@@ -1,0 +1,388 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 55;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		86099543280EAB88000F1EF2 /* main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 86099542280EAB88000F1EF2 /* main.cpp */; };
+		8609954B28102B12000F1EF2 /* slark.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 8609954828102AF7000F1EF2 /* slark.xcframework */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		866C93C1282285F300A189E6 /* PlayerImpl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 866C93BF2822841700A189E6 /* PlayerImpl.cpp */; };
+		86FA65072812C6CB00B7D3D9 /* Player.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 86FA65062812C6CB00B7D3D9 /* Player.cpp */; };
+		86FA65162815879300B7D3D9 /* DecoderManager.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 86FA65142815879300B7D3D9 /* DecoderManager.cpp */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		86099536280EAAFF000F1EF2 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+		8609954C28102B12000F1EF2 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 12;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				8609954B28102B12000F1EF2 /* slark.xcframework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		5A2B0C8BD5CED56B6D40C859 /* Pods-slark.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-slark.release.xcconfig"; path = "Target Support Files/Pods-slark/Pods-slark.release.xcconfig"; sourceTree = "<group>"; };
+		86099538280EAAFF000F1EF2 /* slark */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = slark; sourceTree = BUILT_PRODUCTS_DIR; };
+		86099542280EAB88000F1EF2 /* main.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = main.cpp; path = slark/main.cpp; sourceTree = "<group>"; };
+		8609954828102AF7000F1EF2 /* slark.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = slark.xcframework; path = Pods/slarklib/framework/iOS/slark.xcframework; sourceTree = "<group>"; };
+		866C93BD281F7DB600A189E6 /* DemuxerManager.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = DemuxerManager.cpp; sourceTree = "<group>"; };
+		866C93BE281F7DB600A189E6 /* DemuxerManager.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = DemuxerManager.hpp; sourceTree = "<group>"; };
+		866C93BF2822841700A189E6 /* PlayerImpl.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = PlayerImpl.cpp; sourceTree = "<group>"; };
+		866C93C02822841700A189E6 /* PlayerImpl.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = PlayerImpl.hpp; sourceTree = "<group>"; };
+		86FA65062812C6CB00B7D3D9 /* Player.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Player.cpp; sourceTree = "<group>"; };
+		86FA65082812C6DD00B7D3D9 /* Player.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Player.hpp; sourceTree = "<group>"; };
+		86FA650A2812CA9C00B7D3D9 /* Time.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Time.hpp; sourceTree = "<group>"; };
+		86FA650D281414A300B7D3D9 /* IDecoder.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = IDecoder.hpp; sourceTree = "<group>"; };
+		86FA65142815879300B7D3D9 /* DecoderManager.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = DecoderManager.cpp; sourceTree = "<group>"; };
+		86FA65152815879300B7D3D9 /* DecoderManager.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = DecoderManager.hpp; sourceTree = "<group>"; };
+		86FA65182818269C00B7D3D9 /* IDemuxer.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = IDemuxer.hpp; sourceTree = "<group>"; };
+		86FA651A281BFAB300B7D3D9 /* AVFrame.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = AVFrame.hpp; sourceTree = "<group>"; };
+		88374FE236490AA537CD55C9 /* Pods-slark.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-slark.debug.xcconfig"; path = "Target Support Files/Pods-slark/Pods-slark.debug.xcconfig"; sourceTree = "<group>"; };
+		9FA92BA7205A06285B894EF6 /* libPods-slark.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-slark.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		86099535280EAAFF000F1EF2 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		54651FCAC2E94BA85262E842 /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				88374FE236490AA537CD55C9 /* Pods-slark.debug.xcconfig */,
+				5A2B0C8BD5CED56B6D40C859 /* Pods-slark.release.xcconfig */,
+			);
+			path = Pods;
+			sourceTree = "<group>";
+		};
+		8609952F280EAAFF000F1EF2 = {
+			isa = PBXGroup;
+			children = (
+				86FA65052812C6B200B7D3D9 /* interface */,
+				86099542280EAB88000F1EF2 /* main.cpp */,
+				86099539280EAAFF000F1EF2 /* Products */,
+				54651FCAC2E94BA85262E842 /* Pods */,
+				B9B73B5349A5D693EC5AFEF4 /* Frameworks */,
+			);
+			sourceTree = "<group>";
+		};
+		86099539280EAAFF000F1EF2 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				86099538280EAAFF000F1EF2 /* slark */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		86FA65052812C6B200B7D3D9 /* interface */ = {
+			isa = PBXGroup;
+			children = (
+				86FA65062812C6CB00B7D3D9 /* Player.cpp */,
+				86FA65082812C6DD00B7D3D9 /* Player.hpp */,
+				86FA650A2812CA9C00B7D3D9 /* Time.hpp */,
+				86FA650D281414A300B7D3D9 /* IDecoder.hpp */,
+				86FA65142815879300B7D3D9 /* DecoderManager.cpp */,
+				86FA65152815879300B7D3D9 /* DecoderManager.hpp */,
+				86FA65182818269C00B7D3D9 /* IDemuxer.hpp */,
+				86FA651A281BFAB300B7D3D9 /* AVFrame.hpp */,
+				866C93BD281F7DB600A189E6 /* DemuxerManager.cpp */,
+				866C93BE281F7DB600A189E6 /* DemuxerManager.hpp */,
+				866C93BF2822841700A189E6 /* PlayerImpl.cpp */,
+				866C93C02822841700A189E6 /* PlayerImpl.hpp */,
+			);
+			name = interface;
+			path = slark/interface;
+			sourceTree = "<group>";
+		};
+		B9B73B5349A5D693EC5AFEF4 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				8609954828102AF7000F1EF2 /* slark.xcframework */,
+				9FA92BA7205A06285B894EF6 /* libPods-slark.a */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		86099537280EAAFF000F1EF2 /* slark */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8609953F280EAAFF000F1EF2 /* Build configuration list for PBXNativeTarget "slark" */;
+			buildPhases = (
+				C1AABAA60F6735DFFFA73ED8 /* [CP] Check Pods Manifest.lock */,
+				86099534280EAAFF000F1EF2 /* Sources */,
+				86099535280EAAFF000F1EF2 /* Frameworks */,
+				86099536280EAAFF000F1EF2 /* CopyFiles */,
+				8609954C28102B12000F1EF2 /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = slark;
+			productName = slark;
+			productReference = 86099538280EAAFF000F1EF2 /* slark */;
+			productType = "com.apple.product-type.tool";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		86099530280EAAFF000F1EF2 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 1320;
+				TargetAttributes = {
+					86099537280EAAFF000F1EF2 = {
+						CreatedOnToolsVersion = 13.2.1;
+					};
+				};
+			};
+			buildConfigurationList = 86099533280EAAFF000F1EF2 /* Build configuration list for PBXProject "slark" */;
+			compatibilityVersion = "Xcode 13.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 8609952F280EAAFF000F1EF2;
+			productRefGroup = 86099539280EAAFF000F1EF2 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				86099537280EAAFF000F1EF2 /* slark */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		C1AABAA60F6735DFFFA73ED8 /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-slark-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		86099534280EAAFF000F1EF2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				86FA65162815879300B7D3D9 /* DecoderManager.cpp in Sources */,
+				86FA65072812C6CB00B7D3D9 /* Player.cpp in Sources */,
+				866C93C1282285F300A189E6 /* PlayerImpl.cpp in Sources */,
+				86099543280EAB88000F1EF2 /* main.cpp in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		8609953D280EAAFF000F1EF2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 12.1;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		8609953E280EAAFF000F1EF2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 12.1;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		86099540280EAAFF000F1EF2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 88374FE236490AA537CD55C9 /* Pods-slark.debug.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = N5DK4KP42W;
+				ENABLE_HARDENED_RUNTIME = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Pods/slarklib/framework/iOS",
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		86099541280EAAFF000F1EF2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 5A2B0C8BD5CED56B6D40C859 /* Pods-slark.release.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = N5DK4KP42W;
+				ENABLE_HARDENED_RUNTIME = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Pods/slarklib/framework/iOS",
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		86099533280EAAFF000F1EF2 /* Build configuration list for PBXProject "slark" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8609953D280EAAFF000F1EF2 /* Debug */,
+				8609953E280EAAFF000F1EF2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		8609953F280EAAFF000F1EF2 /* Build configuration list for PBXNativeTarget "slark" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				86099540280EAAFF000F1EF2 /* Debug */,
+				86099541280EAAFF000F1EF2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 86099530280EAAFF000F1EF2 /* Project object */;
+}

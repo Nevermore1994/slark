@@ -1,0 +1,16 @@
+PODS:
+  - slarklib (0.0.5)
+
+DEPENDENCIES:
+  - slarklib
+
+SPEC REPOS:
+  https://github.com/CocoaPods/Specs.git:
+    - slarklib
+
+SPEC CHECKSUMS:
+  slarklib: 570f0e117e2b193d287a2f417eb9b67cc15f180d
+
+PODFILE CHECKSUM: 98c9a6461664f8858ef271d26150ed52d7b59b82
+
+COCOAPODS: 1.10.2
