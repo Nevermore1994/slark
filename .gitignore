@@ -1,0 +1,10 @@
+*.xml
+*.debug.xcconfig
+*.release.xcconfig
+/CMakeFiles
+/cmake-build-debug
+/bin
+/cmake_install.cmake
+/Makefile
+/Pods
+
