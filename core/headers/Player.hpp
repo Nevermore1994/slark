@@ -9,6 +9,7 @@
 
 #include "Time.hpp"
 
+#include <vector>
 #include <string>
 #include <cstdint>
 #include <functional>
