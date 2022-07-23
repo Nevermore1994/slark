@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <algorithm>
 
 namespace slark{
 
@@ -46,9 +47,9 @@ struct Data{
         return copy(0, length);
     }
     
-    [[nodiscard]] inline Data copy(uint32_t pos, uint32_t len) const noexcept {
+    [[nodiscard]] inline Data copy(uint64_t pos, uint64_t len) const noexcept {
         Data res;
-        if(empty()){
+        if(empty() || len == 0 || (len + pos) >= length){
             return res;
         }
         res.capacity = len;
@@ -58,7 +59,17 @@ struct Data{
         return res;
     }
     
-    [[nodiscard]] inline std::unique_ptr<Data> copy()
+    [[nodiscard]] inline std::unique_ptr<Data> copyPtr(uint64_t pos, uint64_t len) const noexcept {
+        auto res = std::make_unique<Data>();
+        if(empty() || len == 0 || (len + pos) >= length){
+            return res;
+        }
+        res->capacity = len;
+        res->length = len;
+        res->data = new char[len];
+        std::copy(data + pos, data + len + 1, res->data);
+        return res;
+    }
     
     inline void release() noexcept{
         if(data){

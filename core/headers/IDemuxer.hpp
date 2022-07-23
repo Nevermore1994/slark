@@ -26,19 +26,20 @@ enum class DemuxerType {
     WAV,
 };
 
-enum class DemuxerSataeCode {
-    Success = 0,
-    FileEnd = 1,
+enum class DemuxerState {
+    Failed = 0,
+    Success = 1,
+    FileEnd = 2,
 };
 
 
-struct DemuxerInfo{
+struct DemuxerInfo {
     DemuxerType type = DemuxerType::Unknown;
     std::string symbol;
     std::string demuxerName;
 };
 
-struct DemuxerHeaderInfo{
+struct DemuxerHeaderInfo {
     uint64_t headerLength = 0;
     uint64_t dataSize = 0;
 };
@@ -73,7 +74,7 @@ public:
     
     virtual void reset() = 0;
     
-    virtual std::tuple<DemuxerSataeCode, AVFrameList> parseData(std::unique_ptr<Data> data) = 0;
+    virtual std::tuple<DemuxerState, AVFrameList> parseData(std::unique_ptr<Data> data) = 0;
     
     inline bool isInited() const noexcept {
         return isInited_;
@@ -87,17 +88,18 @@ public:
         return audioInfo_ != nullptr;
     }
     
-    inline const VideoInfo* videoInfo() const noexcept {
+    inline const VideoInfo *videoInfo() const noexcept {
         return videoInfo_.get();
     }
     
-    inline const AudioInfo* audioInfo() const noexcept {
+    inline const AudioInfo *audioInfo() const noexcept {
         return audioInfo_.get();
     }
     
     inline const DemuxerHeaderInfo& headerInfo() const noexcept {
         return headerInfo_;
     }
+
 protected:
     bool isInited_ = false;
     uint64_t parseLength_ = 0;
@@ -108,7 +110,7 @@ protected:
 };
 
 template<typename T>
-std::unique_ptr<IDemuxer> createDemuxer(std::string name){
+std::unique_ptr<IDemuxer> createDemuxer(std::string name) {
     return std::unique_ptr<IDemuxer>(BaseClass<T>::create(name));
 }
 
