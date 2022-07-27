@@ -49,7 +49,7 @@ struct Data{
     
     [[nodiscard]] inline Data copy(uint64_t pos, uint64_t len) const noexcept {
         Data res;
-        if(empty() || len == 0 || (len + pos) > length + 1){
+        if(empty() || len == 0 || (len + pos - 1) > length){
             return res;
         }
         res.capacity = len;
@@ -61,7 +61,7 @@ struct Data{
     
     [[nodiscard]] inline std::unique_ptr<Data> copyPtr(uint64_t pos, uint64_t len) const noexcept {
         auto res = std::make_unique<Data>();
-        if(empty() || len == 0 || (len + pos) > length + 1){
+        if(empty() || len == 0 || (len + pos) > length){
             return res;
         }
         res->capacity = len;

@@ -230,18 +230,17 @@ std::tuple<DemuxerState, AVFrameList> WAVDemuxer::parseData(std::unique_ptr<Data
         frame->index = ++parseFrameCount_;
         frameList.push_back(std::move(frame));
         
-        start += frameLength + 1;
+        start += frameLength;
     }
     DemuxerState state = DemuxerState::Failed;
     if(start > 0 && !isCompleted) {
-        auto t = overflowData_->copyPtr(start, overflowData_->length - start + 1);
+        auto t = overflowData_->copyPtr(start, overflowData_->length - start);
        // logi("demux data %lld, overflow length %lld", start, t->length);
         overflowData_ = std::move(t);
         state = DemuxerState::Success;
     } else if(isCompleted) {
-        auto t = start == 0 ? 0 : 1;
         auto frame = std::make_unique<AVFrame>();
-        frame->data = overflowData_->copy(start, overflowData_->length - start + t);
+        frame->data = overflowData_->copy(start, overflowData_->length - start);
         frame->duration = static_cast<double>(frame->data.length) /
                           (audioInfo_->sampleRate * audioInfo_->bitsPerSample * audioInfo_->channels) * 1000;
         frame->index = ++parseFrameCount_;
