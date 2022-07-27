@@ -14,7 +14,6 @@
 
 
 using namespace slark;
-using namespace slark;
 
 Player::Impl::Impl(std::shared_ptr<PlayerParams> params)
     : params_(std::move(params))
@@ -103,6 +102,7 @@ void Player::Impl::init() noexcept {
 
 void Player::Impl::handleData(std::list<std::unique_ptr<Data>>&& dataList) noexcept {
     std::string demuxData;
+    logi("handleData %ld", dataList.size());
     while(!dataList.empty()){
         auto data = std::move(dataList.front());
         dataList.pop_front();
@@ -128,7 +128,11 @@ void Player::Impl::handleData(std::list<std::unique_ptr<Data>>&& dataList) noexc
             loge("not find demuxer...");
             continue;
         }
-        auto [code, frameList] = demuxer_->parseData(std::move(data));
+        auto&& [code, frameList] = demuxer_->parseData(std::move(data));
+        //logi("demux frame count %d, state: %d", frameList.size(), code);
+        if(code == DemuxerState::Failed && dataList.empty()){
+            break;
+        }
         rawFrames_.push(frameList);
     }
 }
@@ -154,13 +158,15 @@ void Player::Impl::process() {
     handleData(std::move(dataList));
     
     auto state = dataManager_->state();
-    if (state == IOState::Eof) {
+    auto isLoop = params_->isLoop;
+    if(state == IOState::Failed || state == IOState::Error){
+        stop();
+    } else if (state == IOState::Eof) {
         if(params_->isLoop){
-            dataManager_->setIndex(0);
-        } else {
-            stop();
+            //dataManager_->setIndex(0);
         }
-    } else if(state == IOState::Failed || state == IOState::Error){
+    }
+    if(demuxer_ && demuxer_->isCompleted()){
         stop();
     }
 }

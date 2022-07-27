@@ -49,25 +49,25 @@ struct Data{
     
     [[nodiscard]] inline Data copy(uint64_t pos, uint64_t len) const noexcept {
         Data res;
-        if(empty() || len == 0 || (len + pos) >= length){
+        if(empty() || len == 0 || (len + pos) > length + 1){
             return res;
         }
         res.capacity = len;
         res.length = len;
         res.data = new char[len];
-        std::copy(data + pos, data + len + 1, res.data);
+        std::copy(data + pos, data + pos + len, res.data);
         return res;
     }
     
     [[nodiscard]] inline std::unique_ptr<Data> copyPtr(uint64_t pos, uint64_t len) const noexcept {
         auto res = std::make_unique<Data>();
-        if(empty() || len == 0 || (len + pos) >= length){
+        if(empty() || len == 0 || (len + pos) > length + 1){
             return res;
         }
         res->capacity = len;
         res->length = len;
         res->data = new char[len];
-        std::copy(data + pos, data + len + 1, res->data);
+        std::copy(data + pos, data + pos + len, res->data);
         return res;
     }
     
@@ -90,14 +90,15 @@ struct Data{
         auto expectLength = length + d.length;
         if(capacity < expectLength){
             auto p = data;
-            data = new char [expectLength]; //throw except
-            if(p){
-                std::copy(data, data + length + 1, p);
-                capacity = expectLength;
+            auto len = static_cast<int64_t>(expectLength * 1.5f);
+            data = new char [len]; //throw except
+            capacity = len;
+            if(p) {
+                std::copy(p, p + length, data);
                 delete[] p;
             }
         }
-        std::copy(data + length + 1, data + expectLength + 1, d.data);
+        std::copy(d.data, d.data + d.length, data + length);
         length = expectLength;
     }
     
