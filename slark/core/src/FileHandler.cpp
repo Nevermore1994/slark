@@ -89,7 +89,8 @@ void FileHandler::process() {
     {
         std::unique_lock<std::mutex> lock(mutex_);
         data = std::make_unique<Data>(kDefaultSize);
-        data->length = file_->stream().readsome(data->data, data->capacity);
+        file_->stream().read(data->data, data->capacity);
+        data->length = file_->stream().gcount();
     }
     
     if(handler_ && data){

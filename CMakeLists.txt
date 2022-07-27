@@ -8,13 +8,13 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 project(slark)
 
-set(CORE_INCLUDE_DIR ./core/headers)
-set(BASE_INCLUDE_DIR ./base/headers)
-set(THIRD_PARTY_INCLUDE_DIR ./third_party)
+set(CORE_INCLUDE_DIR slark/core/headers)
+set(BASE_INCLUDE_DIR slark/base/headers)
+set(THIRD_PARTY_INCLUDE_DIR slark/third_party)
 
-aux_source_directory(./base/src BASE_DIR_SRCS)
-aux_source_directory(./core/src CORE_DIR_SRCS)
-aux_source_directory(./core/demuxer DEMUX_DIR_SRCS)
+aux_source_directory(slark/base/src BASE_DIR_SRCS)
+aux_source_directory(slark/core/src CORE_DIR_SRCS)
+aux_source_directory(slark/core/demuxer DEMUX_DIR_SRCS)
 
 file(GLOB ALL_SOURCE ${CORE_DIR_SRCS} ${DEMUX_DIR_SRCS} ${BASE_DIR_SRCS})
 

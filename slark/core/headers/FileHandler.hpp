@@ -14,7 +14,7 @@
 
 namespace slark{
 
-constexpr uint32_t kDefaultSize = 1499; //prime number，< MTU
+constexpr uint32_t kDefaultSize = 1024 * 5;
 
 class FileHandler:public IOHandler{
 public:

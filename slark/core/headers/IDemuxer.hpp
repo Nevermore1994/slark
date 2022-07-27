@@ -80,6 +80,10 @@ public:
         return isInited_;
     }
     
+    inline bool isCompleted() const noexcept {
+        return isCompleted_;
+    }
+    
     inline bool hasVideo() const noexcept {
         return videoInfo_ != nullptr;
     }
@@ -102,6 +106,8 @@ public:
 
 protected:
     bool isInited_ = false;
+    bool isCompleted_ = false;
+    uint32_t parseFrameCount_ = 0;
     uint64_t parseLength_ = 0;
     std::unique_ptr<Data> overflowData_;
     std::unique_ptr<VideoInfo> videoInfo_;

@@ -64,13 +64,14 @@ void IOManager::buildHandler(std::string path) {
 
 void IOManager::handleData(std::unique_ptr<Data> data, int64_t offset, IOState state) {
     if(data->length == 0 && state != IOState::Eof){
-        logi("[IOManager] offset %llu, io state %d", offset, static_cast<int>(state));
+        logi("[IOManager] offset %lld, io state %d", offset, static_cast<int>(state));
     }
     offset_ = offset + data->length;
     state_ = state;
     if(state == IOState::Eof && nextTask()){
         state_ = IOState::Normal;
     }
+    logi("[IOManager] offset %lld, ,io state %d", offset_, static_cast<int>(state));
     if(callBack_){
         callBack_(std::move(data), offset, state);
     }
