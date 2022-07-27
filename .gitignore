@@ -8,3 +8,5 @@
 /Makefile
 /Pods
 
+/.idea/.gitignore
+/.idea/slark.iml
