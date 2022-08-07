@@ -8,6 +8,7 @@
 #include "Thread.hpp"
 #include "RingBuffer.hpp"
 #include "NonCopyable.hpp"
+#include "AVFrameDeque.hpp"
 #include <memory>
 
 namespace slark {
@@ -15,6 +16,7 @@ namespace slark {
 enum class DecoderType {
     Unknown = 0,
     AAC = 1000,
+    RAW = 1001,
     AudioDecoderEnd,
     H264 = 2000,
     VideoDecoderEnd,
@@ -25,7 +27,7 @@ struct DecoderInfo{
     std::string decoderName;
 };
 
-class IDecoder : public slark::NonCopyable {
+class IDecoder : public NonCopyable {
 public:
     ~IDecoder() override = default;
 
@@ -39,9 +41,12 @@ public:
     DecoderType type() const noexcept {
         return decoderType_;
     }
-
-private:
+    
+    virtual AVFrameList decode(AVFrameList&& frameList) = 0;
+    
+protected:
     DecoderType decoderType_ = DecoderType::Unknown;
+    AVFrameSafeDeque deque_;
 };
 
 }

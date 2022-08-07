@@ -8,7 +8,6 @@
 #include "Log.hpp"
 
 using namespace slark;
-using namespace slark;
 
 IOManager::IOManager(std::vector<std::string> paths, int16_t index, IOHandlerCallBack func)
     : index_(index)
@@ -103,6 +102,8 @@ void IOManager::updateEvent(TransportEvent event) {
             break;
         case TransportEvent::Reset:
             open();
+            break;
+        default:
             break;
     }
 }
