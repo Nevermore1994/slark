@@ -111,16 +111,18 @@ void Player::Impl::handleData(std::list<std::unique_ptr<Data>>&& dataList) noexc
             demuxData.append(data->data, data->length);
             std::string_view dataView(demuxData);
             auto demuxType = DemuxerManager::shareInstance().probeDemuxType(dataView);
-            if(demuxType != DemuxerType::Unknown){
-                demuxer_ = DemuxerManager::shareInstance().create(demuxType);
-                auto [res, offset] = demuxer_->open(dataView);
-                if(res){
-                    auto p = demuxData.data();
-                    data = std::make_unique<Data>(p + offset, demuxData.length() - offset);
-                    demuxData.clear();
-                } else {
-                    loge("create demuxer error...");
-                }
+            if(demuxType == DemuxerType::Unknown){
+                continue;
+            }
+            
+            demuxer_ = DemuxerManager::shareInstance().create(demuxType);
+            auto [res, offset] = demuxer_->open(dataView);
+            if(res){
+                auto p = demuxData.data();
+                data = std::make_unique<Data>(p + offset, demuxData.length() - offset);
+                demuxData.clear();
+            } else {
+                loge("create demuxer error...");
             }
         }
         
@@ -188,6 +190,9 @@ TransportEvent Player::Impl::eventType(PlayerState state) const noexcept {
             break;
         case PlayerState::Stop:
             event = TransportEvent::Stop;
+            break;
+        default:
+            break;
     }
     return event;
 }
