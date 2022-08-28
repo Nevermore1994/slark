@@ -6,7 +6,7 @@
 
 #include "AVFrameDeque.hpp"
 
-using namespace slark;
+namespace slark {
 
 void AVFrameSafeDeque::push(AVFramePtr frame) {
     std::unique_lock<std::mutex> lock(mutex_);
@@ -24,21 +24,14 @@ void AVFrameSafeDeque::push(AVFrameList& frameList) {
     frameList.clear();
 }
 
-AVFrame *AVFrameSafeDeque::front() {
+AVFramePtr AVFrameSafeDeque::pop() {
     std::unique_lock<std::mutex> lock(mutex_);
     if(frames_.empty()){
         return nullptr;
     }
-    auto& p = frames_.front();
-    return p.get();
-}
-
-void AVFrameSafeDeque::pop() {
-    std::unique_lock<std::mutex> lock(mutex_);
-    if(frames_.empty()){
-        return;
-    }
+    auto ptr = std::move(frames_.front());
     frames_.pop_front();
+    return ptr;
 }
 
 void AVFrameSafeDeque::swap(AVFrameSafeDeque& deque) {
@@ -51,6 +44,6 @@ void AVFrameSafeDeque::clear() {
     frames_.clear();
 }
 
-
+}//end namespace slark
 
 

@@ -7,7 +7,7 @@
 #include "File.hpp"
 #include <cstdio>
 
-using namespace slark::FileUtil;
+namespace slark::FileUtil{
 
 File::File(const std::string& path, std::ios_base::openmode mode)
     : path_(path)
@@ -39,3 +39,5 @@ void File::close(){
         file_.reset();
     }
 }
+
+}//end namespace slark::FileUtil

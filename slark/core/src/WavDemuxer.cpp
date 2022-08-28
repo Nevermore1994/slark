@@ -9,7 +9,7 @@
 #include "MediaUtility.hpp"
 #include "Time.hpp"
 
-using namespace slark;
+namespace slark {
 
 enum class WaveFormat {
     PCM = 0x0001,
@@ -41,7 +41,7 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
     auto totalSize = uint32LE(&probeData[4]);
     auto offset = 12ull;
     auto remainSize = totalSize;
-    WaveFormat format;
+    WaveFormat format = WaveFormat::PCM;
     uint16_t channels = 0;
     uint64_t sampleRate = 0;
     uint16_t bitsPerSample = 0;
@@ -254,3 +254,4 @@ std::tuple<DemuxerState, AVFrameList> WAVDemuxer::parseData(std::unique_ptr<Data
     return {state, std::move(frameList)};
 }
 
+}//end namespace slark

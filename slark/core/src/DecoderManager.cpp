@@ -7,8 +7,7 @@
 
 #include "DecoderManager.hpp"
 
-using namespace std;
-using namespace slark;
+namespace slark {
 
 void DecoderManager::init() noexcept {
 
@@ -24,3 +23,4 @@ bool DecoderManager::contains(DecoderType type) noexcept {
 }
 
 
+}//end namespace slark

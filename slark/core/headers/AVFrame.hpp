@@ -73,6 +73,12 @@ struct AVFrame {
         data.reset();
     }
     
+    inline Data detachData() noexcept {
+        auto d = data;
+        data = Data();
+        return d;
+    }
+    
     inline std::unique_ptr<AVFrame> copy() const noexcept {
         auto frame = std::make_unique<AVFrame>();
         frame->isKeyFrame = this->isKeyFrame;
@@ -109,5 +115,6 @@ struct AVFrame {
 };
 
 using AVFramePtr = std::unique_ptr<AVFrame>;
+using AVFrameRef = AVFrame*;
 using AVFrameList = std::list<AVFramePtr>;
 }

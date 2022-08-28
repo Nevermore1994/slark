@@ -7,7 +7,7 @@
 #include "Timer.hpp"
 #include "Utility.hpp"
 
-using namespace slark;
+namespace slark {
 
 TimerInfo::TimerInfo(uint64_t time)
     : expireTime(time)
@@ -50,3 +50,4 @@ Timer& Timer::operator=(Timer&& timer) noexcept {
     return *this;
 }
 
+}//end namespace slark

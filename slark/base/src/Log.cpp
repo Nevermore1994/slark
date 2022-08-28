@@ -7,8 +7,12 @@
 #include "date.h"
 #include <cstdarg>
 
+#ifdef __APPLE__ 
+#include "InternalLog.hpp"
+#endif
+
 //todo:platform log
-using namespace slark;
+namespace slark {
 
 void slark::printLog(LogType level, const char *format, ...) {
     std::string logStr = date::format("%F %T", std::chrono::system_clock::now());
@@ -22,7 +26,12 @@ void slark::printLog(LogType level, const char *format, ...) {
     buf[kMaxLogBuffSize - 1] = 0; //last element = 0
     
     logStr.append(buf);
+#if __APPLE__
+    outputLog(std::move(logStr));
+#else
     fprintf(stdout, "%s\n", logStr.c_str());
     fflush(stdout);
+#endif
 }
 
+}//end namespace slark

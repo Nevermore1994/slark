@@ -8,8 +8,7 @@
 #include "FileUtility.hpp"
 #include <cassert>
 
-using namespace slark;
-using namespace slark;
+namespace slark {
 
 FileHandler::FileHandler()
     : file_(nullptr)
@@ -110,4 +109,4 @@ IOState FileHandler::state() noexcept {
     return IOState::Normal;
 }
 
-
+}//end namespace slark

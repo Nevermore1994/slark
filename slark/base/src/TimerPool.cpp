@@ -8,7 +8,8 @@
 #include "Log.hpp"
 #include <chrono>
 
-using namespace slark;
+namespace slark {
+
 using namespace std::chrono;
 using namespace std::chrono_literals;
 
@@ -124,3 +125,4 @@ void TimerPool::remove(TimerId id) noexcept {
     timers_.erase(id);
 }
 
+}//end namespace slark

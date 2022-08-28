@@ -8,7 +8,7 @@
 #include "TimerManager.hpp"
 #include <chrono>
 
-using namespace slark;
+namespace slark {
 using namespace std::chrono_literals;
 
 TimerManager::TimerManager()
@@ -48,3 +48,5 @@ TimerId TimerManager::runLoop(std::chrono::milliseconds timeInterval, TimerCallb
 void TimerManager::cancel(TimerId id) {
     pool_.cancel(id);
 }
+
+}//end namespace slark

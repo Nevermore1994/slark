@@ -2,12 +2,13 @@
 //  rawDecoder.cpp
 //  slark
 //
-//  Created by 谭平 on 2022/8/7.
+//  Created by Nevermore on 2022/8/7.
 //
 
-#include "rawDecoder.hpp"
+#include "RawDecoder.hpp"
+#include "Time.hpp"
 
-using namespace slark;
+namespace slark {
 
 void RawDecoder::open() noexcept {
 
@@ -22,5 +23,10 @@ void RawDecoder::close() noexcept {
 }
 
 AVFrameList RawDecoder::decode(AVFrameList &&frameList){
+    for(auto& frame:frameList){
+        frame->decodedStamp = Time::nowTimeStamp();
+    }
     return std::move(frameList);
 }
+
+}//end namespace slark
