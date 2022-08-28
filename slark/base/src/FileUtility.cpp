@@ -11,7 +11,7 @@
 #include <cstring>
 #include <filesystem>
 
-using namespace slark;
+namespace slark {
 
 bool FileUtil::isDirExist(const std::string& path) {
     return access(path.c_str(), F_OK) == 0;
@@ -81,8 +81,10 @@ bool FileUtil::removeDir(const std::string& path, bool isRetain) {
     return res;
 }
 
-bool FileUtil::copy(const std::string &from, const std::string &to){
+bool FileUtil::copyFile(const std::string &from, const std::string &to){
     std::error_code error;
     std::filesystem::copy(from, to, std::filesystem::copy_options::recursive, error);
     return error.value() == 0;
 }
+
+}//end namespace slark

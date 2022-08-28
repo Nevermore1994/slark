@@ -17,9 +17,9 @@ namespace Time {
 
 constexpr static uint64_t kInvalid = 0;
 
-using TimeStamp = uint64_t;
+using Timestamp = uint64_t;
 
-Time::TimeStamp nowTimeStamp();
+Time::Timestamp nowTimeStamp();
 } //end namespace slark::Time
 
 

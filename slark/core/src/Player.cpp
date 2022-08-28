@@ -9,7 +9,7 @@
 #include "Player.hpp"
 #include "PlayerImpl.hpp"
 
-using namespace slark;
+namespace slark{
 
 Player::Player(std::shared_ptr<PlayerParams> params)
     : pimpl_(std::make_unique<Player::Impl>(params)) {
@@ -60,3 +60,4 @@ const PlayerInfos& Player::info() {
     return pimpl_->info();
 }
 
+}//end namespace slark

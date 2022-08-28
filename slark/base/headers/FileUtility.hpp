@@ -29,7 +29,7 @@ bool resizeFile(const std::string& path, uint64_t length);
 
 bool removeDir(const std::string& path, bool isRetain = false); //isRetain:keep the top-level directory
 
-bool copy(const std::string& from, const std::string& to);
+bool copyFile(const std::string& from, const std::string& to);
 }
 
 

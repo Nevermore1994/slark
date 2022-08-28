@@ -10,8 +10,9 @@
 #include <tuple>
 #include <memory>
 #include "NonCopyable.hpp"
-#include "Time.hpp"
 #include "AVFrame.hpp"
+#include "VideoInfo.hpp"
+#include "AudioInfo.hpp"
 #include "BaseClass.hpp"
 
 
@@ -42,24 +43,6 @@ struct DemuxerInfo {
 struct DemuxerHeaderInfo {
     uint64_t headerLength = 0;
     uint64_t dataSize = 0;
-};
-
-struct VideoInfo {
-    uint32_t width{};
-    uint32_t height{};
-    uint32_t fps{};
-    CTime offset;
-    CTime duration;
-};
-
-struct AudioInfo {
-    uint16_t channels = 0;
-    uint16_t bitsPerSample = 0;
-    uint64_t sampleRate = 0;
-    uint64_t headerLength = 0;
-    CTime offset;
-    CTime duration;
-    std::string format;
 };
 
 class IDemuxer : public slark::NonCopyable {

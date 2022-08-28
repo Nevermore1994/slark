@@ -14,17 +14,20 @@
 
 namespace slark{
 
-class AVFrameSafeDeque:public NonCopyable{
+class AVFrameSafeDeque : public NonCopyable{
 public:
     AVFrameSafeDeque() = default;
     ~AVFrameSafeDeque() override = default;
     
     void push(AVFramePtr frame);
     void push(AVFrameList& frameList);
-    AVFrame* front();
-    void pop();
+    AVFramePtr pop();
     void swap(AVFrameSafeDeque& deque);
     void clear();
+    
+    inline bool empty() const noexcept{
+        return frames_.empty();
+    }
 private:
     std::mutex mutex_;
     std::deque<AVFramePtr> frames_;

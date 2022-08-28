@@ -8,7 +8,7 @@
 #include "DemuxerManager.hpp"
 #include "WavDemuxer.hpp"
 
-using namespace slark;
+namespace slark {
 
 DemuxerManager::DemuxerManager() {
     init();
@@ -66,3 +66,5 @@ DemuxerType DemuxerManager::probeDemuxType(const std::string_view& str) const no
     }
     return DemuxerType::Unknown;
 }
+
+}//end namespace slark

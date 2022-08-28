@@ -14,11 +14,11 @@
 #include <pthread.h>
 #endif
 
-using namespace slark;
-using namespace slark::Util;
+namespace slark::Util {
+
 using namespace std::literals;
 
-std::string Util::randomString(uint32_t length) {
+std::string randomString(uint32_t length) {
     static std::string charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"s;
     std::string result;
     result.resize(length);
@@ -31,7 +31,7 @@ std::string Util::randomString(uint32_t length) {
     return result;
 }
 
-uint64_t Util::randomId(uint8_t length) {
+uint64_t randomId(uint8_t length) {
     if(length >= 18) {
         throw std::runtime_error("randomId error");
     }
@@ -47,16 +47,15 @@ uint64_t Util::randomId(uint8_t length) {
     return std::stoull(result);
 }
 
-uint32_t Util::shortId() {
+uint32_t shortId() {
     return static_cast<uint32_t>(Util::randomId(12));
 }
 
-std::string Util::uuid() {
+std::string uuid() {
     return Util::randomString(64);
 }
 
-std::vector<std::string>&
-Util::spiltString(const std::string& str, const char& flag, std::vector<std::string>& res, bool isSkipSpace) {
+std::vector<std::string>& spiltString(const std::string& str, const char& flag, std::vector<std::string>& res, bool isSkipSpace) {
     std::istringstream iss(str);
     for(std::string item; std::getline(iss, item, flag);) {
         if(isSkipSpace && item.empty()) {
@@ -68,3 +67,5 @@ Util::spiltString(const std::string& str, const char& flag, std::vector<std::str
     return res;
 }
 
+
+}//end namespace slark::Util

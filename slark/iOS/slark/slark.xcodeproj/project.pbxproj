@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		864A316828AF32D300C46DED /* AudioRenderNode.h in Headers */ = {isa = PBXBuildFile; fileRef = 864A316728AF32D300C46DED /* AudioRenderNode.h */; };
+		864A316A28AF686800C46DED /* AudioDefine.h in Headers */ = {isa = PBXBuildFile; fileRef = 864A316928AF686800C46DED /* AudioDefine.h */; };
+		864A316C28AFA11400C46DED /* AudioComponent.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 864A316B28AFA11400C46DED /* AudioComponent.cpp */; };
+		864A316E28B3998200C46DED /* AudioInfo.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 864A316D28B3998200C46DED /* AudioInfo.hpp */; };
+		864A317028B399C700C46DED /* VideoInfo.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 864A316F28B399C700C46DED /* VideoInfo.hpp */; };
+		864A317228B39E0300C46DED /* AudioDescription.h in Headers */ = {isa = PBXBuildFile; fileRef = 864A317128B39E0300C46DED /* AudioDescription.h */; };
+		864A317428B39F6A00C46DED /* AudioDescription.mm in Sources */ = {isa = PBXBuildFile; fileRef = 864A317328B39F6A00C46DED /* AudioDescription.mm */; };
 		8679DD93289FCAC9009E3022 /* DemuxerManager.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 8679DD54289FCAC9009E3022 /* DemuxerManager.hpp */; };
 		8679DD94289FCAC9009E3022 /* AVFrame.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 8679DD55289FCAC9009E3022 /* AVFrame.hpp */; };
 		8679DD95289FCAC9009E3022 /* Type.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 8679DD56289FCAC9009E3022 /* Type.hpp */; };
@@ -61,9 +68,25 @@
 		8679DDCB289FCAC9009E3022 /* date.h in Headers */ = {isa = PBXBuildFile; fileRef = 8679DD92289FCAC9009E3022 /* date.h */; };
 		8679DDCE289FD0BB009E3022 /* RawDecoder.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 8679DDCD289FD0BB009E3022 /* RawDecoder.hpp */; };
 		8679DDD0289FD274009E3022 /* RawDecoder.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8679DDCF289FD274009E3022 /* RawDecoder.cpp */; };
+		8679DDD328A7E665009E3022 /* AudioRender.mm in Sources */ = {isa = PBXBuildFile; fileRef = 8679DDD228A7E665009E3022 /* AudioRender.mm */; };
+		8679DDD628A7E6BC009E3022 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8679DDD528A7E6BC009E3022 /* AudioToolbox.framework */; };
+		8679DDD828AA4C94009E3022 /* AudioRender.h in Headers */ = {isa = PBXBuildFile; fileRef = 8679DDD728AA4C94009E3022 /* AudioRender.h */; };
+		8679DDDA28AA5127009E3022 /* InternalLog.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 8679DDD928AA5127009E3022 /* InternalLog.hpp */; };
+		8679DDDC28AA51AA009E3022 /* InternalLog.mm in Sources */ = {isa = PBXBuildFile; fileRef = 8679DDDB28AA51AA009E3022 /* InternalLog.mm */; };
+		8679DDE628AC9538009E3022 /* AudioComponent.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 8679DDE428AC9538009E3022 /* AudioComponent.hpp */; };
+		8679DDEC28ADE896009E3022 /* AudioRenderNode.mm in Sources */ = {isa = PBXBuildFile; fileRef = 8679DDEB28ADE896009E3022 /* AudioRenderNode.mm */; };
+		86B3A4C128B62D4B00DC360E /* AudioNode.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 86B3A4C028B62D4B00DC360E /* AudioNode.hpp */; };
+		86B3A4C328B62DBA00DC360E /* AudioNode.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 86B3A4C228B62DBA00DC360E /* AudioNode.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		864A316728AF32D300C46DED /* AudioRenderNode.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AudioRenderNode.h; sourceTree = "<group>"; };
+		864A316928AF686800C46DED /* AudioDefine.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AudioDefine.h; sourceTree = "<group>"; };
+		864A316B28AFA11400C46DED /* AudioComponent.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = AudioComponent.cpp; sourceTree = "<group>"; };
+		864A316D28B3998200C46DED /* AudioInfo.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = AudioInfo.hpp; sourceTree = "<group>"; };
+		864A316F28B399C700C46DED /* VideoInfo.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = VideoInfo.hpp; sourceTree = "<group>"; };
+		864A317128B39E0300C46DED /* AudioDescription.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AudioDescription.h; sourceTree = "<group>"; };
+		864A317328B39F6A00C46DED /* AudioDescription.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AudioDescription.mm; sourceTree = "<group>"; };
 		8679DD48289FCA4E009E3022 /* slark.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = slark.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		8679DD54289FCAC9009E3022 /* DemuxerManager.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = DemuxerManager.hpp; sourceTree = "<group>"; };
 		8679DD55289FCAC9009E3022 /* AVFrame.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = AVFrame.hpp; sourceTree = "<group>"; };
@@ -119,6 +142,15 @@
 		8679DD92289FCAC9009E3022 /* date.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = date.h; sourceTree = "<group>"; };
 		8679DDCD289FD0BB009E3022 /* RawDecoder.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = RawDecoder.hpp; sourceTree = "<group>"; };
 		8679DDCF289FD274009E3022 /* RawDecoder.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = RawDecoder.cpp; sourceTree = "<group>"; };
+		8679DDD228A7E665009E3022 /* AudioRender.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AudioRender.mm; sourceTree = "<group>"; };
+		8679DDD528A7E6BC009E3022 /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.1.sdk/System/Library/Frameworks/AudioToolbox.framework; sourceTree = DEVELOPER_DIR; };
+		8679DDD728AA4C94009E3022 /* AudioRender.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AudioRender.h; sourceTree = "<group>"; };
+		8679DDD928AA5127009E3022 /* InternalLog.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = InternalLog.hpp; sourceTree = "<group>"; };
+		8679DDDB28AA51AA009E3022 /* InternalLog.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = InternalLog.mm; sourceTree = "<group>"; };
+		8679DDE428AC9538009E3022 /* AudioComponent.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = AudioComponent.hpp; sourceTree = "<group>"; };
+		8679DDEB28ADE896009E3022 /* AudioRenderNode.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AudioRenderNode.mm; sourceTree = "<group>"; };
+		86B3A4C028B62D4B00DC360E /* AudioNode.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = AudioNode.hpp; sourceTree = "<group>"; };
+		86B3A4C228B62DBA00DC360E /* AudioNode.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = AudioNode.cpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -126,6 +158,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8679DDD628A7E6BC009E3022 /* AudioToolbox.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -137,6 +170,7 @@
 			children = (
 				8679DD4A289FCA4E009E3022 /* slark */,
 				8679DD49289FCA4E009E3022 /* Products */,
+				8679DDD428A7E6BC009E3022 /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -161,7 +195,7 @@
 		8679DD52289FCAC9009E3022 /* core */ = {
 			isa = PBXGroup;
 			children = (
-				8679DDCC289FCD96009E3022 /* iOS */,
+				8679DDD128A27CAF009E3022 /* AudioEngine */,
 				8679DD53289FCAC9009E3022 /* headers */,
 				8679DD66289FCAC9009E3022 /* src */,
 			);
@@ -191,6 +225,8 @@
 				8679DD64289FCAC9009E3022 /* IDemuxer.hpp */,
 				8679DD65289FCAC9009E3022 /* TransportEvent.hpp */,
 				8679DDCD289FD0BB009E3022 /* RawDecoder.hpp */,
+				864A316D28B3998200C46DED /* AudioInfo.hpp */,
+				864A316F28B399C700C46DED /* VideoInfo.hpp */,
 			);
 			path = headers;
 			sourceTree = "<group>";
@@ -216,6 +252,7 @@
 		8679DD71289FCAC9009E3022 /* base */ = {
 			isa = PBXGroup;
 			children = (
+				8679DDDD28AA5606009E3022 /* platform */,
 				8679DD78289FCAC9009E3022 /* headers */,
 				8679DD86289FCAC9009E3022 /* src */,
 			);
@@ -272,6 +309,50 @@
 		8679DDCC289FCD96009E3022 /* iOS */ = {
 			isa = PBXGroup;
 			children = (
+				8679DDD228A7E665009E3022 /* AudioRender.mm */,
+				8679DDD728AA4C94009E3022 /* AudioRender.h */,
+				8679DDEB28ADE896009E3022 /* AudioRenderNode.mm */,
+				864A316728AF32D300C46DED /* AudioRenderNode.h */,
+				864A317128B39E0300C46DED /* AudioDescription.h */,
+				864A317328B39F6A00C46DED /* AudioDescription.mm */,
+			);
+			path = iOS;
+			sourceTree = "<group>";
+		};
+		8679DDD128A27CAF009E3022 /* AudioEngine */ = {
+			isa = PBXGroup;
+			children = (
+				864A316928AF686800C46DED /* AudioDefine.h */,
+				8679DDE428AC9538009E3022 /* AudioComponent.hpp */,
+				864A316B28AFA11400C46DED /* AudioComponent.cpp */,
+				86B3A4C028B62D4B00DC360E /* AudioNode.hpp */,
+				86B3A4C228B62DBA00DC360E /* AudioNode.cpp */,
+				8679DDCC289FCD96009E3022 /* iOS */,
+			);
+			path = AudioEngine;
+			sourceTree = "<group>";
+		};
+		8679DDD428A7E6BC009E3022 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				8679DDD528A7E6BC009E3022 /* AudioToolbox.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		8679DDDD28AA5606009E3022 /* platform */ = {
+			isa = PBXGroup;
+			children = (
+				8679DDDE28AA5611009E3022 /* iOS */,
+			);
+			path = platform;
+			sourceTree = "<group>";
+		};
+		8679DDDE28AA5611009E3022 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				8679DDD928AA5127009E3022 /* InternalLog.hpp */,
+				8679DDDB28AA51AA009E3022 /* InternalLog.mm */,
 			);
 			path = iOS;
 			sourceTree = "<group>";
@@ -283,6 +364,7 @@
 			isa = PBXHeadersBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				864A316A28AF686800C46DED /* AudioDefine.h in Headers */,
 				8679DD9B289FCAC9009E3022 /* AVFrameDeque.hpp in Headers */,
 				8679DDBD289FCAC9009E3022 /* TimerManager.hpp in Headers */,
 				8679DD99289FCAC9009E3022 /* DecoderManager.hpp in Headers */,
@@ -294,6 +376,7 @@
 				8679DD9A289FCAC9009E3022 /* IOHandler.hpp in Headers */,
 				8679DDB5289FCAC9009E3022 /* Utility.hpp in Headers */,
 				8679DDA4289FCAC9009E3022 /* TransportEvent.hpp in Headers */,
+				8679DDD828AA4C94009E3022 /* AudioRender.h in Headers */,
 				8679DD98289FCAC9009E3022 /* WavDemuxer.hpp in Headers */,
 				8679DD93289FCAC9009E3022 /* DemuxerManager.hpp in Headers */,
 				8679DD97289FCAC9009E3022 /* FileHandler.hpp in Headers */,
@@ -301,14 +384,20 @@
 				8679DDA3289FCAC9009E3022 /* IDemuxer.hpp in Headers */,
 				8679DDB6289FCAC9009E3022 /* Time.hpp in Headers */,
 				8679DDC0289FCAC9009E3022 /* NonCopyable.hpp in Headers */,
+				864A317028B399C700C46DED /* VideoInfo.hpp in Headers */,
 				8679DD9E289FCAC9009E3022 /* PlayerImpl.hpp in Headers */,
 				8679DDB7289FCAC9009E3022 /* FileUtility.hpp in Headers */,
 				8679DDA1289FCAC9009E3022 /* Player.hpp in Headers */,
+				864A316828AF32D300C46DED /* AudioRenderNode.h in Headers */,
+				8679DDE628AC9538009E3022 /* AudioComponent.hpp in Headers */,
 				8679DDB4289FCAC9009E3022 /* RingBuffer.hpp in Headers */,
+				864A317228B39E0300C46DED /* AudioDescription.h in Headers */,
 				8679DDB8289FCAC9009E3022 /* File.hpp in Headers */,
+				864A316E28B3998200C46DED /* AudioInfo.hpp in Headers */,
 				8679DDBA289FCAC9009E3022 /* Reflection.hpp in Headers */,
 				8679DDA2289FCAC9009E3022 /* MediaUtility.hpp in Headers */,
 				8679DDBC289FCAC9009E3022 /* TimerPool.hpp in Headers */,
+				8679DDDA28AA5127009E3022 /* InternalLog.hpp in Headers */,
 				8679DDBE289FCAC9009E3022 /* Thread.hpp in Headers */,
 				8679DD96289FCAC9009E3022 /* IDecoder.hpp in Headers */,
 				8679DDB9289FCAC9009E3022 /* ThreadManager.hpp in Headers */,
@@ -316,6 +405,7 @@
 				8679DD9D289FCAC9009E3022 /* MediaDefs.hpp in Headers */,
 				8679DD95289FCAC9009E3022 /* Type.hpp in Headers */,
 				8679DD94289FCAC9009E3022 /* AVFrame.hpp in Headers */,
+				86B3A4C128B62D4B00DC360E /* AudioNode.hpp in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -388,16 +478,21 @@
 			buildActionMask = 2147483647;
 			files = (
 				8679DDA8289FCAC9009E3022 /* MediaDefs.cpp in Sources */,
+				8679DDDC28AA51AA009E3022 /* InternalLog.mm in Sources */,
 				8679DDC1289FCAC9009E3022 /* TimerManager.cpp in Sources */,
 				8679DDA6289FCAC9009E3022 /* Player.cpp in Sources */,
 				8679DDAB289FCAC9009E3022 /* DecoderManager.cpp in Sources */,
+				86B3A4C328B62DBA00DC360E /* AudioNode.cpp in Sources */,
+				8679DDEC28ADE896009E3022 /* AudioRenderNode.mm in Sources */,
 				8679DDCA289FCAC9009E3022 /* Time.cpp in Sources */,
 				8679DDC3289FCAC9009E3022 /* Log.cpp in Sources */,
 				8679DDD0289FD274009E3022 /* RawDecoder.cpp in Sources */,
 				8679DDC7289FCAC9009E3022 /* ThreadManager.cpp in Sources */,
+				8679DDD328A7E665009E3022 /* AudioRender.mm in Sources */,
 				8679DDA9289FCAC9009E3022 /* PlayerImpl.cpp in Sources */,
 				8679DDA7289FCAC9009E3022 /* MediaUtility.cpp in Sources */,
 				8679DDC6289FCAC9009E3022 /* File.cpp in Sources */,
+				864A316C28AFA11400C46DED /* AudioComponent.cpp in Sources */,
 				8679DDA5289FCAC9009E3022 /* IOManager.cpp in Sources */,
 				8679DDC8289FCAC9009E3022 /* Utility.cpp in Sources */,
 				8679DDC2289FCAC9009E3022 /* Thread.cpp in Sources */,
@@ -408,6 +503,7 @@
 				8679DDAC289FCAC9009E3022 /* AVFrameDeque.cpp in Sources */,
 				8679DDC5289FCAC9009E3022 /* TimerPool.cpp in Sources */,
 				8679DDC9289FCAC9009E3022 /* FileUtility.cpp in Sources */,
+				864A317428B39F6A00C46DED /* AudioDescription.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

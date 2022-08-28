@@ -7,7 +7,7 @@
 #include "Log.hpp"
 #include "TimerManager.hpp"
 
-using namespace slark;
+namespace slark {
 using namespace slark::Util;
 using namespace slark::Time;
 using namespace std::chrono_literals;
@@ -59,7 +59,7 @@ Thread& ThreadManager::thisThread() {
 
 
 void ThreadManager::reportRunInfo() noexcept {
-    TimeStamp now = nowTimeStamp();
+    Timestamp now = nowTimeStamp();
     logi("ThreadManager report now:%llu, now live size :%lu", now, threadInfos_.size());
     //todo replace C++20 std::erase_if
     std::vector<std::thread::id> expiredThreads;
@@ -78,7 +78,7 @@ void ThreadManager::reportRunInfo() noexcept {
             continue;
         }
         auto thread = t.lock();
-        TimeStamp interval = (now - thread->getLastRunTimeStamp());
+        Timestamp interval = (now - thread->getLastRunTimeStamp());
         if(thread->isRunning() && interval >= kMaxThreadBlockTimeInterval) {
             loge("ThreadManager report [%s] is blocking.", thread->getName().data());
         }
@@ -90,3 +90,5 @@ void ThreadManager::reportRunInfo() noexcept {
         }
     }
 }
+
+}//end namespace slark

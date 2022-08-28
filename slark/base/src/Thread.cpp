@@ -12,7 +12,7 @@
 #include "Log.hpp"
 #include <cassert>
 
-using namespace slark;
+namespace slark {
 using namespace std::chrono;
 
 Thread::Thread(const std::string& name)
@@ -113,3 +113,4 @@ TimerId Thread::runAfter(milliseconds delayTime, TimerCallback func) noexcept {
     return timerPool_.runAfter(delayTime, std::move(func));
 }
 
+}//end namespace slark

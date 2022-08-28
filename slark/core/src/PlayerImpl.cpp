@@ -13,7 +13,7 @@
 #include <functional>
 
 
-using namespace slark;
+namespace slark{
 
 Player::Impl::Impl(std::shared_ptr<PlayerParams> params)
     : params_(std::move(params))
@@ -160,7 +160,7 @@ void Player::Impl::process() {
     handleData(std::move(dataList));
     
     auto state = dataManager_->state();
-    auto isLoop = params_->isLoop;
+    //auto isLoop = params_->isLoop;
     if(state == IOState::Failed || state == IOState::Error){
         stop();
     } else if (state == IOState::Eof) {
@@ -212,4 +212,5 @@ void Player::Impl::notifyEvent(PlayerState state) const noexcept {
     }
 }
 
+}//end namespace slark
 #pragma  endregion

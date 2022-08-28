@@ -73,7 +73,7 @@ public:
         return isRunning_.load();
     }
     
-    inline Time::TimeStamp getLastRunTimeStamp() const noexcept {
+    inline Time::Timestamp getLastRunTimeStamp() const noexcept {
         return lastRunTimeStamp_;
     }
     
@@ -97,7 +97,7 @@ private:
     std::string name_;
     std::mutex mutex_;
     std::condition_variable cond_;
-    Time::TimeStamp lastRunTimeStamp_ = 0;
+    Time::Timestamp lastRunTimeStamp_ = 0;
     std::thread worker_;
     TimerPool timerPool_;
 };

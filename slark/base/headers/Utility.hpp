@@ -29,7 +29,7 @@ T random(T min, T max) {
 }
 
 template<typename T>
-std::vector<T> reservoirSampling(const std::vector<T>& source, uint32_t count) {
+std::vector<T> randomSelect(const std::vector<T>& source, uint32_t count) {
     if(count >= source.size()) {
         return {source.begin(), source.end()};
     }

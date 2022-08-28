@@ -6,7 +6,7 @@
 
 #include "MediaUtility.hpp"
 
-using namespace slark;
+namespace slark{
 
 bool slark::isLocalFile(const std::string& path) {
     auto pos = path.find(kHttpSymbol);
@@ -38,3 +38,5 @@ uint16_t slark::popcount(uint64_t value) {
 uint16_t slark::uint16LE(const uint8_t* ptr){
     return ptr[1] << 8 | ptr[0];
 }
+
+}//end namespace slark
