@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2021/12/22.
-// slark Time
+// Slark Time
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 #pragma once
@@ -11,16 +11,20 @@
 #include <algorithm>
 #include <cassert>
 
-namespace slark{
+namespace Slark {
 
 namespace Time {
 
-constexpr static uint64_t kInvalid = 0;
+constexpr static uint64_t kTimeInvalid = 0;
 
 using Timestamp = uint64_t;
 
+std::string localTime();
+
+//system time
 Time::Timestamp nowTimeStamp();
-} //end namespace slark::Time
+
+} //end namespace Slark::Time
 
 
 struct CTime {
@@ -30,56 +34,50 @@ public:
     int64_t value;
     uint64_t scale;
     bool isValid;
-    
+
     CTime()
-        : value(Time::kInvalid)
-        , scale(Time::kInvalid)
-        , isValid(scale != Time::kInvalid) {
+        : value(Time::kTimeInvalid)
+        , scale(Time::kTimeInvalid)
+        , isValid(scale != Time::kTimeInvalid) {
     }
-    
+
     CTime(int64_t v, uint64_t s)
         : value(v)
         , scale(s)
-        , isValid(scale != Time::kInvalid) {
+        , isValid(scale != Time::kTimeInvalid) {
     }
-    
-    CTime(double t, uint64_t s)
-        : value(s * t)
-        , scale(s)
-        , isValid(scale != Time::kInvalid) {
-    }
-    
+
     CTime(long double t, uint64_t s)
         : value(s * t)
         , scale(s)
-        , isValid(scale != Time::kInvalid) {
+        , isValid(scale != Time::kTimeInvalid) {
     }
-    
-    inline long double second() const noexcept {
+
+    [[nodiscard]] inline long double second() const noexcept {
         assert(isValid);
-        if(isValid) {
+        if (isValid) {
             return static_cast<double>(value) / static_cast<double>(scale);
         }
         return 0;
     }
-    
+
     inline bool operator==(const CTime& rhs) const noexcept {
         return fabs(second() - rhs.second()) < kTimePrecision;
     }
-    
+
     inline bool operator>(const CTime& rhs) const noexcept {
         return second() - rhs.second() > kTimePrecision;
     }
-    
+
     inline bool operator<(const CTime& rhs) const noexcept {
         return second() - rhs.second() < -kTimePrecision;
     }
-    
+
     inline CTime operator-(const CTime& rhs) const noexcept {
         auto t = second() - rhs.second();
         return {t, scale};
     }
-    
+
     inline CTime operator+(const CTime& rhs) const noexcept {
         auto t = second() + rhs.second();
         return {t, scale};
@@ -89,49 +87,49 @@ public:
 struct CTimeRange {
     CTime start;
     CTime duration;
-    
+
     CTimeRange()
         : start()
         , duration() {
-        
+
     }
-    
-    CTimeRange(CTime start_, CTime duration_)
+
+    [[maybe_unused]] CTimeRange(CTime start_, CTime duration_)
         : start(start_)
         , duration(duration_) {
-        
+
     }
-    
-    inline bool operator==(const CTimeRange& rhs) const noexcept {
-        if(!isValid() || !rhs.isValid()) {
+
+    [[nodiscard]] inline bool operator==(const CTimeRange& rhs) const noexcept {
+        if (!isValid() || !rhs.isValid()) {
             return false;
         }
         return start == rhs.start && duration == rhs.duration;
     }
-    
-    inline bool overlap(const CTimeRange& rhs) const noexcept {
-        if(!isValid() || !rhs.isValid()) {
+
+    [[nodiscard]] inline bool overlap(const CTimeRange& rhs) const noexcept {
+        if (!isValid() || !rhs.isValid()) {
             return false;
         }
         auto end = start.second() + duration.second();
         auto rend = rhs.start.second() + rhs.duration.second();
-        if(rend < start.second() || rhs.start.second() > end) {
+        if (rend < start.second() || rhs.start.second() > end) {
             return false;
         }
         return true;
     }
-    
-    inline CTime end() const noexcept{
+
+    [[nodiscard]] inline CTime end() const noexcept {
         return start + duration;
     }
-    
-    inline bool isValid() const noexcept {
+
+    [[nodiscard]] inline bool isValid() const noexcept {
         return start.isValid && duration.isValid;
     }
-    
-    inline CTimeRange overlapTimeRange(const CTimeRange& rhs) const noexcept {
+
+    [[maybe_unused]] [[nodiscard]] inline CTimeRange overlapTimeRange(const CTimeRange& rhs) const noexcept {
         CTimeRange range;
-        if(!this->overlap(rhs)) {
+        if (!this->overlap(rhs)) {
             return range;
         }
         auto end = this->end().second();

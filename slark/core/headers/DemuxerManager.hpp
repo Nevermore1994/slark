@@ -1,7 +1,7 @@
 
 //
 //  DemuxerManager.hpp
-//  slark
+//  Slark
 //
 //  Created by Nevermore on 2022/5/2.
 //
@@ -13,31 +13,31 @@
 #include <memory>
 #include <unordered_set>
 
-namespace slark {
+namespace Slark {
 
-class DemuxerManager : public slark::NonCopyable {
+class DemuxerManager : public Slark::NonCopyable {
 
 public:
     inline static DemuxerManager& shareInstance() {
         static DemuxerManager instance;
         return instance;
     }
-    
+
     DemuxerManager();
-    
+
     ~DemuxerManager() override = default;
 
 public:
     void init() noexcept;
-    
+
     bool contains(DemuxerType type) const noexcept;
-    
+
     DemuxerType probeDemuxType(const std::string& str) const noexcept;
-    
+
     DemuxerType probeDemuxType(std::unique_ptr<Data> data) const noexcept;
-    
+
     DemuxerType probeDemuxType(const std::string_view& str) const noexcept;
-    
+
     std::unique_ptr<IDemuxer> create(DemuxerType type) noexcept;
 
 private:

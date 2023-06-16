@@ -11,8 +11,8 @@ namespace slark::Audio {
 
 using namespace slark;
 
-AudioRenderComponent::AudioRenderComponent(AudioInfo info){
-    
+AudioRenderComponent::AudioRenderComponent(AudioInfo info) {
+
 }
 
 AudioRenderComponent::~AudioRenderComponent() {
@@ -23,15 +23,15 @@ bool AudioRenderComponent::push(AVFramePtr frame) {
     auto res = true;
     frame->prepareRenderStamp = Time::nowTimeStamp();
     //plugin process data
-    if(process){
+    if (process) {
         res = process(frame->data);
     }
-    
+
     frame->pushRenderQueueStamp = Time::nowTimeStamp();
-    if(res){
+    if (res) {
         push(std::move(frame));
     }
-    
+
     return res;
 }
 

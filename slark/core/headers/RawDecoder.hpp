@@ -1,6 +1,6 @@
 //
 //  RawDecoder.hpp
-//  slark
+//  Slark
 //
 //  Created by Nevermore on 2022/4/26.
 //
@@ -9,20 +9,20 @@
 
 #include "IDecoder.hpp"
 
-namespace slark {
+namespace Slark {
 
-class RawDecoder : public IDecoder{
+class RawDecoder : public IDecoder {
 
 public:
     ~RawDecoder() = default;
-    
+
     void open() noexcept override;
-    
+
     void close() noexcept override;
-    
+
     void reset() noexcept override;
 
-    AVFrameList decode(AVFrameList &&frameList) override;
+    AVFrameList decode(AVFrameList&& frameList) override;
 };
 
 }

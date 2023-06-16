@@ -1,6 +1,6 @@
 //
 //  Decoder.hpp
-//  slark
+//  Slark
 //
 //  Created by Nevermore on 2022/4/23.
 //
@@ -11,7 +11,7 @@
 #include "AVFrameDeque.hpp"
 #include <memory>
 
-namespace slark {
+namespace Slark {
 
 enum class DecoderType {
     Unknown = 0,
@@ -22,7 +22,7 @@ enum class DecoderType {
     VideoDecoderEnd,
 };
 
-struct DecoderInfo{
+struct DecoderInfo {
     DecoderType type = DecoderType::Unknown;
     std::string decoderName;
 };
@@ -33,17 +33,17 @@ public:
 
 public:
     virtual void open() noexcept = 0;
-    
+
     virtual void reset() noexcept = 0;
-    
+
     virtual void close() noexcept = 0;
-    
+
     DecoderType type() const noexcept {
         return decoderType_;
     }
-    
+
     virtual AVFrameList decode(AVFrameList&& frameList) = 0;
-    
+
 protected:
     DecoderType decoderType_ = DecoderType::Unknown;
     AVFrameSafeDeque deque_;

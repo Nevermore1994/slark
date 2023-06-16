@@ -1,12 +1,12 @@
 //
 // Created by Nevermore on 2022/7/11.
-// slark AVFrameDeque
+// Slark AVFrameDeque
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 
 #include "AVFrameDeque.hpp"
 
-namespace slark {
+namespace Slark {
 
 void AVFrameSafeDeque::push(AVFramePtr frame) {
     std::unique_lock<std::mutex> lock(mutex_);
@@ -14,19 +14,19 @@ void AVFrameSafeDeque::push(AVFramePtr frame) {
 }
 
 void AVFrameSafeDeque::push(AVFrameList& frameList) {
-    if(!frameList.empty()){
+    if (!frameList.empty()) {
         std::unique_lock<std::mutex> lock(mutex_);
-        for(auto& it:frameList){
+        for (auto& it : frameList) {
             frames_.push_back(std::move(it));
         }
     }
-    
+
     frameList.clear();
 }
 
 AVFramePtr AVFrameSafeDeque::pop() {
     std::unique_lock<std::mutex> lock(mutex_);
-    if(frames_.empty()){
+    if (frames_.empty()) {
         return nullptr;
     }
     auto ptr = std::move(frames_.front());
@@ -44,6 +44,6 @@ void AVFrameSafeDeque::clear() {
     frames_.clear();
 }
 
-}//end namespace slark
+}//end namespace Slark
 
 

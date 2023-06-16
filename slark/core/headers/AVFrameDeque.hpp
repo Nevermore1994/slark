@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2022/7/11.
-// slark AVFrameDeque
+// Slark AVFrameDeque
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 
@@ -12,20 +12,20 @@
 #include "AVFrame.hpp"
 #include "NonCopyable.hpp"
 
-namespace slark{
+namespace Slark {
 
-class AVFrameSafeDeque : public NonCopyable{
+class AVFrameSafeDeque : public NonCopyable {
 public:
     AVFrameSafeDeque() = default;
     ~AVFrameSafeDeque() override = default;
-    
+
     void push(AVFramePtr frame);
     void push(AVFrameList& frameList);
     AVFramePtr pop();
     void swap(AVFrameSafeDeque& deque);
     void clear();
-    
-    inline bool empty() const noexcept{
+
+    inline bool empty() const noexcept {
         return frames_.empty();
     }
 private:

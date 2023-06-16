@@ -1,13 +1,13 @@
 //
 // Created by Nevermore on 2022/5/30.
-// slark TransportEvent
+// Slark TransportEvent
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 #pragma once
 
-namespace slark{
+namespace Slark {
 
-enum class TransportEvent{
+enum class TransportEvent {
     Unknown,
     Start,
     Pause,
@@ -15,7 +15,7 @@ enum class TransportEvent{
     Stop,
 };
 
-struct ITransportObserver{
+struct ITransportObserver {
     virtual void updateEvent(TransportEvent event) = 0;
 };
 

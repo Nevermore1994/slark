@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2022/5/27.
-// slark MediaUtility
+// Slark MediaUtility
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 
@@ -8,7 +8,7 @@
 
 #include <string>
 
-namespace slark{
+namespace Slark {
 
 constexpr const char* kHttpSymbol = "https://";
 

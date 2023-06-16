@@ -1,6 +1,6 @@
 //
 //  VideoInfo.hpp
-//  slark
+//  Slark
 //
 //  Created by Nevermore on 2022/8/22.
 //
@@ -9,7 +9,7 @@
 
 #include "Time.hpp"
 
-namespace slark {
+namespace Slark {
 
 struct VideoInfo {
     uint32_t width{};
@@ -19,5 +19,5 @@ struct VideoInfo {
     CTime duration;
 };
 
-} //end namespace slark 
+} //end namespace Slark
 

@@ -23,9 +23,9 @@ inline void runTest() {
     File ft("test1.txt", std::ios_base::out | std::ios_base::binary);
     f.open();
     ft.open();
-    char d[13] ={'\0'};
+    char d[13] = {'\0'};
     uint8_t* dp = reinterpret_cast<uint8_t*>(d);
-    for(int i = 0; i < 1000; i++){
+    for (int i = 0; i < 1000; i++) {
         auto str = Util::randomString(12);
         str.append("\n");
         auto p = reinterpret_cast<const uint8_t*>(str.c_str());

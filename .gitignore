@@ -7,6 +7,13 @@
 /cmake_install.cmake
 /Makefile
 /Pods
+/build
+/Testing
+/.cmake
 
-/.idea/.gitignore
-/.idea/slark.iml
+#IDE ignore
+/.idea
+.ninja_deps
+.ninja_log
+build.ninja
+CMakeCache.txt

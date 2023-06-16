@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2022/5/23.
-// slark WAVDemuxer
+// Slark WAVDemuxer
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 #pragma once
@@ -9,23 +9,23 @@
 #include "BaseClass.hpp"
 #include <string_view>
 
-namespace slark{
+namespace Slark {
 
-class WAVDemuxer:public IDemuxer{
+class WAVDemuxer: public IDemuxer {
 public:
     WAVDemuxer();
-    
+
     ~WAVDemuxer() override;
-    
+
     std::tuple<bool, uint64_t> open(std::string_view probeData) noexcept override;
-    
+
     void close() noexcept override;
-    
+
     void reset() noexcept override;
-    
+
     std::tuple<DemuxerState, AVFrameList> parseData(std::unique_ptr<Data> data) override;
-    
-    inline static DemuxerInfo& info()  noexcept{
+
+    inline static DemuxerInfo& info()  noexcept {
         static DemuxerInfo info = {
             .type = DemuxerType::WAV,
             .symbol = "WAVE",
@@ -33,7 +33,7 @@ public:
         };
         return info;
     }
-    
+
 };
 
 }

@@ -5,7 +5,7 @@
 //
 
 #include "testThread.hpp"
-#include "Utility.hpp"
+#include "Random.hpp"
 #include "Thread.hpp"
 #include <unistd.h>
 #include <iostream>
@@ -13,22 +13,22 @@
 using namespace std;
 using namespace slark;
 
-void test(){
+void test() {
     uint64_t start = Time::nowTimeStamp();
     cout << "test start" << endl;
     uint64_t sum = 0;
-    for(int i = 0; i < 1000000; i++){
+    for (int i = 0; i < 1000000; i++) {
         sum += i;
     }
     cout << "test end, cost time:" << Time::nowTimeStamp() - start << endl;
 }
 
-void testThread(){
+void testThread() {
     int testCount = 5;
     Thread thread("----- test Thread -----");
     thread.setFunc(test);
-    while(testCount){
-        cout << "test Thread end" << testCount << ","<< Time::nowTimeStamp() << endl;
+    while (testCount) {
+        cout << "test Thread end" << testCount << "," << Time::nowTimeStamp() << endl;
         thread.resume();
         usleep(1000 * 10);
         thread.pause();

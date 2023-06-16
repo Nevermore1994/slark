@@ -87,7 +87,7 @@
 		864A316F28B399C700C46DED /* VideoInfo.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = VideoInfo.hpp; sourceTree = "<group>"; };
 		864A317128B39E0300C46DED /* AudioDescription.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AudioDescription.h; sourceTree = "<group>"; };
 		864A317328B39F6A00C46DED /* AudioDescription.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AudioDescription.mm; sourceTree = "<group>"; };
-		8679DD48289FCA4E009E3022 /* slark.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = slark.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		8679DD48289FCA4E009E3022 /* Slark.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Slark.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		8679DD54289FCAC9009E3022 /* DemuxerManager.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = DemuxerManager.hpp; sourceTree = "<group>"; };
 		8679DD55289FCAC9009E3022 /* AVFrame.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = AVFrame.hpp; sourceTree = "<group>"; };
 		8679DD56289FCAC9009E3022 /* Type.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = Type.hpp; sourceTree = "<group>"; };
@@ -168,7 +168,7 @@
 		8679DD3E289FCA4D009E3022 = {
 			isa = PBXGroup;
 			children = (
-				8679DD4A289FCA4E009E3022 /* slark */,
+				8679DD4A289FCA4E009E3022 /* Slark */,
 				8679DD49289FCA4E009E3022 /* Products */,
 				8679DDD428A7E6BC009E3022 /* Frameworks */,
 			);
@@ -177,19 +177,19 @@
 		8679DD49289FCA4E009E3022 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				8679DD48289FCA4E009E3022 /* slark.framework */,
+				8679DD48289FCA4E009E3022 /* Slark.framework */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		8679DD4A289FCA4E009E3022 /* slark */ = {
+		8679DD4A289FCA4E009E3022 /* Slark */ = {
 			isa = PBXGroup;
 			children = (
 				8679DD71289FCAC9009E3022 /* base */,
 				8679DD52289FCAC9009E3022 /* core */,
 				8679DD91289FCAC9009E3022 /* third_party */,
 			);
-			path = slark;
+			path = Slark;
 			sourceTree = "<group>";
 		};
 		8679DD52289FCAC9009E3022 /* core */ = {
@@ -412,9 +412,9 @@
 /* End PBXHeadersBuildPhase section */
 
 /* Begin PBXNativeTarget section */
-		8679DD47289FCA4D009E3022 /* slark */ = {
+		8679DD47289FCA4D009E3022 /* Slark */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 8679DD4F289FCA4E009E3022 /* Build configuration list for PBXNativeTarget "slark" */;
+			buildConfigurationList = 8679DD4F289FCA4E009E3022 /* Build configuration list for PBXNativeTarget "Slark" */;
 			buildPhases = (
 				8679DD43289FCA4D009E3022 /* Headers */,
 				8679DD44289FCA4D009E3022 /* Sources */,
@@ -425,9 +425,9 @@
 			);
 			dependencies = (
 			);
-			name = slark;
-			productName = slark;
-			productReference = 8679DD48289FCA4E009E3022 /* slark.framework */;
+			name = Slark;
+			productName = Slark;
+			productReference = 8679DD48289FCA4E009E3022 /* Slark.framework */;
 			productType = "com.apple.product-type.framework";
 		};
 /* End PBXNativeTarget section */
@@ -444,7 +444,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 8679DD42289FCA4D009E3022 /* Build configuration list for PBXProject "slark" */;
+			buildConfigurationList = 8679DD42289FCA4D009E3022 /* Build configuration list for PBXProject "Slark" */;
 			compatibilityVersion = "Xcode 13.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -457,7 +457,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				8679DD47289FCA4D009E3022 /* slark */,
+				8679DD47289FCA4D009E3022 /* Slark */,
 			);
 		};
 /* End PBXProject section */
@@ -649,7 +649,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.Nevermore.sdk.slark;
+				PRODUCT_BUNDLE_IDENTIFIER = com.Nevermore.sdk.Slark;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -678,7 +678,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.Nevermore.sdk.slark;
+				PRODUCT_BUNDLE_IDENTIFIER = com.Nevermore.sdk.Slark;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -689,7 +689,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		8679DD42289FCA4D009E3022 /* Build configuration list for PBXProject "slark" */ = {
+		8679DD42289FCA4D009E3022 /* Build configuration list for PBXProject "Slark" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				8679DD4D289FCA4E009E3022 /* Debug */,
@@ -698,7 +698,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		8679DD4F289FCA4E009E3022 /* Build configuration list for PBXNativeTarget "slark" */ = {
+		8679DD4F289FCA4E009E3022 /* Build configuration list for PBXNativeTarget "Slark" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				8679DD50289FCA4E009E3022 /* Debug */,
