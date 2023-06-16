@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2021/10/25.
-// slark TimerPool
+// Slark TimerPool
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 #pragma once
@@ -13,39 +13,39 @@
 #include "Time.hpp"
 #include "Timer.hpp"
 
-namespace slark {
+namespace Slark {
 
 class TimerPool {
 public:
     TimerPool() = default;
-    
+
     ~TimerPool();
-    
+
     TimerPool(const TimerPool&) = delete;
-    
+
     TimerPool& operator=(const TimerPool&) = delete;
-    
+
     TimerPool(TimerPool&&) noexcept;
-    
+
     TimerPool& operator=(TimerPool&&) noexcept;
-    
+
     TimerId runAt(uint64_t timeStamp, TimerCallback func) noexcept;
-    
+
     TimerId runAfter(uint64_t delayTime, TimerCallback func) noexcept; //ms
     TimerId runLoop(uint64_t timeInterval, TimerCallback func) noexcept;
-    
+
     TimerId runAfter(std::chrono::milliseconds timeStamp, TimerCallback func) noexcept; //ms
     TimerId runLoop(std::chrono::milliseconds timeStamp, TimerCallback func) noexcept;
-    
+
     void cancel(TimerId id);
-    
+
     void loop() noexcept;
-    
+
     void clear() noexcept;
 
 private:
     TimerId addTimer(uint64_t timeStamp, TimerCallback func, bool isLoop, uint64_t timeInterval = 1000) noexcept;
-    
+
     void remove(TimerId id) noexcept;
 
 private:

@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2021/10/22.
-// slark TimerManager
+// Slark TimerManager
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 
@@ -8,7 +8,7 @@
 #include "TimerManager.hpp"
 #include <chrono>
 
-namespace slark {
+namespace Slark {
 using namespace std::chrono_literals;
 
 TimerManager::TimerManager()
@@ -49,4 +49,4 @@ void TimerManager::cancel(TimerId id) {
     pool_.cancel(id);
 }
 
-}//end namespace slark
+}//end namespace Slark

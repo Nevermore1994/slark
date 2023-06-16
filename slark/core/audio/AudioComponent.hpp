@@ -16,11 +16,11 @@
 
 namespace slark::Audio {
 
-class AudioRenderComponent:public slark::NonCopyable{
+class AudioRenderComponent: public slark::NonCopyable {
 public:
     AudioRenderComponent(AudioInfo info);
     ~AudioRenderComponent() override;
-    
+
     bool push(AVFramePtr frame);
     AVFramePtr pop();
 public:
@@ -30,10 +30,10 @@ private:
     slark::AVFrameSafeDeque frames_;
 };
 
-class AudioRecorderComponent:public slark::NonCopyable{
+class AudioRecorderComponent: public slark::NonCopyable {
 public:
     ~AudioRecorderComponent() override = default;
-    
+
     void output(slark::Data data);
 public:
     std::function<bool(slark::Data)> process;

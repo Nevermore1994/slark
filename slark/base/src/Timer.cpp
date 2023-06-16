@@ -1,18 +1,18 @@
 //
 // Created by Nevermore on 2021/10/22.
-// slark Timer
+// Slark Timer
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 
 #include "Timer.hpp"
-#include "Utility.hpp"
+#include "Random.hpp"
 
-namespace slark {
+namespace Slark {
 
 TimerInfo::TimerInfo(uint64_t time)
     : expireTime(time)
-    , timerId(Util::shortId()) {
-    
+    , timerId(Random::shortId()) {
+
 }
 
 bool TimerInfo::operator<(const TimerInfo& rhs) const noexcept {
@@ -27,20 +27,20 @@ Timer::Timer()
     : timerInfo(0)
     , func(nullptr)
     , isValid(false) {
-    
+
 }
 
 Timer::Timer(uint64_t timeStamp, TimerCallback f)
     : timerInfo(timeStamp)
     , func(std::move(f)) {
-    
+
 }
 
 Timer::Timer(Timer&& timer) noexcept
     : timerInfo(timer.timerInfo)
     , func(std::move(timer.func))
     , isValid(timer.isValid) {
-    
+
 }
 
 Timer& Timer::operator=(Timer&& timer) noexcept {
@@ -50,4 +50,4 @@ Timer& Timer::operator=(Timer&& timer) noexcept {
     return *this;
 }
 
-}//end namespace slark
+}//end namespace Slark

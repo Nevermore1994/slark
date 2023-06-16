@@ -1,6 +1,6 @@
 //
 //  AudioInfo.hpp
-//  slark
+//  Slark
 //
 //  Created by Nevermore on 2022/8/22.
 //
@@ -9,7 +9,7 @@
 #include <string>
 #include "Time.hpp"
 
-namespace slark {
+namespace Slark {
 
 struct AudioInfo {
     uint16_t channels = 0;

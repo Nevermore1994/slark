@@ -26,6 +26,10 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin")
 
 set(CMAKE_BUILD_TYPE Debug)
 
+if (CMAKE_BUILD_TYPE STREQUAL Debug)
+    ADD_DEFINITIONS(-DDEBUG)
+endif ()
+
 add_executable(${PROJECT_NAME} ./main.cpp ${ALL_SOURCE})
 
 #add_library(${PROJECT_NAME} ${ALL_SOURCE})

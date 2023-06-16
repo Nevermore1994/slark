@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2021/10/25.
-// slark ThreadManager
+// Slark ThreadManager
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 #pragma once
@@ -9,7 +9,7 @@
 #include <unordered_map>
 #include "Thread.hpp"
 
-namespace slark {
+namespace Slark {
 
 constexpr const Time::Timestamp kMaxThreadBlockTimeInterval = std::chrono::seconds(30).count(); //30s
 
@@ -23,16 +23,16 @@ public:
 
 public:
     ThreadManager();
-    
-    ~ThreadManager();
-    
-    void add(std::shared_ptr<Thread> thread);
-    
+
+    ~ThreadManager() override;
+
+    void add(const std::shared_ptr<Thread>& thread);
+
     void remove(const std::shared_ptr<Thread>& thread);
-    
+
     void remove(std::thread::id id);
-    
-    Thread& thisThread();
+
+    std::shared_ptr<Thread> thisThread();
 
 private:
     void reportRunInfo() noexcept;

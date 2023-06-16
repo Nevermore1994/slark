@@ -1,6 +1,6 @@
 //
-// Created by Nevermore on 2021/10/22.
-// slark Utility
+// Created by Nevermore on 2023/6/14.
+// Slark Random
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 
@@ -12,14 +12,14 @@
 #include <type_traits>
 #include <algorithm>
 
-namespace slark::Util {
+namespace Slark::Random {
 
 //random
 template<typename T>
 T random(T min, T max) {
     std::random_device rd;
     std::mt19937 gen(rd());
-    if(std::is_floating_point_v<T>) {
+    if (std::is_floating_point_v<T>) {
         std::uniform_real_distribution<double> dis(min, max);
         return dis(gen);
     } else {
@@ -30,7 +30,7 @@ T random(T min, T max) {
 
 template<typename T>
 std::vector<T> randomSelect(const std::vector<T>& source, uint32_t count) {
-    if(count >= source.size()) {
+    if (count >= source.size()) {
         return {source.begin(), source.end()};
     }
     std::random_device rd;
@@ -42,16 +42,13 @@ std::vector<T> randomSelect(const std::vector<T>& source, uint32_t count) {
 
 std::string randomString(uint32_t length);
 
-uint64_t randomId(uint8_t length);
-
-//id
+//length 12
 uint32_t shortId();
+
+//length 18
+uint64_t id();
 
 std::string uuid();
 
-//string
-std::vector<std::string>&
-spiltString(const std::string& str, const char& flag, std::vector<std::string>& res, bool isSkipSpace = true);
-
-}// end namespace slark::Util
+}// end namespace Slark::Random
 

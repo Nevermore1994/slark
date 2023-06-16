@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2021/10/22.
-// slark FileUtility
+// Slark FileUtility
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 #include "FileUtility.hpp"
@@ -11,80 +11,70 @@
 #include <cstring>
 #include <filesystem>
 
-namespace slark {
+namespace Slark::FileUtil  {
 
-bool FileUtil::isDirExist(const std::string& path) {
-    return access(path.c_str(), F_OK) == 0;
+[[maybe_unused]] bool isDirExist(const std::string& path) {
+    if (path.empty()) {
+        return false;
+    }
+    return std::filesystem::exists(path) && std::filesystem::is_directory(path);
 }
 
-bool FileUtil::isFileExist(const std::string& path) {
-    return access(path.c_str(), F_OK) == 0;
+[[maybe_unused]] bool isFileExist(const std::string& path) {
+    if (path.empty()) {
+        return false;
+    }
+    return std::filesystem::exists(path) && !std::filesystem::is_directory(path);
 }
 
-bool FileUtil::createDir(const std::string& path) {
+[[maybe_unused]] bool createDir(const std::string& path) {
     return std::filesystem::create_directory(path);
 }
 
-bool FileUtil::deleteFile(const std::string& path) {
-    return remove(path.c_str()) == 0;
-}
-
-bool FileUtil::renameFile(const std::string& oldName, const std::string& newName) {
-    return rename(oldName.c_str(), newName.c_str()) == 0;
-}
-
-int64_t FileUtil::getFileSize(const std::string& path) {
-    struct stat statBuffer{};
-    if(stat(path.c_str(), &statBuffer) == 0) {
-        return statBuffer.st_size;
+[[maybe_unused]] bool deleteFile(const std::string& path) {
+    if (path.empty()) {
+        return false;
     }
-    return -1;
+    return std::filesystem::remove(path);
 }
 
-bool FileUtil::resizeFile(const std::string& path, uint64_t length) {
-    return truncate(path.c_str(), length) == 0;
+[[maybe_unused]] bool renameFile(const std::string& oldName, const std::string& newName) {
+    if (oldName.empty() || newName.empty()) {
+        return false;
+    }
+    std::error_code error;
+    std::filesystem::rename(oldName, newName, error);
+    return !error;
 }
 
-bool FileUtil::removeDir(const std::string& path, bool isRetain) {
-    if(path.empty()) {
+[[maybe_unused]] int64_t fileSize(const std::string& path) {
+    if (path.empty()) {
+        return kFileError;
+    }
+    return static_cast<int64_t>(std::filesystem::file_size(path));
+}
+
+[[maybe_unused]] bool resizeFile(const std::string& path, uint64_t length) {
+    if (path.empty()) {
+
         return true;
     }
-    DIR *dir = nullptr;
-    struct dirent *dirInfo = nullptr;
-    struct stat statBuffer{};
-    lstat(path.c_str(), &statBuffer);
-    bool res = true;
-    
-    if(S_ISREG(statBuffer.st_mode)) {
-        remove(path.c_str());
-    } else if(S_ISDIR(statBuffer.st_mode)) {
-        if((dir = opendir(path.c_str())) == nullptr) {
-            return true;
-        }
-        while((dirInfo = readdir(dir)) != nullptr) {
-            std::string filePath = path;
-            filePath.append("/");
-            filePath.append(dirInfo->d_name);
-            if(strcmp(dirInfo->d_name, ".") == 0 || strcmp(dirInfo->d_name, "..") == 0) {
-                continue;
-            }
-            res = res && removeDir(filePath);
-            if(isRetain) {
-                remove(filePath.c_str());
-            }
-        }
-        closedir(dir);
-        if(!isRetain) {
-            remove(path.c_str());
-        }
-    }
-    return res;
+    std::error_code error;
+    std::filesystem::resize_file(path, length, error);
+    return !error;
 }
 
-bool FileUtil::copyFile(const std::string &from, const std::string &to){
+[[maybe_unused]] bool removeDir(const std::string& path) {
+    if (path.empty()) {
+        return true;
+    }
+    return std::filesystem::remove(path);;
+}
+
+[[maybe_unused]] bool copyFile(const std::string& from, const std::string& to) {
     std::error_code error;
     std::filesystem::copy(from, to, std::filesystem::copy_options::recursive, error);
-    return error.value() == 0;
+    return !error;
 }
 
-}//end namespace slark
+}//end namespace Slark

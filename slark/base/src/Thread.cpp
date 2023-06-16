@@ -1,57 +1,42 @@
 //
 // Created by Nevermore on 2021/10/22.
-// slark Thread
+// Slark Thread
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 
 #ifndef __APPLE__
-#include <pthread.h>
+    #include <pthread.h>
 #endif
 
 #include "Thread.hpp"
 #include "Log.hpp"
 #include <cassert>
 
-namespace slark {
+namespace Slark {
 using namespace std::chrono;
-
-Thread::Thread(const std::string& name)
-    : name_(name)
-    , worker_(&Thread::process, this)
-    , isExit_(false)
-    , isRunning_(false)
-    , lastRunTimeStamp_(0) {
-    func_ = nullptr;
-}
-
-Thread::Thread(std::string&& name)
-    : name_(std::move(name))
-    , worker_(&Thread::process, this)
-    , isExit_(false)
-    , isRunning_(false)
-    , lastRunTimeStamp_(0)
-    , func_(nullptr) {
-}
 
 Thread::~Thread() noexcept {
     stop();
-}
-
-void Thread::stop() noexcept {
-    //don't this thread join self
-    assert(std::this_thread::get_id() != worker_.get_id());
-    if(isExit_) {
-        return;
-    }
-    isExit_ = true;
-    cond_.notify_all();
-    if(worker_.joinable()) {
+    if (worker_.joinable()) {
         worker_.join();
     }
 }
 
+void Thread::stop() noexcept {
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (isExit_) {
+            return;
+        }
+        isExit_ = true;
+        isRunning_ = false;
+    }
+    cond_.notify_all();
+}
+
 void Thread::pause() noexcept {
-    if(!isRunning_ || isExit_) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    if (!isRunning_) {
         return;
     }
     isRunning_ = false;
@@ -62,22 +47,27 @@ void Thread::resume() noexcept {
 }
 
 void Thread::start() noexcept {
-    if(isRunning_ || isExit_) {
-        return;
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (isRunning_ || isExit_) {
+            return;
+        }
+        isRunning_ = true;
     }
-    isRunning_ = true;
     cond_.notify_all();
 }
 
 void Thread::process() noexcept {
-    setThreadName();
-    while(!isExit_) {
-        if(isRunning_) {
+    if (!isSetting_) {
+        setThreadName();
+    }
+    while (!isExit_) {
+        if (isRunning_) {
             lastRunTimeStamp_ = Time::nowTimeStamp();
-            timerPool_.loop();
-            if(func_) {
+            if (func_) {
                 func_();
             }
+            timerPool_.loop();
         } else {
             std::unique_lock<std::mutex> lock(mutex_);
             cond_.wait(lock, [&] {
@@ -99,6 +89,7 @@ void Thread::setThreadName() noexcept {
 #else
     pthread_setname_np(name_.c_str());
 #endif
+    isSetting_ = true;
 }
 
 TimerId Thread::runAt(uint64_t timeStamp, TimerCallback func) noexcept {
@@ -113,4 +104,4 @@ TimerId Thread::runAfter(milliseconds delayTime, TimerCallback func) noexcept {
     return timerPool_.runAfter(delayTime, std::move(func));
 }
 
-}//end namespace slark
+}//end namespace Slark

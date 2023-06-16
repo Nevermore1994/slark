@@ -14,23 +14,23 @@ namespace slark::Audio {
 using namespace slark;
 
 void IAudioInputNode::receive(AVFrameRef frame) noexcept {
-    
+
 }
 
 bool IAudioOutputNode::addTarget(std::weak_ptr<IAudioInputNode> node) noexcept {
-    if(node.expired()){
+    if (node.expired()) {
         return false;
     }
-    
+
     auto hash = reinterpret_cast<uint64_t>(node.lock().get());
     return targets_.insert({hash, std::move(node)}).second;
 }
 
 bool IAudioOutputNode::removeTarget(std::weak_ptr<IAudioInputNode> node) noexcept {
-    if(node.expired()){
+    if (node.expired()) {
         return false;
     }
-    
+
     auto hash = reinterpret_cast<uint64_t>(node.lock().get());
     return targets_.erase(hash) > 0;
 }
@@ -41,9 +41,9 @@ void IAudioOutputNode::removeAllTarget() noexcept {
 
 void IAudioOutputNode::notifyTargets(AVFrameRef frame) noexcept {
     //C++20 replace erase_if
-    for(auto it = targets_.begin(); it != targets_.end();){
+    for (auto it = targets_.begin(); it != targets_.end();) {
         auto& [hash, ptr] = *it;
-        if(ptr.expired()){
+        if (ptr.expired()) {
             it = targets_.erase(it);
         } else {
             auto p = ptr.lock();

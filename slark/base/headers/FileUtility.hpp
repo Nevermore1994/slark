@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2021/10/22.
-// slark FileUtility
+// Slark FileUtility
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 
@@ -9,9 +9,9 @@
 #include <cstdint>
 #include <string>
 
-namespace slark::FileUtil {
+namespace Slark::FileUtil {
 
-constexpr static int64_t kError = -1l;
+constexpr int64_t kFileError = -1l;
 
 bool isDirExist(const std::string&);
 
@@ -23,13 +23,14 @@ bool deleteFile(const std::string&);
 
 bool renameFile(const std::string& oldName, const std::string& newName);
 
-int64_t getFileSize(const std::string& path);
+int64_t fileSize(const std::string& path);
 
 bool resizeFile(const std::string& path, uint64_t length);
 
-bool removeDir(const std::string& path, bool isRetain = false); //isRetain:keep the top-level directory
+bool removeDir(const std::string& path);
 
 bool copyFile(const std::string& from, const std::string& to);
+
 }
 
 

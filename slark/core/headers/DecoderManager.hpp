@@ -1,6 +1,6 @@
 //
 //  DecoderManager.hpp
-//  slark
+//  Slark
 //
 //  Created by Nevermore on 2022/4/24.
 //
@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <memory>
 
-namespace slark {
+namespace Slark {
 
 class DecoderManager : public NonCopyable {
 
@@ -19,16 +19,16 @@ public:
         static DecoderManager instance;
         return instance;
     }
-    
+
     DecoderManager() = default;
-    
+
     ~DecoderManager() override = default;
 
 public:
     void init() noexcept;
-    
+
     bool contains(DecoderType coderType) noexcept;
-    
+
     std::unique_ptr<IDecoder> create(DecoderType type) noexcept;
 
 private:

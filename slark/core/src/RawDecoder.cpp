@@ -1,6 +1,6 @@
 //
 //  rawDecoder.cpp
-//  slark
+//  Slark
 //
 //  Created by Nevermore on 2022/8/7.
 //
@@ -8,7 +8,7 @@
 #include "RawDecoder.hpp"
 #include "Time.hpp"
 
-namespace slark {
+namespace Slark {
 
 void RawDecoder::open() noexcept {
 
@@ -22,11 +22,11 @@ void RawDecoder::close() noexcept {
     deque_.clear();
 }
 
-AVFrameList RawDecoder::decode(AVFrameList &&frameList){
-    for(auto& frame:frameList){
+AVFrameList RawDecoder::decode(AVFrameList&& frameList) {
+    for (auto& frame : frameList) {
         frame->decodedStamp = Time::nowTimeStamp();
     }
     return std::move(frameList);
 }
 
-}//end namespace slark
+}//end namespace Slark

@@ -1,14 +1,14 @@
 //
 // Created by Nevermore on 2021/10/25.
-// slark TimerPool
+// Slark TimerPool
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 #include "TimerPool.hpp"
-#include "Utility.hpp"
+#include "Random.hpp"
 #include "Log.hpp"
 #include <chrono>
 
-namespace slark {
+namespace Slark {
 
 using namespace std::chrono;
 using namespace std::chrono_literals;
@@ -42,26 +42,26 @@ void TimerPool::loop() noexcept {
     decltype(timers_) timers;
     {
         std::unique_lock<std::mutex> lock(mutex_);
-        while(!timerInfos_.empty() && now >= timerInfos_.top().expireTime) {
+        while (!timerInfos_.empty() && now >= timerInfos_.top().expireTime) {
             auto expireTimeInfo = timerInfos_.top();
             expireTimes.push_back(expireTimeInfo);
             timerInfos_.pop();
         }
         timers.insert(timers_.begin(), timers_.end());
     }
-    for(auto& expireTimeInfo: expireTimes) {
+    for (auto& expireTimeInfo : expireTimes) {
         auto id = expireTimeInfo.timerId;
         bool canRemove = timers.count(id) == 0;
-        
-        if(canRemove) {
+
+        if (canRemove) {
             continue;
         }
         auto& timer = timers[id];
-        if(timer.isValid) {
+        if (timer.isValid) {
             timer.func();
         }
         canRemove = !timer.isValid || !timer.timerInfo.isLoop;
-        if(canRemove) {
+        if (canRemove) {
             remove(id);
         } else {
             TimerInfo timerInfo = timer.timerInfo;
@@ -109,13 +109,13 @@ TimerId TimerPool::runAfter(milliseconds delayTime, TimerCallback func) noexcept
 TimerId TimerPool::runLoop(milliseconds timeInterval, TimerCallback func) noexcept {
     auto now = Time::nowTimeStamp();
     auto t = std::chrono::duration_cast<microseconds>(timeInterval).count();
-    
+
     return addTimer(now + t, std::move(func), true, t);
 }
 
 void TimerPool::cancel(TimerId id) {
     std::unique_lock<std::mutex> lock(mutex_);
-    if(timers_.count(id)) {
+    if (timers_.count(id)) {
         timers_[id].isValid = false;
     }
 }
@@ -125,4 +125,4 @@ void TimerPool::remove(TimerId id) noexcept {
     timers_.erase(id);
 }
 
-}//end namespace slark
+}//end namespace Slark

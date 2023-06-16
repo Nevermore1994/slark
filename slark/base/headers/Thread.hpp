@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2021/10/22.
-// slark Thread
+// Slark Thread
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 #pragma once
@@ -13,87 +13,72 @@
 #include <atomic>
 #include <string_view>
 #include "TimerPool.hpp"
-#include "Utility.hpp"
+#include "Random.hpp"
 #include "NonCopyable.hpp"
 
-namespace slark {
+namespace Slark {
 
 class Thread : public NonCopyable {
 
 public:
     template<class Func, typename ... Args>
     Thread(std::string&& name, Func&& f, Args&& ... args)
-        :name_(std::move(name))
-        , isRunning_(false)
-        , isExit_(false)
+        : name_(std::move(name))
         , worker_(&Thread::process, this)
         , lastRunTimeStamp_(0) {
-        std::unique_lock<std::mutex> lock(mutex_);
-        func_ = std::bind(std::forward<Func>(f), std::forward<Args>(args)...);
-    }
-    
-    template<class Func, typename ... Args>
-    Thread(const std::string& name, Func&& f, Args&& ... args)
-        :name_(name)
-        , isRunning_(false)
-        , isExit_(false)
-        , worker_(&Thread::process, this)
-        , lastRunTimeStamp_(0) {
-        std::unique_lock<std::mutex> lock(mutex_);
-        func_ = std::bind(std::forward<Func>(f), std::forward<Args>(args)...);
-    }
-    
-    explicit Thread(std::string&& name);
-    
-    explicit Thread(const std::string& name);
-    
-    ~Thread()  noexcept override;
-    
-    void start() noexcept;
-    
-    void pause() noexcept;
-    
-    void resume() noexcept;
-    
-    void stop() noexcept;
-    
-    TimerId runAt(uint64_t timeStamp, TimerCallback func) noexcept;
-    
-    TimerId runAfter(uint64_t delayTime, TimerCallback func) noexcept; //ms
-    TimerId runAfter(std::chrono::milliseconds delayTime, TimerCallback func) noexcept;
-    
-    template<class Func, typename ... Args>
-    void setFunc(Func&& f, Args&& ... args) noexcept {
-        std::unique_lock<std::mutex> lock(mutex_);
         func_ = std::bind(std::forward<Func>(f), std::forward<Args>(args)...);
     }
 
-public:
-    inline bool isRunning() const noexcept {
-        return isRunning_.load();
+    template<class Func, typename ... Args>
+    Thread(const std::string& name, Func&& f, Args&& ... args)
+        : name_(name)
+        , worker_(&Thread::process, this)
+        , lastRunTimeStamp_(0) {
+        func_ = std::bind(std::forward<Func>(f), std::forward<Args>(args)...);
     }
-    
-    inline Time::Timestamp getLastRunTimeStamp() const noexcept {
+
+    ~Thread() noexcept override;
+
+    void start() noexcept;
+
+    void pause() noexcept;
+
+    void resume() noexcept;
+
+    void stop() noexcept;
+
+    TimerId runAt(uint64_t timeStamp, TimerCallback func) noexcept;
+    TimerId runAfter(uint64_t delayTime, TimerCallback func) noexcept; //ms
+    TimerId runAfter(std::chrono::milliseconds delayTime, TimerCallback func) noexcept;
+
+public:
+    inline bool isRunning() noexcept {
+        std::unique_lock<std::mutex> lock(mutex_);
+        return isRunning_;
+    }
+
+    [[nodiscard]] inline Time::Timestamp getLastRunTimeStamp() const noexcept {
         return lastRunTimeStamp_;
     }
-    
-    inline std::thread::id getId() const noexcept {
+
+    [[nodiscard]] inline std::thread::id getId() const noexcept {
         return worker_.get_id();
     }
-    
-    inline std::string_view getName() const noexcept {
+
+    [[nodiscard]] inline std::string_view getName() const noexcept {
         return std::string_view(name_);
     }
 
 private:
     void process() noexcept;
-    
+
     void setThreadName() noexcept;
 
 private:
     std::function<void()> func_;
-    std::atomic<bool> isRunning_;
-    std::atomic<bool> isExit_;
+    bool isRunning_ = false;
+    bool isExit_ = false;
+    bool isSetting_ = false;
     std::string name_;
     std::mutex mutex_;
     std::condition_variable cond_;
@@ -102,5 +87,5 @@ private:
     TimerPool timerPool_;
 };
 
-}//end namespace slark
+}//end namespace Slark
 

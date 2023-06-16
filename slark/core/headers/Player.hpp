@@ -1,6 +1,6 @@
 //
 //  Player.hpp
-//  slark
+//  Slark
 //
 //  Created by Nevermore on 2022/4/22.
 //
@@ -15,7 +15,7 @@
 #include <functional>
 #include <memory>
 
-namespace slark {
+namespace Slark {
 
 enum class PlayerState {
     Unknown = 0,
@@ -35,11 +35,11 @@ enum class PlayerEvent {
 
 struct IPlayerObserver {
     virtual void updateTime(long double time) = 0;
-    
+
     virtual void updateState(PlayerState state) = 0;
-    
+
     virtual void event(PlayerEvent event) = 0;
-    
+
     virtual ~IPlayerObserver() = default;
 };
 
@@ -62,35 +62,35 @@ class Player {
 
 public:
     Player(std::shared_ptr<PlayerParams> params);
-    
+
     ~Player();
 
 public:
     void play() noexcept;
-    
+
     void stop() noexcept;
-    
+
     void pause() noexcept;
-    
+
     void resume() noexcept;
-    
+
     void seek(long double time) noexcept;
-    
+
     void seek(long double time, bool isAccurate) noexcept;
-    
+
     std::string_view playerId() const noexcept;
 
 public:
     const PlayerParams& observer();
-    
+
     PlayerState state();
-    
+
     const PlayerInfos& info();
 
 private:
     class Impl;
-    
+
     std::unique_ptr<Impl> pimpl_;
 };
 
-}//end namespace slark
+}//end namespace Slark

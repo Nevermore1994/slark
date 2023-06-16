@@ -1,6 +1,6 @@
 //
 //  Player.cpp
-//  slark
+//  Slark
 //
 //  Created by Nevermore on 2022/4/22.
 //
@@ -9,11 +9,11 @@
 #include "Player.hpp"
 #include "PlayerImpl.hpp"
 
-namespace slark{
+namespace Slark {
 
 Player::Player(std::shared_ptr<PlayerParams> params)
     : pimpl_(std::make_unique<Player::Impl>(params)) {
-    
+
 }
 
 Player::~Player() {
@@ -60,4 +60,4 @@ const PlayerInfos& Player::info() {
     return pimpl_->info();
 }
 
-}//end namespace slark
+}//end namespace Slark
