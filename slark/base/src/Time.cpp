@@ -5,21 +5,23 @@
 //
 #include <iomanip>
 #include <sstream>
+#include <iostream>
 #include "Time.hpp"
+#include "date.h"
 
 namespace Slark {
 
 Time::Timestamp Time::nowTimeStamp() {
-    auto tp = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
+    using namespace std::chrono;
+    auto tp = time_point_cast<microseconds>(system_clock::now());
+    tp += 8h;
     return tp.time_since_epoch().count();
 }
 
 std::string Time::localTime() {
     using namespace std::chrono;
-    auto timePoint = system_clock::to_time_t(system_clock::now());
-    auto time = std::localtime(&timePoint);
-    std::stringstream ss;
-    ss << std::put_time(time, "%F %T");
-    return ss.str();
+    auto tp = system_clock::now();
+    tp += 8h;
+    return date::format("%F %T", tp);
 }
 }//end namespace Slark
