@@ -10,6 +10,7 @@
 #include <cmath>
 #include <algorithm>
 #include <cassert>
+#include <string>
 
 namespace Slark {
 
