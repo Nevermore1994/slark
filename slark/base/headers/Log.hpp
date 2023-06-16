@@ -26,7 +26,7 @@ void printLog(LogType level, const char* format, ...);
 
 #define logger(level, format, args...) \
     do {                               \
-        printLog(level, "[%s][Line:%d][Function:%s]" format, __FILE_NAME__, __LINE__, __FUNCTION__, ##args);  \
+        printLog(level, "[%s][Line:%d][Function:%s]" format, __FILE__, __LINE__, __FUNCTION__, ##args);  \
     } while(0)
 
 #define  LogD(format, args...)  logger(LogType::Debug, format, ##args)

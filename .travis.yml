@@ -1,0 +1,48 @@
+language: cpp
+dist: focal
+sudo: required
+
+jobs:
+    include:
+        - os: linux
+          addons:
+              apt:
+                  sources:
+                      - ubuntu-toolchain-r-test
+                  packages:
+                      - gcc-10
+          env:
+              - MATRIX_EVAL="CC=gcc-12 && CXX=g++-12"
+          arch: amd64
+          compiler: gcc
+
+        -   os: linux
+            addons:
+                apt:
+                    sources:
+                        - ubuntu-toolchain-r-test
+                        - llvm-toolchain-precise-14
+                    packages:
+                        - cmake
+                        - clang-15
+                        - wget
+            env:
+                - MATRIX_EVAL="CC=clang-14 && CXX=clang++-14"
+            arch: amd64
+            compiler: clang
+
+        -   os: osx
+            osx_image: xcode14.0
+
+before_install:
+    - eval "${MATRIX_EVAL}"
+    - if [ $TRAVIS_OS_NAME == linux ]; then sudo apt-get update  && sudo apt-get install gcc-12 g++-12 && sudo apt-get install clang-14; fi
+
+branches:
+    - main
+    - develop
+
+script:
+    - cd $TRAVIS_BUILD_DIR
+    - cmake -G "Unix Makefiles" .
+    - make -j 4
