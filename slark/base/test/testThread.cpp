@@ -11,7 +11,7 @@
 #include <iostream>
 
 using namespace std;
-using namespace slark;
+using namespace Slark;
 
 void test() {
     uint64_t start = Time::nowTimeStamp();
@@ -25,8 +25,7 @@ void test() {
 
 void testThread() {
     int testCount = 5;
-    Thread thread("----- test Thread -----");
-    thread.setFunc(test);
+    Thread thread("----- test Thread -----", test);
     while (testCount) {
         cout << "test Thread end" << testCount << "," << Time::nowTimeStamp() << endl;
         thread.resume();

@@ -47,11 +47,11 @@ namespace Slark::FileUtil  {
     return !error;
 }
 
-[[maybe_unused]] int64_t fileSize(const std::string& path) {
+[[maybe_unused]] uint64_t fileSize(const std::string& path) {
     if (path.empty()) {
-        return kFileError;
+        return 0;
     }
-    return static_cast<int64_t>(std::filesystem::file_size(path));
+    return static_cast<uint64_t>(std::filesystem::file_size(path));
 }
 
 [[maybe_unused]] bool resizeFile(const std::string& path, uint64_t length) {

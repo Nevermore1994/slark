@@ -6,7 +6,7 @@
 #include "FileHandler.hpp"
 #include "Log.hpp"
 #include "FileUtility.hpp"
-#include <cassert>
+#include "Assert.hpp"
 
 namespace Slark {
 
@@ -62,9 +62,7 @@ void FileHandler::write(std::unique_ptr<Data> data) {
 }
 
 void FileHandler::write(const char* data, uint64_t length) {
-    if (data == nullptr) {
-        assert("error !!!, write null data.");
-    }
+    SAssert(data != nullptr ,"error !!!, write null data.");
     auto p = std::make_unique<Data>(data, length);
     std::unique_lock<std::mutex> lock(mutex_);
     writeData_.push_back(std::move(p));
