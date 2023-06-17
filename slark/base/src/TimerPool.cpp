@@ -113,11 +113,20 @@ TimerId TimerPool::runLoop(milliseconds timeInterval, TimerCallback func) noexce
     return addTimer(now + t, std::move(func), true, t);
 }
 
-void TimerPool::cancel(TimerId id) {
+void TimerPool::cancel(TimerId id) noexcept {
     std::unique_lock<std::mutex> lock(mutex_);
-    if (timers_.count(id)) {
-        timers_[id].isValid = false;
+    if (auto it = timers_.find(id); it != timers_.end()) {
+        it->second.isValid = false;
     }
+}
+
+void TimerPool::cancel(const std::vector<TimerId>& timers) noexcept {
+    std::unique_lock<std::mutex> lock(mutex_);
+    std::for_each(timers.begin(), timers.end(), [&](const TimerId& id){
+        if (auto it = timers_.find(id); it != timers_.end()) {
+            it->second.isValid = false;
+        }
+    });
 }
 
 void TimerPool::remove(TimerId id) noexcept {

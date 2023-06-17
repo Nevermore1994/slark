@@ -37,7 +37,9 @@ public:
     TimerId runAfter(std::chrono::milliseconds timeStamp, TimerCallback func) noexcept; //ms
     TimerId runLoop(std::chrono::milliseconds timeStamp, TimerCallback func) noexcept;
 
-    void cancel(TimerId id);
+    void cancel(TimerId id) noexcept;
+
+    void cancel(const std::vector<TimerId>& timers) noexcept;
 
     void loop() noexcept;
 

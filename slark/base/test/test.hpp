@@ -12,12 +12,12 @@
 #include "File.hpp"
 #include <cstdint>
 
-using namespace slark;
-using namespace slark::FileUtil;
+using namespace Slark;
+using namespace Slark::FileUtil;
 
 inline void runTest() {
-//    testThread();
-//    testTimer();
+    testThread();
+    testTimer();
     RingBuffer<uint8_t, 1024> buffer;
     File f("test.txt", std::ios_base::out | std::ios_base::binary);
     File ft("test1.txt", std::ios_base::out | std::ios_base::binary);
@@ -26,7 +26,7 @@ inline void runTest() {
     char d[13] = {'\0'};
     uint8_t* dp = reinterpret_cast<uint8_t*>(d);
     for (int i = 0; i < 1000; i++) {
-        auto str = Util::randomString(12);
+        auto str = Random::randomString(12);
         str.append("\n");
         auto p = reinterpret_cast<const uint8_t*>(str.c_str());
         buffer.append(p, str.length());
