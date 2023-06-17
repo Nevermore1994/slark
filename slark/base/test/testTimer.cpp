@@ -8,7 +8,7 @@
 #include <iostream>
 
 using namespace std;
-using namespace slark;
+using namespace Slark;
 using namespace std::chrono;
 using namespace chrono_literals;
 

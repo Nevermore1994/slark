@@ -9,10 +9,10 @@
 
 namespace Slark {
 
-std::vector<std::string> spiltString(const std::string& str, char delim) {
+std::vector<std::string> spiltString(const std::string& str, char delimiter) {
     std::istringstream iss(str);
     std::vector<std::string> res;
-    for (std::string item; std::getline(iss, item, delim);) {
+    for (std::string item; std::getline(iss, item, delimiter);) {
         if (item.empty()) {
             continue;
         } else {
@@ -31,15 +31,15 @@ std::vector<std::string> spiltString(const std::string& str, const std::string& 
     return res;
 }
 
-std::vector<std::string_view> spiltStringView(const std::string& str, char delim) {
+std::vector<std::string_view> spiltStringView(const std::string& str, char delimiter) {
     std::vector<std::string_view> res;
     std::string_view stringView(str);
-    auto lastPos = stringView.find_first_not_of(delim, 0);
-    auto pos = stringView.find_first_of(delim, lastPos);
+    auto lastPos = stringView.find_first_not_of(delimiter, 0);
+    auto pos = stringView.find_first_of(delimiter, lastPos);
     while (pos != std::string::npos || lastPos != std::string::npos) {
         res.push_back(stringView.substr(lastPos, pos - lastPos));
-        lastPos = stringView.find_first_not_of(delim, pos);
-        pos = stringView.find_first_of(delim, lastPos);
+        lastPos = stringView.find_first_not_of(delimiter, pos);
+        pos = stringView.find_first_of(delimiter, lastPos);
     }
     return res;
 }

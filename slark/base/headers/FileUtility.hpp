@@ -11,8 +11,6 @@
 
 namespace Slark::FileUtil {
 
-constexpr int64_t kFileError = -1l;
-
 bool isDirExist(const std::string&);
 
 bool isFileExist(const std::string&);
@@ -23,7 +21,7 @@ bool deleteFile(const std::string&);
 
 bool renameFile(const std::string& oldName, const std::string& newName);
 
-int64_t fileSize(const std::string& path);
+uint64_t fileSize(const std::string& path);
 
 bool resizeFile(const std::string& path, uint64_t length);
 
