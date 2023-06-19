@@ -17,7 +17,7 @@ Time::Timestamp Time::nowTimeStamp() {
 }
 
 std::chrono::seconds Time::offsetFromUTC() {
-    static std::chrono::seconds offset = []{
+    static std::chrono::seconds offset = [] {
         time_t t = time(nullptr);
         struct tm lt = {0};
         localtime_r(&t, &lt);

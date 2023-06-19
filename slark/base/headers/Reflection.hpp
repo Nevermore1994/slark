@@ -49,7 +49,7 @@ private:
 template<typename T>
 void RegisterClass(const std::string& name) {
     return Reflection::shareInstance().enrolment(name, []() {
-        return new(std::nothrow) T();
+        return new (std::nothrow) T();
     });
 }
 

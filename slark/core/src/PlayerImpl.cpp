@@ -87,7 +87,7 @@ void Player::Impl::init() noexcept {
         }
 
         {
-            std::unique_lock<std::mutex> lock(mutex_);
+            std::unique_lock<std::mutex> lock(dataMutex_);
             seekOffset_ = kInvalid;
             rawDatas_.push_back(std::move(data));
         }
@@ -151,7 +151,7 @@ void Player::Impl::setState(PlayerState state) noexcept {
 void Player::Impl::process() {
     decltype(rawDatas_) dataList;
     {
-        std::unique_lock<std::mutex> lock(mutex_);
+        std::unique_lock<std::mutex> lock(dataMutex_);
         dataList.swap(rawDatas_);
     }
     handleData(std::move(dataList));
@@ -197,7 +197,7 @@ TransportEvent Player::Impl::eventType(PlayerState state) const noexcept {
 void Player::Impl::notifyEvent(PlayerState state) const noexcept {
     auto event = eventType(state);
     if (event == TransportEvent::Unknown) {
-        LogE("transport event error.");
+        LogE("transport event Unknown.");
         return;
     }
     for (const auto& ptr : listeners_) {

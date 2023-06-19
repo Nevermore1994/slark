@@ -71,7 +71,7 @@ private:
     TransportEvent eventType(PlayerState state) const noexcept;
 
 private:
-    std::mutex mutex_;
+    std::mutex dataMutex_;
     PlayerState state_ = PlayerState::Unknown;
     int64_t seekOffset_ = kInvalid;
     PlayerInfos info_;
