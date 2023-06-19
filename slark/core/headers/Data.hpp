@@ -27,15 +27,15 @@ struct Data {
         : capacity(size)
         , length(size)
         , data(nullptr) {
-        data = new char[length];
+        data = new(std::nothrow) char[length];
         std::copy(d, d + size + 1, data);
     }
 
-    Data(uint64_t size)
+    explicit Data(uint64_t size)
         : capacity(size)
         , length(0)
         , data(nullptr) {
-        data = new char[size];
+        data = new(std::nothrow) char[size];
         std::fill_n(data, size, 0);
     }
 
@@ -54,7 +54,7 @@ struct Data {
         }
         res.capacity = len;
         res.length = len;
-        res.data = new char[len];
+        res.data = new(std::nothrow) char[len];
         std::copy(data + pos, data + pos + len, res.data);
         return res;
     }
@@ -66,7 +66,7 @@ struct Data {
         }
         res->capacity = len;
         res->length = len;
-        res->data = new char[len];
+        res->data = new(std::nothrow) char[len];
         std::copy(data + pos, data + pos + len, res->data);
         return res;
     }
@@ -90,8 +90,8 @@ struct Data {
         auto expectLength = length + d.length;
         if (capacity < expectLength) {
             auto p = data;
-            auto len = static_cast<int64_t>(expectLength * 1.5f);
-            data = new char [len]; //throw except
+            auto len = static_cast<int64_t>(static_cast<float>(expectLength) * 1.5f);
+            data = new(std::nothrow) char[len];
             capacity = len;
             if (p) {
                 std::copy(p, p + length, data);
