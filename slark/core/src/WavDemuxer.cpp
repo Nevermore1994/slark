@@ -222,7 +222,7 @@ std::tuple<DemuxerState, AVFrameList> WAVDemuxer::parseData(std::unique_ptr<Data
     AVFrameList frameList;
     auto start = 0ll;
     auto isCompleted = parseLength_ >= headerInfo_.dataSize;
-    assert(audioInfo_->sampleRate != 0);
+    SAssert(audioInfo_->sampleRate != 0, "wav demuxer sample rate is invalid.");
     while (overflowData_->length - start + 1 >= frameLength) {
         auto frame = std::make_unique<AVFrame>();
         frame->data = overflowData_->copy(start, frameLength);
