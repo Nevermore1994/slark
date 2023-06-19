@@ -122,7 +122,7 @@ void TimerPool::cancel(TimerId id) noexcept {
 
 void TimerPool::cancel(const std::vector<TimerId>& timers) noexcept {
     std::unique_lock<std::mutex> lock(mutex_);
-    std::for_each(timers.begin(), timers.end(), [&](const TimerId& id){
+    std::for_each(timers.begin(), timers.end(), [&](const TimerId & id) {
         if (auto it = timers_.find(id); it != timers_.end()) {
             it->second.isValid = false;
         }

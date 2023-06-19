@@ -10,7 +10,7 @@
 #include <memory>
 #include "AVFrame.hpp"
 
-namespace slark::Audio {
+namespace Slark::Audio {
 
 ///AudioNode don't hold AVFrameRef, let AVFrameRef flow freely
 ///only when node is last section
@@ -18,7 +18,7 @@ namespace slark::Audio {
 class IAudioInputNode {
 public:
     virtual ~IAudioInputNode() = default;
-    virtual void receive(slark::AVFrameRef frame) noexcept = 0;
+    virtual void receive(Slark::AVFrameRef frame) noexcept = 0;
 };
 
 class IAudioOutputNode {
@@ -30,8 +30,8 @@ public:
     bool removeTarget(std::weak_ptr<IAudioInputNode> node) noexcept;
     void removeAllTarget() noexcept;
 protected:
-    void notifyTargets(slark::AVFrameRef frame) noexcept;
-    virtual slark::AVFrameRef send() noexcept = 0;
+    void notifyTargets(Slark::AVFrameRef frame) noexcept;
+    virtual Slark::AVFrameRef send() noexcept = 0;
 private:
     std::unordered_map<uint64_t, std::weak_ptr<IAudioInputNode>> targets_;
 };
