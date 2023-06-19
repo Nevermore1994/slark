@@ -61,7 +61,7 @@ struct PlayerInfos {
 class Player {
 
 public:
-    Player(std::shared_ptr<PlayerParams> params);
+    Player(const std::shared_ptr<PlayerParams>& params);
 
     ~Player();
 
