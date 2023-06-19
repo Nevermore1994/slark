@@ -20,6 +20,8 @@ constexpr static uint64_t kTimeInvalid = 0;
 
 using Timestamp = uint64_t;
 
+std::chrono::seconds offsetFromUTC();
+
 std::string localTime();
 
 //system time

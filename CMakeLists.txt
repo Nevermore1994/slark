@@ -95,10 +95,11 @@ include_directories(${ALL_HEADER})
 
 message(STATUS "current build: " ${CMAKE_BUILD_TYPE} " build type:" ${TESTING_TYPE})
 
-if (CMAKE_BUILD_TYPE STREQUAL Debug)
+if (CMAKE_BUILD_TYPE STREQUAL DEBUG)
     add_definitions(-DDEBUG) #set DEBUG = 1
     add_executable(${PROJECT_NAME} ${MAIN_FILE} ${ALL_SOURCE})
-else()
+    message("build testing....")
+else ()
     add_library(${PROJECT_NAME} ${ALL_SOURCE})
 endif ()
 

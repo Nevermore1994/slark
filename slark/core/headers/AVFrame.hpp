@@ -69,7 +69,7 @@ struct AVFrame {
         data.release();
     }
 
-    inline void resetData() noexcept {
+    inline void resetData() const noexcept {
         data.reset();
     }
 
