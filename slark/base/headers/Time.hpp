@@ -54,7 +54,7 @@ public:
 
     [[nodiscard]] inline long double second() const noexcept {
         bool isValid = this->isValid();
-        AssertMessage(isValid, "time is invalid");
+        SAssert(isValid, "time is invalid");
         if (isValid) {
             return static_cast<double>(value) / static_cast<double>(scale);
         }
