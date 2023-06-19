@@ -59,8 +59,7 @@ DemuxerType DemuxerManager::probeDemuxType(std::unique_ptr<Data> data) const noe
 
 DemuxerType DemuxerManager::probeDemuxType(const std::string_view& str) const noexcept {
     for (const auto& pair : demuxers_) {
-        auto pos = str.find(pair.first);
-        if (pos != std::string::npos) {
+        if (auto pos = str.find(pair.first); pos != std::string::npos) {
             return pair.second.type;
         }
     }

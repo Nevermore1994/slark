@@ -26,13 +26,13 @@ public:
 
     ~ThreadManager() override;
 
-    void add(const std::shared_ptr<Thread>& thread);
+    void add(const std::shared_ptr<Thread>& thread) noexcept;
 
-    void remove(const std::shared_ptr<Thread>& thread);
+    void remove(const std::shared_ptr<Thread>& thread) noexcept;
 
-    void remove(std::thread::id id);
+    void remove(std::thread::id id) noexcept;
 
-    std::shared_ptr<Thread> thisThread();
+    std::shared_ptr<Thread> thisThread() noexcept;
 
 private:
     void reportRunInfo() noexcept;

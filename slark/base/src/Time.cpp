@@ -9,14 +9,14 @@
 
 namespace Slark {
 
-Time::Timestamp Time::nowTimeStamp() {
+Time::Timestamp Time::nowTimeStamp() noexcept{
     using namespace std::chrono;
     auto tp = time_point_cast<microseconds>(system_clock::now());
     tp += Time::offsetFromUTC();
     return tp.time_since_epoch().count();
 }
 
-std::chrono::seconds Time::offsetFromUTC() {
+std::chrono::seconds Time::offsetFromUTC() noexcept {
     static std::chrono::seconds offset = [] {
         time_t t = time(nullptr);
         struct tm lt = {0};
@@ -26,7 +26,7 @@ std::chrono::seconds Time::offsetFromUTC() {
     return offset;
 }
 
-std::string Time::localTime() {
+std::string Time::localTime() noexcept {
     using namespace std::chrono;
     auto tp = system_clock::now();
     tp += Time::offsetFromUTC();

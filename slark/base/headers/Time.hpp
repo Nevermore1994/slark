@@ -20,12 +20,12 @@ constexpr static uint64_t kTimeInvalid = 0;
 
 using Timestamp = uint64_t;
 
-std::chrono::seconds offsetFromUTC();
+std::chrono::seconds offsetFromUTC() noexcept;
 
-std::string localTime();
+std::string localTime() noexcept;
 
 //system time
-Time::Timestamp nowTimeStamp();
+Time::Timestamp nowTimeStamp() noexcept;
 
 } //end namespace Slark::Time
 

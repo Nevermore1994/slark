@@ -26,14 +26,14 @@ public:
 
     ~TimerManager() noexcept;
 
-    TimerId runAt(uint64_t timeStamp, TimerCallback func); //ms
-    TimerId runAfter(uint64_t delayTime, TimerCallback func); //ms
-    TimerId runLoop(uint64_t timeInterval, TimerCallback func); //ms
+    TimerId runAt(uint64_t timeStamp, TimerCallback func) noexcept; //ms
+    TimerId runAfter(uint64_t delayTime, TimerCallback func) noexcept; //ms
+    TimerId runLoop(uint64_t timeInterval, TimerCallback func) noexcept; //ms
     TimerId runAfter(std::chrono::milliseconds timeStamp, TimerCallback func) noexcept;
 
     TimerId runLoop(std::chrono::milliseconds timeStamp, TimerCallback func) noexcept;
 
-    void cancel(TimerId id);
+    void cancel(TimerId id) noexcept;
 
 private:
     void loop();

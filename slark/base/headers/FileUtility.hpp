@@ -11,23 +11,23 @@
 
 namespace Slark::FileUtil {
 
-bool isDirExist(const std::string&);
+bool isDirExist(const std::string&) noexcept;
 
-bool isFileExist(const std::string&);
+bool isFileExist(const std::string&) noexcept;
 
-bool createDir(const std::string&);
+bool createDir(const std::string&) noexcept;
 
-bool deleteFile(const std::string&);
+bool deleteFile(const std::string&) noexcept;
 
-bool renameFile(const std::string& oldName, const std::string& newName);
+bool renameFile(const std::string& oldName, const std::string& newName) noexcept;
 
-uint64_t fileSize(const std::string& path);
+uint64_t fileSize(const std::string& path) noexcept;
 
-bool resizeFile(const std::string& path, uint64_t length);
+bool resizeFile(const std::string& path, uint64_t length) noexcept;
 
-bool removeDir(const std::string& path);
+bool removeDir(const std::string& path) noexcept;
 
-bool copyFile(const std::string& from, const std::string& to);
+bool copyFile(const std::string& from, const std::string& to) noexcept;
 
 }
 

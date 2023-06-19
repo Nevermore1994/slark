@@ -27,22 +27,22 @@ ThreadManager::~ThreadManager() {
 }
 
 
-void ThreadManager::add(const std::shared_ptr<Thread>& thread) {
+void ThreadManager::add(const std::shared_ptr<Thread>& thread) noexcept {
     std::unique_lock<std::mutex> lock(mutex_);
     threadInfos_.emplace(thread->getId(), thread);
 }
 
-void ThreadManager::remove(const std::shared_ptr<Thread>& thread) {
+void ThreadManager::remove(const std::shared_ptr<Thread>& thread) noexcept {
     std::unique_lock<std::mutex> lock(mutex_);
     threadInfos_.erase(thread->getId());
 }
 
-void ThreadManager::remove(std::thread::id id) {
+void ThreadManager::remove(std::thread::id id) noexcept {
     std::unique_lock<std::mutex> lock(mutex_);
     threadInfos_.erase(id);
 }
 
-std::shared_ptr<Thread> ThreadManager::thisThread() {
+std::shared_ptr<Thread> ThreadManager::thisThread() noexcept {
     std::unique_lock<std::mutex> lock(mutex_);
     auto id = std::this_thread::get_id();
     auto it = threadInfos_.find(id);

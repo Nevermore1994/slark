@@ -11,7 +11,7 @@
 
 namespace Slark {
 
-Player::Player(std::shared_ptr<PlayerParams> params)
+Player::Player(const std::shared_ptr<PlayerParams>& params)
     : pimpl_(std::make_unique<Player::Impl>(params)) {
 
 }

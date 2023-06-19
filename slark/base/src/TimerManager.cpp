@@ -25,15 +25,15 @@ void TimerManager::loop() {
     pool_.loop();
 }
 
-TimerId TimerManager::runAt(uint64_t timeStamp, TimerCallback func) {
+TimerId TimerManager::runAt(uint64_t timeStamp, TimerCallback func) noexcept {
     return pool_.runAt(timeStamp, std::move(func));
 }
 
-TimerId TimerManager::runAfter(uint64_t delayTime, TimerCallback func) {
+TimerId TimerManager::runAfter(uint64_t delayTime, TimerCallback func) noexcept {
     return pool_.runAfter(delayTime, std::move(func));
 }
 
-TimerId TimerManager::runLoop(uint64_t timeInterval, TimerCallback func) {
+TimerId TimerManager::runLoop(uint64_t timeInterval, TimerCallback func) noexcept {
     return pool_.runLoop(timeInterval, std::move(func));
 }
 
@@ -45,7 +45,7 @@ TimerId TimerManager::runLoop(std::chrono::milliseconds timeInterval, TimerCallb
     return pool_.runLoop(timeInterval, std::move(func));
 }
 
-void TimerManager::cancel(TimerId id) {
+void TimerManager::cancel(TimerId id) noexcept {
     pool_.cancel(id);
 }
 
