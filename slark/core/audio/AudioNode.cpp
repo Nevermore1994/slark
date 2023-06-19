@@ -9,9 +9,9 @@
 #include <vector>
 #include "AudioNode.hpp"
 
-namespace slark::Audio {
+namespace Slark::Audio {
 
-using namespace slark;
+using namespace Slark;
 
 void IAudioInputNode::receive(AVFrameRef frame) noexcept {
 

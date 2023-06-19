@@ -14,9 +14,9 @@
 #include "Time.hpp"
 #include "AVFrameDeque.hpp"
 
-namespace slark::Audio {
+namespace Slark::Audio {
 
-class AudioRenderComponent: public slark::NonCopyable {
+class AudioRenderComponent: public Slark::NonCopyable {
 public:
     AudioRenderComponent(AudioInfo info);
     ~AudioRenderComponent() override;
@@ -24,19 +24,19 @@ public:
     bool push(AVFramePtr frame);
     AVFramePtr pop();
 public:
-    std::function<bool(slark::Data)> process;
+    std::function<bool(Slark::Data)> process;
     std::function<void(AVFramePtr)> completion;
 private:
-    slark::AVFrameSafeDeque frames_;
+    Slark::AVFrameSafeDeque frames_;
 };
 
-class AudioRecorderComponent: public slark::NonCopyable {
+class AudioRecorderComponent: public Slark::NonCopyable {
 public:
     ~AudioRecorderComponent() override = default;
 
-    void output(slark::Data data);
+    void output(Slark::Data data);
 public:
-    std::function<bool(slark::Data)> process;
+    std::function<bool(Slark::Data)> process;
 private:
     class AudioRecorderComponentImpl;
     std::unique_ptr<AudioRecorderComponentImpl> impl_;
