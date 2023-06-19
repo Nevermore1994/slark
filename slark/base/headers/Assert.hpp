@@ -10,7 +10,7 @@ void AssertMessage(bool result, const char* format, ...);
 
 #define SAssert(result, format, args...) \
     do {                               \
-        AssertMessage(result, "[assert] [%s][Line:%d][Function:%s]" format, __FILE_NAME__, __LINE__, __FUNCTION__, ##args);  \
+        AssertMessage(result, "[assert] [%s][Line:%d][Function:%s]" format, __FILE__, __LINE__, __FUNCTION__, ##args);  \
     } while(0)
 #else
 

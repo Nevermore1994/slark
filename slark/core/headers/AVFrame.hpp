@@ -105,16 +105,24 @@ struct AVFrame {
         return frame;
     }
 
-    constexpr bool operator<(const AVFrame& rhs) const noexcept {
+    bool operator<(const AVFrame& rhs) const noexcept {
         return index < rhs.index;
     }
 
-    constexpr bool operator>(const AVFrame& rhs) const noexcept {
+    bool operator>(const AVFrame& rhs) const noexcept {
         return index > rhs.index;
+    }
+
+    inline bool isVideo() const noexcept {
+        return frameType == AVFrameType::Video;
+    }
+
+    inline bool isAudio() const noexcept {
+        return frameType == AVFrameType::Audio;
     }
 };
 
 using AVFramePtr = std::unique_ptr<AVFrame>;
-using AVFrameRef = AVFrame*;
+using AVFrameRef = AVFrame&;
 using AVFrameList = std::list<AVFramePtr>;
 }

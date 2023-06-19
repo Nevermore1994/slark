@@ -7,9 +7,9 @@
 
 #include "AudioComponent.hpp"
 
-namespace slark::Audio {
+namespace Slark::Audio {
 
-using namespace slark;
+using namespace Slark;
 
 AudioRenderComponent::AudioRenderComponent(AudioInfo info) {
 

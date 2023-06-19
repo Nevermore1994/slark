@@ -9,8 +9,8 @@
 #include <cstdint>
 #include <cmath>
 #include <algorithm>
-#include <cassert>
 #include <string>
+#include "Assert.hpp"
 
 namespace Slark {
 
@@ -36,28 +36,25 @@ private:
 public:
     int64_t value;
     uint64_t scale;
-    bool isValid;
 
     CTime()
         : value(Time::kTimeInvalid)
-        , scale(Time::kTimeInvalid)
-        , isValid(scale != Time::kTimeInvalid) {
+        , scale(Time::kTimeInvalid) {
     }
 
     CTime(int64_t v, uint64_t s)
         : value(v)
-        , scale(s)
-        , isValid(scale != Time::kTimeInvalid) {
+        , scale(s) {
     }
 
     CTime(long double t, uint64_t s)
         : value(s * t)
-        , scale(s)
-        , isValid(scale != Time::kTimeInvalid) {
+        , scale(s) {
     }
 
     [[nodiscard]] inline long double second() const noexcept {
-        assert(isValid);
+        bool isValid = this->isValid();
+        AssertMessage(isValid, "time is invalid");
         if (isValid) {
             return static_cast<double>(value) / static_cast<double>(scale);
         }
@@ -69,11 +66,19 @@ public:
     }
 
     inline bool operator>(const CTime& rhs) const noexcept {
-        return second() - rhs.second() > kTimePrecision;
+        return (second() - rhs.second()) > kTimePrecision;
     }
 
     inline bool operator<(const CTime& rhs) const noexcept {
-        return second() - rhs.second() < -kTimePrecision;
+        return (second() - rhs.second()) < -kTimePrecision;
+    }
+
+    inline bool operator>=(const CTime& rhs) const noexcept {
+        return this->operator==(rhs) || this->operator>(rhs);
+    }
+
+    inline bool operator<=(const CTime& rhs) const noexcept {
+        return this->operator==(rhs) || this->operator<(rhs);
     }
 
     inline CTime operator-(const CTime& rhs) const noexcept {
@@ -84,6 +89,10 @@ public:
     inline CTime operator+(const CTime& rhs) const noexcept {
         auto t = second() + rhs.second();
         return {t, scale};
+    }
+
+    [[nodiscard]] inline bool isValid() const noexcept {
+        return scale != Time::kTimeInvalid;
     }
 };
 
@@ -127,10 +136,10 @@ struct CTimeRange {
     }
 
     [[nodiscard]] inline bool isValid() const noexcept {
-        return start.isValid && duration.isValid;
+        return start.isValid() && duration.isValid();
     }
 
-    [[maybe_unused]] [[nodiscard]] inline CTimeRange overlapTimeRange(const CTimeRange& rhs) const noexcept {
+    [[maybe_unused]] [[nodiscard]] inline CTimeRange overlapRange(const CTimeRange& rhs) const noexcept {
         CTimeRange range;
         if (!this->overlap(rhs)) {
             return range;
