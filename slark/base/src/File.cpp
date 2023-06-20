@@ -7,6 +7,7 @@
 #include "File.hpp"
 #include "Log.hpp"
 #include <utility>
+#include <cstring>
 
 namespace Slark::FileUtil {
 
