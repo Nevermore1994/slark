@@ -2,7 +2,7 @@
 //  AudioNode.cpp
 //  slark
 //
-//  Created by 谭平 on 2022/8/24.
+//  Created by Nevermore on 2022/8/24.
 //
 
 #include <functional>

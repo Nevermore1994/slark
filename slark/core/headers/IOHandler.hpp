@@ -15,7 +15,6 @@ namespace Slark {
 enum class IOState {
     Normal,
     Error,
-    Failed,
     EndOfFile,
 };
 

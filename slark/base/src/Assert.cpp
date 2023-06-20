@@ -7,7 +7,9 @@
 #include <stdexcept>
 #include "Assert.hpp"
 
+namespace Slark {
 #if DEBUG
+
 void AssertMessage(bool result, const char* format, ...) {
     if (!result) {
         constexpr int kMaxMessageBuffSize = 512;
@@ -22,3 +24,6 @@ void AssertMessage(bool result, const char* format, ...) {
 }
 
 #endif
+
+
+}

@@ -28,7 +28,7 @@ public:
 
     void seek(uint64_t pos);
     void write(std::unique_ptr<Data> data);
-    void write(const char* data, uint64_t length);
+    void write(uint8_t* data, uint64_t length);
 
 public:
     inline std::string_view path() const noexcept override {
@@ -43,7 +43,7 @@ private:
     void process();
     IOState state() noexcept;
 private:
-    uint64_t seekPos_ = kInvalid;
+    int64_t seekPos_ = kInvalid;
     std::mutex mutex_;
     std::string path_;
     Slark::Thread worker_;

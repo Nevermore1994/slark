@@ -9,7 +9,7 @@
 
 namespace Slark {
 
-Time::Timestamp Time::nowTimeStamp() noexcept{
+Time::Timestamp Time::nowTimeStamp() noexcept {
     using namespace std::chrono;
     auto tp = time_point_cast<microseconds>(system_clock::now());
     tp += Time::offsetFromUTC();

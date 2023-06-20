@@ -98,15 +98,17 @@ void Player::Impl::init() noexcept {
 }
 
 void Player::Impl::handleData(std::list<std::unique_ptr<Data>>&& dataList) noexcept {
-    std::string demuxData;
+    Data demuxData;
     LogI("handleData %ld", dataList.size());
     while (!dataList.empty()) {
         auto data = std::move(dataList.front());
         dataList.pop_front();
 
         if (demuxer_ == nullptr) {
-            demuxData.append(data->data, data->length);
-            std::string_view dataView(demuxData);
+            demuxData.append(*data);
+            data.reset();
+
+            std::string_view dataView = demuxData.view();
             auto demuxType = DemuxerManager::shareInstance().probeDemuxType(dataView);
             if (demuxType == DemuxerType::Unknown) {
                 continue;
@@ -115,9 +117,9 @@ void Player::Impl::handleData(std::list<std::unique_ptr<Data>>&& dataList) noexc
             demuxer_ = DemuxerManager::shareInstance().create(demuxType);
             auto [res, offset] = demuxer_->open(dataView);
             if (res) {
-                auto p = demuxData.data();
-                data = std::make_unique<Data>(p + offset, demuxData.length() - offset);
-                demuxData.clear();
+                auto p = demuxData.data;
+                data = std::make_unique<Data>(p + offset, demuxData.length - offset);
+                demuxData.release();
             } else {
                 LogE("create demuxer error...");
             }
@@ -158,7 +160,7 @@ void Player::Impl::process() {
 
     auto state = dataManager_->state();
     //auto isLoop = params_->isLoop;
-    if (state == IOState::Failed || state == IOState::Error) {
+    if (state == IOState::Error) {
         stop();
     } else if (state == IOState::EndOfFile) {
         if (params_->isLoop) {

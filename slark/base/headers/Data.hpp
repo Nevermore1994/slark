@@ -8,13 +8,14 @@
 #include <cstdint>
 #include <memory>
 #include <algorithm>
+#include <string_view>
 
 namespace Slark {
 
 struct Data {
     uint64_t capacity = 0;
     uint64_t length = 0;
-    char* data = nullptr;
+    uint8_t* data = nullptr;
 
     Data()
         : capacity(0)
@@ -23,11 +24,11 @@ struct Data {
 
     }
 
-    Data(const char* d, uint64_t size)
+    Data(uint8_t* d, uint64_t size)
         : capacity(size)
         , length(size)
         , data(nullptr) {
-        data = new (std::nothrow) char[length];
+        data = new (std::nothrow) uint8_t[length];
         std::copy(d, d + size + 1, data);
     }
 
@@ -35,7 +36,7 @@ struct Data {
         : capacity(size)
         , length(0)
         , data(nullptr) {
-        data = new (std::nothrow) char[size];
+        data = new (std::nothrow) uint8_t[size];
         std::fill_n(data, size, 0);
     }
 
@@ -54,7 +55,7 @@ struct Data {
         }
         res.capacity = len;
         res.length = len;
-        res.data = new (std::nothrow) char[len];
+        res.data = new (std::nothrow) uint8_t[len];
         std::copy(data + pos, data + pos + len, res.data);
         return res;
     }
@@ -66,7 +67,7 @@ struct Data {
         }
         res->capacity = len;
         res->length = len;
-        res->data = new (std::nothrow) char[len];
+        res->data = new (std::nothrow) uint8_t[len];
         std::copy(data + pos, data + pos + len, res->data);
         return res;
     }
@@ -91,7 +92,7 @@ struct Data {
         if (capacity < expectLength) {
             auto p = data;
             auto len = static_cast<int64_t>(static_cast<float>(expectLength) * 1.5f);
-            data = new (std::nothrow) char[len];
+            data = new (std::nothrow) uint8_t[len];
             capacity = len;
             if (p) {
                 std::copy(p, p + length, data);
@@ -104,6 +105,10 @@ struct Data {
 
     inline bool empty() const noexcept {
         return length == 0;
+    }
+
+    inline std::string_view view() const noexcept {
+        return {reinterpret_cast<char*>(data), length};
     }
 };
 

@@ -83,7 +83,7 @@ void AudioRender::stop() noexcept {
     checkOSStatus(AudioOutputUnitStop(audioUnit_), "AudioOutputUnitStop");
 }
 
-bool AudioRender::setupAudioUnit() noexcept{
+bool AudioRender::setupAudioUnit() noexcept {
     OSStatus status;
     
     // init audio unit

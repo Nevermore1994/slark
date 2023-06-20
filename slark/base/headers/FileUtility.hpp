@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2021/10/22.
-// Slark FileUtility
+// Slark FileUtil
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 

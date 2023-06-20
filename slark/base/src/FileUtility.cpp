@@ -13,7 +13,7 @@
 
 namespace Slark::FileUtil  {
 
-[[maybe_unused]] bool isDirExist(const std::string& path) noexcept{
+[[maybe_unused]] bool isDirExist(const std::string& path) noexcept {
     if (path.empty()) {
         return false;
     }
