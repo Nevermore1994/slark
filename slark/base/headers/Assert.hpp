@@ -1,9 +1,11 @@
 //
 // Created by Nevermore on 2023/6/14.
-// slark Assert
+// Slark Assert
 // Copyright (c) 2023 Nevermore All rights reserved.
 //
 #pragma once
+
+namespace Slark {
 
 #if DEBUG
 void AssertMessage(bool result, const char* format, ...);
@@ -17,3 +19,5 @@ void AssertMessage(bool result, const char* format, ...);
 #define SAssert(result, format, args...)   /*nothing*/
 
 #endif
+
+}

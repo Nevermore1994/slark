@@ -17,7 +17,7 @@ FileHandler::FileHandler()
 
 FileHandler::~FileHandler() {
     worker_.stop();
-    if (file_->stream().is_open()) {
+    if (file_->isOpen()) {
         file_->close();
     }
 }
@@ -25,9 +25,9 @@ FileHandler::~FileHandler() {
 bool FileHandler::open(std::string path) {
     std::unique_lock<std::mutex> lock(mutex_);
     path_ = path;
-    file_ = std::make_unique<FileUtil::File>(path, std::ios_base::out | std::ios_base::in | std::ios_base::binary);
+    file_ = std::make_unique<FileUtil::File>(path);
     if (file_->open()) {
-        file_->stream().seekg(std::ios_base::beg);
+        file_->seek(0);
         worker_.start();
     } else {
         LogE("open file failed. %s", path_.c_str());
@@ -61,7 +61,7 @@ void FileHandler::write(std::unique_ptr<Data> data) {
     writeData_.push_back(std::move(data));
 }
 
-void FileHandler::write(const char* data, uint64_t length) {
+void FileHandler::write(uint8_t* data, uint64_t length) {
     SAssert(data != nullptr, "error !!!, write null data.");
     auto p = std::make_unique<Data>(data, length);
     std::unique_lock<std::mutex> lock(mutex_);
@@ -71,23 +71,22 @@ void FileHandler::write(const char* data, uint64_t length) {
 void FileHandler::process() {
     if (seekPos_ != kInvalid) {
         std::unique_lock<std::mutex> lock(mutex_);
-        file_->stream().seekg(seekPos_);
+        file_->seek(seekPos_);
         seekPos_ = kInvalid;
     }
     {
         std::unique_lock<std::mutex> lock(mutex_);
         for (const auto& data : writeData_) {
-            file_->stream().write(data->data, data->length);
+            file_->write(*data);
         }
     }
 
-    auto offset = file_->stream().tellg();
+    auto offset = file_->tell();
     std::unique_ptr<Data> data;
     {
         std::unique_lock<std::mutex> lock(mutex_);
         data = std::make_unique<Data>(kDefaultSize);
-        file_->stream().read(data->data, data->capacity);
-        data->length = file_->stream().gcount();
+        file_->read(*data);
     }
 
     if (handler_ && data) {
@@ -96,12 +95,10 @@ void FileHandler::process() {
 }
 
 IOState FileHandler::state() noexcept {
-    auto offset = file_->stream().tellg();
-    if (file_->stream().eof() || offset == file_->fileSize()) {
+    auto offset = file_->tell();
+    if (file_->readOver() || offset == file_->fileSize()) {
         return IOState::EndOfFile;
-    } else if (file_->stream().fail()) {
-        return IOState::Failed;
-    } else if (file_->stream().bad()) {
+    } else if (file_->isFailed()) {
         return IOState::Error;
     }
     return IOState::Normal;

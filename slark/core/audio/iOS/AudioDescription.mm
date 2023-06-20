@@ -2,7 +2,7 @@
 //  AudioDescription.mm
 //  slark
 //
-//  Created by 谭平 on 2022/8/22.
+//  Created by Nevermore on 2022/8/22.
 //
 
 #import "AudioDescription.h"
