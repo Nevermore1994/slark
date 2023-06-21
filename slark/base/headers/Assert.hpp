@@ -16,7 +16,7 @@ void AssertMessage(bool result, const char* format, ...);
     } while(0)
 #else
 
-#define SAssert(result, format, args...)   /*nothing*/
+#define SAssert(result, format, ...)   /*nothing*/
 
 #endif
 

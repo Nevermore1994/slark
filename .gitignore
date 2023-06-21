@@ -17,3 +17,6 @@
 .ninja_log
 build.ninja
 CMakeCache.txt
+/_deps
+/test/*.cmake
+/test/*/*.cmake

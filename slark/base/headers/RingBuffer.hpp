@@ -40,7 +40,7 @@ private:
         if (length < 0) {
             length += size_;
         }
-        return length;
+        return static_cast<uint64_t>(length);
     }
 
 private:

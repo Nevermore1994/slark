@@ -11,8 +11,8 @@
 namespace Slark {
 
 FileHandler::FileHandler()
-    : file_(nullptr)
-    , worker_("IOThread", &FileHandler::process, this) {
+    : worker_("IOThread", &FileHandler::process, this)
+    , file_(nullptr){
 }
 
 FileHandler::~FileHandler() {

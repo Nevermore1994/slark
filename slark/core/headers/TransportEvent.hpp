@@ -17,6 +17,7 @@ enum class TransportEvent {
 
 struct ITransportObserver {
     virtual void updateEvent(TransportEvent event) = 0;
+    virtual ~ITransportObserver() = default;
 };
 
 }

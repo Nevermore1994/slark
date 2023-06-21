@@ -19,7 +19,7 @@ void printLog(LogType level, const char* format, ...) {
     char buf[kMaxLogBuffSize] = {0};
     va_list args;
     va_start(args, format);
-    vsnprintf((char*)(buf), (kMaxLogBuffSize - 1), format, args);
+    vsnprintf(reinterpret_cast<char*>(buf), (kMaxLogBuffSize - 1), format, args);
     va_end(args);
     buf[kMaxLogBuffSize - 1] = 0; //last element = 0
 

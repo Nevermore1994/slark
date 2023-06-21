@@ -9,7 +9,7 @@
 
 namespace Slark {
 
-constexpr int32_t kInvalid = -1;
+constexpr int64_t kInvalid = -1;
 
 #define CheckIndexValid(index, vector) \
     (0 <= (index) && ((index) < (vector).size()))

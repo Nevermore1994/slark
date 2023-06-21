@@ -75,7 +75,7 @@ public:
     void close() noexcept override;
 
 protected:
-    int32_t checkEveryN_;
+    uint32_t checkEveryN_;
     uint32_t checkCount_;
     uint64_t writeSize_;
     uint32_t writeCount_;
