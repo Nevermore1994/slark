@@ -180,12 +180,14 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
             int64_t durationUs = 0;
             if (format == WaveFormat::MSGSM) {
                 // 65 bytes decode to 320 8kHz samples
-                durationUs = 1000000LL * (dataSize / 65 * 320) / 8000;
+                durationUs = 1000000 * (dataSize / 65 * 320) / 8000;
             } else {
                 size_t bytesPerSample = bitsPerSample >> 3;
-                durationUs = 1000000LL * (dataSize / (channels * bytesPerSample)) / sampleRate;
+                auto bitSample = channels * bytesPerSample;
+                durationUs = static_cast<int64_t>(1000000LL * (dataSize / bitSample) /
+                                                                      sampleRate);
             }
-            duration = durationUs / 1000.0;
+            duration = static_cast<double>(durationUs) / 1000.0;
             completion();
             return {isValid, dataOffset};
         }
@@ -218,15 +220,15 @@ std::tuple<DemuxerState, AVFrameList> WAVDemuxer::parseData(std::unique_ptr<Data
     overflowData_->append(*data);
     //frame include 2048 sample
     constexpr uint16_t sampleCount = 2048;
-    auto frameLength = audioInfo_->bitsPerSample * audioInfo_->channels * sampleCount;
+    uint64_t frameLength = audioInfo_->bitsPerSample * audioInfo_->channels * sampleCount;
     AVFrameList frameList;
-    auto start = 0ll;
+    uint64_t start = 0;
     auto isCompleted = parseLength_ >= headerInfo_.dataSize;
     SAssert(audioInfo_->sampleRate != 0, "wav demuxer sample rate is invalid.");
     while (overflowData_->length - start + 1 >= frameLength) {
         auto frame = std::make_unique<AVFrame>();
         frame->data = overflowData_->copy(start, frameLength);
-        frame->duration = static_cast<double>(sampleCount) / audioInfo_->sampleRate * 1000;
+        frame->duration = static_cast<uint32_t>(static_cast<double>(sampleCount) / static_cast<double>(audioInfo_->sampleRate) * 1000);
         frame->index = ++parseFrameCount_;
         frameList.push_back(std::move(frame));
 
@@ -241,8 +243,8 @@ std::tuple<DemuxerState, AVFrameList> WAVDemuxer::parseData(std::unique_ptr<Data
     } else if (isCompleted) {
         auto frame = std::make_unique<AVFrame>();
         frame->data = overflowData_->copy(start, overflowData_->length - start);
-        frame->duration = static_cast<double>(frame->data.length) /
-                          (audioInfo_->sampleRate * audioInfo_->bitsPerSample * audioInfo_->channels) * 1000;
+        auto scale = static_cast<double>(audioInfo_->sampleRate * audioInfo_->bitsPerSample * audioInfo_->channels);
+        frame->duration = static_cast<uint32_t>(static_cast<double>(frame->data.length) / scale * 1000);
         frame->index = ++parseFrameCount_;
         frameList.push_back(std::move(frame));
 
