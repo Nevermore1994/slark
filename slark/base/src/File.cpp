@@ -31,9 +31,9 @@ bool IFile::open() noexcept {
     if (file_) {
         return true;
     }
-    file_ = fopen(path_.c_str(), ModeStr[(int) mode_]);
+    file_ = fopen(path_.c_str(), ModeStr[static_cast<int>(mode_)]);
     if (!file_) {
-        LogE("open file:%s", strerror(errno));
+        LogE("open file:%s", std::strerror(errno));
         isFailed_ = true;
     }
     return file_ != nullptr;
@@ -65,9 +65,9 @@ void IFile::close() noexcept {
 WriteFile::WriteFile(std::string path)
     : IFile(std::move(path), FileMode::WriteMode)
     , checkEveryN_(kCheckCount)
-    , writeCount_(0)
+    , checkCount_(0)
     , writeSize_(0)
-    , checkCount_(0) {
+    , writeCount_(0) {
 }
 
 WriteFile::~WriteFile() {
@@ -111,7 +111,7 @@ bool WriteFile::write(const uint8_t* data, uint64_t size) noexcept {
         flush();
     }
     if (writeSize < size) {
-        LogE("write file: %s", strerror(errno));
+        LogE("write file: %s", std::strerror(errno));
         isFailed_ = true;
     }
     return writeSize == size;
@@ -119,8 +119,8 @@ bool WriteFile::write(const uint8_t* data, uint64_t size) noexcept {
 
 ReadFile::ReadFile(std::string path)
     : IFile(std::move(path), FileMode::ReadMode)
-    , readSize_(0)
-    , readOver_(false) {
+    , readOver_(false)
+    , readSize_(0){
 }
 
 ReadFile::~ReadFile() {
@@ -140,7 +140,7 @@ std::tuple<bool, uint8_t> ReadFile::readByte() noexcept {
         if (feof(file_)) {
             readOver_ = true;
         } else {
-            LogE("read byte error:%s", strerror(errno));
+            LogE("read byte error:%s", std::strerror(errno));
             isFailed_ = true;
         }
     }
@@ -167,7 +167,7 @@ bool ReadFile::read(Data& data) noexcept {
         if (feof(file_)) {
             readOver_ = true;
         } else {
-            LogE("read data error:%s", strerror(errno));
+            LogE("read data error:%s", std::strerror(errno));
             isFailed_ = true;
         }
     }
@@ -198,8 +198,8 @@ void ReadFile::close() noexcept {
 
 File::File(std::string path)
     : IFile(path, FileMode::FreeMode)
-    , WriteFile(path)
-    , ReadFile(path) {
+    , ReadFile(path)
+    , WriteFile(path) {
 }
 
 File::~File() = default;

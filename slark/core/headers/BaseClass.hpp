@@ -35,7 +35,7 @@ struct BaseClass {
     }
 
     inline static T* create(std::string name) noexcept {
-        return (T*)Slark::GenerateClass(name);
+        return reinterpret_cast<T*>(Slark::GenerateClass(name));
     }
 };
 

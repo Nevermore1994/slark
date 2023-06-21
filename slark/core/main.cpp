@@ -28,15 +28,15 @@ struct Observer:public IPlayerObserver, public std::enable_shared_from_this<Obse
         return weak_from_this();
     }
     
-    inline void event(PlayerEvent event) override {
+    inline void event(PlayerEvent /* event */) override {
     
     }
 };
 
 
 
-int main(int argc, const char * argv[]) {
-    auto t = Time::nowTimeStamp();
+int main() {
+    //auto t = Time::nowTimeStamp();
     std::cout << "now time:" << Time::localTime() << std::endl;
 
 //    if(FileUtil::isFileExist("test.wav")){

@@ -24,16 +24,19 @@ constexpr const uint16_t kMaxLogBuffSize = 1024;
 
 void printLog(LogType level, const char* format, ...);
 
-#define logger(level, format, args...) \
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
+
+#define logger(level, format, ...) \
     do {                               \
-        printLog(level, "[%s][Line:%d][Function:%s]" format, __FILE__, __LINE__, __FUNCTION__, ##args);  \
+        printLog(level, "[%s][Line:%d][Function:%s]" format, __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__);  \
     } while(0)
 
-#define  LogD(format, args...)  logger(LogType::Debug, format, ##args)
-#define  LogI(format, args...)  logger(LogType::Info, format, ##args)
-#define  LogW(format, args...)  logger(LogType::Warning, format, ##args)
-#define  LogE(format, args...)  logger(LogType::Error, format, ##args)
-
+#define  LogD(format, ...)  logger(LogType::Debug, format, ##__VA_ARGS__)
+#define  LogI(format, ...)  logger(LogType::Info, format, ##__VA_ARGS__)
+#define  LogW(format, ...)  logger(LogType::Warning, format, ##__VA_ARGS__)
+#define  LogE(format, ...)  logger(LogType::Error, format, ##__VA_ARGS__)
+#pragma clang diagnostic pop
 }
 
 

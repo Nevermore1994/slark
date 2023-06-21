@@ -15,8 +15,8 @@
 namespace Slark {
 
 Player::Impl::Impl(std::shared_ptr<PlayerParams> params)
-    : params_(std::move(params))
-    , playerId_(Random::uuid()) {
+    : playerId_(Random::uuid())
+    , params_(std::move(params)) {
     init();
 }
 
@@ -81,7 +81,7 @@ void Player::Impl::init() noexcept {
     for (const auto& item : params_->items) {
         paths.push_back(item.path);
     }
-    dataManager_ = std::make_unique<IOManager>(paths, 0, [this](std::unique_ptr<Data> data, uint64_t offset, IOState state) {
+    dataManager_ = std::make_unique<IOManager>(paths, 0, [this](std::unique_ptr<Data> data, int64_t offset, IOState state) {
         if (seekOffset_ != kInvalid && offset != seekOffset_) {
             return;
         }

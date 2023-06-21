@@ -48,12 +48,14 @@ public:
     }
 
     CTime(long double t, uint64_t s)
-        : value(s * t)
+        : value(static_cast<int64_t>(s * t))
         , scale(s) {
     }
 
     [[nodiscard]] inline long double second() const noexcept {
         bool isValid = this->isValid();
+        //it appears that Clang just hasn't updated their warnings yet.
+        //https://stackoverflow.com/questions/67912343/how-to-resolve-must-specify-at-least-one-argument-for-parameter-of-variad
         SAssert(isValid, "time is invalid");
         if (isValid) {
             return static_cast<double>(value) / static_cast<double>(scale);

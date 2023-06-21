@@ -92,8 +92,8 @@ struct Data {
         if (capacity < expectLength) {
             auto p = data;
             auto len = static_cast<int64_t>(static_cast<float>(expectLength) * 1.5f);
-            data = new (std::nothrow) uint8_t[len];
-            capacity = len;
+            data = new (std::nothrow) uint8_t[static_cast<size_t>(len)];
+            capacity = static_cast<uint64_t>(len);
             if (p) {
                 std::copy(p, p + length, data);
                 delete[] p;

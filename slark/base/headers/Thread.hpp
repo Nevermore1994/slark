@@ -24,16 +24,16 @@ public:
     template<class Func, typename ... Args>
     Thread(std::string&& name, Func&& f, Args&& ... args)
         : name_(std::move(name))
-        , worker_(&Thread::process, this)
-        , lastRunTimeStamp_(0) {
+        ,lastRunTimeStamp_(0)
+        , worker_(&Thread::process, this) {
         func_ = std::bind(std::forward<Func>(f), std::forward<Args>(args)...);
     }
 
     template<class Func, typename ... Args>
     Thread(const std::string& name, Func&& f, Args&& ... args)
         : name_(name)
-        , worker_(&Thread::process, this)
-        , lastRunTimeStamp_(0) {
+        , lastRunTimeStamp_(0)
+        , worker_(&Thread::process, this) {
         func_ = std::bind(std::forward<Func>(f), std::forward<Args>(args)...);
     }
 
