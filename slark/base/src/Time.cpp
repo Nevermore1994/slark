@@ -19,9 +19,8 @@ Time::Timestamp Time::nowTimeStamp() noexcept {
 std::chrono::seconds Time::offsetFromUTC() noexcept {
     static std::chrono::seconds offset = [] {
         time_t t = time(nullptr);
-        struct tm lt = {0};
-        localtime_r(&t, &lt);
-        return std::chrono::seconds(lt.tm_gmtoff);
+        auto lt = localtime(&t);
+        return std::chrono::seconds(lt->tm_gmtoff);
     }();
     return offset;
 }

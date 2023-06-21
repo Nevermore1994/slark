@@ -54,7 +54,7 @@ public:
 
     [[nodiscard]] inline long double second() const noexcept {
         bool isValid = this->isValid();
-        //it appears that Clang just hasn't updated their warnings yet.
+        //it appears that c++17 just hasn't updated their warnings yet.
         //https://stackoverflow.com/questions/67912343/how-to-resolve-must-specify-at-least-one-argument-for-parameter-of-variad
         SAssert(isValid, "time is invalid");
         if (isValid) {
@@ -64,7 +64,7 @@ public:
     }
 
     inline bool operator==(const CTime& rhs) const noexcept {
-        return fabs(second() - rhs.second()) < kTimePrecision;
+        return fabsl(second() - rhs.second()) < kTimePrecision;
     }
 
     inline bool operator>(const CTime& rhs) const noexcept {

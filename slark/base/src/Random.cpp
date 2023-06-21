@@ -26,8 +26,9 @@ std::string randomString(uint32_t length) {
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> dis(0, 61);// 61 = 26 * 2 + 10 - 1. [0, 61]
-    for (int i = 0; i < length; i++)
-        result[i] = charset[dis(gen)];
+    for (uint32_t i = 0; i < length; i++) {
+        result[i] = charset[static_cast<uint32_t>(dis(gen))];
+    }
     return result;
 }
 

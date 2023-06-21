@@ -14,7 +14,7 @@ namespace Slark {
 struct AudioInfo {
     uint16_t channels = 0;
     uint16_t bitsPerSample = 0;
-    uint64_t sampleRate = 0;
+    double sampleRate = 0;
     uint64_t headerLength = 0;
     CTime offset;
     CTime duration;
