@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2022/5/12.
-// Slark Data
+// slark Data
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 #pragma once
@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <string_view>
 
-namespace Slark {
+namespace slark {
 
 struct Data {
     uint64_t capacity = 0;
@@ -44,23 +44,11 @@ struct Data {
         release();
     }
 
-    [[nodiscard]] inline Data copy() const noexcept {
-        return copy(0, length);
+    [[nodiscard]] inline std::unique_ptr<Data> copy() const noexcept {
+        return this->copy(0, length);
     }
 
-    [[nodiscard]] inline Data copy(uint64_t pos, uint64_t len) const noexcept {
-        Data res;
-        if (empty() || len == 0 || (len + pos - 1) > length) {
-            return res;
-        }
-        res.capacity = len;
-        res.length = len;
-        res.data = new (std::nothrow) uint8_t[len];
-        std::copy(data + pos, data + pos + len, res.data);
-        return res;
-    }
-
-    [[nodiscard]] inline std::unique_ptr<Data> copyPtr(uint64_t pos, uint64_t len) const noexcept {
+    [[nodiscard]] inline std::unique_ptr<Data> copy(uint64_t pos, uint64_t len) const noexcept {
         auto res = std::make_unique<Data>();
         if (empty() || len == 0 || (len + pos) > length) {
             return res;
@@ -81,7 +69,7 @@ struct Data {
         capacity = 0;
     }
 
-    inline void reset() const noexcept {
+    inline void resetData() const noexcept {
         if (data) {
             std::fill_n(data, length, 0);
         }

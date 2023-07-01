@@ -5,11 +5,11 @@
 //  Created by Nevermore on 2022/8/19.
 //
 
-#include "AudioComponent.hpp"
+#include "AudioComponent.h"
 
-namespace Slark::Audio {
+namespace slark::Audio {
 
-using namespace Slark;
+using namespace slark;
 
 AudioRenderComponent::AudioRenderComponent(AudioInfo info) {
 
@@ -24,7 +24,7 @@ bool AudioRenderComponent::push(AVFramePtr frame) {
     frame->prepareRenderStamp = Time::nowTimeStamp();
     //plugin process data
     if (process) {
-        res = process(frame->data);
+        res = process(*frame->data);
     }
 
     frame->pushRenderQueueStamp = Time::nowTimeStamp();

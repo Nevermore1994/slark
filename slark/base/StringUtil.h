@@ -8,14 +8,14 @@
 #include <string>
 #include <string_view>
 
-namespace Slark {
+namespace slark {
 
 std::vector<std::string> spiltString(const std::string& str, char delimiter);
 
 std::vector<std::string> spiltString(const std::string& str, const std::string& delimiter);
 
-std::vector<std::string_view> spiltStringView(const std::string& str, char delimiter);
+std::vector<std::string_view> spiltStringView(const std::string_view& strView, char delimiter);
 
-std::vector<std::string_view> spiltStringView(const std::string& str, const std::string& delimiter);
+std::vector<std::string_view> spiltStringView(const std::string_view& strView, const std::string& delimiter);
 
-} // Slark
+} // slark

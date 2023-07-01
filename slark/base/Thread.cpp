@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2021/10/22.
-// Slark Thread
+// slark Thread
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 
@@ -8,11 +8,11 @@
     #include <pthread.h>
 #endif
 
-#include "Thread.hpp"
+#include "Thread.h"
 #include "Log.hpp"
 #include <cassert>
 
-namespace Slark {
+namespace slark {
 using namespace std::chrono;
 
 Thread::~Thread() noexcept {
@@ -104,4 +104,4 @@ TimerId Thread::runAfter(milliseconds delayTime, TimerCallback func) noexcept {
     return timerPool_.runAfter(delayTime, std::move(func));
 }
 
-}//end namespace Slark
+}//end namespace slark

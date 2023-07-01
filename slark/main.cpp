@@ -6,14 +6,14 @@
 
 #include <memory>
 #include <iostream>
-#include "Player.hpp"
+#include "Player.h"
 #include "BaseClass.hpp"
-#include "WavDemuxer.hpp"
-#include "FileUtility.hpp"
+#include "WavDemuxer.h"
+#include "FileUtility.h"
 #include "Log.hpp"
 #include "Time.hpp"
 
-using namespace Slark;
+using namespace slark;
 
 struct Observer:public IPlayerObserver, public std::enable_shared_from_this<Observer>{
     inline void updateTime(long double time) override{

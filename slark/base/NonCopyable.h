@@ -4,7 +4,7 @@
 //
 #pragma once
 
-namespace Slark {
+namespace slark {
 
 class NonCopyable {
 public:

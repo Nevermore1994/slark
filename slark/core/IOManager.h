@@ -1,15 +1,15 @@
 //
 // Created by Nevermore on 2022/5/27.
-// Slark IOManager
+// slark IOManager
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 #pragma once
 
-#include "TransportEvent.hpp"
+#include "TransportEvent.h"
 #include "FileHandler.hpp"
 //network handler
 
-namespace Slark {
+namespace slark {
 
 #define CallFunc(pointer, func)                                             \
     inline void func(){                                                         \
@@ -19,7 +19,7 @@ namespace Slark {
         }                                                                       \
     }                                                                           \
 
-class IOManager: public Slark::NonCopyable, public ITransportObserver {
+class IOManager: public slark::NonCopyable, public ITransportObserver {
 public:
     IOManager(std::vector<std::string> paths, int16_t index = 0, IOHandlerCallBack func = nullptr);
     ~IOManager() override;

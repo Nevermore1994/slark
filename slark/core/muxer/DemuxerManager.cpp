@@ -1,14 +1,14 @@
 //
 //  DemuxerManager.cpp
-//  Slark
+//  slark
 //
 //  Created by Nevermore on 2022/5/2.
 //
 
-#include "DemuxerManager.hpp"
-#include "WavDemuxer.hpp"
+#include "DemuxerManager.h"
+#include "WavDemuxer.h"
 
-namespace Slark {
+namespace slark {
 
 DemuxerManager::DemuxerManager() {
     init();
@@ -65,4 +65,4 @@ DemuxerType DemuxerManager::probeDemuxType(const std::string_view& str) const no
     return DemuxerType::Unknown;
 }
 
-}//end namespace Slark
+}//end namespace slark

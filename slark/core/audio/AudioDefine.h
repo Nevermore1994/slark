@@ -10,7 +10,7 @@
 namespace slark::Audio {
 
 enum class AudioRenderStatus {
-    Unknow,
+    Unknown,
     Play,
     Pause,
     Stop,

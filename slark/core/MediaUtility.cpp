@@ -1,12 +1,12 @@
 //
 // Created by Nevermore on 2022/5/27.
-// Slark MediaUtility
+// slark MediaUtility
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 
 #include "MediaUtility.hpp"
 
-namespace Slark {
+namespace slark {
 
 bool isLocalFile(const std::string& path) {
     auto pos = path.find(kHttpSymbol);
@@ -39,4 +39,4 @@ uint16_t uint16LE(const uint8_t* ptr) {
     return ptr[1] << 8 | ptr[0];
 }
 
-}//end namespace Slark
+}//end namespace slark

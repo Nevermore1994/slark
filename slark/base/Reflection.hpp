@@ -9,9 +9,9 @@
 #include <functional>
 #include <any>
 #include <mutex>
-#include "NonCopyable.hpp"
+#include "NonCopyable.h"
 
-namespace Slark {
+namespace slark {
 
 using ReflectionFunction = std::function<void* (void)>;
 

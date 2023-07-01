@@ -1,6 +1,6 @@
 //
 //  AVFrame.hpp
-//  Slark
+//  slark
 //
 //  Created by Nevermore on 2022/4/29.
 //
@@ -13,7 +13,7 @@
 #include <list>
 #include "Data.hpp"
 
-namespace Slark {
+namespace slark {
 
 enum class AVFrameType {
     Unknown = 0,
@@ -43,7 +43,7 @@ struct AVFrame {
     uint64_t pts = 0;
     uint64_t dts = 0;
     uint64_t keyIndex = 0;
-    Data data;
+    std::unique_ptr<Data> data;
 
     inline void reset() noexcept {
         isKeyFrame = false;
@@ -66,16 +66,12 @@ struct AVFrame {
         renderedStamp = 0;
         pts = 0;
         dts = 0;
-        data.release();
+        data->release();
     }
 
-    inline void resetData() const noexcept {
+    inline std::unique_ptr<Data> detachData() noexcept {
+        auto d = std::move(data);
         data.reset();
-    }
-
-    inline Data detachData() noexcept {
-        auto d = data;
-        data = Data();
         return d;
     }
 
@@ -101,7 +97,7 @@ struct AVFrame {
         frame->renderedStamp = this->renderedStamp;
         frame->pts = this->pts;
         frame->dts = this->dts;
-        frame->data = data.copy();
+        frame->data = data->copy();
         return frame;
     }
 

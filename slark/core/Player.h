@@ -1,6 +1,6 @@
 //
 //  Player.hpp
-//  Slark
+//  slark
 //
 //  Created by Nevermore on 2022/4/22.
 //
@@ -15,7 +15,7 @@
 #include <functional>
 #include <memory>
 
-namespace Slark {
+namespace slark {
 
 enum class PlayerState {
     Unknown = 0,
@@ -93,4 +93,4 @@ private:
     std::unique_ptr<Impl> pimpl_;
 };
 
-}//end namespace Slark
+}//end namespace slark

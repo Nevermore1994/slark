@@ -1,13 +1,13 @@
 //
 // Created by Nevermore on 2022/5/12.
-// Slark Type
+// slark Type
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 
 #pragma once
 #include <cstdint>
 
-namespace Slark {
+namespace slark {
 
 constexpr int64_t kInvalid = -1;
 

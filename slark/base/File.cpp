@@ -1,15 +1,14 @@
 //
 // Created by Nevermore on 2021/10/22.
-// Slark File
+// slark File
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
-
-#include "File.hpp"
-#include "Log.hpp"
 #include <utility>
 #include <cstring>
+#include "File.h"
+#include "Log.hpp"
 
-namespace Slark::FileUtil {
+namespace slark::FileUtil {
 
 IFile::IFile(std::string path, FileMode mode)
     : path_(std::move(path))
@@ -31,7 +30,7 @@ bool IFile::open() noexcept {
     if (file_) {
         return true;
     }
-    file_ = fopen(path_.c_str(), ModeStr[static_cast<int>(mode_)]);
+    file_ = fopen(path_.c_str(), kModeStr[static_cast<int>(mode_)].data());
     if (!file_) {
         LogE("open file:%s", std::strerror(errno));
         isFailed_ = true;
@@ -216,4 +215,4 @@ void File::close() noexcept {
     readOver_ = false;
 }
 
-}//end namespace Slark::FileUtil
+}//end namespace slark::FileUtil

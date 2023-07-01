@@ -1,13 +1,13 @@
 //
 // Created by Nevermore on 2021/10/22.
-// Slark Timer
+// slark Timer
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 
-#include "Timer.hpp"
-#include "Random.hpp"
+#include "Timer.h"
+#include "Random.h"
 
-namespace Slark {
+namespace slark {
 
 TimerInfo::TimerInfo(uint64_t time)
     : expireTime(time)
@@ -50,4 +50,4 @@ Timer& Timer::operator=(Timer&& timer) noexcept {
     return *this;
 }
 
-}//end namespace Slark
+}//end namespace slark

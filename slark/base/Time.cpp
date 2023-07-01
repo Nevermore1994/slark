@@ -1,13 +1,13 @@
 //
 // Created by Nevermore on 2021/12/22.
-// Slark Time
+// slark Time
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 #include "Time.hpp"
 #include "date.h"
 #include <ctime>
 
-namespace Slark {
+namespace slark {
 
 Time::Timestamp Time::nowTimeStamp() noexcept {
     using namespace std::chrono;
@@ -31,4 +31,4 @@ std::string Time::localTime() noexcept {
     tp += Time::offsetFromUTC();
     return date::format("%F %T", tp);
 }
-}//end namespace Slark
+}//end namespace slark

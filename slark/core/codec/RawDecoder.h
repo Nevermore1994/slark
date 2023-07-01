@@ -1,15 +1,15 @@
 //
 //  RawDecoder.hpp
-//  Slark
+//  slark
 //
 //  Created by Nevermore on 2022/4/26.
 //
 
 #pragma once
 
-#include "IDecoder.hpp"
+#include "IDecoder.h"
 
-namespace Slark {
+namespace slark {
 
 class RawDecoder : public IDecoder {
 

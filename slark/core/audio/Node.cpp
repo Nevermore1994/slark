@@ -6,18 +6,21 @@
 //
 
 #include <functional>
+#include <utility>
 #include <vector>
-#include "AudioNode.hpp"
+#include "Node.h"
 
-namespace Slark::Audio {
+namespace slark {
 
-using namespace Slark;
+void InputNode::receive(std::shared_ptr<AVFrame> frame) noexcept {
+    frame_ = std::move(frame);
+}
 
-void IAudioInputNode::receive(AVFrameRef frame) noexcept {
+void InputNode::process() noexcept {
 
 }
 
-bool IAudioOutputNode::addTarget(std::weak_ptr<IAudioInputNode> node) noexcept {
+bool IOutputNode::addTarget(std::weak_ptr<InputNode> node) noexcept {
     if (node.expired()) {
         return false;
     }
@@ -26,7 +29,7 @@ bool IAudioOutputNode::addTarget(std::weak_ptr<IAudioInputNode> node) noexcept {
     return targets_.insert({hash, std::move(node)}).second;
 }
 
-bool IAudioOutputNode::removeTarget(std::weak_ptr<IAudioInputNode> node) noexcept {
+bool IOutputNode::removeTarget(std::weak_ptr<InputNode> node) noexcept {
     if (node.expired()) {
         return false;
     }
@@ -35,11 +38,11 @@ bool IAudioOutputNode::removeTarget(std::weak_ptr<IAudioInputNode> node) noexcep
     return targets_.erase(hash) > 0;
 }
 
-void IAudioOutputNode::removeAllTarget() noexcept {
+void IOutputNode::removeAllTarget() noexcept {
     targets_.clear();
 }
 
-void IAudioOutputNode::notifyTargets(AVFrameRef frame) noexcept {
+void IOutputNode::notifyTargets(std::shared_ptr<AVFrame> frame) noexcept {
     //C++20 replace erase_if
     for (auto it = targets_.begin(); it != targets_.end();) {
         auto& [hash, ptr] = *it;
@@ -53,9 +56,8 @@ void IAudioOutputNode::notifyTargets(AVFrameRef frame) noexcept {
     }
 }
 
-void IAudioOutputNode::process() noexcept {
-    auto frame = send();
-    notifyTargets(frame);
+void IOutputNode::process() noexcept {
+    notifyTargets(std::move(frame_));
 }
 
 }//end namespace slark

@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2021/12/22.
-// Slark Time
+// slark Time
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 #pragma once
@@ -10,9 +10,9 @@
 #include <cmath>
 #include <algorithm>
 #include <string>
-#include "Assert.hpp"
+#include "Assert.h"
 
-namespace Slark {
+namespace slark {
 
 namespace Time {
 
@@ -27,7 +27,7 @@ std::string localTime() noexcept;
 //system time
 Time::Timestamp nowTimeStamp() noexcept;
 
-} //end namespace Slark::Time
+} //end namespace slark::Time
 
 
 struct CTime {

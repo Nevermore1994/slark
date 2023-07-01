@@ -1,9 +1,9 @@
 //
 // Created by Nevermore on 2021/10/22.
-// Slark FileUtility
+// slark FileUtility
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
-#include "FileUtility.hpp"
+#include "FileUtility.h"
 #include <cstdio>
 #include <unistd.h>
 #include <dirent.h>
@@ -11,7 +11,7 @@
 #include <cstring>
 #include <filesystem>
 
-namespace Slark::FileUtil  {
+namespace slark::FileUtil  {
 
 [[maybe_unused]] bool isDirExist(const std::string& path) noexcept {
     if (path.empty()) {
@@ -76,4 +76,4 @@ namespace Slark::FileUtil  {
     return !error;
 }
 
-}//end namespace Slark
+}//end namespace slark

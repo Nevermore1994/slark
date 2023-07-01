@@ -1,18 +1,18 @@
 //
 //  PlayerImpl.cpp
-//  Slark
+//  slark
 //
 //  Created by Nevermore on 2022/5/4.
 //
 
-#include "Random.hpp"
-#include "FileUtility.hpp"
+#include "Random.h"
+#include "FileUtility.h"
 #include "Log.hpp"
-#include "PlayerImpl.hpp"
+#include "PlayerImpl.h"
 #include <utility>
 #include <functional>
 
-namespace Slark {
+namespace slark {
 
 Player::Impl::Impl(std::shared_ptr<PlayerParams> params)
     : playerId_(Random::uuid())
@@ -211,4 +211,4 @@ void Player::Impl::notifyEvent(PlayerState state) const noexcept {
     }
 }
 
-}//end namespace Slark
+}//end namespace slark

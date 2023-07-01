@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2023/6/14.
-// Slark Random
+// slark Random
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 
@@ -12,7 +12,7 @@
 #include <type_traits>
 #include <algorithm>
 
-namespace Slark::Random {
+namespace slark::Random {
 
 //random
 template<typename T>
@@ -50,5 +50,5 @@ uint64_t id();
 
 std::string uuid();
 
-}// end namespace Slark::Random
+}// end namespace slark::Random
 

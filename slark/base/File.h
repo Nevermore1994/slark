@@ -1,21 +1,22 @@
 //
 // Created by Nevermore on 2021/10/22.
-// Slark File
+// slark File
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 #pragma once
 
 #include <cstdio>
 #include <memory>
-#include "NonCopyable.hpp"
-#include "FileUtility.hpp"
+#include <string_view>
+#include "NonCopyable.h"
+#include "FileUtility.h"
 #include "Data.hpp"
 
-namespace Slark::FileUtil {
+namespace slark::FileUtil {
 
 using FileHandle = FILE*;
 
-constexpr const char* ModeStr[] = {"rb", "wb", "ab", "wb+"};
+static std::string_view kModeStr[] = {"rb", "wb", "ab", "wb+"};
 
 enum class FileMode {
     ReadMode = 0,
@@ -64,6 +65,8 @@ public:
     ~WriteFile() override;
 
     bool write(const Data& data) noexcept;
+
+    bool write(const std::string str) noexcept;
 
     bool write(const uint8_t* data, uint64_t size) noexcept;
 
@@ -122,4 +125,4 @@ public:
     void close() noexcept final;
 };
 
-}//end namespace Slark::FileUtil
+}//end namespace slark::FileUtil

@@ -5,9 +5,9 @@
 //
 #include <cstdarg>
 #include <stdexcept>
-#include "Assert.hpp"
+#include "Assert.h"
 
-namespace Slark {
+namespace slark {
 #if DEBUG
 
 void AssertMessage(bool result, const char* format, ...) {

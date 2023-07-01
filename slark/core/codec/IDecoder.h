@@ -1,17 +1,17 @@
 //
 //  Decoder.hpp
-//  Slark
+//  slark
 //
 //  Created by Nevermore on 2022/4/23.
 //
 #pragma once
-#include "Thread.hpp"
+#include "Thread.h"
 #include "RingBuffer.hpp"
-#include "NonCopyable.hpp"
+#include "NonCopyable.h"
 #include "AVFrameDeque.hpp"
 #include <memory>
 
-namespace Slark {
+namespace slark {
 
 enum class DecoderType {
     Unknown = 0,

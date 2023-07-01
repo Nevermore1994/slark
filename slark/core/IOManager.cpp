@@ -1,14 +1,14 @@
 //
 // Created by Nevermore on 2022/5/27.
-// Slark IOManager
+// slark IOManager
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
-#include "IOManager.hpp"
+#include "IOManager.h"
 #include "MediaUtility.hpp"
 #include "Log.hpp"
 
 
-namespace Slark {
+namespace slark {
 
 IOManager::IOManager(std::vector<std::string> paths, int16_t index, IOHandlerCallBack func)
     : index_(index)
@@ -109,4 +109,4 @@ void IOManager::updateEvent(TransportEvent event) {
     }
 }
 
-}//end namespace Slark
+}//end namespace slark

@@ -1,16 +1,16 @@
 //
 // Created by Nevermore on 2022/5/12.
-// Slark IHandler
+// slark IHandler
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 
 #include "Data.hpp"
-#include "NonCopyable.hpp"
+#include "NonCopyable.h"
 #include <cstdint>
 #include <functional>
 #include <string_view>
 
-namespace Slark {
+namespace slark {
 
 enum class IOState {
     Normal,
@@ -20,7 +20,7 @@ enum class IOState {
 
 using IOHandlerCallBack = std::function<void(std::unique_ptr<Data>, int64_t, IOState)>;
 
-struct IOHandler: public Slark::NonCopyable {
+struct IOHandler: public slark::NonCopyable {
     ~IOHandler() override = default;
 
     virtual bool open(std::string path) = 0;

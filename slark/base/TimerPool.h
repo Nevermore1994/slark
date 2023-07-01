@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2021/10/25.
-// Slark TimerPool
+// slark TimerPool
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 #pragma once
@@ -11,9 +11,9 @@
 #include <unordered_map>
 #include <mutex>
 #include "Time.hpp"
-#include "Timer.hpp"
+#include "Timer.h"
 
-namespace Slark {
+namespace slark {
 
 class TimerPool {
 public:
