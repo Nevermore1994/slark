@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2022/5/17.
-// Slark BaseClass
+// slark BaseClass
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 
@@ -10,7 +10,7 @@
 #include <memory>
 #include "Reflection.hpp"
 
-namespace Slark {
+namespace slark {
 
 #define GetClassName(name) #name
 
@@ -30,12 +30,12 @@ HAS_MEMBER(name);
 template<typename T>
 struct BaseClass {
     inline static std::string registerClass() {
-        Slark::RegisterClass(T);
+        slark::RegisterClass(T);
         return GetClassName(T);
     }
 
     inline static T* create(std::string name) noexcept {
-        return reinterpret_cast<T*>(Slark::GenerateClass(name));
+        return reinterpret_cast<T*>(slark::GenerateClass(name));
     }
 };
 

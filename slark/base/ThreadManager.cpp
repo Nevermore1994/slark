@@ -1,15 +1,15 @@
 //
 // Created by Nevermore on 2021/10/25.
-// Slark ThreadManager
+// slark ThreadManager
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
-#include "ThreadManager.hpp"
+#include "ThreadManager.h"
 #include "Log.hpp"
-#include "TimerManager.hpp"
+#include "TimerManager.h"
 
-namespace Slark {
-using namespace Slark::Random;
-using namespace Slark::Time;
+namespace slark {
+using namespace slark::Random;
+using namespace slark::Time;
 using namespace std::chrono_literals;
 
 ThreadManager::ThreadManager() {
@@ -85,4 +85,4 @@ void ThreadManager::reportRunInfo() noexcept {
     }
 }
 
-}//end namespace Slark
+}//end namespace slark

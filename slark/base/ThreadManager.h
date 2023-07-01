@@ -1,15 +1,15 @@
 //
 // Created by Nevermore on 2021/10/25.
-// Slark ThreadManager
+// slark ThreadManager
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 #pragma once
 
 #include <thread>
 #include <unordered_map>
-#include "Thread.hpp"
+#include "Thread.h"
 
-namespace Slark {
+namespace slark {
 
 constexpr const Time::Timestamp kMaxThreadBlockTimeInterval = std::chrono::seconds(30).count(); //30s
 

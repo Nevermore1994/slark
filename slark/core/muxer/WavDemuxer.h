@@ -1,15 +1,15 @@
 //
 // Created by Nevermore on 2022/5/23.
-// Slark WAVDemuxer
+// slark WAVDemuxer
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 #pragma once
 
-#include "IDemuxer.hpp"
+#include "IDemuxer.h"
 #include "BaseClass.hpp"
 #include <string_view>
 
-namespace Slark {
+namespace slark {
 
 class WAVDemuxer: public IDemuxer {
 public:

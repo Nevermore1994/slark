@@ -1,15 +1,15 @@
 //
 // Created by Nevermore on 2022/5/23.
-// Slark WAVDemuxer
+// slark WAVDemuxer
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 #include <string_view>
 #include "Log.hpp"
-#include "WavDemuxer.hpp"
+#include "WavDemuxer.h"
 #include "MediaUtility.hpp"
 #include "Time.hpp"
 
-namespace Slark {
+namespace slark {
 
 enum class WaveFormat {
     PCM = 0x0001,
@@ -19,7 +19,7 @@ enum class WaveFormat {
     EXTENSIBLE = 0xFFFE
 };
 
-static const char* WAVEEXT_SUBFORMAT = "\x00\x00\x00\x00\x10\x00\x80\x00\x00\xAA\x00\x38\x9B\x71";
+static std::string_view WaveextSubformat = "\x00\x00\x00\x00\x10\x00\x80\x00\x00\xAA\x00\x38\x9B\x71";
 
 WAVDemuxer::WAVDemuxer() {
 
@@ -102,12 +102,13 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
             }
 
             channels = uint16LE(&formatSpec[2]);
+            if (channels < 1 || channels > 8) {
+                return res;
+            }
             if (format != WaveFormat::EXTENSIBLE) {
                 if (channels != 1 && channels != 2) {
                     LogW("More than 2 channels (%d) in non-WAVE_EXT, unknown channel mask", channels);
                 }
-            } else if (channels < 1 && channels > 8) {
-                return res;
             }
 
             sampleRate = uint32LE(&formatSpec[4]);
@@ -119,17 +120,15 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
             bitsPerSample = uint16LE(&formatSpec[14]);
 
             if (format == WaveFormat::PCM || format == WaveFormat::EXTENSIBLE) {
-                if (bitsPerSample != 8 && bitsPerSample != 16 && bitsPerSample != 24) {
+                if (bitsPerSample != 8 && bitsPerSample != 16 && bitsPerSample != 24 && bitsPerSample != 32) {
                     return res;
                 }
             } else if (format == WaveFormat::MSGSM && bitsPerSample != 0) {
                 return res;
-            } else if (bitsPerSample != 8) {
+            }  else if (bitsPerSample != 8) {
                 //WaveFormat::MULAW WaveFormat::ALAW
                 return res;
-            }
-
-            if (format == WaveFormat::EXTENSIBLE) {
+            } else if (format == WaveFormat::EXTENSIBLE) {
                 auto validBitsPerSample = uint16LE(&formatSpec[18]);
                 if (validBitsPerSample != bitsPerSample) {
                     if (validBitsPerSample != 0) {
@@ -164,10 +163,12 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
                     return res;
                 }
 
-                if (formatSpec.compare(26, 14, WAVEEXT_SUBFORMAT)) {
+                if (formatSpec.compare(26, 14, WaveextSubformat.data())) {
                     LogE("unsupported GUID");
                     return res;
                 }
+            } else {
+                return res;
             }
             isValid = true;
         } else if (!chunkHeader.compare(0, 4, "data")) {
@@ -180,7 +181,7 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
             int64_t durationUs = 0;
             if (format == WaveFormat::MSGSM) {
                 // 65 bytes decode to 320 8kHz samples
-                durationUs = 1000000 * (dataSize / 65 * 320) / 8000;
+                durationUs = 1000000LL * (dataSize / 65 * 320) / 8000;
             } else {
                 size_t bytesPerSample = bitsPerSample >> 3;
                 auto bitSample = channels * bytesPerSample;
@@ -203,15 +204,16 @@ void WAVDemuxer::close() noexcept {
 
 void WAVDemuxer::reset() noexcept {
     isInited_ = false;
-    isCompleted_ = false;
+    state_ = DemuxerState::Unknown;
     parseLength_ = 0;
     overflowData_->release();
 }
 
 std::tuple<DemuxerState, AVFrameList> WAVDemuxer::parseData(std::unique_ptr<Data> data) {
-    if (data->empty()) {
-        return {DemuxerState::Failed, AVFrameList()};
+    if (data->empty() || state_ != DemuxerState::Success) {
+        return { DemuxerState::Failed, AVFrameList()};
     }
+
     if (overflowData_ == nullptr) {
         overflowData_ = std::make_unique<Data>();
         parseLength_ += headerInfo_.headerLength;
@@ -234,9 +236,9 @@ std::tuple<DemuxerState, AVFrameList> WAVDemuxer::parseData(std::unique_ptr<Data
 
         start += frameLength;
     }
-    DemuxerState state = DemuxerState::Failed;
+    DemuxerState state = DemuxerState::Unknown;
     if (start > 0 && !isCompleted) {
-        auto t = overflowData_->copyPtr(start, overflowData_->length - start);
+        auto t = overflowData_->copy(start, overflowData_->length - start);
         // LogI("demux data %lld, overflow length %lld", start, t->length);
         overflowData_ = std::move(t);
         state = DemuxerState::Success;
@@ -244,16 +246,17 @@ std::tuple<DemuxerState, AVFrameList> WAVDemuxer::parseData(std::unique_ptr<Data
         auto frame = std::make_unique<AVFrame>();
         frame->data = overflowData_->copy(start, overflowData_->length - start);
         auto scale = static_cast<double>(audioInfo_->sampleRate * audioInfo_->bitsPerSample * audioInfo_->channels);
-        frame->duration = static_cast<uint32_t>(static_cast<double>(frame->data.length) / scale * 1000);
+        frame->duration = static_cast<uint32_t>(static_cast<double>(frame->data->length) / scale * 1000);
         frame->index = ++parseFrameCount_;
         frameList.push_back(std::move(frame));
 
         LogI("demux completed.");
-        isCompleted_ = true;
+        state_ = DemuxerState::FileEnd;
         state = DemuxerState::FileEnd;
     }
+    state_ = state;
     LogI("demuxed data %lld, overflow data %lld, frame count %ld", parseLength_, overflowData_->length, parseFrameCount_);
     return {state, std::move(frameList)};
 }
 
-}//end namespace Slark
+}//end namespace slark

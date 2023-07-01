@@ -1,18 +1,18 @@
 //
 // Created by Nevermore on 2021/11/20.
-// Slark Buffer
+// slark Buffer
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 #pragma once
 
-#include "NonCopyable.hpp"
+#include "NonCopyable.h"
 #include <cstdint>
 #include <mutex>
 #include <array>
 #include <atomic>
 #include <algorithm>
 
-namespace Slark {
+namespace slark {
 
 constexpr uint64_t RingBufferLength = 1024 * 1024 * 500;
 

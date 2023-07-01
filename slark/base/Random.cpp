@@ -1,10 +1,10 @@
 //
 // Created by Nevermore on 2021/10/22.
-// Slark Utility
+// slark Utility
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 
-#include "Random.hpp"
+#include "Random.h"
 #include <chrono>
 #include <thread>
 #include <string>
@@ -14,7 +14,7 @@
     #include <pthread.h>
 #endif
 
-namespace Slark::Random {
+namespace slark::Random {
 
 using namespace std::literals;
 
@@ -45,4 +45,4 @@ std::string uuid() {
 }
 
 
-}//end namespace Slark::Random
+}//end namespace slark::Random

@@ -1,13 +1,13 @@
 //
 //  DecoderManager.cpp
-//  Slark
+//  slark
 //
 //  Created by Nevermore on 2022/4/24.
 //
 
-#include "DecoderManager.hpp"
+#include "DecoderManager.h"
 
-namespace Slark {
+namespace slark {
 
 void DecoderManager::init() noexcept {
 
@@ -23,4 +23,4 @@ bool DecoderManager::contains(DecoderType type) noexcept {
 }
 
 
-}//end namespace Slark
+}//end namespace slark

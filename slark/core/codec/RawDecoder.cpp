@@ -1,14 +1,14 @@
 //
 //  rawDecoder.cpp
-//  Slark
+//  slark
 //
 //  Created by Nevermore on 2022/8/7.
 //
 
-#include "RawDecoder.hpp"
+#include "RawDecoder.h"
 #include "Time.hpp"
 
-namespace Slark {
+namespace slark {
 
 void RawDecoder::open() noexcept {
 
@@ -29,4 +29,4 @@ AVFrameList RawDecoder::decode(AVFrameList&& frameList) {
     return std::move(frameList);
 }
 
-}//end namespace Slark
+}//end namespace slark

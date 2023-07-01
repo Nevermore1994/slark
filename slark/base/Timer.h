@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2021/10/22.
-// Slark Timer
+// slark Timer
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 
@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <functional>
 
-namespace Slark {
+namespace slark {
 
 using TimerCallback = std::function<void()>;
 

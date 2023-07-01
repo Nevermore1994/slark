@@ -8,15 +8,15 @@
 #pragma once
 #include <memory>
 #include <functional>
-#include "AudioInfo.hpp"
-#include "NonCopyable.hpp"
+#include "AudioInfo.h"
+#include "NonCopyable.h"
 #include "AVFrame.hpp"
 #include "Time.hpp"
 #include "AVFrameDeque.hpp"
 
-namespace Slark::Audio {
+namespace slark::Audio {
 
-class AudioRenderComponent: public Slark::NonCopyable {
+class AudioRenderComponent: public slark::NonCopyable {
 public:
     AudioRenderComponent(AudioInfo info);
     ~AudioRenderComponent() override;
@@ -24,19 +24,19 @@ public:
     bool push(AVFramePtr frame);
     AVFramePtr pop();
 public:
-    std::function<bool(Slark::Data)> process;
+    std::function<bool(Data)> process;
     std::function<void(AVFramePtr)> completion;
 private:
-    Slark::AVFrameSafeDeque frames_;
+    slark::AVFrameSafeDeque frames_;
 };
 
-class AudioRecorderComponent: public Slark::NonCopyable {
+class AudioRecorderComponent: public slark::NonCopyable {
 public:
     ~AudioRecorderComponent() override = default;
 
-    void output(Slark::Data data);
+    void output(slark::Data data);
 public:
-    std::function<bool(Slark::Data)> process;
+    std::function<bool(slark::Data)> process;
 private:
     class AudioRecorderComponentImpl;
     std::unique_ptr<AudioRecorderComponentImpl> impl_;

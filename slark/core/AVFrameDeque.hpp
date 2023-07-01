@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2022/7/11.
-// Slark AVFrameDeque
+// slark AVFrameDeque
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 
@@ -10,9 +10,9 @@
 #include <mutex>
 #include <memory>
 #include "AVFrame.hpp"
-#include "NonCopyable.hpp"
+#include "NonCopyable.h"
 
-namespace Slark {
+namespace slark {
 
 class AVFrameSafeDeque : public NonCopyable {
 public:

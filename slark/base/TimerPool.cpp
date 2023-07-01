@@ -1,14 +1,14 @@
 //
 // Created by Nevermore on 2021/10/25.
-// Slark TimerPool
+// slark TimerPool
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
-#include "TimerPool.hpp"
-#include "Random.hpp"
+#include "TimerPool.h"
+#include "Random.h"
 #include "Log.hpp"
 #include <chrono>
 
-namespace Slark {
+namespace slark {
 
 using namespace std::chrono;
 using namespace std::chrono_literals;
@@ -134,4 +134,4 @@ void TimerPool::remove(TimerId id) noexcept {
     timers_.erase(id);
 }
 
-}//end namespace Slark
+}//end namespace slark

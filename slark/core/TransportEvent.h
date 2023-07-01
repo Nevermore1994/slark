@@ -1,11 +1,11 @@
 //
 // Created by Nevermore on 2022/5/30.
-// Slark TransportEvent
+// slark TransportEvent
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 #pragma once
 
-namespace Slark {
+namespace slark {
 
 enum class TransportEvent {
     Unknown,

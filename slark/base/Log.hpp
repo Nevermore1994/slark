@@ -1,14 +1,14 @@
 //
 // Created by Nevermore on 2021/10/24.
-// Slark log
+// slark log
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 #pragma once
 
 #include <cstdio>
-#include <string>
+#include <string_view>
 
-namespace Slark {
+namespace slark {
 
 enum class LogType {
     Debug = 0,
@@ -18,11 +18,11 @@ enum class LogType {
     Assert
 };
 
-constexpr const char* kLogStrs[] = {" [debug] ", " [info] ", " [warning] ", " [error] ", " [assert] "};
+static std::string_view kLogStrs[] = {" [debug] ", " [info] ", " [warning] ", " [error] ", " [assert] "};
 
 constexpr const uint16_t kMaxLogBuffSize = 1024;
 
-void printLog(LogType level, const char* format, ...);
+void PrintLog(LogType level, const char* format, ...);
 
 #ifdef __clang__
 #pragma clang diagnostic push
@@ -30,7 +30,7 @@ void printLog(LogType level, const char* format, ...);
 #endif
 #define logger(level, format, ...) \
     do {                               \
-        printLog(level, "[%s][Line:%d][Function:%s]" format, __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__);  \
+        PrintLog(level, "[%s][Line:%d][Function:%s]" format, __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__);  \
     } while(0)
 
 #define  LogD(format, ...)  logger(LogType::Debug, format, ##__VA_ARGS__)

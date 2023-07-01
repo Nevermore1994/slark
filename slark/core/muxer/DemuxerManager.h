@@ -1,21 +1,21 @@
 
 //
 //  DemuxerManager.hpp
-//  Slark
+//  slark
 //
 //  Created by Nevermore on 2022/5/2.
 //
 
 #pragma once
 
-#include "IDemuxer.hpp"
-#include "NonCopyable.hpp"
+#include "IDemuxer.h"
+#include "NonCopyable.h"
 #include <memory>
 #include <unordered_set>
 
-namespace Slark {
+namespace slark {
 
-class DemuxerManager : public Slark::NonCopyable {
+class DemuxerManager : public slark::NonCopyable {
 
 public:
     inline static DemuxerManager& shareInstance() {

@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2021/10/22.
-// Slark FileUtil
+// slark FileUtil
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 
@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <string>
 
-namespace Slark::FileUtil {
+namespace slark::FileUtil {
 
 bool isDirExist(const std::string&) noexcept;
 

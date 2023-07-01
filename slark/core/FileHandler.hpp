@@ -1,18 +1,18 @@
 //
 // Created by Nevermore on 2022/5/11.
-// Slark FileHandler
+// slark FileHandler
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 #pragma once
 
-#include "IOHandler.hpp"
-#include "Type.hpp"
-#include "Thread.hpp"
-#include "File.hpp"
+#include "IOHandler.h"
+#include "Base.h"
+#include "Thread.h"
+#include "File.h"
 #include <list>
 #include <mutex>
 
-namespace Slark {
+namespace slark {
 
 constexpr uint32_t kDefaultSize = 1024 * 5;
 
@@ -46,8 +46,8 @@ private:
     int64_t seekPos_ = kInvalid;
     std::mutex mutex_;
     std::string path_;
-    Slark::Thread worker_;
-    std::unique_ptr<Slark::FileUtil::File> file_;
+    slark::Thread worker_;
+    std::unique_ptr<slark::FileUtil::File> file_;
     std::list<std::unique_ptr<Data>> writeData_;
     IOHandlerCallBack handler_;
 };

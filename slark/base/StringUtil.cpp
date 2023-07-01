@@ -3,11 +3,11 @@
 // slark StringUtil
 // Copyright (c) 2023 Nevermore All rights reserved.
 //
-#include "StringUtil.hpp"
+#include "StringUtil.h"
 #include <sstream>
 #include <functional>
 
-namespace Slark {
+namespace slark {
 
 std::vector<std::string> spiltString(const std::string& str, char delimiter) {
     std::istringstream iss(str);
@@ -31,9 +31,8 @@ std::vector<std::string> spiltString(const std::string& str, const std::string& 
     return res;
 }
 
-std::vector<std::string_view> spiltStringView(const std::string& str, char delimiter) {
+std::vector<std::string_view> spiltStringView(const std::string_view& stringView, char delimiter) {
     std::vector<std::string_view> res;
-    std::string_view stringView(str);
     auto lastPos = stringView.find_first_not_of(delimiter, 0);
     auto pos = stringView.find_first_of(delimiter, lastPos);
     while (pos != std::string::npos || lastPos != std::string::npos) {
@@ -44,8 +43,7 @@ std::vector<std::string_view> spiltStringView(const std::string& str, char delim
     return res;
 }
 
-std::vector<std::string_view> spiltStringView(const std::string& str, const std::string& delimiter) {
-    std::string_view stringView(str);
+std::vector<std::string_view> spiltStringView(const std::string_view& stringView, const std::string& delimiter) {
     size_t posStart = 0, posEnd, delimLength = delimiter.length();
     std::vector<std::string_view> res;
 
@@ -59,4 +57,4 @@ std::vector<std::string_view> spiltStringView(const std::string& str, const std:
     return res;
 }
 
-} // Slark
+} // slark

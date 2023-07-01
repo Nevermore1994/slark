@@ -1,16 +1,17 @@
 //
 // Created by Nevermore on 2022/5/27.
-// Slark MediaUtility
+// slark MediaUtility
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 
 #pragma once
 
 #include <string>
+#include <string_view>
 
-namespace Slark {
+namespace slark {
 
-constexpr const char* kHttpSymbol = "https://";
+constexpr std::string_view kHttpSymbol = "https://";
 
 bool isLocalFile(const std::string& path);
 

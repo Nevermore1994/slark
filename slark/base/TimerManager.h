@@ -1,18 +1,18 @@
 //
 // Created by Nevermore on 2021/10/22.
-// Slark TimerManager
+// slark TimerManager
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 #pragma once
 
 #include <functional>
 #include <memory>
-#include "Thread.hpp"
-#include "Timer.hpp"
-#include "TimerPool.hpp"
-#include "NonCopyable.hpp"
+#include "Thread.h"
+#include "Timer.h"
+#include "TimerPool.h"
+#include "NonCopyable.h"
 
-namespace Slark {
+namespace slark {
 
 class TimerManager : public NonCopyable {
 public:

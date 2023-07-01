@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2021/10/22.
-// Slark Thread
+// slark Thread
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 #pragma once
@@ -12,11 +12,11 @@
 #include <functional>
 #include <atomic>
 #include <string_view>
-#include "TimerPool.hpp"
-#include "Random.hpp"
-#include "NonCopyable.hpp"
+#include "TimerPool.h"
+#include "Random.h"
+#include "NonCopyable.h"
 
-namespace Slark {
+namespace slark {
 
 class Thread : public NonCopyable {
 
@@ -87,5 +87,5 @@ private:
     TimerPool timerPool_;
 };
 
-}//end namespace Slark
+}//end namespace slark
 

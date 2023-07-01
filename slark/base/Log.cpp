@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2021/10/24.
-// Slark log
+// slark log
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 #include "Log.hpp"
@@ -11,11 +11,11 @@
     #include "InternalLog.hpp"
 #endif
 
-namespace Slark {
+namespace slark {
 
-void printLog(LogType level, const char* format, ...) {
+void PrintLog(LogType level, const char* format, ...) {
     std::string logStr = Time::localTime();
-    logStr.append(kLogStrs[static_cast<int>(level)]);
+    logStr.append(kLogStrs[static_cast<size_t>(level)]);
     char buf[kMaxLogBuffSize] = {0};
     va_list args;
     va_start(args, format);
@@ -32,4 +32,4 @@ void printLog(LogType level, const char* format, ...) {
 #endif
 }
 
-}//end namespace Slark
+}//end namespace slark

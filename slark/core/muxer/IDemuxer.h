@@ -1,6 +1,6 @@
 //
 //  demuxer.hpp
-//  Slark
+//  slark
 //
 //  Created by Nevermore on 2022/4/26.
 //
@@ -9,14 +9,14 @@
 
 #include <tuple>
 #include <memory>
-#include "NonCopyable.hpp"
+#include "NonCopyable.h"
 #include "AVFrame.hpp"
-#include "VideoInfo.hpp"
-#include "AudioInfo.hpp"
+#include "VideoInfo.h"
+#include "AudioInfo.h"
 #include "BaseClass.hpp"
 
 
-namespace Slark {
+namespace slark {
 
 enum class DemuxerType {
     Unknown = 0,
@@ -28,9 +28,11 @@ enum class DemuxerType {
 };
 
 enum class DemuxerState {
-    Failed = 0,
-    Success = 1,
-    FileEnd = 2,
+    Unknown = -1,
+    Success = 0,
+    Failed = 1,
+    NotSupport = 2,
+    FileEnd = 3,
 };
 
 
@@ -45,7 +47,7 @@ struct DemuxerHeaderInfo {
     uint64_t dataSize = 0;
 };
 
-class IDemuxer : public Slark::NonCopyable {
+class IDemuxer : public slark::NonCopyable {
 
 public:
     ~IDemuxer() override = default;
@@ -64,7 +66,7 @@ public:
     }
 
     inline bool isCompleted() const noexcept {
-        return isCompleted_;
+        return state_ == DemuxerState::FileEnd;
     }
 
     inline bool hasVideo() const noexcept {
@@ -89,7 +91,7 @@ public:
 
 protected:
     bool isInited_ = false;
-    bool isCompleted_ = false;
+    DemuxerState state_;
     uint32_t parseFrameCount_ = 0;
     uint64_t parseLength_ = 0;
     std::unique_ptr<Data> overflowData_;
@@ -103,6 +105,6 @@ std::unique_ptr<IDemuxer> createDemuxer(std::string name) {
     return std::unique_ptr<IDemuxer>(BaseClass<T>::create(name));
 }
 
-}//end namespace Slark
+}//end namespace slark
 
 /* IDemuxer_hpp */

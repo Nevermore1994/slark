@@ -1,6 +1,6 @@
 //
 //  PlayerImpl.hpp
-//  Slark
+//  slark
 //
 //  Created by Nevermore on 2022/5/4.
 //
@@ -10,16 +10,16 @@
 #include <deque>
 #include <string_view>
 #include "FileHandler.hpp"
-#include "Player.hpp"
-#include "DecoderManager.hpp"
-#include "DemuxerManager.hpp"
+#include "Player.h"
+#include "DecoderManager.h"
+#include "DemuxerManager.h"
 #include "AVFrame.hpp"
-#include "IOManager.hpp"
-#include "TransportEvent.hpp"
-#include "Thread.hpp"
+#include "IOManager.h"
+#include "TransportEvent.h"
+#include "Thread.h"
 #include "AVFrameDeque.hpp"
 
-namespace Slark {
+namespace slark {
 
 class Player::Impl {
 public:
@@ -77,7 +77,7 @@ private:
     PlayerInfos info_;
     std::string playerId_;
     std::shared_ptr<PlayerParams> params_;
-    std::unique_ptr<Slark::Thread> transporter_ = nullptr;
+    std::unique_ptr<slark::Thread> transporter_ = nullptr;
     std::list<std::unique_ptr<Data>> rawDatas_;
     std::vector<std::weak_ptr<ITransportObserver>> listeners_;
     std::shared_ptr<IOManager> dataManager_ = nullptr;

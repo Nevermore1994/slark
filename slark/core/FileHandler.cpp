@@ -1,14 +1,14 @@
 //
 // Created by Nevermore on 2022/5/11.
-// Slark FileHandler
+// slark FileHandler
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 #include "FileHandler.hpp"
 #include "Log.hpp"
-#include "FileUtility.hpp"
-#include "Assert.hpp"
+#include "FileUtility.h"
+#include "Assert.h"
 
-namespace Slark {
+namespace slark {
 
 FileHandler::FileHandler()
     : worker_("IOThread", &FileHandler::process, this)
@@ -104,4 +104,4 @@ IOState FileHandler::state() noexcept {
     return IOState::Normal;
 }
 
-}//end namespace Slark
+}//end namespace slark

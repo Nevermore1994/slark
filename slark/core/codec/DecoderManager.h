@@ -1,16 +1,16 @@
 //
 //  DecoderManager.hpp
-//  Slark
+//  slark
 //
 //  Created by Nevermore on 2022/4/24.
 //
 
-#include "IDecoder.hpp"
-#include "NonCopyable.hpp"
+#include "IDecoder.h"
+#include "NonCopyable.h"
 #include <unordered_map>
 #include <memory>
 
-namespace Slark {
+namespace slark {
 
 class DecoderManager : public NonCopyable {
 
