@@ -20,3 +20,8 @@ CMakeCache.txt
 /_deps
 /test/*.cmake
 /test/*/*.cmake
+script/build
+script/*.cmake
+script/CMakeFiles
+script/CMakeScripts
+script/slark.xcodeproj

@@ -21,78 +21,103 @@ find_package(Threads REQUIRED)
 
 
 #source file path
-set(BASE_INCLUDE_DIR slark/base/headers)
-set(THIRD_PARTY_INCLUDE_DIR slark/third_party)
-set(CORE_INCLUDE_DIR slark/core/headers)
-set(AUDIO_INCLUDE_DIR slark/core/audio/headers)
+set(BASE_DIR slark/base/)
+set(THIRD_PARTY_DIR slark/third_party/)
+set(CORE_DIR slark/core/)
 
-#base src files
-aux_source_directory(slark/base/src BASE_DIR_SRCS)
-#core src files
-aux_source_directory(slark/core/src CORE_DIR_SRCS)
-#core base testing files
-aux_source_directory(test/ BASE_TEST_DIR_SRCS)
-#core core testing files
-aux_source_directory(slark/core/main.cpp CORE_TEST_DIR_SRCS)
-#audio src files
-aux_source_directory(slark/core/audio AUDIO_DIR_SRCS)
 
-#release
-set(RELEASE_BASE_LIBRARY 0)
-set(RELEASE_CORE_LIBRARY 1)
-set(RELEASE_ALL_LIBRARY 100)
-#test type
-set(TESTING_BASE_TYPE 101)
-set(TESTING_CORE_TYPE 102)
-set(TESTING_ALL_TYPE 103)
+set(BASE_LIBRARY "base")
+set(CORE_LIBRARY "core")
+
+function(add_base_library)
+    message(STATUS "add base library...")
+    FILE(GLOB BASE_FILES ${BASE_DIR}/*.cpp ${BASE_DIR}/*.hpp)
+    target_sources(${PROJECT_NAME} PUBLIC ${BASE_FILES})
+    target_include_directories(${PROJECT_NAME} PUBLIC ${BASE_DIR})
+    target_include_directories(${PROJECT_NAME} PUBLIC ${THIRD_PARTY_DIR})
+    source_group("base" FILES ${BASE_FILES})
+    message(STATUS ${BASE_FILES})
+endfunction()
+
+function(add_core_library)
+    message(STATUS "add core library...")
+    FILE(GLOB CORE_FILES ${CORE_DIR}/*.cpp ${CORE_DIR}/*.hpp)
+    target_sources(${PROJECT_NAME} PUBLIC ${CORE_FILES})
+    target_include_directories(${PROJECT_NAME} PUBLIC ${CORE_DIR})
+    source_group("core" FILES ${CORE_FILES})
+endfunction()
+
+function(add_component name)
+    message(STATUS "add ${name} library...")
+    FILE(GLOB FILES ${CORE_DIR}/${name}/*.cpp ${CORE_DIR}/${name}/*.hpp)
+    target_sources(${PROJECT_NAME} PUBLIC ${FILES})
+    target_include_directories(${PROJECT_NAME} PUBLIC ${CORE_DIR}/${name})
+    source_group("core/${name}" FILES ${FILES})
+endfunction()
+
+function(add_ios_library)
+    message(STATUS "add ios library...")
+endfunction()
+
+function(add_android_library)
+    message(STATUS "add android library...")
+endfunction()
 
 #set_build_type
-function(set_build_type build_type)
-    if (${build_type} GREATER ${RELEASE_ALL_LIBRARY})
+function(set_build_type build_library build_type is_build_executable)
+    if (${build_type} STREQUAL "Debug")
         set(CMAKE_BUILD_TYPE DEBUG PARENT_SCOPE)
+        add_definitions(-DDEBUG) #set DEBUG = 1
         add_executable(${PROJECT_NAME} "")
-    else()
+    else ()
         set(CMAKE_BUILD_TYPE RELEASE PARENT_SCOPE)
         add_library(${PROJECT_NAME} "")
     endif ()
 
-    target_sources(${PROJECT_NAME} PUBLIC ${BASE_DIR_SRCS})
-    target_include_directories(${PROJECT_NAME} PUBLIC ${BASE_INCLUDE_DIR})
-    target_include_directories(${PROJECT_NAME} PUBLIC ${THIRD_PARTY_INCLUDE_DIR})
-    if (${build_type} EQUAL ${TESTING_BASE_TYPE})
-        #base test
-        target_sources(${PROJECT_NAME} PRIVATE test/main.cpp)
-    elseif (${build_type} EQUAL ${TESTING_CORE_TYPE})
-        #core test
-        target_sources(${PROJECT_NAME} PRIVATE slark/core/main.cpp)
-        target_sources(${PROJECT_NAME} PUBLIC ${CORE_DIR_SRCS})
-        target_include_directories(${PROJECT_NAME} PRIVATE ${CORE_INCLUDE_DIR})
-    elseif (${build_type} EQUAL ${TESTING_ALL_TYPE})
-        #all test
-        target_sources(${PROJECT_NAME} PRIVATE slark/core/main.cpp)
-        target_sources(${PROJECT_NAME} PUBLIC ${CORE_DIR_SRCS} PUBLIC ${CORE_INCLUDE_DIR})
-        target_sources(${PROJECT_NAME} PUBLIC ${AUDIO_DIR_SRCS} PUBLIC ${AUDIO_INCLUDE_DIR})
-        target_include_directories(${PROJECT_NAME} PUBLIC ${CORE_INCLUDE_DIR})
-        target_include_directories(${PROJECT_NAME} PUBLIC ${AUDIO_INCLUDE_DIR})
+    #must add base library
+    add_base_library()
+
+    #add core library
+    if (${build_library} STREQUAL ${CORE_LIBRARY})
+        add_core_library()
+        add_component("codec")
+        add_component("muxer")
+        add_component("audio")
+    elseif (NOT (${build_library} STREQUAL ${BASE_LIBRARY}))
+        message(STATUS "build library parameter error...")
+    endif ()
+
+    if (${is_build_executable} EQUAL 1)
+        if (${build_library} STREQUAL ${BASE_LIBRARY})
+            #base test
+            target_sources(${PROJECT_NAME} PUBLIC slark/baseMain.cpp)
+            source_group("Source Files" FILES slark/baseMain.cpp)
+        elseif (${build_library} STREQUAL ${CORE_LIBRARY})
+            target_sources(${PROJECT_NAME} PUBLIC slark/main.cpp)
+            source_group("Source Files" FILES slark/main.cpp)
+        endif ()
+        message(STATUS "will build testing...")
+    elseif (${is_build_executable} EQUAL 0})
+        message(STATUS "will build library...")
+    else ()
+        message(STATUS "build executable parameters error...")
     endif ()
 endfunction(set_build_type)
 
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin")
 #set build type
-set_build_type(${TESTING_CORE_TYPE})
+set_build_type(${CORE_LIBRARY} "Debug" 1)
 
 if (CMAKE_BUILD_TYPE STREQUAL DEBUG)
     message("build testing....")
+    execute_process(COMMAND rm -rf ${CMAKE_CURRENT_SOURCE_DIR}/_deps)
+    execute_process(COMMAND rm -rf ${CMAKE_CURRENT_SOURCE_DIR}/script/_deps)
+    enable_testing()
+    include(cmake/gtest.cmake)
+    add_subdirectory(test)
 else ()
     message("build library....")
 endif ()
 
 target_link_libraries(${PROJECT_NAME}  ${CMAKE_THREAD_LIBS_INIT})
-
-# tests
-if(NOT without-test)
-    enable_testing()
-    include(cmake/gtest.cmake)
-    add_subdirectory(test)
-endif()
