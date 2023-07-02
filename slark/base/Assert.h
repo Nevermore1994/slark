@@ -7,9 +7,9 @@
 
 namespace slark {
 
-#if defined (__GNUC__) && defined(__linux__)
+#if defined (__GNUC__)
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wvariadic-macros"
+#pragma GCC diagnostic ignored "-Wpedantic"
 #endif
 
 #ifdef __clang__

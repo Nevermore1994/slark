@@ -24,9 +24,9 @@ constexpr const uint16_t kMaxLogBuffSize = 1024;
 
 void PrintLog(LogType level, const char* format, ...);
 
-#if defined (__GNUC__) && defined(__linux__)
+#if defined (__GNUC__)
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wvariadic-macros"
+#pragma GCC diagnostic ignored "-Wpedantic"
 #endif
 
 #ifdef __clang__
@@ -48,7 +48,7 @@ void PrintLog(LogType level, const char* format, ...);
 #pragma clang diagnostic pop
 #endif
 
-#if defined (__GNUC__) && defined(__linux__)
+#if defined (__GNUC__)
 #pragma GCC diagnostic pop
 #endif
 }
