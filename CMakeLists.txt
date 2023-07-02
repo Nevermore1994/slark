@@ -107,7 +107,7 @@ endfunction(set_build_type)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin")
 #set build type
-set_build_type(${CORE_LIBRARY} "Debug" 1)
+set_build_type(${BASE_LIBRARY} "Debug" 1)
 
 if (CMAKE_BUILD_TYPE STREQUAL DEBUG)
     message("build testing....")

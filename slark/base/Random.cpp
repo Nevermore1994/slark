@@ -4,7 +4,7 @@
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 
-#include "Random.h"
+#include "Random.hpp"
 #include <chrono>
 #include <thread>
 #include <string>

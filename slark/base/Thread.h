@@ -13,7 +13,7 @@
 #include <atomic>
 #include <string_view>
 #include "TimerPool.h"
-#include "Random.h"
+#include "Random.hpp"
 #include "NonCopyable.h"
 
 namespace slark {
@@ -57,7 +57,7 @@ public:
         return isRunning_;
     }
 
-    [[nodiscard]] inline Time::Timestamp getLastRunTimeStamp() const noexcept {
+    [[nodiscard]] inline Time::TimeStamp getLastRunTimeStamp() const noexcept {
         return lastRunTimeStamp_;
     }
 
@@ -82,7 +82,7 @@ private:
     std::string name_;
     std::mutex mutex_;
     std::condition_variable cond_;
-    Time::Timestamp lastRunTimeStamp_ = 0;
+    Time::TimeStamp lastRunTimeStamp_ = 0;
     std::thread worker_;
     TimerPool timerPool_;
 };

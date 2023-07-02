@@ -71,6 +71,7 @@ WriteFile::WriteFile(std::string path)
 
 WriteFile::~WriteFile() {
     flush();
+    IFile::close();
 }
 
 bool WriteFile::open() noexcept {
@@ -105,15 +106,19 @@ bool WriteFile::write(const uint8_t* data, uint64_t size) noexcept {
     }
     writeCount_++;
     auto writeSize = fwrite(data, size, 1, file_);
-    writeSize_ += writeSize;
+    writeSize_ += size;
     if (writeCount_ >= checkEveryN_) {
         flush();
     }
-    if (writeSize < size) {
+    if (writeSize <= 0) {
         LogE("write file: %s", std::strerror(errno));
         isFailed_ = true;
     }
-    return writeSize == size;
+    return writeSize == 1;
+}
+
+bool WriteFile::write(const std::string& str) noexcept {
+    return write(reinterpret_cast<const uint8_t*>(str.data()), str.length());
 }
 
 ReadFile::ReadFile(std::string path)
@@ -162,7 +167,7 @@ bool ReadFile::read(Data& data) noexcept {
         return false;
     }
     auto res = fread(&data.data, data.capacity, 1, file_);
-    if (res < data.capacity) {
+    if (res <= 0) {
         if (feof(file_)) {
             readOver_ = true;
         } else {

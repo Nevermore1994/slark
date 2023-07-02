@@ -53,7 +53,7 @@ std::shared_ptr<Thread> ThreadManager::thisThread() noexcept {
 }
 
 void ThreadManager::reportRunInfo() noexcept {
-    Timestamp now = nowTimeStamp();
+    TimeStamp now = NowTimeStamp();
     LogI("ThreadManager report now:%llu, now live size :%lu", now, threadInfos_.size());
     ///Todo: replace C++20 std::erase_if
     std::vector<std::thread::id> expiredThreads;
@@ -72,7 +72,7 @@ void ThreadManager::reportRunInfo() noexcept {
             continue;
         }
         auto thread = t.lock();
-        Timestamp interval = (now - thread->getLastRunTimeStamp());
+        TimeStamp interval = (now - thread->getLastRunTimeStamp());
         if (thread->isRunning() && interval >= kMaxThreadBlockTimeInterval) {
             LogE("ThreadManager report [%s] is blocking.", thread->getName().data());
         }

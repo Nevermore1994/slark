@@ -5,7 +5,7 @@
 //  Created by Nevermore on 2022/5/4.
 //
 
-#include "Random.h"
+#include "Random.hpp"
 #include "FileUtility.h"
 #include "Log.hpp"
 #include "PlayerImpl.h"

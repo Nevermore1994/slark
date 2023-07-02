@@ -16,7 +16,7 @@ void AssertMessage(bool result, const char* format, ...) {
         char buf[kMaxMessageBuffSize] = {0};
         va_list args;
         va_start(args, format);
-        vsnprintf((char*)(buf), (kMaxMessageBuffSize - 1), format, args);
+        vsnprintf(static_cast<char*>(buf), (kMaxMessageBuffSize - 1), format, args);
         va_end(args);
         buf[kMaxMessageBuffSize - 1] = 0;
         throw std::runtime_error(buf);

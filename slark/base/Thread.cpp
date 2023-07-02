@@ -63,7 +63,7 @@ void Thread::process() noexcept {
     }
     while (!isExit_) {
         if (isRunning_) {
-            lastRunTimeStamp_ = Time::nowTimeStamp();
+            lastRunTimeStamp_ = Time::NowTimeStamp();
             if (func_) {
                 func_();
             }

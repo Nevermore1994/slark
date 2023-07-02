@@ -18,14 +18,16 @@ namespace Time {
 
 constexpr static uint64_t kTimeInvalid = 0;
 
-using Timestamp = uint64_t;
+using TimeStamp = uint64_t;
 
-std::chrono::seconds offsetFromUTC() noexcept;
+std::chrono::seconds OffsetFromUTC() noexcept;
 
-std::string localTime() noexcept;
+std::string LocalTime() noexcept;
+
+std::string LocalShortTime() noexcept;
 
 //system time
-Time::Timestamp nowTimeStamp() noexcept;
+Time::TimeStamp NowTimeStamp() noexcept;
 
 } //end namespace slark::Time
 
