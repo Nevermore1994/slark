@@ -24,10 +24,16 @@ constexpr const uint16_t kMaxLogBuffSize = 1024;
 
 void PrintLog(LogType level, const char* format, ...);
 
+#ifdef __gcc__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wvariadic-macros"
+#endif
+
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 #endif
+
 #define logger(level, format, ...) \
     do {                               \
         PrintLog(level, "[%s][Line:%d][Function:%s]" format, __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__); /* NOLINT(bugprone-lambda-function-name) */ \
@@ -40,6 +46,10 @@ void PrintLog(LogType level, const char* format, ...);
 
 #ifdef __clang__
 #pragma clang diagnostic pop
+#endif
+
+#ifdef __gcc__
+#pragma GCC diagnostic pop
 #endif
 }
 
