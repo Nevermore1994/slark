@@ -162,22 +162,22 @@ function(read_config)
     #enable test
     string(JSON DISABLE_TEST_VALUE GET ${CONFIG_JSON_STRING} disable_test)
     set(DISABLE_TEST ${DISABLE_TEST_VALUE} PARENT_SCOPE)
-    if(${DISABLE_TEST} EQUAL 0)
-        message(STATUS "enable testing")
-        execute_process(COMMAND rm -rf ${CMAKE_CURRENT_SOURCE_DIR}/_deps)
-        execute_process(COMMAND rm -rf ${CMAKE_CURRENT_SOURCE_DIR}/script/_deps)
-        enable_testing()
-        include(cmake/gtest.cmake)
-        add_subdirectory(test)
-    else()
-        message(STATUS "disable testing")
-    endif()
 endfunction()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin")
 
 read_config()
 
-
+#ctest only running main flow, don't move to function
+if(${DISABLE_TEST} EQUAL 0)
+    message(STATUS "enable testing")
+    execute_process(COMMAND rm -rf ${CMAKE_CURRENT_SOURCE_DIR}/_deps)
+    execute_process(COMMAND rm -rf ${CMAKE_CURRENT_SOURCE_DIR}/script/_deps)
+    enable_testing()
+    include(cmake/gtest.cmake)
+    add_subdirectory(test)
+else()
+    message(STATUS "disable testing")
+endif()
 
 target_link_libraries(${PROJECT_NAME}  ${CMAKE_THREAD_LIBS_INIT})
