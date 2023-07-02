@@ -7,7 +7,7 @@
 
 namespace slark {
 
-#ifdef __gcc__
+#if defined (__GNUC__) && defined(__linux__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wvariadic-macros"
 #endif
@@ -35,7 +35,7 @@ void AssertMessage(bool result, const char* format, ...);
 #pragma clang diagnostic pop
 #endif
 
-#ifdef __gcc__
+#if defined (__GNUC__) && defined(__linux__)
 #pragma GCC diagnostic pop
 #endif
 }
