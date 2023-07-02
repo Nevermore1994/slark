@@ -166,7 +166,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin")
 
 read_config()
 
-if (CMAKE_BUILD_TYPE STREQUAL DEBUG)
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     message("build testing....")
     execute_process(COMMAND rm -rf ${CMAKE_CURRENT_SOURCE_DIR}/_deps)
     execute_process(COMMAND rm -rf ${CMAKE_CURRENT_SOURCE_DIR}/script/_deps)
