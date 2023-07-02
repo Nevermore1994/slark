@@ -164,10 +164,10 @@ function(read_config)
         message(STATUS "enable testing")
         execute_process(COMMAND rm -rf ${CMAKE_CURRENT_SOURCE_DIR}/_deps)
         execute_process(COMMAND rm -rf ${CMAKE_CURRENT_SOURCE_DIR}/script/_deps)
-        enable_testing()
-        include(cmake/gtest.cmake)
-        add_subdirectory(test)
     endif()
+    enable_testing()
+    include(cmake/gtest.cmake)
+    add_subdirectory(test)
     
 endfunction()
 
