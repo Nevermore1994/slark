@@ -25,4 +25,3 @@ script/*.cmake
 script/CMakeFiles
 script/CMakeScripts
 script/slark.xcodeproj
-script/test
