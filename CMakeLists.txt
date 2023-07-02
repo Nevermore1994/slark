@@ -5,7 +5,7 @@ include(CMakePrintHelpers)
 include(FetchContent)
 
 #C++ standard
-set(CMAKE_CXX_FLAGS "-std=c++17 -Wall -Wextra -pedantic -Wcast-align -Wcast-qual -Wconversion -Wdisabled-optimization -Wendif-labels -Wfloat-equal -Winit-self -Winline -Wmissing-include-dirs -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual -Wpacked -Wpointer-arith -Wredundant-decls -Wshadow -Wsign-promo -Wvariadic-macros -Wwrite-strings ")
+set(CMAKE_CXX_FLAGS "-std=c++17 -Wall -Wextra -Wpedantic -Wcast-align -Wcast-qual -Wconversion -Wdisabled-optimization -Wendif-labels -Wfloat-equal -Winit-self -Winline -Wmissing-include-dirs -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual -Wpacked -Wpointer-arith -Wredundant-decls -Wshadow -Wsign-promo -Wvariadic-macros -Wwrite-strings -Wno-variadic-macros")
 set(CMAKE_CXX_FLAGS_DEBUG "-g3 -O0 -pg")
 set(CMAKE_CXX_FLAGS_RELEASE "-O2 -s -DNDEBUG -march=native")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-g3 -Og -pg")
@@ -13,12 +13,13 @@ set(CMAKE_CXX_FLAGS_MINSIZEREL "-Os -s -DNDEBUG -march=native")
 
 message(STATUS "current path: " ${CMAKE_CURRENT_SOURCE_DIR})
 
+set(COMPONENT_LIST "audio" "http")
+
 project(slark)
 
 #set thread library
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
-
 
 #source file path
 set(BASE_DIR slark/base/)
@@ -26,88 +27,144 @@ set(THIRD_PARTY_DIR slark/third_party/)
 set(CORE_DIR slark/core/)
 
 
-set(BASE_LIBRARY "base")
-set(CORE_LIBRARY "core")
-
 function(add_base_library)
-    message(STATUS "add base library...")
-    FILE(GLOB BASE_FILES ${BASE_DIR}/*.cpp ${BASE_DIR}/*.hpp)
+    message(STATUS "add base library")
+    FILE(GLOB BASE_FILES ${BASE_DIR}/*.cpp ${BASE_DIR}/*.hpp ${BASE_DIR}/*.h ${THIRD_PARTY_DIR}/*.h)
     target_sources(${PROJECT_NAME} PUBLIC ${BASE_FILES})
     target_include_directories(${PROJECT_NAME} PUBLIC ${BASE_DIR})
     target_include_directories(${PROJECT_NAME} PUBLIC ${THIRD_PARTY_DIR})
     source_group("base" FILES ${BASE_FILES})
-    message(STATUS ${BASE_FILES})
 endfunction()
 
 function(add_core_library)
-    message(STATUS "add core library...")
-    FILE(GLOB CORE_FILES ${CORE_DIR}/*.cpp ${CORE_DIR}/*.hpp)
+    message(STATUS "add core library")
+    FILE(GLOB CORE_FILES ${CORE_DIR}/*.cpp ${CORE_DIR}/*.hpp ${CORE_DIR}/*.h)
     target_sources(${PROJECT_NAME} PUBLIC ${CORE_FILES})
     target_include_directories(${PROJECT_NAME} PUBLIC ${CORE_DIR})
     source_group("core" FILES ${CORE_FILES})
 endfunction()
 
 function(add_component name)
-    message(STATUS "add ${name} library...")
-    FILE(GLOB FILES ${CORE_DIR}/${name}/*.cpp ${CORE_DIR}/${name}/*.hpp)
+    message(STATUS "add ${name} library")
+    FILE(GLOB FILES ${CORE_DIR}/${name}/*.cpp ${CORE_DIR}/${name}/*.hpp ${CORE_DIR}/${name}/*.h)
     target_sources(${PROJECT_NAME} PUBLIC ${FILES})
     target_include_directories(${PROJECT_NAME} PUBLIC ${CORE_DIR}/${name})
     source_group("core/${name}" FILES ${FILES})
 endfunction()
 
+
 function(add_ios_library)
-    message(STATUS "add ios library...")
+    message(STATUS "add ios library")
 endfunction()
 
 function(add_android_library)
-    message(STATUS "add android library...")
+    message(STATUS "add android library")
 endfunction()
 
-#set_build_type
-function(set_build_type build_library build_type is_build_executable)
-    if (${build_type} STREQUAL "Debug")
+function(set_platform platform)
+    message(STATUS "platform:${platform}")
+    if(${PLATFORM} STREQUAL "iOS")
+        add_definitions(-DSLARK_IOS) #set SLARK_IOS = 1
+    elseif(${PLATFORM} STREQUAL "Android")
+        add_definitions(-DSLARK_Android) #set SLARK_Android = 1
+    endif()
+endfunction()
+
+
+function(set_build_type type)
+    message(STATUS "build:${type}")
+    if(${type} STREQUAL "Debug")
         set(CMAKE_BUILD_TYPE DEBUG PARENT_SCOPE)
         add_definitions(-DDEBUG) #set DEBUG = 1
-        add_executable(${PROJECT_NAME} "")
-    else ()
+    else()
         set(CMAKE_BUILD_TYPE RELEASE PARENT_SCOPE)
-        add_library(${PROJECT_NAME} "")
-    endif ()
+    endif()
+endfunction()
 
+function(set_output_type type)
+    message(STATUS "output:${type}")
+    if(${type} STREQUAL "exe")
+        add_executable(${PROJECT_NAME} "")
+    else()
+        add_library(${PROJECT_NAME} "")
+    endif()
+endfunction()
+
+function(set_main_component component_name)
+    message(STATUS "main component:${component_name}")
     #must add base library
     add_base_library()
-
+    
     #add core library
-    if (${build_library} STREQUAL ${CORE_LIBRARY})
+    if(${component_name} STREQUAL "core")
         add_core_library()
         add_component("codec")
         add_component("muxer")
-        add_component("audio")
-    elseif (NOT (${build_library} STREQUAL ${BASE_LIBRARY}))
-        message(STATUS "build library parameter error...")
-    endif ()
+    endif()
+    
+endfunction()
 
-    if (${is_build_executable} EQUAL 1)
-        if (${build_library} STREQUAL ${BASE_LIBRARY})
-            #base test
-            target_sources(${PROJECT_NAME} PUBLIC slark/baseMain.cpp)
-            source_group("Source Files" FILES slark/baseMain.cpp)
-        elseif (${build_library} STREQUAL ${CORE_LIBRARY})
-            target_sources(${PROJECT_NAME} PUBLIC slark/main.cpp)
-            source_group("Source Files" FILES slark/main.cpp)
+function(load_component component_name_list)
+    message(STATUS "load component:" ${component_name_list})
+    foreach(name IN LISTS component_name_list)
+        add_component(${name})
+    endforeach ()
+endfunction()
+
+
+function(read_config)
+    file(READ ${CMAKE_CURRENT_SOURCE_DIR}/script/config.json CONFIG_JSON_STRING)
+    #parse platform
+    string(JSON PLATFORM GET ${CONFIG_JSON_STRING} platform)
+    set_platform(${PLATFORM})
+    
+    #build_type 
+    string(JSON BUILD_TYPE GET ${CONFIG_JSON_STRING} build_type)
+    set_build_type(${BUILD_TYPE})
+     
+    #parse output
+    string(JSON OUTPUT_TYPE GET ${CONFIG_JSON_STRING} output)
+    set_output_type(${OUTPUT_TYPE})
+    
+    #parse component
+    string(JSON MAIN_COMPONENT GET ${CONFIG_JSON_STRING} component main)
+    set_main_component(${MAIN_COMPONENT})
+    
+    #parse disable
+    if(${MAIN_COMPONENT} STREQUAL "core")
+        string(JSON DISABLE_COMPONENT_LENGTH LENGTH ${CONFIG_JSON_STRING} component disable)
+        foreach (i RANGE 0 ${DISABLE_COMPONENT_LENGTH})
+            if(${i} EQUAL ${DISABLE_COMPONENT_LENGTH})
+                continue()
+            endif()
+            string(JSON DISABLE_COMPONENT_NAME GET ${CONFIG_JSON_STRING} component disable ${i})
+            message(STATUS "remove:" ${DISABLE_COMPONENT_NAME})
+            list(REMOVE_ITEM COMPONENT_LIST ${DISABLE_COMPONENT_NAME})
+        endforeach()
+        list(LENGTH COMPONENT_LIST COMPONENT_LIST_LENGTH)
+        if(${COMPONENT_LIST_LENGTH} GREATER 0)
+            load_component(${COMPONENT_LIST})
         endif ()
-        message(STATUS "will build testing...")
-    elseif (${is_build_executable} EQUAL 0})
-        message(STATUS "will build library...")
-    else ()
-        message(STATUS "build executable parameters error...")
     endif ()
-endfunction(set_build_type)
+    
+    #add test main
+    if(${OUTPUT_TYPE} STREQUAL "exe")
+        if (${MAIN_COMPONENT} STREQUAL "base")
+            target_sources(${PROJECT_NAME} PUBLIC slark/baseMain.cpp)
+            source_group("SourceFiles" FILES slark/baseMain.cpp)
+        else()
+            target_sources(${PROJECT_NAME} PUBLIC slark/main.cpp)
+            source_group("SourceFiles" FILES slark/main.cpp)
+        endif()
+    endif()
+    
 
+    
+endfunction()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin")
-#set build type
-set_build_type(${BASE_LIBRARY} "Debug" 1)
+
+read_config()
 
 if (CMAKE_BUILD_TYPE STREQUAL DEBUG)
     message("build testing....")
