@@ -14,6 +14,7 @@ set(CMAKE_CXX_FLAGS_MINSIZEREL "-Os -s -DNDEBUG -march=native")
 message(STATUS "current path: " ${CMAKE_CURRENT_SOURCE_DIR})
 
 set(COMPONENT_LIST "audio" "http")
+set(DISABLE_TEST 0)
 
 project(slark)
 
@@ -158,23 +159,24 @@ function(read_config)
         endif()
     endif()
     
-
-    
+    #enable test
+    string(JSON DISABLE_TEST_VALUE GET ${CONFIG_JSON_STRING} disable_test)
+    set(DISABLE_TEST ${DISABLE_TEST_VALUE} PARENT_SCOPE)
 endfunction()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin")
 
 read_config()
 
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    message("build testing....")
+if(${DISABLE_TEST} EQUAL 0)
+    message(STATUS "enable testing")
     execute_process(COMMAND rm -rf ${CMAKE_CURRENT_SOURCE_DIR}/_deps)
     execute_process(COMMAND rm -rf ${CMAKE_CURRENT_SOURCE_DIR}/script/_deps)
     enable_testing()
     include(cmake/gtest.cmake)
     add_subdirectory(test)
-else ()
-    message("build library....")
-endif ()
+else()
+    message(STATUS "disable testing")
+endif()
 
 target_link_libraries(${PROJECT_NAME}  ${CMAKE_THREAD_LIBS_INIT})
