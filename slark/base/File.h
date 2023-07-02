@@ -66,7 +66,7 @@ public:
 
     bool write(const Data& data) noexcept;
 
-    bool write(const std::string str) noexcept;
+    bool write(const std::string& str) noexcept;
 
     bool write(const uint8_t* data, uint64_t size) noexcept;
 

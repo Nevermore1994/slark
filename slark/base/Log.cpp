@@ -5,6 +5,7 @@
 //
 #include "Log.hpp"
 #include "Time.hpp"
+#include "LogOutput.h"
 #include <cstdarg>
 
 #ifdef SLARK_IOS
@@ -14,7 +15,7 @@
 namespace slark {
 
 void PrintLog(LogType level, const char* format, ...) {
-    std::string logStr = Time::localTime();
+    std::string logStr = Time::LocalTime();
     logStr.append(kLogStrs[static_cast<size_t>(level)]);
     char buf[kMaxLogBuffSize] = {0};
     va_list args;
@@ -24,12 +25,13 @@ void PrintLog(LogType level, const char* format, ...) {
     buf[kMaxLogBuffSize - 1] = 0; //last element = 0
 
     logStr.append(buf);
+    LogOutput::shareInstance().write(logStr);
 #ifdef SLARK_IOS
     outputLog(std::move(logStr));
-#else
+#elif SLARK_BASE
+#endif
     fprintf(stdout, "%s\n", logStr.c_str());
     fflush(stdout);
-#endif
 }
 
 }//end namespace slark

@@ -5,7 +5,7 @@
 //
 
 #include "Timer.h"
-#include "Random.h"
+#include "Random.hpp"
 
 namespace slark {
 

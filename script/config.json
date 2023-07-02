@@ -1,5 +1,5 @@
 {
-    "platform": "iOS",
+    "platform": "base",
     "build_type": "Debug",
     "output": "exe",
     "component": {

@@ -21,13 +21,13 @@ AudioRenderComponent::~AudioRenderComponent() {
 
 bool AudioRenderComponent::push(AVFramePtr frame) {
     auto res = true;
-    frame->prepareRenderStamp = Time::nowTimeStamp();
+    frame->prepareRenderStamp = Time::NowTimeStamp();
     //plugin process data
     if (process) {
         res = process(*frame->data);
     }
 
-    frame->pushRenderQueueStamp = Time::nowTimeStamp();
+    frame->pushRenderQueueStamp = Time::NowTimeStamp();
     if (res) {
         push(std::move(frame));
     }

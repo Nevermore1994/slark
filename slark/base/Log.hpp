@@ -30,7 +30,7 @@ void PrintLog(LogType level, const char* format, ...);
 #endif
 #define logger(level, format, ...) \
     do {                               \
-        PrintLog(level, "[%s][Line:%d][Function:%s]" format, __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__);  \
+        PrintLog(level, "[%s][Line:%d][Function:%s]" format, __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__); /* NOLINT(bugprone-lambda-function-name) */ \
     } while(0)
 
 #define  LogD(format, ...)  logger(LogType::Debug, format, ##__VA_ARGS__)
