@@ -12,6 +12,7 @@ import json
 # -n "component": "base", "core"
 # -d disable component: "audio" or more 
 # -a clear: clear cmake cache gen: generate project file build: generate and compile run: if executable file, build and run
+# disable_test
 
 #global path
 now_path = os.getcwd()
@@ -33,8 +34,9 @@ config_data = {
     "component" : {
         "main" : "base",
         # -d  disable component: "audio" or more 
-        "other" : ["audio"]
-    }
+        "disable" : []
+    },
+    "disable_test": 0
 }
 
 #remove cmake cache
@@ -140,6 +142,10 @@ def set_setting():
                         choices = ["clear", "gen", "build","run"],
                         metavar = "gen",
                         default = "gen")
+    parser.add_argument('-disable_test',
+                        action='store_true',
+                        help= "disable test",
+                        default=False)
     
     
 def parse_args():
@@ -148,10 +154,15 @@ def parse_args():
     config_data["build_type"] = args.type
     config_data["output"] = args.output
     config_data["component"]["main"] = args.component
+    
     if (args.disable != None):
         for remove_component in args.disable:
-            config_data["component"]["other"].remove(remove_component)
+            config_data["component"]["disable"].remove(remove_component)
     
+    if args.disable_test == True:
+        config_data["disable_test"] = 1
+        
+
     with open('./config.json', mode='w', encoding='utf-8') as f:
         json_data = json.dumps(config_data, indent = 4, ensure_ascii = True)
         json.dump(config_data, f, indent = 4)
@@ -170,8 +181,6 @@ def parse_args():
     
 def main():
     print(root_path)
-
-    
     set_setting()
     parse_args()
     
