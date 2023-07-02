@@ -13,8 +13,6 @@ set(CMAKE_CXX_FLAGS_MINSIZEREL "-Os -s -DNDEBUG -march=native")
 
 message(STATUS "current path: " ${CMAKE_CURRENT_SOURCE_DIR})
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin")
-
 project(slark)
 
 #set thread library
@@ -106,11 +104,15 @@ function(set_build_type build_library build_type is_build_executable)
     endif ()
 endfunction(set_build_type)
 
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin")
 #set build type
 set_build_type(${BASE_LIBRARY} "Debug" 1)
 
 if (CMAKE_BUILD_TYPE STREQUAL DEBUG)
     message("build testing....")
+    execute_process(COMMAND rm -rf ${CMAKE_CURRENT_SOURCE_DIR}/_deps)
+    execute_process(COMMAND rm -rf ${CMAKE_CURRENT_SOURCE_DIR}/script/_deps)
     enable_testing()
     include(cmake/gtest.cmake)
     add_subdirectory(test)
