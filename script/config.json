@@ -3,9 +3,8 @@
     "build_type": "Debug",
     "output": "exe",
     "component": {
-        "main": "base",
-        "other": [
-            "audio"
-        ]
-    }
+        "main": "core",
+        "disable": ["http"]
+    },
+    "disable_test": 0
 }
