@@ -7,7 +7,7 @@
 
 #import "AudioDescription.h"
 
-using namespace slark::Audio;
+using namespace slark;
 
 AudioStreamBasicDescription convertInfo2Description(slark::AudioInfo info) {
     AudioStreamBasicDescription description;

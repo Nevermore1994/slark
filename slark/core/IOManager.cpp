@@ -11,7 +11,8 @@
 namespace slark {
 
 IOManager::IOManager(std::vector<std::string> paths, int16_t index, IOHandlerCallBack func)
-    : index_(index)
+    : state_(IOState::Normal)
+    , index_(index)
     , paths_(std::move(paths))
     , callBack_(std::move(func)) {
 }
@@ -29,7 +30,7 @@ bool IOManager::open() {
     if (!CheckIndexValid(index_, paths_)) {
         return false;
     }
-    auto path = paths_[index_];
+    auto path = paths_[static_cast<size_t>(index_)];
     if (handler_ == nullptr) {
         buildHandler(path);
     } else {
@@ -66,7 +67,7 @@ void IOManager::handleData(std::unique_ptr<Data> data, int64_t offset, IOState s
     if (data->length == 0 && state != IOState::EndOfFile) {
         LogI("[IOManager] offset %lld, io state %d", offset, static_cast<int>(state));
     }
-    offset_ = offset + data->length;
+    offset_ = static_cast<uint64_t>(offset) + data->length;
     state_ = state;
     if (state == IOState::EndOfFile && nextTask()) {
         state_ = IOState::Normal;
@@ -86,7 +87,7 @@ bool IOManager::nextTask() noexcept {
     if (!CheckIndexValid(index_, paths_) || !handler_) {
         return false;
     }
-    handler_->open(paths_[index_]);
+    handler_->open(paths_[static_cast<size_t>(index_)]);
     return true;
 }
 

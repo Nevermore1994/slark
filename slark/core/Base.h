@@ -12,7 +12,7 @@ namespace slark {
 constexpr int64_t kInvalid = -1;
 
 #define CheckIndexValid(index, vector) \
-    (0 <= (index) && ((index) < (vector).size()))
+    (0 <= (index) && (static_cast<size_t>(index) < (vector).size()))
 
 
 }

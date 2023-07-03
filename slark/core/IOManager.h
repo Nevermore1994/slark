@@ -21,7 +21,7 @@ namespace slark {
 
 class IOManager: public slark::NonCopyable, public ITransportObserver {
 public:
-    IOManager(std::vector<std::string> paths, int16_t index = 0, IOHandlerCallBack func = nullptr);
+    explicit IOManager(std::vector<std::string> paths, int16_t index = 0, IOHandlerCallBack func = nullptr);
     ~IOManager() override;
 
     bool open();

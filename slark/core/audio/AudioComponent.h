@@ -18,7 +18,7 @@ namespace slark::Audio {
 
 class AudioRenderComponent: public slark::NonCopyable {
 public:
-    AudioRenderComponent(AudioInfo info);
+    explicit AudioRenderComponent(AudioInfo info);
     ~AudioRenderComponent() override;
 
     bool push(AVFramePtr frame);

@@ -67,12 +67,12 @@ void Player::Impl::pause() noexcept {
     transporter_->pause();
 }
 
-void Player::Impl::seek(long double time) noexcept {
-
+void Player::Impl::seek(long double /*time*/) noexcept {
+    seekOffset_ = 0;
 }
 
-void Player::Impl::seek(long double time, bool isAccurate) noexcept {
-
+void Player::Impl::seek(long double /*time*/, bool /*isAccurate*/) noexcept {
+    seekOffset_ = 0;
 }
 
 void Player::Impl::init() noexcept {
@@ -81,7 +81,7 @@ void Player::Impl::init() noexcept {
     for (const auto& item : params_->items) {
         paths.push_back(item.path);
     }
-    dataManager_ = std::make_unique<IOManager>(paths, 0, [this](std::unique_ptr<Data> data, int64_t offset, IOState state) {
+    dataManager_ = std::make_unique<IOManager>(paths, 0, [this](std::unique_ptr<Data> data, int64_t offset, IOState /*state*/) {
         if (seekOffset_ != kInvalid && offset != seekOffset_) {
             return;
         }
@@ -129,7 +129,8 @@ void Player::Impl::handleData(std::list<std::unique_ptr<Data>>&& dataList) noexc
             LogE("not find demuxer...");
             continue;
         }
-        auto&& [code, frameList] = demuxer_->parseData(std::move(data));
+        auto parseResult = demuxer_->parseData(std::move(data));
+        auto& [code, frameList] = parseResult;
         //LogI("demux frame count %d, state: %d", frameList.size(), code);
         if (code == DemuxerState::Failed && dataList.empty()) {
             break;
