@@ -25,3 +25,4 @@ script/*.cmake
 script/CMakeFiles
 script/CMakeScripts
 script/slark.xcodeproj
+cmake-build-debug-gcc

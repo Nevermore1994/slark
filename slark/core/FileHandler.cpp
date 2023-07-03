@@ -53,7 +53,7 @@ void FileHandler::close() {
 
 void FileHandler::seek(uint64_t pos) {
     std::unique_lock<std::mutex> lock(mutex_);
-    seekPos_ = pos;
+    seekPos_ = static_cast<int64_t>(pos);
 }
 
 void FileHandler::write(std::unique_ptr<Data> data) {
@@ -95,7 +95,7 @@ void FileHandler::process() {
 }
 
 IOState FileHandler::state() noexcept {
-    auto offset = file_->tell();
+    auto offset = static_cast<uint64_t>(file_->tell());
     if (file_->readOver() || offset == file_->fileSize()) {
         return IOState::EndOfFile;
     } else if (file_->isFailed()) {

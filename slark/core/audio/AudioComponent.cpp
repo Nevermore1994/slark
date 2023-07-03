@@ -11,7 +11,7 @@ namespace slark::Audio {
 
 using namespace slark;
 
-AudioRenderComponent::AudioRenderComponent(AudioInfo info) {
+AudioRenderComponent::AudioRenderComponent(AudioInfo /*info*/) {
 
 }
 

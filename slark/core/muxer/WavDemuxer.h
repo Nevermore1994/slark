@@ -27,9 +27,9 @@ public:
 
     inline static DemuxerInfo& info()  noexcept {
         static DemuxerInfo info = {
-            .type = DemuxerType::WAV,
-            .symbol = "WAVE",
-            .demuxerName = BaseClass<WAVDemuxer>::registerClass()
+            DemuxerType::WAV,
+            "WAVE",
+            BaseClass<WAVDemuxer>::registerClass()
         };
         return info;
     }

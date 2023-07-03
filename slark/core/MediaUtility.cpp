@@ -18,7 +18,7 @@ uint32_t uint32LE(const char* ptr) {
 }
 
 uint32_t uint32LE(const uint8_t* ptr) {
-    return ptr[3] << 24 | ptr[2] << 16 | ptr[1] << 8 | ptr[0];
+    return static_cast<uint32_t>(ptr[3] << 24 | ptr[2] << 16 | ptr[1] << 8 | ptr[0]);
 }
 
 uint16_t uint16LE(const char* ptr) {
@@ -36,7 +36,7 @@ uint16_t popcount(uint64_t value) {
 }
 
 uint16_t uint16LE(const uint8_t* ptr) {
-    return ptr[1] << 8 | ptr[0];
+    return static_cast<uint16_t>(ptr[1] << 8 | ptr[0]);
 }
 
 }//end namespace slark

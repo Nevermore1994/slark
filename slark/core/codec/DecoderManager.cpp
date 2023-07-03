@@ -13,11 +13,11 @@ void DecoderManager::init() noexcept {
 
 }
 
-std::unique_ptr<IDecoder> DecoderManager::create(DecoderType type) noexcept {
+std::unique_ptr<IDecoder> DecoderManager::create(DecoderType /*type*/) noexcept {
     return nullptr;
 }
 
-bool DecoderManager::contains(DecoderType type) noexcept {
+bool DecoderManager::contains(DecoderType /*type*/) noexcept {
     //return decoders_.count(type) != 0;
     return false;
 }

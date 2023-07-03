@@ -68,7 +68,7 @@ private:
 
     void notifyEvent(PlayerState state) const noexcept;
 
-    TransportEvent eventType(PlayerState state) const noexcept;
+    [[nodiscard]] TransportEvent eventType(PlayerState state) const noexcept;
 
 private:
     std::mutex dataMutex_;
