@@ -134,7 +134,7 @@ function(read_config)
     #parse disable
     if(${MAIN_COMPONENT} STREQUAL "core")
         string(JSON DISABLE_COMPONENT_LENGTH LENGTH ${CONFIG_JSON_STRING} component disable)
-        foreach (i RANGE 0 ${DISABLE_COMPONENT_LENGTH})
+        foreach (i RANGE 0 ${DISABLE_COMPONENT_LENGTH} )
             if(${i} EQUAL ${DISABLE_COMPONENT_LENGTH})
                 continue()
             endif()

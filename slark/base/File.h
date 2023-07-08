@@ -38,15 +38,15 @@ public:
 
     void seek(int64_t offset) noexcept;
 
-    int64_t tell() const noexcept;
+    [[nodiscard]] int64_t tell() const noexcept;
 
-    uint64_t fileSize() const noexcept;
+    [[nodiscard]] uint64_t fileSize() const noexcept;
 public:
-    inline bool isOpen() const noexcept {
+    [[nodiscard]] inline bool isOpen() const noexcept {
         return file_ != nullptr;
     }
 
-    inline bool isFailed() const noexcept {
+    [[nodiscard]] inline bool isFailed() const noexcept {
         return isFailed_;
     }
 protected:
@@ -60,7 +60,7 @@ protected:
 class WriteFile : virtual public IFile {
     constexpr static uint32_t kCheckCount = 512;
 public:
-    explicit WriteFile(std::string path);
+    explicit WriteFile(std::string path, bool isAppend = false);
 
     ~WriteFile() override;
 
@@ -96,11 +96,11 @@ public:
 
     bool read(Data& data) noexcept;
 
-    void backfillByte(uint8_t byte) noexcept;
+    void backFillByte(uint8_t byte) noexcept;
 
-    inline bool readOver() const noexcept { return readOver_; }
+    [[nodiscard]] inline bool readOver() const noexcept { return readOver_; }
 
-    inline uint64_t readSize() const noexcept { return readSize_; }
+    [[nodiscard]] inline uint64_t readSize() const noexcept { return readSize_; }
 
 public:
     bool open() noexcept override;
@@ -115,7 +115,7 @@ protected:
 
 class File final : public ReadFile, public WriteFile {
 public:
-    File(std::string path);
+    explicit File(const std::string& path);
 
     ~File() override;
 

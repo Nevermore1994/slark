@@ -18,7 +18,6 @@ TimerPool::~TimerPool() {
 }
 
 TimerPool::TimerPool(TimerPool&& lhs) noexcept {
-    clear();
     timerInfos_.swap(lhs.timerInfos_);
     timers_.swap(lhs.timers_);
 }

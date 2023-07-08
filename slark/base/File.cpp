@@ -32,8 +32,8 @@ bool IFile::open() noexcept {
     }
     file_ = fopen(path_.c_str(), kModeStr[static_cast<int>(mode_)].data());
     if (!file_) {
-        LogE("open file:%s", std::strerror(errno));
         isFailed_ = true;
+        LogE("open file:%s", std::strerror(errno));
     }
     return file_ != nullptr;
 }
@@ -61,8 +61,8 @@ void IFile::close() noexcept {
 }
 
 
-WriteFile::WriteFile(std::string path)
-    : IFile(std::move(path), FileMode::WriteMode)
+WriteFile::WriteFile(std::string path, bool isAppend)
+    : IFile(std::move(path), isAppend ? FileMode::AppendMode : FileMode::WriteMode)
     , checkEveryN_(kCheckCount)
     , checkCount_(0)
     , writeSize_(0)
@@ -111,8 +111,8 @@ bool WriteFile::write(const uint8_t* data, uint64_t size) noexcept {
         flush();
     }
     if (writeSize <= 0) {
-        LogE("write file: %s", std::strerror(errno));
         isFailed_ = true;
+        LogE("write file: %s", std::strerror(errno));
     }
     return writeSize == 1;
 }
@@ -144,8 +144,8 @@ std::tuple<bool, uint8_t> ReadFile::readByte() noexcept {
         if (feof(file_)) {
             readOver_ = true;
         } else {
-            LogE("read byte error:%s", std::strerror(errno));
             isFailed_ = true;
+            LogE("read byte error:%s", std::strerror(errno));
         }
     }
     readSize_++;
@@ -171,15 +171,15 @@ bool ReadFile::read(Data& data) noexcept {
         if (feof(file_)) {
             readOver_ = true;
         } else {
-            LogE("read data error:%s", std::strerror(errno));
             isFailed_ = true;
+            LogE("read data error:%s", std::strerror(errno));
         }
     }
     data.length = res;
     return res > 0;
 }
 
-void ReadFile::backfillByte(uint8_t byte) noexcept {
+void ReadFile::backFillByte(uint8_t byte) noexcept {
     if (file_) {
         ungetc(byte, file_);
     }
@@ -200,7 +200,7 @@ void ReadFile::close() noexcept {
     }
 }
 
-File::File(std::string path)
+File::File(const std::string& path)
     : IFile(path, FileMode::FreeMode)
     , ReadFile(path)
     , WriteFile(path) {

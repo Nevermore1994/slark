@@ -34,7 +34,7 @@ std::string Time::LocalTime() noexcept {
 
 std::string Time::LocalShortTime() noexcept {
     using namespace std::chrono;
-    auto tp = system_clock::now();
+    auto tp = time_point_cast<seconds>(system_clock::now());
     tp += Time::OffsetFromUTC();
     return date::format("%F %H:%M:%S", tp);
 }

@@ -33,11 +33,11 @@ public:
     ~IOutputNode() override = default;
 
     bool addTarget(std::weak_ptr<InputNode> node) noexcept;
-    bool removeTarget(std::weak_ptr<InputNode> node) noexcept;
+    bool removeTarget(const std::weak_ptr<InputNode>& node) noexcept;
     void removeAllTarget() noexcept;
     void process() noexcept override;
 protected:
-    void notifyTargets(std::shared_ptr<AVFrame> frame) noexcept;
+    void notifyTargets() noexcept;
 private:
     std::unordered_map<uint64_t, std::weak_ptr<InputNode>> targets_;
 };
