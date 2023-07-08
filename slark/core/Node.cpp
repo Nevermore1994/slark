@@ -29,7 +29,7 @@ bool IOutputNode::addTarget(std::weak_ptr<InputNode> node) noexcept {
     return targets_.insert({hash, std::move(node)}).second;
 }
 
-bool IOutputNode::removeTarget(std::weak_ptr<InputNode> node) noexcept {
+bool IOutputNode::removeTarget(const std::weak_ptr<InputNode>& node) noexcept {
     if (node.expired()) {
         return false;
     }
@@ -42,7 +42,7 @@ void IOutputNode::removeAllTarget() noexcept {
     targets_.clear();
 }
 
-void IOutputNode::notifyTargets(std::shared_ptr<AVFrame> frame) noexcept {
+void IOutputNode::notifyTargets() noexcept {
     //C++20 replace erase_if
     for (auto it = targets_.begin(); it != targets_.end();) {
         auto& [hash, ptr] = *it;
@@ -50,14 +50,14 @@ void IOutputNode::notifyTargets(std::shared_ptr<AVFrame> frame) noexcept {
             it = targets_.erase(it);
         } else {
             auto p = ptr.lock();
-            p->receive(frame);
+            p->receive(frame_);
             ++it;
         }
     }
 }
 
 void IOutputNode::process() noexcept {
-    notifyTargets(std::move(frame_));
+    notifyTargets();
 }
 
 }//end namespace slark
