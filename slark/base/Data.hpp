@@ -91,6 +91,11 @@ struct Data {
         length = expectLength;
     }
 
+    inline void append(std::unique_ptr<Data> data) noexcept {
+        append(*data);
+        data.reset();
+    }
+
     inline bool empty() const noexcept {
         return length == 0;
     }

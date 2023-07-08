@@ -1,5 +1,5 @@
 //
-//  AudioNode.hpp
+//  Node.hpp
 //  slark
 //
 //  Created by Nevermore on 2022/8/24.
@@ -28,9 +28,9 @@ public:
     void process() noexcept override;
 };
 
-class IOutputNode: public virtual INode {
+class OutputNode: public virtual INode {
 public:
-    ~IOutputNode() override = default;
+    ~OutputNode() override = default;
 
     bool addTarget(std::weak_ptr<InputNode> node) noexcept;
     bool removeTarget(const std::weak_ptr<InputNode>& node) noexcept;
@@ -38,7 +38,13 @@ public:
     void process() noexcept override;
 protected:
     void notifyTargets() noexcept;
-private:
+protected:
     std::unordered_map<uint64_t, std::weak_ptr<InputNode>> targets_;
+};
+
+class Node: public InputNode, public OutputNode {
+public:
+    ~Node() override = default;
+    void process() noexcept override;
 };
 }

@@ -1,28 +1,28 @@
 //
 // Created by Nevermore on 2022/5/11.
-// slark FileHandler
+// slark ReadFileHandler
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
-#include "FileHandler.hpp"
+#include "ReadFileHandler.hpp"
 #include "Log.hpp"
 #include "FileUtility.h"
 #include "Assert.h"
 
 namespace slark {
 
-FileHandler::FileHandler()
-    : worker_("IOThread", &FileHandler::process, this)
+ReadFileHandler::ReadFileHandler()
+    : worker_("IOThread", &ReadFileHandler::process, this)
     , file_(nullptr){
 }
 
-FileHandler::~FileHandler() {
+ReadFileHandler::~ReadFileHandler() {
     worker_.stop();
     if (file_->isOpen()) {
         file_->close();
     }
 }
 
-bool FileHandler::open(std::string path) {
+bool ReadFileHandler::open(std::string path) {
     std::unique_lock<std::mutex> lock(mutex_);
     path_ = path;
     file_ = std::make_unique<FileUtil::File>(path);
@@ -35,15 +35,15 @@ bool FileHandler::open(std::string path) {
     return file_->open();
 }
 
-void FileHandler::resume() {
+void ReadFileHandler::resume() {
     worker_.resume();
 }
 
-void FileHandler::pause() {
+void ReadFileHandler::pause() {
     worker_.pause();
 }
 
-void FileHandler::close() {
+void ReadFileHandler::close() {
     std::unique_lock<std::mutex> lock(mutex_);
     worker_.pause();
     if (file_->isOpen()) {
@@ -51,34 +51,16 @@ void FileHandler::close() {
     }
 }
 
-void FileHandler::seek(uint64_t pos) {
+void ReadFileHandler::seek(uint64_t pos) {
     std::unique_lock<std::mutex> lock(mutex_);
     seekPos_ = static_cast<int64_t>(pos);
 }
 
-void FileHandler::write(std::unique_ptr<Data> data) {
-    std::unique_lock<std::mutex> lock(mutex_);
-    writeData_.push_back(std::move(data));
-}
-
-void FileHandler::write(uint8_t* data, uint64_t length) {
-    SAssert(data != nullptr, "error !!!, write null data.");
-    auto p = std::make_unique<Data>(data, length);
-    std::unique_lock<std::mutex> lock(mutex_);
-    writeData_.push_back(std::move(p));
-}
-
-void FileHandler::process() {
+void ReadFileHandler::process() {
     if (seekPos_ != kInvalid) {
         std::unique_lock<std::mutex> lock(mutex_);
         file_->seek(seekPos_);
         seekPos_ = kInvalid;
-    }
-    {
-        std::unique_lock<std::mutex> lock(mutex_);
-        for (const auto& data : writeData_) {
-            file_->write(*data);
-        }
     }
 
     auto offset = file_->tell();
@@ -94,7 +76,7 @@ void FileHandler::process() {
     }
 }
 
-IOState FileHandler::state() noexcept {
+IOState ReadFileHandler::state() noexcept {
     auto offset = static_cast<uint64_t>(file_->tell());
     if (file_->readOver() || offset == file_->fileSize()) {
         return IOState::EndOfFile;

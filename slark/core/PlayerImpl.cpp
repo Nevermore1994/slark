@@ -81,7 +81,7 @@ void Player::Impl::init() noexcept {
     for (const auto& item : params_->items) {
         paths.push_back(item.path);
     }
-    dataManager_ = std::make_unique<IOManager>(paths, 0, [this](std::unique_ptr<Data> data, int64_t offset, IOState /*state*/) {
+    dataManager_ = std::make_shared<IOManager>(std::move(paths), 0, [this](std::unique_ptr<Data> data, int64_t offset, IOState /*state*/) {
         if (seekOffset_ != kInvalid && offset != seekOffset_) {
             return;
         }
@@ -89,7 +89,7 @@ void Player::Impl::init() noexcept {
         {
             std::unique_lock<std::mutex> lock(dataMutex_);
             seekOffset_ = kInvalid;
-            rawDatas_.push_back(std::move(data));
+            dataList_.push_back(std::move(data));
         }
     });
     listeners_.push_back(std::weak_ptr<ITransportObserver>(dataManager_));
@@ -97,9 +97,14 @@ void Player::Impl::init() noexcept {
     setState(PlayerState::Ready);
 }
 
-void Player::Impl::handleData(std::list<std::unique_ptr<Data>>&& dataList) noexcept {
+void Player::Impl::demuxData() noexcept {
+    decltype(dataList_) dataList;
+    {
+        std::unique_lock<std::mutex> lock(dataMutex_);
+        dataList.swap(dataList_);
+    }
     Data demuxData;
-    LogI("handleData %ld", dataList.size());
+    LogI("demuxData %ld", dataList.size());
     while (!dataList.empty()) {
         auto data = std::move(dataList.front());
         dataList.pop_front();
@@ -135,7 +140,7 @@ void Player::Impl::handleData(std::list<std::unique_ptr<Data>>&& dataList) noexc
         if (code == DemuxerState::Failed && dataList.empty()) {
             break;
         }
-        rawFrames_.push(frameList);
+        rawPackets_.push(frameList);
     }
 }
 
@@ -152,25 +157,9 @@ void Player::Impl::setState(PlayerState state) noexcept {
 }
 
 void Player::Impl::process() {
-    decltype(rawDatas_) dataList;
-    {
-        std::unique_lock<std::mutex> lock(dataMutex_);
-        dataList.swap(rawDatas_);
-    }
-    handleData(std::move(dataList));
-
-    auto state = dataManager_->state();
-    //auto isLoop = params_->isLoop;
-    if (state == IOState::Error) {
-        stop();
-    } else if (state == IOState::EndOfFile) {
-        if (params_->isLoop) {
-            //dataManager_->setIndex(0);
-        }
-    }
-    if (demuxer_ && demuxer_->isCompleted()) {
-        stop();
-    }
+    demuxData();
+    decodeData();
+    updateInternalState();
 }
 
 TransportEvent Player::Impl::eventType(PlayerState state) const noexcept {
@@ -210,6 +199,27 @@ void Player::Impl::notifyEvent(PlayerState state) const noexcept {
         auto listener = ptr.lock();
         listener->updateEvent(event);
     }
+}
+
+void Player::Impl::updateInternalState() {
+    auto state = dataManager_->state();
+    //auto isLoop = params_->isLoop;
+    if (state == IOState::Error) {
+        //stop io
+        dataManager_->pause();
+        //stop();
+    } else if (state == IOState::EndOfFile) {
+        if (params_->isLoop) {
+            //dataManager_->setIndex(0);
+        }
+    }
+//    if (demuxer_ && demuxer_->isCompleted()) {
+//        stop();
+//    }
+}
+
+void Player::Impl::decodeData() noexcept {
+
 }
 
 }//end namespace slark

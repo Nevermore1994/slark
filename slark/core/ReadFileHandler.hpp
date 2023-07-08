@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2022/5/11.
-// slark FileHandler
+// slark ReadFileHandler
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 #pragma once
@@ -16,10 +16,10 @@ namespace slark {
 
 constexpr uint32_t kDefaultSize = 1024 * 5;
 
-class FileHandler: public IOHandler {
+class ReadFileHandler: public IOHandler {
 public:
-    FileHandler();
-    ~FileHandler() override;
+    ReadFileHandler();
+    ~ReadFileHandler() override;
 public:
     bool open(std::string path) override;
     void resume() override;
@@ -27,8 +27,6 @@ public:
     void close() override;
 
     void seek(uint64_t pos);
-    void write(std::unique_ptr<Data> data);
-    void write(uint8_t* data, uint64_t length);
 
 public:
     inline std::string_view path() const noexcept override {
@@ -47,8 +45,7 @@ private:
     std::mutex mutex_;
     std::string path_;
     slark::Thread worker_;
-    std::unique_ptr<slark::FileUtil::File> file_;
-    std::list<std::unique_ptr<Data>> writeData_;
+    std::unique_ptr<slark::FileUtil::ReadFile> file_;
     IOHandlerCallBack handler_;
 };
 

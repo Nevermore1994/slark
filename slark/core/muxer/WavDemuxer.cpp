@@ -8,6 +8,7 @@
 #include "WavDemuxer.h"
 #include "MediaUtility.hpp"
 #include "Time.hpp"
+#include "MediaDefs.h"
 
 namespace slark {
 
@@ -56,6 +57,7 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
         audioInfo_->sampleRate = sampleRate;
         audioInfo_->bitsPerSample = bitsPerSample;
         audioInfo_->duration = CTime(static_cast<long double>(duration), 1000000);
+        audioInfo_->mediaInfo = MEDIA_MIMETYPE_AUDIO_RAW;
         headerInfo_.dataSize = totalSize;
         headerInfo_.headerLength = offset;
         isInited_ = true;
@@ -211,7 +213,7 @@ void WAVDemuxer::reset() noexcept {
 
 std::tuple<DemuxerState, AVFrameList> WAVDemuxer::parseData(std::unique_ptr<Data> data) {
     if (data->empty() || state_ != DemuxerState::Success) {
-        return { DemuxerState::Failed, AVFrameList()};
+        return { DemuxerState::Failed, AVFrameList() };
     }
 
     if (overflowData_ == nullptr) {
@@ -219,7 +221,7 @@ std::tuple<DemuxerState, AVFrameList> WAVDemuxer::parseData(std::unique_ptr<Data
         parseLength_ += headerInfo_.headerLength;
     }
     parseLength_ += data->length;
-    overflowData_->append(*data);
+    overflowData_->append(std::move(data));
     //frame include 2048 sample
     constexpr uint16_t sampleCount = 2048;
     uint64_t frameLength = audioInfo_->bitsPerSample * audioInfo_->channels * sampleCount;
