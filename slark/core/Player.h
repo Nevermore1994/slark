@@ -55,13 +55,13 @@ struct PlayerParams {
 };
 
 struct PlayerInfos {
-    CTime duration = CTime();
+    CTime duration;
 };
 
 class Player {
 
 public:
-    Player(const std::shared_ptr<PlayerParams>& params);
+    explicit Player(const std::shared_ptr<PlayerParams>& params);
 
     ~Player();
 
@@ -78,8 +78,7 @@ public:
 
     void seek(long double time, bool isAccurate) noexcept;
 
-    std::string_view playerId() const noexcept;
-
+    [[nodiscard]] std::string_view playerId() const noexcept;
 public:
     const PlayerParams& observer();
 

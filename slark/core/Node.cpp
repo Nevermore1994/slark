@@ -1,5 +1,5 @@
 //
-//  AudioNode.cpp
+//  Node.cpp
 //  slark
 //
 //  Created by Nevermore on 2022/8/24.
@@ -20,7 +20,7 @@ void InputNode::process() noexcept {
 
 }
 
-bool IOutputNode::addTarget(std::weak_ptr<InputNode> node) noexcept {
+bool OutputNode::addTarget(std::weak_ptr<InputNode> node) noexcept {
     if (node.expired()) {
         return false;
     }
@@ -29,7 +29,7 @@ bool IOutputNode::addTarget(std::weak_ptr<InputNode> node) noexcept {
     return targets_.insert({hash, std::move(node)}).second;
 }
 
-bool IOutputNode::removeTarget(const std::weak_ptr<InputNode>& node) noexcept {
+bool OutputNode::removeTarget(const std::weak_ptr<InputNode>& node) noexcept {
     if (node.expired()) {
         return false;
     }
@@ -38,11 +38,11 @@ bool IOutputNode::removeTarget(const std::weak_ptr<InputNode>& node) noexcept {
     return targets_.erase(hash) > 0;
 }
 
-void IOutputNode::removeAllTarget() noexcept {
+void OutputNode::removeAllTarget() noexcept {
     targets_.clear();
 }
 
-void IOutputNode::notifyTargets() noexcept {
+void OutputNode::notifyTargets() noexcept {
     //C++20 replace erase_if
     for (auto it = targets_.begin(); it != targets_.end();) {
         auto& [hash, ptr] = *it;
@@ -56,8 +56,12 @@ void IOutputNode::notifyTargets() noexcept {
     }
 }
 
-void IOutputNode::process() noexcept {
+void OutputNode::process() noexcept {
     notifyTargets();
+}
+
+void Node::process() noexcept {
+    OutputNode::process();
 }
 
 }//end namespace slark

@@ -52,7 +52,7 @@ bool IOManager::setIndex(int16_t index) noexcept {
 void IOManager::buildHandler(std::string path) {
     auto url = std::move(path);
     if (isLocalFile(url)) {
-        handler_ = std::make_unique<FileHandler>();
+        handler_ = std::make_unique<ReadFileHandler>();
     } else {
         //network
     }
@@ -69,8 +69,12 @@ void IOManager::handleData(std::unique_ptr<Data> data, int64_t offset, IOState s
     }
     offset_ = static_cast<uint64_t>(offset) + data->length;
     state_ = state;
-    if (state == IOState::EndOfFile && nextTask()) {
-        state_ = IOState::Normal;
+    if (state == IOState::EndOfFile) {
+        if (nextTask()) {
+            state_ = IOState::Normal;
+        } else {
+            state_ = IOState::Error;
+        }
     }
     LogI("[IOManager] offset %lld, ,io state %d", offset_, static_cast<int>(state));
     if (callBack_) {

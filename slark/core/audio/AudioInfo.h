@@ -18,7 +18,7 @@ struct AudioInfo {
     uint64_t headerLength = 0;
     CTime offset;
     CTime duration;
-    std::string format;
+    std::string_view mediaInfo;
 };
 
 }

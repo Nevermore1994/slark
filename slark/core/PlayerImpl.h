@@ -9,7 +9,7 @@
 
 #include <deque>
 #include <string_view>
-#include "FileHandler.hpp"
+#include "ReadFileHandler.hpp"
 #include "Player.h"
 #include "DecoderManager.h"
 #include "DemuxerManager.h"
@@ -41,26 +41,28 @@ public:
     void seek(long double time, bool isAccurate) noexcept;
 
 public:
-    inline const PlayerInfos& info() const noexcept {
+    [[nodiscard]] inline const PlayerInfos& info() const noexcept {
         return info_;
     }
 
-    inline PlayerState state() const noexcept {
+    [[nodiscard]] inline PlayerState state() const noexcept {
         return state_;
     }
 
-    inline const PlayerParams& params() const noexcept {
+    [[nodiscard]] inline const PlayerParams& params() const noexcept {
         return *params_;
     }
 
-    inline std::string_view playerId() const noexcept {
+    [[nodiscard]] inline std::string_view playerId() const noexcept {
         return std::string_view(playerId_);
     }
 
 private:
     void init() noexcept;
 
-    void handleData(std::list<std::unique_ptr<Data>>&& dataList) noexcept;
+    void demuxData() noexcept;
+    
+    void decodeData() noexcept;
 
     void setState(PlayerState state) noexcept;
 
@@ -70,6 +72,7 @@ private:
 
     [[nodiscard]] TransportEvent eventType(PlayerState state) const noexcept;
 
+    void updateInternalState();
 private:
     std::mutex dataMutex_;
     PlayerState state_ = PlayerState::Unknown;
@@ -78,11 +81,11 @@ private:
     std::string playerId_;
     std::shared_ptr<PlayerParams> params_;
     std::unique_ptr<slark::Thread> transporter_ = nullptr;
-    std::list<std::unique_ptr<Data>> rawDatas_;
+    std::list<std::unique_ptr<Data>> dataList_;
     std::vector<std::weak_ptr<ITransportObserver>> listeners_;
     std::shared_ptr<IOManager> dataManager_ = nullptr;
-    std::shared_ptr<IDemuxer> demuxer_ = nullptr;
-    AVFrameSafeDeque rawFrames_;
+    std::unique_ptr<IDemuxer> demuxer_ = nullptr;
+    AVFrameSafeDeque rawPackets_;
     AVFrameSafeDeque decodeFrames_;
 };
 

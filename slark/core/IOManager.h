@@ -6,13 +6,13 @@
 #pragma once
 
 #include "TransportEvent.h"
-#include "FileHandler.hpp"
+#include "ReadFileHandler.hpp"
 //network handler
 
 namespace slark {
 
-#define CallFunc(pointer, func)                                             \
-    inline void func(){                                                         \
+#define CallFunc(pointer, func)                                                 \
+    inline void func() {                                                        \
         std::unique_lock<std::mutex> lock(mutex_);                              \
         if (pointer){                                                           \
             pointer->func();                                                    \
@@ -52,7 +52,7 @@ private:
     void handleData(std::unique_ptr<Data> data, int64_t offset, IOState state);
     bool nextTask() noexcept;
 private:
-    std::mutex mutex_;
+    std::mutex mutex_; //for handler_
     IOState state_;
     std::atomic<int16_t> index_ = kInvalid;
     uint64_t offset_ = 0;
