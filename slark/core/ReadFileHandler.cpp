@@ -6,7 +6,7 @@
 #include "ReadFileHandler.hpp"
 #include "Log.hpp"
 #include "FileUtility.h"
-#include "Assert.h"
+#include "Assert.hpp"
 
 namespace slark {
 

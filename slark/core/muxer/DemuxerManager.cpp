@@ -50,7 +50,7 @@ DemuxerType DemuxerManager::probeDemuxType(const std::string& str) const noexcep
 }
 
 DemuxerType DemuxerManager::probeDemuxType(std::unique_ptr<Data> data) const noexcept {
-    if (data->data == nullptr || data->length == 0) {
+    if (data->rawData == nullptr || data->length == 0) {
         return {};
     }
     return probeDemuxType(data->view());
