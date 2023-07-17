@@ -5,7 +5,7 @@
 //
 #include <cstdarg>
 #include <stdexcept>
-#include "Assert.h"
+#include "Assert.hpp"
 
 namespace slark {
 #if DEBUG

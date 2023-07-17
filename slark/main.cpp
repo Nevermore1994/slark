@@ -19,17 +19,17 @@ struct Observer:public IPlayerObserver, public std::enable_shared_from_this<Obse
     inline void updateTime(long double time) override{
         LogI("%f", time);
     }
-    
+
     inline void updateState(PlayerState state) override{
         LogI("core:%d", static_cast<int>(state));
     }
-    
+
     inline std::weak_ptr<Observer> observer() noexcept{
         return weak_from_this();
     }
-    
+
     inline void event(PlayerEvent /* event */) override {
-    
+
     }
 };
 

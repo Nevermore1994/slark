@@ -3,9 +3,9 @@
 // slark Time
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
+#include <ctime>
 #include "Time.hpp"
 #include "date.h"
-#include <ctime>
 
 namespace slark {
 

@@ -122,7 +122,7 @@ void Player::Impl::demuxData() noexcept {
             demuxer_ = DemuxerManager::shareInstance().create(demuxType);
             auto [res, offset] = demuxer_->open(dataView);
             if (res) {
-                auto p = demuxData.data;
+                auto p = demuxData.rawData;
                 data = std::make_unique<Data>(p + offset, demuxData.length - offset);
                 demuxData.release();
             } else {

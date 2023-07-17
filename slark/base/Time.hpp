@@ -10,7 +10,7 @@
 #include <cmath>
 #include <algorithm>
 #include <string>
-#include "Assert.h"
+#include "Assert.hpp"
 
 namespace slark {
 
@@ -35,29 +35,29 @@ Time::TimeStamp NowTimeStamp() noexcept;
 struct CTime {
 private:
     constexpr static long double kTimePrecision = 0.001;
+    constexpr static uint64_t kDefaultScale = 1000U;
 public:
     int64_t value;
-    uint64_t scale;
+    uint64_t scale = 1000;
 
     CTime()
-        : value(Time::kTimeInvalid)
+        : value(0)
         , scale(Time::kTimeInvalid) {
     }
 
-    CTime(int64_t v, uint64_t s)
+    explicit CTime(int64_t v, uint64_t s)
         : value(v)
         , scale(s) {
     }
 
-    CTime(long double t, uint64_t s)
-        : value(static_cast<int64_t>(s * t))
-        , scale(s) {
+    /// init with seconds
+    explicit CTime(long double t)
+        : value(static_cast<int64_t>(kDefaultScale * t))
+        , scale(kDefaultScale) {
     }
 
     [[nodiscard]] inline long double second() const noexcept {
         bool isValid = this->isValid();
-        //it appears that c++17 just hasn't updated their warnings yet.
-        //https://stackoverflow.com/questions/67912343/how-to-resolve-must-specify-at-least-one-argument-for-parameter-of-variad
         SAssert(isValid, "time is invalid");
         if (isValid) {
             return static_cast<double>(value) / static_cast<double>(scale);
@@ -87,12 +87,12 @@ public:
 
     inline CTime operator-(const CTime& rhs) const noexcept {
         auto t = second() - rhs.second();
-        return {t, scale};
+        return CTime(static_cast<int64_t>(t * static_cast<long double>(scale)), scale);
     }
 
     inline CTime operator+(const CTime& rhs) const noexcept {
         auto t = second() + rhs.second();
-        return {t, scale};
+        return CTime(static_cast<int64_t>(t * static_cast<long double>(scale)), scale);
     }
 
     [[nodiscard]] inline bool isValid() const noexcept {
@@ -117,10 +117,27 @@ struct CTimeRange {
     }
 
     [[nodiscard]] inline bool operator==(const CTimeRange& rhs) const noexcept {
+        SAssert(isValid() && rhs.isValid(), "time is invalid");
         if (!isValid() || !rhs.isValid()) {
             return false;
         }
         return start == rhs.start && duration == rhs.duration;
+    }
+
+    [[nodiscard]] inline bool operator<(const CTimeRange& rhs) const noexcept {
+        SAssert(isValid() && rhs.isValid(), "time is invalid");
+        if (!isValid() || !rhs.isValid()) {
+            return false;
+        }
+        return end() < rhs.start;
+    }
+
+    [[nodiscard]] inline bool operator>(const CTimeRange& rhs) const noexcept {
+        SAssert(isValid() && rhs.isValid(), "time is invalid");
+        if (!isValid() || !rhs.isValid()) {
+            return false;
+        }
+        return end() > rhs.start;
     }
 
     [[nodiscard]] inline bool overlap(const CTimeRange& rhs) const noexcept {
@@ -151,7 +168,7 @@ struct CTimeRange {
         auto end = this->end().second();
         auto rend = rhs.end().second();
         range.start = std::max(start, rhs.start);
-        range.duration = CTime(std::min(end, rend), start.scale) - range.start;
+        range.duration = CTime(static_cast<int64_t>(std::min(end, rend)), start.scale) - range.start;
         return range;
     }
 };

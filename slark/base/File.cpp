@@ -97,7 +97,7 @@ void WriteFile::flush() noexcept {
 }
 
 bool WriteFile::write(const Data& data) noexcept {
-    return write(data.data, data.length);
+    return write(data.rawData, data.length);
 }
 
 bool WriteFile::write(const uint8_t* data, uint64_t size) noexcept {
@@ -166,7 +166,7 @@ bool ReadFile::read(Data& data) noexcept {
     if (!file_ || readOver_) {
         return false;
     }
-    auto res = fread(&data.data, data.capacity, 1, file_);
+    auto res = fread(&data.rawData, data.capacity, 1, file_);
     if (res <= 0) {
         if (feof(file_)) {
             readOver_ = true;
