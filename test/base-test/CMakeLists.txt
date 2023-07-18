@@ -8,7 +8,7 @@ target_link_libraries(base-test
         gtest
         gtest_main
         pthread
-        slark)
+        slark_base)
 
 add_test(
         NAME base

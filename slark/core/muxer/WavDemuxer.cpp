@@ -56,7 +56,7 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
         audioInfo_->channels = channels;
         audioInfo_->sampleRate = sampleRate;
         audioInfo_->bitsPerSample = bitsPerSample;
-        audioInfo_->duration = CTime(static_cast<long double>(duration), 1000000);
+        audioInfo_->duration = CTime(duration);
         audioInfo_->mediaInfo = MEDIA_MIMETYPE_AUDIO_RAW;
         headerInfo_.dataSize = totalSize;
         headerInfo_.headerLength = offset;
