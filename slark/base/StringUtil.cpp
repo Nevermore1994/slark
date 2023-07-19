@@ -7,7 +7,7 @@
 #include <sstream>
 #include <functional>
 
-namespace slark {
+namespace slark::string {
 
 std::vector<std::string> spiltString(const std::string& str, char delimiter) {
     std::istringstream iss(str);
