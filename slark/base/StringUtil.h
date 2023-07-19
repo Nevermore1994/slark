@@ -8,7 +8,7 @@
 #include <string>
 #include <string_view>
 
-namespace slark {
+namespace slark::string {
 
 std::vector<std::string> spiltString(const std::string& str, char delimiter);
 

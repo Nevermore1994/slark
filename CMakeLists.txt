@@ -2,7 +2,6 @@ cmake_minimum_required(VERSION 3.20)
 
 include(CMakeForceCompiler)
 include(CMakePrintHelpers)
-include(FetchContent)
 
 #C++ standard
 set(CMAKE_CXX_FLAGS "-std=c++17 -Wall -Wextra -Wpedantic -Wcast-align -Wcast-qual -Wconversion -Wdisabled-optimization -Wendif-labels -Wfloat-equal -Winit-self -Winline -Wmissing-include-dirs -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual -Wpacked -Wpointer-arith -Wredundant-decls -Wshadow -Wsign-promo -Wvariadic-macros -Wwrite-strings -Wno-variadic-macros")
@@ -24,15 +23,14 @@ find_package(Threads REQUIRED)
 set(BASE_DIR slark/base/)
 set(THIRD_PARTY_DIR slark/third_party/)
 set(CORE_DIR slark/core/)
-
+set_property(GLOBAL PROPERTY LIBRARY_TYPE "base")
 
 function(add_base_library)
     message(STATUS "add base library")
     FILE(GLOB BASE_FILES ${BASE_DIR}/*.cpp ${BASE_DIR}/*.hpp ${BASE_DIR}/*.h ${THIRD_PARTY_DIR}/*.h)
-    source_group("base" FILES ${BASE_FILES})
-    add_library(${PROJECT_NAME}_base ${BASE_FILES})
-    target_include_directories(${PROJECT_NAME}_base PUBLIC ${BASE_DIR})
-    target_include_directories(${PROJECT_NAME}_base PUBLIC ${THIRD_PARTY_DIR})
+    add_library(base ${BASE_FILES})
+    target_include_directories(base PUBLIC ${BASE_DIR})
+    target_include_directories(base PUBLIC ${THIRD_PARTY_DIR})
 endfunction()
 
 function(add_core_library)
@@ -99,6 +97,7 @@ function(set_main_component component_name)
         add_core_library()
         add_component("codec")
         add_component("muxer")
+        set_property(GLOBAL PROPERTY LIBRARY_TYPE "core")
     endif()
     
 endfunction()
@@ -126,11 +125,11 @@ function(read_config)
     set_output_type(${OUTPUT_TYPE})
     
     #parse component
-    string(JSON MAIN_COMPONENT GET ${CONFIG_JSON_STRING} component main)
-    set_main_component(${MAIN_COMPONENT})
+    string(JSON COMPONENT_TYPE GET ${CONFIG_JSON_STRING} component main)
+    set_main_component(${COMPONENT_TYPE})
     
     #parse disable
-    if(${MAIN_COMPONENT} STREQUAL "core")
+    if(${COMPONENT_TYPE} STREQUAL "core")
         string(JSON DISABLE_COMPONENT_LENGTH LENGTH ${CONFIG_JSON_STRING} component disable)
         foreach (i RANGE 0 ${DISABLE_COMPONENT_LENGTH} )
             if(${i} EQUAL ${DISABLE_COMPONENT_LENGTH})
@@ -148,7 +147,7 @@ function(read_config)
     
     #add test main
     if(${OUTPUT_TYPE} STREQUAL "exe")
-        if (${MAIN_COMPONENT} STREQUAL "base")
+        if (${COMPONENT_TYPE} STREQUAL "base")
             target_sources(${PROJECT_NAME} PUBLIC slark/baseMain.cpp)
             source_group("SourceFiles" FILES slark/baseMain.cpp)
         else()
@@ -156,7 +155,7 @@ function(read_config)
             source_group("SourceFiles" FILES slark/main.cpp)
         endif()
     endif()
-    
+
     #enable test
     string(JSON DISABLE_TEST_VALUE GET ${CONFIG_JSON_STRING} disable_test)
     set(DISABLE_TEST ${DISABLE_TEST_VALUE} PARENT_SCOPE)
@@ -178,4 +177,4 @@ else()
     message(STATUS "disable testing")
 endif()
 
-target_link_libraries(${PROJECT_NAME} ${PROJECT_NAME}_base ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(${PROJECT_NAME} base ${CMAKE_THREAD_LIBS_INIT})
