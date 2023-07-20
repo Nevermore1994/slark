@@ -16,7 +16,7 @@ std::string LogFileName() {
         LogE("create log folder failed.");
         return "";
     }
-    return  logDir + "/" + Time::LocalShortTime() + ".log";
+    return logDir + "/" + Time::localShortTime() + ".log";
 }
 
 LogOutput::LogOutput()

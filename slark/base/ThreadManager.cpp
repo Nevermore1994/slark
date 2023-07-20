@@ -53,7 +53,7 @@ std::shared_ptr<Thread> ThreadManager::thisThread() noexcept {
 }
 
 void ThreadManager::reportRunInfo() noexcept {
-    TimeStamp now = NowTimeStamp();
+    TimeStamp now = nowTimeStamp();
     LogI("ThreadManager report now:%llu, now live size :%lu", now, threadInfos_.size());
     ///Todo: replace C++20 std::erase_if
     std::vector<std::thread::id> expiredThreads;

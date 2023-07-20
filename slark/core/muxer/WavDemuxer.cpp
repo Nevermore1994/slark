@@ -22,13 +22,9 @@ enum class WaveFormat {
 
 static std::string_view WaveextSubformat = "\x00\x00\x00\x00\x10\x00\x80\x00\x00\xAA\x00\x38\x9B\x71";
 
-WAVDemuxer::WAVDemuxer() {
+WAVDemuxer::WAVDemuxer() = default;
 
-}
-
-WAVDemuxer::~WAVDemuxer() {
-
-}
+WAVDemuxer::~WAVDemuxer() = default;
 
 std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept {
     auto res = std::make_tuple(false, 0);
@@ -208,7 +204,7 @@ void WAVDemuxer::reset() noexcept {
     isInited_ = false;
     state_ = DemuxerState::Unknown;
     parseLength_ = 0;
-    overflowData_->release();
+    overflowData_.reset();
 }
 
 std::tuple<DemuxerState, AVFrameList> WAVDemuxer::parseData(std::unique_ptr<Data> data) {

@@ -11,6 +11,7 @@
 #include "PlayerImpl.h"
 #include <utility>
 #include <functional>
+#include <algorithm>
 
 namespace slark {
 
@@ -124,7 +125,7 @@ void Player::Impl::demuxData() noexcept {
             if (res) {
                 auto p = demuxData.rawData;
                 data = std::make_unique<Data>(p + offset, demuxData.length - offset);
-                demuxData.release();
+                demuxData.destroy();
             } else {
                 LogE("create demuxer error...");
             }
@@ -186,19 +187,20 @@ TransportEvent Player::Impl::eventType(PlayerState state) const noexcept {
     return event;
 }
 
-void Player::Impl::notifyEvent(PlayerState state) const noexcept {
+void Player::Impl::notifyEvent(PlayerState state) noexcept {
     auto event = eventType(state);
     if (event == TransportEvent::Unknown) {
         LogE("transport event Unknown.");
         return;
     }
-    for (const auto& ptr : listeners_) {
-        if (ptr.expired()) {
-            continue;
+    listeners_.erase(std::remove_if(listeners_.begin(), listeners_.end(), [&](auto& ptr){
+        auto isExpired = ptr.expired();
+        if (!isExpired) {
+            auto listener = ptr.lock();
+            listener->updateEvent(event);
         }
-        auto listener = ptr.lock();
-        listener->updateEvent(event);
-    }
+        return isExpired;
+    }), listeners_.end());
 }
 
 void Player::Impl::updateInternalState() {

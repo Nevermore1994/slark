@@ -18,15 +18,22 @@ enum class IOState {
     EndOfFile,
 };
 
+namespace IO {
+
+constexpr uint32_t kReadDefaultSize = 1024 * 5;
+
+}
+
 using IOHandlerCallBack = std::function<void(std::unique_ptr<Data>, int64_t, IOState)>;
 
 struct IOHandler: public slark::NonCopyable {
     ~IOHandler() override = default;
 
-    virtual bool open(std::string path) = 0;
-    virtual void resume() = 0;
-    virtual void pause() = 0;
-    virtual void close() = 0;
+    virtual IOState state() const noexcept = 0;
+    virtual bool open(const std::string& path) noexcept = 0;
+    virtual void resume() noexcept = 0;
+    virtual void pause() noexcept = 0;
+    virtual void close() noexcept = 0;
     virtual std::string_view path() const noexcept = 0;
     virtual void setCallBack(IOHandlerCallBack callBack) noexcept = 0;
 };

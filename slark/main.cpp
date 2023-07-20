@@ -36,9 +36,9 @@ struct Observer:public IPlayerObserver, public std::enable_shared_from_this<Obse
 
 
 int main() {
-    //auto t = Time::NowTimeStamp();
-    std::cout << "now time:" << Time::LocalTime() << std::endl;
-    std::cout << "now time:" << Time::LocalShortTime() << std::endl;
+    //auto t = Time::nowTimeStamp();
+    std::cout << "now time:" << Time::localTime() << std::endl;
+    std::cout << "now time:" << Time::localShortTime() << std::endl;
 //    if(FileUtil::isFileExist("test.wav")){
 //        LogI("file is exist %lld", FileUtil::fileSize("test.wav"));
 //    } else {

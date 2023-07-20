@@ -8,12 +8,12 @@
 
 namespace slark {
 
-void AVFrameSafeDeque::push(AVFramePtr frame) {
+void AVFrameSafeDeque::push(AVFramePtr frame) noexcept {
     std::unique_lock<std::mutex> lock(mutex_);
     frames_.push_back(std::move(frame));
 }
 
-void AVFrameSafeDeque::push(AVFrameList& frameList) {
+void AVFrameSafeDeque::push(AVFrameList& frameList) noexcept {
     if (!frameList.empty()) {
         std::unique_lock<std::mutex> lock(mutex_);
         for (auto& it : frameList) {
@@ -24,7 +24,7 @@ void AVFrameSafeDeque::push(AVFrameList& frameList) {
     frameList.clear();
 }
 
-AVFramePtr AVFrameSafeDeque::pop() {
+AVFramePtr AVFrameSafeDeque::pop() noexcept {
     std::unique_lock<std::mutex> lock(mutex_);
     if (frames_.empty()) {
         return nullptr;
@@ -34,14 +34,25 @@ AVFramePtr AVFrameSafeDeque::pop() {
     return ptr;
 }
 
-void AVFrameSafeDeque::swap(AVFrameSafeDeque& deque) {
+void AVFrameSafeDeque::swap(AVFrameSafeDeque& deque) noexcept {
     std::unique_lock<std::mutex> lock(mutex_);
     frames_.swap(deque.frames_);
 }
 
-void AVFrameSafeDeque::clear() {
+
+void AVFrameSafeDeque::clear() noexcept {
     std::unique_lock<std::mutex> lock(mutex_);
     frames_.clear();
+}
+
+AVFrameList AVFrameSafeDeque::detachData() noexcept {
+    AVFrameList frameList;
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        frameList.swap(frames_);
+    }
+
+    return frameList;
 }
 
 }//end namespace slark

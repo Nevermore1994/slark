@@ -41,7 +41,7 @@ struct Data {
     }
 
     ~Data() {
-        release();
+        destroy();
     }
 
     [[nodiscard]] inline std::unique_ptr<Data> copy() const noexcept {
@@ -60,7 +60,7 @@ struct Data {
         return res;
     }
 
-    inline void release() noexcept {
+    inline void destroy() noexcept {
         if (rawData) {
             delete [] rawData;
             rawData = nullptr;

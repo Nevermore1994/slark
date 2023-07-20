@@ -36,7 +36,7 @@ void TimerPool::clear() noexcept {
 }
 
 void TimerPool::loop() noexcept {
-    uint64_t now = Time::NowTimeStamp();
+    uint64_t now = Time::nowTimeStamp();
     std::vector<TimerInfo> expireTimes;
     decltype(timers_) timers;
     {
@@ -90,23 +90,23 @@ TimerId TimerPool::runAt(uint64_t timeStamp, TimerCallback func) noexcept {
 }
 
 TimerId TimerPool::runAfter(uint64_t delayTime, TimerCallback func) noexcept {
-    auto now = Time::NowTimeStamp();
+    auto now = Time::nowTimeStamp();
     return addTimer(now + delayTime * 1000, std::move(func), false);
 }
 
 TimerId TimerPool::runLoop(uint64_t timeInterval, TimerCallback func) noexcept {
-    auto now = Time::NowTimeStamp();
+    auto now = Time::nowTimeStamp();
     return addTimer(now + timeInterval * 1000, std::move(func), true, timeInterval * 1000);
 }
 
 TimerId TimerPool::runAfter(milliseconds delayTime, TimerCallback func) noexcept {
-    auto now = Time::NowTimeStamp();
+    auto now = Time::nowTimeStamp();
     auto t = static_cast<uint64_t>(std::chrono::duration_cast<microseconds>(delayTime).count());
     return addTimer(now + t, std::move(func), false);
 }
 
 TimerId TimerPool::runLoop(milliseconds timeInterval, TimerCallback func) noexcept {
-    auto now = Time::NowTimeStamp();
+    auto now = Time::nowTimeStamp();
     auto t = static_cast<uint64_t>(std::chrono::duration_cast<microseconds>(timeInterval).count());
 
     return addTimer(now + t, std::move(func), true, t);
