@@ -66,7 +66,7 @@ struct AVFrame {
         renderedStamp = 0;
         pts = 0;
         dts = 0;
-        data->release();
+        data->destroy();
     }
 
     inline std::unique_ptr<Data> detachData() noexcept {
@@ -75,7 +75,7 @@ struct AVFrame {
         return d;
     }
 
-    inline std::unique_ptr<AVFrame> copy() const noexcept {
+    [[nodiscard]] inline std::unique_ptr<AVFrame> copy() const noexcept {
         auto frame = std::make_unique<AVFrame>();
         frame->isKeyFrame = this->isKeyFrame;
         frame->frameType = this->frameType;

@@ -34,8 +34,6 @@ public:
 
     DemuxerType probeDemuxType(const std::string& str) const noexcept;
 
-    DemuxerType probeDemuxType(std::unique_ptr<Data> data) const noexcept;
-
     DemuxerType probeDemuxType(const std::string_view& str) const noexcept;
 
     std::unique_ptr<IDemuxer> create(DemuxerType type) noexcept;

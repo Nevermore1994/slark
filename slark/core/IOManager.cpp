@@ -52,7 +52,7 @@ bool IOManager::setIndex(int16_t index) noexcept {
 void IOManager::buildHandler(std::string path) {
     auto url = std::move(path);
     if (isLocalFile(url)) {
-        handler_ = std::make_unique<ReadFileHandler>();
+        handler_ = std::make_unique<ReadHandler>();
     } else {
         //network
     }

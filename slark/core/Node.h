@@ -21,7 +21,7 @@ protected:
     std::shared_ptr<AVFrame> frame_;
 };
 
-class InputNode: public virtual INode{
+class InputNode: public virtual INode {
 public:
     ~InputNode() override = default;
     void receive(std::shared_ptr<AVFrame> frame) noexcept;

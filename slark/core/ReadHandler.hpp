@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2022/5/11.
-// slark ReadFileHandler
+// slark ReadHandler
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 #pragma once
@@ -14,20 +14,24 @@
 
 namespace slark {
 
-constexpr uint32_t kDefaultSize = 1024 * 5;
-
-class ReadFileHandler: public IOHandler {
+class ReadHandler: public IOHandler {
 public:
-    ReadFileHandler();
-    ~ReadFileHandler() override;
+    ReadHandler();
+    ~ReadHandler() override;
 public:
-    bool open(std::string path) override;
-    void resume() override;
-    void pause() override;
-    void close() override;
+    IOState state() const noexcept override;
+    bool open(const std::string& path) noexcept override;
+    void resume() noexcept override;
+    void pause() noexcept override;
+    void close() noexcept override;
 
     void seek(uint64_t pos);
-
+    inline uint64_t tell() const {
+        if (file_) {
+            file_->tell();
+        }
+        return 0;
+    }
 public:
     inline std::string_view path() const noexcept override {
         return path_;
@@ -39,7 +43,6 @@ public:
     }
 private:
     void process();
-    IOState state() noexcept;
 private:
     int64_t seekPos_ = kInvalid;
     std::mutex mutex_;

@@ -24,7 +24,7 @@ void RawDecoder::close() noexcept {
 
 AVFrameList RawDecoder::decode(AVFrameList&& frameList) {
     for (auto& frame : frameList) {
-        frame->decodedStamp = Time::NowTimeStamp();
+        frame->decodedStamp = Time::nowTimeStamp();
     }
     return std::move(frameList);
 }

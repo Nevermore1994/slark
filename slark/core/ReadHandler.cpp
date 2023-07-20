@@ -1,28 +1,28 @@
 //
 // Created by Nevermore on 2022/5/11.
-// slark ReadFileHandler
+// slark ReadHandler
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
-#include "ReadFileHandler.hpp"
+#include "ReadHandler.hpp"
 #include "Log.hpp"
 #include "FileUtility.h"
 #include "Assert.hpp"
 
 namespace slark {
 
-ReadFileHandler::ReadFileHandler()
-    : worker_("IOThread", &ReadFileHandler::process, this)
+ReadHandler::ReadHandler()
+    : worker_("ReadThread", &ReadHandler::process, this)
     , file_(nullptr){
 }
 
-ReadFileHandler::~ReadFileHandler() {
+ReadHandler::~ReadHandler() {
     worker_.stop();
     if (file_->isOpen()) {
         file_->close();
     }
 }
 
-bool ReadFileHandler::open(std::string path) {
+bool ReadHandler::open(const std::string& path) noexcept {
     std::unique_lock<std::mutex> lock(mutex_);
     path_ = path;
     file_ = std::make_unique<FileUtil::File>(path);
@@ -35,15 +35,15 @@ bool ReadFileHandler::open(std::string path) {
     return file_->open();
 }
 
-void ReadFileHandler::resume() {
+void ReadHandler::resume() noexcept {
     worker_.resume();
 }
 
-void ReadFileHandler::pause() {
+void ReadHandler::pause() noexcept {
     worker_.pause();
 }
 
-void ReadFileHandler::close() {
+void ReadHandler::close() noexcept {
     std::unique_lock<std::mutex> lock(mutex_);
     worker_.pause();
     if (file_->isOpen()) {
@@ -51,12 +51,15 @@ void ReadFileHandler::close() {
     }
 }
 
-void ReadFileHandler::seek(uint64_t pos) {
+void ReadHandler::seek(uint64_t pos) {
     std::unique_lock<std::mutex> lock(mutex_);
     seekPos_ = static_cast<int64_t>(pos);
 }
 
-void ReadFileHandler::process() {
+void ReadHandler::process() {
+    if (!file_) {
+        return;
+    }
     if (seekPos_ != kInvalid) {
         std::unique_lock<std::mutex> lock(mutex_);
         file_->seek(seekPos_);
@@ -67,7 +70,7 @@ void ReadFileHandler::process() {
     std::unique_ptr<Data> data;
     {
         std::unique_lock<std::mutex> lock(mutex_);
-        data = std::make_unique<Data>(kDefaultSize);
+        data = std::make_unique<Data>(IO::kReadDefaultSize);
         file_->read(*data);
     }
 
@@ -76,7 +79,11 @@ void ReadFileHandler::process() {
     }
 }
 
-IOState ReadFileHandler::state() noexcept {
+IOState ReadHandler::state() const noexcept {
+    if (!file_) {
+        return IOState::Error;
+    }
+
     auto offset = static_cast<uint64_t>(file_->tell());
     if (file_->readOver() || offset == file_->fileSize()) {
         return IOState::EndOfFile;

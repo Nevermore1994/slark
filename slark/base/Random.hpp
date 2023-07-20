@@ -20,6 +20,7 @@ T random(T min, T max) {
     std::random_device rd;
     std::mt19937 gen(rd());
     if (std::is_floating_point_v<T>) {
+        std::uniform_real_distribution<int> d();
         std::uniform_real_distribution<double> dis(min, max);
         return dis(gen);
     } else {

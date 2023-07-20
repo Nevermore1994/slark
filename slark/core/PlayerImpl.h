@@ -9,7 +9,7 @@
 
 #include <deque>
 #include <string_view>
-#include "ReadFileHandler.hpp"
+#include "ReadHandler.hpp"
 #include "Player.h"
 #include "DecoderManager.h"
 #include "DemuxerManager.h"
@@ -68,7 +68,7 @@ private:
 
     void process();
 
-    void notifyEvent(PlayerState state) const noexcept;
+    void notifyEvent(PlayerState state) noexcept;
 
     [[nodiscard]] TransportEvent eventType(PlayerState state) const noexcept;
 
