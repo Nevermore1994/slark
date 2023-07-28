@@ -8,17 +8,19 @@
 #include "Thread.h"
 #include "RingBuffer.hpp"
 #include "NonCopyable.h"
-#include "AVFrameDeque.hpp"
+#include "AVFrameSafeDeque.hpp"
 #include <memory>
 
 namespace slark {
 
 enum class DecoderType {
     Unknown = 0,
-    AAC = 1000,
-    RAW = 1001,
+    RAW = 1000,
+    AACSoftwareDecoder = 1001,
+    AACHardwareDecoder = 1002,
     AudioDecoderEnd,
-    H264 = 2000,
+    H264SoftWareDecoder = 2000,
+    H264HardWareDecoder = 2001,
     VideoDecoderEnd,
 };
 
@@ -27,10 +29,12 @@ struct DecoderInfo {
     std::string decoderName;
 };
 
+using DecoderReceiveCallback = std::function<void(AVFrameArray)>;
+
 class IDecoder : public NonCopyable {
 public:
-    ~IDecoder() override = default;
 
+    ~IDecoder() override = default;
 public:
     virtual void open() noexcept = 0;
 
@@ -38,14 +42,33 @@ public:
 
     virtual void close() noexcept = 0;
 
-    DecoderType type() const noexcept {
+    [[nodiscard]] inline DecoderType subType() const noexcept {
+        return decoderSubType_;
+    }
+
+    [[nodiscard]] inline DecoderType type() const noexcept {
         return decoderType_;
     }
 
-    virtual AVFrameList decode(AVFrameList&& frameList) = 0;
+    [[nodiscard]] inline bool isAudio() const noexcept {
+        return DecoderType::Unknown < decoderType_ && decoderType_ < DecoderType::AudioDecoderEnd;
+    }
 
+    [[nodiscard]] inline bool isVideo() const noexcept {
+        return DecoderType::AudioDecoderEnd < decoderType_ && decoderType_ < DecoderType::VideoDecoderEnd;
+    }
+
+    [[nodiscard]] inline bool isOpen() const noexcept {
+        return isOpen_;
+    }
+
+    virtual AVFrameArray send(AVFrameArray&& frameList) = 0;
+
+    virtual AVFrameArray flush() noexcept = 0;
 protected:
-    DecoderType decoderType_ = DecoderType::Unknown;
+    DecoderType decoderType_;
+    DecoderType decoderSubType_ = DecoderType::Unknown;
+    bool isOpen_;
     AVFrameSafeDeque deque_;
 };
 

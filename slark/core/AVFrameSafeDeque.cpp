@@ -4,7 +4,7 @@
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 
-#include "AVFrameDeque.hpp"
+#include "AVFrameSafeDeque.hpp"
 
 namespace slark {
 
@@ -13,14 +13,13 @@ void AVFrameSafeDeque::push(AVFramePtr frame) noexcept {
     frames_.push_back(std::move(frame));
 }
 
-void AVFrameSafeDeque::push(AVFrameList& frameList) noexcept {
+void AVFrameSafeDeque::push(AVFrameArray& frameList) noexcept {
     if (!frameList.empty()) {
         std::unique_lock<std::mutex> lock(mutex_);
-        for (auto& it : frameList) {
-            frames_.push_back(std::move(it));
+        for (auto& frame : frameList) {
+            frames_.push_back(std::move(frame));
         }
     }
-
     frameList.clear();
 }
 
@@ -42,16 +41,21 @@ void AVFrameSafeDeque::swap(AVFrameSafeDeque& deque) noexcept {
 
 void AVFrameSafeDeque::clear() noexcept {
     std::unique_lock<std::mutex> lock(mutex_);
-    frames_.clear();
+    decltype(frames_) tempQueue;
+    frames_.swap(tempQueue);
 }
 
-AVFrameList AVFrameSafeDeque::detachData() noexcept {
-    AVFrameList frameList;
-    {
+AVFrameArray AVFrameSafeDeque::detachData() noexcept {
+    AVFrameArray frameList;
+    decltype(frames_) tempDeque;
+    if (!empty()){
         std::unique_lock<std::mutex> lock(mutex_);
-        frameList.swap(frames_);
+        tempDeque.swap(frames_);
     }
-
+    while (!tempDeque.empty()) {
+        frameList.push_back(std::move(tempDeque.front()));
+        tempDeque.pop_front();
+    }
     return frameList;
 }
 

@@ -22,7 +22,7 @@ public:
 
     void reset() noexcept override;
 
-    AVFrameList decode(AVFrameList&& frameList) override;
+    AVFrameArray send(AVFrameArray&& frameList) override;
 };
 
 }

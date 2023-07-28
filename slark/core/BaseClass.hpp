@@ -14,9 +14,9 @@ namespace slark {
 
 #define GetClassName(name) #name
 
-#define HAS_MEMBER(XXX) \
+#define HasMemberFunction(XXX) \
     template<typename T, typename... Args>\
-    struct has_member_##XXX \
+    struct HasMemberFunction ##XXX  \
     { \
     private:  \
         template<typename U> static auto Check(int) -> decltype(std::declval<U>().XXX(std::declval<Args>()...), std::true_type());  \
@@ -25,8 +25,6 @@ namespace slark {
         static constexpr auto value = decltype(Check<T>(0))::value; \
     }
 
-HAS_MEMBER(name);
-
 template<typename T>
 struct BaseClass {
     inline static std::string registerClass() {
@@ -34,10 +32,9 @@ struct BaseClass {
         return GetClassName(T);
     }
 
-    inline static T* create(std::string name) noexcept {
+    inline static T* create(const std::string& name) noexcept {
         return reinterpret_cast<T*>(slark::GenerateClass(name));
     }
 };
-
 
 }

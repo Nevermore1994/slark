@@ -23,7 +23,7 @@ public:
 
     void reset() noexcept override;
 
-    std::tuple<DemuxerState, AVFrameList> parseData(std::unique_ptr<Data> data) override;
+    std::tuple<DemuxerState, AVFrameArray> parseData(std::unique_ptr<Data> data) override;
 
     inline static DemuxerInfo& info()  noexcept {
         static DemuxerInfo info = {

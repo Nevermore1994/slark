@@ -17,7 +17,7 @@
 #include "IOManager.h"
 #include "TransportEvent.h"
 #include "Thread.h"
-#include "AVFrameDeque.hpp"
+#include "AVFrameSafeDeque.hpp"
 
 namespace slark {
 

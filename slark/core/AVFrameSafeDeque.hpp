@@ -20,10 +20,10 @@ public:
     ~AVFrameSafeDeque() override = default;
 
     void push(AVFramePtr frame) noexcept;
-    void push(AVFrameList& frameList) noexcept;
+    void push(AVFrameArray& frameList) noexcept;
     AVFramePtr pop() noexcept;
     void swap(AVFrameSafeDeque& deque) noexcept;
-    AVFrameList detachData() noexcept;
+    AVFrameArray detachData() noexcept;
     void clear() noexcept;
 
     inline bool empty() const noexcept {
@@ -31,7 +31,7 @@ public:
     }
 private:
     std::mutex mutex_;
-    std::list<AVFramePtr> frames_;
+    std::deque<AVFramePtr> frames_;
 };
 
 }
