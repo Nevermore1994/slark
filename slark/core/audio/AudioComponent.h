@@ -12,7 +12,7 @@
 #include "NonCopyable.h"
 #include "AVFrame.hpp"
 #include "Time.hpp"
-#include "AVFrameDeque.hpp"
+#include "AVFrameSafeDeque.hpp"
 
 namespace slark::Audio {
 

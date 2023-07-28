@@ -22,7 +22,7 @@ void RawDecoder::close() noexcept {
     deque_.clear();
 }
 
-AVFrameList RawDecoder::decode(AVFrameList&& frameList) {
+AVFrameArray RawDecoder::send(AVFrameArray&& frameList) {
     for (auto& frame : frameList) {
         frame->decodedStamp = Time::nowTimeStamp();
     }

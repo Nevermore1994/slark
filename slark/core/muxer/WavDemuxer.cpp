@@ -207,9 +207,9 @@ void WAVDemuxer::reset() noexcept {
     overflowData_.reset();
 }
 
-std::tuple<DemuxerState, AVFrameList> WAVDemuxer::parseData(std::unique_ptr<Data> data) {
+std::tuple<DemuxerState, AVFrameArray> WAVDemuxer::parseData(std::unique_ptr<Data> data) {
     if (data->empty() || state_ != DemuxerState::Success) {
-        return { DemuxerState::Failed, AVFrameList() };
+        return { DemuxerState::Failed, AVFrameArray() };
     }
 
     if (overflowData_ == nullptr) {
@@ -221,7 +221,7 @@ std::tuple<DemuxerState, AVFrameList> WAVDemuxer::parseData(std::unique_ptr<Data
     //frame include 2048 sample
     constexpr uint16_t sampleCount = 2048;
     uint64_t frameLength = audioInfo_->bitsPerSample * audioInfo_->channels * sampleCount;
-    AVFrameList frameList;
+    AVFrameArray frameList;
     uint64_t start = 0;
     auto isCompleted = parseLength_ >= headerInfo_.dataSize;
     SAssert(audioInfo_->sampleRate != 0, "wav demuxer sample rate is invalid.");
@@ -253,7 +253,7 @@ std::tuple<DemuxerState, AVFrameList> WAVDemuxer::parseData(std::unique_ptr<Data
         state = DemuxerState::FileEnd;
     }
     state_ = state;
-    LogI("demuxed data %lld, overflow data %lld, frame count %ld", parseLength_, overflowData_->length, parseFrameCount_);
+    LogI("demux data %lld, overflow data %lld, frame count %ld", parseLength_, overflowData_->length, parseFrameCount_);
     return {state, std::move(frameList)};
 }
 

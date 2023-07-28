@@ -9,19 +9,30 @@
 namespace slark {
 
 class DecoderComponent : public NonCopyable {
-    using DecoderCallback = std::function<void(AVFrameList)>;
 public:
-    explicit DecoderComponent(const std::string& name, std::unique_ptr<IDecoder> decoder, DecoderCallback&& callback);
+    explicit DecoderComponent(const std::string& name, DecoderReceiveCallback&& callback);
     ~DecoderComponent() override = default;
 
-    void receive(AVFrameList&& packets) noexcept;
-    void pause() const noexcept;
-    void resume() const noexcept;
+    void setDecoder(std::unique_ptr<IDecoder> decoder) noexcept;
+    void receive(AVFrameArray&& packets) noexcept;
+    void pause() noexcept;
+    void resume() noexcept;
+    void reset() noexcept;
+
+    inline IDecoder& decoder() noexcept {
+        return *decoder_;
+    }
+
+    inline void setReachFileEnd() noexcept {
+        isReachEnd_ = true;
+    }
+
 private:
     void decode();
 private:
+    std::atomic<bool> isReachEnd_ = false;
     std::unique_ptr<IDecoder> decoder_;
-    DecoderCallback callback_;
+    DecoderReceiveCallback callback_;
     Thread decodeWorker_;
     AVFrameSafeDeque packets_;
 };

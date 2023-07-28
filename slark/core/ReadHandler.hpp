@@ -26,9 +26,9 @@ public:
     void close() noexcept override;
 
     void seek(uint64_t pos);
-    inline uint64_t tell() const {
+    [[nodiscard]] inline int64_t tell() const {
         if (file_) {
-            file_->tell();
+            return file_->tell();
         }
         return 0;
     }

@@ -59,7 +59,7 @@ public:
 
     virtual void reset() = 0;
 
-    virtual std::tuple<DemuxerState, AVFrameList> parseData(std::unique_ptr<Data> data) = 0;
+    virtual std::tuple<DemuxerState, AVFrameArray> parseData(std::unique_ptr<Data> data) = 0;
 
     inline bool isInited() const noexcept {
         return isInited_;

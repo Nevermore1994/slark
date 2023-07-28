@@ -120,5 +120,5 @@ struct AVFrame {
 
 using AVFramePtr = std::unique_ptr<AVFrame>;
 using AVFrameRef = AVFrame&;
-using AVFrameList = std::list<AVFramePtr>;
+using AVFrameArray = std::vector<AVFramePtr>;
 }
