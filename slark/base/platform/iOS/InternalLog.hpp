@@ -10,6 +10,6 @@
 
 #include <string>
 
-void outputLog(std::string&& log);
+void outputLog(std::string log);
 
 #endif /* InternalLog_h */

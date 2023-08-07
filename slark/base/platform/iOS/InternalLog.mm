@@ -9,7 +9,7 @@
 #import <Foundation/NSObjCRuntime.h>
 #import <Foundation/NSString.h>
 
-void outputLog(std::string&& log){
+void outputLog(std::string log){
     NSString* str = [NSString stringWithUTF8String:log.data()];
     NSLog(@"%@", str);
 }

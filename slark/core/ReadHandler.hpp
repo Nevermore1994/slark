@@ -19,7 +19,7 @@ public:
     ReadHandler();
     ~ReadHandler() override;
 public:
-    IOState state() const noexcept override;
+    [[nodiscard]] IOState state() const noexcept override;
     bool open(const std::string& path) noexcept override;
     void resume() noexcept override;
     void pause() noexcept override;

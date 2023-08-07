@@ -13,33 +13,34 @@
 #include "AVFrame.hpp"
 #include "Time.hpp"
 #include "AVFrameSafeDeque.hpp"
+#include "Node.h"
 
 namespace slark::Audio {
 
-class AudioRenderComponent: public slark::NonCopyable {
+class AudioRenderComponent: public slark::NonCopyable, public InputNode {
 public:
     explicit AudioRenderComponent(AudioInfo info);
-    ~AudioRenderComponent() override;
+    ~AudioRenderComponent() override = default;
 
-    bool push(AVFramePtr frame);
-    AVFramePtr pop();
+    void receive(AVFrameRefPtr frame) noexcept override;
+    void process(AVFrameRefPtr frame) noexcept override;
 public:
-    std::function<bool(Data)> process;
-    std::function<void(AVFramePtr)> completion;
+    std::function<void(AVFrameRefPtr)> completion;
 private:
-    slark::AVFrameSafeDeque frames_;
+    class AudioRenderComponentImpl;
+    std::unique_ptr<AudioRenderComponentImpl> pimpl_;
 };
 
-class AudioRecorderComponent: public slark::NonCopyable {
+class AudioRecorderComponent: public slark::NonCopyable, public OutputNode {
 public:
+    AudioRecorderComponent() = default;
     ~AudioRecorderComponent() override = default;
 
-    void output(slark::Data data);
-public:
-    std::function<bool(slark::Data)> process;
+    void process(AVFrameRefPtr frame) noexcept override;
+    void send(AVFrameRefPtr frame) noexcept override;
 private:
     class AudioRecorderComponentImpl;
-    std::unique_ptr<AudioRecorderComponentImpl> impl_;
+    std::unique_ptr<AudioRecorderComponentImpl> pimpl_;
 };
 
 }

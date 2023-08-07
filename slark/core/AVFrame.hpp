@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <memory>
 #include <algorithm>
-#include <list>
+#include <vector>
 #include "Data.hpp"
 
 namespace slark {
@@ -119,6 +119,7 @@ struct AVFrame {
 };
 
 using AVFramePtr = std::unique_ptr<AVFrame>;
+using AVFrameRefPtr = std::shared_ptr<AVFrame>;
 using AVFrameRef = AVFrame&;
 using AVFrameArray = std::vector<AVFramePtr>;
 }

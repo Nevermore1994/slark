@@ -26,7 +26,7 @@ public:
     AVFrameArray detachData() noexcept;
     void clear() noexcept;
 
-    inline bool empty() const noexcept {
+    [[nodiscard]] inline bool empty() const noexcept {
         return frames_.empty();
     }
 private:

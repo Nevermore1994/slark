@@ -24,7 +24,7 @@ public:
 public:
     TimerManager();
 
-    ~TimerManager() noexcept;
+    ~TimerManager();
 
     TimerId runAt(uint64_t timeStamp, TimerCallback func) noexcept; //ms
     TimerId runAfter(uint64_t delayTime, TimerCallback func) noexcept; //ms

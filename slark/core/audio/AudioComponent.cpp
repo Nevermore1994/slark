@@ -11,32 +11,29 @@ namespace slark::Audio {
 
 using namespace slark;
 
-AudioRenderComponent::AudioRenderComponent(AudioInfo /*info*/) {
+AudioRenderComponent::AudioRenderComponent(AudioInfo /*info*/)
+    : pimpl_(nullptr) {
 
 }
 
-AudioRenderComponent::~AudioRenderComponent() {
-    frames_.clear();
+void AudioRenderComponent::receive(std::shared_ptr<AVFrame> frame) noexcept {
+    process(frame);
 }
 
-bool AudioRenderComponent::push(AVFramePtr frame) {
-    auto res = true;
-    frame->prepareRenderStamp = Time::nowTimeStamp();
-    //plugin process data
-    if (process) {
-        res = process(*frame->data);
+void AudioRenderComponent::process(std::shared_ptr<AVFrame> frame) noexcept {
+    //render
+    if (completion) {
+        completion(frame);
     }
-
-    frame->pushRenderQueueStamp = Time::nowTimeStamp();
-    if (res) {
-        push(std::move(frame));
-    }
-
-    return res;
 }
 
-AVFramePtr AudioRenderComponent::pop() {
-    return frames_.pop();
+void AudioRecorderComponent::process(std::shared_ptr<AVFrame> frame) noexcept {
+    OutputNode::send(frame);
 }
+
+void AudioRecorderComponent::send(AVFrameRefPtr frame) noexcept {
+    process(std::move(frame));
+}
+
 
 }
