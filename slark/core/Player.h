@@ -80,7 +80,7 @@ public:
 
     [[nodiscard]] std::string_view playerId() const noexcept;
 public:
-    const PlayerParams& observer();
+    const PlayerParams& peek();
 
     PlayerState state();
 

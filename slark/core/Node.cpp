@@ -12,14 +12,6 @@
 
 namespace slark {
 
-void InputNode::receive(std::shared_ptr<AVFrame> frame) noexcept {
-    frame_ = std::move(frame);
-}
-
-void InputNode::process() noexcept {
-
-}
-
 bool OutputNode::addTarget(std::weak_ptr<InputNode> node) noexcept {
     if (node.expired()) {
         return false;
@@ -42,7 +34,7 @@ void OutputNode::removeAllTarget() noexcept {
     targets_.clear();
 }
 
-void OutputNode::notifyTargets() noexcept {
+void OutputNode::notifyTargets(std::shared_ptr<AVFrame> frame) noexcept {
     //C++20 replace erase_if
     for (auto it = targets_.begin(); it != targets_.end();) {
         auto& [hash, ptr] = *it;
@@ -50,18 +42,24 @@ void OutputNode::notifyTargets() noexcept {
             it = targets_.erase(it);
         } else {
             auto p = ptr.lock();
-            p->receive(frame_);
+            p->receive(frame);
             ++it;
         }
     }
 }
 
-void OutputNode::process() noexcept {
-    notifyTargets();
+void OutputNode::send(std::shared_ptr<AVFrame> frame) noexcept {
+    notifyTargets(std::move(frame));
 }
 
-void Node::process() noexcept {
-    OutputNode::process();
+
+void Node::process(std::shared_ptr<AVFrame> frame) noexcept {
+
+}
+
+void Node::receive(std::shared_ptr<AVFrame> frame) noexcept {
+    process(frame);
+    send(frame);
 }
 
 }//end namespace slark

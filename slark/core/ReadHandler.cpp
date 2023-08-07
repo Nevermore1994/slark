@@ -32,32 +32,45 @@ bool ReadHandler::open(const std::string& path) noexcept {
     } else {
         LogE("open file failed. %s", path_.c_str());
     }
-    return file_->open();
+    return file_->isOpen();
 }
 
 void ReadHandler::resume() noexcept {
+    if(!file_ || !file_->isOpen()) {
+        LogE("file not open.");
+        return;
+    }
     worker_.resume();
 }
 
 void ReadHandler::pause() noexcept {
+    if(!file_ || !file_->isOpen()) {
+        LogE("file not open.");
+        return;
+    }
     worker_.pause();
 }
 
 void ReadHandler::close() noexcept {
     std::unique_lock<std::mutex> lock(mutex_);
     worker_.pause();
-    if (file_->isOpen()) {
+    if (file_ && file_->isOpen()) {
         file_->close();
+        file_.reset();
     }
 }
 
 void ReadHandler::seek(uint64_t pos) {
+    if(!file_ || !file_->isOpen()) {
+        LogE("file not open.");
+        return;
+    }
     std::unique_lock<std::mutex> lock(mutex_);
     seekPos_ = static_cast<int64_t>(pos);
 }
 
 void ReadHandler::process() {
-    if (!file_) {
+    if (!file_ || !file_->isOpen()) {
         return;
     }
     if (seekPos_ != kInvalid) {
@@ -87,7 +100,7 @@ IOState ReadHandler::state() const noexcept {
     auto offset = static_cast<uint64_t>(file_->tell());
     if (file_->readOver() || offset == file_->fileSize()) {
         return IOState::EndOfFile;
-    } else if (file_->isFailed()) {
+    } else if (file_->isFailed() || !file_->isOpen()) {
         return IOState::Error;
     }
     return IOState::Normal;

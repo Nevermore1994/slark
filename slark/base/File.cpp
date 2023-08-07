@@ -139,6 +139,7 @@ std::tuple<bool, uint8_t> ReadFile::readByte() noexcept {
         return {false, 0};
     }
     uint8_t byte = 0;
+
     auto res = fread(&byte, 1, 1, file_);
     if (res == 0) {
         if (feof(file_)) {
@@ -152,14 +153,13 @@ std::tuple<bool, uint8_t> ReadFile::readByte() noexcept {
     return {res == 1, byte};
 }
 
-std::tuple<bool, Data> ReadFile::read(uint32_t size) noexcept {
-    Data data;
+std::tuple<bool, std::unique_ptr<Data>> ReadFile::read(uint32_t size) noexcept {
     if (!file_ || readOver_) {
-        return {false, data};
+        return {false, nullptr};
     }
-    data = Data(size);
-    auto res = read(data);
-    return {res, data};
+    auto data = std::make_unique<Data>(size);
+    auto res = read(*data);
+    return {res, std::move(data)};
 }
 
 bool ReadFile::read(Data& data) noexcept {

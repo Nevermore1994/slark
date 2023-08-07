@@ -90,7 +90,7 @@ public:
 
     ~ReadFile() override;
 
-    std::tuple<bool, Data> read(uint32_t size) noexcept;
+    std::tuple<bool, std::unique_ptr<Data>> read(uint32_t size) noexcept;
 
     std::tuple<bool, uint8_t> readByte() noexcept;
 

@@ -16,7 +16,7 @@ TimerManager::TimerManager()
     timerThread_->start();
 }
 
-TimerManager::~TimerManager() noexcept {
+TimerManager::~TimerManager() {
     pool_.clear();
     timerThread_->stop();
 }
