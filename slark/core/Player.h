@@ -80,11 +80,11 @@ public:
 
     [[nodiscard]] std::string_view playerId() const noexcept;
 public:
-    const PlayerParams& peek();
+    const PlayerParams& peek() noexcept;
 
-    PlayerState state();
+    PlayerState state() noexcept;
 
-    const PlayerInfos& info();
+    const PlayerInfos& info() noexcept;
 
 private:
     class Impl;

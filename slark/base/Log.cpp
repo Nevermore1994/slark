@@ -6,11 +6,12 @@
 #include "Log.hpp"
 #include "Time.hpp"
 #include "LogOutput.h"
+#ifdef SLARK_IOS
+    #include "InternalLog.h"
+#endif
+
 #include <cstdarg>
 
-#ifdef SLARK_IOS
-    #include "InternalLog.hpp"
-#endif
 
 namespace slark {
 

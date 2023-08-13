@@ -5,8 +5,9 @@
 //  Created by Nevermore on 2022/8/13.
 //
 
-#import "AudioRender.h"
-#include "Log.h"
+#include "AudioDescription.h"
+#include "AudioRender.h"
+#include "Log.hpp"
 #include <algorithm>
 
 namespace slark::Audio {
@@ -16,9 +17,7 @@ using namespace slark;
 bool checkOSStatus(OSStatus status, const char *errorMsg)
 {
     if (status != noErr) {
-#if DEBUG
-    loge("Error happen in %s, and status = %x\n", errorMsg, status);
-#endif
+        LogE("Error happen in %s, and status = %x\n", errorMsg, status);
         return false;
     }
     return true;
@@ -27,111 +26,195 @@ bool checkOSStatus(OSStatus status, const char *errorMsg)
 static OSStatus AudioRenderCallback(void *inRefCon,
                                     AudioUnitRenderActionFlags *ioActionFlags,
                                     const AudioTimeStamp *inTimeStamp,
-                                    UInt32 inBusNumber,
-                                    UInt32 inNumberFrames,
+                                    UInt32 /*inBusNumber*/,
+                                    UInt32 /*inNumberFrames*/,
                                     AudioBufferList *__nullable ioData)
 {
     @autoreleasepool {
-        AudioRender* render = (AudioRender *)inRefCon;
+        auto render = static_cast<AudioRender*>(inRefCon);
         
         if (render->status() != AudioRenderStatus::Play) {
             *ioActionFlags |= kAudioUnitRenderAction_OutputIsSilence;
             return noErr;
         }
         
-        if(!render->requestNextAudioData){
+        if (!render->requestNextAudioData){
+            LogE("render request data function is nullptr.");
             *ioActionFlags |= kAudioUnitRenderAction_OutputIsSilence;
             return noErr;
         }
-        Data data = render->requestNextAudioData(ioData->mBuffers[0].mDataByteSize,inTimeStamp->mSampleTime / render->format().mSampleRate);
         
-        if (!data.empty()) {
-            std::copy((char*)ioData->mBuffers[0].mData, (char*)ioData->mBuffers[0].mData + ioData->mBuffers[0].mDataByteSize, data.data);
-        } else {
+        if (!render->isNeedRequestData()) {
             *ioActionFlags |= kAudioUnitRenderAction_OutputIsSilence;
+            LogI("now no need data, status:%d", render->status());
+            return noErr;
         }
         
+        for (decltype(ioData->mNumberBuffers) i = 0; i < ioData->mNumberBuffers; i++) {
+            auto data = render->requestNextAudioData(ioData->mBuffers[i].mDataByteSize);
+            if (!data->empty()) {
+                std::copy(reinterpret_cast<uint8_t*>(ioData->mBuffers[i].mData), reinterpret_cast<uint8_t*>(ioData->mBuffers[i].mData) + ioData->mBuffers[i].mDataByteSize, data->rawData);
+            } else {
+                *ioActionFlags |= kAudioUnitRenderAction_OutputIsSilence;
+            }
+        }
         return noErr;
     }
 }
 
 AudioRender::AudioRender(std::unique_ptr<AudioForamt> format)
-    :format_(std::move(format)) {
-    
+    : format_(std::move(format)) {
+    auto isSuccess = checkFormat();
+    if (isSuccess) {
+        setupAUGraph();
+    }
+    status_ = isSuccess ? AudioRenderStatus::Ready : AudioRenderStatus::Error;
 }
 
 AudioRender::~AudioRender() {
     stop();
-    checkOSStatus(AudioUnitUninitialize(audioUnit_), "AudioUnitUninitialize");
-    checkOSStatus(AudioComponentInstanceDispose(audioUnit_), "AudioComponentInstanceDispose");
 }
 
 void AudioRender::play() noexcept {
+    if (status_ == AudioRenderStatus::Play || status_ == AudioRenderStatus::Stop) {
+        LogI("[audio render] start play return:%d", status_); 
+        return;
+    }
     status_ = AudioRenderStatus::Play;
-    logi("[audio render] play.");
-    checkOSStatus(AudioOutputUnitStart(audioUnit_), "AudioOutputUnitStart");
+    LogI("[audio render] play.");
+    checkOSStatus(AUGraphStart(auGraph_), "start AUGraph error.");
 }
 
 void AudioRender::pause() noexcept {
+    if (status_ == AudioRenderStatus::Pause || status_ == AudioRenderStatus::Stop) {
+        LogI("[audio render] pause return:%d", status_);
+    }
     status_ = AudioRenderStatus::Pause;
-    logi("[audio render] pause.");
+    LogI("[audio render] pause.");
+    checkOSStatus(AUGraphStop(auGraph_), "pause stop AUGraph error.");
+}
+
+void AudioRender::flush() noexcept {
+    checkOSStatus(AudioUnitReset(volumeUnit_, kAudioUnitScope_Global, kAudioUnitOutputBus), "flush error.");
 }
 
 void AudioRender::stop() noexcept {
+    LogI("[audio render] stop start.");
+    if (status_ == AudioRenderStatus::Stop) {
+        LogI("[audio render] stop cancel.");
+        return;
+    }
     status_ = AudioRenderStatus::Stop;
-    logi("[audio render] pause.");
-    checkOSStatus(AudioOutputUnitStop(audioUnit_), "AudioOutputUnitStop");
+    if (auGraph_) {
+        AUGraphStop(auGraph_);
+    }
+    
+    if (renderUnit_) {
+        AudioOutputUnitStop(renderUnit_);
+        renderUnit_ = nullptr;
+    }
+    
+    if (volumeUnit_) {
+        AudioOutputUnitStop(volumeUnit_);
+        volumeUnit_ = nullptr;
+    }
+    
+    if (auGraph_) {
+        AUGraphUninitialize(auGraph_);
+        DisposeAUGraph(auGraph_);
+        auGraph_ = nullptr;
+    }
+
+    AudioComponentInstanceDispose(volumeUnit_);
+    LogI("[audio render] stop end.");
 }
 
-bool AudioRender::setupAudioUnit() noexcept {
-    OSStatus status;
+bool AudioRender::isNeedRequestData() const noexcept {
+    if (status_ == AudioRenderStatus::Stop || status_ == AudioRenderStatus::Pause || status_ == AudioRenderStatus::Error) {
+        return false;
+    }
+    return true;
+}
+
+bool AudioRender::checkFormat() const noexcept {
+    if (format_ == nullptr) {
+        LogE("audio render format is nullptr.");
+        return false;
+    }
+    if (format_->mBitsPerChannel == 0 || format_->mSampleRate == 0.0f || format_->mBytesPerFrame == 0) {
+        LogE("audio render format is invalid.");
+        return false;
+    }
+    return true;
+}
+
+bool AudioRender::setupAUGraph() noexcept {
+    OSStatus status = noErr;
+    checkOSStatus(NewAUGraph(&auGraph_), "create AUGraph error.");
+    checkOSStatus(AUGraphOpen(auGraph_), "open AUGraph error.");
     
-    // init audio unit
-    AudioComponentDescription audioComponentDescription = {
+    // init render unit
+    AudioComponentDescription renderComponentDescription = {
         .componentType = kAudioUnitType_Output,
         .componentSubType = kAudioUnitSubType_RemoteIO,
         .componentManufacturer = kAudioUnitManufacturer_Apple,
         .componentFlags = 0,
         .componentFlagsMask = 0
     };
-    AudioComponent inputComponect = AudioComponentFindNext(NULL, &audioComponentDescription);
-    status = AudioComponentInstanceNew(inputComponect, &audioUnit_);
-    if (!checkOSStatus(status, "AudioComponentInstanceNew") || !audioUnit_) {
-        return NO;
-    }
-        
-    checkOSStatus(AudioUnitSetProperty(audioUnit_,
+    checkOSStatus(AUGraphAddNode(auGraph_, &renderComponentDescription, &renderIndex_), "create render node error.");
+    checkOSStatus(AUGraphNodeInfo(auGraph_, renderIndex_, &renderComponentDescription, &renderUnit_), "get render Audio Unit error.");
+    
+    checkOSStatus(AudioUnitSetProperty(renderUnit_,
                                        kAudioUnitProperty_StreamFormat,
                                        kAudioUnitScope_Input,
-                                       0,
+                                       kAudioUnitOutputBus,
                                        format_.get(),
                                        sizeof(AudioStreamBasicDescription)),
-                  "kAudioUnitProperty_StreamFormat");
+                  "set audio unit callback error.");
     
     AURenderCallbackStruct renderCallback = {
         .inputProc = AudioRenderCallback,
         .inputProcRefCon = this,
     };
     
-    checkOSStatus(AudioUnitSetProperty(audioUnit_,
+    checkOSStatus(AudioUnitSetProperty(renderUnit_,
                                        kAudioUnitProperty_SetRenderCallback,
                                        kAudioUnitScope_Input,
-                                       0,
+                                       kAudioUnitOutputBus,
                                        &renderCallback,
                                        sizeof(renderCallback)),
-                  "kAudioUnitProperty_SetRenderCallback");
+                  "set render audio unit callback error.");
     
     UInt32 zero;
-    checkOSStatus(AudioUnitSetProperty(audioUnit_,
+    checkOSStatus(AudioUnitSetProperty(renderUnit_,
                                        kAudioOutputUnitProperty_StartTimestampsAtZero,
                                        kAudioUnitScope_Input,
-                                       0,
+                                       kAudioUnitOutputBus,
                                        &zero,
                                        sizeof(zero)),
-                  "kAudioOutputUnitProperty_StartTimestampsAtZero");
+                  "set render audio unit start timestamp error.");
     
-    status = AudioUnitInitialize(audioUnit_);
-    if (!checkOSStatus(status, "AudioUnitInitialize")) {
+    //init volume unit
+    AudioComponentDescription volumeComponentDescription = {
+        .componentType = kAudioUnitType_Mixer,
+        .componentSubType = kAudioUnitSubType_MatrixMixer,
+        .componentManufacturer = kAudioUnitManufacturer_Apple,
+        .componentFlags = 0,
+        .componentFlagsMask = 0
+    };
+    checkOSStatus(AUGraphAddNode(auGraph_, &volumeComponentDescription, &volumeIndex_), "create volume audio unit error.");
+    
+    checkOSStatus(AUGraphNodeInfo(auGraph_, volumeIndex_, &volumeComponentDescription, &volumeUnit_), "get volume audio unit error.");
+    checkOSStatus(AudioUnitSetProperty(volumeUnit_,
+                                       kAudioUnitProperty_StreamFormat,
+                                       kAudioUnitScope_Input,
+                                       kAudioUnitOutputBus,
+                                       format_.get(),
+                                       sizeof(AudioStreamBasicDescription)),
+                  "set volume audio unit format error.");
+    
+    checkOSStatus(AUGraphConnectNodeInput(auGraph_, volumeIndex_, kAudioUnitOutputBus, renderIndex_, kAudioUnitOutputBus), "audio unit connect error.");
+    if (!checkOSStatus(AUGraphInitialize(auGraph_),  "audio graph init error.")) {
         return false;
     }
     

@@ -53,9 +53,10 @@ struct Data {
         if (empty() || len == 0 || (len + pos) > length) {
             return res;
         }
-        res->capacity = len;
-        res->length = len;
-        res->rawData = new (std::nothrow) uint8_t[len];
+        auto size = len - pos + 1;
+        res->capacity = size;
+        res->length = size;
+        res->rawData = new (std::nothrow) uint8_t[size];
         std::copy(rawData + pos, rawData + pos + len, res->rawData);
         return res;
     }
@@ -72,7 +73,7 @@ struct Data {
     [[maybe_unused]]
     inline void resetData() const noexcept {
         if (rawData) {
-            std::fill_n(rawData, length, 0);
+            std::fill_n(rawData, capacity, 0);
         }
     }
 

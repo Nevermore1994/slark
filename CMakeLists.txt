@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 
+enable_language(CXX)
+enable_language(OBJC)
+
 include(CMakeForceCompiler)
 include(CMakePrintHelpers)
 
@@ -20,17 +23,31 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
 #source file path
-set(BASE_DIR slark/base/)
-set(THIRD_PARTY_DIR slark/third_party/)
-set(CORE_DIR slark/core/)
+set(BASE_DIR slark/base)
+set(THIRD_PARTY_DIR slark/third_party)
+set(CORE_DIR slark/core)
 set_property(GLOBAL PROPERTY LIBRARY_TYPE "base")
 
-function(add_base_library)
+function(add_base_library PLATFORM)
     message(STATUS "add base library")
-    FILE(GLOB BASE_FILES ${BASE_DIR}/*.cpp ${BASE_DIR}/*.hpp ${BASE_DIR}/*.h ${THIRD_PARTY_DIR}/*.h)
+    set(BASE_FILE_LISTS ${BASE_DIR}/*.cpp ${BASE_DIR}/*.hpp ${BASE_DIR}/*.h ${THIRD_PARTY_DIR}/*.h)
+    set(BASE_HEADER "")
+    if(${PLATFORM} STREQUAL "iOS")
+        list(APPEND BASE_FILE_LISTS
+        ${BASE_DIR}/platform/iOS/*.cpp 
+        ${BASE_DIR}/platform/iOS/*.hpp 
+        ${BASE_DIR}/platform/iOS/*.h 
+        ${BASE_DIR}/platform/iOS/*.m 
+        ${BASE_DIR}/platform/iOS/*.mm
+        )
+        set(BASE_HEADER ${BASE_DIR}/platform/iOS)
+        message(${BASE_HEADER})
+    endif()
+    FILE(GLOB BASE_FILES ${BASE_FILE_LISTS})
     add_library(base ${BASE_FILES})
     target_include_directories(base PUBLIC ${BASE_DIR})
     target_include_directories(base PUBLIC ${THIRD_PARTY_DIR})
+    target_include_directories(base PUBLIC ${BASE_HEADER})
 endfunction()
 
 function(add_core_library)
@@ -41,25 +58,75 @@ function(add_core_library)
     source_group("core" FILES ${CORE_FILES})
 endfunction()
 
-function(add_component name)
-    message(STATUS "add ${name} library")
-    FILE(GLOB FILES ${CORE_DIR}/${name}/*.cpp ${CORE_DIR}/${name}/*.hpp ${CORE_DIR}/${name}/*.h)
+function(add_component NAME)
+    message(STATUS "add ${NAME} library")
+    FILE(GLOB FILES ${CORE_DIR}/${NAME}/*.cpp ${CORE_DIR}/${NAME}/*.hpp ${CORE_DIR}/${NAME}/*.h)
     target_sources(${PROJECT_NAME} PUBLIC ${FILES})
-    target_include_directories(${PROJECT_NAME} PUBLIC ${CORE_DIR}/${name})
-    source_group("core/${name}" FILES ${FILES})
+    target_include_directories(${PROJECT_NAME} PUBLIC ${CORE_DIR}/${NAME})
+    source_group("core/${NAME}" FILES ${FILES})
 endfunction()
 
 
+macro(add_framework fwname appname)
+    find_library(FRAMEWORK_${fwname}
+    NAMES ${fwname}
+    PATHS ${CMAKE_OSX_SYSROOT}/System/Library
+    PATH_SUFFIXES Frameworks
+    NO_DEFAULT_PATH)
+    if( ${FRAMEWORK_${fwname}} STREQUAL FRAMEWORK_${fwname}-NOTFOUND)
+        MESSAGE(ERROR ": Framework ${fwname} not found")
+    else()
+        TARGET_LINK_LIBRARIES(${appname} "${FRAMEWORK_${fwname}}/${fwname}")
+        MESSAGE(STATUS "Framework ${fwname} found at ${FRAMEWORK_${fwname}}")
+    endif()
+endmacro(add_framework)
+
+
 function(add_ios_library)
-    message(STATUS "add ios library")
+    message(STATUS "add iOS library")
+
+    FILE(GLOB PLATFORM_CORE_FILE 
+        ${CORE_DIR}/platform/iOS/*.cpp 
+        ${CORE_DIR}/platform/iOS/*.hpp 
+        ${CORE_DIR}/platform/iOS/*.h 
+        ${CORE_DIR}/platform/iOS/*.m 
+        ${CORE_DIR}/platform/iOS/*.mm
+    )
+
+    target_sources(${PROJECT_NAME} PUBLIC ${PLATFORM_CORE_FILE})
+    target_include_directories(${PROJECT_NAME} PUBLIC ${CORE_DIR}/platform/iOS)
+    source_group("core/iOS" FILES ${PLATFORM_CORE_FILE})
+
+    add_framework(Foundation ${PROJECT_NAME})
+    add_framework(AVFoundation ${PROJECT_NAME})
+    add_framework(VideoToolBox ${PROJECT_NAME})
+    add_framework(AudioToolBox ${PROJECT_NAME})
+
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+        FRAMEWORK TRUE
+        FRAMEWORK_VERSION C
+        # "current version" in semantic format in Mach-O binary file
+        VERSION 16.4.0
+        # "compatibility version" in semantic format in Mach-O binary file
+        SOVERSION 1.0.0
+        PUBLIC_HEADER ${PROJECT_NAME}Framework.h
+        XCODE_ATTRIBUTE_CLANG_ENABLE_OBJC_ARC "YES"
+        XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH[variant=Debug] "YES"
+        XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH[variant=Release] "NO"
+        XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "iPhone Developer"
+    )
+    set(FRAMEWORK_BUNDLE_IDENTIFIER "com.slark.slarkframework")  
+    set(FRAMEWORK_NAME "slark")  
 endfunction()
 
 function(add_android_library)
     message(STATUS "add android library")
 endfunction()
 
-function(set_platform platform)
-    message(STATUS "platform:${platform}")
+
+
+function(set_platform PLATFORM)
+    message(STATUS "platform:${PLATFORM}")
     if(${PLATFORM} STREQUAL "iOS")
         add_definitions(-DSLARK_IOS) #set SLARK_IOS = 1
     elseif(${PLATFORM} STREQUAL "Android")
@@ -68,9 +135,9 @@ function(set_platform platform)
 endfunction()
 
 
-function(set_build_type type)
-    message(STATUS "build:${type}")
-    if(${type} STREQUAL "Debug")
+function(set_build_type TYPE)
+    message(STATUS "build:${TYPE}")
+    if(${TYPE} STREQUAL "Debug")
         set(CMAKE_BUILD_TYPE DEBUG PARENT_SCOPE)
         add_definitions(-DDEBUG) #set DEBUG = 1
     else()
@@ -78,22 +145,22 @@ function(set_build_type type)
     endif()
 endfunction()
 
-function(set_output_type type)
-    message(STATUS "output:${type}")
-    if(${type} STREQUAL "exe")
+function(set_output_type TYPE)
+    message(STATUS "output:${TYPE}")
+    if(${TYPE} STREQUAL "exe")
         add_executable(${PROJECT_NAME} "")
     else()
-        add_library(${PROJECT_NAME} "")
+        add_library(${PROJECT_NAME} SHARED "")
     endif()
 endfunction()
 
-function(set_main_component component_name)
-    message(STATUS "main component:${component_name}")
+function(set_main_component COMPONENT_NAME PLATFORM)
+    message(STATUS "main component:${COMPONENT_NAME}")
     #must add base library
-    add_base_library()
+    add_base_library(${PLATFORM})
     
     #add core library
-    if(${component_name} STREQUAL "core")
+    if(${COMPONENT_NAME} STREQUAL "core")
         add_core_library()
         add_component("codec")
         add_component("muxer")
@@ -102,9 +169,9 @@ function(set_main_component component_name)
     
 endfunction()
 
-function(load_component component_name_list)
-    message(STATUS "load component:" ${component_name_list})
-    foreach(name IN LISTS component_name_list)
+function(load_component COMPONENT_NAME_LIST)
+    message(STATUS "load component:" ${COMPONENT_NAME_LIST})
+    foreach(name IN LISTS COMPONENT_NAME_LIST)
         add_component(${name})
     endforeach ()
 endfunction()
@@ -122,11 +189,16 @@ function(read_config)
      
     #parse output
     string(JSON OUTPUT_TYPE GET ${CONFIG_JSON_STRING} output)
-    set_output_type(${OUTPUT_TYPE})
+    if(${PLATFORM} STREQUAL "iOS" OR ${PLATFORM} STREQUAL "Android")
+        set_output_type("lib")
+    else()
+        set_output_type(${OUTPUT_TYPE})
+    endif()
+
     
     #parse component
     string(JSON COMPONENT_TYPE GET ${CONFIG_JSON_STRING} component main)
-    set_main_component(${COMPONENT_TYPE})
+    set_main_component(${COMPONENT_TYPE} ${PLATFORM})
     
     #parse disable
     if(${COMPONENT_TYPE} STREQUAL "core")
@@ -144,6 +216,11 @@ function(read_config)
             load_component(${COMPONENT_LIST})
         endif ()
     endif ()
+
+    if(${PLATFORM} STREQUAL "iOS")
+        add_ios_library()
+    elseif(${PLATFORM} STREQUAL "Android")
+    endif()
     
     #add test main
     if(${OUTPUT_TYPE} STREQUAL "exe")
@@ -157,8 +234,12 @@ function(read_config)
     endif()
 
     #enable test
-    string(JSON DISABLE_TEST_VALUE GET ${CONFIG_JSON_STRING} disable_test)
-    set(DISABLE_TEST ${DISABLE_TEST_VALUE} PARENT_SCOPE)
+    if(${PLATFORM} STREQUAL "iOS" OR ${PLATFORM} STREQUAL "Android")
+        set(DISABLE_TEST 1 PARENT_SCOPE)
+    else()
+        string(JSON DISABLE_TEST_VALUE GET ${CONFIG_JSON_STRING} disable_test)
+        set(DISABLE_TEST ${DISABLE_TEST_VALUE} PARENT_SCOPE)
+    endif()
 endfunction()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/build")
@@ -177,4 +258,4 @@ else()
     message(STATUS "disable testing")
 endif()
 
-target_link_libraries(${PROJECT_NAME} base ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(${PROJECT_NAME} base ${CMAKE_THREAD_LIBS_INIT} )

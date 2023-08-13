@@ -4,4 +4,5 @@
 # 
 # This file includes the relevant testing commands required for 
 # testing this directory and lists subdirectories to be tested as well.
-subdirs("base-test")
+subdirs("base_test")
+subdirs("core_test")

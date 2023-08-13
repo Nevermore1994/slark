@@ -8,6 +8,7 @@
 #pragma once
 
 #import <AudioToolbox/AudioToolbox.h>
+#include <memory>
 #include "Data.hpp"
 #include "AudioDefine.h"
 
@@ -23,6 +24,8 @@ public:
     void play() noexcept;
     void pause() noexcept;
     void stop() noexcept;
+    void setVolume(float volume) noexcept;
+    void flush() noexcept;
     
     inline AudioRenderStatus status() const noexcept {
         return status_;
@@ -32,13 +35,20 @@ public:
         return *format_;
     }
     
-    std::function<slark::Data(uint32_t, double)> requestNextAudioData;
+    bool isNeedRequestData() const noexcept;
+    
+    std::function<std::unique_ptr<slark::Data>(uint32_t)> requestNextAudioData;
 private:
-    bool setupAudioUnit() noexcept;
+    bool checkFormat() const noexcept;
+    bool setupAUGraph() noexcept;
 private:
-    AudioComponentInstance audioUnit_;
+    AUGraph auGraph_;
+    AUNode renderIndex_;
+    AudioUnit renderUnit_;
+    AUNode volumeIndex_;
+    AudioUnit volumeUnit_;
     std::unique_ptr<AudioForamt> format_;
-    AudioRenderStatus status_;
+    AudioRenderStatus status_ = AudioRenderStatus::Unknown;
 };
 
 }
