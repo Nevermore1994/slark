@@ -5,7 +5,7 @@
 //  Created by Nevermore on 2022/8/15.
 //
 
-#include "InternalLog.hpp"
+#include "InternalLog.h"
 #import <Foundation/NSObjCRuntime.h>
 #import <Foundation/NSString.h>
 

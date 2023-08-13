@@ -1,5 +1,5 @@
 //
-//  AudioComponent.hpp
+//  AudioComponent.h
 //  slark
 //
 //  Created by Nevermore on 2022/8/17.
@@ -19,7 +19,7 @@ namespace slark::Audio {
 
 class AudioRenderComponent: public slark::NonCopyable, public InputNode {
 public:
-    explicit AudioRenderComponent(AudioInfo info);
+    explicit AudioRenderComponent(std::unique_ptr<AudioInfo> info);
     ~AudioRenderComponent() override = default;
 
     void receive(AVFrameRefPtr frame) noexcept override;

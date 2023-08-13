@@ -64,7 +64,7 @@ def gen(platform):
     print("-------gen start -------\n")
     command = "cmake -DCMAKE_MAKE_PROGRAM=/usr/bin/make -S" + root_path + " -B " + build_path + " -G "
     if platform == "iOS":
-        command = "cmake .. -G Xcode"
+        command = "cmake .. -G Xcode -DCMAKE_TOOLCHAIN_FILE=../ios.toolchain.cmake -DPLATFORM=OS64 -DENABLE_BITCODE=FALSE"
         print(command)
         os.system(command)
         command = "open slark.xcodeproj"

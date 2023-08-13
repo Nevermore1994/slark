@@ -111,8 +111,7 @@ void Player::Impl::demuxData() noexcept {
         dataList.pop_front();
 
         if (demuxer_ == nullptr) {
-            demuxData.append(*data);
-            data.reset();
+            demuxData.append(std::move(data));
 
             std::string_view dataView = demuxData.view();
             auto demuxType = DemuxerManager::shareInstance().probeDemuxType(dataView);

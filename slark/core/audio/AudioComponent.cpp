@@ -6,13 +6,15 @@
 //
 
 #include "AudioComponent.h"
+#include "AudioRenderComponentImpl.h"
+#include "AudioRecorderComponentImpl.h"
 
 namespace slark::Audio {
 
 using namespace slark;
 
-AudioRenderComponent::AudioRenderComponent(AudioInfo /*info*/)
-    : pimpl_(nullptr) {
+AudioRenderComponent::AudioRenderComponent(std::unique_ptr<AudioInfo> info)
+    : pimpl_(std::make_unique<AudioRenderComponentImpl>(std::move(info))) {
 
 }
 
@@ -22,6 +24,8 @@ void AudioRenderComponent::receive(std::shared_ptr<AVFrame> frame) noexcept {
 
 void AudioRenderComponent::process(std::shared_ptr<AVFrame> frame) noexcept {
     //render
+    pimpl_->receive(frame);
+    //if render complete, call back
     if (completion) {
         completion(frame);
     }

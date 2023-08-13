@@ -65,7 +65,7 @@ void ThreadManager::reportRunInfo() noexcept {
         }
     }
 
-    for (auto& pair : threadInfos) {
+    for (const auto& pair : threadInfos) {
         auto t = pair.second;
         if (t.expired()) {
             expiredThreads.push_back(pair.first);
@@ -79,7 +79,7 @@ void ThreadManager::reportRunInfo() noexcept {
     }
     if (!expiredThreads.empty()) {
         std::unique_lock<std::mutex> lock(mutex_);
-        for (auto key : expiredThreads) {
+        for (const auto& key : expiredThreads) {
             threadInfos_.erase(key);
         }
     }
