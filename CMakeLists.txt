@@ -22,11 +22,13 @@ project(slark)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
+
 #source file path
 set(BASE_DIR slark/base)
 set(THIRD_PARTY_DIR slark/third_party)
 set(CORE_DIR slark/core)
 set_property(GLOBAL PROPERTY LIBRARY_TYPE "base")
+set(LINK_LIBRARY "" ${CMAKE_THREAD_LIBS_INIT})
 
 function(add_base_library PLATFORM)
     message(STATUS "add base library")
@@ -76,7 +78,7 @@ macro(add_framework fwname appname)
     if( ${FRAMEWORK_${fwname}} STREQUAL FRAMEWORK_${fwname}-NOTFOUND)
         MESSAGE(ERROR ": Framework ${fwname} not found")
     else()
-        TARGET_LINK_LIBRARIES(${appname} "${FRAMEWORK_${fwname}}/${fwname}")
+        target_link_libraries(${appname} "${FRAMEWORK_${fwname}}")
         MESSAGE(STATUS "Framework ${fwname} found at ${FRAMEWORK_${fwname}}")
     endif()
 endmacro(add_framework)
