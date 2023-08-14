@@ -6,8 +6,12 @@
 //
 
 #include "AudioComponent.h"
-#include "AudioRenderComponentImpl.h"
-#include "AudioRecorderComponentImpl.h"
+
+#if SLARK_IOS
+    #include "AudioRenderComponentImpl.h"
+    #include "AudioRecorderComponentImpl.h"
+#endif
+
 
 namespace slark::Audio {
 
