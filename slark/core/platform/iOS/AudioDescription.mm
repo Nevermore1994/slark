@@ -9,7 +9,9 @@
 
 using namespace slark;
 
-AudioStreamBasicDescription convertInfo2Description(slark::AudioInfo info) {
+namespace slark::Audio {
+
+AudioStreamBasicDescription convertInfo2Description(slark::Audio::AudioInfo info) {
     AudioStreamBasicDescription description;
     description.mFormatID = kAudioFormatLinearPCM;
     description.mSampleRate = info.sampleRate;
@@ -20,4 +22,6 @@ AudioStreamBasicDescription convertInfo2Description(slark::AudioInfo info) {
     description.mBytesPerFrame = info.bitsPerSample * description.mChannelsPerFrame;
     description.mBytesPerPacket = description.mBytesPerFrame * description.mFramesPerPacket;
     return description;
+}
+
 }

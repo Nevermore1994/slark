@@ -7,15 +7,15 @@
 
 #pragma once
 
-#import <AudioToolbox/AudioToolbox.h>
-#include "AudioInfo.h"
+#include <AudioToolbox/AudioToolbox.h>
+#include "AudioDefine.h"
 
 namespace slark::Audio {
 
 static constexpr int32_t kAudioUnitOutputBus = 0;
 static constexpr int32_t kAudioUnitInputBus = 1;
 
-AudioStreamBasicDescription convertInfo2Description(slark::AudioInfo info);
+AudioStreamBasicDescription convertInfo2Description(slark::Audio::AudioInfo info);
 
 
 }

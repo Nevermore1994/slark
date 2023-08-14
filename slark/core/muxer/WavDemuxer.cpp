@@ -48,7 +48,7 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
     uint64_t dataSize = 0;
     double duration = 0.0;
     auto completion = [&]() {
-        audioInfo_ = std::make_unique<AudioInfo>();
+        audioInfo_ = std::make_unique<Audio::AudioInfo>();
         audioInfo_->channels = channels;
         audioInfo_->sampleRate = sampleRate;
         audioInfo_->bitsPerSample = bitsPerSample;
