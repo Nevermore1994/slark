@@ -14,6 +14,11 @@ namespace slark::Audio {
 
 using namespace slark;
 
+std::unique_ptr<IAudioRender> createAudioRender(std::shared_ptr<AudioInfo> audioInfo) {
+    SAssert(audioInfo != nullptr, "audio render info is nullptr");
+    return std::make_unique<AudioRender>(audioInfo);
+}
+
 bool checkOSStatus(OSStatus status, const char *errorMsg)
 {
     if (status != noErr) {
@@ -62,8 +67,8 @@ static OSStatus AudioRenderCallback(void *inRefCon,
     }
 }
 
-AudioRender::AudioRender(std::unique_ptr<AudioForamt> format)
-    : format_(std::move(format)) {
+AudioRender::AudioRender(std::shared_ptr<AudioInfo> audioInfo)
+    : IAudioRender(audioInfo) {
     auto isSuccess = checkFormat();
     if (isSuccess) {
         setupAUGraph();
@@ -137,11 +142,11 @@ bool AudioRender::isNeedRequestData() const noexcept {
 }
 
 bool AudioRender::checkFormat() const noexcept {
-    if (format_ == nullptr) {
+    if (audioInfo_ == nullptr) {
         LogE("audio render format is nullptr.");
         return false;
     }
-    if (format_->mBitsPerChannel == 0 || format_->mSampleRate == 0.0f || format_->mBytesPerFrame == 0) {
+    if (audioInfo_->channels == 0 || audioInfo_->sampleRate == 0.0f || audioInfo_->bitsPerSample == 0) {
         LogE("audio render format is invalid.");
         return false;
     }
@@ -149,7 +154,8 @@ bool AudioRender::checkFormat() const noexcept {
 }
 
 bool AudioRender::setupAUGraph() noexcept {
-    OSStatus status = noErr;
+    auto format = convertInfo2Description(*audioInfo_);
+    
     checkOSStatus(NewAUGraph(&auGraph_), "create AUGraph error.");
     checkOSStatus(AUGraphOpen(auGraph_), "open AUGraph error.");
     
@@ -168,7 +174,7 @@ bool AudioRender::setupAUGraph() noexcept {
                                        kAudioUnitProperty_StreamFormat,
                                        kAudioUnitScope_Input,
                                        kAudioUnitOutputBus,
-                                       format_.get(),
+                                       &format,
                                        sizeof(AudioStreamBasicDescription)),
                   "set audio unit callback error.");
     
@@ -209,7 +215,7 @@ bool AudioRender::setupAUGraph() noexcept {
                                        kAudioUnitProperty_StreamFormat,
                                        kAudioUnitScope_Input,
                                        kAudioUnitOutputBus,
-                                       format_.get(),
+                                       &format,
                                        sizeof(AudioStreamBasicDescription)),
                   "set volume audio unit format error.");
     

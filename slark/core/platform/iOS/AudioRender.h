@@ -7,37 +7,28 @@
 
 #pragma once
 
-#import <AudioToolbox/AudioToolbox.h>
+#include <AudioToolbox/AudioToolbox.h>
 #include <memory>
 #include "Data.hpp"
 #include "AudioDefine.h"
+#include "AudioDescription.h"
 
 namespace slark::Audio {
 
 using AudioForamt = AudioStreamBasicDescription;
 
-class AudioRender {
+class AudioRender : public IAudioRender {
 public:
-    AudioRender(std::unique_ptr<AudioForamt> format);
-    ~AudioRender();
+    explicit AudioRender(std::shared_ptr<AudioInfo> audioInfo);
+    ~AudioRender() override;
     
-    void play() noexcept;
-    void pause() noexcept;
-    void stop() noexcept;
-    void setVolume(float volume) noexcept;
-    void flush() noexcept;
+    void play() noexcept override;
+    void pause() noexcept override;
+    void stop() noexcept override;
+    void setVolume(float volume) noexcept override;
+    void flush() noexcept override;
     
-    inline AudioRenderStatus status() const noexcept {
-        return status_;
-    }
-    
-    AudioStreamBasicDescription format() const noexcept {
-        return *format_;
-    }
-    
-    bool isNeedRequestData() const noexcept;
-    
-    std::function<std::unique_ptr<slark::Data>(uint32_t)> requestNextAudioData;
+    bool isNeedRequestData() const noexcept override;
 private:
     bool checkFormat() const noexcept;
     bool setupAUGraph() noexcept;
@@ -47,8 +38,6 @@ private:
     AudioUnit renderUnit_;
     AUNode volumeIndex_;
     AudioUnit volumeUnit_;
-    std::unique_ptr<AudioForamt> format_;
-    AudioRenderStatus status_ = AudioRenderStatus::Unknown;
 };
 
 }

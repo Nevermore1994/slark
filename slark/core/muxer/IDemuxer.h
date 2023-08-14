@@ -12,7 +12,7 @@
 #include "NonCopyable.h"
 #include "AVFrame.hpp"
 #include "VideoInfo.h"
-#include "AudioInfo.h"
+#include "AudioDefine.h"
 #include "BaseClass.hpp"
 
 
@@ -77,12 +77,12 @@ public:
         return audioInfo_ != nullptr;
     }
 
-    inline const VideoInfo* videoInfo() const noexcept {
-        return videoInfo_.get();
+    inline const std::shared_ptr<VideoInfo> videoInfo() const noexcept {
+        return videoInfo_;
     }
 
-    inline const AudioInfo* audioInfo() const noexcept {
-        return audioInfo_.get();
+    inline const std::shared_ptr<Audio::AudioInfo> audioInfo() const noexcept {
+        return audioInfo_;
     }
 
     inline const DemuxerHeaderInfo& headerInfo() const noexcept {
@@ -95,8 +95,8 @@ protected:
     uint32_t parseFrameCount_ = 0;
     uint64_t parseLength_ = 0;
     std::unique_ptr<Data> overflowData_;
-    std::unique_ptr<VideoInfo> videoInfo_;
-    std::unique_ptr<AudioInfo> audioInfo_;
+    std::shared_ptr<VideoInfo> videoInfo_;
+    std::shared_ptr<Audio::AudioInfo> audioInfo_;
     DemuxerHeaderInfo headerInfo_;
 };
 
