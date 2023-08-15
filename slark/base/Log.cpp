@@ -15,7 +15,7 @@
 
 namespace slark {
 
-void PrintLog(LogType level, const char* format, ...) {
+void printLog(LogType level, const char* format, ...) {
     std::string logStr = Time::localTime();
     logStr.append(kLogStrs[static_cast<size_t>(level)]);
     char buf[kMaxLogBuffSize] = {0};
@@ -31,10 +31,11 @@ void PrintLog(LogType level, const char* format, ...) {
     }
 #ifdef SLARK_IOS
     outputLog(std::move(logStr));
-#elif SLARK_BASE
-#endif
+#elif SLARK_ANDROID
+#else
     fprintf(stdout, "%s\n", logStr.c_str());
     fflush(stdout);
+#endif
 }
 
 }//end namespace slark
