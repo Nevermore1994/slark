@@ -13,6 +13,7 @@ namespace slark {
 ReadHandler::ReadHandler()
     : worker_("ReadThread", &ReadHandler::process, this)
     , file_(nullptr){
+
 }
 
 ReadHandler::~ReadHandler() {

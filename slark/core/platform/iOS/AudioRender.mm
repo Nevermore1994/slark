@@ -30,7 +30,7 @@ bool checkOSStatus(OSStatus status, const char *errorMsg)
 
 static OSStatus AudioRenderCallback(void *inRefCon,
                                     AudioUnitRenderActionFlags *ioActionFlags,
-                                    const AudioTimeStamp *inTimeStamp,
+                                    const AudioTimeStamp* /*inTimeStamp*/,
                                     UInt32 /*inBusNumber*/,
                                     UInt32 /*inNumberFrames*/,
                                     AudioBufferList *__nullable ioData)
@@ -116,11 +116,13 @@ void AudioRender::stop() noexcept {
     
     if (renderUnit_) {
         AudioOutputUnitStop(renderUnit_);
+        AudioComponentInstanceDispose(renderUnit_);
         renderUnit_ = nullptr;
     }
     
     if (volumeUnit_) {
         AudioOutputUnitStop(volumeUnit_);
+        AudioComponentInstanceDispose(volumeUnit_);
         volumeUnit_ = nullptr;
     }
     
@@ -130,7 +132,6 @@ void AudioRender::stop() noexcept {
         auGraph_ = nullptr;
     }
 
-    AudioComponentInstanceDispose(volumeUnit_);
     LogI("[audio render] stop end.");
 }
 

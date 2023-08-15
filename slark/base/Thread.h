@@ -12,26 +12,21 @@
 #include <functional>
 #include <atomic>
 #include <string_view>
+#include <type_traits>
+#include <iostream>
 #include "TimerPool.h"
 #include "Random.hpp"
 #include "NonCopyable.h"
+#include "Log.hpp"
 
 namespace slark {
 
 class Thread : public NonCopyable {
 
 public:
-    template<class Func, typename ... Args>
-    Thread(std::string&& name, Func&& f, Args&& ... args)
+    template<class Func, typename ... Args, typename = std::enable_if_t<!std::is_same_v<std::decay_t<Func>, std::thread>>>
+    Thread(std::string name, Func&& f, Args&& ... args)
         : name_(std::move(name))
-        , lastRunTimeStamp_(0)
-        , worker_(&Thread::process, this) {
-        func_ = std::bind(std::forward<Func>(f), std::forward<Args>(args)...);
-    }
-
-    template<class Func, typename ... Args>
-    Thread(const std::string& name, Func&& f, Args&& ... args)
-        : name_(name)
         , lastRunTimeStamp_(0)
         , worker_(&Thread::process, this) {
         func_ = std::bind(std::forward<Func>(f), std::forward<Args>(args)...);

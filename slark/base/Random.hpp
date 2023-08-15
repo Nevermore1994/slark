@@ -15,21 +15,24 @@
 namespace slark::Random {
 
 //random
-template<typename T>
+template <typename T>
 T random(T min, T max) {
     std::random_device rd;
     std::mt19937 gen(rd());
-    if (std::is_floating_point_v<T>) {
-        std::uniform_real_distribution<double> dis(min, max);
-        return dis(gen);
-    } else {
-        std::uniform_int_distribution<T> dis(min, max);
-        return dis(gen);
-    }
+    std::uniform_int_distribution<T> dis(min, max);
+    return dis(gen);
+}
+
+template <typename T, typename = std::enable_if_t<std::is_floating_point_v<T>>>
+T random(T min, T max) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<T> dis(min, max);
+    return dis(gen);
 }
 
 template<typename T>
-std::vector<T> randomSelect(const std::vector<T>& source, uint32_t count) {
+std::vector<T> randomSelect(const std::vector<T>& source, uint32_t count) noexcept {
     if (count >= source.size()) {
         return {source.begin(), source.end()};
     }
@@ -40,15 +43,15 @@ std::vector<T> randomSelect(const std::vector<T>& source, uint32_t count) {
     return {res.begin(), res.begin() + count};
 }
 
-std::string randomString(uint32_t length);
+std::string randomString(uint32_t length) noexcept;
 
-//length 12
-uint32_t shortId();
+uint32_t shortId() noexcept;
 
-//length 18
-uint64_t id();
+///length 64
+std::string uniqueId() noexcept;
 
-std::string uuid();
+///length 128
+std::string uuid() noexcept;
 
 }// end namespace slark::Random
 
