@@ -132,7 +132,7 @@ function(set_platform PLATFORM)
     if(${PLATFORM} STREQUAL "iOS")
         add_definitions(-DSLARK_IOS) #set SLARK_IOS = 1
     elseif(${PLATFORM} STREQUAL "Android")
-        add_definitions(-DSLARK_Android) #set SLARK_Android = 1
+        add_definitions(-DSLARK_ANDROID) #set SLARK_ANDROID = 1
     endif()
 endfunction()
 

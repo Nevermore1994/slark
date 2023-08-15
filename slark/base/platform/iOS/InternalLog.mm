@@ -12,4 +12,5 @@
 void outputLog(std::string log){
     NSString* str = [NSString stringWithUTF8String:log.data()];
     NSLog(@"%@", str);
+    str = nil;
 }
