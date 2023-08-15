@@ -18,7 +18,7 @@ namespace slark::Random {
 
 using namespace std::literals;
 
-std::string randomString(uint32_t length) {
+std::string randomString(uint32_t length) noexcept {
     const static std::string charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"s;
     std::string result;
     result.resize(length);
@@ -32,16 +32,16 @@ std::string randomString(uint32_t length) {
     return result;
 }
 
-uint32_t shortId() {
+uint32_t shortId() noexcept {
     return static_cast<uint32_t>(Random::random<uint32_t>(0, UINT32_MAX));
 }
 
-uint64_t id() {
-    return static_cast<uint32_t>(Random::random<uint64_t>(0, UINT64_MAX));
+std::string uniqueId() noexcept {
+    return randomString(64);
 }
 
-std::string uuid() {
-    return randomString(64);
+std::string uuid() noexcept {
+    return randomString(128);
 }
 
 

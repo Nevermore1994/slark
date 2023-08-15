@@ -62,5 +62,11 @@ protected:
     AudioRenderStatus status_ = AudioRenderStatus::Unknown;
 };
 
+#if (SLARK_IOS || SLRAK_ANDROID)
 std::unique_ptr<IAudioRender> createAudioRender(std::shared_ptr<AudioInfo> audioInfo);
+#else
+inline std::unique_ptr<IAudioRender> createAudioRender(std::shared_ptr<AudioInfo> /*audioInfo*/) {
+    return nullptr;
+}
+#endif
 }
