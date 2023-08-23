@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <vector>
 #include "Data.hpp"
+#include "SafeDeque.hpp"
 
 namespace slark {
 
@@ -122,4 +123,6 @@ using AVFramePtr = std::unique_ptr<AVFrame>;
 using AVFrameRefPtr = std::shared_ptr<AVFrame>;
 using AVFrameRef = AVFrame&;
 using AVFrameArray = std::vector<AVFramePtr>;
+using AVFramePtrSafeDeque = SafeDeque<AVFramePtr>;
+using AVFrameRefPtrSafeDeque = SafeDeque<AVFrameRefPtr>;
 }

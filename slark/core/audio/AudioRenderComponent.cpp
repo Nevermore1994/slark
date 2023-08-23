@@ -10,15 +10,15 @@ namespace slark::Audio {
 AudioRenderComponent::AudioRenderComponent(std::shared_ptr<slark::Audio::AudioInfo> info)
     : audioInfo_(info)
     , pimpl_(createAudioRender(info)) {
-
 }
 
-void AudioRenderComponent::receive(std::shared_ptr<AVFrame> frame) noexcept {
+void AudioRenderComponent::receive(AVFrameRefPtr frame) noexcept {
     process(frame);
 }
 
-void AudioRenderComponent::process(std::shared_ptr<AVFrame> frame) noexcept {
+void AudioRenderComponent::process(AVFrameRefPtr frame) noexcept {
     //render
+    frames_.push(frame);
     //pimpl_->receive(frame);
     //if render complete, call back
     if (completion) {

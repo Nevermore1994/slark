@@ -17,7 +17,6 @@
 #include "IOManager.h"
 #include "TransportEvent.h"
 #include "Thread.h"
-#include "AVFrameSafeDeque.hpp"
 
 namespace slark {
 
@@ -85,8 +84,8 @@ private:
     std::vector<std::weak_ptr<ITransportObserver>> listeners_;
     std::shared_ptr<IOManager> dataManager_ = nullptr;
     std::unique_ptr<IDemuxer> demuxer_ = nullptr;
-    AVFrameSafeDeque rawPackets_;
-    AVFrameSafeDeque decodeFrames_;
+    AVFramePtrSafeDeque rawPackets_;
+    AVFramePtrSafeDeque decodeFrames_;
 };
 
 }

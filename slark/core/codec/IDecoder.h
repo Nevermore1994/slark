@@ -8,7 +8,7 @@
 #include "Thread.h"
 #include "RingBuffer.hpp"
 #include "NonCopyable.h"
-#include "AVFrameSafeDeque.hpp"
+#include "AVFrame.hpp"
 #include <memory>
 
 namespace slark {

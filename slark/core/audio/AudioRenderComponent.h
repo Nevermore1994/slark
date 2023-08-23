@@ -10,7 +10,6 @@
 #include "NonCopyable.h"
 #include "AVFrame.hpp"
 #include "Time.hpp"
-#include "AVFrameSafeDeque.hpp"
 #include "Node.h"
 
 #ifdef SLARK_IOS
@@ -35,7 +34,7 @@ public:
     std::function<void(AVFrameRefPtr)> completion;
 private:
     std::shared_ptr<AudioInfo> audioInfo_;
-    AVFrameSafeDeque frames_;
+    AVFrameRefPtrSafeDeque frames_;
     std::unique_ptr<IAudioRender> pimpl_;
 
 };
