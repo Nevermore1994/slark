@@ -12,6 +12,7 @@
 #include "FileUtility.h"
 #include "Log.hpp"
 #include "Time.hpp"
+#include "Thread.h"
 
 using namespace slark;
 
@@ -39,6 +40,9 @@ int main() {
     //auto t = Time::nowTimeStamp();
     std::cout << "now time:" << Time::localTime() << std::endl;
     std::cout << "now time:" << Time::localShortTime() << std::endl;
+    slark::Thread t("ttt", [](){
+        std::cout << "xx" << std::endl;
+    });
 //    if(FileUtil::isFileExist("test.wav")){
 //        LogI("file is exist %lld", FileUtil::fileSize("test.wav"));
 //    } else {

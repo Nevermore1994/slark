@@ -108,16 +108,16 @@ function(add_ios_library)
         FRAMEWORK TRUE
         FRAMEWORK_VERSION C
         # "current version" in semantic format in Mach-O binary file
-        VERSION 16.4.0
+        VERSION 0.0.1
         # "compatibility version" in semantic format in Mach-O binary file
-        SOVERSION 1.0.0
+        SOVERSION 0.0.1
         PUBLIC_HEADER ${PROJECT_NAME}Framework.h
         XCODE_ATTRIBUTE_CLANG_ENABLE_OBJC_ARC "YES"
         XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH[variant=Debug] "YES"
         XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH[variant=Release] "NO"
         XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "iPhone Developer"
     )
-    set(FRAMEWORK_BUNDLE_IDENTIFIER "com.slark.slarkframework")  
+    set(FRAMEWORK_BUNDLE_IDENTIFIER "com.slark.slarkFramework")
     set(FRAMEWORK_NAME "slark")  
 endfunction()
 

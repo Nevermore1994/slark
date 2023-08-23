@@ -38,19 +38,27 @@ static OSStatus AudioRenderCallback(void *inRefCon,
     @autoreleasepool {
         auto render = static_cast<AudioRender*>(inRefCon);
         
+        auto silenceHandler = [&]() {
+            for (decltype(ioData->mNumberBuffers) i = 0; i < ioData->mNumberBuffers; i++) {
+                std::fill(reinterpret_cast<uint8_t*>(ioData->mBuffers[i].mData), reinterpret_cast<uint8_t*>(ioData->mBuffers[i].mData) + ioData->mBuffers[i].mDataByteSize, 0);
+            };
+        };
         if (render->status() != AudioRenderStatus::Play) {
             *ioActionFlags |= kAudioUnitRenderAction_OutputIsSilence;
+            silenceHandler();
             return noErr;
         }
         
         if (!render->requestNextAudioData){
             LogE("render request data function is nullptr.");
             *ioActionFlags |= kAudioUnitRenderAction_OutputIsSilence;
+            silenceHandler();
             return noErr;
         }
         
         if (!render->isNeedRequestData()) {
             *ioActionFlags |= kAudioUnitRenderAction_OutputIsSilence;
+            silenceHandler();
             LogI("now no need data, status:%d", render->status());
             return noErr;
         }
@@ -61,6 +69,7 @@ static OSStatus AudioRenderCallback(void *inRefCon,
                 std::copy(reinterpret_cast<uint8_t*>(ioData->mBuffers[i].mData), reinterpret_cast<uint8_t*>(ioData->mBuffers[i].mData) + ioData->mBuffers[i].mDataByteSize, data->rawData);
             } else {
                 *ioActionFlags |= kAudioUnitRenderAction_OutputIsSilence;
+                silenceHandler();
             }
         }
         return noErr;
