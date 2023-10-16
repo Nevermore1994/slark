@@ -69,7 +69,7 @@ protected:
     DecoderType decoderType_;
     DecoderType decoderSubType_ = DecoderType::Unknown;
     bool isOpen_;
-    AVFrameSafeDeque deque_;
+    AVFramePtrSafeDeque deque_;
 };
 
 }

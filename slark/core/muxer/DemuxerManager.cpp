@@ -17,7 +17,7 @@ DemuxerManager::DemuxerManager() {
 
 void DemuxerManager::init() noexcept {
     demuxers_ = {
-        {WAVDemuxer::info().symbol, WAVDemuxer::info()}
+        { WAVDemuxer::info().symbol, WAVDemuxer::info() }
     };
 }
 
@@ -34,7 +34,7 @@ std::unique_ptr<IDemuxer> DemuxerManager::create(DemuxerType type) noexcept {
     if (!contains(type)) {
         return nullptr;
     }
-    IDemuxer* p = nullptr;
+    std::unique_ptr<IDemuxer> p = nullptr;
     switch (type) {
         case DemuxerType::WAV:
             return createDemuxer<WAVDemuxer>(WAVDemuxer::info().demuxerName);
@@ -42,7 +42,7 @@ std::unique_ptr<IDemuxer> DemuxerManager::create(DemuxerType type) noexcept {
             p = nullptr;
             break;
     }
-    return std::unique_ptr<IDemuxer>(p);
+    return p;
 }
 
 DemuxerType DemuxerManager::probeDemuxType(const std::string& str) const noexcept {

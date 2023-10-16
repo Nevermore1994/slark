@@ -4,6 +4,7 @@
 // Copyright (c) 2023 Nevermore All rights reserved.
 //
 #include "AudioRenderComponent.h"
+#include "Log.hpp"
 
 namespace slark::Audio {
 
@@ -38,6 +39,46 @@ void AudioRenderComponent::reset() noexcept {
 const std::shared_ptr<AudioInfo> AudioRenderComponent::audioInfo() const noexcept {
     SAssert(audioInfo_ != nullptr, "audio render info is nullptr");
     return audioInfo_;
+}
+
+void AudioRenderComponent::play() noexcept {
+    if (pimpl_) {
+        pimpl_->play();
+    } else {
+        LogI("audio render is nullptr.");
+    }
+}
+
+void AudioRenderComponent::pause() noexcept {
+    if (pimpl_) {
+        pimpl_->play();
+    } else {
+        LogI("audio render is nullptr.");
+    }
+}
+
+void AudioRenderComponent::stop() noexcept {
+    if (pimpl_) {
+        pimpl_->stop();
+    } else {
+        LogI("audio render is nullptr.");
+    }
+}
+
+void AudioRenderComponent::setVolume(float volume) noexcept {
+    if (pimpl_) {
+        pimpl_->setVolume(volume);
+    } else {
+        LogI("audio render is nullptr.");
+    }
+}
+
+void AudioRenderComponent::flush() noexcept {
+    if (pimpl_) {
+        pimpl_->flush();
+    } else {
+        LogI("audio render is nullptr.");
+    }
 }
 
 }

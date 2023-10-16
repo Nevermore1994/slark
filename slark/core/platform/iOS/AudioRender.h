@@ -8,7 +8,6 @@
 #pragma once
 
 #include <AudioToolbox/AudioToolbox.h>
-#include <memory>
 #include "Data.hpp"
 #include "AudioDefine.h"
 #include "AudioDescription.h"

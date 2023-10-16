@@ -19,9 +19,9 @@ enum class LogType {
     Assert
 };
 
-static std::string_view kLogStrs[] = {" [debug] ", " [info] ", " [warning] ", " [error] ", " [assert] "};
+extern const std::string_view kLogStrs[];
 
-constexpr const uint16_t kMaxLogBuffSize = 1024;
+extern const uint16_t kMaxLogBuffSize;
 
 void printLog(LogType level, const char* format, ...);
 
@@ -32,7 +32,7 @@ void printLog(LogType level, const char* format, ...);
 
 #define logger(level, format, ...) \
 do {                               \
-        printLog(level, "[%s][Line:%d][Function:%s]" format, __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__); /* NOLINT(bugprone-lambda-function-name) */ \
+        printLog(level, "[%s][Line:%d][Function:%s]" format, __FILE_NAME__, __LINE__, __FUNCTION__, ##__VA_ARGS__); /* NOLINT(bugprone-lambda-function-name) */ \
 } while(0)
 
 #define  LogD(format, ...)  logger(LogType::Debug, format, ##__VA_ARGS__)

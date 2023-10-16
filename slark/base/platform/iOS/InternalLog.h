@@ -12,4 +12,4 @@
 
 void outputLog(std::string log);
 
-#endif /* InternalLog_h */
+#endif /* slark_IOS_InternalLog_h */

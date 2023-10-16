@@ -67,13 +67,13 @@ public:
 private:
     void process() noexcept;
 
-    void setThreadName() noexcept;
+    void setup() noexcept;
 
 private:
     std::function<void()> func_;
     bool isRunning_ = false;
     bool isExit_ = false;
-    bool isSetting_ = false;
+    bool isInit_ = false;
     std::string name_;
     std::mutex mutex_;
     std::condition_variable cond_;

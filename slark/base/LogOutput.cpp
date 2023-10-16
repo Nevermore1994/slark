@@ -6,12 +6,13 @@
 #include "LogOutput.h"
 #include "Time.hpp"
 #include "Log.hpp"
+#include <string_view>
 
 namespace slark {
 
 std::string LogFileName() {
     using namespace slark::FileUtil;
-    static std::string logDir = "logs";
+    const static std::string logDir = "logs";
     if (!isDirExist(logDir) && !createDir(logDir)) {
         LogE("create log folder failed.");
         return "";

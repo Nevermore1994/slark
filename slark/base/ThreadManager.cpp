@@ -55,34 +55,19 @@ std::shared_ptr<Thread> ThreadManager::thisThread() noexcept {
 void ThreadManager::reportRunInfo() noexcept {
     TimeStamp now = nowTimeStamp();
     LogI("ThreadManager report now:%llu, now live size :%lu", now, threadInfos_.size());
-    ///Todo: replace C++20 std::erase_if
-    std::vector<std::thread::id> expiredThreads;
-    std::vector<std::pair<std::thread::id, std::weak_ptr<Thread>>> threadInfos;
-    {
-        std::unique_lock<std::mutex> lock(mutex_);
-        for (const auto& pair : threadInfos_) {
-            threadInfos.emplace_back(pair.first, pair.second);
+    std::unique_lock<std::mutex> lock(mutex_);
+    std::erase_if(threadInfos_, [now] (auto& pair) {
+        auto& [id, ptr] = pair;
+        auto isExpired = ptr.expired();
+        if (!isExpired) {
+            auto thread = ptr.lock();
+            TimeStamp interval = (now - thread->getLastRunTimeStamp());
+            if (thread->isRunning() && interval >= kMaxThreadBlockTimeInterval) {
+                LogE("ThreadManager report [%s] is blocking.", thread->getName().data());
+            }
         }
-    }
-
-    for (const auto& pair : threadInfos) {
-        auto t = pair.second;
-        if (t.expired()) {
-            expiredThreads.push_back(pair.first);
-            continue;
-        }
-        auto thread = t.lock();
-        TimeStamp interval = (now - thread->getLastRunTimeStamp());
-        if (thread->isRunning() && interval >= kMaxThreadBlockTimeInterval) {
-            LogE("ThreadManager report [%s] is blocking.", thread->getName().data());
-        }
-    }
-    if (!expiredThreads.empty()) {
-        std::unique_lock<std::mutex> lock(mutex_);
-        for (const auto& key : expiredThreads) {
-            threadInfos_.erase(key);
-        }
-    }
+        return isExpired;
+    });
 }
 
 }//end namespace slark

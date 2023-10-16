@@ -25,7 +25,7 @@ public:
 
     std::tuple<DemuxerState, AVFrameArray> parseData(std::unique_ptr<Data> data) override;
 
-    inline static DemuxerInfo& info()  noexcept {
+    inline static const DemuxerInfo& info() noexcept {
         static DemuxerInfo info = {
             DemuxerType::WAV,
             "WAVE",

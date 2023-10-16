@@ -35,17 +35,15 @@ void OutputNode::removeAllTarget() noexcept {
 }
 
 void OutputNode::notifyTargets(std::shared_ptr<AVFrame> frame) noexcept {
-    //C++20 replace erase_if
-    for (auto it = targets_.begin(); it != targets_.end();) {
-        auto& [hash, ptr] = *it;
-        if (ptr.expired()) {
-            it = targets_.erase(it);
-        } else {
+    std::erase_if(targets_, [frame](const auto& pair){
+        const auto& [hash, ptr] = pair;
+        auto isExpired = ptr.expired();
+        if (!isExpired) {
             auto p = ptr.lock();
             p->receive(frame);
-            ++it;
         }
-    }
+        return isExpired;
+    });
 }
 
 void OutputNode::send(std::shared_ptr<AVFrame> frame) noexcept {
@@ -53,7 +51,7 @@ void OutputNode::send(std::shared_ptr<AVFrame> frame) noexcept {
 }
 
 
-void Node::process(std::shared_ptr<AVFrame> frame) noexcept {
+void Node::process(std::shared_ptr<AVFrame> /*frame*/) noexcept {
 
 }
 

@@ -59,10 +59,17 @@ void Thread::start() noexcept {
 
 void Thread::process() noexcept {
     if (!isSetting_) {
-        setThreadName();
+        setup();
     }
-    while (!isExit_) {
-        if (isRunning_) {
+    bool isExit = false;
+    bool isRunning = false;
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        isExit = isExit_;
+        isRunning = isRunning_;
+    }
+    while (!isExit) {
+        if (isRunning) {
             lastRunTimeStamp_ = Time::nowTimeStamp();
             if (func_) {
                 func_();
@@ -70,7 +77,7 @@ void Thread::process() noexcept {
             timerPool_.loop();
         } else {
             std::unique_lock<std::mutex> lock(mutex_);
-            cond_.wait(lock, [&] {
+            cond_.wait(lock, [this] {
                 return isExit_ || isRunning_;
             });
         }
@@ -78,7 +85,7 @@ void Thread::process() noexcept {
 }
 
 
-void Thread::setThreadName() noexcept {
+void Thread::setup() noexcept {
 #ifndef __APPLE__
     auto handle = worker_.native_handle();
     std::string name = name_;
@@ -89,7 +96,7 @@ void Thread::setThreadName() noexcept {
 #else
     pthread_setname_np(name_.c_str());
 #endif
-    isSetting_ = true;
+    isInit_ = true;
 }
 
 TimerId Thread::runAt(uint64_t timeStamp, TimerCallback func) noexcept {

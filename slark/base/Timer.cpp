@@ -11,7 +11,7 @@ namespace slark {
 
 TimerInfo::TimerInfo(uint64_t time)
     : expireTime(time)
-    , timerId(Random::shortId()) {
+    , timerId(Random::u32Random()) {
 
 }
 

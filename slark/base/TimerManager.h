@@ -14,7 +14,7 @@
 
 namespace slark {
 
-class TimerManager : public NonCopyable {
+class TimerManager final : public NonCopyable {
 public:
     inline static TimerManager& shareInstance() {
         static TimerManager instance;
@@ -24,7 +24,7 @@ public:
 public:
     TimerManager();
 
-    ~TimerManager();
+    ~TimerManager() final;
 
     TimerId runAt(uint64_t timeStamp, TimerCallback func) noexcept; //ms
     TimerId runAfter(uint64_t delayTime, TimerCallback func) noexcept; //ms

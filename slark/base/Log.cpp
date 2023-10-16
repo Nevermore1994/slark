@@ -6,14 +6,18 @@
 #include "Log.hpp"
 #include "Time.hpp"
 #include "LogOutput.h"
+
 #ifdef SLARK_IOS
-    #include "InternalLog.h"
+#include "InternalLog.h"
 #endif
 
 #include <cstdarg>
 
-
 namespace slark {
+
+constexpr const std::string_view kLogStrs[] = {" [debug] ", " [info] ", " [warning] ", " [error] ", " [assert] "};
+
+constexpr const uint16_t kMaxLogBuffSize = 1024;
 
 void printLog(LogType level, const char* format, ...) {
     std::string logStr = Time::localTime();

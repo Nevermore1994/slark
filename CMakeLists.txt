@@ -7,7 +7,7 @@ include(CMakeForceCompiler)
 include(CMakePrintHelpers)
 
 #C++ standard
-set(CMAKE_CXX_FLAGS "-std=c++17 -Wall -Wextra -Wpedantic -Wcast-align -Wcast-qual -Wconversion -Wdisabled-optimization -Wendif-labels -Wfloat-equal -Winit-self -Winline -Wmissing-include-dirs -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual -Wpacked -Wpointer-arith -Wredundant-decls -Wshadow -Wsign-promo -Wvariadic-macros -Wwrite-strings -Wno-variadic-macros")
+set(CMAKE_CXX_FLAGS "-std=c++2b -Wall -Wextra -Wpedantic -Wcast-align -Wcast-qual -Wconversion -Wdisabled-optimization -Wendif-labels -Wfloat-equal -Winit-self -Winline -Wmissing-include-dirs -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual -Wpacked -Wpointer-arith -Wredundant-decls -Wshadow -Wsign-promo -Wvariadic-macros -Wwrite-strings -Wno-variadic-macros")
 set(CMAKE_CXX_FLAGS_RELEASE "-O2 -s -DNDEBUG -march=native")
 set(CMAKE_CXX_FLAGS_MINSIZEREL "-Os -s -DNDEBUG -march=native")
 
@@ -217,12 +217,12 @@ function(read_config)
         if(${COMPONENT_LIST_LENGTH} GREATER 0)
             load_component(${COMPONENT_LIST})
         endif ()
+        
+        if(${PLATFORM} STREQUAL "iOS")
+            add_ios_library()
+        elseif(${PLATFORM} STREQUAL "Android")
+        endif()
     endif ()
-
-    if(${PLATFORM} STREQUAL "iOS")
-        add_ios_library()
-    elseif(${PLATFORM} STREQUAL "Android")
-    endif()
     
     #add test main
     if(${OUTPUT_TYPE} STREQUAL "exe")
@@ -237,7 +237,7 @@ function(read_config)
 
     #enable test
     if(${PLATFORM} STREQUAL "iOS" OR ${PLATFORM} STREQUAL "Android")
-        set(DISABLE_TEST 1 PARENT_SCOPE)
+        set(DISABLE_TEST 0 PARENT_SCOPE)
     else()
         string(JSON DISABLE_TEST_VALUE GET ${CONFIG_JSON_STRING} disable_test)
         set(DISABLE_TEST ${DISABLE_TEST_VALUE} PARENT_SCOPE)

@@ -10,12 +10,8 @@
 
 namespace slark::string {
 
-std::vector<std::string> spiltString(const std::string& str, char delimiter);
+std::vector<std::string> spiltString(const std::string& str, const std::string_view& delimiter);
 
-std::vector<std::string> spiltString(const std::string& str, const std::string& delimiter);
-
-std::vector<std::string_view> spiltStringView(const std::string_view& strView, char delimiter);
-
-std::vector<std::string_view> spiltStringView(const std::string_view& strView, const std::string& delimiter);
+std::vector<std::string_view> spiltStringView(const std::string_view& stringView, const std::string_view& delimiter);
 
 } // slark
