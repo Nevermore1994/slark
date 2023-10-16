@@ -51,13 +51,18 @@ public:
         return status_;
     }
     
-    const std::shared_ptr<AudioInfo> info() const noexcept {
+    inline const std::shared_ptr<AudioInfo> info() const noexcept {
         SAssert(audioInfo_ != nullptr, "audio render info is nullptr");
         return audioInfo_;
     }
     
+    inline float volume() const noexcept {
+        return volume_;
+    }
+    
     std::function<std::unique_ptr<slark::Data>(uint32_t)> requestNextAudioData;
 protected:
+    float volume_ = 50.f; // 0 ~ 100
     std::shared_ptr<AudioInfo> audioInfo_ = nullptr;
     AudioRenderStatus status_ = AudioRenderStatus::Unknown;
 };

@@ -13,7 +13,7 @@ namespace slark {
 
 constexpr const Time::TimeStamp kMaxThreadBlockTimeInterval = std::chrono::seconds(30).count(); //30s
 
-class ThreadManager : public NonCopyable {
+class ThreadManager final: public NonCopyable {
 public:
     static inline ThreadManager& shareInstance() {
         static ThreadManager instance;
@@ -24,7 +24,7 @@ public:
 public:
     ThreadManager();
 
-    ~ThreadManager() override;
+    ~ThreadManager() final;
 
     void add(const std::shared_ptr<Thread>& thread) noexcept;
 

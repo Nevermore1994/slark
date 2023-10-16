@@ -30,6 +30,12 @@ public:
     const std::shared_ptr<AudioInfo> audioInfo() const noexcept;
     void clear() noexcept;
     void reset() noexcept;
+    
+    void play() noexcept;
+    void pause() noexcept;
+    void stop() noexcept;
+    void setVolume(float volume) noexcept;
+    void flush() noexcept;
 public:
     std::function<void(AVFrameRefPtr)> completion;
 private:

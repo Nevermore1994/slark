@@ -98,7 +98,7 @@ struct Data {
         appendData.reset();
     }
 
-    [[nodiscard]]  inline bool empty() const noexcept {
+    [[nodiscard]] inline bool empty() const noexcept {
         return length == 0;
     }
 

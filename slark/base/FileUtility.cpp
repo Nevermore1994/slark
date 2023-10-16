@@ -13,32 +13,29 @@
 
 namespace slark::FileUtil  {
 
-[[maybe_unused]] bool isDirExist(const std::string& path) noexcept {
+bool isDirExist(const std::string& path) noexcept {
     if (path.empty()) {
         return false;
     }
     return std::filesystem::exists(path) && std::filesystem::is_directory(path);
 }
 
-[[maybe_unused]] bool isFileExist(const std::string& path) noexcept {
+bool isFileExist(const std::string& path) noexcept {
     if (path.empty()) {
         return false;
     }
     return std::filesystem::exists(path) && !std::filesystem::is_directory(path);
 }
 
-[[maybe_unused]] bool createDir(const std::string& path) noexcept {
+bool createDir(const std::string& path) noexcept {
     return std::filesystem::create_directory(path);
 }
 
-[[maybe_unused]] bool deleteFile(const std::string& path) noexcept {
-    if (path.empty()) {
-        return false;
-    }
-    return std::filesystem::remove(path);
+bool deleteFile(const std::string& path) noexcept {
+    return path.empty() ? false : std::filesystem::remove(path);
 }
 
-[[maybe_unused]] bool renameFile(const std::string& oldName, const std::string& newName) noexcept {
+bool renameFile(const std::string& oldName, const std::string& newName) noexcept {
     if (oldName.empty() || newName.empty()) {
         return false;
     }
@@ -47,14 +44,11 @@ namespace slark::FileUtil  {
     return !error;
 }
 
-[[maybe_unused]] uint64_t fileSize(const std::string& path) noexcept {
-    if (path.empty()) {
-        return 0;
-    }
-    return static_cast<uint64_t>(std::filesystem::file_size(path));
+uint64_t fileSize(const std::string& path) noexcept {
+    return path.empty() ? 0 : static_cast<uint64_t>(std::filesystem::file_size(path));
 }
 
-[[maybe_unused]] bool resizeFile(const std::string& path, uint64_t length) noexcept {
+bool resizeFile(const std::string& path, uint64_t length) noexcept {
     if (path.empty()) {
         return true;
     }
@@ -63,14 +57,11 @@ namespace slark::FileUtil  {
     return !error;
 }
 
-[[maybe_unused]] bool removeDir(const std::string& path) noexcept {
-    if (path.empty()) {
-        return true;
-    }
-    return std::filesystem::remove(path);;
+bool removeDir(const std::string& path) noexcept {
+    return path.empty() ? true : std::filesystem::remove(path);;
 }
 
-[[maybe_unused]] bool copyFile(const std::string& from, const std::string& to) noexcept {
+bool copyFile(const std::string& from, const std::string& to) noexcept {
     std::error_code error;
     std::filesystem::copy(from, to, std::filesystem::copy_options::recursive, error);
     return !error;

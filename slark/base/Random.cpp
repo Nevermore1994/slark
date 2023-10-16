@@ -25,15 +25,19 @@ std::string randomString(uint32_t length) noexcept {
 
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(0, 61);// 61 = 26 * 2 + 10 - 1. [0, 61]
+    std::uniform_int_distribution<> dis(0, charset.size());// 61 = 26 * 2 + 10 - 1. [0, 61]
     for (uint32_t i = 0; i < length; i++) {
         result[i] = charset[static_cast<uint32_t>(dis(gen))];
     }
     return result;
 }
 
-uint32_t shortId() noexcept {
+uint32_t u32Random() noexcept {
     return static_cast<uint32_t>(Random::random<uint32_t>(0, UINT32_MAX));
+}
+
+int32_t i32Random() noexcept {
+    return static_cast<int32_t>(Random::random<int32_t>(0, INT32_MAX));
 }
 
 std::string uniqueId() noexcept {
@@ -43,6 +47,5 @@ std::string uniqueId() noexcept {
 std::string uuid() noexcept {
     return randomString(128);
 }
-
 
 }//end namespace slark::Random

@@ -8,7 +8,7 @@
 #include "AudioDescription.h"
 #include "AudioRender.h"
 #include "Log.hpp"
-#include <algorithm>
+#include "Base.h"
 
 namespace slark::Audio {
 
@@ -39,25 +39,23 @@ static OSStatus AudioRenderCallback(void *inRefCon,
         auto render = static_cast<AudioRender*>(inRefCon);
         
         auto silenceHandler = [&]() {
+            *ioActionFlags |= kAudioUnitRenderAction_OutputIsSilence;
             for (decltype(ioData->mNumberBuffers) i = 0; i < ioData->mNumberBuffers; i++) {
                 std::fill(reinterpret_cast<uint8_t*>(ioData->mBuffers[i].mData), reinterpret_cast<uint8_t*>(ioData->mBuffers[i].mData) + ioData->mBuffers[i].mDataByteSize, 0);
             };
         };
         if (render->status() != AudioRenderStatus::Play) {
-            *ioActionFlags |= kAudioUnitRenderAction_OutputIsSilence;
             silenceHandler();
             return noErr;
         }
         
         if (!render->requestNextAudioData){
             LogE("render request data function is nullptr.");
-            *ioActionFlags |= kAudioUnitRenderAction_OutputIsSilence;
             silenceHandler();
             return noErr;
         }
         
         if (!render->isNeedRequestData()) {
-            *ioActionFlags |= kAudioUnitRenderAction_OutputIsSilence;
             silenceHandler();
             LogI("now no need data, status:%d", render->status());
             return noErr;
@@ -68,7 +66,6 @@ static OSStatus AudioRenderCallback(void *inRefCon,
             if (!data->empty()) {
                 std::copy(reinterpret_cast<uint8_t*>(ioData->mBuffers[i].mData), reinterpret_cast<uint8_t*>(ioData->mBuffers[i].mData) + ioData->mBuffers[i].mDataByteSize, data->rawData);
             } else {
-                *ioActionFlags |= kAudioUnitRenderAction_OutputIsSilence;
                 silenceHandler();
             }
         }
@@ -144,8 +141,18 @@ void AudioRender::stop() noexcept {
     LogI("[audio render] stop end.");
 }
 
+void AudioRender::setVolume(float volume) noexcept {
+    if (FloatEqual(volume, volume_)) {
+        return;
+    }
+    volume_ = volume;
+    float t = (volume_ - 50.0f) / 50.0f * 20.f;
+    AudioUnitSetParameter(volumeUnit_, kAudioUnitScope_Global, 0, kReverb2Param_Gain, t, 0);
+}
+
 bool AudioRender::isNeedRequestData() const noexcept {
     if (status_ == AudioRenderStatus::Stop || status_ == AudioRenderStatus::Pause || status_ == AudioRenderStatus::Error) {
+        LogI("audio render not need data.");
         return false;
     }
     return true;

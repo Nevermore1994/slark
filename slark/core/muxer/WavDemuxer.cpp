@@ -4,6 +4,7 @@
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 #include <string_view>
+#include <bit>
 #include "Log.hpp"
 #include "WavDemuxer.h"
 #include "MediaUtility.hpp"
@@ -20,7 +21,7 @@ enum class WaveFormat {
     EXTENSIBLE = 0xFFFE
 };
 
-static std::string_view WaveextSubformat = "\x00\x00\x00\x00\x10\x00\x80\x00\x00\xAA\x00\x38\x9B\x71";
+static const  std::string_view WaveextSubformat = "\x00\x00\x00\x00\x10\x00\x80\x00\x00\xAA\x00\x38\x9B\x71";
 
 WAVDemuxer::WAVDemuxer() = default;
 
@@ -148,9 +149,9 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
                 }
 
                 if ((channelMask != 0)
-                    && (popcount(channelMask) != channels)) {
+                    && (std::popcount(channelMask) != channels)) {
                     LogE("invalid number of channels (%d) in channel mask (0x%x)",
-                         popcount(channelMask), channels);
+                         std::popcount(channelMask), channels);
                     return res;
                 }
 

@@ -4,39 +4,27 @@ sudo: required
 
 jobs:
     include:
-        - os: linux
-          addons:
-              apt:
-                  sources:
-                      - ubuntu-toolchain-r-test
-                  packages:
-                      - gcc-10
-          env:
-              - MATRIX_EVAL="CC=gcc-12 && CXX=g++-12"
-          arch: amd64
-          compiler: gcc
-
         -   os: linux
             addons:
                 apt:
                     sources:
                         - ubuntu-toolchain-r-test
-                        - llvm-toolchain-precise-14
+                        - llvm-toolchain-precise-17
                     packages:
                         - cmake
-                        - clang-15
+                        - clang-17
                         - wget
             env:
-                - MATRIX_EVAL="CC=clang-14 && CXX=clang++-14"
+                - MATRIX_EVAL="CC=clang-17 && CXX=clang++-17"
             arch: amd64
             compiler: clang
 
         -   os: osx
-            osx_image: xcode14.0
+            osx_image: xcode15.0
 
 before_install:
     - eval "${MATRIX_EVAL}"
-    - if [ $TRAVIS_OS_NAME == linux ]; then sudo apt-get update  && sudo apt-get install gcc-12 g++-12 && sudo apt-get install clang-14; fi
+    - if [ $TRAVIS_OS_NAME == linux ]; then sudo apt-get update && sudo apt-get install clang-17; fi
 
 branches:
     - main

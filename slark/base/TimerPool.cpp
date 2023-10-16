@@ -7,6 +7,7 @@
 #include "Random.hpp"
 #include "Log.hpp"
 #include <chrono>
+#include <ranges>
 
 namespace slark {
 
@@ -63,9 +64,9 @@ void TimerPool::loop() noexcept {
         if (canRemove) {
             remove(id);
         } else {
+            //add timer again
             TimerInfo timerInfo = timer.timerInfo;
             timerInfo.expireTime = now + timerInfo.loopInterval;
-            //add loop timer
             std::unique_lock<std::mutex> lock(mutex_);
             timerInfos_.push(timerInfo);
         }
@@ -121,7 +122,7 @@ void TimerPool::cancel(TimerId id) noexcept {
 
 void TimerPool::cancel(const std::vector<TimerId>& timers) noexcept {
     std::unique_lock<std::mutex> lock(mutex_);
-    std::for_each(timers.begin(), timers.end(), [&](const TimerId & id) {
+    std::ranges::for_each(timers, [this](const TimerId& id){
         if (auto it = timers_.find(id); it != timers_.end()) {
             it->second.isValid = false;
         }

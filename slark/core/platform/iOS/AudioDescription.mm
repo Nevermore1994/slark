@@ -11,7 +11,7 @@ using namespace slark;
 
 namespace slark::Audio {
 
-AudioStreamBasicDescription convertInfo2Description(slark::Audio::AudioInfo info) {
+AudioStreamBasicDescription convertInfo2Description(AudioInfo info) {
     AudioStreamBasicDescription description;
     description.mFormatID = kAudioFormatLinearPCM;
     description.mSampleRate = info.sampleRate;

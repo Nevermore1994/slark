@@ -34,7 +34,7 @@ private:
     std::unique_ptr<IDecoder> decoder_;
     DecoderReceiveCallback callback_;
     Thread decodeWorker_;
-    AVFrameSafeDeque packets_;
+    AVFramePtrSafeDeque packets_;
 };
 
 }

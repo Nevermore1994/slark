@@ -140,7 +140,7 @@ struct CTimeRange {
         return end() > rhs.start;
     }
 
-    [[nodiscard]] inline bool overlap(const CTimeRange& rhs) const noexcept {
+    [[nodiscard]] inline bool isOverlap(const CTimeRange& rhs) const noexcept {
         if (!isValid() || !rhs.isValid()) {
             return false;
         }
@@ -160,9 +160,9 @@ struct CTimeRange {
         return start.isValid() && duration.isValid();
     }
 
-    [[maybe_unused]] [[nodiscard]] inline CTimeRange overlapRange(const CTimeRange& rhs) const noexcept {
+    [[maybe_unused]] [[nodiscard]] inline CTimeRange overlap(const CTimeRange& rhs) const noexcept {
         CTimeRange range;
-        if (!this->overlap(rhs)) {
+        if (!this->isOverlap(rhs)) {
             return range;
         }
         auto end = this->end().second();

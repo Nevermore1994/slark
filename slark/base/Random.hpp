@@ -45,7 +45,9 @@ std::vector<T> randomSelect(const std::vector<T>& source, uint32_t count) noexce
 
 std::string randomString(uint32_t length) noexcept;
 
-uint32_t shortId() noexcept;
+uint32_t u32Random() noexcept;
+
+int32_t i32Random() noexcept;
 
 ///length 64
 std::string uniqueId() noexcept;

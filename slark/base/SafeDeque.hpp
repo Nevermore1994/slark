@@ -64,7 +64,7 @@ public:
         deque_.clear();
     }
 
-    [[nodiscard]] inline bool empty() const noexcept {
+    [[nodiscard]] inline bool empty() noexcept {
         std::unique_lock<std::mutex> lock(mutex_);
         return deque_.empty();
     }

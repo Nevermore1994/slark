@@ -6,6 +6,7 @@
 
 #include "MediaUtility.hpp"
 
+
 namespace slark {
 
 bool isLocalFile(const std::string& path) {
@@ -23,16 +24,6 @@ uint32_t uint32LE(const uint8_t* ptr) {
 
 uint16_t uint16LE(const char* ptr) {
     return uint16LE(reinterpret_cast<const uint8_t*>(ptr));
-}
-
-uint16_t popcount(uint64_t value) {
-    uint16_t res = 0;
-    while (value) {
-        value = value & (value - 1);
-        res ++;
-    }
-
-    return res;
 }
 
 uint16_t uint16LE(const uint8_t* ptr) {
