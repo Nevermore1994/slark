@@ -1,0 +1,16 @@
+PODS:
+  - slark (0.0.1)
+
+DEPENDENCIES:
+  - slark (from `../../../script/slark.podspec`)
+
+EXTERNAL SOURCES:
+  slark:
+    :path: "../../../script/slark.podspec"
+
+SPEC CHECKSUMS:
+  slark: 2e245811dc5c17ffab8ea9fb4cb7ad8910b1e828
+
+PODFILE CHECKSUM: 242e685a53666719b75718ff1723eaccfb49becb
+
+COCOAPODS: 1.12.1

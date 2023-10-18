@@ -58,7 +58,7 @@ void Thread::start() noexcept {
 }
 
 void Thread::process() noexcept {
-    if (!isSetting_) {
+    if (!isInit_) {
         setup();
     }
     bool isExit = false;

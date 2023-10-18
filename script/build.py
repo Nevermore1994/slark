@@ -67,7 +67,10 @@ def gen(platform):
         command = "cmake .. -G Xcode -DCMAKE_TOOLCHAIN_FILE=../ios.toolchain.cmake -DPLATFORM=OS64 -DENABLE_BITCODE=FALSE"
         print(command)
         os.system(command)
-        command = "open slark.xcodeproj"
+        command = "pod install --repo-update"
+        os.system(command)
+        print(command)
+        command = "open slark.xcworkspace"
     else:
         command += '"Unix Makefiles"'
     print(command)

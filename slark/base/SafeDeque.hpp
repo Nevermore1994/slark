@@ -7,6 +7,7 @@
 #include <mutex>
 #include <memory>
 #include "NonCopyable.h"
+
 namespace slark {
 
 template<typename T>
@@ -30,14 +31,14 @@ public:
         valueList.clear();
     }
     
-    [[nodiscard]] inline T pop() noexcept {
+    [[nodiscard]] inline std::tuple<bool, T> pop() noexcept {
         std::unique_lock<std::mutex> lock(mutex_);
         if (deque_.empty()) {
-            return nullptr;
+            return {false , T{}};
         }
         auto value = std::move(deque_.front());
         deque_.pop_front();
-        return value;
+        return {true, std::move(value)};
     }
     
     inline void swap(SafeDeque& deque) noexcept {
@@ -67,6 +68,11 @@ public:
     [[nodiscard]] inline bool empty() noexcept {
         std::unique_lock<std::mutex> lock(mutex_);
         return deque_.empty();
+    }
+    
+    [[nodiscard]] inline size_t size() noexcept {
+        std::unique_lock<std::mutex> lock(mutex_);
+        return deque_.size();
     }
 private:
     std::mutex mutex_;

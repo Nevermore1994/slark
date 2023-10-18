@@ -25,7 +25,7 @@ std::string randomString(uint32_t length) noexcept {
 
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(0, charset.size());// 61 = 26 * 2 + 10 - 1. [0, 61]
+    std::uniform_int_distribution<> dis(0, static_cast<int>(charset.size()));// 61 = 26 * 2 + 10 - 1. [0, 61]
     for (uint32_t i = 0; i < length; i++) {
         result[i] = charset[static_cast<uint32_t>(dis(gen))];
     }

@@ -32,3 +32,5 @@ cmake-build-debug-gcc
 script/Debug-iphoneos
 script/Debug-maccatalyst/slark.framework
 script/Testing/Temporary
+demo/iOS/demo/Pods/Target Support Files/Pods-demo
+demo/iOS/demo/Pods

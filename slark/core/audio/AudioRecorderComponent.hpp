@@ -2,7 +2,7 @@
 //  AudioRecorderComponent.hpp
 //  slark
 //
-//
+// Copyright (c) 2023 Nevermore All rights reserved.
 #pragma once
 #include <memory>
 #include <functional>

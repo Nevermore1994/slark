@@ -11,24 +11,15 @@ using namespace slark::string;
 
 TEST(spilt1, string) {
     std::string s1 = "0,1,2,3,4,5,6,7,8,9,";
-    auto spiltStrs = spiltString(s1, ',');
+    auto spiltStrs = spiltString(s1, ",");
     for(size_t i = 0; i < spiltStrs.size(); i++) {
         ASSERT_EQ(spiltStrs[i], std::to_string(i));
     }
 }
 
-TEST(spilt2, string) {
-    std::string s1 = "0,,,1,,,2,3,,,4,,,,,,5,6,7,8,9,,,,,,";
-    auto spiltStrs = spiltString(s1, ',');
-    auto spiltStrs2 = spiltString(s1, ",");
-    for(size_t i = 0; i < spiltStrs2.size(); i++) {
-        ASSERT_EQ(spiltStrs[i], spiltStrs2[i]);
-    }
-}
-
 TEST(spilt3, string) {
     std::string s1 = "https://baidu.com";
-    auto spiltStrs = spiltString(s1, '/');
+    auto spiltStrs = spiltString(s1, "/");
     ASSERT_EQ(spiltStrs.size(), 2);
 }
 
@@ -43,7 +34,7 @@ TEST(spilt4, string) {
 
 TEST(spilt5, string) {
     std::string_view s1 = "https://baidu.com";
-    auto spiltStrs = spiltStringView(s1, '/');
+    auto spiltStrs = spiltStringView(s1, "/");
     std::for_each(spiltStrs.begin(), spiltStrs.end(), [](const auto& view){
         std::cout << view << std::endl;
     });
