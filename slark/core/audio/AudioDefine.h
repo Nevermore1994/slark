@@ -2,11 +2,11 @@
 //  AudioDefine.h
 //  slark
 //
-//  Created by Nevermore on 2022/8/19.
+// Copyright (c) 2023 Nevermore All rights reserved.
 //
 #pragma once
+#include <functional>
 #include "AVFrame.hpp"
-#include "Assert.hpp"
 #include "Time.hpp"
 
 namespace slark::Audio {

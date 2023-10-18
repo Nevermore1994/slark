@@ -11,4 +11,15 @@ target_link_libraries(core_test
         base
         )
 
+set_target_properties(core_test PROPERTIES
+        FRAMEWORK TRUE
+        FRAMEWORK_VERSION C
+        XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD "c++23"
+        XCODE_ATTRIBUTE_CLANG_ENABLE_OBJC_ARC "YES"
+        XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH[variant=Debug] "YES"
+        XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH[variant=Release] "NO"
+        XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "iPhone Developer"
+        XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY "libc++"
+        MACOSX_FRAMEWORK_IDENTIFIER "com.slark.coretest"
+)
 gtest_add_tests(TARGET core_test)

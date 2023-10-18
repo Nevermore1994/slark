@@ -3,7 +3,7 @@
 //  slark
 //
 //  Created by Nevermore on 2022/4/29.
-//
+//  Copyright (c) 2023 Nevermore All rights reserved.
 
 #pragma once
 

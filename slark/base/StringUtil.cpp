@@ -11,14 +11,18 @@
 namespace slark::string {
 
 std::vector<std::string> spiltString(const std::string& str, const std::string_view& delimiter) {
-    auto res = str | std::ranges::views::split(delimiter) | std::ranges::views::transform([](auto&& range) {
+    auto res = str | std::views::split(delimiter) | std::views::filter([](auto&& range) {
+        return !range.empty();
+    }) | std::views::transform([](auto&& range) {
         return std::string(std::string_view(range));
     });
     return std::vector<std::string>(res.begin(), res.end());
 }
 
 std::vector<std::string_view> spiltStringView(const std::string_view& stringView, const std::string_view& delimiter) {
-    auto res = stringView | std::ranges::views::split(delimiter) | std::ranges::views::transform([](auto&& range) {
+    auto res = stringView | std::ranges::views::split(delimiter) | std::views::filter([](auto&& range) {
+        return !range.empty();
+    }) | std::ranges::views::transform([](auto&& range) {
         return std::string_view(range);
     });
     return std::vector<std::string_view>(res.begin(), res.end());

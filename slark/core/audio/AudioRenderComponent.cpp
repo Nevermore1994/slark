@@ -18,13 +18,7 @@ void AudioRenderComponent::receive(AVFrameRefPtr frame) noexcept {
 }
 
 void AudioRenderComponent::process(AVFrameRefPtr frame) noexcept {
-    //render
     frames_.push(frame);
-    //pimpl_->receive(frame);
-    //if render complete, call back
-    if (completion) {
-        completion(frame);
-    }
 }
 
 void AudioRenderComponent::clear() noexcept {
@@ -45,7 +39,7 @@ void AudioRenderComponent::play() noexcept {
     if (pimpl_) {
         pimpl_->play();
     } else {
-        LogI("audio render is nullptr.");
+        LogE("audio render is nullptr.");
     }
 }
 
@@ -53,7 +47,7 @@ void AudioRenderComponent::pause() noexcept {
     if (pimpl_) {
         pimpl_->play();
     } else {
-        LogI("audio render is nullptr.");
+        LogE("audio render is nullptr.");
     }
 }
 
@@ -61,7 +55,7 @@ void AudioRenderComponent::stop() noexcept {
     if (pimpl_) {
         pimpl_->stop();
     } else {
-        LogI("audio render is nullptr.");
+        LogE("audio render is nullptr.");
     }
 }
 
@@ -69,7 +63,7 @@ void AudioRenderComponent::setVolume(float volume) noexcept {
     if (pimpl_) {
         pimpl_->setVolume(volume);
     } else {
-        LogI("audio render is nullptr.");
+        LogE("audio render is nullptr.");
     }
 }
 
@@ -77,7 +71,7 @@ void AudioRenderComponent::flush() noexcept {
     if (pimpl_) {
         pimpl_->flush();
     } else {
-        LogI("audio render is nullptr.");
+        LogE("audio render is nullptr.");
     }
 }
 

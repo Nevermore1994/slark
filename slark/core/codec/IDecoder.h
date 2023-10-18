@@ -66,7 +66,7 @@ public:
 
     virtual AVFrameArray flush() noexcept = 0;
 protected:
-    DecoderType decoderType_;
+    DecoderType decoderType_ = DecoderType::Unknown;
     DecoderType decoderSubType_ = DecoderType::Unknown;
     bool isOpen_;
     AVFramePtrSafeDeque deque_;

@@ -12,7 +12,7 @@ using namespace slark;
 TEST(equal, CTime) {
     CTime time1(100, 100);
     CTime time2(1.0);
-    ASSERT_EQ(time1.second(), time2.second());
+    ASSERT_EQ((time1 == time2), true);
 }
 
 TEST(add, CTime) {
@@ -45,26 +45,26 @@ TEST(gerater, CTime) {
 TEST(equal, CTimeRange) {
     CTimeRange timeRange1(CTime(5.0), CTime(10000, 1000));
     CTimeRange timeRange2(CTime(200, 40), CTime(10));
-    ASSERT_EQ(timeRange1, timeRange2);
+    ASSERT_EQ(timeRange1 == timeRange2, true);
 }
 
 TEST(overloop, CTimeRange) {
     {
         CTimeRange timeRange1(CTime(5.0), CTime(10000, 1000));
         CTimeRange timeRange2(CTime(120, 40), CTime(10));
-        ASSERT_EQ(timeRange1.overlap(timeRange2), true);
+        ASSERT_EQ(timeRange1.isOverlap(timeRange2), true);
     }
 
     {
         CTimeRange timeRange1(CTime(5.0), CTime(10000, 1000));
         CTimeRange timeRange2(CTime(50, 2), CTime(10));
-        ASSERT_EQ(timeRange1.overlap(timeRange2), false);
+        ASSERT_EQ(timeRange1.isOverlap(timeRange2), false);
     }
 
     {
         CTimeRange timeRange1(CTime(5.0), CTime(10000, 1000));
         CTimeRange timeRange2(CTime(40, 20), CTime(1));
-        ASSERT_EQ(timeRange1.overlap(timeRange2), false);
+        ASSERT_EQ(timeRange1.isOverlap(timeRange2), false);
     }
 }
 
