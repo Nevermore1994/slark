@@ -10,7 +10,7 @@
 		B1EC3F6AD6F9927A9868F1A1 /* Pods_demo.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 48269D2A033DC72E3C95D2BE /* Pods_demo.framework */; };
 		C11838192ADFCC6800DB0127 /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = C11838182ADFCC6800DB0127 /* AppDelegate.m */; };
 		C118381C2ADFCC6800DB0127 /* SceneDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = C118381B2ADFCC6800DB0127 /* SceneDelegate.m */; };
-		C118381F2ADFCC6800DB0127 /* ViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = C118381E2ADFCC6800DB0127 /* ViewController.m */; };
+		C118381F2ADFCC6800DB0127 /* ViewController.mm in Sources */ = {isa = PBXBuildFile; fileRef = C118381E2ADFCC6800DB0127 /* ViewController.mm */; };
 		C11838222ADFCC6800DB0127 /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = C11838202ADFCC6800DB0127 /* Main.storyboard */; };
 		C11838242ADFCC6900DB0127 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C11838232ADFCC6900DB0127 /* Assets.xcassets */; };
 		C11838272ADFCC6900DB0127 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = C11838252ADFCC6900DB0127 /* LaunchScreen.storyboard */; };
@@ -26,7 +26,7 @@
 		C118381A2ADFCC6800DB0127 /* SceneDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SceneDelegate.h; sourceTree = "<group>"; };
 		C118381B2ADFCC6800DB0127 /* SceneDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SceneDelegate.m; sourceTree = "<group>"; };
 		C118381D2ADFCC6800DB0127 /* ViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ViewController.h; sourceTree = "<group>"; };
-		C118381E2ADFCC6800DB0127 /* ViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ViewController.m; sourceTree = "<group>"; };
+		C118381E2ADFCC6800DB0127 /* ViewController.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = ViewController.mm; sourceTree = "<group>"; };
 		C11838212ADFCC6800DB0127 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		C11838232ADFCC6900DB0127 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		C11838262ADFCC6900DB0127 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -61,7 +61,6 @@
 				833B99EA2349AD6CF9B4B555 /* Pods-demo.debug.xcconfig */,
 				DC568D03803B819F7CFF7E50 /* Pods-demo.release.xcconfig */,
 			);
-			name = Pods;
 			path = Pods;
 			sourceTree = "<group>";
 		};
@@ -91,7 +90,7 @@
 				C118381A2ADFCC6800DB0127 /* SceneDelegate.h */,
 				C118381B2ADFCC6800DB0127 /* SceneDelegate.m */,
 				C118381D2ADFCC6800DB0127 /* ViewController.h */,
-				C118381E2ADFCC6800DB0127 /* ViewController.m */,
+				C118381E2ADFCC6800DB0127 /* ViewController.mm */,
 				C11838202ADFCC6800DB0127 /* Main.storyboard */,
 				C11838232ADFCC6900DB0127 /* Assets.xcassets */,
 				C11838252ADFCC6900DB0127 /* LaunchScreen.storyboard */,
@@ -112,6 +111,7 @@
 				C11838102ADFCC6800DB0127 /* Sources */,
 				C11838112ADFCC6800DB0127 /* Frameworks */,
 				C11838122ADFCC6800DB0127 /* Resources */,
+				4C1BBDA7D2A40412B12C2EA9 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -168,6 +168,21 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		4C1BBDA7D2A40412B12C2EA9 /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputFileListPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-demo/Pods-demo-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
 		C6272A477C2F8CD62CFE3210 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -197,7 +212,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C118381F2ADFCC6800DB0127 /* ViewController.m in Sources */,
+				C118381F2ADFCC6800DB0127 /* ViewController.mm in Sources */,
 				C11838192ADFCC6800DB0127 /* AppDelegate.m in Sources */,
 				C118382A2ADFCC6900DB0127 /* main.m in Sources */,
 				C118381C2ADFCC6800DB0127 /* SceneDelegate.m in Sources */,
@@ -351,8 +366,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = N5DK4KP42W;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = demo/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "slark demo";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
@@ -384,8 +401,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = N5DK4KP42W;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = demo/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "slark demo";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;

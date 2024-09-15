@@ -7,5 +7,5 @@ install! 'cocoapods', :disable_input_output_paths => true
 target 'demo' do
   # Comment the next line if you don't want to use dynamic frameworks
   use_frameworks!
-  pod 'slark', :path => '../../../script/slark.podspec' 
+  pod 'slark', :path => '../../..' 
 end
