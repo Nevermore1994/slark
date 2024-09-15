@@ -61,7 +61,7 @@ void Player::seek(long double time, bool isAccurate) noexcept {
     pimpl_->seek(time, isAccurate);
 }
 
-const PlayerParams& Player::peek() noexcept {
+PlayerParams Player::peek() noexcept {
     return pimpl_->params();
 }
 

@@ -116,7 +116,7 @@ public:
     void removeObserver(const IPlayerObserverPtrArray& observers) noexcept;
 
 public:
-    const PlayerParams& peek() noexcept;
+    PlayerParams peek() noexcept;
 
     PlayerState state() noexcept;
     
