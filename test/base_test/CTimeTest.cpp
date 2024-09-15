@@ -9,13 +9,15 @@
 
 using namespace slark;
 
-TEST(equal, CTime) {
+TEST(CTime, equal) {
     CTime time1(100, 100);
     CTime time2(1.0);
-    ASSERT_EQ((time1 == time2), true);
+    ASSERT_EQ(time1, time2);
+    CTime time3(1000, 1000);
+    ASSERT_EQ(time1, time3);
 }
 
-TEST(add, CTime) {
+TEST(CTime, add) {
     CTime time1(100, 100);
     CTime time2(1.0);
     auto time3 = time1 + time2;
@@ -23,32 +25,32 @@ TEST(add, CTime) {
     ASSERT_EQ((time3 + time3).second(), 4.0);
 }
 
-TEST(sub, CTime) {
+TEST(CTime, sub) {
     CTime time1(100, 100);
     CTime time2(3.0);
     ASSERT_EQ((time1 - time2).second(), -2.0);
     ASSERT_EQ((time2 - time1).second(), 2.0);
 }
 
-TEST(less, CTime) {
+TEST(CTime, less) {
     CTime time1(100, 100);
     CTime time2(3.0);
     ASSERT_LE(time1.second(), time2.second());
 }
 
-TEST(gerater, CTime) {
+TEST(CTime, gerater) {
     CTime time1(10000, 100);
     CTime time2(3.0);
     ASSERT_GE(time1.second(), time2.second());
 }
 
-TEST(equal, CTimeRange) {
+TEST(CTimeRange, equal) {
     CTimeRange timeRange1(CTime(5.0), CTime(10000, 1000));
     CTimeRange timeRange2(CTime(200, 40), CTime(10));
     ASSERT_EQ(timeRange1 == timeRange2, true);
 }
 
-TEST(overloop, CTimeRange) {
+TEST(CTimeRange, overloop) {
     {
         CTimeRange timeRange1(CTime(5.0), CTime(10000, 1000));
         CTimeRange timeRange2(CTime(120, 40), CTime(10));
@@ -68,7 +70,7 @@ TEST(overloop, CTimeRange) {
     }
 }
 
-TEST(less, CTimeRange) {
+TEST(CTimeRange, less) {
     {
         CTimeRange timeRange1(CTime(5.0), CTime(10000, 1000));
         CTimeRange timeRange2(CTime(10, 5), CTime(2));
