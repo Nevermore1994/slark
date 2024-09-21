@@ -25,6 +25,5 @@ uint16_t uint16LE(const char* ptr);
 
 uint16_t uint16LE(const uint8_t* ptr);
 
-Time::TimePoint toDuration(const Data& data, const Audio::AudioInfo& info);
 
 }

@@ -11,7 +11,7 @@
 #include <shared_mutex>
 #include <optional>
 #include "Reader.hpp"
-#include "public/Player.h"
+#include "Player.h"
 #include "DecoderComponent.h"
 #include "DemuxerManager.h"
 #include "AVFrame.hpp"
@@ -22,6 +22,20 @@
 #include "Synchronized.hpp"
 
 namespace slark {
+
+struct PlayerSeekRequest {
+    bool isAccurate = false;
+    CTime seekTime{0}; //seconds
+    uint64_t seekPos = 0;
+};
+
+struct PlayedTime {
+    CTime audioPlayedTime{0};
+    CTime videoPlayedTime{0};
+    CTime time() {
+        return std::min(audioPlayedTime, videoPlayedTime);
+    }
+};
 
 class Player::Impl {
 public:
@@ -34,9 +48,7 @@ public:
 
     void updateSetting(PlayerSetting setting) noexcept;
 
-    void seek(long double time) noexcept;
-
-    void seek(long double time, bool isAccurate) noexcept;
+    void seek(long double time, bool isAccurate = false) noexcept;
     
     void addObserver(IPlayerObserverPtr observer) noexcept;
     
@@ -77,7 +89,7 @@ private:
 
     void process() noexcept;
     
-    void handleEvent(std::list<Event>&& events) noexcept;
+    void handleEvent(std::list<EventPtr>&& events) noexcept;
     
     void notifyObserver(PlayerState state) noexcept;
     
@@ -90,17 +102,19 @@ private:
     void decodeAudio() noexcept;
 
     void decodeVideo() noexcept;
+    
+    void doSeek() noexcept;
 private:
     bool isReadCompleted_ = false;
     PlayerState state_ = PlayerState::Unknown;
-    std::optional<int64_t> seekPos_;
+    std::optional<PlayerSeekRequest> seekRequest_;
     PlayerInfo info_;
     std::string playerId_;
     Synchronized<std::unique_ptr<PlayerParams>, std::shared_mutex> params_;
     Synchronized<std::unordered_map<uint64_t, IPlayerObserverPtr>> observers_;
     
-    SenderPtr<Event> sender_;
-    ReceiverPtr<Event> receiver_;
+    SenderPtr<EventPtr> sender_;
+    ReceiverPtr<EventPtr> receiver_;
     
     std::unique_ptr<Thread> ownerThread_ = nullptr;
     
@@ -122,6 +136,8 @@ private:
     
     //render
     std::unique_ptr<Audio::AudioRenderComponent> audioRender_ = nullptr;
+    
+    Synchronized<PlayedTime> playedTime;
 };
 
 }

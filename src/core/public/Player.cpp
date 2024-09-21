@@ -41,7 +41,7 @@ void Player::stop() noexcept {
 void Player::pause() noexcept {
     auto nowState = state();
     if (nowState != PlayerState::Playing) {
-        LogI("not playing, state:%d ...", static_cast<int>(nowState));
+        LogI("not playing, state:{}", static_cast<int>(nowState));
         return;
     }
     LogI("pause playing.");

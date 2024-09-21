@@ -22,13 +22,13 @@
 
 namespace slark::Audio {
 
-constexpr uint64_t kDefaultAudioBufferSize = 4 * 1024;
+constexpr uint64_t kDefaultAudioBufferSize = 8 * 1024;
 class AudioRenderComponent: public slark::NonCopyable, public InputNode {
 public:
     explicit AudioRenderComponent(std::shared_ptr<AudioInfo> info);
     ~AudioRenderComponent() override = default;
 
-    void receive(AVFrameRefPtr frame) noexcept override;
+    void send(AVFrameRefPtr frame) noexcept override;
     void process(AVFrameRefPtr frame) noexcept override;
     [[nodiscard]] std::shared_ptr<AudioInfo> audioInfo() const noexcept;
     void clear() noexcept;
@@ -39,6 +39,7 @@ public:
     void stop() noexcept;
     void setVolume(float volume) noexcept;
     void flush() noexcept;
+    void seekToPos(uint64_t pos) noexcept;
 
     bool isFull() noexcept {
         bool isFull = false;
@@ -47,13 +48,21 @@ public:
         });
         return isFull;
     }
+    
+    AudioRenderStatus status() const {
+        if (pimpl_) {
+            return pimpl_->status();
+        }
+        return AudioRenderStatus::Unknown;
+    }
+    
 private:
     void init() noexcept;
 public:
-    std::function<void(uint64_t)> renderCompletion;
-    std::function<DataPtr(uint64_t)> pullAudioData;
+    std::function<void(CTime)> renderCompletion;
+    std::function<uint32_t(uint8_t*, uint32_t)> pullAudioData;
 private:
-    Time::TimePoint renderPoint_ = 0;
+    uint64_t renderedDataLength_ = 0;
     std::shared_ptr<AudioInfo> audioInfo_;
     RingBuffer<uint8_t, kDefaultAudioBufferSize> audioBuffer_;
     Synchronized<std::deque<AVFrameRefPtr>, std::shared_mutex> frames_;

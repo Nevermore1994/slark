@@ -32,8 +32,4 @@ uint16_t uint16LE(const uint8_t* ptr) {
     return static_cast<uint16_t>(ptr[1] << 8 | ptr[0]);
 }
 
-Time::TimePoint toDuration(const Data& data, const Audio::AudioInfo& info) {
-    return {static_cast<uint64_t>(static_cast<double>(data.length * 8) / static_cast<double> (info.bitrate()) * 1000000.0)};
-}
-
 }//end namespace slark

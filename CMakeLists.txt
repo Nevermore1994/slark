@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 #
 ## Compiler flags
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic -Wcast-align -Wcast-qual -Wconversion -Wdisabled-optimization -Wendif-labels -Wfloat-equal -Winit-self -Winline -Wmissing-include-dirs -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual -Wpacked -Wpointer-arith -Wredundant-decls -Wshadow -Wsign-promo -Wvariadic-macros -Wwrite-strings -Wno-variadic-macros -Wunknown-pragmas")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic -Wcast-align -Wcast-qual -Wconversion -Wdisabled-optimization -Wendif-labels -Wfloat-equal -Winit-self -Winline -Wmissing-include-dirs -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual -Wpacked -Wpointer-arith -Wredundant-decls -Wshadow -Wsign-promo -Wvariadic-macros -Wwrite-strings -Wno-variadic-macros -Wundef")
 
 # Set thread library
 set(THREADS_PREFER_PTHREAD_FLAG ON)
@@ -81,6 +81,14 @@ add_subdirectory(src/base)
 add_subdirectory(src/core)
 target_link_libraries(${PROJECT_NAME} PRIVATE core)
 
+if(${BUILD_PLATFORM} STREQUAL "iOS")
+    message(STATUS "add iOS interface")
+    add_subdirectory(src/interface/iOS)
+    target_link_libraries(${PROJECT_NAME} PUBLIC iOS_INTERFACE)
+elseif (${BUILD_PLATFORM} STREQUAL "Android")
+
+endif ()
+
 if(NOT DISABLE_TEST)
     message(STATUS "enable testing")
     enable_testing()
@@ -98,4 +106,4 @@ target_link_libraries(${PROJECT_NAME}
             ${CMAKE_THREAD_LIBS_INIT}
         )
 
-target_link_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
+#target_link_options(${PROJECT_NAME} PRIVATE -fsanitize=address)

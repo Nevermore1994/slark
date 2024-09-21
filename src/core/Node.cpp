@@ -7,8 +7,9 @@
 
 #include <functional>
 #include <utility>
+#include <ranges>
 #include "Node.h"
-#include "Utility.hpp"
+#include "Util.hpp"
 
 namespace slark {
 
@@ -31,18 +32,18 @@ void OutputNode::removeAllTarget() noexcept {
 }
 
 void OutputNode::notifyTargets(std::shared_ptr<AVFrame> frame) noexcept {
-    std::erase_if(targets_, [frame](const auto& pair){
-        const auto& [hash, ptr] = pair;
-        auto isExpired = ptr.expired();
-        if (!isExpired) {
-            auto p = ptr.lock();
-            p->receive(frame);
+    for (auto& p : std::views::values(targets_)
+        | std::views::filter([](const auto& p) { return !p.expired();})) {
+        if (auto ref = p.lock(); ref) {
+            ref->send(frame);
         }
-        return isExpired;
+    }
+    std::erase_if(targets_, [frame](const auto& pair){
+        return pair.second.expired();
     });
 }
 
-void OutputNode::send(std::shared_ptr<AVFrame> frame) noexcept {
+void OutputNode::receive(std::shared_ptr<AVFrame> frame) noexcept {
     notifyTargets(std::move(frame));
 }
 
@@ -50,9 +51,9 @@ void Node::process(std::shared_ptr<AVFrame> /*frame*/) noexcept {
 
 }
 
-void Node::receive(std::shared_ptr<AVFrame> frame) noexcept {
+void Node::send(std::shared_ptr<AVFrame> frame) noexcept {
     process(frame);
-    send(frame);
+    receive(frame);
 }
 
 }//end namespace slark

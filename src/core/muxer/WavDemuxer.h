@@ -20,15 +20,15 @@ public:
 
     void close() noexcept override;
 
-    void reset() noexcept override;
-
     DemuxerResult parseData(std::unique_ptr<Data> data) override;
+    
+    [[nodiscard]] uint64_t getSeekToPos(CTime) override;
 
     inline static const DemuxerInfo& info() noexcept {
         static DemuxerInfo info = {
             DemuxerType::WAV,
             "WAVE",
-            BaseClass<WAVDemuxer>::registerClass()
+            BaseClass<WAVDemuxer>::registerClass(GetClassName(WAVDemuxer))
         };
         return info;
     }

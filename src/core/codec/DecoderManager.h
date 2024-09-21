@@ -16,13 +16,9 @@ namespace slark {
 class DecoderManager : public NonCopyable {
 
 public:
-    inline static DecoderManager& shareInstance() {
-        static DecoderManager instance;
-        return instance;
-    }
+    static DecoderManager& shareInstance();
 
-    DecoderManager() = default;
-
+    DecoderManager();
     ~DecoderManager() override = default;
 
 public:

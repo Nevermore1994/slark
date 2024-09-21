@@ -16,12 +16,14 @@ namespace slark {
 
 class Writer: public IOHandler {
 public:
-    Writer(const std::string& path, const std::string& name = "");
+    Writer();
     ~Writer() override;
 public:
+    bool open(std::string_view path, bool isAppend = false) noexcept;
     void close() noexcept override;
     [[nodiscard]] std::string_view path() noexcept override;
     [[nodiscard]] IOState state() noexcept override;
+    void stop() noexcept;
 public:
     bool write(DataPtr data) noexcept;
     bool write(Data&& data) noexcept;
@@ -34,7 +36,8 @@ public:
 private:
     void process() noexcept;
 private:
-    bool isClosed_ = false;
+    std::atomic_bool isOpen_ = false;
+    std::atomic_bool isStop_ = false;
     Time::TimePoint idleTime_ = 0;
     Synchronized<std::vector<DataPtr>> dataList_;
     Synchronized<std::unique_ptr<FileUtil::WriteFile>, std::shared_mutex> file_;

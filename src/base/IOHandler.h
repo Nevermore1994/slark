@@ -19,7 +19,7 @@ enum class IOState {
     Closed,
 };
 
-struct IOHandler: public slark::NonCopyable {
+struct IOHandler: public NonCopyable {
     ~IOHandler() override = default;
 
     //get now reader/writer state

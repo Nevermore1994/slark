@@ -85,9 +85,7 @@ void Thread::setup() noexcept {
 #ifndef __APPLE__
     auto handle = worker_.native_handle();
     std::string name = name_;
-    if (name.length() > 15) {
-        name = name.substr(0, 15);
-    }
+    name = name.substr(0, 15);   //linux thread name length < 15
     pthread_setname_np(handle, name.c_str());
 #else
     pthread_setname_np(name_.c_str());

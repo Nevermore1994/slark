@@ -36,9 +36,10 @@ struct ReaderSetting {
 
 class Reader: public IOHandler {
 public:
-    Reader(const std::string& path, ReaderSetting&& setting, const std::string& name = "");
+    Reader();
     ~Reader() override;
 public:
+    bool open(std::string_view path, ReaderSetting&& setting);
     [[nodiscard]] IOState state() noexcept override;
     void close() noexcept override;
     std::string_view path() noexcept override;
@@ -46,6 +47,7 @@ public:
     void start() noexcept;
     void resume() noexcept;
     void pause() noexcept;
+    void stop() noexcept;
 
     void seek(uint64_t pos) noexcept;
     int64_t tell() noexcept;

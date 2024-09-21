@@ -5,7 +5,7 @@
 //
 #include "DecoderComponent.h"
 #include "Log.hpp"
-#include "Utility.hpp"
+#include "Util.hpp"
 
 namespace slark {
 
@@ -26,7 +26,7 @@ void DecoderComponent::decode() {
         packets.swap(vec);
     });
     AVFrameArray decodeFrameArray;
-    if(!packets.empty()) {;
+    if(!packets.empty()) {
         decodeFrameArray = decoder_->send(std::move(packets));
     } else if (isReachEnd_) {
         auto frame = decoder_->flush();

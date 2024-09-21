@@ -15,13 +15,16 @@ void RawDecoder::open() noexcept {
 }
 
 void RawDecoder::reset() noexcept {
-    
+    isOpen_ = false;
+    isFlushed_ = false;
 }
 
 void RawDecoder::close() noexcept {
+    isOpen_ = false;
+    isFlushed_ = false;
 }
 
-AVFrameArray RawDecoder::send(AVFrameArray&& frameList) {
+AVFrameArray RawDecoder::send(AVFrameArray frameList) {
     for (auto& frame : frameList) {
         frame->stats.decodedStamp = Time::nowTimeStamp();
     }
@@ -29,6 +32,7 @@ AVFrameArray RawDecoder::send(AVFrameArray&& frameList) {
 }
 
 AVFrameArray RawDecoder::flush() noexcept {
+    isFlushed_ = true;
     return {};
 }
 

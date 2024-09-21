@@ -11,6 +11,11 @@
 namespace slark {
 using namespace std::chrono_literals;
 
+TimerManager& TimerManager::shareInstance() {
+    static TimerManager instance;
+    return instance;
+}
+
 TimerManager::TimerManager()
     : timerThread_(std::make_unique<Thread>("TimerManager", &TimerManager::loop, this)) {
     timerThread_->start();

@@ -18,6 +18,9 @@ if(${BUILD_PLATFORM} STREQUAL "iOS")
             platform/iOS/*.h
             platform/iOS/*.m
             platform/iOS/*.mm
+            interface/iOS/*.h
+            interface/iOS/*.m
+            interface/iOS/*.mm
             )
     file(GLOB CORE_iOS_FILES ${CORE_iOS_FILES_LISTS})
     target_sources(core PUBLIC ${CORE_iOS_FILES})
@@ -48,6 +51,6 @@ elseif (${BUILD_PLATFORM} STREQUAL "Android")
 
 endif()
 
-target_include_directories(core PUBLIC public)
+target_include_directories(core PUBLIC public interface)
 target_include_directories(core PRIVATE . muxer audio codec)
 target_include_directories(core PRIVATE ../base)

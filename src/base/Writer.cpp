@@ -6,37 +6,48 @@
 //
 
 #include "Writer.hpp"
-#include "Utility.hpp"
+#include "Util.hpp"
 #include "Log.hpp"
 
 namespace slark {
 
 static const std::string kWriterPrefixName = "Writer_";
-Writer::Writer(const std::string& path, const std::string& name)
-    : worker_(kWriterPrefixName + (name.empty() ? Util::genRandomName("") : name), &Writer::process, this)
+Writer::Writer()
+    : worker_(Util::genRandomName(kWriterPrefixName), &Writer::process, this)
 {
+
+}
+
+Writer::~Writer() = default;
+
+bool Writer::open(std::string_view path, bool isAppend) noexcept {
     bool isSuccess = false;
     file_.withWriteLock([&](auto& file){
-        file = std::make_unique<FileUtil::WriteFile>(path);
+        file = std::make_unique<FileUtil::WriteFile>(std::string(path), isAppend);
         if (!file->open()) {
             LogE("open file failed. {}", path);
         }
         isSuccess = !file->isFailed();
     });
     if (isSuccess) {
+        isOpen_ = true;
         worker_.start();
     }
+    return isSuccess;
 }
 
-Writer::~Writer() = default;
-
 void Writer::close() noexcept {
-    isClosed_ = true;
+    isOpen_ = false;
+    worker_.resume();
+}
+
+void Writer::stop() noexcept {
+    isStop_ = true;
     worker_.resume();
 }
 
 IOState Writer::state() noexcept {
-    if (isClosed_) {
+    if (!isOpen_ || isStop_) {
         return IOState::Closed;
     }
     IOState state = IOState::Normal;
@@ -67,15 +78,20 @@ void Writer::process() noexcept {
         dataList.swap(vec);
     });
     if (dataList.empty()) {
-        if (isClosed_) {
-            worker_.stop();
+        if (!isOpen_ || isStop_) {
             file_.withWriteLock([](auto& file){
                 if (file) {
                     file->close();
                 }
                 file.reset();
             });
-            LogI("{} closed", worker_.getName());
+            if (!isOpen_) {
+                worker_.pause();
+                LogI("{} closed", worker_.getName());
+            } else {
+                worker_.stop();
+                LogI("{} stoped", worker_.getName());
+            }
         } else {
             constexpr auto kMaxIdleTime = 5s;
             if ((Time::nowTimeStamp() - idleTime_).toSeconds() > kMaxIdleTime) {
@@ -87,7 +103,7 @@ void Writer::process() noexcept {
     
     bool isSuccess = true;
     uint32_t writeCount = 0;
-    file_.withWriteLock([&](auto& file){
+    file_.withReadLock([&](auto& file){
         for (auto& data : dataList) {
             if (file->isFailed()){
                 isSuccess = false;
@@ -124,8 +140,8 @@ uint64_t Writer::writeSize() noexcept {
 }
 
 bool Writer::write(DataPtr data) noexcept {
-    if (isClosed_) {
-        LogE("Unable to write data, file has been closed.");
+    if (!isOpen_ || isStop_) {
+        LogE("unable to write data, file has been closed.");
         return false;
     }
     dataList_.withLock([&](auto& vec){

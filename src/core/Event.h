@@ -8,29 +8,44 @@
 #include <cstdint>
 #include <memory>
 #include <string_view>
+#include <any>
 
 namespace slark {
 
-enum class Event: int8_t {
+enum class EventType: int8_t {
     Unknown = 0,
     Play,
     Pause,
     Stop,
+    Seek,
     ReadCompleted,
-    ReadError,
     DemuxCompleted,
+    DecodeCompleted,
+    RenderFrameCompleted,
+    Error_START,
+    ReadError,
     DemuxError,
     DecodeError,
-    RenderFrameCompleted,
     RenderError,
-    SwitchAudioDecoder,
-    SwitchVideoDecoder,
+    Error_End,
     UpdateRenderSize,
 };
 
 enum class PlayerState : int8_t;
 
-Event buildEvent(PlayerState state);
-std::string_view EventTypeToString(Event type);
+struct Event {
+    EventType type = EventType::Unknown;
+    std::any data;
+    Event() = default;
+    Event(EventType t)
+        : type(t) {
+        
+    }
+};
+using EventPtr = std::unique_ptr<Event>;
+
+EventPtr buildEvent(PlayerState state);
+EventPtr buildEvent(EventType type);
+std::string_view EventTypeToString(EventType type);
 }
 
