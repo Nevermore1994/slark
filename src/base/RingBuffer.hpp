@@ -5,7 +5,6 @@
 //
 #pragma once
 
-#include <_types/_uint64_t.h>
 #include <cstdint>
 #include <array>
 #include <algorithm>
@@ -14,9 +13,9 @@
 
 namespace slark {
 
-constexpr uint64_t RingBufferLength = 1024 * 1024 * 500;
+constexpr uint32_t RingBufferLength = 1024 * 1024 * 500;
 
-template<typename T, uint64_t Capacity = RingBufferLength>
+template<typename T, uint32_t Capacity = RingBufferLength>
 class RingBuffer : public NonCopyable {
 public:
     RingBuffer()
@@ -27,7 +26,7 @@ public:
     ~RingBuffer() override = default;
 
 public:
-    void append(const T* data, uint64_t size) noexcept {
+    void append(const T* data, uint32_t size) noexcept {
         if (size == 0 || isFull()) return;
 
         size = std::min(size, Capacity - size_); // 确保不会超过可用空间
@@ -54,7 +53,7 @@ public:
         readSize_ = 0;
     }
 
-    uint64_t read(T* data, uint64_t size) noexcept {
+    uint32_t read(T* data, uint32_t size) noexcept {
         if (size == 0 || isEmpty()) return 0;
 
         size = std::min(size, length());  // 只读取可用数据的大小
@@ -73,15 +72,15 @@ public:
         return size;
     }
 
-    [[nodiscard]] uint64_t tail() noexcept {
+    [[nodiscard]] uint32_t tail() noexcept {
         return Capacity - size_;
     }
 
-    [[nodiscard]] uint64_t capacity() noexcept {
+    [[nodiscard]] uint32_t capacity() noexcept {
         return Capacity;
     }
 
-    [[nodiscard]] inline uint64_t length() noexcept {
+    [[nodiscard]] inline uint32_t length() noexcept {
         return size_;
     }
 
@@ -93,16 +92,16 @@ public:
         return size_ == Capacity;
     }
 
-    [[nodiscard]] uint64_t readSize() const noexcept {
+    [[nodiscard]] uint32_t readSize() const noexcept {
         return readSize_;
     }
 
 private:
     std::unique_ptr<std::array<T, Capacity>> data_;
-    uint64_t readPos_ = 0;
-    uint64_t writePos_ = 0;
-    uint64_t size_ = 0;
-    uint64_t readSize_ = 0;
+    uint32_t readPos_ = 0;
+    uint32_t writePos_ = 0;
+    uint32_t size_ = 0;
+    uint32_t readSize_ = 0;
 };
 
 }

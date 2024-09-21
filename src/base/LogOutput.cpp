@@ -22,6 +22,15 @@ std::string LogFileName() {
 
 constexpr uint32_t kMaxWriteLogCount = 8 * 1024;
 
+LogOutput& LogOutput::shareInstance(){
+   static std::unique_ptr<LogOutput> instance_;
+   static std::once_flag flag;
+   std::call_once(flag, []{
+       instance_ = std::make_unique<LogOutput>();
+   });
+   return *instance_;
+}
+
 LogOutput::LogOutput() = default;
 
 LogOutput::~LogOutput() = default;
@@ -29,6 +38,7 @@ LogOutput::~LogOutput() = default;
 void LogOutput::write(const std::string& str) noexcept {
     writer_.withLock([&](auto& writer){
         if (writer == nullptr) {
+            writer = std::make_unique<Writer>();
             updateFile(writer);
         }
         writer->write(str);
@@ -44,7 +54,7 @@ void LogOutput::updateFile(std::unique_ptr<Writer>& writer) noexcept {
         LogP("log file path is empty");
         return;
     }
-    writer = std::make_unique<Writer>(path, "LogOutput");
+    writer->open(path);
 }
 
 } // slark

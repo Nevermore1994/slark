@@ -59,11 +59,16 @@ public:
         return isOpen_;
     }
 
-    virtual AVFrameArray send(AVFrameArray&& frameList) = 0;
+    [[nodiscard]] inline bool isFlushed() const noexcept {
+        return isFlushed_;
+    }
+    
+    virtual AVFrameArray send(AVFrameArray frameList) = 0;
 
     virtual AVFrameArray flush() noexcept = 0;
 protected:
-    bool isOpen_;
+    bool isOpen_ = false;
+    bool isFlushed_ = false;
     DecoderType decoderType_ = DecoderType::Unknown;
 };
 

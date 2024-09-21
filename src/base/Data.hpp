@@ -103,7 +103,7 @@ struct Data {
     }
 
 #pragma clang diagnostic push
-#pragma ide diagnostic ignored "google-explicit-constructor"
+#pragma clang diagnostic ignored "google-explicit-constructor"
     Data(const std::string& str)
         : Data(static_cast<uint64_t>(str.size()), reinterpret_cast<const uint8_t*>(str.data())) {
 

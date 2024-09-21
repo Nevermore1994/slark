@@ -19,7 +19,7 @@ if(${BUILD_PLATFORM} STREQUAL "iOS")
     add_framework(Foundation base)
     message(${BASE_iOS_FILES})
     target_sources(base PUBLIC ${BASE_iOS_FILES})
-    target_include_directories(base PUBLIC ./platform/ios)
+    target_include_directories(base PUBLIC ./platform/iOS)
 elseif (${BUILD_PLATFORM} STREQUAL "Android")
 
 endif()

@@ -9,41 +9,45 @@
 
 namespace slark {
 
-Event buildEvent(PlayerState state) {
-    Event event = Event::Unknown;
+EventPtr buildEvent(PlayerState state) {
+    EventType eventType = EventType::Unknown;
     switch (state) {
         case PlayerState::Playing: {
-            event = Event::Play;
+            eventType = EventType::Play;
         }
             break;
         case PlayerState::Pause: {
-            event = Event::Pause;
+            eventType = EventType::Pause;
         }
             break;
         case PlayerState::Stop: {
-            event = Event::Stop;
+            eventType = EventType::Stop;
         }
             break;
         default:
             break;
     }
-    return event;
+    return std::make_unique<Event>(eventType);
+}
+
+EventPtr buildEvent(EventType type) {
+    return std::make_unique<Event>(type);
 }
 
 #define ENUM_TO_STRING_CASE(value) case value: return std::string_view(#value)
 
-std::string_view EventTypeToString(Event type) {
+std::string_view EventTypeToString(EventType type) {
     switch (type) {
-        ENUM_TO_STRING_CASE(Event::Play);
-        ENUM_TO_STRING_CASE(Event::Pause);
-        ENUM_TO_STRING_CASE(Event::Stop);
-        ENUM_TO_STRING_CASE(Event::ReadCompleted);
-        ENUM_TO_STRING_CASE(Event::ReadError);
-        ENUM_TO_STRING_CASE(Event::DemuxCompleted);
-        ENUM_TO_STRING_CASE(Event::DemuxError);
-        ENUM_TO_STRING_CASE(Event::DecodeError);
-        ENUM_TO_STRING_CASE(Event::RenderFrameCompleted);
-        ENUM_TO_STRING_CASE(Event::RenderError);
+        ENUM_TO_STRING_CASE(EventType::Play);
+        ENUM_TO_STRING_CASE(EventType::Pause);
+        ENUM_TO_STRING_CASE(EventType::Stop);
+        ENUM_TO_STRING_CASE(EventType::ReadCompleted);
+        ENUM_TO_STRING_CASE(EventType::ReadError);
+        ENUM_TO_STRING_CASE(EventType::DemuxCompleted);
+        ENUM_TO_STRING_CASE(EventType::DemuxError);
+        ENUM_TO_STRING_CASE(EventType::DecodeError);
+        ENUM_TO_STRING_CASE(EventType::RenderFrameCompleted);
+        ENUM_TO_STRING_CASE(EventType::RenderError);
         default:
             return "Unknown";
     }

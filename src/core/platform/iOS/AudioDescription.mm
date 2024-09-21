@@ -18,9 +18,10 @@ AudioStreamBasicDescription convertInfo2Description(AudioInfo info) {
     description.mChannelsPerFrame = info.channels;
     description.mFramesPerPacket = 1;
     description.mFormatFlags = kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagIsPacked;
-    description.mBitsPerChannel = info.bitsPerSample * 8;
-    description.mBytesPerFrame = info.bitsPerSample * description.mChannelsPerFrame;
+    description.mBitsPerChannel = info.bitsPerSample;
+    description.mBytesPerFrame = description.mBitsPerChannel * description.mChannelsPerFrame / 8;
     description.mBytesPerPacket = description.mBytesPerFrame * description.mFramesPerPacket;
+    
     return description;
 }
 

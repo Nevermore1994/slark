@@ -15,6 +15,15 @@ namespace slark {
 constexpr std::string_view kSoftwareFlag = "SW";
 constexpr std::string_view kHardwareFlag = "HW";
 
+DecoderManager& DecoderManager::shareInstance() {
+    static DecoderManager instance;
+    return instance;
+}
+
+DecoderManager::DecoderManager()  {
+    init();
+}
+
 void DecoderManager::init() noexcept {
     mediaInfo_ = {
         {std::string(MEDIA_MIMETYPE_AUDIO_RAW), DecoderType::RAW},

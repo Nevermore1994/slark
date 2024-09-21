@@ -59,9 +59,27 @@ public:
 
     virtual void close() = 0;
 
-    virtual void reset() = 0;
+    virtual void reset() noexcept {
+        isInited_ = false;
+        isCompleted_ = false;
+        parsedLength_ = 0;
+        parseFrameCount_ = 0;
+        totalDuration_ = CTime(0);
+        seekPos_.reset();
+        overflowData_.reset();
+        videoInfo_.reset();
+        audioInfo_.reset();
+    }
+    
+    virtual void setSeekPos(uint64_t pos) noexcept {
+        seekPos_ = pos;
+        overflowData_.reset();
+        parsedLength_ = pos;
+    }
 
     virtual DemuxerResult parseData(std::unique_ptr<Data> data) = 0;
+    
+    [[nodiscard]] virtual uint64_t getSeekToPos(CTime) = 0;
 
     [[nodiscard]] bool isInited() const noexcept {
         return isInited_;
@@ -87,19 +105,42 @@ public:
         return audioInfo_;
     }
 
-    [[nodiscard]] const DemuxerHeaderInfo& headerInfo() const noexcept {
+    [[nodiscard]] const std::shared_ptr<DemuxerHeaderInfo>& headerInfo() const noexcept {
         return headerInfo_;
     }
-
+    
+    [[nodiscard]] CTime startTime() const noexcept {
+        if (!isInited_) {
+            return CTime();
+        }
+        if (videoInfo_ && audioInfo_) {
+            return std::min(videoInfo_->startTime, audioInfo_->startTime);
+        } else if (videoInfo_) {
+            return videoInfo_->startTime;
+        } else if (audioInfo_) {
+            return audioInfo_->startTime;
+        }
+        return CTime();
+    }
+    
+    [[nodiscard]] CTime totalDuration() const noexcept {
+        if (!isInited_) {
+            return CTime();
+        }
+        return totalDuration_;
+    }
+    
 protected:
     bool isInited_ = false;
     bool isCompleted_ = false;
     uint32_t parseFrameCount_ = 0;
-    uint64_t parseLength_ = 0;
-    std::unique_ptr<Data> overflowData_;
+    uint64_t parsedLength_ = 0;
+    std::optional<uint64_t> seekPos_;
+    CTime totalDuration_{0};
+    DataPtr overflowData_;
     std::shared_ptr<VideoInfo> videoInfo_;
     std::shared_ptr<Audio::AudioInfo> audioInfo_;
-    DemuxerHeaderInfo headerInfo_;
+    std::shared_ptr<DemuxerHeaderInfo> headerInfo_;
 };
 
 }//end namespace slark

@@ -14,8 +14,6 @@
 
 namespace slark::Audio {
 
-using AudioForamt = AudioStreamBasicDescription;
-
 class AudioRender : public IAudioRender {
 public:
     explicit AudioRender(std::shared_ptr<AudioInfo> audioInfo);
@@ -26,17 +24,16 @@ public:
     void stop() noexcept override;
     void setVolume(float volume) noexcept override;
     void flush() noexcept override;
+    Time::TimePoint latency() noexcept override;
     
     bool isNeedRequestData() const noexcept override;
 private:
     bool checkFormat() const noexcept;
-    bool setupAUGraph() noexcept;
+    bool setupAudioComponent() noexcept;
 private:
-    AUGraph auGraph_;
-    AUNode renderIndex_;
-    AudioUnit renderUnit_;
-    AUNode volumeIndex_;
     AudioUnit volumeUnit_;
+    AudioUnit renderUnit_;
 };
 
 }
+

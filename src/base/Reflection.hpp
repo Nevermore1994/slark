@@ -46,10 +46,11 @@ private:
 };
 
 template<typename T>
-void RegisterClass(const std::string& name) {
-    return Reflection::shareInstance().enrolment(name, []() {
+std::string RegisterClass(const std::string& name) {
+    Reflection::shareInstance().enrolment(name, []() {
         return new (std::nothrow) T();
     });
+    return name;
 }
 
 inline void* GenerateInstance(const std::string& name) {
@@ -61,18 +62,15 @@ inline void* GenerateInstance(const std::string& name) {
 }
 
 #define GetClassName(name) #name
-#define RegisterClass(name) RegisterClass<name>(#name)
-#define GenerateClass(name) GenerateInstance(name)
 
 template<typename T>
 struct BaseClass {
-    inline static std::string registerClass() {
-        slark::RegisterClass(T);
-        return GetClassName(T);
+    inline static std::string registerClass(std::string name) {
+        return RegisterClass<T>(name);
     }
 
     inline static T* create(const std::string& name) noexcept {
-        return reinterpret_cast<T*>(slark::GenerateClass(name));
+        return reinterpret_cast<T*>(GenerateInstance(name));
     }
 };
 

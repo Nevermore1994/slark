@@ -18,10 +18,7 @@ namespace slark {
 class DemuxerManager : public slark::NonCopyable {
 
 public:
-    inline static DemuxerManager& shareInstance() {
-        static DemuxerManager instance;
-        return instance;
-    }
+    static DemuxerManager& shareInstance();
 
     DemuxerManager();
 

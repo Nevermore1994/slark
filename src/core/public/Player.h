@@ -1,5 +1,5 @@
 //
-//  Player.hpp
+//  Player.h
 //  slark
 //
 //  Created by Nevermore on 2022/4/22.
@@ -24,12 +24,15 @@ enum class PlayerState : int8_t {
     Playing,
     Pause,
     Stop,
+    Error,
+    Completed,
 };
 
 enum class PlayerEvent : int8_t {
     FirstFrameRendered,
     SeekDone,
     PlayEnd,
+    OnError,
 };
 
 struct IPlayerObserver {
@@ -37,7 +40,7 @@ struct IPlayerObserver {
 
     virtual void notifyState(std::string_view playerId, PlayerState state) = 0;
 
-    virtual void event(std::string_view playerId, PlayerEvent event) = 0;
+    virtual void event(std::string_view playerId, PlayerEvent event, std::string value) = 0;
 
     virtual ~IPlayerObserver() = default;
 };
@@ -78,10 +81,8 @@ struct PlayerParams {
 };
 
 struct PlayerInfo {
-    bool hasVideo;
-    bool hasAudio;
-    std::string_view playerId;
-    ///second
+    bool hasVideo = false;
+    bool hasAudio = false;
     long double duration;
 };
 

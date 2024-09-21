@@ -13,7 +13,7 @@
 #include "LogOutput.h"
 
 #ifdef SLARK_IOS
-#include "InternalLog.h"
+#include "iOSBase.h"
 #endif
 
 namespace slark {
@@ -31,7 +31,7 @@ enum class LogType {
 constexpr const std::string_view kLogStrs[] = {" [print] ", " [debug] ", " [info] ", " [warning] ", " [error] ", " [assert] ", " [record] "};
 
 template <typename ...Args>
-void PrintLog(LogType level, std::string_view format, Args&& ...args) {
+void printLog(LogType level, std::string_view format, Args&& ...args) {
     auto logStr = std::vformat(format, std::make_format_args(args...));
 #ifdef SLARK_IOS
     outputLog(logStr);
@@ -55,7 +55,7 @@ void PrintLog(LogType level, std::string_view format, Args&& ...args) {
 
 #define logger(level, format, ...) \
 do {                               \
-    PrintLog(level, "{}{}[{}][Line:{}][Function:{}]" format "\n", Time::localTime(), kLogStrs[static_cast<size_t>(level)], __FILE_NAME__, __LINE__, __FUNCTION__, ##__VA_ARGS__); /* NOLINT(bugprone-lambda-function-name) */ \
+    printLog(level, "{}{}[{}][Line:{}][Function:{}]" format "\n", Time::localTime(), kLogStrs[static_cast<size_t>(level)], __FILE_NAME__, __LINE__, __FUNCTION__, ##__VA_ARGS__); /* NOLINT(bugprone-lambda-function-name) */ \
 } while(0)
 
 #define  LogD(format, ...)  logger(LogType::Debug, format, ##__VA_ARGS__)

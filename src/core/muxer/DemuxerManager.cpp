@@ -10,6 +10,12 @@
 
 namespace slark {
 
+DemuxerManager& DemuxerManager::shareInstance()
+{
+   static DemuxerManager instance;
+   return instance;
+}
+
 DemuxerManager::DemuxerManager() {
     init();
 }

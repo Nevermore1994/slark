@@ -21,9 +21,10 @@ std::string randomString(uint32_t length) noexcept {
 
     static thread_local std::random_device rd;
     static thread_local std::mt19937 gen(rd());
-    static thread_local std::uniform_int_distribution<> dis(0, static_cast<int>(kRandomString.size()));// 61 = 26 * 2 + 10 - 1. [0, 61]
+    static thread_local std::uniform_int_distribution<> dis(0, 61);// 61 = 26 * 2 + 10 - 1. [0, 61]
     for (uint32_t i = 0; i < length; i++) {
-        result[i] = kRandomString[static_cast<uint32_t>(dis(gen))];
+        auto index = static_cast<uint32_t>(dis(gen));
+        result[i] = kRandomString[index];
     }
     return result;
 }

@@ -14,10 +14,7 @@ namespace slark {
 
 class TimerManager final : public NonCopyable {
 public:
-    inline static TimerManager& shareInstance() {
-        static TimerManager instance;
-        return instance;
-    }
+    static TimerManager& shareInstance();
 
 public:
     TimerManager();

@@ -25,13 +25,13 @@ public:
 
     AVFrameArray flush() noexcept override;
 
-    AVFrameArray send(AVFrameArray&& frameList) override;
+    AVFrameArray send(AVFrameArray frameList) override;
 
     inline static const DecoderInfo& info() noexcept {
         static DecoderInfo info = {
             DecoderType::RAW,
             MEDIA_MIMETYPE_AUDIO_RAW,
-            BaseClass<RawDecoder>::registerClass()
+            BaseClass<RawDecoder>::registerClass(GetClassName(RawDecoder))
         };
         return info;
     }

@@ -83,7 +83,7 @@ public:
         bool isValid = this->isValid();
         SAssert(isValid, "time is invalid");
         if (isValid) {
-            return static_cast<double>(value) / static_cast<double>(scale);
+            return std::round(static_cast<double>(value) / static_cast<double>(scale) * 1000000.0) / 1000000.0;
         }
         return 0;
     }

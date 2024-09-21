@@ -10,11 +10,7 @@ namespace slark {
 
 class LogOutput {
 public:
-    inline static LogOutput& shareInstance() {
-        static LogOutput instance_;
-        return instance_;
-    }
-
+    static LogOutput& shareInstance();
     LogOutput();
     ~LogOutput();
     void write(const std::string& str) noexcept;
