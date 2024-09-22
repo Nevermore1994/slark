@@ -58,8 +58,8 @@ struct ResourceItem {
 };
 
 struct RenderSize {
-    uint32_t width = 720;
-    uint32_t height = 1280;
+    uint32_t width = 1280;
+    uint32_t height = 720;
     RenderSize() = default;
     RenderSize(uint32_t width, uint32_t height)
         : width(width)
@@ -72,7 +72,9 @@ struct PlayerSetting {
     bool isLoop = false;
     bool enableAudioSoftDecode = false;
     bool enableVideoSoftDecode = false;
+    bool isMute = false;
     RenderSize size;
+    float volume = 100.0f;
 };
 
 struct PlayerParams {
@@ -104,9 +106,13 @@ public:
 
     void seek(long double time, bool isAccurate) noexcept;
 
-    [[nodiscard]] std::string_view playerId() const noexcept;
-
-    void updateSetting(PlayerSetting setting) noexcept;
+    void setLoop(bool isLoop);
+    
+    void setVolume(float volume);
+    
+    void setMute(bool isMute);
+     
+    void setRenderSize(uint32_t width, uint32_t height);
 
     void addObserver(IPlayerObserverPtr observer) noexcept;
     
@@ -118,10 +124,16 @@ public:
 
 public:
     PlayerParams peek() noexcept;
+    
+    PlayerSetting peekSetting() noexcept;
 
     PlayerState state() noexcept;
     
     const PlayerInfo& info() noexcept;
+    
+    [[nodiscard]] std::string_view playerId() const noexcept;
+    
+    [[nodiscard]] long double currentPlayedTime() noexcept;
 private:
     void setState(PlayerState state) noexcept;
 

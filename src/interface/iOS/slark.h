@@ -39,7 +39,9 @@ typedef enum : NSUInteger {
 @interface Player : NSObject
 @property (nonatomic, weak) id<IPlayerObserver> delegate;
 
-- (instancetype)Player:(NSString*) path;
+- (instancetype)init:(NSString*) path;
+
+- (instancetype)initWithTimeRange:(NSString*) path range:(CMTimeRange)range;
 
 - (void)play;
 
