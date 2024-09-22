@@ -32,7 +32,7 @@ struct PlayerSeekRequest {
 struct PlayedTime {
     CTime audioPlayedTime{0};
     CTime videoPlayedTime{0};
-    CTime time() {
+    CTime time() const {
         return std::min(audioPlayedTime, videoPlayedTime);
     }
 };
@@ -46,7 +46,13 @@ public:
 public:
     void updateState(PlayerState state) noexcept;
 
-    void updateSetting(PlayerSetting setting) noexcept;
+    void setLoop(bool isLoop);
+    
+    void setVolume(float volume);
+    
+    void setMute(bool isMute);
+     
+    void setRenderSize(RenderSize size);
 
     void seek(long double time, bool isAccurate = false) noexcept;
     
@@ -62,21 +68,15 @@ public:
         return info_;
     }
 
-    [[nodiscard]] inline PlayerState state() const noexcept {
-        return state_;
-    }
+    [[nodiscard]] PlayerState state() noexcept;
 
-    [[nodiscard]] inline PlayerParams params()  noexcept {
-        PlayerParams params;
-        params_.withReadLock([&params](auto& p){
-            params = *p;
-        });
-        return params;
-    }
+    [[nodiscard]] PlayerParams params() noexcept;
 
     [[nodiscard]] inline std::string_view playerId() const noexcept {
         return std::string_view(playerId_);
     }
+    
+    [[nodiscard]] long double currentPlayedTime() noexcept;
     
 private:
     void init() noexcept;
@@ -89,7 +89,9 @@ private:
 
     void process() noexcept;
     
-    void handleEvent(std::list<EventPtr>&& events) noexcept;
+    PlayerState handleEvent(std::list<EventPtr>&& events) noexcept;
+    
+    void handleSettingUpdate(Event& t) noexcept;
     
     void notifyObserver(PlayerState state) noexcept;
     
@@ -106,7 +108,7 @@ private:
     void doSeek() noexcept;
 private:
     bool isReadCompleted_ = false;
-    PlayerState state_ = PlayerState::Unknown;
+    Synchronized<PlayerState, std::shared_mutex> state_;
     std::optional<PlayerSeekRequest> seekRequest_;
     PlayerInfo info_;
     std::string playerId_;
@@ -137,7 +139,7 @@ private:
     //render
     std::unique_ptr<Audio::AudioRenderComponent> audioRender_ = nullptr;
     
-    Synchronized<PlayedTime> playedTime;
+    Synchronized<PlayedTime, std::shared_mutex> playedTime;
 };
 
 }

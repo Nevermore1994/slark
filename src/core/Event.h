@@ -22,13 +22,15 @@ enum class EventType: int8_t {
     DemuxCompleted,
     DecodeCompleted,
     RenderFrameCompleted,
-    Error_START,
     ReadError,
     DemuxError,
     DecodeError,
     RenderError,
-    Error_End,
-    UpdateRenderSize,
+    UpdateSetting,
+    UpdateSettingVolume,
+    UpdateSettingMute,
+    UpdateSettingRenderSize,
+    UpdateSettingEnd,
 };
 
 enum class PlayerState : int8_t;

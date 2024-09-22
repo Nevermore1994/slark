@@ -65,6 +65,10 @@ PlayerParams Player::peek() noexcept {
     return pimpl_->params();
 }
 
+PlayerSetting Player::peekSetting() noexcept {
+    return pimpl_->params().setting;
+}
+
 PlayerState Player::state() noexcept {
     return pimpl_->state();
 }
@@ -73,8 +77,20 @@ const PlayerInfo& Player::info() noexcept {
     return pimpl_->info();
 }
 
-void Player::updateSetting(PlayerSetting setting) noexcept {
+void Player::setLoop(bool isLoop) {
+    pimpl_->setLoop(isLoop);
+}
 
+void Player::setVolume(float volume) {
+    pimpl_->setVolume(volume);
+}
+
+void Player::setMute(bool isMute) {
+    pimpl_->setMute(isMute);
+}
+ 
+void Player::setRenderSize(uint32_t width, uint32_t height) {
+    pimpl_->setRenderSize({width, height});
 }
 
 void Player::addObserver(IPlayerObserverPtr observer) noexcept {
@@ -91,6 +107,10 @@ void Player::removeObserver(const IPlayerObserverPtr& observer) noexcept {
 
 void Player::removeObserver(const IPlayerObserverPtrArray& observers) noexcept {
     pimpl_->removeObserver(observers);
+}
+
+long double Player::currentPlayedTime() noexcept {
+    return pimpl_->currentPlayedTime();
 }
 
 }//end namespace slark

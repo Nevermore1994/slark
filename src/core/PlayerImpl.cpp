@@ -280,14 +280,14 @@ void Player::Impl::render() noexcept {
 }
 
 void Player::Impl::process() noexcept {
-    handleEvent(receiver_->tryReceiveAll());
-    if (state_ == PlayerState::Stop) {
+    auto state = handleEvent(receiver_->tryReceiveAll());
+    if (state == PlayerState::Stop) {
         return;
     }
     if (seekRequest_.has_value()) {
         doSeek();
     }
-    if (state_ == PlayerState::Playing) {
+    if (state == PlayerState::Playing) {
         render();
         decodeAudio();
         demux();
@@ -304,11 +304,18 @@ void Player::Impl::doSeek() noexcept {
 }
 
 void Player::Impl::setState(PlayerState state) noexcept {
-    if (state_ == state) {
+    bool isChanged = false;
+    state_.withWriteLock([state, &isChanged](auto& nowState){
+        if (nowState == state) {
+            return;
+        }
+        nowState = state;
+        isChanged = true;
+    });
+    if (!isChanged) {
         return;
     }
-    state_ = state;
-    if (state_ == PlayerState::Playing) {
+    if (state == PlayerState::Playing) {
         ownerThread_->resume();
         readHandler_->resume();
         if (audioRender_) {
@@ -317,7 +324,7 @@ void Player::Impl::setState(PlayerState state) noexcept {
         if (audioDecoder_) {
             audioDecoder_->resume();
         }
-    } else if (state_ == PlayerState::Pause) {
+    } else if (state == PlayerState::Pause) {
         readHandler_->pause();
         ownerThread_->pause();
         if (audioRender_) {
@@ -326,7 +333,7 @@ void Player::Impl::setState(PlayerState state) noexcept {
         if (audioDecoder_) {
             audioDecoder_->pause();
         }
-    } else if (state_ == PlayerState::Stop) {
+    } else if (state == PlayerState::Stop) {
         readHandler_->close();
         ownerThread_->stop();
         audioRender_.reset();
@@ -355,7 +362,40 @@ std::expected<PlayerState, bool> getStateFromEvent(EventType event) {
     }
 }
 
-void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
+void Player::Impl::handleSettingUpdate(Event& t) noexcept {
+    if (t.type == EventType::UpdateSettingVolume) {
+        auto volume = std::any_cast<float>(t.data);
+        if (audioRender_) {
+            audioRender_->setVolume(volume / 100.0f);
+        }
+        params_.withWriteLock([volume](auto& p){
+            p->setting.volume = volume;
+        });
+        LogI("set volume:{}", volume);
+    } else if (t.type == EventType::UpdateSettingMute) {
+        auto isMute = std::any_cast<bool>(t.data);
+        if (audioRender_) {
+            if (isMute) {
+                audioRender_->setVolume(0);
+            } else {
+                float volume;
+                params_.withReadLock([&volume](auto& p){
+                    volume = p->setting.volume;
+                });
+                audioRender_->setVolume(volume / 100.f);
+            }
+        }
+        LogI("set mute:{}", isMute);
+    } else if (t.type == EventType::UpdateSettingRenderSize) {
+        auto size = std::any_cast<RenderSize>(t.data);
+        params_.withWriteLock([size](auto& p){
+            p->setting.size = size;
+        });
+        LogI("set size, width:{}, height:{}", size.width, size.height);
+    }
+}
+
+PlayerState Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
     PlayerState changeState = PlayerState::Unknown;
     for (auto& event : events) {
         if (!event) {
@@ -363,6 +403,8 @@ void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
         }
         if (event->type == EventType::Seek) {
             seekRequest_ = std::any_cast<PlayerSeekRequest>(event->data);
+        } else if (EventType::UpdateSetting < event->type && event->type < EventType::UpdateSettingEnd) {
+            handleSettingUpdate(*event);
         } else if (auto state = getStateFromEvent(event->type); state.has_value()) {
             LogI("eventType:{}", EventTypeToString(event->type));
             if (changeState != PlayerState::Stop) {
@@ -375,6 +417,7 @@ void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
     if (changeState != PlayerState::Unknown) {
         setState(changeState);
     }
+    return changeState;
 }
 
 void Player::Impl::notifyObserver(PlayerState state) noexcept {
@@ -391,10 +434,52 @@ void Player::Impl::notifyObserver(PlayerState state) noexcept {
     });
 }
 
-void Player::Impl::updateSetting(PlayerSetting setting) noexcept {
-    params_.withWriteLock([&setting](auto& p){
-        p->setting = setting;
+PlayerParams Player::Impl::params() noexcept {
+    PlayerParams params;
+    params_.withReadLock([&params](auto& p){
+        params = *p;
     });
+    return params;
+}
+
+void Player::Impl::setLoop(bool isLoop) {
+    params_.withWriteLock([isLoop](auto& p){
+        p->setting.isLoop = isLoop;
+    });
+}
+
+void Player::Impl::setVolume(float volume) {
+    auto ptr = buildEvent(EventType::UpdateSettingVolume);
+    ptr->data = std::make_any<float>(volume);
+    sender_->send(std::move(ptr));
+}
+
+void Player::Impl::setMute(bool isMute) {
+    auto ptr = buildEvent(EventType::UpdateSettingMute);
+    ptr->data = std::make_any<bool>(isMute);
+    sender_->send(std::move(ptr));
+}
+ 
+void Player::Impl::setRenderSize(RenderSize size) {
+    auto ptr = buildEvent(EventType::UpdateSettingRenderSize);
+    ptr->data = std::make_any<RenderSize>(size);
+    sender_->send(std::move(ptr));
+}
+
+PlayerState Player::Impl::state() noexcept {
+    PlayerState state = PlayerState::Unknown;
+    state_.withReadLock([&state](auto& nowState){
+        state = nowState;
+    });
+    return state;
+}
+
+long double Player::Impl::currentPlayedTime() noexcept {
+    long double currentTime = 0;
+    playedTime.withReadLock([&currentTime](auto& time){
+        currentTime = time.time().second();
+    });
+    return currentTime;
 }
 
 }//end namespace slark

@@ -70,59 +70,99 @@ struct PlayerObserver final : public slark::IPlayerObserver
 @interface Player()
 {
     std::unique_ptr<slark::Player> player_;
-    std::unique_ptr<PlayerObserver> Observer_;
+    std::shared_ptr<PlayerObserver> observer_;
 }
 
 @end
 
 @implementation Player
 
-- (instancetype)Player:(NSString*) path {
+- (instancetype)init:(NSString*) path {
+    return [self initWithTimeRange:path range:kCMTimeRangeInvalid];
+}
 
+- (instancetype)initWithTimeRange:(NSString*) path range:(CMTimeRange)range {
+    if (self = [super init]) {
+        auto params = std::make_unique<slark::PlayerParams>();
+        params->item.path = [path UTF8String];
+        if (CMTIMERANGE_IS_VALID(range)) {
+            params->item.displayStart = CMTimeGetSeconds(range.start);
+            params->item.displayDuration = CMTimeGetSeconds(range.duration);
+        }
+        player_ = std::make_unique<slark::Player>(params);
+        observer_ = std::make_shared<PlayerObserver>();
+        player_->addObserver(observer_);
+        __weak __typeof(self) weakSelf = self;
+        observer_->notifyTimeFunc = [weakSelf](NSString* playerId, long double time){
+            dispatch_async(dispatch_get_main_queue(), ^{
+                __strong __typeof(weakSelf) strongSelf = weakSelf;
+                if ([strongSelf.delegate respondsToSelector:@selector(notifyTime:time:)]) {
+                    [strongSelf.delegate notifyTime:playerId time:time];
+                }
+            });
+        };
+        observer_->notifyStateFunc = [weakSelf](NSString* playerId, PlayerState state){
+            dispatch_async(dispatch_get_main_queue(), ^{
+                __strong __typeof(weakSelf) strongSelf = weakSelf;
+                if ([strongSelf.delegate respondsToSelector:@selector(notifyState:state:)]) {
+                    [strongSelf.delegate notifyState:playerId state:state];
+                }
+            });
+        };
+        observer_->notifyEventFunc = [weakSelf](NSString* playerId, PlayerEvent evnt, NSString* value){
+            dispatch_async(dispatch_get_main_queue(), ^{
+                __strong __typeof(weakSelf) strongSelf = weakSelf;
+                if ([strongSelf.delegate respondsToSelector:@selector(notifyEvent:event:value:)]) {
+                    [strongSelf.delegate notifyEvent:playerId event:evnt value:value];
+                }
+            });
+        };
+    }
+    return self;
 }
 
 - (void)play {
-    
+    player_->play();
 }
 
 - (void)pause {
-    
+    player_->pause();
 }
 
 - (void)stop {
-    
+    player_->stop();
 }
  
 - (void)seek:(double) seekToTime {
-    
+    player_->seek(seekToTime);
 }
 
 - (void)seek:(double) seekToTime isAccurate:(BOOL)isAccurate {
-    
+    player_->seek(seekToTime, static_cast<bool>(isAccurate));
 }
 
 - (void)setLoop:(BOOL) isLoop {
-    
+    player_->setLoop(static_cast<bool>(isLoop));
 }
 
 - (void)setVolume:(float) volume {
-    
+    player_->setVolume(volume);
 }
 
 - (void)setMute:(BOOL) isMute {
-    
+    player_->setMute(static_cast<bool>(isMute));
 }
 
 - (void)setRenderSize:(int) width height:(int) height {
-    
+    player_->setRenderSize(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 }
 
 - (CMTime)totalDuration {
-    
+    return CMTimeMakeWithSeconds(player_->info().duration, 1000);
 }
 
 - (CMTime)currentTime {
-    
+    return CMTimeMakeWithSeconds(player_->currentPlayedTime(), 1000);
 }
 
 - (PlayerState)state {
