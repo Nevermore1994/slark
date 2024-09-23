@@ -1,0 +1,151 @@
+//
+//  PlayerImpl.hpp
+//  slark
+//
+//  Created by Nevermore.
+//
+
+#pragma once
+
+#include <deque>
+#include <shared_mutex>
+#include <optional>
+#include "Reader.hpp"
+#include "Player.h"
+#include "DecoderComponent.h"
+#include "DemuxerManager.h"
+#include "AVFrame.hpp"
+#include "Reader.hpp"
+#include "Channel.hpp"
+#include "Event.h"
+#include "AudioRenderComponent.h"
+#include "Synchronized.hpp"
+
+namespace slark {
+
+struct PlayerSeekRequest {
+    bool isAccurate = false;
+    CTime seekTime{0}; //seconds
+    uint64_t seekPos = 0;
+};
+
+struct PlayedTime {
+    CTime audioPlayedTime{0};
+    CTime videoPlayedTime{0};
+    CTime time() const {
+        return std::min(audioPlayedTime, videoPlayedTime);
+    }
+};
+
+class Player::Impl {
+public:
+    explicit Impl(std::unique_ptr<PlayerParams> params);
+    ~Impl();
+    Impl(const Impl&) = delete;
+    Impl& operator=(const Impl&) = delete;
+public:
+    void updateState(PlayerState state) noexcept;
+
+    void setLoop(bool isLoop);
+    
+    void setVolume(float volume);
+    
+    void setMute(bool isMute);
+     
+    void setRenderSize(RenderSize size);
+
+    void seek(long double time, bool isAccurate = false) noexcept;
+    
+    void addObserver(IPlayerObserverPtr observer) noexcept;
+    
+    void removeObserver(IPlayerObserverPtr observer) noexcept;
+public:
+    [[nodiscard]] inline const PlayerInfo& info() const noexcept {
+        return info_;
+    }
+
+    [[nodiscard]] PlayerState state() noexcept;
+
+    [[nodiscard]] PlayerParams params() noexcept;
+
+    [[nodiscard]] inline std::string_view playerId() const noexcept {
+        return std::string_view(playerId_);
+    }
+    
+    [[nodiscard]] long double currentPlayedTime() noexcept;
+    
+private:
+    void init() noexcept;
+
+    void initPlayerInfo() noexcept;
+
+    void demux() noexcept;
+    
+    void render() noexcept;
+
+    void process() noexcept;
+    
+    void handleEvent(std::list<EventPtr>&& events) noexcept;
+    
+    void handleSettingUpdate(Event& t) noexcept;
+    
+    void notifyState(PlayerState state) noexcept;
+    
+    void notifyEvent(PlayerEvent event, std::string value = "") noexcept;
+    
+    void notifyTime() noexcept;
+    
+    void setState(PlayerState state) noexcept;
+
+    bool createDemuxer(DataPtr& data) noexcept;
+
+    std::unique_ptr<DecoderComponent> createDecoderComponent(std::string_view mediaInfo, bool isAudio) noexcept;
+
+    void decodeAudio() noexcept;
+
+    void decodeVideo() noexcept;
+    
+    void doPlay() noexcept;
+    
+    void doPause() noexcept;
+    
+    void doStop() noexcept;
+    
+    void doSeek() noexcept;
+private:
+    bool isReadCompleted_ = false;
+    Synchronized<PlayerState, std::shared_mutex> state_;
+    std::optional<PlayerSeekRequest> seekRequest_;
+    PlayerInfo info_;
+    std::string playerId_;
+    Synchronized<std::unique_ptr<PlayerParams>, std::shared_mutex> params_;
+    Synchronized<IPlayerObserverPtr, std::shared_mutex> observer_;
+    
+    SenderPtr<EventPtr> sender_;
+    ReceiverPtr<EventPtr> receiver_;
+    
+    std::unique_ptr<Thread> ownerThread_ = nullptr;
+    
+    //IO
+    std::unique_ptr<Reader> readHandler_ = nullptr;
+    Synchronized<std::vector<DataPtr>> dataList_;
+    DataPtr demuxData_;
+    
+    //demux
+    std::unique_ptr<IDemuxer> demuxer_ = nullptr;
+    std::deque<AVFramePtr> audioPackets_;
+    std::deque<AVFramePtr> videoPackets_;
+    
+    //decode
+    Synchronized<std::deque<AVFramePtr>> audioFrames_;
+    Synchronized<std::deque<AVFramePtr>> videoFrames_;
+    std::unique_ptr<DecoderComponent> audioDecoder_ = nullptr;
+    std::unique_ptr<DecoderComponent> videoDecoder_ = nullptr;
+    
+    //render
+    std::unique_ptr<Audio::AudioRenderComponent> audioRender_ = nullptr;
+    
+    Synchronized<PlayedTime, std::shared_mutex> playedTime;
+};
+
+}

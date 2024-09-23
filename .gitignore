@@ -17,3 +17,24 @@
 .ninja_log
 build.ninja
 CMakeCache.txt
+/_deps
+/test/*.cmake
+/test/*/*.cmake
+script/build
+script/*.cmake
+script/CMakeFiles
+script/CMakeScripts
+script/slark.xcodeproj
+script/_deps
+script/test
+test/cmake-build-debug
+cmake-build-debug-gcc
+script/Debug-iphoneos
+script/Debug-maccatalyst/slark.framework
+script/Testing/Temporary
+demo/iOS/demo/Pods/Target Support Files/Pods-demo
+demo/iOS/demo/Pods
+demo/iOS/demo/demo.xcworkspace/xcuserdata/rolf.tan.xcuserdatad/xcdebugger
+demo/iOS/demo/demo.xcodeproj/xcshareddata/xcschemes
+src/.VSCodeCounter/
+

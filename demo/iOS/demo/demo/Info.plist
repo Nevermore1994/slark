@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string></string>
+	<key>NSAppleMusicUsageDescription</key>
+	<string></string>
+	<key>kTCCServiceMediaLibrary</key>
+	<string></string>
+	<key>NSAppBundlesUsageDescription</key>
+	<string></string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string></string>
+</dict>
+</plist>
