@@ -12,7 +12,7 @@
 
 namespace slark {
 
-enum class EventType: int8_t {
+enum class EventType: uint8_t {
     Unknown = 0,
     Play,
     Pause,
@@ -33,7 +33,7 @@ enum class EventType: int8_t {
     UpdateSettingEnd,
 };
 
-enum class PlayerState : int8_t;
+enum class PlayerState : uint8_t;
 
 struct Event {
     EventType type = EventType::Unknown;

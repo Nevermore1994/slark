@@ -22,7 +22,7 @@ void DecoderComponent::decode() {
         return;
     }
     AVFrameArray packets;
-    packets_.withLock([&](auto& vec){
+    packets_.withWriteLock([&](auto& vec){
         packets.swap(vec);
     });
     AVFrameArray decodeFrameArray;
@@ -30,6 +30,7 @@ void DecoderComponent::decode() {
         decodeFrameArray = decoder_->send(std::move(packets));
     } else if (isReachEnd_) {
         auto frame = decoder_->flush();
+        isReachEnd_ = false;
     } else {
         decodeWorker_.pause();
         return;
@@ -47,7 +48,7 @@ void DecoderComponent::send(AVFrameArray&& packets) noexcept {
 }
 
 void DecoderComponent::send(AVFramePtr packet) noexcept {
-    packets_.withLock([&](auto& vec){
+    packets_.withWriteLock([&](auto& vec){
         vec.emplace_back(std::move(packet));
     });
     decodeWorker_.resume();
@@ -64,17 +65,14 @@ void DecoderComponent::resume() noexcept {
 void DecoderComponent::reset() noexcept {
     decodeWorker_.pause();
     isReachEnd_ = false;
-    packets_.withLock([](auto& vec){
+    packets_.withWriteLock([](auto& vec){
         vec.clear();
     });
 }
 
 void DecoderComponent::close() noexcept {
+    reset();
     decodeWorker_.stop();
-    isReachEnd_ = false;
-    packets_.withLock([](auto& vec){
-        vec.clear();
-    });
 }
 
 }

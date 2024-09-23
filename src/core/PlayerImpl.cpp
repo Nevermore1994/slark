@@ -48,52 +48,33 @@ void Player::Impl::updateState(PlayerState state) noexcept {
 
 void Player::Impl::addObserver(IPlayerObserverPtr observer) noexcept {
     if (auto hash = Util::getWeakPtrAddress(observer); hash.has_value()) {
-        observers_.withLock([&](auto& map) {
-            map[hash.value()] = std::move(observer);
+        observer_.withWriteLock([&hash, observer = std::move(observer)](auto& ob) {
+            ob = std::move(observer);
         });
     }
 }
 
-void Player::Impl::addObserver(IPlayerObserverPtrArray observers) noexcept {
-    std::unordered_map<uint64_t, IPlayerObserverPtr> tempMap;
-    for (auto& ptr : observers) {
-        if (auto hash = Util::getWeakPtrAddress(ptr); hash.has_value()) {
-            tempMap[hash.value()] = std::move(ptr);
-        }
-    }
-    observers_.withLock([temp = std::move(tempMap)](auto& map) {
-        map.insert_range(temp);
-    });
-}
-
-void Player::Impl::removeObserver(const IPlayerObserverPtr& observer) noexcept {
+void Player::Impl::removeObserver(IPlayerObserverPtr observer) noexcept {
     if (auto hash = Util::getWeakPtrAddress(observer); hash.has_value()) {
-        observers_.withLock([&hash](auto& map) {
-            map.erase(hash.value());
+        observer_.withWriteLock([&hash](auto& observer) {
+            observer.reset();
         });
     }
-}
-
-void Player::Impl::removeObserver(const IPlayerObserverPtrArray& observers) noexcept {
-    std::vector<uint64_t> keyArray;
-    for (const auto& ptr : observers) {
-        if (auto hash = Util::getWeakPtrAddress(ptr); hash.has_value()) {
-            keyArray.emplace_back(hash.value());
-        }
-    }
-    observers_.withLock([&](auto& map) {
-        for (const auto& key : keyArray) {
-            map.erase(key);
-        }
-    });
 }
 
 void Player::Impl::init() noexcept {
+    using namespace std::chrono_literals;
     setState(PlayerState::Initializing);
     auto [sp, rp] = Channel<EventPtr>::create();
     sender_ = std::move(sp);
     receiver_ = std::move(rp);
 
+    ownerThread_ = std::make_unique<Thread>("playerThread", &Player::Impl::process, this);
+    ownerThread_->runLoop(500ms, [this](){
+        if (state() == PlayerState::Playing) {
+            notifyTime(); //0.5s notify observer
+        }
+    });
     ///set file path
     std::string path;
     params_.withReadLock([&](auto& params){
@@ -110,7 +91,7 @@ void Player::Impl::init() noexcept {
         if (seekRequest_.has_value() && seekRequest_.value().seekPos != offset) {
             return;
         }
-
+        LogI("receive data size: {}", data->length);
         if (data) {
             dataList_.withLock([&](auto& dataList) {
                 dataList.emplace_back(std::move(data));
@@ -124,10 +105,16 @@ void Player::Impl::init() noexcept {
         }
     };
     readHandler_ = std::make_unique<Reader>();
-    readHandler_->open(path, std::move(setting));
-
-    ownerThread_ = std::make_unique<Thread>("playerThread", &Player::Impl::process, this);
-    setState(PlayerState::Ready);
+    if (!readHandler_->open(path, std::move(setting))) {
+        setState(PlayerState::Error);
+        notifyEvent(PlayerEvent::OnError, std::to_string(static_cast<uint8_t>(PlayerErrorCode::OpenFileError)));
+    } else {
+        setState(PlayerState::Buffering);
+        readHandler_->start();
+        LogI("player initializing start.");
+    }
+    
+    ownerThread_->start();
 }
 
 bool Player::Impl::createDemuxer(DataPtr& data) noexcept {
@@ -152,6 +139,7 @@ bool Player::Impl::createDemuxer(DataPtr& data) noexcept {
         data = std::make_unique<Data>(demuxData_->length - offset, p + offset);
         demuxData_.reset();
         initPlayerInfo();
+        LogI("init demuxer success.");
         return true;
     }
     LogE("create demuxer error...");
@@ -161,8 +149,7 @@ bool Player::Impl::createDemuxer(DataPtr& data) noexcept {
 void Player::Impl::initPlayerInfo() noexcept {
     info_.hasAudio = demuxer_->hasAudio();
     info_.hasVideo = demuxer_->hasVideo();
-    ///TODO: fix duration
-
+    info_.duration = demuxer_->totalDuration().second();
     if (info_.hasAudio) {
         LogI("has audio, audio info:{}", demuxer_->audioInfo()->mediaInfo);
         do {
@@ -178,12 +165,12 @@ void Player::Impl::initPlayerInfo() noexcept {
                     LogI("audio played time:{}", audioPlayedTime.second());
                 });
             };
-            audioRender_->play();
         } while(false);
     } else {
         LogI("no audio");
     }
-
+    setState(PlayerState::Ready);
+    LogE("init player success.");
 }
 
 void Player::Impl::demux() noexcept {
@@ -197,7 +184,7 @@ void Player::Impl::demux() noexcept {
     if (dataList.empty()) {
         return;
     }
-    LogI("receive data size: {}", dataList.size());
+    LogI("demux data size:{}", dataList.size());
     for (auto& data : dataList) {
         if (demuxer_ == nullptr && !createDemuxer(data)) {
             LogI("create demuxer failed.");
@@ -280,18 +267,50 @@ void Player::Impl::render() noexcept {
 }
 
 void Player::Impl::process() noexcept {
-    auto state = handleEvent(receiver_->tryReceiveAll());
-    if (state == PlayerState::Stop) {
+    handleEvent(receiver_->tryReceiveAll());
+    auto nowState = state();
+    if (nowState == PlayerState::Stop) {
         return;
     }
     if (seekRequest_.has_value()) {
         doSeek();
     }
-    if (state == PlayerState::Playing) {
+    if (nowState == PlayerState::Playing) {
         render();
         decodeAudio();
         demux();
+    } else if (nowState == PlayerState::Buffering) {
+        demux();
     }
+}
+
+void Player::Impl::doPlay() noexcept {
+    ownerThread_->resume();
+    readHandler_->resume();
+    if (audioRender_) {
+        audioRender_->play();
+    }
+    if (audioDecoder_) {
+        audioDecoder_->resume();
+    }
+}
+
+void Player::Impl::doPause() noexcept {
+    ownerThread_->pause();
+    readHandler_->pause();
+    if (audioDecoder_) {
+        audioDecoder_->pause();
+    }
+    if (audioRender_) {
+        audioDecoder_->pause();
+    }
+}
+
+void Player::Impl::doStop() noexcept {
+    readHandler_->close();
+    ownerThread_->stop();
+    audioRender_.reset();
+    audioDecoder_.reset();
 }
 
 void Player::Impl::doSeek() noexcept {
@@ -316,30 +335,13 @@ void Player::Impl::setState(PlayerState state) noexcept {
         return;
     }
     if (state == PlayerState::Playing) {
-        ownerThread_->resume();
-        readHandler_->resume();
-        if (audioRender_) {
-            audioRender_->play();
-        }
-        if (audioDecoder_) {
-            audioDecoder_->resume();
-        }
+        doPlay();
     } else if (state == PlayerState::Pause) {
-        readHandler_->pause();
-        ownerThread_->pause();
-        if (audioRender_) {
-            audioRender_->pause();
-        }
-        if (audioDecoder_) {
-            audioDecoder_->pause();
-        }
+        doPause();
     } else if (state == PlayerState::Stop) {
-        readHandler_->close();
-        ownerThread_->stop();
-        audioRender_.reset();
-        audioDecoder_.reset();
+        doStop();
     }
-    notifyObserver(state);
+    notifyState(state);
 }
 
 std::expected<PlayerState, bool> getStateFromEvent(EventType event) {
@@ -395,7 +397,7 @@ void Player::Impl::handleSettingUpdate(Event& t) noexcept {
     }
 }
 
-PlayerState Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
+void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
     PlayerState changeState = PlayerState::Unknown;
     for (auto& event : events) {
         if (!event) {
@@ -417,21 +419,35 @@ PlayerState Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
     if (changeState != PlayerState::Unknown) {
         setState(changeState);
     }
-    return changeState;
 }
 
-void Player::Impl::notifyObserver(PlayerState state) noexcept {
-    observers_.withLock([this,state](auto& map){
-        for (auto& p : std::views::values(map)
-            | std::views::filter([](const IPlayerObserverPtr& p) { return !p.expired();})) {
-            if (auto ref = p.lock(); ref) {
-                ref->notifyState(playerId_,state);
-            }
+void Player::Impl::notifyEvent(PlayerEvent event, std::string value) noexcept {
+    observer_.withReadLock([this, event, value = std::move(value)](auto& observer){
+        if (auto ptr = observer.lock(); ptr) {
+            ptr->notifyEvent(playerId_, event, value);
         }
-        std::erase_if(map, [](auto& pair) {
-            return pair.second.expired();
-        });
     });
+}
+
+void Player::Impl::notifyState(PlayerState state) noexcept {
+    observer_.withReadLock([this, state](auto& observer){
+        if (auto ptr = observer.lock(); ptr) {
+            ptr->notifyState(playerId_, state);
+        }
+    });
+}
+
+void Player::Impl::notifyTime() noexcept {
+    double time = 0;
+    playedTime.withReadLock([&time](auto& playedTime){
+        time = playedTime.time().second();
+    });
+    observer_.withReadLock([this, time](auto& observer){
+        if (auto ptr = observer.lock(); ptr) {
+            ptr->notifyTime(playerId_, time);
+        }
+    });
+    LogI("notifyTime:{}", time);
 }
 
 PlayerParams Player::Impl::params() noexcept {

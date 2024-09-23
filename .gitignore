@@ -36,3 +36,5 @@ demo/iOS/demo/Pods/Target Support Files/Pods-demo
 demo/iOS/demo/Pods
 demo/iOS/demo/demo.xcworkspace/xcuserdata/rolf.tan.xcuserdatad/xcdebugger
 demo/iOS/demo/demo.xcodeproj/xcshareddata/xcschemes
+src/.VSCodeCounter/
+

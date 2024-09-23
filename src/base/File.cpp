@@ -180,12 +180,14 @@ bool ReadFile::read(Data& data) noexcept {
         LogE("read byte error:{}", std::strerror(errno));
     }
     data.length = res;
+    readSize_ = data.length;
     return res > 0;
 }
 
 void ReadFile::backFillByte(uint8_t byte) noexcept {
     if (file_) {
         ungetc(byte, file_);
+        readSize_--;
     } else {
         LogE("can't back fill byte, file is null");
     }
@@ -202,26 +204,6 @@ void ReadFile::close() noexcept {
     if (file_) {
         IFile::close();
     }
-}
-
-File::File(const std::string& path)
-    : IFile(path, FileMode::FreeMode)
-    , ReadFile(path)
-    , WriteFile(path) {
-}
-
-File::~File() = default;
-
-bool File::open() noexcept {
-    readSize_ = 0;
-    readOver_ = false;
-    return WriteFile::open();
-}
-
-void File::close() noexcept {
-    WriteFile::close();
-    readSize_ = 0;
-    readOver_ = false;
 }
 
 }//end namespace slark::FileUtil

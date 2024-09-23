@@ -520,6 +520,8 @@
 					"\"VideoToolBox\"",
 					"-framework",
 					"\"slark\"",
+					"-framework",
+					CoreMedia,
 				);
 				OTHER_LIBTOOLFLAGS = "$(inherited)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.slark.base.test;
@@ -572,6 +574,8 @@
 					"\"VideoToolBox\"",
 					"-framework",
 					"\"slark\"",
+					"-framework",
+					CoreMedia,
 				);
 				OTHER_LIBTOOLFLAGS = "$(inherited)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.slark.base.test.demo;

@@ -28,6 +28,14 @@ public:
     void setReachEnd(bool isReachEnd) noexcept {
         isReachEnd_ = isReachEnd;
     }
+    
+    bool isNeedPushFrame() noexcept {
+        bool isNeed = true;
+        packets_.withReadLock([&isNeed](auto& packets){
+            isNeed = packets.empty();
+        });
+        return isNeed
+    }
 
 private:
     void decode();
@@ -36,7 +44,7 @@ private:
     std::unique_ptr<IDecoder> decoder_;
     DecoderReceiveFunc callback_;
     Thread decodeWorker_;
-    Synchronized<std::vector<AVFramePtr>> packets_;
+    Synchronized<std::vector<AVFramePtr>, std::shared_mutex> packets_;
 };
 
 }

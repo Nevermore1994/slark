@@ -7,8 +7,8 @@
 
 #pragma once
 
-#import <AVFoundation/AVTime.h>
-
+#import <AVFoundation/AVFoundation.h>
+#import <CoreMedia/CMTime.h>
 
 typedef enum : NSUInteger {
     PlayerStateUnknown,

@@ -13,7 +13,8 @@ namespace slark {
 static const std::string kReaderPrefixName = "Reader_";
 
 Reader::Reader()
-    : worker_( Util::genRandomName(kReaderPrefixName), &Reader::process, this) {
+    : worker_(Util::genRandomName(kReaderPrefixName), &Reader::process, this) {
+    
 }
 
 bool Reader::open(std::string_view path, ReaderSetting&& setting) {
@@ -23,6 +24,7 @@ bool Reader::open(std::string_view path, ReaderSetting&& setting) {
         setting_ = std::move(setting);
         isSuccess = file->open();
     });
+    worker_.setInterval(setting.timeInterval);
     return isSuccess;
 }
 
@@ -88,7 +90,6 @@ void Reader::seek(uint64_t pos) noexcept {
         return;
     }
     seekPos_ = static_cast<int64_t>(pos);
-    worker_.resume();
 }
 
 void Reader::process() {
@@ -99,7 +100,7 @@ void Reader::process() {
         return;
     } else if (nowState == IOState::EndOfFile) {
         worker_.pause();
-        LogI("stop reading data.");
+        LogI("read data completed.");
         return;
     }
     Data data(setting_.readBlockSize);
