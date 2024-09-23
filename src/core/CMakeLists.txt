@@ -28,6 +28,7 @@ if(${BUILD_PLATFORM} STREQUAL "iOS")
     add_framework(AVFoundation core)
     add_framework(VideoToolBox core)
     add_framework(AudioToolBox core)
+    add_framework(CoreMedia core)
     target_include_directories(core PUBLIC ./platform/iOS)
     target_include_directories(core PUBLIC ../base/platform/iOS)
 

@@ -16,11 +16,11 @@
 
 namespace slark {
 
-enum class PlayerState : int8_t {
+enum class PlayerState : uint8_t {
     Unknown = 0,
     Initializing,
-    Ready,
     Buffering,
+    Ready,
     Playing,
     Pause,
     Stop,
@@ -28,11 +28,15 @@ enum class PlayerState : int8_t {
     Completed,
 };
 
-enum class PlayerEvent : int8_t {
+enum class PlayerEvent : uint8_t {
     FirstFrameRendered,
     SeekDone,
     PlayEnd,
     OnError,
+};
+
+enum class PlayerErrorCode : uint8_t {
+    OpenFileError,
 };
 
 struct IPlayerObserver {
@@ -40,13 +44,13 @@ struct IPlayerObserver {
 
     virtual void notifyState(std::string_view playerId, PlayerState state) = 0;
 
-    virtual void event(std::string_view playerId, PlayerEvent event, std::string value) = 0;
+    virtual void notifyEvent(std::string_view playerId, PlayerEvent event, std::string value) = 0;
 
     virtual ~IPlayerObserver() = default;
 };
 
 using IPlayerObserverPtr = std::weak_ptr<IPlayerObserver>;
-using IPlayerObserverPtrArray = std::vector<IPlayerObserverPtr>;
+using IPlayerObserverRefPtr = std::shared_ptr<IPlayerObserver>;
 
 struct ResourceItem {
     ///play media path, local path or http url
@@ -116,11 +120,7 @@ public:
 
     void addObserver(IPlayerObserverPtr observer) noexcept;
     
-    void addObserver(IPlayerObserverPtrArray observers) noexcept;
-    
     void removeObserver(const IPlayerObserverPtr& observer) noexcept;
-    
-    void removeObserver(const IPlayerObserverPtrArray& observers) noexcept;
 
 public:
     PlayerParams peek() noexcept;

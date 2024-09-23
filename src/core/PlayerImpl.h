@@ -58,11 +58,7 @@ public:
     
     void addObserver(IPlayerObserverPtr observer) noexcept;
     
-    void addObserver(IPlayerObserverPtrArray observers) noexcept;
-    
-    void removeObserver(const IPlayerObserverPtr& observer) noexcept;
-    
-    void removeObserver(const IPlayerObserverPtrArray& observers) noexcept;
+    void removeObserver(IPlayerObserverPtr observer) noexcept;
 public:
     [[nodiscard]] inline const PlayerInfo& info() const noexcept {
         return info_;
@@ -89,11 +85,15 @@ private:
 
     void process() noexcept;
     
-    PlayerState handleEvent(std::list<EventPtr>&& events) noexcept;
+    void handleEvent(std::list<EventPtr>&& events) noexcept;
     
     void handleSettingUpdate(Event& t) noexcept;
     
-    void notifyObserver(PlayerState state) noexcept;
+    void notifyState(PlayerState state) noexcept;
+    
+    void notifyEvent(PlayerEvent event, std::string value = "") noexcept;
+    
+    void notifyTime() noexcept;
     
     void setState(PlayerState state) noexcept;
 
@@ -105,6 +105,12 @@ private:
 
     void decodeVideo() noexcept;
     
+    void doPlay() noexcept;
+    
+    void doPause() noexcept;
+    
+    void doStop() noexcept;
+    
     void doSeek() noexcept;
 private:
     bool isReadCompleted_ = false;
@@ -113,7 +119,7 @@ private:
     PlayerInfo info_;
     std::string playerId_;
     Synchronized<std::unique_ptr<PlayerParams>, std::shared_mutex> params_;
-    Synchronized<std::unordered_map<uint64_t, IPlayerObserverPtr>> observers_;
+    Synchronized<IPlayerObserverPtr, std::shared_mutex> observer_;
     
     SenderPtr<EventPtr> sender_;
     ReceiverPtr<EventPtr> receiver_;

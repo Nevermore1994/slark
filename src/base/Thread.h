@@ -7,7 +7,7 @@
 
 #include <chrono>
 #include <cstdio>
-#include <mutex>
+#include <shared_mutex>
 #include <condition_variable>
 #include <print>
 #include <thread>
@@ -46,19 +46,20 @@ public:
     
     TimerId runAfter(std::chrono::milliseconds delayTime, TimerTask func) noexcept;
 
+    TimerId runLoop(std::chrono::milliseconds timeInterval, TimerTask func) noexcept;
 public:
     [[nodiscard]] inline bool isRunning() noexcept {
-        std::unique_lock<std::mutex> lock(mutex_);
+        std::shared_lock<std::shared_mutex> lock(mutex_);
         return isRunning_;
     }
 
     [[nodiscard]] inline bool isExit() noexcept {
-        std::unique_lock<std::mutex> lock(mutex_);
+        std::shared_lock<std::shared_mutex> lock(mutex_);
         return isExit_;
     }
 
     [[nodiscard]] inline Time::TimePoint getLastRunTimeStamp() const noexcept {
-        return lastRunTimeStamp_;
+        return lastRunTimeStamp_.load();
     }
 
     [[nodiscard]] inline std::thread::id getId() const noexcept {
@@ -74,10 +75,12 @@ public:
     }
 
     void setInterval(std::chrono::milliseconds ms) noexcept {
+        std::lock_guard<std::shared_mutex> lock(mutex_);
         interval_ = ms;
     }
 
-    std::chrono::milliseconds interval () const noexcept {
+    std::chrono::milliseconds interval () noexcept {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
         return interval_;
     }
 
@@ -90,11 +93,11 @@ private:
     bool isRunning_ = false;
     bool isExit_ = false;
     bool isInit_ = false;
-    std::chrono::milliseconds interval_ = std::chrono::milliseconds(0);
+    std::chrono::milliseconds interval_{0};
     std::string name_;
-    std::mutex mutex_;
-    std::condition_variable cond_;
-    Time::TimePoint lastRunTimeStamp_ = 0;
+    std::shared_mutex mutex_;
+    std::condition_variable_any cond_;
+    std::atomic<uint64_t> lastRunTimeStamp_;
     std::thread worker_;
     TimerPool timerPool_;
     std::function<void()> func_;

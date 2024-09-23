@@ -10,6 +10,7 @@
 #include "File.h"
 #include "Synchronized.hpp"
 #include <optional>
+#include <chrono>
 
 namespace slark {
 
@@ -18,6 +19,7 @@ using ReaderDataFunc = std::function<void(DataPtr, int64_t, IOState)>;
 
 struct ReaderSetting {
     uint64_t readBlockSize = kReadDefaultSize;
+    std::chrono::milliseconds timeInterval{5};
     ReaderDataFunc callBack;
     
     ReaderSetting() = default;

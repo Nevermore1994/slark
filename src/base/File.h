@@ -124,21 +124,8 @@ public:
     void close() noexcept override;
 
 protected:
-    bool readOver_;
-    uint64_t readSize_;
-};
-
-
-class File final : public ReadFile, public WriteFile {
-public:
-    explicit File(const std::string& path);
-
-    ~File() override;
-
-public:
-    bool open() noexcept final;
-
-    void close() noexcept final;
+    bool readOver_ = false;
+    uint64_t readSize_ = 0;
 };
 
 }//end namespace slark::FileUtil

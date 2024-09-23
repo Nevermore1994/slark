@@ -25,7 +25,7 @@ Thread::~Thread() noexcept {
 
 void Thread::stop() noexcept {
     {
-        std::unique_lock<std::mutex> lock(mutex_);
+        std::lock_guard<std::shared_mutex> lock(mutex_);
         if (isExit_) {
             return;
         }
@@ -36,7 +36,7 @@ void Thread::stop() noexcept {
 }
 
 void Thread::pause() noexcept {
-    std::unique_lock<std::mutex> lock(mutex_);
+    std::lock_guard<std::shared_mutex> lock(mutex_);
     if (!isRunning_) {
         return;
     }
@@ -49,7 +49,7 @@ void Thread::resume() noexcept {
 
 void Thread::start() noexcept {
     {
-        std::unique_lock<std::mutex> lock(mutex_);
+        std::lock_guard<std::shared_mutex> lock(mutex_);
         if (isRunning_ || isExit_) {
             return;
         }
@@ -73,7 +73,7 @@ void Thread::process() noexcept {
                 std::this_thread::sleep_for(interval_);
             }
         } else {
-            std::unique_lock<std::mutex> lock(mutex_);
+            std::unique_lock<std::shared_mutex> lock(mutex_);
             cond_.wait(lock, [this] {
                 return isExit_ || isRunning_;
             });
@@ -99,6 +99,10 @@ TimerId Thread::runAt(Time::TimePoint timeStamp, TimerTask func) noexcept {
 
 TimerId Thread::runAfter(milliseconds delayTime, TimerTask func) noexcept {
     return timerPool_.runAfter(delayTime, std::move(func));
+}
+
+TimerId Thread::runLoop(milliseconds timeInterval, TimerTask func) noexcept {
+    return timerPool_.runLoop(timeInterval, std::move(func));
 }
 
 }//end namespace slark

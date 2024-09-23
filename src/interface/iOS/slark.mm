@@ -54,7 +54,7 @@ struct PlayerObserver final : public slark::IPlayerObserver
         }
     }
 
-    void event(std::string_view playerId, slark::PlayerEvent event, std::string value) override {
+    void notifyEvent(std::string_view playerId, slark::PlayerEvent event, std::string value) override {
         if (notifyEventFunc) {
             notifyEventFunc(stringViewToNSString(playerId), convertEvent(event), stringViewToNSString(value));
         }
@@ -89,7 +89,7 @@ struct PlayerObserver final : public slark::IPlayerObserver
             params->item.displayStart = CMTimeGetSeconds(range.start);
             params->item.displayDuration = CMTimeGetSeconds(range.duration);
         }
-        player_ = std::make_unique<slark::Player>(params);
+        player_ = std::make_unique<slark::Player>(std::move(params));
         observer_ = std::make_shared<PlayerObserver>();
         player_->addObserver(observer_);
         __weak __typeof(self) weakSelf = self;
@@ -166,7 +166,7 @@ struct PlayerObserver final : public slark::IPlayerObserver
 }
 
 - (PlayerState)state {
-    
+    return convertState(player_->state());
 }
 
 @end

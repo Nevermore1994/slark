@@ -9,20 +9,17 @@
 #import "EXTScope.h"
 #import "AudioViewController.h"
 #import "PlayerControllerView.h"
-#include "Player.h"
+#include "slark.h"
 #include "Log.hpp"
 
 using namespace slark;
 
-@interface AudioViewController()<UIGestureRecognizerDelegate>
-{
-    std::unique_ptr<Player> player_;
-    
-}
+@interface AudioViewController()<UIGestureRecognizerDelegate, IPlayerObserver>
 @property (nonatomic, strong) UIImageView* iconView;
 @property (nonatomic, strong) PlayerControllerView* controllerView;
 @property (nonatomic, strong) UILabel* nameLabel;
 @property (nonatomic, assign) BOOL hasAuthorization;
+@property (nonatomic, strong) Player* player;
 @end
 
 
@@ -106,9 +103,7 @@ using namespace slark;
     NSString *bundlePath = [[NSBundle mainBundle] pathForResource:@"resource" ofType:@"bundle"];
     NSBundle *resouceBundle = [NSBundle bundleWithPath:bundlePath];
     auto path = [resouceBundle pathForResource:@"sample-3s.wav" ofType:@""];
-    auto playerConfig = std::make_unique<PlayerParams>();
-    playerConfig->item.path = [path UTF8String];
-    player_ = std::make_unique<Player>(std::move(playerConfig));
+    self.player = [[Player alloc] init:path];
     self.hasAuthorization = NO;
 }
 
@@ -121,29 +116,47 @@ using namespace slark;
     return _iconView;
 }
 
+- (void)handlePlayClick:(BOOL) isPlay {
+    @weakify(self);
+    if (!isPlay) {
+        [self.player pause];
+        return;
+    }
+    if (!self.hasAuthorization) {
+        [self requestAccess:^(BOOL grant) {
+            @strongify(self);
+            self.hasAuthorization = grant;
+            if (grant) {
+                [self.player play];
+            }
+        }];
+    } else {
+        [self.player play];
+    }
+}
+
 - (PlayerControllerView*)controllerView{
     if (_controllerView == nil) {
         _controllerView = [[PlayerControllerView alloc] initWithFrame:CGRectZero];
         @weakify(self);
         _controllerView.onPlayClick = ^(BOOL isPlay){
             @strongify(self);
-            if (isPlay) {
-                if (!self.hasAuthorization) {
-                    [self requestAccess:^(BOOL grant) {
-                        @strongify(self);
-                        self.hasAuthorization = grant;
-                        if (grant) {
-                            self->player_->play();
-                        }
-                    }];
-                } else {
-                    self->player_->play();
-                }
-            } else {
-                self->player_->pause();
-            }
+            [self handlePlayClick:isPlay];
         };
     }
     return _controllerView;
+}
+
+- (void)notifyTime:(NSString *)playerId time:(double)time {
+    [self.controllerView updateTotalTime:CMTimeGetSeconds(self.player.totalDuration)];
+    [self.controllerView updateCurrentTime:time];
+}
+
+- (void)notifyState:(NSString *)playerId state:(PlayerState)state {
+    
+}
+
+- (void)notifyEvent:(NSString *)playerId event:(PlayerEvent)event value:(NSString *)value {
+    
 }
 @end
