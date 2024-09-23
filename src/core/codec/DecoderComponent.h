@@ -34,7 +34,7 @@ public:
         packets_.withReadLock([&isNeed](auto& packets){
             isNeed = packets.empty();
         });
-        return isNeed
+        return isNeed;
     }
 
 private:

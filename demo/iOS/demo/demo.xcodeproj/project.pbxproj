@@ -12,6 +12,7 @@
 		C118381F2ADFCC6800DB0127 /* ViewController.mm in Sources */ = {isa = PBXBuildFile; fileRef = C118381E2ADFCC6800DB0127 /* ViewController.mm */; };
 		C11838242ADFCC6900DB0127 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C11838232ADFCC6900DB0127 /* Assets.xcassets */; };
 		C118382A2ADFCC6900DB0127 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = C11838292ADFCC6900DB0127 /* main.m */; };
+		C1948EEF2CA17DDD00425DB3 /* EXTScope.m in Sources */ = {isa = PBXBuildFile; fileRef = C1948EEC2CA17DDD00425DB3 /* EXTScope.m */; };
 		C1DA2DCE2C97175200DF03CB /* sample-3s.wav in Resources */ = {isa = PBXBuildFile; fileRef = C1DA2DCD2C97175200DF03CB /* sample-3s.wav */; };
 		C1DA2DD22C97235400DF03CB /* AudioViewController.mm in Sources */ = {isa = PBXBuildFile; fileRef = C1DA2DD12C97235400DF03CB /* AudioViewController.mm */; };
 		C1DA2DD42C9897DC00DF03CB /* PlayerControllerView.m in Sources */ = {isa = PBXBuildFile; fileRef = C1DA2DD32C9897DC00DF03CB /* PlayerControllerView.m */; };
@@ -39,6 +40,9 @@
 		C11838232ADFCC6900DB0127 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		C11838282ADFCC6900DB0127 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		C11838292ADFCC6900DB0127 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
+		C1948EEB2CA17DDD00425DB3 /* EXTScope.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = EXTScope.h; sourceTree = "<group>"; };
+		C1948EEC2CA17DDD00425DB3 /* EXTScope.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = EXTScope.m; sourceTree = "<group>"; };
+		C1948EED2CA17DDD00425DB3 /* metamacros.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = metamacros.h; sourceTree = "<group>"; };
 		C1DA2DC92C9716BD00DF03CB /* resource.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = resource.bundle; sourceTree = BUILT_PRODUCTS_DIR; };
 		C1DA2DCD2C97175200DF03CB /* sample-3s.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; name = "sample-3s.wav"; path = "../../../test_sample/sample-3s.wav"; sourceTree = "<group>"; };
 		C1DA2DD02C97235400DF03CB /* AudioViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AudioViewController.h; sourceTree = "<group>"; };
@@ -132,6 +136,7 @@
 		C11838162ADFCC6800DB0127 /* demo */ = {
 			isa = PBXGroup;
 			children = (
+				C1948EEE2CA17DDD00425DB3 /* EXTScope */,
 				C1DA2DD62C989A3D00DF03CB /* view */,
 				C1DA2DCF2C97222500DF03CB /* viewController */,
 				C11838172ADFCC6800DB0127 /* AppDelegate.h */,
@@ -144,6 +149,16 @@
 				C1DA2E562C9C364D00DF03CB /* Masonry */,
 			);
 			path = demo;
+			sourceTree = "<group>";
+		};
+		C1948EEE2CA17DDD00425DB3 /* EXTScope */ = {
+			isa = PBXGroup;
+			children = (
+				C1948EEB2CA17DDD00425DB3 /* EXTScope.h */,
+				C1948EEC2CA17DDD00425DB3 /* EXTScope.m */,
+				C1948EED2CA17DDD00425DB3 /* metamacros.h */,
+			);
+			path = EXTScope;
 			sourceTree = "<group>";
 		};
 		C1DA2DCF2C97222500DF03CB /* viewController */ = {
@@ -337,6 +352,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C1948EEF2CA17DDD00425DB3 /* EXTScope.m in Sources */,
 				C1DA2E5E2C9C364D00DF03CB /* NSLayoutConstraint+MASDebugAdditions.m in Sources */,
 				C118381F2ADFCC6800DB0127 /* ViewController.mm in Sources */,
 				C1DA2E5C2C9C364D00DF03CB /* MASViewConstraint.m in Sources */,
@@ -521,7 +537,7 @@
 					"-framework",
 					"\"slark\"",
 					"-framework",
-					CoreMedia,
+					"\"CoreMedia\"",
 				);
 				OTHER_LIBTOOLFLAGS = "$(inherited)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.slark.base.test;
@@ -575,7 +591,7 @@
 					"-framework",
 					"\"slark\"",
 					"-framework",
-					CoreMedia,
+					"\"CoreMedia\"",
 				);
 				OTHER_LIBTOOLFLAGS = "$(inherited)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.slark.base.test.demo;
