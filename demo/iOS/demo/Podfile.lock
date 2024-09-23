@@ -1,25 +1,16 @@
 PODS:
-  - libextobjc/EXTScope (0.6):
-    - libextobjc/RuntimeExtensions
-  - libextobjc/RuntimeExtensions (0.6)
   - slark (0.0.1)
 
 DEPENDENCIES:
-  - libextobjc/EXTScope
   - slark (from `../../..`)
-
-SPEC REPOS:
-  https://github.com/CocoaPods/Specs.git:
-    - libextobjc
 
 EXTERNAL SOURCES:
   slark:
     :path: "../../.."
 
 SPEC CHECKSUMS:
-  libextobjc: aed8b7d2b07f511c1a7ecaacb33ea03e327c69b7
-  slark: cc5d50bebadfacc410b66418eb934a0233340c2f
+  slark: 03f88ba509d4e741e819684aeb5f188f320df768
 
-PODFILE CHECKSUM: cbd8ac5129e7e3533ac0487af436ff800fdd17a1
+PODFILE CHECKSUM: 22b98425c79d859aa83e431942c1f97edcf331ef
 
 COCOAPODS: 1.15.2

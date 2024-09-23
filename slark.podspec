@@ -65,6 +65,6 @@ Pod::Spec.new do |s|
         "GCC_PREPROCESSOR_DEFINITIONS" => 'SLARK_IOS=1',
         'OTHER_CPLUSPLUSFLAGS' => '-Wall -Wextra -Wpedantic -Wcast-align -Wcast-qual -Wconversion -Wdisabled-optimization -Wendif-labels -Wfloat-equal -Winit-self -Winline -Wmissing-include-dirs -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual -Wpacked -Wpointer-arith -Wredundant-decls -Wshadow -Wsign-promo -Wvariadic-macros -Wwrite-strings -Wno-variadic-macros -Wno-unknown-pragmas'
     }
-    s.frameworks = 'Foundation', 'AVFoundation', 'VideoToolBox', 'AudioToolBox'
+    s.frameworks = 'Foundation', 'AVFoundation', 'VideoToolBox', 'AudioToolBox', 'CoreMedia'
   end
 

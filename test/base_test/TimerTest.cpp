@@ -7,7 +7,7 @@
 #include <chrono>
 #include <format>
 #include "TimerManager.h"
-#include "Utility.hpp"
+#include "Util.hpp"
 
 using namespace slark;
 

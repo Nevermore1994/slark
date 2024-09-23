@@ -238,7 +238,7 @@ void Player::Impl::decodeAudio() noexcept {
     if (!info_.hasAudio) {
         return;
     }
-    if (!audioRender_ || !audioRender_->isFull()) {
+    if (audioDecoder_ && audioDecoder_->isNeedPushFrame()) {
         if (!audioPackets_.empty()) {
             LogI("push audio frame decode:{}", audioPackets_.front()->index);
             audioDecoder_->send(std::move(audioPackets_.front()));

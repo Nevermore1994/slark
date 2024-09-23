@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 #include <format>
 #include "Thread.h"
-#include "Utility.hpp"
+#include "Util.hpp"
 
 using namespace slark;
 
