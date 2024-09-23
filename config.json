@@ -1,0 +1,7 @@
+{
+    "platform": "PC",
+    "build_type": "Debug",
+    "output": "exe",
+    "disable": null,
+    "disable_test": false
+}
