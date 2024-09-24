@@ -137,8 +137,8 @@
 			isa = PBXGroup;
 			children = (
 				C1948EEE2CA17DDD00425DB3 /* EXTScope */,
-				C1DA2DD62C989A3D00DF03CB /* view */,
-				C1DA2DCF2C97222500DF03CB /* viewController */,
+				C1DA2DD62C989A3D00DF03CB /* View */,
+				C1DA2DCF2C97222500DF03CB /* ViewController */,
 				C11838172ADFCC6800DB0127 /* AppDelegate.h */,
 				C11838182ADFCC6800DB0127 /* AppDelegate.m */,
 				C118381D2ADFCC6800DB0127 /* ViewController.h */,
@@ -161,22 +161,22 @@
 			path = EXTScope;
 			sourceTree = "<group>";
 		};
-		C1DA2DCF2C97222500DF03CB /* viewController */ = {
+		C1DA2DCF2C97222500DF03CB /* ViewController */ = {
 			isa = PBXGroup;
 			children = (
 				C1DA2DD02C97235400DF03CB /* AudioViewController.h */,
 				C1DA2DD12C97235400DF03CB /* AudioViewController.mm */,
 			);
-			path = viewController;
+			path = ViewController;
 			sourceTree = "<group>";
 		};
-		C1DA2DD62C989A3D00DF03CB /* view */ = {
+		C1DA2DD62C989A3D00DF03CB /* View */ = {
 			isa = PBXGroup;
 			children = (
 				C1DA2DD32C9897DC00DF03CB /* PlayerControllerView.m */,
 				C1DA2DD52C98980500DF03CB /* PlayerControllerView.h */,
 			);
-			path = view;
+			path = View;
 			sourceTree = "<group>";
 		};
 		C1DA2E562C9C364D00DF03CB /* Masonry */ = {

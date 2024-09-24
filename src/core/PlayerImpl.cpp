@@ -25,12 +25,8 @@ Player::Impl::Impl(std::unique_ptr<PlayerParams> params)
 }
 
 Player::Impl::~Impl() {
-    ownerThread_->stop();
-    if (readHandler_) {
-        readHandler_->close();
-    }
+    doStop();
 }
-
 
 void Player::Impl::seek(long double time, bool isAccurate) noexcept {
     auto ptr = buildEvent(EventType::Seek);
@@ -164,6 +160,9 @@ void Player::Impl::initPlayerInfo() noexcept {
                     time.audioPlayedTime = audioPlayedTime;
                     LogI("audio played time:{}", audioPlayedTime.second());
                 });
+                if (isgreater(audioPlayedTime.second(), info_.duration)) {
+                    isRenderCompleted_ = true;
+                }
             };
         } while(false);
     } else {
@@ -173,7 +172,7 @@ void Player::Impl::initPlayerInfo() noexcept {
     LogE("init player success.");
 }
 
-void Player::Impl::demux() noexcept {
+void Player::Impl::demuxData() noexcept {
     if (demuxer_ && demuxer_->isCompleted()) {
         return;
     }
@@ -234,7 +233,7 @@ std::unique_ptr<DecoderComponent> Player::Impl::createDecoderComponent(std::stri
     return decoder;
 }
 
-void Player::Impl::decodeAudio() noexcept {
+void Player::Impl::pushAudioFrameDecode() noexcept {
     if (!info_.hasAudio) {
         return;
     }
@@ -251,7 +250,7 @@ void Player::Impl::decodeVideo() noexcept {
 
 }
 
-void Player::Impl::render() noexcept {
+void Player::Impl::pushAVFrameToRender() noexcept {
     if (!info_.hasAudio || !audioRender_ || audioRender_->isFull()) {
         return;
     }
@@ -276,11 +275,12 @@ void Player::Impl::process() noexcept {
         doSeek();
     }
     if (nowState == PlayerState::Playing) {
-        render();
-        decodeAudio();
-        demux();
+        pushAVFrameToRender();
+        pushAudioFrameDecode();
+        demuxData();
     } else if (nowState == PlayerState::Buffering) {
-        demux();
+        demuxData();
+        pushAudioFrameDecode();
     }
 }
 
@@ -307,8 +307,11 @@ void Player::Impl::doPause() noexcept {
 }
 
 void Player::Impl::doStop() noexcept {
-    readHandler_->close();
+    if (readHandler_) {
+        readHandler_->close();
+    }
     ownerThread_->stop();
+    ownerThread_.reset();
     audioRender_.reset();
     audioDecoder_.reset();
 }
@@ -336,7 +339,7 @@ void Player::Impl::setState(PlayerState state) noexcept {
     }
     if (state == PlayerState::Playing) {
         doPlay();
-    } else if (state == PlayerState::Pause) {
+    } else if (state == PlayerState::Pause || state == PlayerState::Completed) {
         doPause();
     } else if (state == PlayerState::Stop) {
         doStop();
@@ -414,6 +417,17 @@ void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
             } else {
                 LogI("player stopped.");
             }
+        }
+    }
+    if (isReadCompleted_ && isRenderCompleted_ && !seekRequest_.has_value()) {
+        bool isLoop;
+        params_.withReadLock([&isLoop](auto& p){
+            isLoop = p->setting.isLoop;
+        });
+        if (isLoop) {
+            seekRequest_->seekTime = CTime(0);
+        } else {
+            changeState = PlayerState::Completed;
         }
     }
     if (changeState != PlayerState::Unknown) {

@@ -79,9 +79,9 @@ private:
 
     void initPlayerInfo() noexcept;
 
-    void demux() noexcept;
+    void demuxData() noexcept;
     
-    void render() noexcept;
+    void pushAVFrameToRender() noexcept;
 
     void process() noexcept;
     
@@ -101,7 +101,7 @@ private:
 
     std::unique_ptr<DecoderComponent> createDecoderComponent(std::string_view mediaInfo, bool isAudio) noexcept;
 
-    void decodeAudio() noexcept;
+    void pushAudioFrameDecode() noexcept;
 
     void decodeVideo() noexcept;
     
@@ -113,7 +113,8 @@ private:
     
     void doSeek() noexcept;
 private:
-    bool isReadCompleted_ = false;
+    std::atomic_bool isReadCompleted_ = false;
+    std::atomic_bool isRenderCompleted_ = false;
     Synchronized<PlayerState, std::shared_mutex> state_;
     std::optional<PlayerSeekRequest> seekRequest_;
     PlayerInfo info_;

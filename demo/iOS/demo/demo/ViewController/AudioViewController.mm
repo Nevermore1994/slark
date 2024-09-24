@@ -117,12 +117,12 @@ using namespace slark;
 }
 
 - (void)handlePlayClick:(BOOL) isPlay {
-    @weakify(self);
     if (!isPlay) {
         [self.player pause];
         return;
     }
     if (!self.hasAuthorization) {
+        @weakify(self);
         [self requestAccess:^(BOOL grant) {
             @strongify(self);
             self.hasAuthorization = grant;
@@ -148,15 +148,16 @@ using namespace slark;
 }
 
 - (void)notifyTime:(NSString *)playerId time:(double)time {
-    [self.controllerView updateTotalTime:CMTimeGetSeconds(self.player.totalDuration)];
     [self.controllerView updateCurrentTime:time];
 }
 
 - (void)notifyState:(NSString *)playerId state:(PlayerState)state {
-    
+    if (state == PlayerState::PlayerStateReady) {
+        [self.controllerView updateTotalTime:CMTimeGetSeconds(self.player.totalDuration)];
+    }
 }
 
 - (void)notifyEvent:(NSString *)playerId event:(PlayerEvent)event value:(NSString *)value {
-    
+
 }
 @end
