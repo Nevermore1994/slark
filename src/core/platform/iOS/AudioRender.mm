@@ -220,14 +220,14 @@ bool AudioRender::setupAudioComponent() noexcept {
    auto format = convertInfo2Description(*audioInfo_);
        
    // Set the format on the output scope of the input element/bus. not necessary
-   if (!checkOSStatus(AudioUnitSetProperty(renderUnit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &format, sizeof(format)),
+    if (!checkOSStatus(AudioUnitSetProperty(renderUnit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, kAudioUnitInputBus, &format, sizeof(format)),
                   "set render unit input format error")) {
        return false;
    }
 
    // Set the format on the input scope of the output element/bus.
    if (!checkOSStatus(AudioUnitSetProperty(renderUnit_, kAudioUnitProperty_StreamFormat,
-                                       kAudioUnitScope_Input, 0, &format, sizeof(format)),
+                                       kAudioUnitScope_Input, kAudioUnitOutputBus, &format, sizeof(format)),
                   "set Property_StreamFormat on outputbus : input scope")) {
        return false;
    }
