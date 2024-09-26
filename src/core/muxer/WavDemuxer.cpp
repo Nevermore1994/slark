@@ -201,7 +201,8 @@ uint64_t WAVDemuxer::getSeekToPos(Time::TimePoint time) {
     if (!isInited_) {
         return 0;
     }
-    return static_cast<uint64_t>(static_cast<long double>(audioInfo_->bitrate() / 8)  * time.second()); //byte
+    auto sampleCount = static_cast<uint64_t>(floor(time.second() * static_cast<long double>(audioInfo_->sampleRate)));
+    return sampleCount * audioInfo_->bytePerFrame(); //byte
 }
 
 DemuxerResult WAVDemuxer::parseData(std::unique_ptr<Data> data, int64_t offset) {

@@ -152,7 +152,7 @@ using namespace slark;
         };
         _controllerView.onSeekDone = ^{
             @strongify(self);
-            [self.player play];
+            [self.controllerView setIsPause:NO];
             LogI("seek done");
         };
     }
