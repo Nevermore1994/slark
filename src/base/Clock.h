@@ -24,6 +24,9 @@ public:
 
     void reset();
 private:
+    Time::TimePoint adjustSpeedTime(Time::TimePoint ) const;
+private:
+    bool isInited_ = false;
     bool isPause_ = true;
     std::shared_mutex mutex_;
     double speed = 1.0;
