@@ -36,7 +36,7 @@ struct Time {
         }
 #pragma clang diagnostic pop
         [[nodiscard]] std::chrono::milliseconds toMilliSeconds() const noexcept;
-        [[nodiscard]] double second() const noexcept;
+        [[nodiscard]] long double second() const noexcept;
         TimePoint operator+(std::chrono::milliseconds delta) const noexcept;
         TimePoint& operator+=(std::chrono::milliseconds delta) noexcept;
         TimePoint operator-(std::chrono::milliseconds delta) const noexcept;
