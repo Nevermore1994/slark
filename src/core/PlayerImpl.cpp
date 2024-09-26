@@ -80,7 +80,7 @@ void Player::Impl::init() noexcept {
 
     ReaderSetting setting;
     setting.callBack = [this](IOData data, IOState state) {
-        //LogI("receive data size: {}", data.data->length);
+        LogI("receive data size: {}", data.data->length);
         if (data.data) {
             dataList_.withLock([&](auto& dataList) {
                 dataList.emplace_back(std::move(data));
@@ -261,9 +261,6 @@ void Player::Impl::process() noexcept {
     if (nowState == PlayerState::Stop) {
         return;
     }
-    if (seekRequest_.has_value()) {
-        doSeek();
-    }
     if (nowState == PlayerState::Playing) {
         pushAVFrameToRender();
         pushAudioFrameDecode();
@@ -310,12 +307,15 @@ void Player::Impl::doSeek() noexcept {
     if (!demuxer_) {
         return;
     }
+    doPause();
     isReadCompleted_ = false;
     auto seekPos = demuxer_->getSeekToPos(seekRequest_.value().seekTime);
     readHandler_->seek(seekPos);
     demuxer_->seekPos(seekPos);
     audioRender_->seek(seekRequest_.value().seekTime);
     LogI("do seek pos:{}, time:{}", seekPos, seekRequest_.value().seekTime.second());
+    seekRequest_.reset();
+    setState(PlayerState::Ready);
 }
 
 void Player::Impl::setState(PlayerState state) noexcept {
@@ -401,6 +401,7 @@ void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
         }
         if (event->type == EventType::Seek) {
             seekRequest_ = std::any_cast<PlayerSeekRequest>(event->data);
+            doSeek();
         } else if (EventType::UpdateSetting < event->type && event->type < EventType::UpdateSettingEnd) {
             handleSettingUpdate(*event);
         } else if (auto state = getStateFromEvent(event->type); state.has_value()) {
