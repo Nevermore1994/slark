@@ -117,6 +117,7 @@ void AudioRenderComponent::flush() noexcept {
 }
 
 void AudioRenderComponent::seek(Time::TimePoint time) noexcept {
+    flush();
     frames_.withWriteLock([this, time](auto& frames) {
         frames.clear();
         audioBuffer_.reset();

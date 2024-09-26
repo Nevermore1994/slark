@@ -145,6 +145,16 @@ using namespace slark;
             @strongify(self);
             [self handlePlayClick:isPlay];
         };
+        _controllerView.onSeekClick = ^(double time) {
+            @strongify(self);
+            [self.player seek:time];
+            LogI("audio seek:{}", time);
+        };
+        _controllerView.onSeekDone = ^{
+            @strongify(self);
+            [self.player play];
+            LogI("seek done");
+        };
     }
     return _controllerView;
 }

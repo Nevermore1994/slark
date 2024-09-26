@@ -40,6 +40,7 @@ bool IFile::open() noexcept {
 void IFile::seek(int64_t offset) noexcept {
     if (file_) {
         fseeko(file_, offset, SEEK_SET);
+        LogI("seek to offset:{}, file size:{}", offset, FileUtil::fileSize(path_));
     }
 }
 
@@ -182,6 +183,11 @@ bool ReadFile::read(Data& data) noexcept {
     data.length = res;
     readSize_ = data.length;
     return res > 0;
+}
+
+void ReadFile::seek(int64_t offset) noexcept {
+    IFile::seek(offset);
+    readOver_ = false;
 }
 
 void ReadFile::backFillByte(uint8_t byte) noexcept {

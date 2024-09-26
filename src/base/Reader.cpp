@@ -93,6 +93,15 @@ void Reader::seek(uint64_t pos) noexcept {
 }
 
 void Reader::process() {
+    if (seekPos_.has_value()) {
+        file_.withReadLock([&](auto& file){
+            if (!file) {
+                return;
+            }
+            file->seek(seekPos_.value());
+        });
+        seekPos_.reset();
+    }
     auto nowState = state();
     if (nowState == IOState::Error) {
         worker_.pause();
@@ -108,10 +117,6 @@ void Reader::process() {
     file_.withReadLock([&](auto& file){
         if (!file) {
             return;
-        }
-        if (seekPos_.has_value()) {
-            file->seek(seekPos_.value());
-            seekPos_.reset();
         }
 
         data.offset = file->tell();

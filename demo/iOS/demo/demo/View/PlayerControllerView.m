@@ -158,6 +158,7 @@
         _progressView.minimumTrackTintColor = [[UIColor alloc] initWithRed:26.0f / 255.0f  green:109.0f / 255.0f  blue:1.f alpha:1.f];
         _progressView.maximumTrackTintColor = [[UIColor alloc] initWithRed:172.0f / 255.0f  green:32.0f / 255.0f blue:219.0f / 255.0f alpha:1.f];
         [_progressView addTarget:self action:@selector(progressChanged) forControlEvents:UIControlEventValueChanged];
+        [_progressView addTarget:self action:@selector(seekDone) forControlEvents:UIControlEventTouchUpInside];
         _progressView.layer.cornerRadius = 10;
         _progressView.layer.masksToBounds = YES;
         UIImage* image = [self imageWithSize:CGSizeMake(12.0, 12.0) color:[[UIColor alloc] initWithRed:200.0f / 255.0f  green:50.0f / 255.0f blue:219.0f / 255.0f alpha:1.f] cornerRadius:60.0];
@@ -217,6 +218,10 @@
 - (void)progressChanged {
     self.currentTimeLabel.text = [self timeString:self.progressView.value];
     !self.onSeekClick ?: self.onSeekClick(self.progressView.value);
+}
+
+- (void)seekDone {
+    !self.onSeekDone ?: self.onSeekDone();
 }
 
 - (void)playClick {

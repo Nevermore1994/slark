@@ -37,7 +37,7 @@ public:
 
     virtual void close() noexcept;
 
-    void seek(int64_t offset) noexcept;
+    virtual void seek(int64_t offset) noexcept;
 
     [[nodiscard]] int64_t tell() const noexcept;
 
@@ -107,6 +107,8 @@ public:
     ~ReadFile() override;
 
     std::expected<Data, bool> read(uint32_t size) noexcept;
+    
+    void seek(int64_t offset) noexcept override;
 
     std::expected<uint8_t, bool> readByte() noexcept;
 
