@@ -120,7 +120,7 @@ public:
 
     void addObserver(IPlayerObserverPtr observer) noexcept;
     
-    void removeObserver(const IPlayerObserverPtr& observer) noexcept;
+    void removeObserver() noexcept;
 
 public:
     PlayerParams peek() noexcept;

@@ -64,6 +64,7 @@ using namespace slark;
           break;
     }
     [self setupAudioSession];
+    LogI("audio viewDidAppear");
 }
 
 - (void)requestAccess:(void(^)(BOOL)) block {
@@ -104,6 +105,7 @@ using namespace slark;
     NSBundle *resouceBundle = [NSBundle bundleWithPath:bundlePath];
     auto path = [resouceBundle pathForResource:@"sample-3s.wav" ofType:@""];
     self.player = [[Player alloc] init:path];
+    self.player.delegate = self;
     self.hasAuthorization = NO;
 }
 
@@ -154,6 +156,8 @@ using namespace slark;
 - (void)notifyState:(NSString *)playerId state:(PlayerState)state {
     if (state == PlayerState::PlayerStateReady) {
         [self.controllerView updateTotalTime:CMTimeGetSeconds(self.player.totalDuration)];
+    } else if (state == PlayerState::PlayerStateCompleted) {
+        [self.controllerView setIsPause:YES];
     }
 }
 

@@ -47,7 +47,7 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
     uint64_t dataSize = 0;
     double duration = 0.0;
     auto completion = [&]() {
-        totalDuration_ = CTime(duration);
+        totalDuration_ = CTime(duration / 1000.0);
         audioInfo_ = std::make_unique<Audio::AudioInfo>();
         audioInfo_->channels = channels;
         audioInfo_->sampleRate = sampleRate;
@@ -197,37 +197,47 @@ void WAVDemuxer::close() noexcept {
     reset();
 }
 
-uint64_t WAVDemuxer::getSeekToPos(CTime time) {
+uint64_t WAVDemuxer::getSeekToPos(Time::TimePoint time) {
     if (!isInited_) {
         return 0;
     }
     return static_cast<uint64_t>(static_cast<long double>(audioInfo_->bitrate() / 8)  * time.second()); //byte
 }
 
-DemuxerResult WAVDemuxer::parseData(std::unique_ptr<Data> data) {
+DemuxerResult WAVDemuxer::parseData(std::unique_ptr<Data> data, int64_t offset) {
     if (data->empty() || !isInited_) {
         return {DemuxerResultCode::Failed, AVFrameArray(), AVFrameArray()};
+    } else if (seekPos_.has_value()) {
+        if (offset != seekPos_.value()) {
+            //discard
+            return {DemuxerResultCode::Normal, AVFrameArray(), AVFrameArray()};
+        } else {
+            seekPos_.reset();
+        }
     }
 
     if (overflowData_ == nullptr) {
         overflowData_ = std::make_unique<Data>();
-        parsedLength_ += headerInfo_->headerLength;
+        receivedLength_ += headerInfo_->headerLength;
     }
-    parsedLength_ += data->length;
+    receivedLength_ += data->length;
     overflowData_->append(std::move(data));
     //frame include 1024 sample
     constexpr uint16_t sampleCount = 1024;
     uint64_t frameLength = audioInfo_->bitsPerSample * audioInfo_->channels * sampleCount / 8;
     AVFrameArray frameList;
     uint64_t start = 0;
-    auto isCompleted = parsedLength_ >= headerInfo_->dataSize;
+    auto isCompleted = receivedLength_ >= headerInfo_->dataSize;
     SAssert(audioInfo_->sampleRate != 0, "wav demuxer sample rate is invalid.");
+    auto scale = static_cast<double>(audioInfo_->bitrate()) / 8;
     while (overflowData_->length - start + 1 >= frameLength) {
         auto frame = std::make_unique<AVFrame>();
         frame->data = overflowData_->copy(start, static_cast<int64_t>(frameLength));
         frame->duration = static_cast<uint32_t>(static_cast<double>(sampleCount) /
                                                 static_cast<double>(audioInfo_->sampleRate) * 1000);
-        frame->index = ++parseFrameCount_;
+        frame->pts = static_cast<double>(prasedLength_) / scale * 1000000;
+        frame->index = ++parsedFrameCount_;
+        
         frame->info = std::make_any<AudioFrameInfo>();
         auto& frameInfo = std::any_cast<AudioFrameInfo&>(frame->info);
         frameInfo.bitsPerSample = audioInfo_->bitsPerSample;
@@ -236,6 +246,7 @@ DemuxerResult WAVDemuxer::parseData(std::unique_ptr<Data> data) {
         frameList.push_back(std::move(frame));
 
         start += frameLength;
+        prasedLength_ += frameLength;
     }
     DemuxerResultCode code = DemuxerResultCode::Normal;
     auto remainLen = static_cast<int64_t>(overflowData_->length - start);
@@ -246,15 +257,17 @@ DemuxerResult WAVDemuxer::parseData(std::unique_ptr<Data> data) {
     } else if (isCompleted) {
         auto frame = std::make_unique<AVFrame>();
         frame->data = overflowData_->copy(start, remainLen);
-        auto scale = static_cast<double>(audioInfo_->sampleRate * audioInfo_->bitsPerSample * audioInfo_->channels);
         frame->duration = static_cast<uint32_t>(static_cast<double>(frame->data->length) / scale * 1000);
-        frame->index = ++parseFrameCount_;
+        frame->pts = ceil(static_cast<double>(prasedLength_) / scale * 1000000);
+        frame->index = ++parsedFrameCount_;
+        prasedLength_ += frame->data->length;
         frameList.push_back(std::move(frame));
 
         LogI("file read completed.");
         code = DemuxerResultCode::FileEnd;
+        
     }
-    LogI("demux data {}, overflow data {}, frame count {}", parsedLength_, overflowData_->length, parseFrameCount_);
+    //LogI("demux data {}, overflow data {}, frame count {}", receivedLength_, overflowData_->length, parsedFrameCount_);
     return {code, std::move(frameList), AVFrameArray()};
 }
 

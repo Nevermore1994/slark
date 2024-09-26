@@ -198,7 +198,7 @@
         _currentTimeLabel.text = [self timeString:0];
         _currentTimeLabel.textAlignment = NSTextAlignmentCenter;
         _currentTimeLabel.font = [UIFont systemFontOfSize:12];
-        _currentTimeLabel.textColor = [UIColor blackColor];
+        _currentTimeLabel.textColor = [UIColor whiteColor];
     }
     return _currentTimeLabel;
 }
@@ -209,7 +209,7 @@
         _totalTimeLabel.text = [self timeString:0];
         _totalTimeLabel.textAlignment = NSTextAlignmentCenter;
         _totalTimeLabel.font = [UIFont systemFontOfSize:12];
-        _totalTimeLabel.textColor = [UIColor blackColor];
+        _totalTimeLabel.textColor = [UIColor whiteColor];
     }
     return _totalTimeLabel;
 }

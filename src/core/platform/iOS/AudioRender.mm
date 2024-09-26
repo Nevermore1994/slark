@@ -198,40 +198,37 @@ bool AudioRender::setupAudioComponent() noexcept {
        .componentFlags = 0,
        .componentFlagsMask = 0,
     };
-
-   auto volumeComponent = AudioComponentFindNext(nullptr, &volumeAudioDesc);
-   if (!volumeComponent || !checkOSStatus(AudioComponentInstanceNew(volumeComponent, &volumeUnit_), "create volume unit error")) {
-       return false;
-   }
+    
+    auto volumeComponent = AudioComponentFindNext(nullptr, &volumeAudioDesc);
+    if (!volumeComponent || !checkOSStatus(AudioComponentInstanceNew(volumeComponent, &volumeUnit_), "create volume unit error")) {
+        return false;
+    }
        
-   AudioComponentDescription renderDesc = {
+    AudioComponentDescription renderDesc = {
        .componentType = kAudioUnitType_Output,
        .componentSubType = kAudioUnitSubType_RemoteIO,
        .componentManufacturer = kAudioUnitManufacturer_Apple,
        .componentFlags = 0,
        .componentFlagsMask = 0,
-   };
+    };
 
-   auto renderComponent = AudioComponentFindNext(nullptr, &renderDesc);
-   if (!renderComponent || !checkOSStatus(AudioComponentInstanceNew(renderComponent, &renderUnit_), "create render component error")) {
+    auto renderComponent = AudioComponentFindNext(nullptr, &renderDesc);
+    if (!renderComponent || !checkOSStatus(AudioComponentInstanceNew(renderComponent, &renderUnit_), "create render component error")) {
        return false;
-   }
-       
-   auto format = convertInfo2Description(*audioInfo_);
+    }
+    auto format = convertInfo2Description(*audioInfo_);
        
    // Set the format on the output scope of the input element/bus. not necessary
     if (!checkOSStatus(AudioUnitSetProperty(renderUnit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, kAudioUnitInputBus, &format, sizeof(format)),
                   "set render unit input format error")) {
-       return false;
-   }
-
-   // Set the format on the input scope of the output element/bus.
-   if (!checkOSStatus(AudioUnitSetProperty(renderUnit_, kAudioUnitProperty_StreamFormat,
+        return false;
+    }
+    // Set the format on the input scope of the output element/bus.
+    if (!checkOSStatus(AudioUnitSetProperty(renderUnit_, kAudioUnitProperty_StreamFormat,
                                        kAudioUnitScope_Input, kAudioUnitOutputBus, &format, sizeof(format)),
                   "set Property_StreamFormat on outputbus : input scope")) {
        return false;
-   }
-
+    }
     AudioUnitConnection connection;
     connection.sourceAudioUnit = volumeUnit_;
     connection.sourceOutputNumber = kAudioUnitOutputBus;
@@ -239,18 +236,15 @@ bool AudioRender::setupAudioComponent() noexcept {
     if (!checkOSStatus(AudioUnitSetProperty(renderUnit_, kAudioUnitProperty_MakeConnection, kAudioUnitScope_Input, kAudioUnitOutputBus, &connection, sizeof(connection)), "volume unit connect render unit error")) {
         return false;
     }
-
     if (!checkOSStatus(AudioUnitSetProperty(volumeUnit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, kAudioUnitOutputBus, &format, sizeof(format)), "set volume input format fail")) {
         return false;
     }
-       
-   AURenderCallbackStruct callback;
-   callback.inputProc = AudioRenderCallback;
-   callback.inputProcRefCon = this;
+    AURenderCallbackStruct callback;
+    callback.inputProc = AudioRenderCallback;
+    callback.inputProcRefCon = this;
     if (!checkOSStatus(AudioUnitSetProperty(volumeUnit_, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, VOLUME_UNIT_INPUT_BUS0, &callback, sizeof(AURenderCallbackStruct)), "add data callback fail")) {
         return false;
     }
-       
     if (!checkOSStatus(AudioUnitSetProperty(volumeUnit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, VOLUME_UNIT_INPUT_BUS0, &format, sizeof(format)), "set input format error")) {
         return false;
     }

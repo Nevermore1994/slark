@@ -5,7 +5,7 @@
 //
 #pragma once
 #include <chrono>
-#include <mutex>
+#include <shared_mutex>
 #include "Time.hpp"
 
 namespace slark {
@@ -25,9 +25,10 @@ public:
     void reset();
 private:
     bool isPause_ = true;
-    std::mutex mutex_;
-    Time::TimePoint start_ = 0;
-    Time::TimePoint totalTime_ = 0;
+    std::shared_mutex mutex_;
+    double speed = 1.0;
+    Time::TimePoint lastUpdated_ = 0;
+    Time::TimePoint pts_ = 0;
 };
 
 }

@@ -97,8 +97,8 @@ void Player::addObserver(IPlayerObserverPtr observer) noexcept {
     pimpl_->addObserver(std::move(observer));
 }
 
-void Player::removeObserver(const IPlayerObserverPtr& observer) noexcept {
-    pimpl_->removeObserver(observer);
+void Player::removeObserver() noexcept {
+    pimpl_->removeObserver();
 }
 
 long double Player::currentPlayedTime() noexcept {

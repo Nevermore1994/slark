@@ -3,46 +3,46 @@
 // slark Clock
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
+#include <mutex>
 #include "Clock.h"
 #include "Time.hpp"
-#include <mutex>
+#include "Log.hpp"
 
 namespace slark {
 
 void Clock::setTime(Time::TimePoint count) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    totalTime_ = count;
-    start_ = Time::nowTimeStamp() - count;
+    std::lock_guard<std::shared_mutex> lock(mutex_);
+    pts_ = count;
+    lastUpdated_ = Time::nowTimeStamp();
 }
 
 Time::TimePoint Clock::time() {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::shared_lock<std::shared_mutex> lock(mutex_);
     if (isPause_) {
-        return totalTime_;
+        return pts_;
     }
-    return Time::nowTimeStamp() - start_;
+    auto elapseTime = Time::nowTimeStamp() - lastUpdated_;
+    Time::TimePoint adjustTime =  static_cast<uint64_t>(static_cast<double>(elapseTime.count) * (1.0 - speed));
+    return elapseTime + pts_ - adjustTime;
 }
 
 void Clock::start() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (isPause_) {
-        start_ = Time::nowTimeStamp() - totalTime_;
-    } else {
-        start_ = Time::nowTimeStamp();
-    }
+    std::lock_guard<std::shared_mutex> lock(mutex_);
+    pts_ = 0;
+    speed = 1.0;
     isPause_ = false;
+    lastUpdated_ = Time::nowTimeStamp();
 }
 
 void Clock::pause() {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::shared_mutex> lock(mutex_);
     isPause_ = true;
-    totalTime_ = Time::nowTimeStamp() - start_;
 }
 
 void Clock::reset() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    start_ = 0;
-    totalTime_ = 0;
+    std::lock_guard<std::shared_mutex> lock(mutex_);
+    pts_ = 0;
+    speed = 1.0;
     isPause_ = true;
 }
 

@@ -17,6 +17,7 @@ AudioRenderComponent::AudioRenderComponent(std::shared_ptr<AudioInfo> info)
 }
 
 void AudioRenderComponent::init() noexcept {
+    clock.reset();
     pimpl_.reset();
     pimpl_ = createAudioRender(audioInfo_);
     pimpl_->requestAudioData = [this](uint8_t* data, uint32_t size) {
@@ -32,11 +33,9 @@ void AudioRenderComponent::init() noexcept {
             if (tSize < size && pullAudioData) {
                 tSize += pullAudioData(data + tSize, size - tSize);
             }
-            if (renderCompletion) {
-                renderCompletion(audioInfo_->dataLen2Duration(renderedDataLength_));
-            }
             renderedDataLength_ += tSize;
         });
+        clock.setTime(audioInfo_->dataLen2TimePoint(renderedDataLength_));
         LogI("request audio size:{}, render size:{}", size, tSize);
         return tSize;
     };
@@ -77,6 +76,7 @@ std::shared_ptr<AudioInfo> AudioRenderComponent::audioInfo() const noexcept {
 void AudioRenderComponent::play() noexcept {
     if (pimpl_) {
         pimpl_->play();
+        clock.start();
     } else {
         LogE("audio render is nullptr.");
     }
@@ -85,6 +85,7 @@ void AudioRenderComponent::play() noexcept {
 void AudioRenderComponent::pause() noexcept {
     if (pimpl_) {
         pimpl_->pause();
+        clock.pause();
     } else {
         LogE("audio render is nullptr.");
     }
@@ -93,6 +94,7 @@ void AudioRenderComponent::pause() noexcept {
 void AudioRenderComponent::stop() noexcept {
     if (pimpl_) {
         pimpl_->stop();
+        clock.reset();
     } else {
         LogE("audio render is nullptr.");
     }
@@ -114,11 +116,14 @@ void AudioRenderComponent::flush() noexcept {
     }
 }
 
-void AudioRenderComponent::seekToPos(uint64_t pos) noexcept {
-    frames_.withWriteLock([this, pos](auto&) {
-        renderedDataLength_ = pos;
-        LogI("audio render seek to pos:{}", pos);
+void AudioRenderComponent::seek(Time::TimePoint time) noexcept {
+    frames_.withWriteLock([this, time](auto& frames) {
+        frames.clear();
+        audioBuffer_.reset();
+        renderedDataLength_ = audioInfo_->timePoint2DataLen(time);
+        LogI("audio render seek to pos:{}", renderedDataLength_);
     });
+    clock.setTime(time);
 }
 
 }

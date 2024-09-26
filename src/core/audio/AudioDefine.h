@@ -34,8 +34,16 @@ struct AudioInfo {
         return sampleRate * channels * bitsPerSample;
     }
     
-    CTime dataLen2Duration(uint32_t dataLen) const {
-        return CTime(static_cast<int64_t>(dataLen) * 8, bitrate());
+    uint64_t bytePerSecond() const {
+        return sampleRate * channels * bitsPerSample / 8;
+    }
+    
+    Time::TimePoint dataLen2TimePoint(uint64_t dataLen) const {
+        return static_cast<uint64_t>(static_cast<long double>(dataLen) / static_cast<long double>(bytePerSecond()) * 1000000);
+    }
+     
+    uint64_t timePoint2DataLen(Time::TimePoint point) const {
+        return static_cast<uint64_t>(point.second() * bytePerSecond());
     }
 };
 
