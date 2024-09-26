@@ -62,9 +62,9 @@ void Player::Impl::init() noexcept {
     receiver_ = std::move(rp);
 
     ownerThread_ = std::make_unique<Thread>("playerThread", &Player::Impl::process, this);
-    ownerThread_->runLoop(500ms, [this](){
+    ownerThread_->runLoop(200ms, [this](){
         if (state() == PlayerState::Playing) {
-            notifyTime(); //0.5s notify observer
+            notifyTime(); 
         }
     });
     ///set file path
@@ -501,7 +501,6 @@ long double Player::Impl::currentPlayedTime() noexcept {
     if (audioRender_) {
         currentTime = audioRender_->playedTime().second();
     }
-    LogI("currentPlayedTime:{}", currentTime);
     return currentTime;
 }
 

@@ -78,22 +78,22 @@
     }];
     [self.nextButton mas_makeConstraints:^(MASConstraintMaker *make) {
         make.height.width.mas_equalTo(48);
-        make.left.mas_equalTo(self.playButton.mas_right).offset(15);
+        make.left.mas_equalTo(self.playButton.mas_right).offset(20);
         make.centerY.equalTo(self.playButton);
     }];
     [self.prevButton mas_makeConstraints:^(MASConstraintMaker *make) {
         make.height.width.mas_equalTo(48);
-        make.right.mas_equalTo(self.playButton.mas_left).offset(-15);
+        make.right.mas_equalTo(self.playButton.mas_left).offset(-20);
         make.centerY.equalTo(self.playButton);
     }];
     [self.loopButton mas_makeConstraints:^(MASConstraintMaker *make) {
         make.height.width.mas_equalTo(30);
-        make.left.mas_equalTo(self.nextButton.mas_right).offset(15);
+        make.right.mas_equalTo(self.totalTimeLabel.mas_left).offset(-10);
         make.centerY.equalTo(self.playButton);
     }];
     [self.volumeButton mas_makeConstraints:^(MASConstraintMaker *make) {
         make.height.width.mas_equalTo(30);
-        make.right.mas_equalTo(self.prevButton.mas_left).offset(-15);
+        make.left.mas_equalTo(self.currentTimeLabel.mas_right).offset(10);
         make.centerY.equalTo(self.playButton);
     }];
     self.isPause = YES;
@@ -284,7 +284,7 @@
     int hour = time / 3600.0;
     time -= hour * 3600.0;
     int mi = time / 60.0;
-    int seconds = ceil(time - (mi * 60.0f));
+    int seconds = round(time - (mi * 60.0f));
     if (hour > 0)
         return [NSString stringWithFormat:@"%02d:%02d:%02d", hour, mi, seconds];
     return [NSString stringWithFormat:@"%02d:%02d", mi, seconds];
