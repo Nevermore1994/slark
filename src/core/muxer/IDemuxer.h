@@ -62,8 +62,9 @@ public:
     virtual void reset() noexcept {
         isInited_ = false;
         isCompleted_ = false;
-        parsedLength_ = 0;
-        parseFrameCount_ = 0;
+        receivedLength_ = 0;
+        prasedLength_ = 0;
+        parsedFrameCount_ = 0;
         totalDuration_ = CTime(0);
         seekPos_.reset();
         overflowData_.reset();
@@ -71,15 +72,16 @@ public:
         audioInfo_.reset();
     }
     
-    virtual void setSeekPos(uint64_t pos) noexcept {
-        seekPos_ = pos;
+    virtual void seekPos(uint64_t pos) noexcept {
         overflowData_.reset();
-        parsedLength_ = pos;
+        receivedLength_ = pos;
+        prasedLength_ = pos;
+        seekPos_ = pos;
     }
 
-    virtual DemuxerResult parseData(std::unique_ptr<Data> data) = 0;
+    virtual DemuxerResult parseData(std::unique_ptr<Data> data, int64_t offset) = 0;
     
-    [[nodiscard]] virtual uint64_t getSeekToPos(CTime) = 0;
+    [[nodiscard]] virtual uint64_t getSeekToPos(Time::TimePoint) = 0;
 
     [[nodiscard]] bool isInited() const noexcept {
         return isInited_;
@@ -133,8 +135,9 @@ public:
 protected:
     bool isInited_ = false;
     bool isCompleted_ = false;
-    uint32_t parseFrameCount_ = 0;
-    uint64_t parsedLength_ = 0;
+    uint32_t parsedFrameCount_ = 0;
+    uint64_t receivedLength_ = 0;
+    uint64_t prasedLength_ = 0;
     std::optional<uint64_t> seekPos_;
     CTime totalDuration_{0};
     DataPtr overflowData_;

@@ -25,16 +25,7 @@ namespace slark {
 
 struct PlayerSeekRequest {
     bool isAccurate = false;
-    CTime seekTime{0}; //seconds
-    uint64_t seekPos = 0;
-};
-
-struct PlayedTime {
-    CTime audioPlayedTime{0};
-    CTime videoPlayedTime{0};
-    CTime time() const {
-        return std::min(audioPlayedTime, videoPlayedTime);
-    }
+    Time::TimePoint seekTime{0};
 };
 
 class Player::Impl {
@@ -58,7 +49,7 @@ public:
     
     void addObserver(IPlayerObserverPtr observer) noexcept;
     
-    void removeObserver(IPlayerObserverPtr observer) noexcept;
+    void removeObserver() noexcept;
 public:
     [[nodiscard]] inline const PlayerInfo& info() const noexcept {
         return info_;
@@ -97,13 +88,13 @@ private:
     
     void setState(PlayerState state) noexcept;
 
-    bool createDemuxer(DataPtr& data) noexcept;
+    bool createDemuxer(IOData& data) noexcept;
 
     std::unique_ptr<DecoderComponent> createDecoderComponent(std::string_view mediaInfo, bool isAudio) noexcept;
 
     void pushAudioFrameDecode() noexcept;
 
-    void decodeVideo() noexcept;
+    void pushVideoFrameDecode() noexcept;
     
     void doPlay() noexcept;
     
@@ -129,7 +120,7 @@ private:
     
     //IO
     std::unique_ptr<Reader> readHandler_ = nullptr;
-    Synchronized<std::vector<DataPtr>> dataList_;
+    Synchronized<std::vector<IOData>> dataList_;
     DataPtr demuxData_;
     
     //demux
@@ -145,8 +136,6 @@ private:
     
     //render
     std::unique_ptr<Audio::AudioRenderComponent> audioRender_ = nullptr;
-    
-    Synchronized<PlayedTime, std::shared_mutex> playedTime;
 };
 
 }

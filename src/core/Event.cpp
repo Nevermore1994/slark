@@ -41,12 +41,9 @@ std::string_view EventTypeToString(EventType type) {
         ENUM_TO_STRING_CASE(EventType::Play);
         ENUM_TO_STRING_CASE(EventType::Pause);
         ENUM_TO_STRING_CASE(EventType::Stop);
-        ENUM_TO_STRING_CASE(EventType::ReadCompleted);
         ENUM_TO_STRING_CASE(EventType::ReadError);
-        ENUM_TO_STRING_CASE(EventType::DemuxCompleted);
         ENUM_TO_STRING_CASE(EventType::DemuxError);
         ENUM_TO_STRING_CASE(EventType::DecodeError);
-        ENUM_TO_STRING_CASE(EventType::RenderFrameCompleted);
         ENUM_TO_STRING_CASE(EventType::RenderError);
         default:
             return "Unknown";

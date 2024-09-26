@@ -103,8 +103,8 @@ void Reader::process() {
         LogI("read data completed.");
         return;
     }
-    Data data(setting_.readBlockSize);
-    int64_t offset = 0;
+
+    IOData data(setting_.readBlockSize);
     file_.withReadLock([&](auto& file){
         if (!file) {
             return;
@@ -114,12 +114,12 @@ void Reader::process() {
             seekPos_.reset();
         }
 
-        offset = file->tell();
-        file->read(data);
+        data.offset = file->tell();
+        file->read(*data.data);
     });
 
     if (setting_.callBack) {
-        setting_.callBack(data.detachData(), offset, state());
+        setting_.callBack(std::move(data), state());
     }
 }
 

@@ -15,7 +15,29 @@
 namespace slark {
 
 constexpr uint64_t kReadDefaultSize = 1024 * 4;
-using ReaderDataFunc = std::function<void(DataPtr, int64_t, IOState)>;
+
+struct IOData {
+    DataPtr data = nullptr;
+    int64_t offset = 0;
+    
+    IOData() = default;
+    IOData(uint64_t size)
+        : data(std::make_unique<Data>(size)) {
+        
+    }
+    IOData(IOData&& d)
+        : data(std::move(d.data))
+        , offset(d.offset) {
+        
+    }
+    
+    IOData& operator=(IOData&& d) {
+        data = std::move(d.data);
+        offset = d.offset;
+    }
+};
+
+using ReaderDataFunc = std::function<void(IOData, IOState)>;
 
 struct ReaderSetting {
     uint64_t readBlockSize = kReadDefaultSize;

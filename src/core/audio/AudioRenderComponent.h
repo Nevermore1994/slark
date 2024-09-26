@@ -13,6 +13,7 @@
 #include "Synchronized.hpp"
 #include "RingBuffer.hpp"
 #include "Time.hpp"
+#include "Clock.h"
 
 #ifdef SLARK_IOS
 #include "AudioRender.h"
@@ -39,8 +40,12 @@ public:
     void stop() noexcept;
     void setVolume(float volume) noexcept;
     void flush() noexcept;
-    void seekToPos(uint64_t pos) noexcept;
+    void seek(Time::TimePoint pos) noexcept;
 
+    Time::TimePoint playedTime() {
+        return clock.time();
+    }
+    
     bool isFull() noexcept {
         bool isFull = false;
         frames_.withReadLock([&](auto&){
@@ -59,10 +64,10 @@ public:
 private:
     void init() noexcept;
 public:
-    std::function<void(CTime)> renderCompletion;
     std::function<uint32_t(uint8_t*, uint32_t)> pullAudioData;
 private:
     uint64_t renderedDataLength_ = 0;
+    Clock clock;
     std::shared_ptr<AudioInfo> audioInfo_;
     RingBuffer<uint8_t, kDefaultAudioBufferSize> audioBuffer_;
     Synchronized<std::deque<AVFrameRefPtr>, std::shared_mutex> frames_;

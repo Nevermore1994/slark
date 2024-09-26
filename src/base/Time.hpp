@@ -29,15 +29,14 @@ struct Time {
         constexpr TimePoint(uint64_t t)
             : count(t) {
         }
-
-        constexpr TimePoint(std::chrono::milliseconds ms)
-            : count(static_cast<uint64_t>(ms.count() * 1000)) {
+        
+        constexpr TimePoint(std::chrono::microseconds micros)
+            : count(static_cast<uint64_t>(micros.count())) {
 
         }
 #pragma clang diagnostic pop
-        [[nodiscard]] std::chrono::microseconds toMicroSeconds() const noexcept;
         [[nodiscard]] std::chrono::milliseconds toMilliSeconds() const noexcept;
-        [[nodiscard]] std::chrono::seconds toSeconds() const noexcept;
+        [[nodiscard]] double second() const noexcept;
         TimePoint operator+(std::chrono::milliseconds delta) const noexcept;
         TimePoint& operator+=(std::chrono::milliseconds delta) noexcept;
         TimePoint operator-(std::chrono::milliseconds delta) const noexcept;
