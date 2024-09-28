@@ -318,6 +318,18 @@ void Player::Impl::doSeek() noexcept {
     setState(PlayerState::Ready);
 }
 
+void Player::Impl::doLoop() noexcept {
+    if (!demuxer_) {
+        return;
+    }
+    isReadCompleted_ = false;
+    auto seekPos = demuxer_->getSeekToPos(0);
+    readHandler_->seek(seekPos);
+    readHandler_->resume();
+    demuxer_->seekPos(seekPos);
+    audioRender_->seek(0);
+}
+
 void Player::Impl::setState(PlayerState state) noexcept {
     bool isChanged = false;
     state_.withWriteLock([state, &isChanged](auto& nowState){
@@ -415,15 +427,15 @@ void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
     }
     auto nowTime = currentPlayedTime();
     if (isReadCompleted_ && isgreaterequal(nowTime, info_.duration) && !seekRequest_.has_value()) {
+        notifyTime(); //notify time to end
+        LogI("play end.");
         bool isLoop;
         params_.withReadLock([&isLoop](auto& p){
             isLoop = p->setting.isLoop;
         });
-        if (isLoop) {
-            seekRequest_->seekTime = 0;
-        } else {
+        doLoop();
+        if (!isLoop){
             changeState = PlayerState::Completed;
-            notifyTime();
         }
     }
     if (changeState != PlayerState::Unknown) {

@@ -103,6 +103,8 @@ private:
     void doStop() noexcept;
     
     void doSeek() noexcept;
+    
+    void doLoop() noexcept;
 private:
     std::atomic_bool isReadCompleted_ = false;
     std::atomic_bool isRenderCompleted_ = false;

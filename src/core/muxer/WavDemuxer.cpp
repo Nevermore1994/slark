@@ -34,7 +34,7 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
     if (probeData.compare(0, 4, "RIFF") || probeData.compare(8, 4, "WAVE")) {
         return res;
     }
-    auto totalSize = uint32LE(&probeData[4]);
+    auto totalSize = uint32LE(probeData.substr(4));
     auto offset = 12ull;
     auto remainSize = totalSize;
     WaveFormat format = WaveFormat::PCM;
@@ -67,7 +67,7 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
         remainSize -= 8;
         offset += 8;
 
-        uint32_t chunkSize = uint32LE(&chunkHeader[4]);
+        uint32_t chunkSize = uint32LE(chunkHeader.substr(4));
 
         if (chunkSize > remainSize) {
             return res;
@@ -83,7 +83,7 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
                 return res;
             }
 
-            format = static_cast<WaveFormat>(uint16LE(&formatSpecData[0]));
+            format = static_cast<WaveFormat>(uint16LE(formatSpecData));
             if (format != WaveFormat::PCM && format != WaveFormat::ALAW && format != WaveFormat::MULAW &&
                 format != WaveFormat::MSGSM && format != WaveFormat::EXTENSIBLE) {
                 return res;
@@ -99,7 +99,7 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
                 return res;
             }
 
-            channels = uint16LE(&formatSpec[2]);
+            channels = uint16LE(formatSpec.substr(2));
             if (channels < 1 || channels > 8) {
                 return res;
             }
@@ -109,13 +109,13 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
                 }
             }
 
-            sampleRate = uint32LE(&formatSpec[4]);
+            sampleRate = uint32LE(formatSpec.substr(4));
 
             if (sampleRate == 0) {
                 return res;
             }
 
-            bitsPerSample = uint16LE(&formatSpec[14]);
+            bitsPerSample = uint16LE(formatSpec.substr(14));
 
             if (format == WaveFormat::PCM || format == WaveFormat::EXTENSIBLE) {
                 if (bitsPerSample != 8 && bitsPerSample != 16 && bitsPerSample != 24 && bitsPerSample != 32) {
@@ -127,7 +127,7 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
                 //WaveFormat::MULAW WaveFormat::ALAW
                 return res;
             } else if (format == WaveFormat::EXTENSIBLE) {
-                auto validBitsPerSample = uint16LE(&formatSpec[18]);
+                auto validBitsPerSample = uint16LE(formatSpec.substr(18));
                 if (validBitsPerSample != bitsPerSample) {
                     if (validBitsPerSample != 0) {
                         LogE("validBits(%d) != bitsPerSample(%d) are not supported", validBitsPerSample, bitsPerSample);
@@ -139,7 +139,7 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
                     }
                 }
 
-                channelMask = uint32LE(&formatSpec[20]);
+                channelMask = uint32LE(formatSpec.substr(20));
                 LogI("numChannels=%d channelMask=0x%x", channels, channelMask);
                 if ((channelMask >> 18) != 0) {
                     LogE("invalid channel mask 0x%x", channelMask);
@@ -154,7 +154,7 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
 
                 // In a WAVE_EXT header, the first two bytes of the GUID stored at byte 24 contain
                 // the sample format, using the same definitions as a regular WAV header
-                auto extFormat = static_cast<WaveFormat>(uint16LE(&formatSpec[24]));
+                auto extFormat = static_cast<WaveFormat>(uint16LE(formatSpec.substr(24)));
                 if (extFormat != WaveFormat::PCM && extFormat != WaveFormat::ALAW && extFormat != WaveFormat::MULAW) {
                     return res;
                 }
