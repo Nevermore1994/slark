@@ -152,8 +152,14 @@ using namespace slark;
         };
         _controllerView.onSeekDone = ^{
             @strongify(self);
-            [self.controllerView setIsPause:NO];
+            if (!self.controllerView.isPause) {
+                [self.controllerView setIsPause:NO];
+            }
             LogI("seek done");
+        };
+        _controllerView.onSetLoopClick = ^(BOOL loop) {
+            @strongify(self);
+            [self.player setLoop:loop];
         };
     }
     return _controllerView;
