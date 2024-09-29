@@ -14,6 +14,7 @@
 #include "VideoInfo.h"
 #include "AudioDefine.h"
 #include "Reflection.hpp"
+#include "Buffer.hpp"
 
 namespace slark {
 
@@ -67,13 +68,13 @@ public:
         parsedFrameCount_ = 0;
         totalDuration_ = CTime(0);
         seekPos_.reset();
-        overflowData_.reset();
+        buffer_.reset();
         videoInfo_.reset();
         audioInfo_.reset();
     }
     
     virtual void seekPos(uint64_t pos) noexcept {
-        overflowData_.reset();
+        buffer_.reset();
         receivedLength_ = pos;
         prasedLength_ = pos;
         seekPos_ = pos;
@@ -140,7 +141,7 @@ protected:
     uint64_t prasedLength_ = 0;
     std::optional<int64_t> seekPos_;
     CTime totalDuration_{0};
-    DataPtr overflowData_;
+    Buffer buffer_;
     std::shared_ptr<VideoInfo> videoInfo_;
     std::shared_ptr<Audio::AudioInfo> audioInfo_;
     std::shared_ptr<DemuxerHeaderInfo> headerInfo_;
