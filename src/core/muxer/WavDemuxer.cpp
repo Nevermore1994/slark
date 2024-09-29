@@ -56,6 +56,7 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
         headerInfo_ = std::make_unique<DemuxerHeaderInfo>();
         headerInfo_->dataSize = totalSize;
         headerInfo_->headerLength = offset;
+        receivedLength_ += headerInfo_->headerLength;
         isInited_ = true;
     };
     while (remainSize >= 8) {
@@ -217,12 +218,8 @@ DemuxerResult WAVDemuxer::parseData(std::unique_ptr<Data> data, int64_t offset) 
         }
     }
 
-    if (overflowData_ == nullptr) {
-        overflowData_ = std::make_unique<Data>();
-        receivedLength_ += headerInfo_->headerLength;
-    }
     receivedLength_ += data->length;
-    overflowData_->append(std::move(data));
+    buffer_.append(std::move(data));
     //frame include 1024 sample
     constexpr uint16_t sampleCount = 1024;
     uint64_t frameLength = audioInfo_->bitsPerSample * audioInfo_->channels * sampleCount / 8;
@@ -231,9 +228,9 @@ DemuxerResult WAVDemuxer::parseData(std::unique_ptr<Data> data, int64_t offset) 
     auto isCompleted = receivedLength_ >= headerInfo_->dataSize;
     SAssert(audioInfo_->sampleRate != 0, "wav demuxer sample rate is invalid.");
     auto scale = static_cast<double>(audioInfo_->bitrate()) / 8;
-    while (overflowData_->length - start + 1 >= frameLength) {
+    while (buffer_.length() >= frameLength) {
         auto frame = std::make_unique<AVFrame>();
-        frame->data = overflowData_->copy(start, static_cast<int64_t>(frameLength));
+        frame->data = buffer_.readData(frameLength);
         frame->duration = static_cast<uint32_t>(static_cast<double>(sampleCount) /
                                                 static_cast<double>(audioInfo_->sampleRate) * 1000);
         frame->pts = static_cast<double>(prasedLength_) / scale * 1000000;
@@ -250,14 +247,9 @@ DemuxerResult WAVDemuxer::parseData(std::unique_ptr<Data> data, int64_t offset) 
         prasedLength_ += frameLength;
     }
     DemuxerResultCode code = DemuxerResultCode::Normal;
-    auto remainLen = static_cast<int64_t>(overflowData_->length - start);
-    if (start > 0 && !isCompleted) {
-        auto t = overflowData_->copy(start, remainLen);
-        LogI("packed data length: {}, overflow length: {}", start, t->length);
-        overflowData_ = std::move(t);
-    } else if (isCompleted) {
+    if (isCompleted) {
         auto frame = std::make_unique<AVFrame>();
-        frame->data = overflowData_->copy(start, remainLen);
+        frame->data = buffer_.readData(buffer_.length());
         frame->duration = static_cast<uint32_t>(static_cast<double>(frame->data->length) / scale * 1000);
         frame->pts = ceil(static_cast<double>(prasedLength_) / scale * 1000000);
         frame->index = ++parsedFrameCount_;
@@ -266,9 +258,11 @@ DemuxerResult WAVDemuxer::parseData(std::unique_ptr<Data> data, int64_t offset) 
 
         LogI("file read completed.");
         code = DemuxerResultCode::FileEnd;
-        
     }
-    //LogI("demux data {}, overflow data {}, frame count {}", receivedLength_, overflowData_->length, parsedFrameCount_);
+    if (!frameList.empty()) {
+        buffer_.shrink();
+    }
+    LogI("prasedLength {}, frame count {}", prasedLength_, parsedFrameCount_);
     return {code, std::move(frameList), AVFrameArray()};
 }
 

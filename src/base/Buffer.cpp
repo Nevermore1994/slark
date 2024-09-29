@@ -113,8 +113,9 @@ DataPtr Buffer::readData(uint64_t size) noexcept {
     if (length() < size) {
         return nullptr;
     }
+    auto ptr = data_->copy(readPos_, static_cast<int64_t>(size));
     readPos_ += size;
-    return data_->copy(readPos_, static_cast<int64_t>(size));
+    return ptr;
 }
 
 void Buffer::shrink() noexcept {
