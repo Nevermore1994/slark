@@ -1,8 +1,10 @@
 //
-// Created by Nevermore on 2022/5/23.
-// slark WAVDemuxer
-// Copyright (c) 2022 Nevermore All rights reserved.
+//  Mp4Demuxer.hpp
+//  slark
 //
+//  Created by Nevermore
+//
+
 #pragma once
 
 #include "IDemuxer.h"
@@ -10,11 +12,11 @@
 
 namespace slark {
 
-class WAVDemuxer: public IDemuxer {
+class Mp4Demuxer: public IDemuxer {
 public:
-    WAVDemuxer();
+    Mp4Demuxer();
 
-    ~WAVDemuxer() override;
+    ~Mp4Demuxer() override = default;
 
     std::tuple<bool, uint64_t> open(std::string_view probeData) noexcept override;
 
@@ -26,9 +28,9 @@ public:
 
     inline static const DemuxerInfo& info() noexcept {
         static DemuxerInfo info = {
-            DemuxerType::WAV,
-            "WAVE",
-            BaseClass<WAVDemuxer>::registerClass(GetClassName(WAVDemuxer))
+            DemuxerType::MP4,
+            "ftyp",
+            BaseClass<Mp4Demuxer>::registerClass(GetClassName(Mp4Demuxer))
         };
         return info;
     }
@@ -36,8 +38,3 @@ public:
 };
 
 }
-
-
-
-
-

@@ -34,6 +34,7 @@ struct IOData {
     IOData& operator=(IOData&& d) {
         data = std::move(d.data);
         offset = d.offset;
+        return *this;
     }
 };
 
@@ -78,6 +79,10 @@ public:
     
     const ReaderSetting& readerSetting() noexcept {
         return setting_;
+    }
+     
+    [[nodiscard]] bool isRunning() noexcept {
+        return worker_.isRunning();
     }
 private:
     void process();

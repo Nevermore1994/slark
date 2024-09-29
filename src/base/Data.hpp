@@ -5,6 +5,7 @@
 //
 #pragma once
 
+#include <_types/_uint64_t.h>
 #include <cstdint>
 #include <memory>
 #include <algorithm>
@@ -47,13 +48,13 @@ struct Data {
         std::fill_n(rawData, size, 0);
     }
 
-    explicit Data(uint64_t size, const std::function<void(uint8_t*)>& func)
+    explicit Data(uint64_t size, const std::function<uint64_t(uint8_t*)>& func)
         : capacity(size)
         , length(0)
         , rawData(nullptr) {
         rawData = new uint8_t[size];
         if (func) {
-            func(rawData);
+            length = func(rawData);
         }
     }
 
@@ -203,7 +204,14 @@ struct Data {
     }
 
     inline void append(std::unique_ptr<Data> appendData) noexcept {
-        append(*appendData);
+        if (rawData == nullptr) {
+            rawData = appendData->rawData;
+            length = appendData->length;
+            capacity = appendData->capacity;
+            appendData->rawData = nullptr;
+        } else {
+            append(*appendData);
+        }
         appendData.reset();
     }
 

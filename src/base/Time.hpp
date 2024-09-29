@@ -34,6 +34,11 @@ struct Time {
             : count(static_cast<uint64_t>(micros.count())) {
 
         }
+
+        constexpr TimePoint(std::chrono::milliseconds ms)
+        : count(static_cast<uint64_t>(ms.count() * 1000)) {
+
+        }
 #pragma clang diagnostic pop
         [[nodiscard]] std::chrono::milliseconds toMilliSeconds() const noexcept;
         [[nodiscard]] long double second() const noexcept;

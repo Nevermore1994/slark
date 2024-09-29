@@ -31,13 +31,13 @@ public:
 
         size = std::min(size, Capacity - size_); // 确保不会超过可用空间
 
-        uint64_t firstPart = std::min(size, Capacity - writePos_);
+        auto firstPart = std::min(size, Capacity - writePos_);
         std::copy(data, data + firstPart, data_->data() + writePos_);
 
         writePos_ = (writePos_ + firstPart) % Capacity;
 
         if (size > firstPart) {
-            uint64_t secondPart = size - firstPart;
+            auto secondPart = size - firstPart;
             std::copy(data + firstPart, data + firstPart + secondPart, data_->data());
             writePos_ = secondPart;
         }

@@ -126,7 +126,7 @@ bool Player::Impl::createDemuxer(IOData& data) noexcept {
     if (auto [res, offset] = demuxer_->open(dataView); res) {
         auto p = demuxData_->rawData;
         data.data = std::make_unique<Data>(demuxData_->length - offset, p + offset);
-        data.offset = offset;
+        data.offset = static_cast<int64_t>(offset);
         demuxData_.reset();
         LogI("init demuxer success.");
         initPlayerInfo();
@@ -143,7 +143,7 @@ void Player::Impl::initPlayerInfo() noexcept {
     if (info_.hasAudio) {
         LogI("has audio, audio info:{}", demuxer_->audioInfo()->mediaInfo);
         do {
-            audioDecoder_ = createDecoderComponent(demuxer_->audioInfo()->mediaInfo, true);
+            audioDecoder_ = createAudioDecoderComponent(demuxer_->audioInfo()->mediaInfo);
             if (!audioDecoder_) {
                 LogI("create decoder error:{}", demuxer_->audioInfo()->mediaInfo);
                 break;
@@ -203,30 +203,34 @@ void Player::Impl::demuxData() noexcept {
     }
 }
 
-std::unique_ptr<DecoderComponent> Player::Impl::createDecoderComponent(std::string_view mediaInfo, bool isAudio) noexcept {
+std::unique_ptr<DecoderComponent> Player::Impl::createAudioDecoderComponent(std::string_view mediaInfo) noexcept {
     PlayerSetting setting;
     params_.withReadLock([&setting](auto& p){
         setting = p->setting;
     });
-    auto decodeType = DecoderManager::shareInstance().getDecoderType(mediaInfo, isAudio ? setting.enableAudioSoftDecode :setting.enableVideoSoftDecode);
+    auto decodeType = DecoderManager::shareInstance().getDecoderType(mediaInfo, setting.enableAudioSoftDecode);
     if (!DecoderManager::shareInstance().contains(decodeType)) {
         LogE("not found decoder:media info {}  type:{}", mediaInfo, static_cast<int32_t>(decodeType));
         return nullptr;
     }
-    auto& frames = isAudio ? audioFrames_ : videoFrames_;
-    auto decoder = std::make_unique<DecoderComponent>(decodeType, [&frames](auto frameArray) {
+    auto decoder = std::make_unique<DecoderComponent>(decodeType, [this](auto frameArray) {
         //LogI("receive frame size: {}", frameArray.size());
-        frames.withLock([&frameArray](auto& frames) {
+        audioFrames_.withLock([&frameArray](auto& frames) {
             std::ranges::for_each(frameArray, [&frames] (auto& frame) { frames.push_back(std::move(frame)); });
         });
     });
     return decoder;
 }
 
+std::unique_ptr<DecoderComponent> Player::Impl::createVideoDecoderComponent(std::string_view mediaInfo) noexcept {
+    return nullptr;
+}
+
 void Player::Impl::pushAudioFrameDecode() noexcept {
     if (!info_.hasAudio) {
         return;
     }
+    ///TODO: compare dts
     if (audioDecoder_ && audioDecoder_->isNeedPushFrame()) {
         if (!audioPackets_.empty()) {
             //LogI("push audio frame decode:{}", audioPackets_.front()->index);
@@ -269,6 +273,7 @@ void Player::Impl::process() noexcept {
         demuxData();
         pushAudioFrameDecode();
     }
+    
 }
 
 void Player::Impl::doPlay() noexcept {
@@ -441,6 +446,15 @@ void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
     if (changeState != PlayerState::Unknown) {
         setState(changeState);
     }
+}
+
+void Player::Impl::checkCacheStatus() noexcept {
+    double time = 0;
+    audioFrames_.withReadLock([](auto& frames) {
+        if (frames.empty()) {
+            return;
+        }
+    });
 }
 
 void Player::Impl::notifyEvent(PlayerEvent event, std::string value) noexcept {
