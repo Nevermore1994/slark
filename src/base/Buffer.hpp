@@ -45,6 +45,8 @@ public:
     }
     
     void shrink() noexcept;
+    
+    void reset() noexcept;
 private:
     DataPtr data_ = nullptr;
     uint64_t readPos_ = 0;
