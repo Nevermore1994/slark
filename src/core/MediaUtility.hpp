@@ -17,12 +17,4 @@ extern const std::string_view kHttpSymbol;
 
 bool isLocalFile(const std::string& path);
 
-uint16_t uint16LE(const uint8_t* ptr);
-
-uint32_t uint32LE(const uint8_t* ptr);
-
-uint16_t uint16LE(std::string_view view);
-
-uint32_t uint32LE(std::string_view view);
-
 }

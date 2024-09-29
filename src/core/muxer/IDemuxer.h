@@ -79,9 +79,9 @@ public:
         seekPos_ = pos;
     }
 
-    virtual DemuxerResult parseData(std::unique_ptr<Data> data, int64_t offset) = 0;
-    
-    [[nodiscard]] virtual uint64_t getSeekToPos(Time::TimePoint) = 0;
+    virtual DemuxerResult parseData(std::unique_ptr<Data> data, int64_t offset) noexcept = 0;
+     
+    [[nodiscard]] virtual uint64_t getSeekToPos(Time::TimePoint) noexcept = 0;
 
     [[nodiscard]] bool isInited() const noexcept {
         return isInited_;
@@ -138,7 +138,7 @@ protected:
     uint32_t parsedFrameCount_ = 0;
     uint64_t receivedLength_ = 0;
     uint64_t prasedLength_ = 0;
-    std::optional<uint64_t> seekPos_;
+    std::optional<int64_t> seekPos_;
     CTime totalDuration_{0};
     DataPtr overflowData_;
     std::shared_ptr<VideoInfo> videoInfo_;

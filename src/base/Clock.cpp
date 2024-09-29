@@ -14,6 +14,7 @@ void Clock::setTime(Time::TimePoint count) {
     std::lock_guard<std::shared_mutex> lock(mutex_);
     pts_ = count;
     lastUpdated_ = Time::nowTimeStamp();
+    isInited_ = true;
 }
 
 Time::TimePoint Clock::adjustSpeedTime(Time::TimePoint elapse) const {

@@ -11,16 +11,13 @@
 using namespace std::chrono;
 using namespace slark;
 
-class ClockTest : public ::testing::Test {
-protected:
+TEST(ClockTest, InitialState) {
     Clock clock;
-};
-
-TEST_F(ClockTest, InitialState) {
     EXPECT_EQ(clock.time(), 0);
 }
 
-TEST_F(ClockTest, SetTime) {
+TEST(ClockTest, SetTime) {
+    Clock clock;
     clock.setTime(milliseconds(5000));
     clock.start();
     std::this_thread::sleep_for(milliseconds(2000));
@@ -28,7 +25,8 @@ TEST_F(ClockTest, SetTime) {
     EXPECT_LE(clock.time().toMilliSeconds(), milliseconds(7500));
 }
 
-TEST_F(ClockTest, StartPauseReset) {
+TEST(ClockTest, StartPauseReset) {
+    Clock clock;
     clock.setTime(milliseconds(5000));
     clock.start();
     std::this_thread::sleep_for(milliseconds(2000));//7000
@@ -45,7 +43,8 @@ TEST_F(ClockTest, StartPauseReset) {
     EXPECT_EQ(clock.time(), 0);
 }
 
-TEST_F(ClockTest, MultiThreadedStartPause) {
+TEST(ClockTest, MultiThreadedStartPause) {
+    Clock clock;
     clock.start();
     std::thread pauseThread([&]() {
         std::this_thread::sleep_for(milliseconds(2000));
@@ -65,7 +64,8 @@ TEST_F(ClockTest, MultiThreadedStartPause) {
     EXPECT_GE(clock.time().toMilliSeconds(), milliseconds(990));
 }
 
-TEST_F(ClockTest, MultiThreadedReset) {
+TEST(ClockTest, MultiThreadedReset) {
+    Clock clock;
     clock.start();
     std::thread resetThread([&]() {
         std::this_thread::sleep_for(milliseconds(2000));

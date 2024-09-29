@@ -28,7 +28,7 @@ AVFrameArray RawDecoder::send(AVFrameArray frameList) {
     for (auto& frame : frameList) {
         frame->stats.decodedStamp = Time::nowTimeStamp();
     }
-    return std::move(frameList);
+    return frameList;
 }
 
 AVFrameArray RawDecoder::flush() noexcept {

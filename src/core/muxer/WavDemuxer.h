@@ -20,9 +20,9 @@ public:
 
     void close() noexcept override;
 
-    DemuxerResult parseData(std::unique_ptr<Data> data, int64_t offset) override;
+    DemuxerResult parseData(std::unique_ptr<Data> data, int64_t offset) noexcept override;
     
-    [[nodiscard]] uint64_t getSeekToPos(Time::TimePoint) override;
+    [[nodiscard]] uint64_t getSeekToPos(Time::TimePoint) noexcept override;
 
     inline static const DemuxerInfo& info() noexcept {
         static DemuxerInfo info = {

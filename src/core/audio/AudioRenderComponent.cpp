@@ -3,6 +3,7 @@
 // slark AudioRenderComponentImpl
 // Copyright (c) 2023 Nevermore All rights reserved.
 //
+
 #include <memory>
 #include <utility>
 #include "AudioRenderComponent.h"
@@ -25,7 +26,8 @@ void AudioRenderComponent::init() noexcept {
         frames_.withWriteLock([this, size, data, &tSize](auto& frames) {
             if (!audioBuffer_.isFull() && !frames.empty()) {
                 while (!frames.empty() && audioBuffer_.tail() >= frames.front()->data->length) {
-                    audioBuffer_.append(frames.front()->data->rawData, frames.front()->data->length);
+                    auto length = static_cast<uint32_t>(frames.front()->data->length);
+                    audioBuffer_.append(frames.front()->data->rawData, length);
                     frames.pop_front();
                 }
             }
@@ -49,7 +51,8 @@ void AudioRenderComponent::process(AVFrameRefPtr frame) noexcept {
     frames_.withWriteLock([&](auto& frames){
         frames.push_back(frame);
         while (!frames.empty() && audioBuffer_.tail() >= frames.front()->data->length) {
-            audioBuffer_.append(frames.front()->data->rawData, frames.front()->data->length);
+            auto length = static_cast<uint32_t>(frames.front()->data->length);
+            audioBuffer_.append(frames.front()->data->rawData, length);
             frames.pop_front();
         }
     });

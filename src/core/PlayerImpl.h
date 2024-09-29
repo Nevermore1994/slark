@@ -10,6 +10,7 @@
 #include <deque>
 #include <shared_mutex>
 #include <optional>
+#include <map>
 #include "Reader.hpp"
 #include "Player.h"
 #include "DecoderComponent.h"
@@ -90,7 +91,9 @@ private:
 
     bool createDemuxer(IOData& data) noexcept;
 
-    std::unique_ptr<DecoderComponent> createDecoderComponent(std::string_view mediaInfo, bool isAudio) noexcept;
+    std::unique_ptr<DecoderComponent> createAudioDecoderComponent(std::string_view mediaInfo) noexcept;
+    
+    std::unique_ptr<DecoderComponent> createVideoDecoderComponent(std::string_view mediaInfo) noexcept;
 
     void pushAudioFrameDecode() noexcept;
 
@@ -105,6 +108,8 @@ private:
     void doSeek() noexcept;
     
     void doLoop() noexcept;
+    
+    void checkCacheStatus() noexcept;
 private:
     std::atomic_bool isReadCompleted_ = false;
     std::atomic_bool isRenderCompleted_ = false;
@@ -131,8 +136,8 @@ private:
     std::deque<AVFramePtr> videoPackets_;
     
     //decode
-    Synchronized<std::deque<AVFramePtr>> audioFrames_;
-    Synchronized<std::deque<AVFramePtr>> videoFrames_;
+    Synchronized<std::deque<AVFramePtr>, std::shared_mutex> audioFrames_;
+    Synchronized<std::map<int64_t, AVFramePtr>, std::shared_mutex> videoFrames_;
     std::unique_ptr<DecoderComponent> audioDecoder_ = nullptr;
     std::unique_ptr<DecoderComponent> videoDecoder_ = nullptr;
     
