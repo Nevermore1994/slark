@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <gtest/gtest.h>
+#include <string_view>
 #include "Buffer.hpp"
 #include "Util.hpp"
 
@@ -60,4 +61,18 @@ TEST(BufferTest, ReadByte) {
     buffer.shrink();
     EXPECT_EQ(buffer.length(), 0);
     EXPECT_EQ(buffer.readPos(), 0);
+}
+
+TEST(BufferTest, ReadData) {
+    Buffer buffer;
+    auto data = std::make_unique<Data>("abcd");
+    buffer.append(std::move(data));
+    auto ptr = buffer.readData(buffer.length());
+    EXPECT_EQ(ptr->view(), std::string_view("abcd"));
+    EXPECT_TRUE(buffer.empty());
+
+    data = std::make_unique<Data>("hello world!");
+    buffer.append(std::move(data));
+    ptr = buffer.readData(buffer.length());
+    EXPECT_EQ(ptr->view().data(), std::string_view("hello world!"));
 }
