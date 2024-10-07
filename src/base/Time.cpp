@@ -90,7 +90,7 @@ std::string Time::localTime() noexcept {
 std::string Time::localShortTime() noexcept {
     auto tp = time_point_cast<seconds>(system_clock::now());
     tp += Time::offsetFromUTC();
-    return std::format("{:%F-%H:%M:%S}", tp);
+    return std::format("{:%Y-%m-%d %H:%M:%S}", tp);
 }
 
 }//end namespace slark
