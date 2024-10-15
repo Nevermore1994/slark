@@ -16,7 +16,7 @@ public:
 
     ~WAVDemuxer() override;
 
-    std::tuple<bool, uint64_t> open(std::string_view probeData) noexcept override;
+    bool open(std::unique_ptr<Buffer>& ) noexcept override;
 
     void close() noexcept override;
 

@@ -9,10 +9,12 @@
 #include "DecoderComponent.h"
 #include "Event.h"
 #include "IDemuxer.h"
+#include "Mp4Demuxer.hpp"
 #include "Player.h"
 #include "Log.hpp"
 #include "PlayerImpl.h"
 #include "Util.hpp"
+#include "Base.h"
 
 namespace slark {
 
@@ -100,19 +102,17 @@ void Player::Impl::init() noexcept {
     } else {
         setState(PlayerState::Buffering);
         readHandler_->start();
-        LogI("player initializing start.");
     }
-    
+    probeBuffer_ = std::make_unique<Buffer>(readHandler_->size());
     ownerThread_->start();
+    LogI("player initializing start.");
 }
 
 bool Player::Impl::createDemuxer(IOData& data) noexcept {
-    if (demuxData_ == nullptr) {
-        demuxData_ = std::make_unique<Data>();
+    if (!probeBuffer_->append(static_cast<uint64_t>(data.offset), std::move(data.data))) {
+        return false;
     }
-    demuxData_->append(std::move(data.data));
-
-    auto dataView = demuxData_->view();
+    auto dataView = probeBuffer_->view();
     auto demuxType = DemuxerManager::shareInstance().probeDemuxType(dataView);
     if (demuxType == DemuxerType::Unknown) {
         return false;
@@ -123,17 +123,56 @@ bool Player::Impl::createDemuxer(IOData& data) noexcept {
         LogE("not found demuer type:{}", static_cast<int32_t>(demuxType));
         return false;
     }
-    if (auto [res, offset] = demuxer_->open(dataView); res) {
-        auto p = demuxData_->rawData;
-        data.data = std::make_unique<Data>(demuxData_->length - offset, p + offset);
-        data.offset = static_cast<int64_t>(offset);
-        demuxData_.reset();
+    return true;
+}
+
+bool Player::Impl::openDemuxer(IOData& data) noexcept {
+    if (!probeBuffer_->append(data.offset, std::move(data.data))) {
+        return false;
+    }
+    if (demuxer_ == nullptr) {
+        return false;
+    }
+    auto res = false;
+    if (res = demuxer_->open(probeBuffer_); res) {
+        probeBuffer_.reset();
         LogI("init demuxer success.");
         initPlayerInfo();
-        return true;
     }
-    LogE("create demuxer error...");
-    return false;
+    if (demuxer_->type() == DemuxerType::MP4) {
+        auto mp4Demuxer = dynamic_cast<Mp4Demuxer*>(demuxer_.get());
+        if (res) {
+            auto dataStart = demuxer_->headerInfo()->headerLength;
+            demuxer_->seekPos(dataStart);
+            readHandler_->seek(dataStart);
+        } else {
+            int64_t moovBoxStart = 0;
+            uint32_t moovBoxSize = 0;
+            constexpr int64_t kMb = 1024 * 1024;
+            if (!mp4Demuxer->probeMoovBox(*probeBuffer_, moovBoxStart, moovBoxSize)) {
+                auto pos = static_cast<int64_t>(probeBuffer_->pos());
+                if (pos == 0) {
+                    auto headerInfo = mp4Demuxer->headerInfo();
+                    if (headerInfo) {
+                        pos = headerInfo->headerLength + headerInfo->dataSize;
+                    } else {
+                        pos = probeBuffer_->totalSize() - kMb;
+                    }
+                } else {
+                    pos -= kMb;
+                }
+                auto probePos = pos;
+                if (probePos < 0) {
+                    return false;
+                }
+                demuxer_->seekPos(probePos);
+                readHandler_->seek(probePos);
+                probeBuffer_->reset();
+                probeBuffer_->setOffset(probePos);
+            }
+        }
+    }
+    return res;
 }
 
 void Player::Impl::initPlayerInfo() noexcept {
@@ -180,8 +219,8 @@ void Player::Impl::demuxData() noexcept {
             continue;
         }
 
-        if (demuxer_ == nullptr || !demuxer_->isInited()) {
-            LogE("not find demuxer.");
+        if (!demuxer_->isInited() && !openDemuxer(data)) {
+            LogI("open demuxer failed.");
             continue;
         }
         auto parseResult = demuxer_->parseData(std::move(data.data), data.offset);
@@ -332,7 +371,9 @@ void Player::Impl::doLoop() noexcept {
     readHandler_->seek(seekPos);
     readHandler_->resume();
     demuxer_->seekPos(seekPos);
-    audioRender_->seek(0);
+    if (audioRender_) {
+        audioRender_->seek(0);
+    }
 }
 
 void Player::Impl::setState(PlayerState state) noexcept {
@@ -431,7 +472,7 @@ void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
         }
     }
     auto nowTime = currentPlayedTime();
-    if (isReadCompleted_ && isgreaterequal(nowTime, info_.duration) && !seekRequest_.has_value()) {
+    if (changeState == PlayerState::Playing && isReadCompleted_ && isgreaterequal(nowTime, info_.duration)) {
         notifyTime(); //notify time to end
         LogI("play end.");
         bool isLoop;

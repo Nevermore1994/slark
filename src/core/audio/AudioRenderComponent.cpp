@@ -37,7 +37,10 @@ void AudioRenderComponent::init() noexcept {
             }
             renderedDataLength_ += tSize;
         });
-        clock.setTime(audioInfo_->dataLen2TimePoint(renderedDataLength_));
+        ///TODO: Fix audio data latency
+        if (tSize != 0) {
+            clock.setTime(audioInfo_->dataLen2TimePoint(renderedDataLength_));
+        }
         LogI("request audio size:{}, render size:{}", size, tSize);
         return tSize;
     };

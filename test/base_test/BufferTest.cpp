@@ -50,6 +50,7 @@ TEST(BufferTest, ReadByte) {
     buffer.shrink();
     EXPECT_EQ(buffer.length(), 0);
     EXPECT_EQ(buffer.readPos(), 0);
+    EXPECT_EQ(buffer.pos(), 4);
 
 
     data = std::make_unique<Data>("abcd");
@@ -58,21 +59,25 @@ TEST(BufferTest, ReadByte) {
     EXPECT_EQ(buffer.readPos(), 4);
     EXPECT_EQ(1633837924, t);
     EXPECT_TRUE(buffer.empty());
+    EXPECT_EQ(buffer.pos(), 8);
     buffer.shrink();
     EXPECT_EQ(buffer.length(), 0);
     EXPECT_EQ(buffer.readPos(), 0);
+    EXPECT_EQ(buffer.pos(), 8);
 }
 
 TEST(BufferTest, ReadData) {
-    Buffer buffer;
+    Buffer buffer(200);
     auto data = std::make_unique<Data>("abcd");
     buffer.append(std::move(data));
     auto ptr = buffer.readData(buffer.length());
     EXPECT_EQ(ptr->view(), std::string_view("abcd"));
     EXPECT_TRUE(buffer.empty());
+    EXPECT_EQ(buffer.pos(), 4);
 
     data = std::make_unique<Data>("hello world!");
     buffer.append(std::move(data));
     ptr = buffer.readData(buffer.length());
     EXPECT_EQ(ptr->view().data(), std::string_view("hello world!"));
+    EXPECT_EQ(buffer.pos(), 12 + 4);
 }

@@ -138,5 +138,14 @@ int64_t Reader::tell() noexcept {
     return pos;
 }
 
+uint64_t Reader::size() noexcept {
+    uint64_t size = 0;
+    file_.withReadLock([&](auto& file){
+        if (file) {
+            size = file->fileSize();
+        }
+    });
+    return size;
+}
 }//end namespace slark
 

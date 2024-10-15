@@ -7,6 +7,7 @@
 
 #include "DemuxerManager.h"
 #include "WavDemuxer.h"
+#include "Mp4Demuxer.hpp"
 
 namespace slark {
 
@@ -22,7 +23,8 @@ DemuxerManager::DemuxerManager() {
 
 void DemuxerManager::init() noexcept {
     demuxers_ = {
-        { WAVDemuxer::info().type, WAVDemuxer::info() }
+        { WAVDemuxer::info().type, WAVDemuxer::info() },
+        { Mp4Demuxer::info().type, Mp4Demuxer::info() }
     };
 }
 

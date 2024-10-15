@@ -7,7 +7,6 @@
 
 #include "Util.hpp"
 #include "Random.hpp"
-#include "Assert.hpp"
 
 namespace slark::Util {
 
@@ -15,70 +14,101 @@ std::string genRandomName(const std::string& namePrefix) noexcept {
     return namePrefix + Random::randomString(8);
 }
 
-uint8_t readByteBE(std::string_view view) {
-    SAssert(!view.empty(), "out of range");
+bool readByte(std::string_view view, uint8_t& value) noexcept {
+    if (view.empty()) {
+        return false;
+    }
     auto func = [&](size_t pos) {
-        return static_cast<uint8_t>(view[pos]) << (pos * 8);
+        return static_cast<uint8_t>(view[pos]);
     };
-    return static_cast<uint8_t>(func(0));
+    value = static_cast<uint8_t>(func(0));
+    return true;
 }
 
-uint16_t read2ByteBE(std::string_view view) {
-    SAssert(view.size() >= 2, "out of range");
+bool read2ByteBE(std::string_view view, uint16_t& value) noexcept {
+    if (view.size() < 2) {
+        return false;
+    }
     auto func = [&](size_t pos) {
         return static_cast<uint8_t>(view[pos]) << ((1 - pos) * 8);
     };
-    return static_cast<uint16_t>(func(0) | func(1));
+    value = static_cast<uint16_t>(func(0) | func(1));
+    return true;
 }
 
-uint32_t read3ByteBE(std::string_view view) {
-    SAssert(view.size() >= 3, "out of range");
+bool read3ByteBE(std::string_view view, uint32_t& value) noexcept {
+    if (view.size() < 3) {
+        return false;
+    }
     auto func = [&](size_t pos) {
         return static_cast<uint8_t>(view[pos]) << ((2 - pos) * 8);
     };
-    return static_cast<uint32_t>(func(0) | func(1) | func(2));
+    value = static_cast<uint32_t>(func(0) | func(1) | func(2));
+    return true;
 }
 
-uint32_t read4ByteBE(std::string_view view) {
-    SAssert(view.size() >= 4, "out of range");
+bool read4ByteBE(std::string_view view, uint32_t& value) noexcept {
+    if (view.size() < 4) {
+        return false;
+    }
     auto func = [&](size_t pos) {
         //This must be uint8_t for conversion, char -> uint8_t
         return static_cast<uint8_t>(view[pos]) << ((3 - pos) * 8);
     };
-    return static_cast<uint32_t>(func(0) | func(1) | func(2) | func(3));
+    value = static_cast<uint32_t>(func(0) | func(1) | func(2) | func(3));
+    return true;
 }
 
-uint8_t readByteLE(std::string_view view) {
-    SAssert(!view.empty(), "out of range");
+bool read8ByteBE(std::string_view view, uint64_t& value) noexcept {
+    if (view.size() < 8) {
+        return false;
+    }
+    auto func = [&](size_t pos) {
+        return static_cast<uint64_t>(static_cast<uint8_t>(view[pos]) << ((7 - pos) * 8));
+    };
+    value = static_cast<uint64_t>(func(0) | func(1) | func(2) | func(3) | func(4) | func(5) | func(6) | func(7));
+    return true;
+}
+
+bool read2ByteLE(std::string_view view, uint16_t& value) noexcept {
+    if (view.size() < 2) {
+        return false;
+    }
     auto func = [&](size_t pos) {
         return static_cast<uint8_t>(view[pos]) << (pos * 8);
     };
-    return static_cast<uint8_t>(func(0));
+    value = static_cast<uint16_t>(func(1) | func(0));
+    return true;
 }
 
-uint16_t read2ByteLE(std::string_view view) {
-    SAssert(view.size() >= 2, "out of range");
+bool read3ByteLE(std::string_view view, uint32_t& value) noexcept {
+    if (view.size() < 3) {
+        return false;
+    }
     auto func = [&](size_t pos) {
         return static_cast<uint8_t>(view[pos]) << (pos * 8);
     };
-    return static_cast<uint16_t>(func(1) | func(0));
+    value = static_cast<uint32_t>(func(2) | func(1) | func(0));
+    return true;
 }
 
-uint32_t read3ByteLE(std::string_view view) {
-    SAssert(view.size() >= 3, "out of range");
-    auto func = [&](size_t pos) {
-        return static_cast<uint8_t>(view[pos]) << (pos * 8);
-    };
-    return static_cast<uint32_t>(func(2) | func(1) | func(0));
-}
-
-uint32_t read4ByteLE(std::string_view view) {
-    SAssert(view.size() >= 4, "out of range");
+bool read4ByteLE(std::string_view view, uint32_t& value) noexcept {
+    if (view.size() < 4) {
+        return false;
+    }
     auto func = [&](size_t pos) {
         //This must be uint8_t for conversion, char -> uint8_t
         return static_cast<uint8_t>(view[pos]) << (pos * 8);
     };
-    return static_cast<uint32_t>(func(3) | func(2) | func(1) | func(0));
+    value = static_cast<uint32_t>(func(3) | func(2) | func(1) | func(0));
+    return true;
+}
+
+bool read8ByteLE(std::string_view view, uint64_t& value) noexcept {
+    auto func = [&](size_t pos) {
+        return static_cast<uint64_t>(static_cast<uint8_t>(view[pos]) << (pos * 8));
+    };
+    return static_cast<uint64_t>(func(7) | func(6) | func(5) | func(4) | func(3) | func(2) | func(1) | func(0));
 }
 
 std::string uint32ToByteLE(uint32_t value) noexcept {

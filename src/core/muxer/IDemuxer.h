@@ -56,7 +56,7 @@ public:
     ~IDemuxer() override = default;
 
 public:
-    virtual std::tuple<bool, uint64_t> open(std::string_view probeData) = 0;
+    virtual bool open(std::unique_ptr<Buffer>& ) = 0;
 
     virtual void close() = 0;
 
@@ -64,20 +64,19 @@ public:
         isInited_ = false;
         isCompleted_ = false;
         receivedLength_ = 0;
-        prasedLength_ = 0;
         parsedFrameCount_ = 0;
         totalDuration_ = CTime(0);
-        seekPos_.reset();
         buffer_.reset();
         videoInfo_.reset();
         audioInfo_.reset();
     }
     
     virtual void seekPos(uint64_t pos) noexcept {
-        buffer_.reset();
         receivedLength_ = pos;
-        prasedLength_ = pos;
-        seekPos_ = pos;
+        if (buffer_) {
+            buffer_->reset();
+            buffer_->setOffset(pos);
+        }
     }
 
     virtual DemuxerResult parseData(std::unique_ptr<Data> data, int64_t offset) noexcept = 0;
@@ -133,15 +132,18 @@ public:
         return totalDuration_;
     }
     
+    [[nodiscard]] DemuxerType type() const noexcept {
+        return type_;
+    }
+    
 protected:
     bool isInited_ = false;
     bool isCompleted_ = false;
+    DemuxerType type_ = DemuxerType::Unknown;
     uint32_t parsedFrameCount_ = 0;
     uint64_t receivedLength_ = 0;
-    uint64_t prasedLength_ = 0;
-    std::optional<int64_t> seekPos_;
     CTime totalDuration_{0};
-    Buffer buffer_;
+    std::unique_ptr<Buffer> buffer_;
     std::shared_ptr<VideoInfo> videoInfo_;
     std::shared_ptr<Audio::AudioInfo> audioInfo_;
     std::shared_ptr<DemuxerHeaderInfo> headerInfo_;

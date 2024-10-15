@@ -2,7 +2,7 @@
 //  iOSUtil.m
 //  slark
 //
-//  Created by Rolf.Tan on 
+//  Created by Nevermore on 
 //
 #import "iOSUtil.h"
 

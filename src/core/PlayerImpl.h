@@ -21,6 +21,7 @@
 #include "Event.h"
 #include "AudioRenderComponent.h"
 #include "Synchronized.hpp"
+#include "Buffer.hpp"
 
 namespace slark {
 
@@ -90,6 +91,8 @@ private:
     void setState(PlayerState state) noexcept;
 
     bool createDemuxer(IOData& data) noexcept;
+    
+    bool openDemuxer(IOData& data) noexcept;
 
     std::unique_ptr<DecoderComponent> createAudioDecoderComponent(std::string_view mediaInfo) noexcept;
     
@@ -128,7 +131,7 @@ private:
     //IO
     std::unique_ptr<Reader> readHandler_ = nullptr;
     Synchronized<std::vector<IOData>> dataList_;
-    DataPtr demuxData_;
+    std::unique_ptr<Buffer> probeBuffer_;
     
     //demux
     std::unique_ptr<IDemuxer> demuxer_ = nullptr;
