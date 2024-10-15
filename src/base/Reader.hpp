@@ -76,6 +76,7 @@ public:
 
     void seek(uint64_t pos) noexcept;
     int64_t tell() noexcept;
+    uint64_t size() noexcept;
     
     const ReaderSetting& readerSetting() noexcept {
         return setting_;

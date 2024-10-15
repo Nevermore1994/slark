@@ -24,21 +24,23 @@ std::expected<uint64_t, bool> getWeakPtrAddress(const std::weak_ptr<T>& ptr) noe
 
 std::string genRandomName(const std::string& namePrefix) noexcept;
 
-uint8_t readByteBE(std::string_view view);
+bool readByte(std::string_view view, uint8_t& value) noexcept;
 
-uint16_t read2ByteBE(std::string_view view);
+bool read2ByteBE(std::string_view view, uint16_t& value) noexcept;
 
-uint32_t read3ByteBE(std::string_view view);
+bool read3ByteBE(std::string_view view, uint32_t& value) noexcept;
 
-uint32_t read4ByteBE(std::string_view view);
+bool read4ByteBE(std::string_view view, uint32_t& value) noexcept;
 
-uint8_t readByteLE(std::string_view view);
+bool read8ByteBE(std::string_view view, uint64_t& value) noexcept;
 
-uint16_t read2ByteLE(std::string_view view);
+bool read2ByteLE(std::string_view view, uint16_t& value) noexcept;
 
-uint32_t read3ByteLE(std::string_view view);
+bool read3ByteLE(std::string_view view, uint32_t& value) noexcept;
 
-uint32_t read4ByteLE(std::string_view view);
+bool read4ByteLE(std::string_view view, uint32_t& value) noexcept;
+
+bool read8ByteLE(std::string_view view, uint64_t& value) noexcept;
 
 std::string uint32ToByteLE(uint32_t value) noexcept;
 

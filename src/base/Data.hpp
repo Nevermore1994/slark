@@ -204,6 +204,9 @@ struct Data {
     }
 
     inline void append(std::unique_ptr<Data> appendData) noexcept {
+        if (appendData == nullptr) {
+            return;
+        }
         if (rawData == nullptr) {
             rawData = appendData->rawData;
             length = appendData->length;

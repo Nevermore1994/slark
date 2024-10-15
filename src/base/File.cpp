@@ -45,7 +45,11 @@ void IFile::seek(int64_t offset) noexcept {
 }
 
 int64_t IFile::tell() const noexcept {
-    return file_ ? ftello(file_) : 0;
+    fpos_t pos = 0;
+    if (file_ && (fgetpos(file_, &pos) == 0)) {
+        return static_cast<int64_t>(pos);
+    }
+    return 0;
 }
 
 uint64_t IFile::fileSize() const noexcept {
@@ -108,7 +112,7 @@ bool WriteFile::write(const uint8_t* data, uint64_t size) noexcept {
     writeCount_++;
     auto writeSize = fwrite(data, 1, size, file_);
     writeSize_ += size;
-    if (writeCount_ >= checkEveryN_) {
+    if ((writeCount_ % checkEveryN_) == 0) {
         flush();
     }
     if (writeSize <= 0) {

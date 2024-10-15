@@ -89,7 +89,7 @@ struct PlayerParams {
 struct PlayerInfo {
     bool hasVideo = false;
     bool hasAudio = false;
-    long double duration;
+    long double duration = 0;
 };
 
 class Player {
