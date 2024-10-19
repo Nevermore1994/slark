@@ -8,6 +8,8 @@
 
 namespace slark {
 
+extern const std::string_view MEDIA_MIMETYPE_UNKNOWN;
+
 extern const std::string_view MEDIA_MIMETYPE_IMAGE_JPEG;
 
 

@@ -39,14 +39,18 @@ struct AudioFrameInfo {
     uint16_t channels = 0;
     uint16_t bitsPerSample = 0;
     uint64_t sampleRate = 0;
+    
+    double duration(uint32_t size) const noexcept {
+        return static_cast<double>(size) / static_cast<double>(bitsPerSample / 8 * channels * sampleRate);
+    }
 };
 
 struct VideoFrameInfo {
     bool isKeyFrame = false;
     uint32_t width = 0;
     uint32_t height = 0;
+    uint32_t timeScale = 0;
     uint64_t offset = 0;
-    uint64_t refIndex = 0;
     uint64_t keyIndex = 0;
 };
 
@@ -56,6 +60,7 @@ struct AVFrame {
     uint64_t index = 0;
     uint64_t pts = 0;
     uint64_t dts = 0;
+    uint64_t offset = 0;
     std::unique_ptr<Data> data;
     Statistics stats;
     std::any info;
@@ -81,7 +86,9 @@ struct AVFrame {
         frame->index = index;
         frame->pts = pts;
         frame->dts = dts;
-        frame->data = data->copy();
+        if (data) {
+            frame->data = data->copy();
+        }
         frame->info = info;
         return frame;
     }
@@ -114,6 +121,13 @@ struct AVFrame {
             std::unexpected(false);
         }
         return std::any_cast<VideoFrameInfo>(info);
+    }
+    
+    std::string_view view() const noexcept {
+        if (data) {
+            return data->view();
+        }
+        return {};
     }
 };
 

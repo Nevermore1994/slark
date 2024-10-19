@@ -82,7 +82,7 @@ void Player::Impl::init() noexcept {
 
     ReaderSetting setting;
     setting.callBack = [this](IOData data, IOState state) {
-        LogI("receive data size: {}", data.data->length);
+        LogI("receive data offset:{} size: {}", data.offset, data.length());
         if (data.data) {
             dataList_.withLock([&](auto& dataList) {
                 dataList.emplace_back(std::move(data));
@@ -142,9 +142,13 @@ bool Player::Impl::openDemuxer(IOData& data) noexcept {
     if (demuxer_->type() == DemuxerType::MP4) {
         auto mp4Demuxer = dynamic_cast<Mp4Demuxer*>(demuxer_.get());
         if (res) {
-            auto dataStart = demuxer_->headerInfo()->headerLength;
+            auto dataStart = demuxer_->headerInfo()->headerLength + 8; // //skip size and type
             demuxer_->seekPos(dataStart);
             readHandler_->seek(dataStart);
+#if DEBUG
+            auto ss = mp4Demuxer->description();
+            LogI("mp4 info:{}", ss);
+#endif
         } else {
             int64_t moovBoxStart = 0;
             uint32_t moovBoxSize = 0;
@@ -220,7 +224,6 @@ void Player::Impl::demuxData() noexcept {
         }
 
         if (!demuxer_->isInited() && !openDemuxer(data)) {
-            LogI("open demuxer failed.");
             continue;
         }
         auto parseResult = demuxer_->parseData(std::move(data.data), data.offset);
@@ -230,12 +233,13 @@ void Player::Impl::demuxData() noexcept {
         }
         if (!parseResult.audioFrames.empty()) {
             for (auto& packet : parseResult.audioFrames) {
-                LogI("demux audio frame:{}", packet->index);
+                LogI("demux audio frame:{}, pts:{}, dts:{}, offset:{}", packet->index, packet->dts, packet->pts, packet->offset);
                 audioPackets_.push_back(std::move(packet));
             }
         }
         if (!parseResult.videoFrames.empty()) {
             for (auto& packet : parseResult.videoFrames) {
+                LogI("demux video frame:{}, pts:{}, dts:{}, offset:{}", packet->index, packet->dts, packet->pts, packet->offset);
                 videoPackets_.push_back(std::move(packet));
             }
         }

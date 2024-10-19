@@ -45,6 +45,8 @@ public:
 
     bool readByte(uint8_t& value) noexcept;
     
+    bool readBE(uint32_t size, uint32_t& value) noexcept;
+    
     DataPtr readData(uint64_t) noexcept;
     
     bool readString(uint64_t size, std::string& str) noexcept;

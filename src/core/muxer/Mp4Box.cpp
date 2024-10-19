@@ -59,7 +59,7 @@ BoxRefPtr Box::getChild(std::string_view childType) const noexcept {
     return nullptr;
 }
 
-bool Box::decode(Buffer&) noexcept {
+bool Box::decode(Buffer& buffer) noexcept {
     return true;
 }
 
@@ -77,8 +77,11 @@ BoxRefPtr Box::createBox(Buffer& buffer) {
         {"stsz", [](BoxInfo&& info) { return new BoxStsz(std::move(info)); }},
         {"stsc", [](BoxInfo&& info) { return new BoxStsc(std::move(info)); }},
         {"stts", [](BoxInfo&& info) { return new BoxStts(std::move(info)); }},
+        {"ctts", [](BoxInfo&& info) { return new BoxCtts(std::move(info)); }},
+        {"stss", [](BoxInfo&& info) { return new BoxStss(std::move(info)); }},
         {"esds", [](BoxInfo&& info) { return new BoxEsds(std::move(info)); }},
         {"meta", [](BoxInfo&& info) { return new BoxMeta(std::move(info)); }},
+        {"avcC", [](BoxInfo&& info) { return new BoxAvcc(std::move(info)); }},
         {"mdhd", [](BoxInfo&& info) { return new BoxMdhd(std::move(info)); }}
     };
     if (boxFactory.contains(boxInfo.symbol)) {
@@ -92,8 +95,8 @@ BoxRefPtr Box::createBox(Buffer& buffer) {
 std::string BoxFtyp::description(const std::string& prefix) const noexcept {
     auto desc = Box::description(prefix);
     desc.append(std::format("{1}  major brand: {1}\n"
-                            "{1}  minor version: {2}\n",
-                            "{1}  compatible brands: {3}",
+                            "{1}  minor version: {2}\n"
+                            "{1}  compatible brands: {3}\n",
                             prefix, majorBrand, minorVersion, compatibleBrands));
     return desc;
 }
@@ -218,7 +221,7 @@ std::string BoxMdhd::description(const std::string& prefix) const noexcept {
         "{0}    time_scale: {5}\n"
         "{0}    duration: {6}\n"
         "{0}    language: {7}\n"
-        "{0}    quality: {8}",
+        "{0}    quality: {8}\n",
         prefix, version, flags,
         creationTime, modificationTime, timeScale,
         duration, language, quality
@@ -276,6 +279,39 @@ CodecId BoxStsd::getCodecId() {
     return CodecId::Unknown;
 }
 
+//stsd
+//  ├── size: 56
+//  ├── type: 'stsd'
+//  ├── version_and_flags: 0x000000
+//  ├── entry_count: 2
+//  ├── sample_entries:
+//  │   ├── [0]: mp4a (音频样本描述)
+//  │   │   ├── size: 32
+//  │   │   ├── type: 'mp4a'
+//  │   │   ├── version_and_flags: 0x000000
+//  │   │   ├── data_reference_index: 0
+//  │   │   ├── version: 0
+//  │   │   ├── channels: 2
+//  │   │   ├── sample_size: 16
+//  │   │   ├── sample_rate: 44100
+//  │   │   ├── reserved: 0
+//  │   │   ├── avg_bytes_per_second: 128000
+//  │   │   ├── extra_data_size: 6
+//  │   │   └── extra_data: { 0x13, 0x10, 0x00, 0x00, 0x02, 0x00 }
+//  │   └── [1]: avc1 (视频样本描述)
+//  │       ├── size: 40
+//  │       ├── type: 'avc1'
+//  │       ├── version_and_flags: 0x000000
+//  │       ├── data_reference_index: 0
+//  │       ├── width: 1920
+//  │       ├── height: 1080
+//  │       ├── horizresolution: 72
+//  │       ├── vertresolution: 72
+//  │       ├── frame_count: 1
+//  │       ├── compressorname: 'AVC Coding'
+//  │       ├── depth: 24
+//  │       └── pre_defined: 0
+
 bool BoxStsd::decode(Buffer& buffer) noexcept {
     if (!buffer.require(110)) {
         return false;
@@ -299,6 +335,7 @@ bool BoxStsd::decode(Buffer& buffer) noexcept {
             uint32_t tSampleRate;
             buffer.read4ByteBE(tSampleRate);
             sampleRate = static_cast<uint16_t>(tSampleRate >> 16);
+            isAudio = true;
         } else if (box->info.symbol == "avc1" || box->info.symbol == "hev1" || box->info.symbol == "vp09") {
             buffer.skip(6);
             buffer.read2ByteBE(dataReferenceIndex);
@@ -308,10 +345,12 @@ bool BoxStsd::decode(Buffer& buffer) noexcept {
             buffer.skip(12);
             buffer.read2ByteBE(frameCount);
             buffer.skip(32 + 2 + 2);
+            isVideo = true;
         }
         auto subBox = Box::createBox(buffer);
         if (subBox) {
             box->append(subBox);
+            subBox->decode(buffer);
         }
         buffer.skip(endPos - buffer.pos());
     }
@@ -417,38 +456,59 @@ bool BoxStco::decode(Buffer& buffer) noexcept {
 }
 
 bool BoxStts::decode(Buffer& buffer) noexcept {
-    if (!buffer.require(12)) {
-        return false;
-    }
-    
-    int32_t offset = 0;
     buffer.skip(1 + 3); //version + flags
-    offset += 4;
     
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
-    offset += 4;
     
     bool res = true;
     for (uint32_t i = 0; i < entryCount; i++) {
-        if (!buffer.require(8)) {
-            res = false;
-            break;
-        }
         SttsEntry entry;
         buffer.read4ByteBE(entry.sampleCount);
-        buffer.read4ByteBE(entry.sampleDuration);
+        buffer.read4ByteBE(entry.sampleDelta);
         entrys.push_back(entry);
-        offset += 8;
-    }
-    if (!res) {
-        buffer.skip(-offset);
     }
     return res;
 }
 
+uint32_t BoxStts::sampleSize() const noexcept {
+    uint32_t count = 0;
+    for (auto& entry : entrys) {
+        count += entry.sampleCount;
+    }
+    return count;
+}
+
+bool BoxCtts::decode(Buffer& buffer) noexcept {
+    buffer.skip(1 + 3); //version + flags
+    
+    uint32_t entryCount = 0;
+    buffer.read4ByteBE(entryCount);
+    
+    bool res = true;
+    for (size_t i = 0; i < entryCount; i++) {
+        CttsEntry entry;
+        buffer.read4ByteBE(entry.sampleCount);
+        buffer.read4ByteBE(entry.sampleOffset);
+        entrys.push_back(entry);
+    }
+}
+
+bool BoxStss::decode(Buffer& buffer) noexcept {
+    buffer.skip(1 + 3); //version + flags
+    uint32_t size = 0;
+    buffer.read4ByteBE(size);
+    for (size_t i = 0; i < size; i++) {
+        uint32_t index = 0;
+        buffer.read4ByteBE(index);
+        keyIndexs.push_back(index);
+    }
+}
+
 std::string BoxEsds::description(const std::string& prefix) const noexcept {
-    return Box::description(prefix) + " codec." + std::format("{:#x}", objectTypeId);
+    auto desc = Box::description(prefix);
+    desc.pop_back();
+    return desc + " codec:" + std::format("{:#x}\n", objectTypeId);
 }
 
 bool BoxEsds::decode(Buffer& buffer) noexcept {
@@ -532,6 +592,128 @@ bool BoxMeta::decode(Buffer& buffer) noexcept {
     }
     buffer.readByte(version);
     buffer.read3ByteBE(flags);
+    return true;
+}
+
+std::string BoxAvcc::description(const std::string&prefix) const noexcept {
+    auto desc = Box::description(prefix);
+    desc.pop_back();
+    return desc +
+        std::format("version: {}, profileIndication: {}, "
+                "profileCompatibility: {}, levelIndication: {},"
+                "naluByteSize: {}\n",
+                version, profileIndication,
+                profileCompatibility, levelIndication,
+                naluByteSize);
+}
+
+//avcC (size)
+//  |--- (size) 1字节: configurationVersion
+//  |--- (size) 1字节: AVCProfileIndication
+//  |--- (size) 1字节: profile_compatibility
+//  |--- (size) 1字节: AVCLevelIndication
+//  |--- (size) 6位 reserved + 2位 lengthSizeMinusOne
+//  |--- (size) 3位 reserved + 5位 numOfSPS
+//  |--- (size) 2字节: SPS length
+//  |--- (size) N字节: SPS data
+//  |--- (size) 1字节: numOfPPS
+//  |--- (size) 2字节: PPS length
+//  |--- (size) N字节: PPS data
+bool BoxAvcc::decode(Buffer& buffer) noexcept {
+    auto endpos = info.size + info.start;
+    buffer.readByte(version);
+    buffer.readByte(profileIndication);
+    buffer.readByte(profileCompatibility);
+    buffer.readByte(levelIndication);
+    buffer.readByte(naluByteSize);
+    naluByteSize = naluByteSize & 0x03;
+    uint8_t spsCount = 0;
+    buffer.readByte(spsCount);
+    spsCount = spsCount & 0x1f;
+    for (uint8_t i = 0; i < spsCount; i++) {
+        uint16_t spsLength = 0;
+        buffer.read2ByteBE(spsLength);
+        auto data = buffer.readData(spsLength);
+        sps.push_back(std::move(data));
+    }
+    uint8_t ppsCount = 0;
+    buffer.readByte(ppsCount);
+    ppsCount = ppsCount & 0x1f;
+    for (uint8_t i = 0; i < ppsCount; i++) {
+        uint16_t ppsLength = 0;
+        buffer.read2ByteBE(ppsLength);
+        auto data = buffer.readData(ppsLength);
+        pps.push_back(std::move(data));
+    }
+    return true;
+}
+
+std::string BoxHvcc::description(const std::string&prefix) const noexcept {
+    return Box::description(prefix) +
+        std::format("version: {}, profileSpace: {}, "
+                "tierFlag: {}, profileIdc: {},"
+                "profileCompatibility: {} , levelIdc:{}, naluByteSize:{}\n",
+                version, profileSpace,
+                tierFlag, profileIdc,
+                profileCompatibility, levelIdc, naluByteSize);
+}
+
+//hvcC (size)
+//  |--- (1字节) configurationVersion: 配置版本，通常为 1
+//  |--- (1字节) general_profile_space
+//  |--- (4字节) general_profile_compatibility_flags
+//  |--- (6字节) general_constraint_indicator_flags
+//  |--- (1字节) general_level_idc
+//  |--- (2字节) min_spatial_segmentation_idc
+//  |--- (1字节) parallelismType
+//  |--- (1字节) chromaFormat
+//  |--- (1字节) bitDepthLumaMinus8
+//  |--- (1字节) bitDepthChromaMinus8
+//  |--- (2字节) avgFrameRate
+//  |--- (1字节) constantFrameRate, numTemporalLayers, temporalIdNested, lengthSizeMinusOne
+//  |--- (1字节) numOfArrays: NALU 数组的数量
+//       |--- Array 1: (1字节) NAL unit type
+//                    (2字节) numNalus
+//                    (2字节) nalUnitLength
+//                    NALU data (如 VPS, SPS, PPS)
+//       |--- Array 2: (类似 Array 1)
+//       |--- ...
+bool BoxHvcc::decode(Buffer& buffer) noexcept {
+    auto endpos = info.size + info.start;
+    buffer.readByte(version);
+    buffer.readByte(profileSpace);
+    buffer.read4ByteBE(profileCompatibility);
+    buffer.skip(6);
+    buffer.readByte(levelIdc);
+    buffer.skip(2 + 1 + 1 + 1 + 1);
+    buffer.read2ByteBE(avgFrameRate);
+    uint8_t value = 0;
+    buffer.readByte(value);
+    naluByteSize = value & 0x1f;
+    uint8_t naluArraySize = 0;
+    buffer.readByte(naluArraySize);
+    for (uint8_t i = 0; i < naluArraySize; i++) {
+        uint8_t naluType = 0;
+        buffer.readByte(naluType);
+        std::vector<DataRefPtr> vec;
+        uint16_t naluCount = 0;
+        buffer.read2ByteBE(naluCount);
+        uint16_t naluSize = 0;
+        buffer.read2ByteBE(naluSize);
+        for (uint16_t j = 0; j < naluCount; j++) {
+            auto data = buffer.readData(naluSize);
+            vec.push_back(std::move(data));
+        }
+        if (naluType == 32) {
+            vps = std::move(vec);
+        } else if (naluType == 33) {
+            sps = std::move(vec);
+        } else if (naluType == 34) {
+            pps = std::move(vec);
+        }
+    }
+    auto skip = endpos - buffer.readPos();
+    buffer.skip(skip);
     return true;
 }
 

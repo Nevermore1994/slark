@@ -26,7 +26,7 @@ struct AudioInfo {
     uint16_t channels = 0;
     uint16_t bitsPerSample = 0;
     uint64_t sampleRate = 0;
-    uint64_t headerLength = 0;
+    uint32_t timeScale = 0;
     CTime startTime;
     std::string_view mediaInfo;
 

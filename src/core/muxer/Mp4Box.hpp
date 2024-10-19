@@ -58,9 +58,9 @@ public:
 class BoxFtyp : public Box
 {
 public:
-    std::string majorBrand;
-    uint32_t minorVersion;
-    std::string compatibleBrands;
+    std::string majorBrand{};
+    uint32_t minorVersion{};
+    std::string compatibleBrands{};
 public:
     BoxFtyp(BoxInfo&& boxInfo)
         : Box(std::move(boxInfo)) {
@@ -136,6 +136,8 @@ public:
 class BoxStsd : public Box
 {
 public:
+    bool isAudio = false;
+    bool isVideo = false;
     uint8_t version{};
     uint32_t flags{};
     uint32_t entryCount{};
@@ -223,7 +225,7 @@ public:
 struct SttsEntry
 {
     uint32_t sampleCount{};
-    uint32_t sampleDuration{};
+    uint32_t sampleDelta{};
 };
 
 ///Time-to-Sample
@@ -237,6 +239,40 @@ public:
         
     }
     ~BoxStts() override = default;
+
+public:
+    bool decode(Buffer&) noexcept override;
+    uint32_t sampleSize() const noexcept;
+};
+
+struct CttsEntry {
+    uint32_t sampleCount{};
+    uint32_t sampleOffset{};
+};
+
+class BoxCtts : public Box {
+public:
+    std::vector<CttsEntry> entrys;
+public:
+    BoxCtts(BoxInfo&& boxInfo)
+        : Box(std::move(boxInfo)) {
+        
+    }
+    ~BoxCtts() override = default;
+
+public:
+    bool decode(Buffer&) noexcept override;
+};
+
+class BoxStss : public Box {
+public:
+    std::vector<uint32_t> keyIndexs;
+public:
+    BoxStss(BoxInfo&& boxInfo)
+        : Box(std::move(boxInfo)) {
+        
+    }
+    ~BoxStss() override = default;
 
 public:
     bool decode(Buffer&) noexcept override;
@@ -289,6 +325,54 @@ public:
 
 public:
     bool decode(Buffer&) noexcept override;
+};
+
+class BoxAvcc : public Box {
+public:
+    uint8_t version{};
+    uint8_t profileIndication{};
+    uint8_t profileCompatibility{};
+    uint8_t levelIndication{};
+    uint8_t naluByteSize{};
+    
+    std::vector<DataRefPtr> sps;
+    std::vector<DataRefPtr> pps;
+public:
+    BoxAvcc(BoxInfo&& boxInfo)
+        : Box(std::move(boxInfo)) {
+        
+    }
+    ~BoxAvcc() override = default;
+
+public:
+    bool decode(Buffer&) noexcept override;
+    std::string description(const std::string&) const noexcept override;
+};
+
+class BoxHvcc : public Box {
+public:
+    uint8_t version;
+    uint8_t profileSpace;
+    uint8_t tierFlag;
+    uint8_t profileIdc;
+    uint32_t profileCompatibility;
+    uint8_t levelIdc;
+    uint16_t avgFrameRate;
+    uint16_t naluByteSize;
+    
+    std::vector<DataRefPtr> sps;
+    std::vector<DataRefPtr> pps;
+    std::vector<DataRefPtr> vps;
+public:
+    BoxHvcc(BoxInfo&& boxInfo)
+        : Box(std::move(boxInfo)) {
+        
+    }
+    ~BoxHvcc() override = default;
+
+public:
+    bool decode(Buffer&) noexcept override;
+    std::string description(const std::string&) const noexcept override;
 };
 
 }
