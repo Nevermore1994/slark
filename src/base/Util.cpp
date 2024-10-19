@@ -111,6 +111,20 @@ bool read8ByteLE(std::string_view view, uint64_t& value) noexcept {
     return static_cast<uint64_t>(func(7) | func(6) | func(5) | func(4) | func(3) | func(2) | func(1) | func(0));
 }
 
+bool readBE(std::string_view view, uint32_t size, uint32_t& value) noexcept {
+    if (view.size() < size) {
+        return false;
+    }
+    int32_t mx = size - 1;
+    auto func = [&](int32_t pos) {
+        return static_cast<uint32_t>(static_cast<uint8_t>(view[pos]) << ((mx - pos) * 8));
+    };
+    for(size_t i = 0; i <= mx; i++) {
+        value |= func(i);
+    }
+    return true;
+}
+
 std::string uint32ToByteLE(uint32_t value) noexcept {
     std::string ret(4,'\0');
     ret[3] = static_cast<char>((value >> (8 * 3)) & 0xFF);

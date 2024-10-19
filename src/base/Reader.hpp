@@ -21,6 +21,7 @@ struct IOData {
     int64_t offset = 0;
     
     IOData() = default;
+    
     IOData(uint64_t size)
         : data(std::make_unique<Data>(size)) {
         
@@ -35,6 +36,13 @@ struct IOData {
         data = std::move(d.data);
         offset = d.offset;
         return *this;
+    }
+    
+    uint64_t length() {
+        if (data) {
+            return data->length;
+        }
+        return 0;
     }
 };
 

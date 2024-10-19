@@ -7,6 +7,8 @@
 
 namespace slark {
 
+const std::string_view MEDIA_MIMETYPE_UNKNOWN = "unknown";
+
 const std::string_view MEDIA_MIMETYPE_IMAGE_JPEG = "image/jpeg";
 
 const std::string_view MEDIA_MIMETYPE_VIDEO_AVC = "video/avc";

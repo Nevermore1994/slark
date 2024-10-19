@@ -17,4 +17,5 @@ extern const std::string_view kHttpSymbol;
 
 bool isLocalFile(const std::string& path);
 
+uint32_t readUe(std::string_view buffer);
 }

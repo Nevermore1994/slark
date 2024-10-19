@@ -42,6 +42,8 @@ bool read4ByteLE(std::string_view view, uint32_t& value) noexcept;
 
 bool read8ByteLE(std::string_view view, uint64_t& value) noexcept;
 
+bool readBE(std::string_view view, uint32_t size, uint32_t& value) noexcept;
+
 std::string uint32ToByteLE(uint32_t value) noexcept;
 
 std::string uint32ToByteBE(uint32_t value) noexcept;

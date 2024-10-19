@@ -21,7 +21,7 @@ bool Buffer::empty() const noexcept {
     if (!data_) {
         return true;
     }
-    return data_->length < readPos_;
+    return data_->length <= readPos_;
 }
 
 uint64_t Buffer::length() const noexcept {
@@ -60,7 +60,7 @@ std::string_view Buffer::view() const noexcept {
 
 bool Buffer::skipTo(int64_t pos) noexcept {
     auto p = pos - offset_;
-    if (0 <= p && p < data_->length) {
+    if (0 <= p && p <= data_->length) {
         readPos_ = p;
         return true;
     }
@@ -69,7 +69,7 @@ bool Buffer::skipTo(int64_t pos) noexcept {
 
 bool Buffer::skip(int64_t skipOffset) noexcept {
     auto pos = readPos_ + skipOffset;
-    if (0 <= pos && pos < data_->length) {
+    if (0 <= pos && pos <= data_->length) {
         readPos_ = pos;
         return true;
     }
@@ -110,6 +110,21 @@ bool Buffer::read2ByteBE(uint16_t& value) noexcept {
     auto view = data_->view().substr(readPos_);
     readPos_ += 2;
     return Util::read2ByteBE(view, value);
+}
+
+bool Buffer::readBE(uint32_t size, uint32_t& value) noexcept {
+    if (!require(size)) {
+        return false;
+    }
+    auto view = data_->view().substr(readPos_);
+    int32_t mx = size - 1;
+    auto func = [&](int32_t pos) {
+        return static_cast<uint32_t>(static_cast<uint8_t>(view[pos]) << ((mx - pos) * 8));
+    };
+    for(size_t i = 0; i < mx; i++) {
+        value |= func(i);
+    }
+    return true;
 }
 
 bool Buffer::readByte(uint8_t& value) noexcept {
