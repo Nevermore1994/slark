@@ -6,24 +6,21 @@
 #pragma once
 #include "DecoderManager.h"
 #include "Thread.h"
+#include "Synchronized.hpp"
 
 namespace slark {
 
 class DecoderComponent : public NonCopyable {
 public:
-    explicit DecoderComponent(DecoderType decodeType, DecoderReceiveFunc&& callback);
-    ~DecoderComponent() override = default;
+    explicit DecoderComponent(DecoderReceiveFunc&& callback);
+    ~DecoderComponent() override;
 
-    void send(AVFrameArray&& packets) noexcept;
+    bool open(DecoderType type, std::shared_ptr<DecoderConfig> config) noexcept;
     void send(AVFramePtr packet) noexcept;
     void pause() noexcept;
     void resume() noexcept;
     void reset() noexcept;
     void close() noexcept;
-
-    const std::unique_ptr<IDecoder>& decoder() noexcept {
-        return decoder_;
-    }
 
     void setReachEnd(bool isReachEnd) noexcept {
         isReachEnd_ = isReachEnd;
@@ -44,7 +41,7 @@ private:
     std::unique_ptr<IDecoder> decoder_;
     DecoderReceiveFunc callback_;
     Thread decodeWorker_;
-    Synchronized<std::vector<AVFramePtr>, std::shared_mutex> packets_;
+    Synchronized<std::deque<AVFramePtr>, std::shared_mutex> packets_;
 };
 
 }

@@ -23,6 +23,8 @@ public:
     DemuxerResult parseData(std::unique_ptr<Data> data, int64_t offset) noexcept override;
     
     [[nodiscard]] uint64_t getSeekToPos(Time::TimePoint) noexcept override;
+    
+    void reset() noexcept override;
 
     inline static const DemuxerInfo& info() noexcept {
         static DemuxerInfo info = {
@@ -32,7 +34,8 @@ public:
         };
         return info;
     }
-
+private:
+    uint32_t parsedFrameCount_ = 0;
 };
 
 }

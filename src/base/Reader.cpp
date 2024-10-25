@@ -28,7 +28,9 @@ bool Reader::open(std::string_view path, ReaderSetting&& setting) {
     return isSuccess;
 }
 
-Reader::~Reader() = default;
+Reader::~Reader() {
+    stop();
+}
 
 IOState Reader::state() noexcept {
     IOState state = IOState::Normal;

@@ -64,7 +64,6 @@ public:
         isInited_ = false;
         isCompleted_ = false;
         receivedLength_ = 0;
-        parsedFrameCount_ = 0;
         totalDuration_ = CTime(0);
         buffer_.reset();
         videoInfo_.reset();
@@ -111,20 +110,6 @@ public:
         return headerInfo_;
     }
     
-    [[nodiscard]] CTime startTime() const noexcept {
-        if (!isInited_) {
-            return CTime();
-        }
-        if (videoInfo_ && audioInfo_) {
-            return std::min(videoInfo_->startTime, audioInfo_->startTime);
-        } else if (videoInfo_) {
-            return videoInfo_->startTime;
-        } else if (audioInfo_) {
-            return audioInfo_->startTime;
-        }
-        return CTime();
-    }
-    
     [[nodiscard]] CTime totalDuration() const noexcept {
         if (!isInited_) {
             return CTime();
@@ -140,7 +125,6 @@ protected:
     bool isInited_ = false;
     bool isCompleted_ = false;
     DemuxerType type_ = DemuxerType::Unknown;
-    uint32_t parsedFrameCount_ = 0;
     uint64_t receivedLength_ = 0;
     CTime totalDuration_{0};
     std::unique_ptr<Buffer> buffer_;
