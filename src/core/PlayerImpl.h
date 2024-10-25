@@ -30,6 +30,15 @@ struct PlayerSeekRequest {
     Time::TimePoint seekTime{0};
 };
 
+struct PlayerStatistics {
+    bool isFirstAudioRendered = false;
+    bool isFirstVideoRendered = false;
+    Time::TimePoint audioDecodeDelta{0};
+    Time::TimePoint videoDecodeDelta{0};
+    Time::TimePoint audioRenderDelta{0};
+    Time::TimePoint videoRenderDelta{0};
+};
+
 class Player::Impl {
 public:
     explicit Impl(std::unique_ptr<PlayerParams> params);
@@ -45,7 +54,7 @@ public:
     
     void setMute(bool isMute);
      
-    void setRenderSize(RenderSize size);
+    void setRenderSize(uint32_t width, uint32_t height) noexcept;
 
     void seek(long double time, bool isAccurate = false) noexcept;
     
@@ -94,10 +103,8 @@ private:
     
     bool openDemuxer(IOData& data) noexcept;
 
-    std::unique_ptr<DecoderComponent> createAudioDecoderComponent(std::string_view mediaInfo) noexcept;
+    void pushFrameDecode() noexcept;
     
-    std::unique_ptr<DecoderComponent> createVideoDecoderComponent(std::string_view mediaInfo) noexcept;
-
     void pushAudioFrameDecode() noexcept;
 
     void pushVideoFrameDecode() noexcept;
@@ -112,7 +119,9 @@ private:
     
     void doLoop() noexcept;
     
-    void checkCacheStatus() noexcept;
+    [[nodiscard]] uint32_t demuxedDuration() noexcept;
+    
+    void checkCacheState() noexcept;
 private:
     std::atomic_bool isReadCompleted_ = false;
     std::atomic_bool isRenderCompleted_ = false;
@@ -140,12 +149,13 @@ private:
     
     //decode
     Synchronized<std::deque<AVFramePtr>, std::shared_mutex> audioFrames_;
-    Synchronized<std::map<int64_t, AVFramePtr>, std::shared_mutex> videoFrames_;
-    std::unique_ptr<DecoderComponent> audioDecoder_ = nullptr;
-    std::unique_ptr<DecoderComponent> videoDecoder_ = nullptr;
+    Synchronized<std::deque<AVFramePtr>, std::shared_mutex> videoFrames_;
+    std::unique_ptr<DecoderComponent> audioDecodeComponent_ = nullptr;
+    std::unique_ptr<DecoderComponent> videoDecodeComponent_ = nullptr;
     
     //render
     std::unique_ptr<Audio::AudioRenderComponent> audioRender_ = nullptr;
+    PlayerStatistics statistics_;
 };
 
 }

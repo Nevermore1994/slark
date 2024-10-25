@@ -23,15 +23,17 @@ enum class AVFrameType {
     Video,
 };
 
+enum class FrameFormat {
+    Unknown = 0,
+    VideoToolBox = 1,
+};
+
 struct Statistics {
     uint64_t demuxStamp = 0;
     uint64_t pendingStamp = 0;
     uint64_t prepareDecodeStamp = 0;
-    uint64_t encodedStamp = 0;
     uint64_t decodedStamp = 0;
     uint64_t prepareRenderStamp = 0;
-    uint64_t pushRenderQueueStamp = 0;
-    uint64_t popRenderQueueStamp = 0;
     uint64_t renderedStamp = 0;
 };
 
@@ -49,19 +51,22 @@ struct VideoFrameInfo {
     bool isKeyFrame = false;
     uint32_t width = 0;
     uint32_t height = 0;
-    uint32_t timeScale = 0;
     uint64_t offset = 0;
     uint64_t keyIndex = 0;
+    FrameFormat format = FrameFormat::Unknown;
 };
 
 struct AVFrame {
+    bool isDiscard = false;
     AVFrameType frameType = AVFrameType::Unknown;
-    uint32_t duration = 0;
+    uint32_t duration = 0; //ms
+    uint64_t timeScale = 0;
     uint64_t index = 0;
     uint64_t pts = 0;
     uint64_t dts = 0;
     uint64_t offset = 0;
-    std::unique_ptr<Data> data;
+    std::unique_ptr<Data> data; //Undecoded
+    void* opaque = nullptr;
     Statistics stats;
     std::any info;
 
@@ -79,6 +84,14 @@ struct AVFrame {
         data.reset();
         return d;
     }
+    
+    long double dtsTime() noexcept {
+        return static_cast<long double>(dts) / static_cast<long double>(timeScale);
+    }
+    
+    long double ptsTime() noexcept {
+        return static_cast<long double>(dts) / static_cast<long double>(timeScale);
+    }
 
     [[nodiscard]] inline std::unique_ptr<AVFrame> copy() const noexcept {
         auto frame = std::make_unique<AVFrame>();
@@ -86,6 +99,7 @@ struct AVFrame {
         frame->index = index;
         frame->pts = pts;
         frame->dts = dts;
+        frame->offset = offset;
         if (data) {
             frame->data = data->copy();
         }
@@ -129,6 +143,8 @@ struct AVFrame {
         }
         return {};
     }
+    
+    
 };
 
 using AVFramePtr = std::unique_ptr<AVFrame>;

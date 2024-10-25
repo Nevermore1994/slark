@@ -22,3 +22,4 @@ NSString* stringViewToNSString(std::string_view view) {
                                     length:view.size()
                                   encoding:NSUTF8StringEncoding];
 }
+

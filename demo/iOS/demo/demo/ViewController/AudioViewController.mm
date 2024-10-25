@@ -31,6 +31,10 @@ using namespace slark;
     LogI("audio viewDidLoad");
 }
 
+- (void)dealloc {
+    self.player = nil;
+}
+
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     self.navigationController.interactivePopGestureRecognizer.delegate = self;

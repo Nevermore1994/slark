@@ -61,24 +61,16 @@ struct ResourceItem {
     double displayDuration;
 };
 
-struct RenderSize {
-    uint32_t width = 1280;
-    uint32_t height = 720;
-    RenderSize() = default;
-    RenderSize(uint32_t width, uint32_t height)
-        : width(width)
-        , height(height) {
-
-    }
-};
-
 struct PlayerSetting {
     bool isLoop = false;
     bool enableAudioSoftDecode = false;
     bool enableVideoSoftDecode = false;
     bool isMute = false;
-    RenderSize size;
+    uint32_t width = 0;
+    uint32_t height = 0;
     float volume = 100.0f;
+    uint32_t maxCacheTime = 30000; //ms
+    uint32_t minCacheTime = 10000; //seconds
 };
 
 struct PlayerParams {

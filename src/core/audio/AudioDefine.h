@@ -27,7 +27,6 @@ struct AudioInfo {
     uint16_t bitsPerSample = 0;
     uint64_t sampleRate = 0;
     uint32_t timeScale = 0;
-    CTime startTime;
     std::string_view mediaInfo;
 
     uint64_t bitrate() const {
@@ -43,7 +42,7 @@ struct AudioInfo {
     }
     
     Time::TimePoint dataLen2TimePoint(uint64_t dataLen) const {
-        return static_cast<uint64_t>(static_cast<long double>(dataLen) / static_cast<long double>(bytePerSecond()) * 1000000);
+        return static_cast<uint64_t>(static_cast<long double>(dataLen) / static_cast<long double>(bytePerSecond()) * timeScale);
     }
      
     uint64_t timePoint2DataLen(Time::TimePoint point) const {

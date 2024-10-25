@@ -43,7 +43,7 @@ public:
     void seek(Time::TimePoint pos) noexcept;
 
     Time::TimePoint playedTime() {
-        return clock.time();
+        return clock_.time();
     }
     
     bool isFull() noexcept {
@@ -61,13 +61,19 @@ public:
         return AudioRenderStatus::Unknown;
     }
     
+    Clock& clock() noexcept {
+        return clock_;
+    }
+    
 private:
     void init() noexcept;
 public:
     std::function<uint32_t(uint8_t*, uint32_t)> pullAudioData;
+    std::function<void(Time::TimePoint)> firstFrameRenderCallBack;
 private:
+    bool isFirstFrameRendered = false;
     uint64_t renderedDataLength_ = 0;
-    Clock clock;
+    Clock clock_;
     std::shared_ptr<AudioInfo> audioInfo_;
     RingBuffer<uint8_t, kDefaultAudioBufferSize> audioBuffer_;
     Synchronized<std::deque<AVFrameRefPtr>, std::shared_mutex> frames_;

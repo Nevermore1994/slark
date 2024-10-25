@@ -28,7 +28,7 @@ public:
 
 private:
     std::unordered_map<std::string, DecoderType> mediaInfo_;
-    std::unordered_map<DecoderType, DecoderInfo> decoderInfo_;
+    std::unordered_map<DecoderType, DecoderTypeInfo> decoderInfo_;
 };
 
 }
