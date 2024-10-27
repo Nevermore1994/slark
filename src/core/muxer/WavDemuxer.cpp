@@ -51,7 +51,7 @@ bool WAVDemuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
     double duration = 0.0;
     auto completion = [&]() {
         totalDuration_ = CTime(duration / 1000.0);
-        audioInfo_ = std::make_unique<Audio::AudioInfo>();
+        audioInfo_ = std::make_unique<AudioInfo>();
         audioInfo_->channels = channels;
         audioInfo_->sampleRate = sampleRate;
         audioInfo_->bitsPerSample = bitsPerSample;
@@ -219,7 +219,7 @@ uint64_t WAVDemuxer::getSeekToPos(Time::TimePoint time) noexcept {
         return 0;
     }
     auto sampleCount = static_cast<uint64_t>(floor(time.second() * static_cast<long double>(audioInfo_->sampleRate)));
-    return headerInfo_->headerLength + sampleCount * audioInfo_->bytePerFrame(); //byte
+    return headerInfo_->headerLength + sampleCount * audioInfo_->bytePerSample(); //byte
 }
 
 DemuxerResult WAVDemuxer::parseData(std::unique_ptr<Data> data, int64_t offset) noexcept {

@@ -216,7 +216,7 @@ void Player::Impl::initPlayerInfo() noexcept {
                 LogI("create audio decode component successs");
                 break;
             }
-            audioRender_ = std::make_unique<Audio::AudioRenderComponent>(demuxer_->audioInfo());
+            audioRender_ = std::make_unique<AudioRenderComponent>(demuxer_->audioInfo());
             audioRender_->firstFrameRenderCallBack = [this](Time::TimePoint timestamp){
                 statistics_.isFirstAudioRendered = true;
                 statistics_.audioRenderDelta = timestamp - statistics_.audioRenderDelta;

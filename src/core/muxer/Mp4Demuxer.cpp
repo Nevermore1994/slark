@@ -387,10 +387,17 @@ void Mp4Demuxer::init() noexcept {
             continue;
         }
         if (track->type == TrackType::Audio) {
-            audioInfo_ = std::make_shared<Audio::AudioInfo>();
+            audioInfo_ = std::make_shared<AudioInfo>();
             audioInfo_->channels = stsdBox->channelCount;
             audioInfo_->sampleRate = stsdBox->sampleRate;
             audioInfo_->bitsPerSample = stsdBox->sampleSize;
+            if (stsdBox && track->codecId == CodecId::AAC) {
+                auto esdsBox = std::dynamic_pointer_cast<BoxEsds>(stsdBox->getChild("mp4a")->getChild("esds"));
+                if (esdsBox) {
+                    audioInfo_->channels = esdsBox->audioSpecConfig.channelConfiguration;
+                }
+            }
+            //TODO: support more format
             audioInfo_->mediaInfo = codecId == CodecId::AAC ? MEDIA_MIMETYPE_AUDIO_AAC : MEDIA_MIMETYPE_UNKNOWN;
             audioInfo_->timeScale = track->mdhd->timeScale;
         } else if (track->type == TrackType::Video) {

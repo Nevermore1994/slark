@@ -42,7 +42,6 @@ public:
             writePos_ = secondPart;
         }
         size_ += size;
-        readSize_ += size;
     }
 
     void reset() noexcept {
@@ -50,7 +49,6 @@ public:
         writePos_ = 0;
         readPos_ = 0;
         size_ = 0;
-        readSize_ = 0;
     }
 
     uint32_t read(T* data, uint32_t size) noexcept {
@@ -92,16 +90,11 @@ public:
         return size_ == Capacity;
     }
 
-    [[nodiscard]] uint32_t readSize() const noexcept {
-        return readSize_;
-    }
-
 private:
     std::unique_ptr<std::array<T, Capacity>> data_;
     uint32_t readPos_ = 0;
     uint32_t writePos_ = 0;
     uint32_t size_ = 0;
-    uint32_t readSize_ = 0;
 };
 
 }

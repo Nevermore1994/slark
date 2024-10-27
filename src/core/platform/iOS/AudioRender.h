@@ -12,7 +12,7 @@
 #include "AudioDefine.h"
 #include "AudioDescription.h"
 
-namespace slark::Audio {
+namespace slark {
 
 class AudioRender : public IAudioRender {
 public:

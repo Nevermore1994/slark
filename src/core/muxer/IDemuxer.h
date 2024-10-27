@@ -102,7 +102,7 @@ public:
         return videoInfo_;
     }
 
-    [[nodiscard]] const std::shared_ptr<Audio::AudioInfo>& audioInfo() const noexcept {
+    [[nodiscard]] const std::shared_ptr<AudioInfo>& audioInfo() const noexcept {
         return audioInfo_;
     }
 
@@ -129,7 +129,7 @@ protected:
     CTime totalDuration_{0};
     std::unique_ptr<Buffer> buffer_;
     std::shared_ptr<VideoInfo> videoInfo_;
-    std::shared_ptr<Audio::AudioInfo> audioInfo_;
+    std::shared_ptr<AudioInfo> audioInfo_;
     std::shared_ptr<DemuxerHeaderInfo> headerInfo_;
 };
 

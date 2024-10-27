@@ -17,7 +17,7 @@ namespace slark {
 class iOSVideoHWDecoder : public IDecoder {
 public:
     iOSVideoHWDecoder() {
-        decoderType_ = DecoderType::iOSHardWareDecoder;
+        decoderType_ = DecoderType::VideoHardWareDecoder;
     }
     
     ~iOSVideoHWDecoder() override;
@@ -34,7 +34,7 @@ public:
     inline static const DecoderTypeInfo& info() noexcept {
         static DecoderTypeInfo info = {
             DecoderType::RAW,
-            MEDIA_MIMETYPE_AUDIO_RAW,
+            MEDIA_MIMETYPE_VIDEO_AVC,
             BaseClass<iOSVideoHWDecoder>::registerClass(GetClassName(iOSVideoHWDecoder))
         };
         return info;
