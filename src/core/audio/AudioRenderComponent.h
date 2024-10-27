@@ -21,9 +21,9 @@
 
 #endif
 
-namespace slark::Audio {
+namespace slark {
 
-constexpr uint64_t kDefaultAudioBufferSize = 8 * 1024;
+constexpr uint64_t kDefaultAudioBufferSize = 16 * 1024;
 class AudioRenderComponent: public slark::NonCopyable, public InputNode {
 public:
     explicit AudioRenderComponent(std::shared_ptr<AudioInfo> info);

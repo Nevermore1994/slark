@@ -154,7 +154,7 @@ private:
     std::unique_ptr<DecoderComponent> videoDecodeComponent_ = nullptr;
     
     //render
-    std::unique_ptr<Audio::AudioRenderComponent> audioRender_ = nullptr;
+    std::unique_ptr<AudioRenderComponent> audioRender_ = nullptr;
     PlayerStatistics statistics_;
 };
 

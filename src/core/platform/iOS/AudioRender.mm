@@ -14,7 +14,7 @@
 #define VOLUME_UNIT_INPUT_BUS0 0
 
 
-namespace slark::Audio {
+namespace slark {
 
 using namespace slark;
 

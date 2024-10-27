@@ -10,7 +10,7 @@
 #include "Log.hpp"
 #include "MediaUtility.hpp"
 
-namespace slark::Audio {
+namespace slark {
 
 AudioRenderComponent::AudioRenderComponent(std::shared_ptr<AudioInfo> info)
     : audioInfo_(std::move(info)) {

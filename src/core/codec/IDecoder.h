@@ -1,5 +1,5 @@
 //
-//  Decoder.hpp
+//  IDecoder.h
 //  slark
 //
 //  Created by Nevermore.
@@ -17,7 +17,7 @@ enum class DecoderType {
     AACSoftwareDecoder = 1001,
     AACHardwareDecoder = 1002,
     AudioDecoderEnd,
-    iOSHardWareDecoder = 2001,
+    VideoHardWareDecoder = 2001,
 };
 
 struct DecoderTypeInfo {

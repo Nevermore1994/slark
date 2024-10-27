@@ -1,12 +1,11 @@
 //
 // Created by Nevermore on 2023/7/28.
-// slark VideoDecoder
+// slark DecoderConfig
 // Copyright (c) 2023 Nevermore All rights reserved.
 //
 #pragma once
 
 #include "IDecoder.h"
-#include "VideoInfo.h"
 
 namespace slark {
 

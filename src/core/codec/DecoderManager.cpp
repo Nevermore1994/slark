@@ -10,6 +10,7 @@
 #include "RawDecoder.h"
 #if SLARK_IOS
 #include "iOSVideoHWDecoder.h"
+#include "iOSAACHWDecoder.hpp"
 #endif
 
 namespace slark {
@@ -31,13 +32,14 @@ void DecoderManager::init() noexcept {
         {std::string(MEDIA_MIMETYPE_AUDIO_RAW), DecoderType::RAW},
         {std::string(MEDIA_MIMETYPE_AUDIO_AAC) + std::string(kSoftwareFlag), DecoderType::AACSoftwareDecoder},
         {std::string(MEDIA_MIMETYPE_AUDIO_AAC) + std::string(kHardwareFlag), DecoderType::AACHardwareDecoder},
-        {std::string(MEDIA_MIMETYPE_VIDEO_AVC) + std::string(kHardwareFlag), DecoderType::iOSHardWareDecoder},
-        {std::string(MEDIA_MIMETYPE_VIDEO_HEVC) + std::string(kHardwareFlag), DecoderType::iOSHardWareDecoder},
+        {std::string(MEDIA_MIMETYPE_VIDEO_AVC) + std::string(kHardwareFlag), DecoderType::VideoHardWareDecoder},
+        {std::string(MEDIA_MIMETYPE_VIDEO_HEVC) + std::string(kHardwareFlag), DecoderType::VideoHardWareDecoder},
     };
 
     decoderInfo_ = {
         {DecoderType::RAW, RawDecoder::info()},
-        {DecoderType::iOSHardWareDecoder, iOSVideoHWDecoder::info()},
+        {DecoderType::VideoHardWareDecoder, iOSVideoHWDecoder::info()},
+        {DecoderType::AACHardwareDecoder, iOSAACHWDecoder::info()},
     };
 }
 

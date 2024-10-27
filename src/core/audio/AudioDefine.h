@@ -11,7 +11,7 @@
 #include "AVFrame.hpp"
 #include "Time.hpp"
 
-namespace slark::Audio {
+namespace slark {
 
 enum class AudioRenderStatus {
     Unknown,
@@ -37,12 +37,13 @@ struct AudioInfo {
         return sampleRate * channels * bitsPerSample / 8;
     }
     
-    uint64_t bytePerFrame() const {
+    uint64_t bytePerSample() const {
         return channels * bitsPerSample / 8;
     }
     
     Time::TimePoint dataLen2TimePoint(uint64_t dataLen) const {
-        return static_cast<uint64_t>(static_cast<long double>(dataLen) / static_cast<long double>(bytePerSecond()) * timeScale);
+        auto t = static_cast<uint64_t>(static_cast<long double>(dataLen) / static_cast<long double>(bytePerSample() * sampleRate) * 1000000);
+        return t;
     }
      
     uint64_t timePoint2DataLen(Time::TimePoint point) const {
