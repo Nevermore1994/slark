@@ -5,9 +5,8 @@
 //  Created by Nevermore on 2022/4/22.
 //
 
-#include "Player.h"
-
 #include <utility>
+#include "Player.h"
 #include "PlayerImpl.h"
 #include "Log.hpp"
 
@@ -15,7 +14,6 @@ namespace slark {
 
 Player::Player(std::unique_ptr<PlayerParams> params)
     : pimpl_(std::make_unique<Player::Impl>(std::move(params))) {
-
 }
 
 Player::~Player() = default;
@@ -102,7 +100,17 @@ void Player::removeObserver() noexcept {
 }
 
 long double Player::currentPlayedTime() noexcept {
+    if (!pimpl_) {
+        return 0;
+    }
     return pimpl_->currentPlayedTime();
+}
+
+void* Player::requestRender() noexcept {
+    if (!pimpl_) {
+        return nullptr;
+    }
+    return pimpl_->requestRender();
 }
 
 }//end namespace slark

@@ -173,25 +173,30 @@ std::expected<Data, bool> ReadFile::read(uint32_t size) noexcept {
 }
 
 bool ReadFile::read(Data& data) noexcept {
+    return read(data, data.capacity);
+}
+
+bool ReadFile::read(Data& data, uint64_t size) noexcept {
     if (!file_ || readOver_) {
         return false;
     }
-    auto res = fread(data.rawData, 1, data.capacity, file_);
+    auto res = fread(data.rawData, 1, size, file_);
     if (feof(file_) || tell() == static_cast<int64_t>(fileSize())) {
         readOver_ = true;
     }
     if (res == 0 && !readOver_) {
         isFailed_ = true;
-        LogE("read byte error:{}", std::strerror(errno));
+        LogE("read error:{}", std::strerror(errno));
     }
     data.length = res;
-    readSize_ = data.length;
+    readSize_ += res;
     return res > 0;
 }
 
 void ReadFile::seek(int64_t offset) noexcept {
     IFile::seek(offset);
     readOver_ = false;
+    readSize_ = 0;
 }
 
 void ReadFile::backFillByte(uint8_t byte) noexcept {

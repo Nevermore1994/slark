@@ -9,23 +9,24 @@
 #import "EXTScope.h"
 #import "AudioViewController.h"
 #import "PlayerControllerView.h"
-#include "slark.h"
+#include "SlarkPlayer.h"
 #include "Log.hpp"
 
 using namespace slark;
 
-@interface AudioViewController()<UIGestureRecognizerDelegate, IPlayerObserver>
+@interface AudioViewController()<UIGestureRecognizerDelegate, ISlarkPlayerObserver>
 @property (nonatomic, strong) UIImageView* iconView;
 @property (nonatomic, strong) PlayerControllerView* controllerView;
 @property (nonatomic, strong) UILabel* nameLabel;
 @property (nonatomic, assign) BOOL hasAuthorization;
-@property (nonatomic, strong) Player* player;
+@property (nonatomic, strong) SlarkPlayer* player;
 @end
 
 
 @implementation AudioViewController
 
 - (void)viewDidLoad {
+    [super viewDidLoad];
     [self initSubviews];
     [self initData];
     LogI("audio viewDidLoad");
@@ -108,7 +109,7 @@ using namespace slark;
     NSString *bundlePath = [[NSBundle mainBundle] pathForResource:@"resource" ofType:@"bundle"];
     NSBundle *resouceBundle = [NSBundle bundleWithPath:bundlePath];
     auto path = [resouceBundle pathForResource:@"sample-3s.wav" ofType:@""];
-    self.player = [[Player alloc] init:path];
+    self.player = [[SlarkPlayer alloc] init:path];
     self.player.delegate = self;
     self.hasAuthorization = NO;
 }
@@ -173,15 +174,15 @@ using namespace slark;
     [self.controllerView updateCurrentTime:time];
 }
 
-- (void)notifyState:(NSString *)playerId state:(PlayerState)state {
-    if (state == PlayerState::PlayerStateReady) {
+- (void)notifyState:(NSString *)playerId state:(SlarkPlayerState)state {
+    if (state == SlarkPlayerState::PlayerStateReady) {
         [self.controllerView updateTotalTime:CMTimeGetSeconds(self.player.totalDuration)];
-    } else if (state == PlayerState::PlayerStateCompleted) {
+    } else if (state == SlarkPlayerState::PlayerStateCompleted) {
         [self.controllerView setIsPause:YES];
     }
 }
 
-- (void)notifyEvent:(NSString *)playerId event:(PlayerEvent)event value:(NSString *)value {
+- (void)notifyEvent:(NSString *)playerId event:(SlarkPlayerEvent)event value:(NSString *)value {
 
 }
 @end

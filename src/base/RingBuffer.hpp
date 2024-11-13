@@ -13,7 +13,7 @@
 
 namespace slark {
 
-constexpr uint32_t RingBufferLength = 1024 * 1024 * 500;
+constexpr uint32_t RingBufferLength = 1024 * 1024 * 16;
 
 template<typename T, uint32_t Capacity = RingBufferLength>
 class RingBuffer : public NonCopyable {

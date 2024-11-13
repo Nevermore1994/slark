@@ -40,8 +40,11 @@ void decompressionOutputCallback(void* decompressionOutputRefCon,
                 break;
             }
             framePtr->stats.decodedStamp = Time::nowTimeStamp();
-            auto videoInfo = std::any_cast<VideoFrameInfo>(framePtr->info);
-            videoInfo.format = FrameFormat::VideoToolBox;
+            if (framePtr->info.has_value()) {
+                auto videoInfo = std::any_cast<VideoFrameInfo>(framePtr->info);
+                videoInfo.format = FrameFormat::VideoToolBox;
+                framePtr->info = videoInfo;
+            }
             framePtr->opaque = CVBufferRetain(pixelBuffer);
             isSuccess = true;
         } while (false);

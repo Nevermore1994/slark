@@ -5,22 +5,13 @@
 // Copyright (c) 2023 Nevermore All rights reserved.
 //
 #pragma once
-#include <_types/_uint64_t.h>
 #include <functional>
 #include <utility>
+#include "MediaDefs.h"
 #include "AVFrame.hpp"
 #include "Time.hpp"
 
 namespace slark {
-
-enum class AudioRenderStatus {
-    Unknown,
-    Ready,
-    Play,
-    Pause,
-    Stop,
-    Error,
-};
 
 struct AudioInfo {
     uint16_t channels = 0;
@@ -69,15 +60,15 @@ public:
     
     [[nodiscard]] virtual bool isNeedRequestData() const noexcept = 0;
     
-    [[nodiscard]] inline AudioRenderStatus status() const noexcept {
+    [[nodiscard]] inline RenderStatus status() const noexcept {
         return status_;
     }
     
     [[nodiscard]] inline bool isErrorState() const noexcept {
-        return status_ == AudioRenderStatus::Error;
+        return status_ == RenderStatus::Error;
     }
     
-    inline const std::shared_ptr<AudioInfo> info() const noexcept {
+    inline const std::shared_ptr<AudioInfo>& info() const noexcept {
         SAssert(audioInfo_ != nullptr, "audio render info is nullptr");
         return audioInfo_;
     }
@@ -90,7 +81,7 @@ public:
 protected:
     float volume_ = 100.f; // 0 ~ 100
     std::shared_ptr<AudioInfo> audioInfo_ = nullptr;
-    AudioRenderStatus status_ = AudioRenderStatus::Unknown;
+    RenderStatus status_ = RenderStatus::Unknown;
 };
 
 #if (SLARK_IOS || SLARK_ANDROID)

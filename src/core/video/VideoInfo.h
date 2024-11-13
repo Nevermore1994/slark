@@ -1,5 +1,5 @@
 //
-//  VideoInfo.hpp
+//  VideoInfo.h
 //  slark
 //
 //  Created by Nevermore.
@@ -7,7 +7,8 @@
 
 #pragma once
 
-#include "Time.hpp"
+#include "Data.hpp"
+#include "MediaDefs.h"
 
 namespace slark {
 

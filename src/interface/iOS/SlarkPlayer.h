@@ -20,7 +20,7 @@ typedef enum : NSUInteger {
     PlayerStateStop,
     PlayerStateError,
     PlayerStateCompleted,
-} PlayerState;
+} SlarkPlayerState;
 
 
 typedef enum : NSUInteger {
@@ -28,16 +28,16 @@ typedef enum : NSUInteger {
     PlayerEventSeekDone,
     PlayerEventPlayEnd,
     PlayerEventOnError,
-} PlayerEvent;
+} SlarkPlayerEvent;
 
-@protocol IPlayerObserver <NSObject>
+@protocol ISlarkPlayerObserver <NSObject>
 - (void)notifyTime:(NSString*) playerId time:(double) time;
-- (void)notifyState:(NSString*) playerId state:(PlayerState) state;
-- (void)notifyEvent:(NSString*) playerId event:(PlayerEvent) event value:(NSString*) value;
+- (void)notifyState:(NSString*) playerId state:(SlarkPlayerState) state;
+- (void)notifyEvent:(NSString*) playerId event:(SlarkPlayerEvent) event value:(NSString*) value;
 @end
 
-@interface Player : NSObject
-@property (nonatomic, weak) id<IPlayerObserver> delegate;
+@interface SlarkPlayer : NSObject
+@property (nonatomic, weak) id<ISlarkPlayerObserver> delegate;
 
 - (instancetype)init:(NSString*) path;
 
@@ -65,6 +65,9 @@ typedef enum : NSUInteger {
 
 - (CMTime)currentTime;
 
-- (PlayerState)state;
+- (SlarkPlayerState)state;
 
+- (NSString*)playerId;
+
+- (CVPixelBufferRef)requestRender;
 @end

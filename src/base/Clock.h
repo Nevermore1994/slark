@@ -13,18 +13,19 @@ namespace slark {
 class Clock {
 public:
     Clock() = default;
+    ~Clock() = default;
 
-    void setTime(Time::TimePoint count);
+    void setTime(Time::TimePoint count) noexcept;
 
-    Time::TimePoint time();
+    Time::TimePoint time() noexcept;
 
-    void start();
+    void start() noexcept;
 
-    void pause();
+    void pause() noexcept;
 
-    void reset();
+    void reset() noexcept;
 private:
-    Time::TimePoint adjustSpeedTime(Time::TimePoint ) const;
+    Time::TimePoint adjustSpeedTime(Time::TimePoint ) const noexcept;
 private:
     bool isInited_ = false;
     bool isPause_ = true;

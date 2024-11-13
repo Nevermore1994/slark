@@ -78,7 +78,6 @@
 		C1DA2E552C9C364D00DF03CB /* ViewController+MASAdditions.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "ViewController+MASAdditions.m"; sourceTree = "<group>"; };
 		C1E0D0B42CBAC6CC002FE528 /* VideoViewController.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = VideoViewController.mm; sourceTree = "<group>"; };
 		C1E0D0B62CBAC6F1002FE528 /* VideoViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = VideoViewController.h; sourceTree = "<group>"; };
-		C1E0D0B72CBAD445002FE528 /* Sample 2.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Sample 2.mp4"; sourceTree = "<group>"; };
 		C1E0D0B92CBAD45E002FE528 /* Sample.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file; name = Sample.mp4; path = ../../../test_sample/Sample.mp4; sourceTree = "<group>"; };
 		DC568D03803B819F7CFF7E50 /* Pods-demo.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-demo.release.xcconfig"; path = "Target Support Files/Pods-demo/Pods-demo.release.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -136,7 +135,6 @@
 			children = (
 				C11838142ADFCC6800DB0127 /* demo.app */,
 				C1DA2DC92C9716BD00DF03CB /* resource.bundle */,
-				C1E0D0B72CBAD445002FE528 /* Sample 2.mp4 */,
 			);
 			name = Products;
 			sourceTree = "<group>";

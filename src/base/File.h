@@ -113,6 +113,8 @@ public:
     std::expected<uint8_t, bool> readByte() noexcept;
 
     bool read(Data& data) noexcept;
+    
+    bool read(Data& data, uint64_t size) noexcept;
 
     void backFillByte(uint8_t byte) noexcept;
 

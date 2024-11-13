@@ -60,6 +60,7 @@ void TrackContext::reset() noexcept {
     
     cttsEntryIndex = 0;
     cttsEntrySampleIndex = 0;
+    keyIndex = 0;
     
     dts = 0;
     pts = 0;
@@ -189,6 +190,7 @@ AVFrameArray TrackContext::praseH264FrameData(AVFramePtr frame, DataPtr data, co
         } else if (naluType == 6) {
             //sei
             auto seiFrame = frame->copy();
+            seiFrame->info = info;
             seiFrame->data = std::make_unique<Data>(view.substr(0, totalSize));
             view = view.substr(totalSize);
             frames.push_back(std::move(seiFrame));
@@ -500,7 +502,14 @@ DemuxerResult Mp4Demuxer::parseData(std::unique_ptr<Data> data, int64_t offset) 
     return result;
 }
 
-uint64_t Mp4Demuxer::getSeekToPos(Time::TimePoint) noexcept {
+uint64_t Mp4Demuxer::getSeekToPos(Time::TimePoint timePoint) noexcept {
+    if (timePoint == 0) {
+        auto startPos = headerInfo_->headerLength + 8;//skip size and type
+        for (auto& track:std::views::values(tracks_)) {
+            track->seek(startPos);
+        }
+        return startPos;
+    }
     return 0;
 }
 

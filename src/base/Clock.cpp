@@ -10,18 +10,18 @@
 
 namespace slark {
 
-void Clock::setTime(Time::TimePoint count) {
+void Clock::setTime(Time::TimePoint count) noexcept {
     std::lock_guard<std::shared_mutex> lock(mutex_);
     pts_ = count;
     lastUpdated_ = Time::nowTimeStamp();
     isInited_ = true;
 }
 
-Time::TimePoint Clock::adjustSpeedTime(Time::TimePoint elapse) const {
+Time::TimePoint Clock::adjustSpeedTime(Time::TimePoint elapse) const noexcept {
     return static_cast<uint64_t>(static_cast<double>(elapse.count) * (1.0 - speed));
 }
 
-Time::TimePoint Clock::time() {
+Time::TimePoint Clock::time() noexcept {
     std::shared_lock<std::shared_mutex> lock(mutex_);
     if (isPause_) {
         return pts_;
@@ -30,7 +30,7 @@ Time::TimePoint Clock::time() {
     return elapseTime + pts_ - adjustSpeedTime(elapseTime);
 }
 
-void Clock::start() {
+void Clock::start() noexcept {
     std::lock_guard<std::shared_mutex> lock(mutex_);
     if (!isInited_) {
         pts_ = 0;
@@ -42,14 +42,14 @@ void Clock::start() {
     lastUpdated_ = Time::nowTimeStamp();
 }
 
-void Clock::pause() {
+void Clock::pause() noexcept {
     std::lock_guard<std::shared_mutex> lock(mutex_);
     isPause_ = true;
     auto elapseTime = Time::nowTimeStamp() - lastUpdated_;
     pts_ += elapseTime - adjustSpeedTime(elapseTime);
 }
 
-void Clock::reset() {
+void Clock::reset() noexcept {
     std::lock_guard<std::shared_mutex> lock(mutex_);
     pts_ = 0;
     speed = 1.0;

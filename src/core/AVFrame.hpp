@@ -14,7 +14,7 @@
 #include <expected>
 #include "Assert.hpp"
 #include "Data.hpp"
-
+#include "Log.hpp"
 namespace slark {
 
 enum class AVFrameType {
