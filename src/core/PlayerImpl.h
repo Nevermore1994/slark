@@ -76,6 +76,7 @@ public:
     
     [[nodiscard]] long double currentPlayedTime() noexcept;
     
+    [[nodiscard]] void* requestRender() noexcept;
 private:
     void init() noexcept;
 
@@ -122,6 +123,7 @@ private:
     [[nodiscard]] uint32_t demuxedDuration() noexcept;
     
     void checkCacheState() noexcept;
+    
 private:
     std::atomic_bool isReadCompleted_ = false;
     std::atomic_bool isRenderCompleted_ = false;

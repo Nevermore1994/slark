@@ -93,7 +93,7 @@ void Writer::process() noexcept {
                 LogI("{} stoped", worker_.getName());
             }
         } else {
-            constexpr auto kMaxIdleTime = 5000ms;
+            constexpr auto kMaxIdleTime = 3000ms;
             if ((Time::nowTimeStamp() - idleTime_).toMilliSeconds() > kMaxIdleTime) {
                 worker_.pause();
             }

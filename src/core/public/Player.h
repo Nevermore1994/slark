@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include "IEGLContext.h"
 
 namespace slark {
 
@@ -45,7 +46,7 @@ struct IPlayerObserver {
     virtual void notifyState(std::string_view playerId, PlayerState state) = 0;
 
     virtual void notifyEvent(std::string_view playerId, PlayerEvent event, std::string value) = 0;
-
+    
     virtual ~IPlayerObserver() = default;
 };
 
@@ -76,6 +77,7 @@ struct PlayerSetting {
 struct PlayerParams {
     ResourceItem item;
     PlayerSetting setting;
+    std::shared_ptr<IEGLContext> mainGLContext;
 };
 
 struct PlayerInfo {
@@ -114,6 +116,7 @@ public:
     
     void removeObserver() noexcept;
 
+    void* requestRender() noexcept;
 public:
     PlayerParams peek() noexcept;
     

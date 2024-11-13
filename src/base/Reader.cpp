@@ -43,6 +43,8 @@ IOState Reader::state() noexcept {
             state = IOState::Error;
         } else if(file->readOver()) {
             state = IOState::EndOfFile;
+        } else if(readRange_.isValid() && file->tell() >= readRange_.end()) {
+            state = IOState::EndOfFile;
         }
     });
     return state;
@@ -121,13 +123,30 @@ void Reader::process() {
             return;
         }
 
-        data.offset = file->tell();
-        file->read(*data.data);
+        auto tell = file->tell();
+        auto readSize = data.data->capacity;
+        if (readRange_.isValid() && readSize >= (readRange_.end() - tell)) {
+            readSize = readRange_.end() - tell;
+        }
+        data.offset = tell;
+        file->read(*data.data, readSize);
     });
 
     if (setting_.callBack) {
         setting_.callBack(std::move(data), state());
     }
+}
+
+void Reader::setReadRange(ReadRange range) noexcept {
+    if (worker_.isExit()) {
+        LogE("Reader is exit.");
+        return;
+    }
+    readRange_ = range;
+    if (!range.isValid()) {
+        return;
+    }
+    seekPos_ = range.readPos;
 }
 
 int64_t Reader::tell() noexcept {

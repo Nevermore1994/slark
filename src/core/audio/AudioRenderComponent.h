@@ -54,11 +54,11 @@ public:
         return isFull;
     }
     
-    AudioRenderStatus status() const {
+    RenderStatus status() const {
         if (pimpl_) {
             return pimpl_->status();
         }
-        return AudioRenderStatus::Unknown;
+        return RenderStatus::Unknown;
     }
     
     Clock& clock() noexcept {

@@ -24,16 +24,15 @@ void AudioRenderComponent::init() noexcept {
     pimpl_->requestAudioData = [this](uint8_t* data, uint32_t size) {
         uint32_t tSize = 0;
         frames_.withWriteLock([this, size, data, &tSize](auto& frames) {
-            if (!audioBuffer_.isFull() && !frames.empty()) {
+            tSize = audioBuffer_.read(data, size);
+            if (tSize < size && !frames.empty()) {
                 while (!frames.empty() && audioBuffer_.tail() >= frames.front()->data->length) {
                     auto length = static_cast<uint32_t>(frames.front()->data->length);
                     audioBuffer_.append(frames.front()->data->rawData, length);
                     frames.pop_front();
                 }
-            }
-            tSize = audioBuffer_.read(data, size);
-            if (tSize < size && pullAudioData) {
-                tSize += pullAudioData(data + tSize, size - tSize);
+                auto secondReadSize = audioBuffer_.read(data + tSize, size - tSize);
+                tSize += secondReadSize;
             }
             renderedDataLength_ += tSize;
         });
@@ -79,6 +78,7 @@ void AudioRenderComponent::clear() noexcept {
 void AudioRenderComponent::reset() noexcept {
     clear();
     init();
+    clock_.reset();
 }
 
 std::shared_ptr<AudioInfo> AudioRenderComponent::audioInfo() const noexcept {

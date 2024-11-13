@@ -11,24 +11,25 @@
 #import "VideoViewController.h"
 #import "PlayerControllerView.h"
 #import "iOSUtil.h"
-#include "slark.h"
+#import "SlarkViewController.h"
 #include "Log.hpp"
 
 using namespace slark;
 
-@interface VideoViewController()<UIGestureRecognizerDelegate, IPlayerObserver>
+@interface VideoViewController()<UIGestureRecognizerDelegate, ISlarkPlayerObserver>
 @property (nonatomic, strong) PlayerControllerView* controllerView;
 @property (nonatomic, strong) UILabel* nameLabel;
 @property (nonatomic, assign) BOOL hasAuthorization;
-@property (nonatomic, strong) Player* player;
+@property (nonatomic, strong) SlarkViewController* playerController;
 @end
 
 @implementation VideoViewController
 
 - (void)viewDidLoad {
-    [self initSubviews];
+    [super viewDidLoad];
     [self initData];
-    LogI("audio viewDidLoad");
+    [self initSubviews];
+    LogI("video viewDidLoad");
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -99,14 +100,17 @@ using namespace slark;
     NSString *bundlePath = [[NSBundle mainBundle] pathForResource:@"resource" ofType:@"bundle"];
     NSBundle *resouceBundle = [NSBundle bundleWithPath:bundlePath];
     auto path = [resouceBundle pathForResource:@"Sample.mp4" ofType:@""];
-    self.player = [[Player alloc] init:path];
-    self.player.delegate = self;
+    SlarkPlayer* player = [[SlarkPlayer alloc] init:path];
+    player.delegate = self;
+    self.playerController = [[SlarkViewController alloc] initWithPlayer:self.view.bounds player:player];
+    [self addChildViewController:self.playerController];
+    [self.view addSubview:self.playerController.view];
     self.hasAuthorization = NO;
 }
 
 - (void)handlePlayClick:(BOOL) isPlay {
     if (!isPlay) {
-        [self.player pause];
+        [self.playerController.player pause];
         return;
     }
     if (!self.hasAuthorization) {
@@ -115,11 +119,11 @@ using namespace slark;
             @strongify(self);
             self.hasAuthorization = grant;
             if (grant) {
-                [self.player play];
+                [self.playerController.player play];
             }
         }];
     } else {
-        [self.player play];
+        [self.playerController.player play];
     }
 }
 
@@ -133,7 +137,7 @@ using namespace slark;
         };
         _controllerView.onSeekClick = ^(double time) {
             @strongify(self);
-            [self.player seek:time];
+            [self.playerController.player seek:time];
             LogI("audio seek:{}", time);
         };
         _controllerView.onSeekDone = ^{
@@ -145,7 +149,7 @@ using namespace slark;
         };
         _controllerView.onSetLoopClick = ^(BOOL loop) {
             @strongify(self);
-            [self.player setLoop:loop];
+            [self.playerController.player setLoop:loop];
         };
     }
     return _controllerView;
@@ -155,15 +159,15 @@ using namespace slark;
     [self.controllerView updateCurrentTime:time];
 }
 
-- (void)notifyState:(NSString *)playerId state:(PlayerState)state {
-    if (state == PlayerState::PlayerStateReady) {
-        [self.controllerView updateTotalTime:CMTimeGetSeconds(self.player.totalDuration)];
-    } else if (state == PlayerState::PlayerStateCompleted) {
+- (void)notifyState:(NSString *)playerId state:(SlarkPlayerState)state {
+    if (state == SlarkPlayerState::PlayerStateReady) {
+        [self.controllerView updateTotalTime:CMTimeGetSeconds(self.playerController.player.totalDuration)];
+    } else if (state == SlarkPlayerState::PlayerStateCompleted) {
         [self.controllerView setIsPause:YES];
     }
 }
 
-- (void)notifyEvent:(NSString *)playerId event:(PlayerEvent)event value:(NSString *)value {
+- (void)notifyEvent:(NSString *)playerId event:(SlarkPlayerEvent)event value:(NSString *)value {
 
 }
 @end

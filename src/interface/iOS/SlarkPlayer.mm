@@ -1,12 +1,14 @@
 //
-//  slark.mm
+//  SlarkPlayer.mm
 //  slark
 //
 //  Created by Nevermore
 
-#import "slark.h"
+#import "SlarkPlayer.h"
 #import "iOSUtil.h"
-#include "Player.h"
+#import "Player.h"
+#import "GLContextManager.h"
+
 
 #define STATE_ENUM_TO_CASE(value) \
     case slark::PlayerState::value: \
@@ -16,7 +18,7 @@
     case slark::PlayerEvent::value: \
         return PlayerEvent##value
 
-PlayerState convertState(slark::PlayerState state) {
+SlarkPlayerState convertState(slark::PlayerState state) {
     switch (state) {
             STATE_ENUM_TO_CASE(Initializing);
             STATE_ENUM_TO_CASE(Ready);
@@ -31,7 +33,7 @@ PlayerState convertState(slark::PlayerState state) {
     }
 }
 
-PlayerEvent convertEvent(slark::PlayerEvent event) {
+SlarkPlayerEvent convertEvent(slark::PlayerEvent event) {
     switch (event) {
             EVENT_ENUM_TO_CASE(FirstFrameRendered);
             EVENT_ENUM_TO_CASE(SeekDone);
@@ -63,11 +65,11 @@ struct PlayerObserver final : public slark::IPlayerObserver
     ~PlayerObserver() override = default;
 
     std::function<void(NSString*, long double)> notifyTimeFunc;
-    std::function<void(NSString*, PlayerState)> notifyStateFunc;
-    std::function<void(NSString*, PlayerEvent, NSString*)> notifyEventFunc;
+    std::function<void(NSString*, SlarkPlayerState)> notifyStateFunc;
+    std::function<void(NSString*, SlarkPlayerEvent, NSString*)> notifyEventFunc;
 };
 
-@interface Player()
+@interface SlarkPlayer()
 {
     std::unique_ptr<slark::Player> player_;
     std::shared_ptr<PlayerObserver> observer_;
@@ -75,7 +77,7 @@ struct PlayerObserver final : public slark::IPlayerObserver
 
 @end
 
-@implementation Player
+@implementation SlarkPlayer
 
 - (instancetype)init:(NSString*) path {
     return [self initWithTimeRange:path range:kCMTimeRangeInvalid];
@@ -85,10 +87,14 @@ struct PlayerObserver final : public slark::IPlayerObserver
     if (self = [super init]) {
         auto params = std::make_unique<slark::PlayerParams>();
         params->item.path = [path UTF8String];
+        slark::GLContextManager::shareInstance();
+        auto context = slark::createEGLContext();
+        context->init();
         if (CMTIMERANGE_IS_VALID(range)) {
             params->item.displayStart = CMTimeGetSeconds(range.start);
             params->item.displayDuration = CMTimeGetSeconds(range.duration);
         }
+        params->mainGLContext = std::shared_ptr<slark::IEGLContext>(std::move(context));
         player_ = std::make_unique<slark::Player>(std::move(params));
         observer_ = std::make_shared<PlayerObserver>();
         player_->addObserver(observer_);
@@ -101,7 +107,7 @@ struct PlayerObserver final : public slark::IPlayerObserver
                 }
             });
         };
-        observer_->notifyStateFunc = [weakSelf](NSString* playerId, PlayerState state){
+        observer_->notifyStateFunc = [weakSelf](NSString* playerId, SlarkPlayerState state){
             dispatch_async(dispatch_get_main_queue(), ^{
                 __strong __typeof(weakSelf) strongSelf = weakSelf;
                 if ([strongSelf.delegate respondsToSelector:@selector(notifyState:state:)]) {
@@ -109,7 +115,7 @@ struct PlayerObserver final : public slark::IPlayerObserver
                 }
             });
         };
-        observer_->notifyEventFunc = [weakSelf](NSString* playerId, PlayerEvent evnt, NSString* value){
+        observer_->notifyEventFunc = [weakSelf](NSString* playerId, SlarkPlayerEvent evnt, NSString* value){
             dispatch_async(dispatch_get_main_queue(), ^{
                 __strong __typeof(weakSelf) strongSelf = weakSelf;
                 if ([strongSelf.delegate respondsToSelector:@selector(notifyEvent:event:value:)]) {
@@ -165,8 +171,15 @@ struct PlayerObserver final : public slark::IPlayerObserver
     return CMTimeMakeWithSeconds(player_->currentPlayedTime(), 1000);
 }
 
-- (PlayerState)state {
+- (SlarkPlayerState)state {
     return convertState(player_->state());
 }
 
+- (NSString*)playerId {
+    return [NSString stringWithUTF8String:player_->playerId().data()];
+}
+
+- (CVPixelBufferRef)requestRender {
+    return static_cast<CVPixelBufferRef>(player_->requestRender());
+}
 @end

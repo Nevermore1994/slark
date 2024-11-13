@@ -50,7 +50,7 @@ static OSStatus AudioRenderCallback(void *inRefCon,
             };
             return noErr;
         };
-        if (render->status() != AudioRenderStatus::Play) {
+        if (render->status() != RenderStatus::Play) {
             return silenceHandler();
         }
         
@@ -86,7 +86,7 @@ AudioRender::AudioRender(std::shared_ptr<AudioInfo> audioInfo)
     if (isSuccess) {
         setupAudioComponent();
     }
-    status_ = isSuccess ? AudioRenderStatus::Ready : AudioRenderStatus::Error;
+    status_ = isSuccess ? RenderStatus::Ready : RenderStatus::Error;
 }
 
 AudioRender::~AudioRender() {
@@ -98,13 +98,13 @@ void AudioRender::play() noexcept {
         LogI("[audio render] in error status.");
         return;
     }
-    if (status_ == AudioRenderStatus::Play || status_ == AudioRenderStatus::Stop) {
+    if (status_ == RenderStatus::Play || status_ == RenderStatus::Stop) {
         LogI("[audio render] start play return:{}", static_cast<uint32_t>(status_));
         return;
     }
     AudioOutputUnitStart(volumeUnit_);
     AudioOutputUnitStart(renderUnit_);
-    status_ = AudioRenderStatus::Play;
+    status_ = RenderStatus::Play;
     LogI("[audio render] play.");
 }
 
@@ -113,13 +113,13 @@ void AudioRender::pause() noexcept {
         LogI("in error status.");
         return;
     }
-    if (status_ == AudioRenderStatus::Pause || status_ == AudioRenderStatus::Stop) {
+    if (status_ == RenderStatus::Pause || status_ == RenderStatus::Stop) {
         LogI("[audio render] pause return:{}", static_cast<uint32_t>(status_));
         return;
     }
     AudioOutputUnitStop(volumeUnit_);
     AudioOutputUnitStop(renderUnit_);
-    status_ = AudioRenderStatus::Pause;
+    status_ = RenderStatus::Pause;
     LogI("[audio render] pause.");
 }
 
@@ -128,7 +128,7 @@ void AudioRender::flush() noexcept {
         LogE("[audio render] in error status.");
         return;
     }
-    if (status_ == AudioRenderStatus::Stop) {
+    if (status_ == RenderStatus::Stop) {
         LogI("[audio render] flush return:{}", static_cast<uint32_t>(status_));
         return;
     }
@@ -137,11 +137,11 @@ void AudioRender::flush() noexcept {
 
 void AudioRender::stop() noexcept {
     LogI("[audio render] stop start.");
-    if (status_ == AudioRenderStatus::Stop) {
+    if (status_ == RenderStatus::Stop) {
         LogI("[audio render] stoped.");
         return;
     }
-    status_ = AudioRenderStatus::Stop;
+    status_ = RenderStatus::Stop;
     
     if (renderUnit_) {
         AudioOutputUnitStop(renderUnit_);
@@ -167,7 +167,7 @@ void AudioRender::setVolume(float volume) noexcept {
 }
 
 bool AudioRender::isNeedRequestData() const noexcept {
-    if (status_ == AudioRenderStatus::Stop || status_ == AudioRenderStatus::Pause || status_ == AudioRenderStatus::Error) {
+    if (status_ == RenderStatus::Stop || status_ == RenderStatus::Pause || status_ == RenderStatus::Error) {
         LogI("audio render not need data.");
         return false;
     }

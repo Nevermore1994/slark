@@ -16,11 +16,13 @@
 #include "IDemuxer.h"
 #include "Mp4Demuxer.hpp"
 #include "DecoderConfig.h"
+#include "GLContextManager.h"
 
 namespace slark {
 
 Player::Impl::Impl(std::unique_ptr<PlayerParams> params)
     : playerId_(Random::uuid()) {
+    GLContextManager::shareInstance().addMainContext(playerId_, params->mainGLContext);
     params_.withWriteLock([&params](auto& p){
         p = std::move(params);
     });
@@ -143,9 +145,12 @@ bool Player::Impl::openDemuxer(IOData& data) noexcept {
     if (demuxer_->type() == DemuxerType::MP4) {
         auto mp4Demuxer = dynamic_cast<Mp4Demuxer*>(demuxer_.get());
         if (res) {
-            auto dataStart = demuxer_->headerInfo()->headerLength + 8; // //skip size and type
+            auto dataStart = demuxer_->headerInfo()->headerLength + 8; //skip size and type
+            ReadRange range;
+            range.readPos = dataStart;
+            range.readSize = demuxer_->headerInfo()->dataSize;
             demuxer_->seekPos(dataStart);
-            readHandler_->seek(dataStart);
+            readHandler_->setReadRange(range);
 #if DEBUG
             auto ss = mp4Demuxer->description();
             LogI("mp4 info:{}", ss);
@@ -422,6 +427,7 @@ void Player::Impl::doStop() noexcept {
         ownerThread_->stop();
         ownerThread_.reset();
     }
+    GLContextManager::shareInstance().removeMainContext(playerId_);
 }
 
 void Player::Impl::doSeek() noexcept {
@@ -446,7 +452,7 @@ void Player::Impl::doLoop() noexcept {
     isReadCompleted_ = false;
     auto seekPos = demuxer_->getSeekToPos(0);
     readHandler_->seek(seekPos);
-    readHandler_->resume();
+    readHandler_->pause();
     demuxer_->seekPos(seekPos);
     if (audioRender_) {
         audioRender_->seek(0);
@@ -550,7 +556,8 @@ void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
         }
     }
     auto nowTime = currentPlayedTime();
-    if (changeState == PlayerState::Playing && isReadCompleted_ && isgreaterequal(nowTime, info_.duration)) {
+    auto currentState = state();
+    if (currentState == PlayerState::Playing && isReadCompleted_ && isgreaterequal(nowTime, info_.duration)) {
         notifyTime(); //notify time to end
         LogI("play end.");
         bool isLoop;
@@ -560,6 +567,8 @@ void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
         doLoop();
         if (!isLoop){
             changeState = PlayerState::Completed;
+        } else {
+            readHandler_->resume();
         }
     }
     if (changeState != PlayerState::Unknown) {
@@ -655,6 +664,9 @@ uint32_t Player::Impl::demuxedDuration() noexcept {
 }
 
 void Player::Impl::checkCacheState() noexcept {
+    if (state() != PlayerState::Playing) {
+        return;
+    }
     PlayerSetting setting;
     params_.withReadLock([&setting](auto& p){
         setting = p->setting;
@@ -665,6 +677,17 @@ void Player::Impl::checkCacheState() noexcept {
     } else if (cacheTime >= setting.maxCacheTime) {
         readHandler_->pause();
     }
+}
+
+void* Player::Impl::requestRender() noexcept {
+    void* buffer = nullptr;
+    videoFrames_.withLock([&buffer](auto& frames){
+        if (!frames.empty()) {
+            buffer = frames.front()->opaque;
+            frames.pop_front();
+        }
+    });
+    return buffer;
 }
 
 }//end namespace slark

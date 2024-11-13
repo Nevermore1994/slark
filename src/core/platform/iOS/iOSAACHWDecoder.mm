@@ -69,6 +69,7 @@ bool iOSAACHWDecoder::send(AVFramePtr frame) noexcept {
         decodeData->length = outputData_->mBuffers[0].mDataByteSize;
         std::copy(data, data + outputData_->mBuffers[0].mDataByteSize, decodeData->rawData);
         frame->data = std::move(decodeData);
+        frame->stats.decodedStamp = Time::nowTimeStamp();
         if (receiveFunc) {
             receiveFunc(std::move(frame));
         }

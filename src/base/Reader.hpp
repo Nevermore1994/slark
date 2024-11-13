@@ -48,6 +48,20 @@ struct IOData {
 
 using ReaderDataFunc = std::function<void(IOData, IOState)>;
 
+struct ReadRange {
+    static constexpr int64_t kReadRangeInvalid = -1;
+    uint64_t readPos{};
+    int64_t readSize{kReadRangeInvalid};
+    
+    bool isValid() const noexcept {
+        return readSize != kReadRangeInvalid;
+    }
+    
+    uint64_t end() const noexcept {
+        return readPos + readSize;
+    }
+};
+
 struct ReaderSetting {
     uint64_t readBlockSize = kReadDefaultSize;
     std::chrono::milliseconds timeInterval{5};
@@ -81,6 +95,7 @@ public:
     void resume() noexcept;
     void pause() noexcept;
     void stop() noexcept;
+    void setReadRange(ReadRange range) noexcept;
 
     void seek(uint64_t pos) noexcept;
     int64_t tell() noexcept;
@@ -89,15 +104,17 @@ public:
     const ReaderSetting& readerSetting() noexcept {
         return setting_;
     }
-     
+    
     [[nodiscard]] bool isRunning() noexcept {
         return worker_.isRunning();
     }
+    
 private:
     void process();
 private:
     std::optional<int64_t> seekPos_;
     ReaderSetting setting_;
+    ReadRange readRange_;
     Synchronized<std::unique_ptr<FileUtil::ReadFile>, std::shared_mutex> file_;
     Thread worker_;
 };
