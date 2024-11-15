@@ -7,6 +7,7 @@
 #import "SlarkPlayer.h"
 #import "iOSUtil.h"
 #import "Player.h"
+#import "VideoInfo.h"
 #import "GLContextManager.h"
 
 
@@ -181,5 +182,9 @@ struct PlayerObserver final : public slark::IPlayerObserver
 
 - (CVPixelBufferRef)requestRender {
     return static_cast<CVPixelBufferRef>(player_->requestRender());
+}
+
+- (void)setRenderImpl:(std::weak_ptr<slark::IVideoRender>) ptr {
+    player_->setRenderImpl(ptr);
 }
 @end

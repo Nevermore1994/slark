@@ -61,6 +61,8 @@ public:
     void addObserver(IPlayerObserverPtr observer) noexcept;
     
     void removeObserver() noexcept;
+    
+    void setRenderImpl(std::weak_ptr<IVideoRender>& render) noexcept;
 public:
     [[nodiscard]] inline const PlayerInfo& info() const noexcept {
         return info_;
@@ -124,6 +126,7 @@ private:
     
     void checkCacheState() noexcept;
     
+    bool setupIOHandler() noexcept;
 private:
     std::atomic_bool isReadCompleted_ = false;
     std::atomic_bool isRenderCompleted_ = false;
@@ -157,6 +160,7 @@ private:
     
     //render
     std::unique_ptr<AudioRenderComponent> audioRender_ = nullptr;
+    Synchronized<std::weak_ptr<IVideoRender>, std::shared_mutex> videoRender_;
     PlayerStatistics statistics_;
 };
 

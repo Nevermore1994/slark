@@ -9,6 +9,7 @@
 
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CMTime.h>
+#import <memory>
 
 typedef enum : NSUInteger {
     PlayerStateUnknown,
@@ -35,6 +36,12 @@ typedef enum : NSUInteger {
 - (void)notifyState:(NSString*) playerId state:(SlarkPlayerState) state;
 - (void)notifyEvent:(NSString*) playerId event:(SlarkPlayerEvent) event value:(NSString*) value;
 @end
+
+namespace slark {
+
+struct IVideoRender;
+
+}
 
 @interface SlarkPlayer : NSObject
 @property (nonatomic, weak) id<ISlarkPlayerObserver> delegate;
@@ -70,4 +77,6 @@ typedef enum : NSUInteger {
 - (NSString*)playerId;
 
 - (CVPixelBufferRef)requestRender;
+
+- (void)setRenderImpl:(std::weak_ptr<slark::IVideoRender>) ptr;
 @end

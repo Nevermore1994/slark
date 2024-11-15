@@ -86,6 +86,8 @@ struct PlayerInfo {
     long double duration = 0;
 };
 
+struct IVideoRender;
+
 class Player {
 
 public:
@@ -117,6 +119,8 @@ public:
     void removeObserver() noexcept;
 
     void* requestRender() noexcept;
+    
+    void setRenderImpl(std::weak_ptr<IVideoRender>& render);
 public:
     PlayerParams peek() noexcept;
     

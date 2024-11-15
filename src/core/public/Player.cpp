@@ -113,4 +113,11 @@ void* Player::requestRender() noexcept {
     return pimpl_->requestRender();
 }
 
+void Player::setRenderImpl(std::weak_ptr<IVideoRender>& render) {
+    if (!pimpl_) {
+        return;
+    }
+    pimpl_->setRenderImpl(render);
+}
+
 }//end namespace slark

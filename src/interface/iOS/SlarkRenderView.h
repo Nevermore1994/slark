@@ -10,6 +10,11 @@
 #import <UIKit/UIKit.h>
 #import "IEGLContext.h"
 
+namespace slark {
+
+struct IVideoRender;
+
+}
 @protocol SlarkRenderViewDelegate <NSObject>
 - (CVPixelBufferRef)requestRender;
 @end
@@ -25,5 +30,6 @@
 - (CGFloat)scale;
 - (void)updateRenderRect;
 - (void)setContext:(slark::IEGLContextRefPtr) context;
+- (std::weak_ptr<slark::IVideoRender>)renderImpl;
 @end
 #endif /* RenderGLView_hpp */

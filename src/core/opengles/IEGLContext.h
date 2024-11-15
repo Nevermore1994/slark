@@ -19,8 +19,6 @@ public:
     
     virtual void release() = 0;
     
-    virtual bool createBuffer(uint32_t width, uint32_t height) = 0;
-    
     virtual void acttachContext() = 0;
     
     virtual void detachContext() = 0;

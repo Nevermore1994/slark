@@ -24,5 +24,13 @@ struct VideoInfo {
     DataRefPtr vps;
 };
 
+struct IVideoRender {
+    virtual void start() noexcept = 0;
+    virtual void stop() noexcept = 0;
+    virtual void notifyVideoInfo(std::shared_ptr<VideoInfo> videoInfo) noexcept = 0;
+    virtual void notifyRenderInfo() noexcept = 0;
+    virtual ~IVideoRender() = default;
+};
+
 } //end namespace slark
 
