@@ -66,21 +66,34 @@ void Player::Impl::init() noexcept {
     sender_ = std::move(sp);
     receiver_ = std::move(rp);
 
+    if (!setupIOHandler()) {
+        LogE("setupIOHandler failed.");
+        return;
+    }
     ownerThread_ = std::make_unique<Thread>("playerThread", &Player::Impl::process, this);
     ownerThread_->runLoop(200ms, [this](){
         if (state() == PlayerState::Playing) {
             notifyTime(); 
         }
     });
+    
+    readHandler_->start();
+    ownerThread_->start();
+    setState(PlayerState::Buffering);
+    LogI("player buffering start.");
+}
+
+bool Player::Impl::setupIOHandler() noexcept {
     ///set file path
     std::string path;
     params_.withReadLock([&](auto& params){
         path = params->item.path;
     });
+    
     if (path.empty()) {
         LogE("error, player param invalid.");
         setState(PlayerState::Stop);
-        return;
+        return false;
     }
 
     ReaderSetting setting;
@@ -102,13 +115,10 @@ void Player::Impl::init() noexcept {
     if (!readHandler_->open(path, std::move(setting))) {
         setState(PlayerState::Error);
         notifyEvent(PlayerEvent::OnError, std::to_string(static_cast<uint8_t>(PlayerErrorCode::OpenFileError)));
-    } else {
-        setState(PlayerState::Buffering);
-        readHandler_->start();
+        return false;
     }
     probeBuffer_ = std::make_unique<Buffer>(readHandler_->size());
-    ownerThread_->start();
-    LogI("player initializing start.");
+    return true;
 }
 
 bool Player::Impl::createDemuxer(IOData& data) noexcept {
@@ -260,6 +270,11 @@ void Player::Impl::initPlayerInfo() noexcept {
             } else {
                 break;
             }
+            videoRender_.withReadLock([this](auto& p){
+                if (auto ptr = p.lock(); ptr) {
+                    ptr->notifyVideoInfo(demuxer_->videoInfo());
+                }
+            });
         } while(false);
     } else {
         LogI("no video");
@@ -403,6 +418,11 @@ void Player::Impl::doPlay() noexcept {
     if (audioDecodeComponent_) {
         audioDecodeComponent_->resume();
     }
+    videoRender_.withReadLock([this](auto& p){
+        if (auto ptr = p.lock(); ptr) {
+            ptr->start();
+        }
+    });
 }
 
 void Player::Impl::doPause() noexcept {
@@ -414,6 +434,11 @@ void Player::Impl::doPause() noexcept {
     if (audioRender_) {
         audioRender_->pause();
     }
+    videoRender_.withReadLock([this](auto& p){
+        if (auto ptr = p.lock(); ptr) {
+            ptr->stop();
+        }
+    });
 }
 
 void Player::Impl::doStop() noexcept {
@@ -427,6 +452,11 @@ void Player::Impl::doStop() noexcept {
         ownerThread_->stop();
         ownerThread_.reset();
     }
+    videoRender_.withReadLock([this](auto& p){
+        if (auto ptr = p.lock(); ptr) {
+            ptr->stop();
+        }
+    });
     GLContextManager::shareInstance().removeMainContext(playerId_);
 }
 
@@ -688,6 +718,12 @@ void* Player::Impl::requestRender() noexcept {
         }
     });
     return buffer;
+}
+
+void Player::Impl::setRenderImpl(std::weak_ptr<IVideoRender>& render) noexcept {
+    videoRender_.withWriteLock([render](auto& videoRender){
+        videoRender = render;
+    });
 }
 
 }//end namespace slark

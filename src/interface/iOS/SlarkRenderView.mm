@@ -12,8 +12,39 @@
 #import "Log.hpp"
 #import "GLProgram.h"
 #import "GLShader.h"
+#import "VideoInfo.h"
 
 using namespace slark;
+struct VideoRender : public IVideoRender {
+    virtual void notifyVideoInfo(std::shared_ptr<VideoInfo> videoInfo) noexcept override {
+        if (notifyVideoInfoFunc) {
+            notifyVideoInfoFunc(videoInfo);
+        }
+    }
+    
+    virtual void notifyRenderInfo() noexcept override {
+        if (notifyRenderInfoFunc) {
+            notifyRenderInfoFunc();
+        }
+    }
+    
+    virtual void start() noexcept override {
+        if (startFunc) {
+            startFunc();
+        }
+    }
+    
+    virtual void stop() noexcept override {
+        if (stopFunc) {
+            stopFunc();
+        }
+    }
+    
+    std::function<void(std::shared_ptr<VideoInfo> videoInfo)> notifyVideoInfoFunc;
+    std::function<void(void)> startFunc;
+    std::function<void(void)> stopFunc;
+    std::function<void(void)> notifyRenderInfoFunc;
+};
 // Uniform index.
 enum
 {
@@ -64,6 +95,7 @@ static const GLfloat kColorConversion709FullRange[] = {
 {
     IEGLContextRefPtr _context;
     std::unique_ptr<GLProgram> _program;
+    std::shared_ptr<VideoRender> _videoRenderImpl;
     const GLfloat* _preferredConversion;
     CVOpenGLESTextureCacheRef _videoTextureCache;
     //yuv
@@ -162,6 +194,10 @@ static const GLfloat kColorConversion709FullRange[] = {
     return scale;
 }
 
+- (std::weak_ptr<IVideoRender>)renderImpl {
+    return std::weak_ptr<IVideoRender>(_videoRenderImpl);
+}
+
 #pragma mark - setter
 - (void)setRenderInterval:(NSInteger)renderInterval {
     [self stop];
@@ -174,8 +210,26 @@ static const GLfloat kColorConversion709FullRange[] = {
     self.isRendering = NO;
     self.isActive = YES;
     _preferredConversion = kColorConversion709VideoRange;
+
     self.renderRect = self.bounds;
     [self setupLayer];
+}
+
+- (void)setupRenderDelegate{
+    _videoRenderImpl = std::make_shared<VideoRender>();
+    __weak __typeof(self) weakSelf = self;
+    _videoRenderImpl->notifyVideoInfoFunc = [weakSelf](std::shared_ptr<VideoInfo> info) {
+        __strong __typeof(weakSelf) strongSelf = weakSelf;
+        [strongSelf setRenderInterval:info->fps];
+    };
+    _videoRenderImpl->startFunc = [weakSelf]() {
+        __strong __typeof(weakSelf) strongSelf = weakSelf;
+        strongSelf.isActive = YES;
+    };
+    _videoRenderImpl->stopFunc = [weakSelf](){
+        __strong __typeof(weakSelf) strongSelf = weakSelf;
+        strongSelf.isActive = NO;
+    };
 }
 
 - (void)setupGL {
@@ -279,6 +333,7 @@ static const GLfloat kColorConversion709FullRange[] = {
     } else {
         _preferredConversion = kColorConversion709VideoRange;
     }
+    size_t bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer);
     auto frameWidth = static_cast<GLint>(CVPixelBufferGetWidth(pixelBuffer));
     auto frameHeight = static_cast<GLint>(CVPixelBufferGetHeight(pixelBuffer));
     glActiveTexture(GL_TEXTURE0);

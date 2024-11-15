@@ -13,7 +13,6 @@
 @interface SlarkViewController() <SlarkRenderViewDelegate>
 @property(nonatomic, strong) SlarkRenderView* renderView;
 @property(nonatomic, strong) SlarkPlayer* player;
-
 @end
 
 @implementation SlarkViewController
@@ -26,6 +25,7 @@
         NSString* playerId = [self.player playerId];
         auto shareContext = slark::GLContextManager::shareInstance().createShareContextWithId([playerId UTF8String]);
         [self.renderView setContext:shareContext];
+        [self.player setRenderImpl:[self.renderView renderImpl]];
         self.view = self.renderView;
     }
     return self;

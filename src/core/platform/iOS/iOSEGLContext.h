@@ -22,8 +22,6 @@ public:
     
     virtual void release() override;
     
-    virtual bool createBuffer(uint32_t width, uint32_t height) override;
-    
     virtual void acttachContext() override;
     
     virtual void detachContext() override;
