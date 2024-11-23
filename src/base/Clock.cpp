@@ -44,6 +44,9 @@ void Clock::start() noexcept {
 
 void Clock::pause() noexcept {
     std::lock_guard<std::shared_mutex> lock(mutex_);
+    if (!isInited_) {
+        return;
+    }
     isPause_ = true;
     auto elapseTime = Time::nowTimeStamp() - lastUpdated_;
     pts_ += elapseTime - adjustSpeedTime(elapseTime);

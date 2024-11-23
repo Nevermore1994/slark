@@ -147,6 +147,7 @@ void Reader::setReadRange(ReadRange range) noexcept {
         return;
     }
     seekPos_ = range.readPos;
+    worker_.resume();
 }
 
 int64_t Reader::tell() noexcept {
