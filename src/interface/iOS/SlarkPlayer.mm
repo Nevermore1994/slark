@@ -88,7 +88,6 @@ struct PlayerObserver final : public slark::IPlayerObserver
     if (self = [super init]) {
         auto params = std::make_unique<slark::PlayerParams>();
         params->item.path = [path UTF8String];
-        slark::GLContextManager::shareInstance();
         auto context = slark::createEGLContext();
         context->init();
         if (CMTIMERANGE_IS_VALID(range)) {

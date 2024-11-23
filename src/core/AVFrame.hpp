@@ -90,7 +90,7 @@ struct AVFrame {
     }
     
     long double ptsTime() noexcept {
-        return static_cast<long double>(dts) / static_cast<long double>(timeScale);
+        return static_cast<long double>(pts) / static_cast<long double>(timeScale);
     }
 
     [[nodiscard]] inline std::unique_ptr<AVFrame> copy() const noexcept {

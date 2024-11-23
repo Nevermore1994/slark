@@ -82,6 +82,7 @@ BoxRefPtr Box::createBox(Buffer& buffer) {
         {"esds", [](BoxInfo&& info) { return new BoxEsds(std::move(info)); }},
         {"meta", [](BoxInfo&& info) { return new BoxMeta(std::move(info)); }},
         {"avcC", [](BoxInfo&& info) { return new BoxAvcc(std::move(info)); }},
+        {"hvcC", [](BoxInfo&& info) { return new BoxHvcc(std::move(info)); }},
         {"mdhd", [](BoxInfo&& info) { return new BoxMdhd(std::move(info)); }}
     };
     if (boxFactory.contains(boxInfo.symbol)) {

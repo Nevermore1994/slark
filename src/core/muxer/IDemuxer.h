@@ -80,7 +80,7 @@ public:
 
     virtual DemuxerResult parseData(std::unique_ptr<Data> data, int64_t offset) noexcept = 0;
      
-    [[nodiscard]] virtual uint64_t getSeekToPos(Time::TimePoint) noexcept = 0;
+    [[nodiscard]] virtual uint64_t getSeekToPos(long double) noexcept = 0;
 
     [[nodiscard]] bool isInited() const noexcept {
         return isInited_;

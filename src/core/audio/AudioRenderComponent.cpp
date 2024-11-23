@@ -22,6 +22,7 @@ void AudioRenderComponent::init() noexcept {
     pimpl_.reset();
     pimpl_ = createAudioRender(audioInfo_);
     pimpl_->requestAudioData = [this](uint8_t* data, uint32_t size) {
+        std::unique_lock<std::mutex> lock(renderMutex_);
         uint32_t tSize = 0;
         frames_.withWriteLock([this, size, data, &tSize](auto& frames) {
             tSize = audioBuffer_.read(data, size);
@@ -39,6 +40,7 @@ void AudioRenderComponent::init() noexcept {
         ///TODO: Fix audio data latency
         if (tSize != 0) {
             clock_.setTime(audioInfo_->dataLen2TimePoint(renderedDataLength_));
+            LogI("[seek info]push audio frame render:{}", clock_.time().second());
         }
         if (!isFirstFrameRendered && tSize > 0) {
             isFirstFrameRendered = true;
@@ -62,6 +64,10 @@ void AudioRenderComponent::process(AVFrameRefPtr frame) noexcept {
         while (!frames.empty() && audioBuffer_.tail() >= frames.front()->data->length) {
             auto length = static_cast<uint32_t>(frames.front()->data->length);
             audioBuffer_.append(frames.front()->data->rawData, length);
+            if (renderedDataLength_ == 0) {
+                renderedDataLength_ = audioInfo_->timePoint2DataLen(static_cast<uint64_t>(frames.front()->ptsTime() * Time::kMicroSecondScale));
+                LogI("[seek info]audio render set pos:{}", renderedDataLength_);
+            }
             frames.pop_front();
         }
     });
@@ -130,12 +136,12 @@ void AudioRenderComponent::flush() noexcept {
 }
 
 void AudioRenderComponent::seek(Time::TimePoint time) noexcept {
+    std::unique_lock<std::mutex> lock(renderMutex_);
     flush();
     frames_.withWriteLock([this, time](auto& frames) {
         frames.clear();
         audioBuffer_.reset();
-        renderedDataLength_ = audioInfo_->timePoint2DataLen(time);
-        LogI("audio render seek to pos:{}", renderedDataLength_);
+        renderedDataLength_ = 0;
     });
     clock_.setTime(time);
 }

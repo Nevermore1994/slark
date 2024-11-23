@@ -40,7 +40,7 @@ public:
     void stop() noexcept;
     void setVolume(float volume) noexcept;
     void flush() noexcept;
-    void seek(Time::TimePoint pos) noexcept;
+    void seek(Time::TimePoint time) noexcept;
 
     Time::TimePoint playedTime() {
         return clock_.time();
@@ -74,6 +74,7 @@ private:
     bool isFirstFrameRendered = false;
     uint64_t renderedDataLength_ = 0;
     Clock clock_;
+    std::mutex renderMutex_;
     std::shared_ptr<AudioInfo> audioInfo_;
     RingBuffer<uint8_t, kDefaultAudioBufferSize> audioBuffer_;
     Synchronized<std::deque<AVFrameRefPtr>, std::shared_mutex> frames_;

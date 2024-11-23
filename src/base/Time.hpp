@@ -15,7 +15,9 @@
 namespace slark {
 
 struct Time {
-     static constexpr uint64_t kTimeInvalid = 0;
+    static constexpr uint64_t kTimeInvalid = 0;
+    static constexpr uint64_t kMicroSecondScale = 1000000;
+    static constexpr uint64_t kMillSecondScale = 1000;
     ///microseconds
     struct TimePoint {
         uint64_t count{};
@@ -26,7 +28,7 @@ struct Time {
             return count;
         }
 
-        constexpr TimePoint(uint64_t t)
+        constexpr TimePoint(uint64_t t = 0)
             : count(t) {
         }
         

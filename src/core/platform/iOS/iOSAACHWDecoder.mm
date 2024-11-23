@@ -23,10 +23,10 @@ OSStatus AACDecodeInputDataProc(AudioConverterRef,
     }
     auto framePtr = reinterpret_cast<AVFrame*>(inUserData);
     auto audioFrameInfo = std::any_cast<AudioFrameInfo>(framePtr->info);
-    auto dataPtr = framePtr->detachData().release();
+    auto dataPtr = framePtr->detachData();
     ioData->mBuffers[0].mDataByteSize = static_cast<UInt32>(dataPtr->length);
     ioData->mBuffers[0].mNumberChannels = audioFrameInfo.channels;
-    ioData->mBuffers[0].mData = dataPtr->rawData;
+    std::copy(dataPtr->rawData, dataPtr->rawData + dataPtr->length, static_cast<uint8_t*>(ioData->mBuffers[0].mData));
     *ioNumberDataPackets = 1;
     if (outDataPacketDescription) {
         (*outDataPacketDescription)[0].mStartOffset = 0;
@@ -41,13 +41,15 @@ iOSAACHWDecoder::~iOSAACHWDecoder() {
 }
 
 void iOSAACHWDecoder::reset() noexcept {
-    if (decodeSession_) {
-        AudioConverterDispose(decodeSession_);
-        decodeSession_ = nullptr;
-    }
-    if (outputData_){
-        free(outputData_->mBuffers[0].mData);
-        outputData_.reset();
+    @autoreleasepool {
+        if (decodeSession_) {
+            AudioConverterDispose(decodeSession_);
+            decodeSession_ = nullptr;
+        }
+        if (outputData_){
+            free(outputData_->mBuffers[0].mData);
+            outputData_.reset();
+        }
     }
 }
 

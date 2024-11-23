@@ -9,6 +9,7 @@
 
 #include "Data.hpp"
 #include "MediaDefs.h"
+#include "Clock.h"
 
 namespace slark {
 
@@ -22,14 +23,24 @@ struct VideoInfo {
     DataRefPtr sps;
     DataRefPtr pps;
     DataRefPtr vps;
+    
+    long double frameDuration() const noexcept {
+        return 1.0 / static_cast<long double>(fps);
+    }
 };
 
 struct IVideoRender {
     virtual void start() noexcept = 0;
-    virtual void stop() noexcept = 0;
+    virtual void pause() noexcept = 0;
     virtual void notifyVideoInfo(std::shared_ptr<VideoInfo> videoInfo) noexcept = 0;
     virtual void notifyRenderInfo() noexcept = 0;
+    virtual void pushVideoFrameRender(void* frame) noexcept = 0;
     virtual ~IVideoRender() = default;
+    Clock& clock() noexcept {
+        return videoClock_;
+    }
+protected:
+    Clock videoClock_;
 };
 
 } //end namespace slark

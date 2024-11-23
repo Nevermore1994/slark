@@ -45,7 +45,7 @@ void decompressionOutputCallback(void* decompressionOutputRefCon,
                 videoInfo.format = FrameFormat::VideoToolBox;
                 framePtr->info = videoInfo;
             }
-            framePtr->opaque = CVBufferRetain(pixelBuffer);
+            framePtr->opaque = CVPixelBufferRetain(pixelBuffer);
             isSuccess = true;
         } while (false);
         if (isSuccess) {
@@ -80,16 +80,19 @@ iOSVideoHWDecoder::~iOSVideoHWDecoder() {
 void iOSVideoHWDecoder::reset() noexcept {
     isOpen_ = false;
     isFlushed_ = false;
-    if (decodeSession_) {
-        VTDecompressionSessionWaitForAsynchronousFrames(decodeSession_);
-        VTDecompressionSessionInvalidate(decodeSession_);
-        CFRetain(decodeSession_);
-        decodeSession_ = nullptr;
+    @autoreleasepool {
+        if (decodeSession_) {
+            VTDecompressionSessionWaitForAsynchronousFrames(decodeSession_);
+            VTDecompressionSessionInvalidate(decodeSession_);
+            CFRelease(decodeSession_);
+            decodeSession_ = nullptr;
+        }
+        if (videoFormatDescription_) {
+            CFRelease(videoFormatDescription_);
+            videoFormatDescription_ = nullptr;
+        }
     }
-    if (videoFormatDescription_) {
-        CFRelease(videoFormatDescription_);
-        videoFormatDescription_ = nullptr;
-    }
+
 }
 
 bool iOSVideoHWDecoder::send(AVFramePtr frame) noexcept {
@@ -102,17 +105,12 @@ bool iOSVideoHWDecoder::send(AVFramePtr frame) noexcept {
         decoderFlags |= kVTDecodeFrame_DoNotOutputFrame;
     }
     auto status = VTDecompressionSessionDecodeFrame(decodeSession_, sampleBuffer, decoderFlags, reinterpret_cast<void*>(framePtr), 0);
-    if (status != noErr) {
-        if (status == kVTInvalidSessionErr) {
-        }
-        if (status == kVTVideoDecoderMalfunctionErr) {
-            
-        }
-    } else {
+    if (status == noErr) {
         status = VTDecompressionSessionWaitForAsynchronousFrames(decodeSession_);
     }
     if (sampleBuffer) {
         CFRelease(sampleBuffer);
+        sampleBuffer = nullptr;
     }
     return status == noErr;
 }
@@ -181,6 +179,7 @@ bool iOSVideoHWDecoder::createDecodeSession() noexcept {
         return false;
     }
     CFRelease(attrs);
+    attrs = NULL;
     isOpen_ = true;
     return true;
 }
