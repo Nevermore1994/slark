@@ -42,8 +42,7 @@
 }
 
 - (void)releaseResource {
-    EAGLContext* preContext = [self activeContext];
-    [EAGLContext setCurrentContext:preContext];
+    [EAGLContext setCurrentContext:nil];
     _glContext = nil;
 }
 

@@ -66,7 +66,7 @@ public:
         : Box(std::move(boxInfo)) {
         
     }
-    ~BoxFtyp() = default;
+    ~BoxFtyp() override  = default;
 
 public:
     bool decode(Buffer&) noexcept override;

@@ -22,7 +22,7 @@ public:
 
     DemuxerResult parseData(std::unique_ptr<Data> data, int64_t offset) noexcept override;
     
-    [[nodiscard]] uint64_t getSeekToPos(Time::TimePoint) noexcept override;
+    [[nodiscard]] uint64_t getSeekToPos(long double time) noexcept override;
     
     void reset() noexcept override;
 

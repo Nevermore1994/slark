@@ -10,18 +10,21 @@
 namespace slark {
 
 CMSampleBufferRef createSampleBuffer(CMFormatDescriptionRef fmtDesc, void* buff, size_t size) {
-    CMBlockBufferRef blockBuffer = nullptr;
-    CMSampleBufferRef sampleBuffer = nullptr;
-    auto status = CMBlockBufferCreateWithMemoryBlock(NULL, buff, size, kCFAllocatorNull, NULL, 0, size, FALSE, &blockBuffer);
-
-    if (status == noErr) {
-        status = CMSampleBufferCreate(NULL, blockBuffer, TRUE, 0, 0, fmtDesc, 1, 0, NULL, 0, NULL, &sampleBuffer);
+    @autoreleasepool {
+        CMBlockBufferRef blockBuffer = nullptr;
+        CMSampleBufferRef sampleBuffer = nullptr;
+        auto status = CMBlockBufferCreateWithMemoryBlock(NULL, buff, size, kCFAllocatorNull, NULL, 0, size, FALSE, &blockBuffer);
         
+        if (status == noErr) {
+            status = CMSampleBufferCreate(NULL, blockBuffer, TRUE, 0, 0, fmtDesc, 1, 0, NULL, 0, NULL, &sampleBuffer);
+            
+        }
+        
+        if (blockBuffer) {
+            CFRelease(blockBuffer);
+        }
+        return status == noErr ? sampleBuffer : nullptr;
     }
-    
-    if (blockBuffer)
-        CFRelease(blockBuffer);
-    return status == noErr ? sampleBuffer : nullptr;
 }
 
 UIImage* imageFromPixelBuffer(CVPixelBufferRef pixelBuffer) {

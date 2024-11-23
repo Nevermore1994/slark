@@ -31,8 +31,8 @@ public:
     std::shared_ptr<BoxCtts> ctts;
     std::shared_ptr<BoxStss> stss;
     
-    uint32_t sampleSizeIndex = 0;
-    uint32_t entryIndex = 0;
+    uint32_t stszSampleSizeIndex = 0;
+    uint32_t stscEntryIndex = 0;
     uint32_t entrySampleIndex = 0;
     uint32_t chunkLogicIndex = 0;
     uint32_t sampleOffset = 0;
@@ -54,6 +54,7 @@ public:
     void reset() noexcept;
     void parseData(Buffer& buffer, const std::any& frameInfo, AVFrameArray& packets);
     void seek(uint64_t pos) noexcept;
+    uint64_t getSeekPos(long double time) const noexcept;
     AVFrameArray praseH264FrameData(AVFramePtr ptr, DataPtr data, const std::any& frameInfo);
     bool calcIndex() noexcept;
 };
@@ -64,15 +65,17 @@ public:
         type_ = DemuxerType::MP4;
     }
 
-    ~Mp4Demuxer() override = default;
+    ~Mp4Demuxer() override;
 
     bool open(std::unique_ptr<Buffer>& buffer) noexcept override;
 
     void close() noexcept override;
+    
+    void seekPos(uint64_t pos) noexcept override;
 
     DemuxerResult parseData(std::unique_ptr<Data> data, int64_t offset) noexcept override;
     
-    [[nodiscard]] uint64_t getSeekToPos(Time::TimePoint) noexcept override;
+    [[nodiscard]] uint64_t getSeekToPos(long double time) noexcept override;
 
     inline static const DemuxerInfo& info() noexcept {
         static DemuxerInfo info = {

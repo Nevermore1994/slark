@@ -56,8 +56,10 @@ void DecoderComponent::decode() {
         }
     });
     if(packet) {
+        std::unique_lock<std::mutex> lock(mutex_);
         decoder_->send(std::move(packet));
     } else if (isReachEnd_ && !decoder_->isFlushed()) {
+        std::unique_lock<std::mutex> lock(mutex_);
         decoder_->flush();
     } else {
         decodeWorker_.pause();
@@ -82,6 +84,7 @@ void DecoderComponent::resume() noexcept {
 }
 
 void DecoderComponent::reset() noexcept {
+    std::unique_lock<std::mutex> lock(mutex_);
     decodeWorker_.pause();
     decoder_.reset();
     isReachEnd_ = false;
@@ -93,6 +96,16 @@ void DecoderComponent::reset() noexcept {
 void DecoderComponent::close() noexcept {
     reset();
     decodeWorker_.stop();
+}
+
+void DecoderComponent::flush() noexcept {
+    std::unique_lock<std::mutex> lock(mutex_);
+    if (decoder_) {
+        decoder_->flush();
+    }
+    packets_.withWriteLock([](auto& vec){
+        vec.clear();
+    });
 }
 
 }

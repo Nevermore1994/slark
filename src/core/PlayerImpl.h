@@ -22,12 +22,13 @@
 #include "AudioRenderComponent.h"
 #include "Synchronized.hpp"
 #include "Buffer.hpp"
+#include "Clock.h"
 
 namespace slark {
 
 struct PlayerSeekRequest {
     bool isAccurate = false;
-    Time::TimePoint seekTime{0};
+    long double seekTime{0};
 };
 
 struct PlayerStatistics {
@@ -37,6 +38,15 @@ struct PlayerStatistics {
     Time::TimePoint videoDecodeDelta{0};
     Time::TimePoint audioRenderDelta{0};
     Time::TimePoint videoRenderDelta{0};
+    
+    void reset() {
+        isFirstAudioRendered = false;
+        isFirstVideoRendered = false;
+        audioDecodeDelta = 0;
+        videoDecodeDelta = 0;
+        audioRenderDelta = 0;
+        videoRenderDelta = 0;
+    }
 };
 
 class Player::Impl {
@@ -127,7 +137,12 @@ private:
     void checkCacheState() noexcept;
     
     bool setupIOHandler() noexcept;
+    
+    long double videoRenderTime() noexcept;
+    
+    long double audioRenderTime() noexcept;
 private:
+    std::atomic_bool isStoped_ = false;
     std::atomic_bool isReadCompleted_ = false;
     std::atomic_bool isRenderCompleted_ = false;
     Synchronized<PlayerState, std::shared_mutex> state_;
@@ -162,6 +177,9 @@ private:
     std::unique_ptr<AudioRenderComponent> audioRender_ = nullptr;
     Synchronized<std::weak_ptr<IVideoRender>, std::shared_mutex> videoRender_;
     PlayerStatistics statistics_;
+    
+    std::mutex releaseMutex_;
+    std::condition_variable cond_;
 };
 
 }

@@ -29,21 +29,30 @@ struct VideoRender : public IVideoRender {
     }
     
     virtual void start() noexcept override {
+        videoClock_.start();
         if (startFunc) {
             startFunc();
         }
     }
     
-    virtual void stop() noexcept override {
-        if (stopFunc) {
-            stopFunc();
+    virtual void pause() noexcept override {
+        videoClock_.pause();
+        if (pauseFunc) {
+            pauseFunc();
+        }
+    }
+    
+    virtual void pushVideoFrameRender(void* frame) noexcept override {
+        if (pushVideoFrameRenderFunc) {
+            pushVideoFrameRenderFunc(frame);
         }
     }
     
     std::function<void(std::shared_ptr<VideoInfo> videoInfo)> notifyVideoInfoFunc;
     std::function<void(void)> startFunc;
-    std::function<void(void)> stopFunc;
+    std::function<void(void)> pauseFunc;
     std::function<void(void)> notifyRenderInfoFunc;
+    std::function<void(void*)> pushVideoFrameRenderFunc;
 };
 // Uniform index.
 enum
@@ -103,6 +112,7 @@ static const GLfloat kColorConversion709FullRange[] = {
     CVOpenGLESTextureRef _chromaTexture;
     //RGBA
     CVOpenGLESTextureRef _renderTexture;
+    CVPixelBufferRef _pixelbuffer;
 }
 @property(nonatomic, assign) BOOL isDeallocing;
 @property(nonatomic, assign) BOOL isRendering;
@@ -134,11 +144,16 @@ static const GLfloat kColorConversion709FullRange[] = {
 }
 
 - (void)dealloc {
-    self.isDeallocing = YES;
+    _isDeallocing = YES;
     [self stop];
     if (_worker) {
         [self performSelector:@selector(stopRunLoop) onThread:_worker withObject:nil waitUntilDone:YES];
+        [_worker cancel];
         _worker = nil;
+    }
+    if (_pixelbuffer) {
+        CVPixelBufferRelease(_pixelbuffer);
+        _pixelbuffer = NULL;
     }
     [self deleteFrameBuffer];
     [self cleanUpTextures];
@@ -200,18 +215,19 @@ static const GLfloat kColorConversion709FullRange[] = {
 
 #pragma mark - setter
 - (void)setRenderInterval:(NSInteger)renderInterval {
-    [self stop];
-    [self start];
+    _renderInterval = renderInterval;
+    _displayLink.preferredFramesPerSecond = _renderInterval;
 }
 
 #pragma mark - private
 - (void)initData {
-    self.renderInterval = 30; //default 30 fps
-    self.isRendering = NO;
-    self.isActive = YES;
+    _renderInterval = 30; //default 30 fps
+    _isRendering = NO;
+    _isActive = YES;
     _preferredConversion = kColorConversion709VideoRange;
-
-    self.renderRect = self.bounds;
+    _pixelbuffer = NULL;
+    _renderRect = self.bounds;
+    [self setupRenderDelegate];
     [self setupLayer];
 }
 
@@ -226,9 +242,13 @@ static const GLfloat kColorConversion709FullRange[] = {
         __strong __typeof(weakSelf) strongSelf = weakSelf;
         strongSelf.isActive = YES;
     };
-    _videoRenderImpl->stopFunc = [weakSelf](){
+    _videoRenderImpl->pauseFunc = [weakSelf](){
         __strong __typeof(weakSelf) strongSelf = weakSelf;
         strongSelf.isActive = NO;
+    };
+    _videoRenderImpl->pushVideoFrameRenderFunc = [weakSelf](void* frame) {
+        __strong __typeof(weakSelf) strongSelf = weakSelf;
+        [strongSelf pushRenderPixelBuffer:frame];
     };
 }
 
@@ -288,7 +308,17 @@ static const GLfloat kColorConversion709FullRange[] = {
     __weak __typeof(self) weakSelf = self;
     [self.workQueue addOperationWithBlock:^{
         __strong __typeof(weakSelf) strongSelf = weakSelf;
-        [strongSelf performSelector:@selector(doRender) onThread:strongSelf->_worker withObject:nil waitUntilDone:YES];
+        [strongSelf performSelector:@selector(doRender:) onThread:strongSelf->_worker withObject:@(NO) waitUntilDone:YES];
+    }];
+}
+
+- (void)pushRenderPixelBuffer:(void*) buffer{
+    self.isRendering = YES;
+    _pixelbuffer = (CVPixelBufferRef)buffer;
+    __weak __typeof(self) weakSelf = self;
+    [self.workQueue addOperationWithBlock:^{
+        __strong __typeof(weakSelf) strongSelf = weakSelf;
+        [strongSelf performSelector:@selector(doRender:) onThread:strongSelf->_worker withObject:@(YES) waitUntilDone:YES];
     }];
 }
 
@@ -301,12 +331,13 @@ static const GLfloat kColorConversion709FullRange[] = {
     }
     
     if (!_context) {
+        CVPixelBufferRelease(pixelBuffer);
         return;
     }
     _context->acttachContext();
-    [self cleanUpTextures];
     auto nativeContext = (__bridge EAGLContext*)_context->nativeContext();
     if (!nativeContext) {
+        CVPixelBufferRelease(pixelBuffer);
         return;
     }
     auto frameWidth = static_cast<GLint>(CVPixelBufferGetWidth(pixelBuffer));
@@ -320,10 +351,13 @@ static const GLfloat kColorConversion709FullRange[] = {
         [self uploadRGBATexture:pixelBuffer];
     } else {
         LogE("Not support current format.");
+        CVPixelBufferRelease(pixelBuffer);
         return;
     }
     
     [self renderWithTextures:frameWidth height:frameHeight];
+    CVPixelBufferRelease(pixelBuffer);
+    [self cleanUpTextures];
 }
 
 - (BOOL)uploadYUVTexture:(CVPixelBufferRef)pixelBuffer {
@@ -333,6 +367,7 @@ static const GLfloat kColorConversion709FullRange[] = {
     } else {
         _preferredConversion = kColorConversion709VideoRange;
     }
+    CFRelease(colorAttachments);
     size_t bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer);
     auto frameWidth = static_cast<GLint>(CVPixelBufferGetWidth(pixelBuffer));
     auto frameHeight = static_cast<GLint>(CVPixelBufferGetHeight(pixelBuffer));
@@ -454,7 +489,7 @@ static const GLfloat kColorConversion709FullRange[] = {
     glVertexAttribPointer(attributes[ATTRIB_VERTEX], 2, GL_FLOAT, 0, 0, quadVertexData);
     glEnableVertexAttribArray(attributes[ATTRIB_VERTEX]);
     
-    GLfloat quadTextureData[] = {
+    static const GLfloat quadTextureData[] = {
         0.0, 1.0,
         1.0, 1.0,
         0.0, 0.0,
@@ -471,29 +506,35 @@ static const GLfloat kColorConversion709FullRange[] = {
 }
 
 - (void)cleanUpTextures {
-    if (_lumaTexture) {
-        CFRelease(_lumaTexture);
-        _lumaTexture = NULL;
+    @autoreleasepool {
+        if (_lumaTexture) {
+            CFRelease(_lumaTexture);
+            _lumaTexture = NULL;
+        }
+        
+        if (_chromaTexture) {
+            CFRelease(_chromaTexture);
+            _chromaTexture = NULL;
+        }
+        CVOpenGLESTextureCacheFlush(_videoTextureCache, 0);
     }
-    
-    if (_chromaTexture) {
-        CFRelease(_chromaTexture);
-        _chromaTexture = NULL;
-    }
-    CVOpenGLESTextureCacheFlush(_videoTextureCache, 0);
 }
 
 - (void)updateRenderRect{
     _renderRect = self.bounds;
 }
 
-- (void)doRender {
-    BOOL isSuccess = NO;
-    if ([self.delegate respondsToSelector:@selector(requestRender)]) {
-        CVPixelBufferRef buffer = [self.delegate requestRender];
-        if (buffer) {
-            [self displayPixelBuffer:buffer];
-        }
+- (void)doRender:(id) isPushRender{
+    BOOL isPush = [isPushRender boolValue];
+    CVPixelBufferRef buffer = NULL;
+    if (isPush) {
+        buffer = _pixelbuffer;
+        _pixelbuffer = NULL;
+    } else if ([self.delegate respondsToSelector:@selector(requestRender)]) {
+        buffer = [self.delegate requestRender];
+    }
+    if (buffer) {
+        [self displayPixelBuffer:buffer];
     }
     self.isRendering = NO;
 }

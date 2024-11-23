@@ -21,6 +21,7 @@ public:
     void resume() noexcept;
     void reset() noexcept;
     void close() noexcept;
+    void flush() noexcept;
 
     void setReachEnd(bool isReachEnd) noexcept {
         isReachEnd_ = isReachEnd;
@@ -38,6 +39,7 @@ private:
     void decode();
 private:
     std::atomic<bool> isReachEnd_ = false;
+    std::mutex mutex_;
     std::unique_ptr<IDecoder> decoder_;
     DecoderReceiveFunc callback_;
     Thread decodeWorker_;
