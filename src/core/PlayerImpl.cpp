@@ -168,10 +168,10 @@ bool Player::Impl::openDemuxer(IOData& data) noexcept {
             range.readSize = demuxer_->headerInfo()->dataSize;
             demuxer_->seekPos(dataStart);
             readHandler_->setReadRange(range);
-#if DEBUG
-            auto ss = mp4Demuxer->description();
-            LogI("mp4 info:{}", ss);
-#endif
+//#if DEBUG
+//            auto ss = mp4Demuxer->description();
+//            LogI("mp4 info:{}", ss);
+//#endif
         } else {
             int64_t moovBoxStart = 0;
             uint32_t moovBoxSize = 0;
@@ -288,6 +288,10 @@ void Player::Impl::initPlayerInfo() noexcept {
     }
     
     doPause();
+    if (info_.hasVideo) {
+        readHandler_->resume(); //render first frame
+        ownerThread_->resume();
+    }
     setState(PlayerState::Ready);
     LogE("init player success.");
 }
@@ -368,6 +372,7 @@ void Player::Impl::pushVideoFrameDecode() noexcept {
     ///TODO: FIX DTS
     if (videoDecodeComponent_ && videoDecodeComponent_->isNeedPushFrame()) {
         if (!videoPackets_.empty()) {
+            LogI("push video frame decode:{}", videoPackets_.front()->index);
             videoDecodeComponent_->send(std::move(videoPackets_.front()));
             videoPackets_.pop_front();
         }
@@ -399,14 +404,16 @@ void Player::Impl::pushAVFrameToRender() noexcept {
         }
     });
     videoRender_.withReadLock([this](auto& p){
-        long double diff = 0.0;
-        if (info_.hasAudio && info_.hasVideo) {
-            diff = audioRenderTime() - videoRenderTime();
-        } else if(!info_.hasVideo) {
-            return;
-        }
-        if (diff < kAVSyncThreshold) {
-            return;
+        if (statistics_.isFirstVideoRendered) {
+            long double diff = 0.0;
+            if (info_.hasAudio && info_.hasVideo) {
+                diff = audioRenderTime() - videoRenderTime();
+            } else if(!info_.hasVideo) {
+                return;
+            }
+            if (diff < kAVSyncThreshold) {
+                return;
+            }
         }
         if (auto ptr = p.lock(); ptr) {
             AVFramePtr framePtr = nullptr;
@@ -421,6 +428,11 @@ void Player::Impl::pushAVFrameToRender() noexcept {
                 auto t = framePtr->ptsTime();
                 LogI("[seek info] push vieo frame render:{}, pts:{}", t, framePtr->pts);
                 ptr->clock().setTime(static_cast<uint64_t>(framePtr->ptsTime() * Time::kMicroSecondScale));
+                if (!statistics_.isFirstVideoRendered) {
+                    doPause();
+                    LogI("fisrt frame rended.");
+                }
+                statistics_.isFirstVideoRendered = true;
             }
         }
     });
@@ -439,7 +451,12 @@ void Player::Impl::process() noexcept {
     } else if (nowState == PlayerState::Buffering) {
         demuxData();
         pushFrameDecode();
+    } else if (nowState == PlayerState::Ready) {
+        demuxData();
+        pushVideoFrameDecode();
+        pushAVFrameToRender();
     }
+        
     checkCacheState();
 }
 
