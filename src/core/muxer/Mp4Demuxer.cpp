@@ -300,6 +300,9 @@ AVFrameArray TrackContext::praseH264FrameData(AVFramePtr frame, DataPtr data, co
             seiFrame->timeScale = frame->timeScale;
             view = view.substr(totalSize);
             frames.push_back(std::move(seiFrame));
+        } else {
+            LogE("error naluType type:{}", naluType);
+            break;
         }
     }
     info.keyIndex = keyIndex;

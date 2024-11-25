@@ -24,6 +24,10 @@ OSStatus AACDecodeInputDataProc(AudioConverterRef,
     auto framePtr = reinterpret_cast<AVFrame*>(inUserData);
     auto audioFrameInfo = std::any_cast<AudioFrameInfo>(framePtr->info);
     auto dataPtr = framePtr->detachData();
+    if (dataPtr == nullptr) {
+        LogE("decode audio data is nullptr");
+        return noErr;
+    }
     ioData->mBuffers[0].mDataByteSize = static_cast<UInt32>(dataPtr->length);
     ioData->mBuffers[0].mNumberChannels = audioFrameInfo.channels;
     std::copy(dataPtr->rawData, dataPtr->rawData + dataPtr->length, static_cast<uint8_t*>(ioData->mBuffers[0].mData));
