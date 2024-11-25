@@ -33,19 +33,15 @@ struct PlayerSeekRequest {
 
 struct PlayerStatistics {
     bool isFirstAudioRendered = false;
-    bool isFirstVideoRendered = false;
+    bool isForceVideoRendered = false;
     Time::TimePoint audioDecodeDelta{0};
-    Time::TimePoint videoDecodeDelta{0};
     Time::TimePoint audioRenderDelta{0};
-    Time::TimePoint videoRenderDelta{0};
     
     void reset() {
         isFirstAudioRendered = false;
-        isFirstVideoRendered = false;
+        isForceVideoRendered = false;
         audioDecodeDelta = 0;
-        videoDecodeDelta = 0;
         audioRenderDelta = 0;
-        videoRenderDelta = 0;
     }
 };
 
@@ -120,7 +116,7 @@ private:
     
     void pushAudioFrameDecode() noexcept;
 
-    void pushVideoFrameDecode() noexcept;
+    void pushVideoFrameDecode(bool isForce = false) noexcept;
     
     void doPlay() noexcept;
     
