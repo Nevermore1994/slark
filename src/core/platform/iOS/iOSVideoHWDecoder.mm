@@ -20,9 +20,15 @@ void decompressionOutputCallback(void* decompressionOutputRefCon,
                    CMTime) {
     @autoreleasepool {
         auto framePtr = std::unique_ptr<AVFrame>(reinterpret_cast<AVFrame*>(sourceFrameRefCon));
+        auto info = framePtr->videoInfo();
+        if (framePtr->isDiscard || (info.has_value() && !info.value().isHasContent())) {
+            LogE("video decode discard frame:{}", framePtr->index);
+            return;
+        }
         bool isSuccess = false;
         do {
             if (status != noErr) {
+                LogE("OSStatus:{}", status);
                 break;
             }
             
@@ -101,9 +107,6 @@ bool iOSVideoHWDecoder::send(AVFramePtr frame) noexcept {
     auto sampleBuffer = createSampleBuffer(videoFormatDescription_, static_cast<void*>(data->rawData), static_cast<size_t>(data->length));
     auto framePtr = frame.release();
     uint32_t decoderFlags = 0;
-    if (framePtr->isDiscard) {
-        decoderFlags |= kVTDecodeFrame_DoNotOutputFrame;
-    }
     auto status = VTDecompressionSessionDecodeFrame(decodeSession_, sampleBuffer, decoderFlags, reinterpret_cast<void*>(framePtr), 0);
     if (status == noErr) {
         status = VTDecompressionSessionWaitForAsynchronousFrames(decodeSession_);

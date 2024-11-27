@@ -9,6 +9,7 @@
 #include "Buffer.hpp"
 #include "Util.hpp"
 #include "Assert.hpp"
+#include "Log.hpp"
 
 namespace slark {
 
@@ -41,6 +42,11 @@ bool Buffer::append(uint64_t offset, DataPtr ptr) noexcept {
     }
     if (isUpdatedOffset && offset_ != offset) {
         return false; //discard expired data
+    }
+    if (offset_ > offset) {
+        LogI("reset buffer:offset {}, now offset:{}", offset, offset_);
+        data_.reset();
+        offset_ = offset;
     }
     if (data_) {
         data_->append(std::move(ptr));

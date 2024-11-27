@@ -143,5 +143,37 @@ std::string uint32ToByteBE(uint32_t value) noexcept {
     return ret;
 }
 
+uint32_t readUe(std::string_view view, int32_t& offset) {
+    uint32_t zeroCount = 0;
+    auto getBit = [&view](int offset) {
+        int byteOffset = offset / 8;
+        int bitInByte = 7 - (offset % 8);
+        return (view[byteOffset] >> bitInByte) & 0x01;
+    };
+
+    while (getBit(offset) == 0) {
+        zeroCount++;
+        offset++;
+    }
+
+    offset++;
+
+    auto getBits = [getBit](int offset, int count) {
+        uint32_t value = 0;
+        for (int i = 0; i < count; i++) {
+            value = (value << 1) | getBit(offset + i);
+        }
+        return value;
+    };
+
+    uint32_t value = 0;
+    if (zeroCount > 0) {
+        value = getBits(offset, zeroCount);
+        offset += zeroCount;
+    }
+
+    return (1 << zeroCount) - 1 + value;
+}
+
 }
 

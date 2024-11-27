@@ -47,13 +47,31 @@ struct AudioFrameInfo {
     }
 };
 
+enum class VideoFrameType {
+    Unknown,
+    IFrame,
+    PFrame,
+    BFrame,
+    SEI,
+    SPS,
+    PPS,
+};
+
 struct VideoFrameInfo {
     bool isKeyFrame = false;
+    VideoFrameType frameType = VideoFrameType::Unknown;
     uint32_t width = 0;
     uint32_t height = 0;
     uint64_t offset = 0;
     uint64_t keyIndex = 0;
     FrameFormat format = FrameFormat::Unknown;
+    
+    bool isHasContent() const {
+        static const std::vector<VideoFrameType> kHasContentFrames = { VideoFrameType::IFrame, VideoFrameType::PFrame, VideoFrameType::BFrame };
+        return std::any_of(kHasContentFrames.begin(), kHasContentFrames.end(), [this](auto type){
+            return type == frameType;
+        });
+    }
 };
 
 struct AVFrame {
@@ -100,6 +118,8 @@ struct AVFrame {
         frame->pts = pts;
         frame->dts = dts;
         frame->offset = offset;
+        frame->timeScale = timeScale;
+        frame->duration = duration;
         if (data) {
             frame->data = data->copy();
         }
