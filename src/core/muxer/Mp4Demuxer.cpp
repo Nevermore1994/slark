@@ -270,44 +270,60 @@ AVFrameArray TrackContext::praseH264FrameData(AVFramePtr frame, DataPtr data, co
         Util::readByte(naluHeaderView, naluHeader);
         uint8_t naluType = naluHeader & 0x1f;
         uint32_t totalSize = naluSize + naluByteSize + 1; //naluSize + header size
-        if (naluType == 5) {
-            info.isKeyFrame = true;
-            keyIndex = frame->index;
+        if (naluType == 5 || naluType == 1) {
+            if (naluType == 5) {
+                info.isKeyFrame = true;
+                keyIndex = frame->index;
+            } else {
+                info.isKeyFrame = false;
+                info.keyIndex = keyIndex;
+            }
+            DataPtr frameData;
             if (totalSize == data->length) {
-                frame->data = std::move(data);
+                frameData = std::move(data);
                 view = {};
             } else {
-                frame->data = std::make_unique<Data>(view.substr(0, totalSize));
+                frameData = std::make_unique<Data>(view.substr(0, totalSize));
                 view = view.substr(totalSize);
             }
-        } else if (naluType == 1) {
-            info.isKeyFrame = false;
+            int32_t offset = 0;
+            auto sliceView = frameData->view().substr(4 + 1);
+            uint32_t firstMBInSlice = Util::readUe(sliceView, offset);
+            uint32_t sliceType =  Util::readUe(sliceView, offset);
+            if (sliceType == 0 || sliceType == 5) {
+                info.frameType = VideoFrameType::PFrame;
+            } else if (sliceType == 1 || sliceType == 6) {
+                info.frameType = VideoFrameType::BFrame;
+            } else if (sliceType == 2 || sliceType == 7) {
+                info.frameType = VideoFrameType::IFrame;
+            }
             info.keyIndex = keyIndex;
-            if (naluSize == data->length) {
-                frame->data = std::move(data);
-                view = {};
+            if (view.empty()) {
+                frame->info = info;
+                frame->data = std::move(frameData);
+                frames.push_back(std::move(frame));
             } else {
-                frame->data = std::make_unique<Data>(view.substr(0, totalSize));
-                view = view.substr(totalSize);
+                auto newFrame = frame->copy();
+                newFrame->info = info;
+                newFrame->data = std::move(frameData);
+                frames.push_back(std::move(newFrame));
             }
-        } else if (naluType == 2) {
-            //slice
         } else if (naluType == 6) {
-            //sei
             auto seiFrame = frame->copy();
+            info.frameType = VideoFrameType::SEI;
             seiFrame->info = info;
             seiFrame->data = std::make_unique<Data>(view.substr(0, totalSize));
-            seiFrame->timeScale = frame->timeScale;
             view = view.substr(totalSize);
             frames.push_back(std::move(seiFrame));
+        } else if (naluType == 7) {
+            
+        } else if (naluType == 8) {
+            
         } else {
             LogE("error naluType type:{}", naluType);
             break;
         }
     }
-    info.keyIndex = keyIndex;
-    frame->info = info;
-    frames.push_back(std::move(frame));
     return frames;
 }
 
@@ -317,9 +333,11 @@ void TrackContext::parseData(Buffer& buffer, const std::any& frameInfo, AVFrameA
     }
     auto start = stco->chunkOffsets[chunkLogicIndex] + static_cast<uint64_t>(sampleOffset);
     auto size = stsz->sampleSizes[stszSampleSizeIndex];
+    LogI("parse data start:{}, size:{}, pos:{}", start, size, buffer.pos());
     if (!buffer.skipTo(start)) {
         return;
     }
+    LogI("skip to pos:{}, read pos:{}, offset:{}", buffer.pos(), buffer.readPos(), buffer.offset());
     auto frame = std::make_unique<AVFrame>();
     frame->index = ++index;
     frame->dts = dts;
