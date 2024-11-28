@@ -81,7 +81,8 @@ void Player::Impl::init() noexcept {
     ownerThread_ = std::make_unique<Thread>("playerThread", &Player::Impl::process, this);
     ownerThread_->runLoop(200ms, [this](){
         if (state() == PlayerState::Playing) {
-            notifyTime(); 
+            notifyTime();
+            checkCacheState();
         }
     });
     
@@ -112,11 +113,13 @@ bool Player::Impl::setupIOHandler() noexcept {
                 dataList.emplace_back(std::move(data));
             });
         }
-
+        
         if (state == IOState::Error) {
             sender_->send(buildEvent(EventType::ReadError));
         } else if (state == IOState::EndOfFile) {
             isReadCompleted_ = true;
+        } else if (state == IOState::Normal) {
+            isReadCompleted_ = false;
         }
     };
     readHandler_ = std::make_unique<Reader>();
@@ -203,6 +206,73 @@ bool Player::Impl::openDemuxer(IOData& data) noexcept {
     return res;
 }
 
+void Player::Impl::createAudioComponent(const PlayerSetting& setting) noexcept {
+    auto decodeType = DecoderManager::shareInstance().getDecoderType(demuxer_->audioInfo()->mediaInfo, setting.enableAudioSoftDecode);
+    if (!DecoderManager::shareInstance().contains(decodeType)) {
+        LogE("not found decoder:media info {}", demuxer_->audioInfo()->mediaInfo);
+        return;
+    }
+    audioDecodeComponent_ = std::make_unique<DecoderComponent>([this](auto frame) {
+        if (!statistics_.isFirstAudioRendered) {                    statistics_.audioDecodeDelta = frame->stats.decodedStamp - frame->stats.prepareDecodeStamp;
+        }
+        audioFrames_.withWriteLock([&frame](auto& frames){
+            frames.push_back(std::move(frame));
+        });
+    });
+    if (!audioDecodeComponent_) {
+        LogI("create audio decode Component error:{}", demuxer_->audioInfo()->mediaInfo);
+        return;
+    }
+    auto config = std::make_shared<AudioDecoderConfig>();
+    config->bitsPerSample = demuxer_->audioInfo()->bitsPerSample;
+    config->channels = demuxer_->audioInfo()->channels;
+    config->sampleRate = demuxer_->audioInfo()->sampleRate;
+    config->timeScale = demuxer_->audioInfo()->timeScale;
+    if (!audioDecodeComponent_->open(decodeType, config)) {
+        LogI("create audio decode component successs");
+        return ;
+    }
+    audioRender_ = std::make_unique<AudioRenderComponent>(demuxer_->audioInfo());
+    audioRender_->firstFrameRenderCallBack = [this](Time::TimePoint timestamp){
+        statistics_.isFirstAudioRendered = true;
+        statistics_.audioRenderDelta = timestamp - statistics_.audioRenderDelta;
+    };
+    LogI("create audio render successs");
+}
+
+void Player::Impl::createVideoComponent(const PlayerSetting& setting) noexcept  {
+    auto decodeType = DecoderManager::shareInstance().getDecoderType(demuxer_->videoInfo()->mediaInfo, setting.enableVideoSoftDecode);
+    if (!DecoderManager::shareInstance().contains(decodeType)) {
+        LogE("not found decoder:media info {}", demuxer_->videoInfo()->mediaInfo);
+        return;
+    }
+    videoDecodeComponent_ = std::make_unique<DecoderComponent>([this](auto frame) {
+        videoFrames_.withWriteLock([&frame](auto& frames){
+            frames.push_back(std::move(frame));
+        });
+    });
+    if (!videoDecodeComponent_) {
+        LogI("create video decoder error:{}", demuxer_->videoInfo()->mediaInfo);
+        return;
+    }
+    auto config = std::make_shared<VideoDecoderConfig>();
+    config->width = demuxer_->videoInfo()->width;
+    config->height = demuxer_->videoInfo()->height;
+    config->naluHeaderLength = demuxer_->videoInfo()->naluHeaderLength;
+    config->sps = demuxer_->videoInfo()->sps;
+    config->pps = demuxer_->videoInfo()->pps;
+    if (videoDecodeComponent_->open(decodeType, config)) {
+        LogI("create video decode component success");
+    } else {
+        return;
+    }
+    videoRender_.withReadLock([this](auto& p){
+        if (auto ptr = p.lock(); ptr) {
+            ptr->notifyVideoInfo(demuxer_->videoInfo());
+        }
+    });
+}
+
 void Player::Impl::initPlayerInfo() noexcept {
     info_.hasAudio = demuxer_->hasAudio();
     info_.hasVideo = demuxer_->hasVideo();
@@ -213,77 +283,14 @@ void Player::Impl::initPlayerInfo() noexcept {
     });
     if (info_.hasAudio) {
         LogI("has audio, audio info:{}", demuxer_->audioInfo()->mediaInfo);
-        do {
-            auto decodeType = DecoderManager::shareInstance().getDecoderType(demuxer_->audioInfo()->mediaInfo, setting.enableAudioSoftDecode);
-            if (!DecoderManager::shareInstance().contains(decodeType)) {
-                LogE("not found decoder:media info {}", demuxer_->audioInfo()->mediaInfo);
-                break;
-            }
-            audioDecodeComponent_ = std::make_unique<DecoderComponent>([this](auto frame) {
-                if (!statistics_.isFirstAudioRendered) {                    statistics_.audioDecodeDelta = frame->stats.decodedStamp - frame->stats.prepareDecodeStamp;
-                }
-                audioFrames_.withWriteLock([&frame](auto& frames){
-                    frames.push_back(std::move(frame));
-                });
-            });
-            if (!audioDecodeComponent_) {
-                LogI("create audio decode Component error:{}", demuxer_->audioInfo()->mediaInfo);
-                break;
-            }
-            auto config = std::make_shared<AudioDecoderConfig>();
-            config->bitsPerSample = demuxer_->audioInfo()->bitsPerSample;
-            config->channels = demuxer_->audioInfo()->channels;
-            config->sampleRate = demuxer_->audioInfo()->sampleRate;
-            config->timeScale = demuxer_->audioInfo()->timeScale;
-            if (!audioDecodeComponent_->open(decodeType, config)) {
-                LogI("create audio decode component successs");
-                break;
-            }
-            audioRender_ = std::make_unique<AudioRenderComponent>(demuxer_->audioInfo());
-            audioRender_->firstFrameRenderCallBack = [this](Time::TimePoint timestamp){
-                statistics_.isFirstAudioRendered = true;
-                statistics_.audioRenderDelta = timestamp - statistics_.audioRenderDelta;
-            };
-            LogI("create audio render successs");
-        } while(false);
+        createAudioComponent(setting);
     } else {
         LogI("no audio");
     }
     
     if (info_.hasVideo) {
         LogI("has audio, video info:{}", demuxer_->videoInfo()->mediaInfo);
-        do {
-            auto decodeType = DecoderManager::shareInstance().getDecoderType(demuxer_->videoInfo()->mediaInfo, setting.enableVideoSoftDecode);
-            if (!DecoderManager::shareInstance().contains(decodeType)) {
-                LogE("not found decoder:media info {}", demuxer_->videoInfo()->mediaInfo);
-                break;
-            }
-            videoDecodeComponent_ = std::make_unique<DecoderComponent>([this](auto frame) {
-                videoFrames_.withWriteLock([&frame](auto& frames){
-                    frames.push_back(std::move(frame));
-                });
-            });
-            if (!videoDecodeComponent_) {
-                LogI("create video decoder error:{}", demuxer_->videoInfo()->mediaInfo);
-                break;
-            }
-            auto config = std::make_shared<VideoDecoderConfig>();
-            config->width = demuxer_->videoInfo()->width;
-            config->height = demuxer_->videoInfo()->height;
-            config->naluHeaderLength = demuxer_->videoInfo()->naluHeaderLength;
-            config->sps = demuxer_->videoInfo()->sps;
-            config->pps = demuxer_->videoInfo()->pps;
-            if (videoDecodeComponent_->open(decodeType, config)) {
-                LogI("create video decode component success");
-            } else {
-                break;
-            }
-            videoRender_.withReadLock([this](auto& p){
-                if (auto ptr = p.lock(); ptr) {
-                    ptr->notifyVideoInfo(demuxer_->videoInfo());
-                }
-            });
-        } while(false);
+        createVideoComponent(setting);
     } else {
         LogI("no video");
     }
@@ -327,22 +334,24 @@ void Player::Impl::demuxData() noexcept {
         if (!parseResult.audioFrames.empty()) {
             for (auto& packet : parseResult.audioFrames) {
                 auto pts = packet->ptsTime();
+                statistics_.audioDemuxedDuration = pts;
                 if (seekRequest_.has_value() && seekRequest_.value().isAccurate && pts < seekRequest_.value().seekTime) {
                     LogI("discard audio frame:{}", packet->pts);
                     continue;
                 }
-                LogI("demux audio frame:{}, pts:{}, dts:{}, offset:{}", packet->index, packet->dts, packet->pts, packet->offset);
+                LogI("demux audio frame:{}, pts:{}, dts:{}", packet->index, packet->dtsTime(), packet->ptsTime());
                 audioPackets_.push_back(std::move(packet));
             }
         }
         if (!parseResult.videoFrames.empty()) {
             for (auto& packet : parseResult.videoFrames) {
                 auto pts = packet->ptsTime();
+                statistics_.videoDemuxedDuration = pts;
                 if (seekRequest_.has_value() && seekRequest_.value().isAccurate && pts < seekRequest_.value().seekTime) {
                     packet->isDiscard = true;
                     LogI("discard video frame:{}", packet->pts);
                 }
-                LogI("demux video frame:{}, pts:{}, dts:{}, offset:{}", packet->index, packet->dts, packet->pts, packet->offset);
+                LogI("demux video frame:{}, pts:{}, dts:{}", packet->index, packet->dtsTime(), packet->ptsTime());
                 videoPackets_.push_back(std::move(packet));
             }
         }
@@ -391,7 +400,7 @@ void Player::Impl::pushVideoFrameDecode(bool isForce) noexcept {
     }
 }
 
-void Player::Impl::pushFrameDecode() noexcept {
+void Player::Impl::pushAVFrameDecode() noexcept {
     if (info_.hasAudio) {
         pushAudioFrameDecode();
     }
@@ -462,18 +471,16 @@ void Player::Impl::process() noexcept {
     }
     if (nowState == PlayerState::Playing) {
         pushAVFrameToRender();
-        pushFrameDecode();
+        pushAVFrameDecode();
         demuxData();
     } else if (nowState == PlayerState::Buffering) {
         demuxData();
-        pushFrameDecode();
+        pushAVFrameDecode();
     } else if (nowState == PlayerState::Ready || seekRequest_.has_value()) {
         demuxData();
         pushVideoFrameDecode();
         pushAVFrameToRender();
     }
-        
-    checkCacheState();
 }
 
 void Player::Impl::doPlay() noexcept {
@@ -555,6 +562,8 @@ void Player::Impl::doSeek() noexcept {
     });
     LogI("do seek pos:{}, time:{}", seekPos, seekRequest_.value().seekTime);
     statistics_.isForceVideoRendered = true;
+    statistics_.audioDemuxedDuration = seekRequest_.value().seekTime;
+    statistics_.videoDemuxedDuration = seekRequest_.value().seekTime;
     readHandler_->resume();
     ownerThread_->resume();
 }
@@ -767,35 +776,42 @@ PlayerState Player::Impl::state() noexcept {
 }
 
 long double Player::Impl::currentPlayedTime() noexcept {
-    return std::min(audioRenderTime(), videoRenderTime());
+    if (info_.hasAudio && info_.hasVideo) {
+        return std::min(audioRenderTime(), videoRenderTime());
+    } else if (info_.hasAudio) {
+        return audioRenderTime();
+    } else if (info_.hasVideo) {
+        return videoRenderTime();
+    }
+    return 0;
 }
 
-uint32_t Player::Impl::demuxedDuration() noexcept {
-    uint32_t audioDemuxedDuration = 0;
-    uint32_t videoDemuxedDuration = 0;
-    if (info_.hasAudio && !audioPackets_.empty()) {
-        audioDemuxedDuration = audioPackets_.front()->duration * audioPackets_.size();
+long double Player::Impl::demuxedDuration() noexcept {
+    if (info_.hasAudio && info_.hasVideo) {
+        return std::min(statistics_.audioDemuxedDuration, statistics_.videoDemuxedDuration);
+    } else if (info_.hasAudio) {
+        return statistics_.audioDemuxedDuration;
+    } else if (info_.hasVideo) {
+        return statistics_.videoDemuxedDuration;
     }
-    
-    if (info_.hasVideo && !videoPackets_.empty()) {
-        videoDemuxedDuration = videoPackets_.front()->duration * videoPackets_.size();
-    }
-    return std::min(audioDemuxedDuration, videoDemuxedDuration);
+    return 0;
 }
 
 void Player::Impl::checkCacheState() noexcept {
-    if (state() != PlayerState::Playing) {
-        return;
-    }
     PlayerSetting setting;
     params_.withReadLock([&setting](auto& p){
         setting = p->setting;
     });
-    auto cacheTime = demuxedDuration();
-    if (cacheTime < setting.minCacheTime && !isReadCompleted_) {
+    auto cachedDuration = demuxedDuration();
+    auto playedTime = currentPlayedTime();
+    auto cacheTime = cachedDuration - playedTime;
+    LogI("demux cache time:{}, demuxedDuration:{} played time:{}", cacheTime, cachedDuration, playedTime);
+    if (cacheTime < setting.minCacheTime && !isReadCompleted_ && !readHandler_->isRunning()) {
         readHandler_->resume();
-    } else if (cacheTime >= setting.maxCacheTime) {
+        LogI("read resume");
+    } else if (cacheTime >= setting.maxCacheTime && readHandler_->isRunning()) {
         readHandler_->pause();
+        LogI("read pause");
     }
 }
 

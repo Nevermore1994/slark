@@ -70,8 +70,8 @@ struct PlayerSetting {
     uint32_t width = 0;
     uint32_t height = 0;
     float volume = 100.0f;
-    uint32_t maxCacheTime = 30000; //ms
-    uint32_t minCacheTime = 10000; //seconds
+    long double maxCacheTime = 30.0; //seconds
+    long double minCacheTime = 5.0; //seconds
 };
 
 struct PlayerParams {

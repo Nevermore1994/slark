@@ -36,6 +36,8 @@ struct PlayerStatistics {
     bool isForceVideoRendered = false;
     Time::TimePoint audioDecodeDelta{0};
     Time::TimePoint audioRenderDelta{0};
+    long double audioDemuxedDuration = 0;
+    long double videoDemuxedDuration = 0;
     
     void reset() {
         isFirstAudioRendered = false;
@@ -111,8 +113,12 @@ private:
     bool createDemuxer(IOData& data) noexcept;
     
     bool openDemuxer(IOData& data) noexcept;
+    
+    void createAudioComponent(const PlayerSetting& setting) noexcept;
+    
+    void createVideoComponent(const PlayerSetting& setting) noexcept;
 
-    void pushFrameDecode() noexcept;
+    void pushAVFrameDecode() noexcept;
     
     void pushAudioFrameDecode() noexcept;
 
@@ -128,7 +134,7 @@ private:
     
     void doLoop() noexcept;
     
-    [[nodiscard]] uint32_t demuxedDuration() noexcept;
+    long double demuxedDuration() noexcept;
     
     void checkCacheState() noexcept;
     
