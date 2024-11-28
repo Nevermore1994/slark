@@ -104,11 +104,11 @@ struct AVFrame {
     }
     
     long double dtsTime() noexcept {
-        return static_cast<long double>(dts) / static_cast<long double>(timeScale);
+        return std::round(static_cast<long double>(dts) / static_cast<long double>(timeScale) * 1000) / 1000;
     }
     
     long double ptsTime() noexcept {
-        return static_cast<long double>(pts) / static_cast<long double>(timeScale);
+        return std::round(static_cast<long double>(pts) / static_cast<long double>(timeScale) * 1000) / 1000;
     }
 
     [[nodiscard]] inline std::unique_ptr<AVFrame> copy() const noexcept {
