@@ -53,7 +53,11 @@ uint64_t TrackContext::getSeekPos(long double targetTime) const noexcept {
     }
     const auto& indexs = stss->keyIndexs;
     uint32_t keyIndex = std::distance(indexs.begin(), std::lower_bound(indexs.begin(), indexs.end(), sampleIndex));
-    while (keyIndex >= 0 && keyIndex < indexs.size()  && indexs[keyIndex] > sampleIndex) {
+    if (keyIndex == indexs.size()) {
+        //last key frame
+        keyIndex = indexs.size() - 1;
+    }
+    while (keyIndex >= 0 && keyIndex < indexs.size() && indexs[keyIndex] > sampleIndex) {
         keyIndex--;
     }
     if (keyIndex < 0 || keyIndex >= indexs.size()) {
@@ -333,11 +337,11 @@ void TrackContext::parseData(Buffer& buffer, const std::any& frameInfo, AVFrameA
     }
     auto start = stco->chunkOffsets[chunkLogicIndex] + static_cast<uint64_t>(sampleOffset);
     auto size = stsz->sampleSizes[stszSampleSizeIndex];
-    LogI("parse data start:{}, size:{}, pos:{}", start, size, buffer.pos());
+    //LogI("parse data start:{}, size:{}, pos:{}", start, size, buffer.pos());
     if (!buffer.skipTo(start)) {
         return;
     }
-    LogI("skip to pos:{}, read pos:{}, offset:{}", buffer.pos(), buffer.readPos(), buffer.offset());
+    //LogI("skip to pos:{}, read pos:{}, offset:{}", buffer.pos(), buffer.readPos(), buffer.offset());
     auto frame = std::make_unique<AVFrame>();
     frame->index = ++index;
     frame->dts = dts;

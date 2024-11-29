@@ -10,6 +10,6 @@
 #include <type_traits>
 
 template<typename T> requires requires (T&&) { std::is_floating_point_v<T>; }
-inline bool isEqual(T a, T b, float epsilon = std::numeric_limits<T>::epsilon()) {
+inline bool isEqual(T a, T b, T epsilon = std::numeric_limits<T>::epsilon()) {
     return std::fabs(a - b) < epsilon;
 }

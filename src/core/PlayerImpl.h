@@ -44,6 +44,8 @@ struct PlayerStatistics {
         isForceVideoRendered = false;
         audioDecodeDelta = 0;
         audioRenderDelta = 0;
+        audioDemuxedDuration = 0;
+        videoDemuxedDuration = 0;
     }
 };
 
@@ -130,7 +132,7 @@ private:
     
     void doStop() noexcept;
     
-    void doSeek() noexcept;
+    void doSeek(PlayerSeekRequest seekRequest) noexcept;
     
     void doLoop() noexcept;
     
