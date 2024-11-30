@@ -19,6 +19,7 @@ enum class TrackType {
 };
 class TrackContext {
 public:
+    bool isCompleted = false;
     TrackType type = TrackType::Unknown;
     CodecId codecId = CodecId::Unknown;
     std::shared_ptr<BoxMdhd> mdhd;
@@ -49,14 +50,14 @@ public:
     uint64_t keyIndex = 0;
     uint16_t naluByteSize = 0;
 public:
-    bool isInRange(Buffer& buffer) noexcept;
-    bool isInRange(Buffer& buffer, uint64_t& offset) noexcept;
+    bool isInRange(Buffer& buffer) const noexcept;
+    bool isInRange(Buffer& buffer, uint64_t& offset) const noexcept;
     void reset() noexcept;
     void parseData(Buffer& buffer, const std::any& frameInfo, AVFrameArray& packets);
     void seek(uint64_t pos) noexcept;
     uint64_t getSeekPos(long double time) const noexcept;
     AVFrameArray praseH264FrameData(AVFramePtr ptr, DataPtr data, const std::any& frameInfo);
-    bool calcIndex() noexcept;
+    void calcIndex() noexcept;
 };
 
 class Mp4Demuxer: public IDemuxer {
@@ -89,7 +90,7 @@ public:
     bool probeMoovBox(Buffer& buffer, int64_t& start, uint32_t& size) noexcept;
     std::string description() const noexcept;
 private:
-    bool parseMoovBox(Buffer& buffer, BoxRefPtr moovBox) noexcept;
+    bool parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept;
     void init() noexcept;
 private:
     BoxRefPtr rootBox_;

@@ -23,7 +23,7 @@ enum class CodecType : uint8_t {
 
 struct VideoDecoderConfig : public DecoderConfig {
     CodecType codec = CodecType::H264;
-    uint8_t naluHeaderLength{};
+    uint16_t naluHeaderLength{};
     uint32_t width{};
     uint32_t height{};
     DataRefPtr sps;

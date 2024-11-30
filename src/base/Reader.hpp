@@ -22,23 +22,24 @@ struct IOData {
     
     IOData() = default;
     
-    IOData(uint64_t size)
+    explicit IOData(uint64_t size)
         : data(std::make_unique<Data>(size)) {
         
     }
-    IOData(IOData&& d)
+
+    IOData(IOData&& d) noexcept
         : data(std::move(d.data))
-        , offset(d.offset) {
+        , offset(d.offset)  {
         
     }
     
-    IOData& operator=(IOData&& d) {
+    IOData& operator=(IOData&& d) noexcept {
         data = std::move(d.data);
         offset = d.offset;
         return *this;
     }
     
-    uint64_t length() {
+    uint64_t length() const {
         if (data) {
             return data->length;
         }
@@ -53,12 +54,12 @@ struct ReadRange {
     uint64_t readPos{};
     int64_t readSize{kReadRangeInvalid};
     
-    bool isValid() const noexcept {
+    [[nodiscard]] bool isValid() const noexcept {
         return readSize != kReadRangeInvalid;
     }
-    
-    uint64_t end() const noexcept {
-        return readPos + readSize;
+
+    [[nodiscard]] uint64_t end() const noexcept {
+        return readPos + static_cast<uint64_t>(readSize);
     }
 };
 

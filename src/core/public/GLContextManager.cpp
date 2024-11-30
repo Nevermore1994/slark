@@ -45,4 +45,9 @@ IEGLContextRefPtr GLContextManager::createShareContextWithId(const std::string& 
     return res;
 }
 
+#if !SLARK_IOS && !SLARK_ANDROID
+IEGLContextPtr createEGLContext() {
+    return nullptr;
+}
+#endif
 }

@@ -42,7 +42,7 @@ struct AudioFrameInfo {
     uint16_t bitsPerSample = 0;
     uint64_t sampleRate = 0;
     
-    double duration(uint32_t size) const noexcept {
+    double duration(uint64_t size) const noexcept {
         return static_cast<double>(size) / static_cast<double>(bitsPerSample / 8 * channels * sampleRate);
     }
 };
@@ -53,8 +53,8 @@ enum class VideoFrameType {
     PFrame,
     BFrame,
     SEI,
-    SPS,
-    PPS,
+    SPS [[maybe_unused]],
+    PPS [[maybe_unused]],
 };
 
 struct VideoFrameInfo {
@@ -103,11 +103,11 @@ struct AVFrame {
         return d;
     }
     
-    long double dtsTime() noexcept {
+    long double dtsTime() const noexcept {
         return std::round(static_cast<long double>(dts) / static_cast<long double>(timeScale) * 1000) / 1000;
     }
     
-    long double ptsTime() noexcept {
+    long double ptsTime() const noexcept {
         return std::round(static_cast<long double>(pts) / static_cast<long double>(timeScale) * 1000) / 1000;
     }
 

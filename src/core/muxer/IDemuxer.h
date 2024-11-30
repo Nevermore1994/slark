@@ -72,6 +72,7 @@ public:
     
     virtual void seekPos(uint64_t pos) noexcept {
         receivedLength_ = pos;
+        isCompleted_ = false;
         if (buffer_) {
             buffer_->reset();
             buffer_->setOffset(pos);

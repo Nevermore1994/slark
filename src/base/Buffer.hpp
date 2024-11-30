@@ -87,7 +87,7 @@ public:
 private:
     bool isUpdatedOffset = false;
     DataPtr data_ = nullptr;
-    int64_t readPos_ = 0;
+    uint64_t readPos_ = 0;
     uint64_t offset_ = 0;
     uint64_t totalSize_ = 0;
 };

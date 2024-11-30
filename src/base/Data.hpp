@@ -104,16 +104,6 @@ struct Data {
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "google-explicit-constructor"
-    Data(const std::string& str)
-        : Data(static_cast<uint64_t>(str.size()), reinterpret_cast<const uint8_t*>(str.data())) {
-
-    }
-
-    Data(std::string&& str)
-        : Data(static_cast<uint64_t>(str.size()), reinterpret_cast<const uint8_t*>(str.data())) {
-
-    }
-    
     Data(std::string_view str)
         : Data(static_cast<uint64_t>(str.size()), reinterpret_cast<const uint8_t*>(str.data())) {
 
@@ -185,6 +175,26 @@ struct Data {
         capacity = 0;
         rawData = nullptr;
         return res;
+    }
+
+    inline void append(std::string_view str) noexcept {
+        if (rawData == nullptr) {
+            length = 0;
+            capacity = 0;
+        }
+        auto expectLength = length + str.length();
+        if (capacity < expectLength) {
+            auto p = rawData;
+            auto len = static_cast<int64_t>(static_cast<float>(expectLength) * 1.5f);
+            rawData = new uint8_t[static_cast<size_t>(len)];
+            capacity = static_cast<uint64_t>(len);
+            if (p) {
+                std::copy(p, p + length, rawData);
+                delete[] p;
+            }
+        }
+        std::copy(str.data(), str.data() + str.length(), rawData + length);
+        length = expectLength;
     }
 
     inline void append(const Data& d) noexcept {

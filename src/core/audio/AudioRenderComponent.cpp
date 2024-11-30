@@ -138,7 +138,7 @@ void AudioRenderComponent::flush() noexcept {
 void AudioRenderComponent::seek(Time::TimePoint time) noexcept {
     std::unique_lock<std::mutex> lock(renderMutex_);
     flush();
-    frames_.withWriteLock([this, time](auto& frames) {
+    frames_.withWriteLock([this](auto& frames) {
         frames.clear();
         audioBuffer_.reset();
         renderedDataLength_ = 0;
