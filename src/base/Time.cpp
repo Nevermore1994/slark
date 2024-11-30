@@ -16,16 +16,12 @@ using std::chrono::seconds;
 using std::chrono::milliseconds;
 using std::chrono::microseconds;
 
-std::chrono::microseconds Time::TimePoint::toMicroSeconds() const noexcept {
-    return std::chrono::milliseconds(count);
+[[nodiscard]] std::chrono::milliseconds Time::TimePoint::toMilliSeconds() const noexcept {
+    return std::chrono::milliseconds(static_cast<uint64_t>( std::round(static_cast<double>(count) / 1000.0)));
 }
 
-std::chrono::milliseconds Time::TimePoint::toMilliSeconds() const noexcept {
-    return std::chrono::milliseconds(count / 1000);
-}
-
-std::chrono::seconds Time::TimePoint::toSeconds() const noexcept {
-    return std::chrono::seconds (count / 1000000);
+long double Time::TimePoint::second() const noexcept {
+    return std::round(static_cast<long double>(count) / 1000.0) / 1000;
 }
 
 Time::TimePoint Time::TimePoint::operator+(std::chrono::milliseconds delta) const noexcept {
@@ -94,7 +90,7 @@ std::string Time::localTime() noexcept {
 std::string Time::localShortTime() noexcept {
     auto tp = time_point_cast<seconds>(system_clock::now());
     tp += Time::offsetFromUTC();
-    return std::format("{:%F-%H:%M:%S}", tp);
+    return std::format("{:%Y-%m-%d %H:%M:%S}", tp);
 }
 
 }//end namespace slark

@@ -78,22 +78,22 @@
     }];
     [self.nextButton mas_makeConstraints:^(MASConstraintMaker *make) {
         make.height.width.mas_equalTo(48);
-        make.left.mas_equalTo(self.playButton.mas_right).offset(15);
+        make.left.mas_equalTo(self.playButton.mas_right).offset(20);
         make.centerY.equalTo(self.playButton);
     }];
     [self.prevButton mas_makeConstraints:^(MASConstraintMaker *make) {
         make.height.width.mas_equalTo(48);
-        make.right.mas_equalTo(self.playButton.mas_left).offset(-15);
+        make.right.mas_equalTo(self.playButton.mas_left).offset(-20);
         make.centerY.equalTo(self.playButton);
     }];
     [self.loopButton mas_makeConstraints:^(MASConstraintMaker *make) {
         make.height.width.mas_equalTo(30);
-        make.left.mas_equalTo(self.nextButton.mas_right).offset(15);
+        make.right.mas_equalTo(self.totalTimeLabel.mas_left).offset(-10);
         make.centerY.equalTo(self.playButton);
     }];
     [self.volumeButton mas_makeConstraints:^(MASConstraintMaker *make) {
         make.height.width.mas_equalTo(30);
-        make.right.mas_equalTo(self.prevButton.mas_left).offset(-15);
+        make.left.mas_equalTo(self.currentTimeLabel.mas_right).offset(10);
         make.centerY.equalTo(self.playButton);
     }];
     self.isPause = YES;
@@ -158,6 +158,7 @@
         _progressView.minimumTrackTintColor = [[UIColor alloc] initWithRed:26.0f / 255.0f  green:109.0f / 255.0f  blue:1.f alpha:1.f];
         _progressView.maximumTrackTintColor = [[UIColor alloc] initWithRed:172.0f / 255.0f  green:32.0f / 255.0f blue:219.0f / 255.0f alpha:1.f];
         [_progressView addTarget:self action:@selector(progressChanged) forControlEvents:UIControlEventValueChanged];
+        [_progressView addTarget:self action:@selector(seekDone) forControlEvents:UIControlEventTouchUpInside];
         _progressView.layer.cornerRadius = 10;
         _progressView.layer.masksToBounds = YES;
         UIImage* image = [self imageWithSize:CGSizeMake(12.0, 12.0) color:[[UIColor alloc] initWithRed:200.0f / 255.0f  green:50.0f / 255.0f blue:219.0f / 255.0f alpha:1.f] cornerRadius:60.0];
@@ -198,7 +199,7 @@
         _currentTimeLabel.text = [self timeString:0];
         _currentTimeLabel.textAlignment = NSTextAlignmentCenter;
         _currentTimeLabel.font = [UIFont systemFontOfSize:12];
-        _currentTimeLabel.textColor = [UIColor blackColor];
+        _currentTimeLabel.textColor = [UIColor whiteColor];
     }
     return _currentTimeLabel;
 }
@@ -209,7 +210,7 @@
         _totalTimeLabel.text = [self timeString:0];
         _totalTimeLabel.textAlignment = NSTextAlignmentCenter;
         _totalTimeLabel.font = [UIFont systemFontOfSize:12];
-        _totalTimeLabel.textColor = [UIColor blackColor];
+        _totalTimeLabel.textColor = [UIColor whiteColor];
     }
     return _totalTimeLabel;
 }
@@ -217,6 +218,10 @@
 - (void)progressChanged {
     self.currentTimeLabel.text = [self timeString:self.progressView.value];
     !self.onSeekClick ?: self.onSeekClick(self.progressView.value);
+}
+
+- (void)seekDone {
+    !self.onSeekDone ?: self.onSeekDone(self.progressView.value);
 }
 
 - (void)playClick {
@@ -284,7 +289,7 @@
     int hour = time / 3600.0;
     time -= hour * 3600.0;
     int mi = time / 60.0;
-    int seconds = ceil(time - (mi * 60.0f));
+    int seconds = round(time - (mi * 60.0f));
     if (hour > 0)
         return [NSString stringWithFormat:@"%02d:%02d:%02d", hour, mi, seconds];
     return [NSString stringWithFormat:@"%02d:%02d", mi, seconds];

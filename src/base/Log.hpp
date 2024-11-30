@@ -33,6 +33,12 @@ constexpr const std::string_view kLogStrs[] = {" [print] ", " [debug] ", " [info
 template <typename ...Args>
 void printLog(LogType level, std::string_view format, Args&& ...args) {
     auto logStr = std::vformat(format, std::make_format_args(args...));
+    if (level == LogType::Record) {
+        LogOutput::shareInstance().write(logStr);
+        return;
+    } else if (level > LogType::Debug) {
+        LogOutput::shareInstance().write(logStr);
+    }
 #ifdef SLARK_IOS
     outputLog(logStr);
 #elif SLARK_ANDROID
@@ -40,12 +46,6 @@ void printLog(LogType level, std::string_view format, Args&& ...args) {
     std::print("{}", logStr);
     fflush(stdout);
 #endif
-    if (level > LogType::Debug) {
-        LogOutput::shareInstance().write(logStr);
-    } else if (level == LogType::Record) {
-        LogOutput::shareInstance().write(logStr);
-        return;
-    }
 }
 
 #ifdef __clang__

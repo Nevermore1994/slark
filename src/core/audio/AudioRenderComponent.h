@@ -13,6 +13,7 @@
 #include "Synchronized.hpp"
 #include "RingBuffer.hpp"
 #include "Time.hpp"
+#include "Clock.h"
 
 #ifdef SLARK_IOS
 #include "AudioRender.h"
@@ -20,9 +21,9 @@
 
 #endif
 
-namespace slark::Audio {
+namespace slark {
 
-constexpr uint64_t kDefaultAudioBufferSize = 8 * 1024;
+constexpr uint64_t kDefaultAudioBufferSize = 16 * 1024;
 class AudioRenderComponent: public slark::NonCopyable, public InputNode {
 public:
     explicit AudioRenderComponent(std::shared_ptr<AudioInfo> info);
@@ -39,8 +40,12 @@ public:
     void stop() noexcept;
     void setVolume(float volume) noexcept;
     void flush() noexcept;
-    void seekToPos(uint64_t pos) noexcept;
+    void seek(Time::TimePoint time) noexcept;
 
+    Time::TimePoint playedTime() {
+        return clock_.time();
+    }
+    
     bool isFull() noexcept {
         bool isFull = false;
         frames_.withReadLock([&](auto&){
@@ -49,20 +54,27 @@ public:
         return isFull;
     }
     
-    AudioRenderStatus status() const {
+    RenderStatus status() const {
         if (pimpl_) {
             return pimpl_->status();
         }
-        return AudioRenderStatus::Unknown;
+        return RenderStatus::Unknown;
+    }
+    
+    Clock& clock() noexcept {
+        return clock_;
     }
     
 private:
     void init() noexcept;
 public:
-    std::function<void(CTime)> renderCompletion;
     std::function<uint32_t(uint8_t*, uint32_t)> pullAudioData;
+    std::function<void(Time::TimePoint)> firstFrameRenderCallBack;
 private:
+    bool isFirstFrameRendered = false;
     uint64_t renderedDataLength_ = 0;
+    Clock clock_;
+    std::mutex renderMutex_;
     std::shared_ptr<AudioInfo> audioInfo_;
     RingBuffer<uint8_t, kDefaultAudioBufferSize> audioBuffer_;
     Synchronized<std::deque<AVFrameRefPtr>, std::shared_mutex> frames_;

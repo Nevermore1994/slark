@@ -47,13 +47,13 @@ struct Data {
         std::fill_n(rawData, size, 0);
     }
 
-    explicit Data(uint64_t size, const std::function<void(uint8_t*)>& func)
+    explicit Data(uint64_t size, const std::function<uint64_t(uint8_t*)>& func)
         : capacity(size)
         , length(0)
         , rawData(nullptr) {
         rawData = new uint8_t[size];
         if (func) {
-            func(rawData);
+            length = func(rawData);
         }
     }
 
@@ -104,12 +104,7 @@ struct Data {
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "google-explicit-constructor"
-    Data(const std::string& str)
-        : Data(static_cast<uint64_t>(str.size()), reinterpret_cast<const uint8_t*>(str.data())) {
-
-    }
-
-    Data(std::string&& str)
+    Data(std::string_view str)
         : Data(static_cast<uint64_t>(str.size()), reinterpret_cast<const uint8_t*>(str.data())) {
 
     }
@@ -182,6 +177,26 @@ struct Data {
         return res;
     }
 
+    inline void append(std::string_view str) noexcept {
+        if (rawData == nullptr) {
+            length = 0;
+            capacity = 0;
+        }
+        auto expectLength = length + str.length();
+        if (capacity < expectLength) {
+            auto p = rawData;
+            auto len = static_cast<int64_t>(static_cast<float>(expectLength) * 1.5f);
+            rawData = new uint8_t[static_cast<size_t>(len)];
+            capacity = static_cast<uint64_t>(len);
+            if (p) {
+                std::copy(p, p + length, rawData);
+                delete[] p;
+            }
+        }
+        std::copy(str.data(), str.data() + str.length(), rawData + length);
+        length = expectLength;
+    }
+
     inline void append(const Data& d) noexcept {
         if (rawData == nullptr) {
             length = 0;
@@ -203,7 +218,17 @@ struct Data {
     }
 
     inline void append(std::unique_ptr<Data> appendData) noexcept {
-        append(*appendData);
+        if (appendData == nullptr) {
+            return;
+        }
+        if (rawData == nullptr) {
+            rawData = appendData->rawData;
+            length = appendData->length;
+            capacity = appendData->capacity;
+            appendData->rawData = nullptr;
+        } else {
+            append(*appendData);
+        }
         appendData.reset();
     }
 

@@ -9,9 +9,9 @@
 
 using namespace slark;
 
-namespace slark::Audio {
+namespace slark {
 
-AudioStreamBasicDescription convertInfo2Description(AudioInfo info) {
+AudioStreamBasicDescription convertInfo2Description(const AudioInfo& info) {
     AudioStreamBasicDescription description;
     description.mFormatID = kAudioFormatLinearPCM;
     description.mSampleRate = info.sampleRate;
@@ -24,5 +24,6 @@ AudioStreamBasicDescription convertInfo2Description(AudioInfo info) {
     
     return description;
 }
+
 
 }

@@ -6,14 +6,43 @@
 #include "DecoderComponent.h"
 #include "Log.hpp"
 #include "Util.hpp"
+#include "DecoderConfig.h"
 
 namespace slark {
 
-DecoderComponent::DecoderComponent(DecoderType decodeType, DecoderReceiveFunc&& callback)
-    : decoder_(DecoderManager::shareInstance().create(decodeType))
-    , callback_(std::move(callback))
+DecoderComponent::DecoderComponent(DecoderReceiveFunc&& callback)
+    : callback_(callback)
     , decodeWorker_(Util::genRandomName("DecodeThread_"), &DecoderComponent::decode, this) {
+}
 
+DecoderComponent::~DecoderComponent() {
+    close();
+}
+
+bool DecoderComponent::open(DecoderType type, std::shared_ptr<DecoderConfig> config) noexcept {
+    decoder_ = DecoderManager::shareInstance().create(type);
+    if (!decoder_) {
+        return false;
+    }
+    decoder_->receiveFunc = [this](auto frame){
+        callback_(std::move(frame));
+    };
+    if (decoder_->isVideo()) {
+        auto videoConfig = std::dynamic_pointer_cast<VideoDecoderConfig>(config);
+        if (!videoConfig) {
+            return false;
+        }
+        return decoder_->open(videoConfig);
+    } else if (decoder_->isAudio()) {
+        auto audioConfig = std::dynamic_pointer_cast<AudioDecoderConfig>(config);
+        if (!audioConfig) {
+            return false;
+        }
+        return decoder_->open(audioConfig);
+    }
+    using namespace std::chrono_literals;
+    decodeWorker_.setInterval(2ms);
+    return true;
 }
 
 void DecoderComponent::decode() {
@@ -21,35 +50,26 @@ void DecoderComponent::decode() {
         LogE("decoder is nullptr...");
         return;
     }
-    AVFrameArray packets;
-    packets_.withWriteLock([&](auto& vec){
-        packets.swap(vec);
+    AVFramePtr packet;
+    packets_.withWriteLock([&](auto& deque){
+        if (!deque.empty()) {
+            packet = std::move(deque.front());
+            deque.pop_front();
+        }
     });
-    AVFrameArray decodeFrameArray;
-    if(!packets.empty()) {
-        decodeFrameArray = decoder_->send(std::move(packets));
-    } else if (isReachEnd_) {
-        auto frame = decoder_->flush();
-        isReachEnd_ = false;
-    } else {
-        decodeWorker_.pause();
-        return;
+    if(packet) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        decoder_->send(std::move(packet));
+    } else if (isReachEnd_ && !decoder_->isFlushed()) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        decoder_->flush();
     }
-    if (callback_) {
-        callback_(std::move(decodeFrameArray));
-    }
-}
-
-void DecoderComponent::send(AVFrameArray&& packets) noexcept {
-    packets_.withLock([&](auto& vec){
-        std::move(packets.begin(), packets.end(), std::back_inserter(vec));
-    });
-    decodeWorker_.resume();
 }
 
 void DecoderComponent::send(AVFramePtr packet) noexcept {
-    packets_.withWriteLock([&](auto& vec){
-        vec.emplace_back(std::move(packet));
+    packets_.withWriteLock([&](auto& deque){
+        packet->stats.prepareDecodeStamp = Time::nowTimeStamp();
+        deque.emplace_back(std::move(packet));
     });
     decodeWorker_.resume();
 }
@@ -63,7 +83,9 @@ void DecoderComponent::resume() noexcept {
 }
 
 void DecoderComponent::reset() noexcept {
+    std::unique_lock<std::mutex> lock(mutex_);
     decodeWorker_.pause();
+    decoder_.reset();
     isReachEnd_ = false;
     packets_.withWriteLock([](auto& vec){
         vec.clear();
@@ -73,6 +95,16 @@ void DecoderComponent::reset() noexcept {
 void DecoderComponent::close() noexcept {
     reset();
     decodeWorker_.stop();
+}
+
+void DecoderComponent::flush() noexcept {
+    std::unique_lock<std::mutex> lock(mutex_);
+    if (decoder_) {
+        decoder_->flush();
+    }
+    packets_.withWriteLock([](auto& vec){
+        vec.clear();
+    });
 }
 
 }

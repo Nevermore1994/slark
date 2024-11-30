@@ -2,13 +2,13 @@
 //  ViewController.m
 //  demo
 //
-//  Created by Rolf.Tan on 2023/10/18.
+//  Created by Nevermore on 2023/10/18.
 //
-
 
 #import "Masonry.h"
 #import "ViewController.h"
-#import "viewController/AudioViewController.h"
+#import "ViewController/AudioViewController.h"
+#import "ViewController/VideoViewController.h"
 #import "iOSUtil.h"
 #include "Log.hpp"
 
@@ -36,7 +36,6 @@ using namespace slark;
     [self.tabView reloadData];
 }
 
-
 - (void)initViews {
     self.navigationItem.title = @"slark demo";
     [self.navigationController.navigationBar setTitleTextAttributes:@{NSForegroundColorAttributeName:[UIColor blackColor]}];
@@ -51,7 +50,10 @@ using namespace slark;
 }
 
 - (void)initConfig {
-    self.tabDatas = [NSArray arrayWithObjects:@"test music", nil];
+    self.tabDatas = [NSArray arrayWithObjects:
+                     @"audio player",
+                     @"video palyer",
+                     nil];
     [self.tabView reloadData];
 }
 
@@ -71,7 +73,12 @@ using namespace slark;
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     switch (indexPath.row) {
         case 0: {
-            AudioViewController* vc = [[AudioViewController alloc] init];
+            AudioViewController* vc = [AudioViewController new];
+            [self.navigationController pushViewController:vc animated:YES];
+        }
+            break;
+        case 1: {
+            VideoViewController* vc = [VideoViewController new];
             [self.navigationController pushViewController:vc animated:YES];
         }
             break;

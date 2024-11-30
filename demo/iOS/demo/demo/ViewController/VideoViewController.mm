@@ -1,34 +1,35 @@
 //
-//  AudioViewController.m
+//  VideoViewController.m
 //  demo
 //
-
+//  Created by Nevermore on 2024/10/12.
+//
 
 #import <AVFoundation/AVFoundation.h>
 #import "Masonry.h"
 #import "EXTScope.h"
-#import "AudioViewController.h"
+#import "VideoViewController.h"
 #import "PlayerControllerView.h"
-#include "slark.h"
+#import "iOSUtil.h"
+#import "SlarkViewController.h"
 #include "Log.hpp"
 
 using namespace slark;
 
-@interface AudioViewController()<UIGestureRecognizerDelegate, IPlayerObserver>
-@property (nonatomic, strong) UIImageView* iconView;
+@interface VideoViewController()<UIGestureRecognizerDelegate, ISlarkPlayerObserver>
 @property (nonatomic, strong) PlayerControllerView* controllerView;
 @property (nonatomic, strong) UILabel* nameLabel;
 @property (nonatomic, assign) BOOL hasAuthorization;
-@property (nonatomic, strong) Player* player;
+@property (nonatomic, strong) SlarkViewController* playerController;
 @end
 
-
-@implementation AudioViewController
+@implementation VideoViewController
 
 - (void)viewDidLoad {
-    [self initSubviews];
+    [super viewDidLoad];
     [self initData];
-    LogI("audio viewDidLoad");
+    [self initSubviews];
+    LogI("video viewDidLoad");
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -64,6 +65,7 @@ using namespace slark;
           break;
     }
     [self setupAudioSession];
+    LogI("video viewDidAppear");
 }
 
 - (void)requestAccess:(void(^)(BOOL)) block {
@@ -82,56 +84,46 @@ using namespace slark;
 }
 
 - (void)initSubviews {
-    self.navigationItem.title = @"music";
+    self.navigationItem.title = @"video";
     [self.navigationController.navigationBar setTitleTextAttributes:@{NSForegroundColorAttributeName:[UIColor blackColor]}];
     self.view.backgroundColor = [UIColor blackColor];
-    [self.view addSubview:self.iconView];
     [self.view addSubview:self.controllerView];
-    [self.iconView mas_makeConstraints:^(MASConstraintMaker *make) {
-        UIEdgeInsets insets = UIEdgeInsetsMake(100, 60, 300, 60);
-        make.edges.equalTo(self.view).with.insets(insets);
-    }];
     [self.controllerView mas_makeConstraints:^(MASConstraintMaker *make) {
         make.width.mas_equalTo(self.view.mas_width);
         make.height.mas_equalTo(120);
         make.centerX.equalTo(self.view);
-        make.top.mas_equalTo(self.iconView.mas_bottom).mas_offset(40);
+        make.bottom.mas_equalTo(-SafeBottomHeight).mas_offset(-30);
     }];
 }
 
 - (void)initData {
     NSString *bundlePath = [[NSBundle mainBundle] pathForResource:@"resource" ofType:@"bundle"];
     NSBundle *resouceBundle = [NSBundle bundleWithPath:bundlePath];
-    auto path = [resouceBundle pathForResource:@"sample-3s.wav" ofType:@""];
-    self.player = [[Player alloc] init:path];
+    auto path = [resouceBundle pathForResource:@"Sample.mp4" ofType:@""];
+    SlarkPlayer* player = [[SlarkPlayer alloc] init:path];
+    player.delegate = self;
+    self.playerController = [[SlarkViewController alloc] initWithPlayer:self.view.bounds player:player];
+    [self addChildViewController:self.playerController];
+    [self.view addSubview:self.playerController.view];
     self.hasAuthorization = NO;
 }
 
-- (UIView*)iconView {
-    if (_iconView == nil) {
-        _iconView = [[UIImageView alloc] init];
-        _iconView.image = [UIImage imageNamed:@"music_normal"];
-        _iconView.contentMode = UIViewContentModeScaleAspectFit;
-    }
-    return _iconView;
-}
-
 - (void)handlePlayClick:(BOOL) isPlay {
-    @weakify(self);
     if (!isPlay) {
-        [self.player pause];
+        [self.playerController.player pause];
         return;
     }
     if (!self.hasAuthorization) {
+        @weakify(self);
         [self requestAccess:^(BOOL grant) {
             @strongify(self);
             self.hasAuthorization = grant;
             if (grant) {
-                [self.player play];
+                [self.playerController.player play];
             }
         }];
     } else {
-        [self.player play];
+        [self.playerController.player play];
     }
 }
 
@@ -143,20 +135,40 @@ using namespace slark;
             @strongify(self);
             [self handlePlayClick:isPlay];
         };
+        _controllerView.onSeekClick = ^(double time) {
+            @strongify(self);
+            [self.playerController.player seek:time];
+            LogI("audio seek:{}", time);
+        };
+        _controllerView.onSeekDone = ^(double time){
+            @strongify(self);
+            [self.playerController.player seek:time isAccurate:YES];
+            LogI("seek done");
+        };
+        _controllerView.onSetLoopClick = ^(BOOL loop) {
+            @strongify(self);
+            [self.playerController.player setLoop:loop];
+        };
     }
     return _controllerView;
 }
 
 - (void)notifyTime:(NSString *)playerId time:(double)time {
-    [self.controllerView updateTotalTime:CMTimeGetSeconds(self.player.totalDuration)];
     [self.controllerView updateCurrentTime:time];
 }
 
-- (void)notifyState:(NSString *)playerId state:(PlayerState)state {
-    
+- (void)notifyState:(NSString *)playerId state:(SlarkPlayerState)state {
+    if (state == SlarkPlayerState::PlayerStateReady) {
+        [self.controllerView updateTotalTime:CMTimeGetSeconds(self.playerController.player.totalDuration)];
+    } else if (state == SlarkPlayerState::PlayerStateCompleted || state == SlarkPlayerState::PlayerStatePause) {
+        [self.controllerView setIsPause:YES];
+    } else if (state == SlarkPlayerState::PlayerStatePlaying) {
+        [self.controllerView setIsPause:NO];
+    }
 }
 
-- (void)notifyEvent:(NSString *)playerId event:(PlayerEvent)event value:(NSString *)value {
-    
+- (void)notifyEvent:(NSString *)playerId event:(SlarkPlayerEvent)event value:(NSString *)value {
+
 }
 @end
+
