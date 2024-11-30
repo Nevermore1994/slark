@@ -5,7 +5,7 @@
 //
 #pragma once
 #include <chrono>
-#include <mutex>
+#include <shared_mutex>
 #include "Time.hpp"
 
 namespace slark {
@@ -13,21 +13,26 @@ namespace slark {
 class Clock {
 public:
     Clock() = default;
+    ~Clock() = default;
 
-    void setTime(Time::TimePoint count);
+    void setTime(Time::TimePoint count) noexcept;
 
-    Time::TimePoint time();
+    Time::TimePoint time() noexcept;
 
-    void start();
+    void start() noexcept;
 
-    void pause();
+    void pause() noexcept;
 
-    void reset();
+    void reset() noexcept;
 private:
+    Time::TimePoint adjustSpeedTime(Time::TimePoint ) const noexcept;
+private:
+    bool isInited_ = false;
     bool isPause_ = true;
-    std::mutex mutex_;
-    Time::TimePoint start_ = 0;
-    Time::TimePoint totalTime_ = 0;
+    std::shared_mutex mutex_;
+    double speed = 1.0;
+    Time::TimePoint lastUpdated_ = 0;
+    Time::TimePoint pts_ = 0;
 };
 
 }

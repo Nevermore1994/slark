@@ -51,10 +51,10 @@ TEST(Reader, open) {
     writer.reset();
 
     Reader reader;
-    reader.open("test_read.txt", ReaderSetting([&str](DataPtr data, int64_t offset, IOState state){
-        ASSERT_EQ(offset, 0);
+    reader.open("test_read.txt", ReaderSetting([&str](IOData data, IOState state){
+        ASSERT_EQ(data.offset, 0);
         ASSERT_EQ(state, IOState::EndOfFile);
-        ASSERT_EQ(data->view(), std::string_view(str));
+        ASSERT_EQ(data.data->view(), std::string_view(str));
     }));
     std::this_thread::sleep_for(2s);
     reader.close();

@@ -27,6 +27,8 @@
 		C1DA2E5E2C9C364D00DF03CB /* NSLayoutConstraint+MASDebugAdditions.m in Sources */ = {isa = PBXBuildFile; fileRef = C1DA2E502C9C364D00DF03CB /* NSLayoutConstraint+MASDebugAdditions.m */; };
 		C1DA2E5F2C9C364D00DF03CB /* View+MASAdditions.m in Sources */ = {isa = PBXBuildFile; fileRef = C1DA2E522C9C364D00DF03CB /* View+MASAdditions.m */; };
 		C1DA2E602C9C364D00DF03CB /* ViewController+MASAdditions.m in Sources */ = {isa = PBXBuildFile; fileRef = C1DA2E552C9C364D00DF03CB /* ViewController+MASAdditions.m */; };
+		C1E0D0B52CBAC6CC002FE528 /* VideoViewController.mm in Sources */ = {isa = PBXBuildFile; fileRef = C1E0D0B42CBAC6CC002FE528 /* VideoViewController.mm */; };
+		C1E0D0BA2CBAD45E002FE528 /* Sample.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = C1E0D0B92CBAD45E002FE528 /* Sample.mp4 */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -74,6 +76,9 @@
 		C1DA2E532C9C364D00DF03CB /* View+MASShorthandAdditions.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "View+MASShorthandAdditions.h"; sourceTree = "<group>"; };
 		C1DA2E542C9C364D00DF03CB /* ViewController+MASAdditions.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "ViewController+MASAdditions.h"; sourceTree = "<group>"; };
 		C1DA2E552C9C364D00DF03CB /* ViewController+MASAdditions.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "ViewController+MASAdditions.m"; sourceTree = "<group>"; };
+		C1E0D0B42CBAC6CC002FE528 /* VideoViewController.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = VideoViewController.mm; sourceTree = "<group>"; };
+		C1E0D0B62CBAC6F1002FE528 /* VideoViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = VideoViewController.h; sourceTree = "<group>"; };
+		C1E0D0B92CBAD45E002FE528 /* Sample.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file; name = Sample.mp4; path = ../../../test_sample/Sample.mp4; sourceTree = "<group>"; };
 		DC568D03803B819F7CFF7E50 /* Pods-demo.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-demo.release.xcconfig"; path = "Target Support Files/Pods-demo/Pods-demo.release.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -116,6 +121,7 @@
 		C118380B2ADFCC6800DB0127 = {
 			isa = PBXGroup;
 			children = (
+				C1E0D0B92CBAD45E002FE528 /* Sample.mp4 */,
 				C1DA2DCD2C97175200DF03CB /* sample-3s.wav */,
 				C11838162ADFCC6800DB0127 /* demo */,
 				C11838152ADFCC6800DB0127 /* Products */,
@@ -137,8 +143,8 @@
 			isa = PBXGroup;
 			children = (
 				C1948EEE2CA17DDD00425DB3 /* EXTScope */,
-				C1DA2DD62C989A3D00DF03CB /* view */,
-				C1DA2DCF2C97222500DF03CB /* viewController */,
+				C1DA2DD62C989A3D00DF03CB /* View */,
+				C1DA2DCF2C97222500DF03CB /* ViewController */,
 				C11838172ADFCC6800DB0127 /* AppDelegate.h */,
 				C11838182ADFCC6800DB0127 /* AppDelegate.m */,
 				C118381D2ADFCC6800DB0127 /* ViewController.h */,
@@ -161,22 +167,24 @@
 			path = EXTScope;
 			sourceTree = "<group>";
 		};
-		C1DA2DCF2C97222500DF03CB /* viewController */ = {
+		C1DA2DCF2C97222500DF03CB /* ViewController */ = {
 			isa = PBXGroup;
 			children = (
 				C1DA2DD02C97235400DF03CB /* AudioViewController.h */,
 				C1DA2DD12C97235400DF03CB /* AudioViewController.mm */,
+				C1E0D0B42CBAC6CC002FE528 /* VideoViewController.mm */,
+				C1E0D0B62CBAC6F1002FE528 /* VideoViewController.h */,
 			);
-			path = viewController;
+			path = ViewController;
 			sourceTree = "<group>";
 		};
-		C1DA2DD62C989A3D00DF03CB /* view */ = {
+		C1DA2DD62C989A3D00DF03CB /* View */ = {
 			isa = PBXGroup;
 			children = (
 				C1DA2DD32C9897DC00DF03CB /* PlayerControllerView.m */,
 				C1DA2DD52C98980500DF03CB /* PlayerControllerView.h */,
 			);
-			path = view;
+			path = View;
 			sourceTree = "<group>";
 		};
 		C1DA2E562C9C364D00DF03CB /* Masonry */ = {
@@ -302,6 +310,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C1DA2DCE2C97175200DF03CB /* sample-3s.wav in Resources */,
+				C1E0D0BA2CBAD45E002FE528 /* Sample.mp4 in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -366,6 +375,7 @@
 				C1DA2E5D2C9C364D00DF03CB /* NSArray+MASAdditions.m in Sources */,
 				C1DA2E602C9C364D00DF03CB /* ViewController+MASAdditions.m in Sources */,
 				C1DA2E582C9C364D00DF03CB /* MASConstraint.m in Sources */,
+				C1E0D0B52CBAC6CC002FE528 /* VideoViewController.mm in Sources */,
 				C1DA2E5A2C9C364D00DF03CB /* MASLayoutConstraint.m in Sources */,
 				C1DA2DD22C97235400DF03CB /* AudioViewController.mm in Sources */,
 			);

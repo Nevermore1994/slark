@@ -3,47 +3,61 @@
 // slark Clock
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
+#include <mutex>
 #include "Clock.h"
 #include "Time.hpp"
-#include <mutex>
+#include "Log.hpp"
 
 namespace slark {
 
-void Clock::setTime(Time::TimePoint count) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    totalTime_ = count;
-    start_ = Time::nowTimeStamp() - count;
+void Clock::setTime(Time::TimePoint count) noexcept {
+    std::lock_guard<std::shared_mutex> lock(mutex_);
+    pts_ = count;
+    lastUpdated_ = Time::nowTimeStamp();
+    isInited_ = true;
 }
 
-Time::TimePoint Clock::time() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (isPause_) {
-        return totalTime_;
-    }
-    return Time::nowTimeStamp() - start_;
+Time::TimePoint Clock::adjustSpeedTime(Time::TimePoint elapse) const noexcept {
+    return static_cast<uint64_t>(static_cast<double>(elapse.count) * (1.0 - speed));
 }
 
-void Clock::start() {
-    std::lock_guard<std::mutex> lock(mutex_);
+Time::TimePoint Clock::time() noexcept {
+    std::shared_lock<std::shared_mutex> lock(mutex_);
     if (isPause_) {
-        start_ = Time::nowTimeStamp() - totalTime_;
-    } else {
-        start_ = Time::nowTimeStamp();
+        return pts_;
     }
+    auto elapseTime = Time::nowTimeStamp() - lastUpdated_;
+    return elapseTime + pts_ - adjustSpeedTime(elapseTime);
+}
+
+void Clock::start() noexcept {
+    std::lock_guard<std::shared_mutex> lock(mutex_);
+    if (!isInited_) {
+        pts_ = 0;
+        speed = 1.0;
+    }
+
     isPause_ = false;
+    isInited_ = true;
+    lastUpdated_ = Time::nowTimeStamp();
 }
 
-void Clock::pause() {
-    std::lock_guard<std::mutex> lock(mutex_);
+void Clock::pause() noexcept {
+    std::lock_guard<std::shared_mutex> lock(mutex_);
+    if (!isInited_) {
+        return;
+    }
     isPause_ = true;
-    totalTime_ = Time::nowTimeStamp() - start_;
+    auto elapseTime = Time::nowTimeStamp() - lastUpdated_;
+    pts_ += elapseTime - adjustSpeedTime(elapseTime);
 }
 
-void Clock::reset() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    start_ = 0;
-    totalTime_ = 0;
+void Clock::reset() noexcept {
+    std::lock_guard<std::shared_mutex> lock(mutex_);
+    pts_ = 0;
+    speed = 1.0;
     isPause_ = true;
+    isInited_ = false;
 }
 
 }

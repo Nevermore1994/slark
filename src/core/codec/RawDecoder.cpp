@@ -6,12 +6,13 @@
 //
 
 #include "RawDecoder.h"
-#include "Time.hpp"
 
 namespace slark {
 
-void RawDecoder::open() noexcept {
+bool RawDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept {
+    config_ = config;
     isOpen_ = true;
+    return true;
 }
 
 void RawDecoder::reset() noexcept {
@@ -20,20 +21,19 @@ void RawDecoder::reset() noexcept {
 }
 
 void RawDecoder::close() noexcept {
-    isOpen_ = false;
-    isFlushed_ = false;
+    reset();
 }
 
-AVFrameArray RawDecoder::send(AVFrameArray frameList) {
-    for (auto& frame : frameList) {
-        frame->stats.decodedStamp = Time::nowTimeStamp();
+bool RawDecoder::send(AVFramePtr frame) {
+    frame->stats.decodedStamp = Time::nowTimeStamp();
+    if (receiveFunc) {
+        receiveFunc(std::move(frame));
     }
-    return std::move(frameList);
+    return true;
 }
 
-AVFrameArray RawDecoder::flush() noexcept {
+void RawDecoder::flush() noexcept {
     isFlushed_ = true;
-    return {};
 }
 
 

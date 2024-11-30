@@ -2,7 +2,7 @@
 //  iOSUtil.m
 //  slark
 //
-//  Created by Rolf.Tan on 
+//  Created by Nevermore on 
 //
 #import "iOSUtil.h"
 
@@ -22,3 +22,4 @@ NSString* stringViewToNSString(std::string_view view) {
                                     length:view.size()
                                   encoding:NSUTF8StringEncoding];
 }
+

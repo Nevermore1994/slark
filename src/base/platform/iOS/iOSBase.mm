@@ -11,10 +11,12 @@
 #include "Base.h"
 #include "FileUtil.h"
 
-void outputLog(std::string log){
-    NSString* str = [NSString stringWithUTF8String:log.data()];
-    NSLog(@"%@", str);
-    str = nil;
+void outputLog(const std::string& log){
+    @autoreleasepool {
+        NSString* str = [NSString stringWithUTF8String:log.data()];
+        NSLog(@"%@", str);
+        str = nil;
+    }
 }
 
 namespace slark::FileUtil {

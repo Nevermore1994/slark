@@ -63,7 +63,7 @@ TEST(Data, copy) {
 TEST(Data, append) {
     {
         Data data("hello");
-        data.append({" world!"});
+        data.append(" world!");
         ASSERT_EQ(data.view(), std::string_view("hello world!"));
     }
     using namespace std::string_literals;

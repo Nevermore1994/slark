@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include "IEGLContext.h"
 
 namespace slark {
 
@@ -45,7 +46,7 @@ struct IPlayerObserver {
     virtual void notifyState(std::string_view playerId, PlayerState state) = 0;
 
     virtual void notifyEvent(std::string_view playerId, PlayerEvent event, std::string value) = 0;
-
+    
     virtual ~IPlayerObserver() = default;
 };
 
@@ -61,36 +62,31 @@ struct ResourceItem {
     double displayDuration;
 };
 
-struct RenderSize {
-    uint32_t width = 1280;
-    uint32_t height = 720;
-    RenderSize() = default;
-    RenderSize(uint32_t width, uint32_t height)
-        : width(width)
-        , height(height) {
-
-    }
-};
-
 struct PlayerSetting {
     bool isLoop = false;
     bool enableAudioSoftDecode = false;
     bool enableVideoSoftDecode = false;
     bool isMute = false;
-    RenderSize size;
+    uint32_t width = 0;
+    uint32_t height = 0;
     float volume = 100.0f;
+    long double maxCacheTime = 30.0; //seconds
+    long double minCacheTime = 5.0; //seconds
 };
 
 struct PlayerParams {
     ResourceItem item;
     PlayerSetting setting;
+    std::shared_ptr<IEGLContext> mainGLContext;
 };
 
 struct PlayerInfo {
     bool hasVideo = false;
     bool hasAudio = false;
-    long double duration;
+    long double duration = 0;
 };
+
+struct IVideoRender;
 
 class Player {
 
@@ -120,8 +116,11 @@ public:
 
     void addObserver(IPlayerObserverPtr observer) noexcept;
     
-    void removeObserver(const IPlayerObserverPtr& observer) noexcept;
+    void removeObserver() noexcept;
 
+    void* requestRender() noexcept;
+    
+    void setRenderImpl(std::weak_ptr<IVideoRender>& render);
 public:
     PlayerParams peek() noexcept;
     

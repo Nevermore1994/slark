@@ -16,13 +16,15 @@ public:
 
     ~WAVDemuxer() override;
 
-    std::tuple<bool, uint64_t> open(std::string_view probeData) noexcept override;
+    bool open(std::unique_ptr<Buffer>& ) noexcept override;
 
     void close() noexcept override;
 
-    DemuxerResult parseData(std::unique_ptr<Data> data) override;
+    DemuxerResult parseData(std::unique_ptr<Data> data, int64_t offset) noexcept override;
     
-    [[nodiscard]] uint64_t getSeekToPos(CTime) override;
+    [[nodiscard]] uint64_t getSeekToPos(long double time) noexcept override;
+    
+    void reset() noexcept override;
 
     inline static const DemuxerInfo& info() noexcept {
         static DemuxerInfo info = {
@@ -32,7 +34,8 @@ public:
         };
         return info;
     }
-
+private:
+    uint32_t parsedFrameCount_ = 0;
 };
 
 }

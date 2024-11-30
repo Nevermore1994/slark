@@ -11,12 +11,14 @@
 #endif
 
 #include "Thread.h"
+#include "Assert.hpp"
 
 namespace slark {
 using std::chrono::milliseconds;
 using namespace std::chrono_literals;
 
 Thread::~Thread() noexcept {
+    SAssert(worker_.get_id() != std::this_thread::get_id(), "error, release itself in the current thread");
     stop();
     if (worker_.joinable()) {
         worker_.join();

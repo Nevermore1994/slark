@@ -40,11 +40,16 @@ bool IFile::open() noexcept {
 void IFile::seek(int64_t offset) noexcept {
     if (file_) {
         fseeko(file_, offset, SEEK_SET);
+        LogI("seek to offset:{}, file size:{}", offset, FileUtil::fileSize(path_));
     }
 }
 
-int64_t IFile::tell() const noexcept {
-    return file_ ? ftello(file_) : 0;
+uint64_t IFile::tell() const noexcept {
+    fpos_t pos = 0;
+    if (file_ && (fgetpos(file_, &pos) == 0)) {
+        return static_cast<uint64_t>(pos);
+    }
+    return 0;
 }
 
 uint64_t IFile::fileSize() const noexcept {
@@ -107,7 +112,7 @@ bool WriteFile::write(const uint8_t* data, uint64_t size) noexcept {
     writeCount_++;
     auto writeSize = fwrite(data, 1, size, file_);
     writeSize_ += size;
-    if (writeCount_ >= checkEveryN_) {
+    if ((writeCount_ % checkEveryN_) == 0) {
         flush();
     }
     if (writeSize <= 0) {
@@ -168,20 +173,30 @@ std::expected<Data, bool> ReadFile::read(uint32_t size) noexcept {
 }
 
 bool ReadFile::read(Data& data) noexcept {
+    return read(data, data.capacity);
+}
+
+bool ReadFile::read(Data& data, uint64_t size) noexcept {
     if (!file_ || readOver_) {
         return false;
     }
-    auto res = fread(data.rawData, 1, data.capacity, file_);
+    auto res = fread(data.rawData, 1, size, file_);
     if (feof(file_) || tell() == static_cast<int64_t>(fileSize())) {
         readOver_ = true;
     }
     if (res == 0 && !readOver_) {
         isFailed_ = true;
-        LogE("read byte error:{}", std::strerror(errno));
+        LogE("read error:{}", std::strerror(errno));
     }
     data.length = res;
-    readSize_ = data.length;
+    readSize_ += res;
     return res > 0;
+}
+
+void ReadFile::seek(int64_t offset) noexcept {
+    IFile::seek(offset);
+    readOver_ = false;
+    readSize_ = 0;
 }
 
 void ReadFile::backFillByte(uint8_t byte) noexcept {

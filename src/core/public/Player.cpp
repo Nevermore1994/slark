@@ -5,9 +5,8 @@
 //  Created by Nevermore on 2022/4/22.
 //
 
-#include "Player.h"
-
 #include <utility>
+#include "Player.h"
 #include "PlayerImpl.h"
 #include "Log.hpp"
 
@@ -15,7 +14,6 @@ namespace slark {
 
 Player::Player(std::unique_ptr<PlayerParams> params)
     : pimpl_(std::make_unique<Player::Impl>(std::move(params))) {
-
 }
 
 Player::~Player() = default;
@@ -90,19 +88,36 @@ void Player::setMute(bool isMute) {
 }
  
 void Player::setRenderSize(uint32_t width, uint32_t height) {
-    pimpl_->setRenderSize({width, height});
+    pimpl_->setRenderSize(width, height);
 }
 
 void Player::addObserver(IPlayerObserverPtr observer) noexcept {
     pimpl_->addObserver(std::move(observer));
 }
 
-void Player::removeObserver(const IPlayerObserverPtr& observer) noexcept {
-    pimpl_->removeObserver(observer);
+void Player::removeObserver() noexcept {
+    pimpl_->removeObserver();
 }
 
 long double Player::currentPlayedTime() noexcept {
+    if (!pimpl_) {
+        return 0;
+    }
     return pimpl_->currentPlayedTime();
+}
+
+void* Player::requestRender() noexcept {
+    if (!pimpl_) {
+        return nullptr;
+    }
+    return pimpl_->requestRender();
+}
+
+void Player::setRenderImpl(std::weak_ptr<IVideoRender>& render) {
+    if (!pimpl_) {
+        return;
+    }
+    pimpl_->setRenderImpl(render);
 }
 
 }//end namespace slark

@@ -5,37 +5,40 @@
 // Copyright (c) 2023 Nevermore All rights reserved.
 //
 #pragma once
-#include <_types/_uint64_t.h>
 #include <functional>
 #include <utility>
+#include "MediaDefs.h"
 #include "AVFrame.hpp"
 #include "Time.hpp"
 
-namespace slark::Audio {
-
-enum class AudioRenderStatus {
-    Unknown,
-    Ready,
-    Play,
-    Pause,
-    Stop,
-    Error,
-};
+namespace slark {
 
 struct AudioInfo {
     uint16_t channels = 0;
     uint16_t bitsPerSample = 0;
     uint64_t sampleRate = 0;
-    uint64_t headerLength = 0;
-    CTime startTime;
+    uint32_t timeScale = 0;
     std::string_view mediaInfo;
 
     uint64_t bitrate() const {
         return sampleRate * channels * bitsPerSample;
     }
     
-    CTime dataLen2Duration(uint32_t dataLen) const {
-        return CTime(static_cast<int64_t>(dataLen) * 8, bitrate());
+    uint64_t bytePerSecond() const {
+        return sampleRate * channels * bitsPerSample / 8;
+    }
+    
+    uint64_t bytePerSample() const {
+        return channels * bitsPerSample / 8;
+    }
+    
+    Time::TimePoint dataLen2TimePoint(uint64_t dataLen) const {
+        auto t = static_cast<uint64_t>(static_cast<long double>(dataLen) / static_cast<long double>(bytePerSample() * sampleRate) * 1000000);
+        return t;
+    }
+     
+    uint64_t timePoint2DataLen(Time::TimePoint point) const {
+        return static_cast<uint64_t>(point.second() * bytePerSecond());
     }
 };
 
@@ -57,15 +60,15 @@ public:
     
     [[nodiscard]] virtual bool isNeedRequestData() const noexcept = 0;
     
-    [[nodiscard]] inline AudioRenderStatus status() const noexcept {
+    [[nodiscard]] inline RenderStatus status() const noexcept {
         return status_;
     }
     
     [[nodiscard]] inline bool isErrorState() const noexcept {
-        return status_ == AudioRenderStatus::Error;
+        return status_ == RenderStatus::Error;
     }
     
-    inline const std::shared_ptr<AudioInfo> info() const noexcept {
+    inline const std::shared_ptr<AudioInfo>& info() const noexcept {
         SAssert(audioInfo_ != nullptr, "audio render info is nullptr");
         return audioInfo_;
     }
@@ -78,7 +81,7 @@ public:
 protected:
     float volume_ = 100.f; // 0 ~ 100
     std::shared_ptr<AudioInfo> audioInfo_ = nullptr;
-    AudioRenderStatus status_ = AudioRenderStatus::Unknown;
+    RenderStatus status_ = RenderStatus::Unknown;
 };
 
 #if (SLARK_IOS || SLARK_ANDROID)

@@ -15,20 +15,23 @@ namespace slark {
 class RawDecoder : public IDecoder {
 
 public:
+    RawDecoder() {
+        decoderType_ = DecoderType::RAW;
+    }
     ~RawDecoder() override = default;
 
-    void open() noexcept override;
+    bool open(std::shared_ptr<DecoderConfig> config) noexcept override;
 
     void close() noexcept override;
 
     void reset() noexcept override;
 
-    AVFrameArray flush() noexcept override;
+    void flush() noexcept override;
 
-    AVFrameArray send(AVFrameArray frameList) override;
+    bool send(AVFramePtr frame) override;
 
-    inline static const DecoderInfo& info() noexcept {
-        static DecoderInfo info = {
+    inline static const DecoderTypeInfo& info() noexcept {
+        static DecoderTypeInfo info = {
             DecoderType::RAW,
             MEDIA_MIMETYPE_AUDIO_RAW,
             BaseClass<RawDecoder>::registerClass(GetClassName(RawDecoder))

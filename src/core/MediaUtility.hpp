@@ -16,14 +16,4 @@ namespace slark {
 extern const std::string_view kHttpSymbol;
 
 bool isLocalFile(const std::string& path);
-
-uint32_t uint32LE(const char* ptr);
-
-uint32_t uint32LE(const uint8_t* ptr);
-
-uint16_t uint16LE(const char* ptr);
-
-uint16_t uint16LE(const uint8_t* ptr);
-
-
 }

@@ -10,7 +10,7 @@
 #include "IDemuxer.h"
 #include "Log.hpp"
 #include "WavDemuxer.h"
-#include "MediaUtility.hpp"
+#include "Util.hpp"
 #include "MediaDefs.h"
 
 namespace slark {
@@ -19,22 +19,25 @@ enum class WaveFormat {
     PCM = 0x0001, ALAW = 0x0006, MULAW = 0x0007, MSGSM = 0x0031, EXTENSIBLE = 0xFFFE
 };
 
-static const std::string_view WaveextSubformat = "\x00\x00\x00\x00\x10\x00\x80\x00\x00\xAA\x00\x38\x9B\x71";
+static const std::string_view WaveExtSubformat = "\x00\x00\x00\x00\x10\x00\x80\x00\x00\xAA\x00\x38\x9B\x71";
 
-WAVDemuxer::WAVDemuxer() = default;
+WAVDemuxer::WAVDemuxer() {
+    type_ = DemuxerType::WAV;
+}
 
 WAVDemuxer::~WAVDemuxer() = default;
 
-std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept {
-    auto res = std::make_tuple(false, 0);
-    if (probeData.length() < 12) {
+bool WAVDemuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
+    bool res = false;
+    if (!buffer || !buffer->require(12)) {
         return res;
     }
-
+    auto probeData = buffer->view();
     if (probeData.compare(0, 4, "RIFF") || probeData.compare(8, 4, "WAVE")) {
         return res;
     }
-    auto totalSize = uint32LE(&probeData[4]);
+    uint32_t totalSize = 0;
+    Util::read4ByteLE(probeData.substr(4), totalSize);
     auto offset = 12ull;
     auto remainSize = totalSize;
     WaveFormat format = WaveFormat::PCM;
@@ -47,16 +50,20 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
     uint64_t dataSize = 0;
     double duration = 0.0;
     auto completion = [&]() {
-        totalDuration_ = CTime(duration);
-        audioInfo_ = std::make_unique<Audio::AudioInfo>();
+        totalDuration_ = CTime(duration / 1000.0);
+        audioInfo_ = std::make_unique<AudioInfo>();
         audioInfo_->channels = channels;
         audioInfo_->sampleRate = sampleRate;
         audioInfo_->bitsPerSample = bitsPerSample;
         audioInfo_->mediaInfo = MEDIA_MIMETYPE_AUDIO_RAW;
+        audioInfo_->timeScale = 1000000;
         headerInfo_ = std::make_unique<DemuxerHeaderInfo>();
         headerInfo_->dataSize = totalSize;
         headerInfo_->headerLength = offset;
+        receivedLength_ += headerInfo_->headerLength;
         isInited_ = true;
+        buffer->skip(static_cast<int64_t>(offset));
+        buffer_ = std::move(buffer);
     };
     while (remainSize >= 8) {
         auto chunkHeader = probeData.substr(offset, 8);
@@ -67,7 +74,8 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
         remainSize -= 8;
         offset += 8;
 
-        uint32_t chunkSize = uint32LE(&chunkHeader[4]);
+        uint32_t chunkSize = 0;
+        Util::read4ByteLE(chunkHeader.substr(4), chunkSize);
 
         if (chunkSize > remainSize) {
             return res;
@@ -82,8 +90,10 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
             if (formatSpecData.length() < 2) {
                 return res;
             }
-
-            format = static_cast<WaveFormat>(uint16LE(&formatSpecData[0]));
+            
+            uint16_t formatValue = 0;
+            Util::read2ByteLE(formatSpecData, formatValue);
+            format = static_cast<WaveFormat>(formatValue);
             if (format != WaveFormat::PCM && format != WaveFormat::ALAW && format != WaveFormat::MULAW &&
                 format != WaveFormat::MSGSM && format != WaveFormat::EXTENSIBLE) {
                 return res;
@@ -98,8 +108,11 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
             if (formatSpec.length() < fmtSize) {
                 return res;
             }
-
-            channels = uint16LE(&formatSpec[2]);
+            
+            if (!Util::read2ByteLE(formatSpec.substr(2), channels)) {
+                return res;
+            }
+            
             if (channels < 1 || channels > 8) {
                 return res;
             }
@@ -108,14 +121,15 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
                     LogW("More than 2 channels (%d) in non-WAVE_EXT, unknown channel mask", channels);
                 }
             }
-
-            sampleRate = uint32LE(&formatSpec[4]);
-
+            
+            uint32_t sampleRateValue = 0;
+            Util::read4ByteLE(formatSpec.substr(4), sampleRateValue);
+            sampleRate = sampleRateValue;
             if (sampleRate == 0) {
                 return res;
             }
 
-            bitsPerSample = uint16LE(&formatSpec[14]);
+            Util::read2ByteLE(formatSpec.substr(14), bitsPerSample);
 
             if (format == WaveFormat::PCM || format == WaveFormat::EXTENSIBLE) {
                 if (bitsPerSample != 8 && bitsPerSample != 16 && bitsPerSample != 24 && bitsPerSample != 32) {
@@ -127,7 +141,8 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
                 //WaveFormat::MULAW WaveFormat::ALAW
                 return res;
             } else if (format == WaveFormat::EXTENSIBLE) {
-                auto validBitsPerSample = uint16LE(&formatSpec[18]);
+                uint16_t validBitsPerSample = 0;
+                Util::read2ByteLE(formatSpec.substr(18), validBitsPerSample);
                 if (validBitsPerSample != bitsPerSample) {
                     if (validBitsPerSample != 0) {
                         LogE("validBits(%d) != bitsPerSample(%d) are not supported", validBitsPerSample, bitsPerSample);
@@ -139,7 +154,7 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
                     }
                 }
 
-                channelMask = uint32LE(&formatSpec[20]);
+                Util::read4ByteLE(formatSpec.substr(20), channelMask);
                 LogI("numChannels=%d channelMask=0x%x", channels, channelMask);
                 if ((channelMask >> 18) != 0) {
                     LogE("invalid channel mask 0x%x", channelMask);
@@ -154,12 +169,14 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
 
                 // In a WAVE_EXT header, the first two bytes of the GUID stored at byte 24 contain
                 // the sample format, using the same definitions as a regular WAV header
-                auto extFormat = static_cast<WaveFormat>(uint16LE(&formatSpec[24]));
+                uint16_t extFormatValue = 0;
+                Util::read2ByteLE(formatSpec.substr(24), extFormatValue);
+                auto extFormat = static_cast<WaveFormat>(extFormatValue);
                 if (extFormat != WaveFormat::PCM && extFormat != WaveFormat::ALAW && extFormat != WaveFormat::MULAW) {
                     return res;
                 }
 
-                if (formatSpec.compare(26, 14, WaveextSubformat.data())) {
+                if (formatSpec.compare(26, 14, WaveExtSubformat.data())) {
                     LogE("unsupported GUID");
                     return res;
                 }
@@ -185,7 +202,7 @@ std::tuple<bool, uint64_t> WAVDemuxer::open(std::string_view probeData) noexcept
             }
             duration = static_cast<double>(durationUs) / 1000.0;
             completion();
-            return {isValid, dataOffset};
+            return true;
         }
 
         offset += chunkSize;
@@ -197,65 +214,76 @@ void WAVDemuxer::close() noexcept {
     reset();
 }
 
-uint64_t WAVDemuxer::getSeekToPos(CTime time) {
+uint64_t WAVDemuxer::getSeekToPos(long double time) noexcept {
     if (!isInited_) {
         return 0;
     }
-    return static_cast<uint64_t>(static_cast<long double>(audioInfo_->bitrate() / 8)  * time.second()); //byte
+    auto sampleCount = static_cast<uint64_t>(floor(time * static_cast<long double>(audioInfo_->sampleRate)));
+    return headerInfo_->headerLength + sampleCount * audioInfo_->bytePerSample(); //byte
 }
 
-DemuxerResult WAVDemuxer::parseData(std::unique_ptr<Data> data) {
-    if (data->empty() || !isInited_) {
+DemuxerResult WAVDemuxer::parseData(std::unique_ptr<Data> data, int64_t offset) noexcept {
+    if (!data || data->empty() || !isInited_) {
         return {DemuxerResultCode::Failed, AVFrameArray(), AVFrameArray()};
     }
-
-    if (overflowData_ == nullptr) {
-        overflowData_ = std::make_unique<Data>();
-        parsedLength_ += headerInfo_->headerLength;
+    
+    auto length = data->length;
+    if (!buffer_->append(static_cast<uint64_t>(offset), std::move(data))) {
+        return {DemuxerResultCode::Normal, AVFrameArray(), AVFrameArray()};
     }
-    parsedLength_ += data->length;
-    overflowData_->append(std::move(data));
+
+    receivedLength_ += length;
     //frame include 1024 sample
     constexpr uint16_t sampleCount = 1024;
     uint64_t frameLength = audioInfo_->bitsPerSample * audioInfo_->channels * sampleCount / 8;
     AVFrameArray frameList;
-    uint64_t start = 0;
-    auto isCompleted = parsedLength_ >= headerInfo_->dataSize;
+    auto isCompleted = receivedLength_ >= headerInfo_->dataSize;
     SAssert(audioInfo_->sampleRate != 0, "wav demuxer sample rate is invalid.");
-    while (overflowData_->length - start + 1 >= frameLength) {
+    auto scale = static_cast<double>(audioInfo_->bitrate()) / 8;
+    AudioFrameInfo frameInfo;
+    frameInfo.bitsPerSample = audioInfo_->bitsPerSample;
+    frameInfo.channels = audioInfo_->channels;
+    frameInfo.sampleRate = audioInfo_->sampleRate;
+    while (buffer_->length() >= frameLength) {
+        auto prasedLength = buffer_->pos();
         auto frame = std::make_unique<AVFrame>();
-        frame->data = overflowData_->copy(start, static_cast<int64_t>(frameLength));
+        frame->data = buffer_->readData(frameLength);
         frame->duration = static_cast<uint32_t>(static_cast<double>(sampleCount) /
                                                 static_cast<double>(audioInfo_->sampleRate) * 1000);
-        frame->index = ++parseFrameCount_;
-        frame->info = std::make_any<AudioFrameInfo>();
-        auto& frameInfo = std::any_cast<AudioFrameInfo&>(frame->info);
-        frameInfo.bitsPerSample = audioInfo_->bitsPerSample;
-        frameInfo.channels = audioInfo_->channels;
-        frameInfo.sampleRate = audioInfo_->sampleRate;
+        frame->pts = static_cast<uint64_t>(static_cast<double>(prasedLength) / scale * audioInfo_->timeScale);
+        frame->dts = frame->pts;
+        frame->index = ++parsedFrameCount_;
+        frame->timeScale = audioInfo_->timeScale;
+        
+        frame->info = frameInfo;
         frameList.push_back(std::move(frame));
-
-        start += frameLength;
     }
     DemuxerResultCode code = DemuxerResultCode::Normal;
-    auto remainLen = static_cast<int64_t>(overflowData_->length - start);
-    if (start > 0 && !isCompleted) {
-        auto t = overflowData_->copy(start, remainLen);
-        LogI("packed data length: {}, overflow length: {}", start, t->length);
-        overflowData_ = std::move(t);
-    } else if (isCompleted) {
+    if (isCompleted) {
+        auto prasedLength = buffer_->pos();
         auto frame = std::make_unique<AVFrame>();
-        frame->data = overflowData_->copy(start, remainLen);
-        auto scale = static_cast<double>(audioInfo_->sampleRate * audioInfo_->bitsPerSample * audioInfo_->channels);
+        frame->data = buffer_->readData(buffer_->length());
         frame->duration = static_cast<uint32_t>(static_cast<double>(frame->data->length) / scale * 1000);
-        frame->index = ++parseFrameCount_;
+        frame->timeScale = audioInfo_->timeScale;
+        frame->pts = static_cast<uint64_t>(ceil(static_cast<double>(prasedLength) / scale * audioInfo_->timeScale));
+        frame->index = ++parsedFrameCount_;
+        frame->info = frameInfo;
         frameList.push_back(std::move(frame));
+        isCompleted_ = true;
 
         LogI("file read completed.");
         code = DemuxerResultCode::FileEnd;
     }
-    LogI("demux data {}, overflow data {}, frame count {}", parsedLength_, overflowData_->length, parseFrameCount_);
+    if (!frameList.empty()) {
+        buffer_->shrink();
+    }
+    LogI("prasedLength {}, frame count {}", buffer_->pos(), parsedFrameCount_);
     return {code, std::move(frameList), AVFrameArray()};
+}
+
+void WAVDemuxer::reset() noexcept {
+    IDemuxer::reset();
+    parsedFrameCount_ = 0;
 }
 
 }//end namespace slark

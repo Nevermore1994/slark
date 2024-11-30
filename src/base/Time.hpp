@@ -15,7 +15,9 @@
 namespace slark {
 
 struct Time {
-     static constexpr uint64_t kTimeInvalid = 0;
+    static constexpr uint64_t kTimeInvalid = 0;
+    static constexpr uint64_t kMicroSecondScale = 1000000;
+    static constexpr uint64_t kMillSecondScale = 1000;
     ///microseconds
     struct TimePoint {
         uint64_t count{};
@@ -26,18 +28,22 @@ struct Time {
             return count;
         }
 
-        constexpr TimePoint(uint64_t t)
+        constexpr TimePoint(uint64_t t = 0)
             : count(t) {
+        }
+        
+        constexpr TimePoint(std::chrono::microseconds micros)
+            : count(static_cast<uint64_t>(micros.count())) {
+
         }
 
         constexpr TimePoint(std::chrono::milliseconds ms)
-            : count(static_cast<uint64_t>(ms.count() * 1000)) {
+        : count(static_cast<uint64_t>(ms.count() * 1000)) {
 
         }
 #pragma clang diagnostic pop
-        [[nodiscard]] std::chrono::microseconds toMicroSeconds() const noexcept;
         [[nodiscard]] std::chrono::milliseconds toMilliSeconds() const noexcept;
-        [[nodiscard]] std::chrono::seconds toSeconds() const noexcept;
+        [[nodiscard]] long double second() const noexcept;
         TimePoint operator+(std::chrono::milliseconds delta) const noexcept;
         TimePoint& operator+=(std::chrono::milliseconds delta) noexcept;
         TimePoint operator-(std::chrono::milliseconds delta) const noexcept;

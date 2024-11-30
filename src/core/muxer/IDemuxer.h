@@ -14,6 +14,7 @@
 #include "VideoInfo.h"
 #include "AudioDefine.h"
 #include "Reflection.hpp"
+#include "Buffer.hpp"
 
 namespace slark {
 
@@ -55,31 +56,32 @@ public:
     ~IDemuxer() override = default;
 
 public:
-    virtual std::tuple<bool, uint64_t> open(std::string_view probeData) = 0;
+    virtual bool open(std::unique_ptr<Buffer>& ) = 0;
 
     virtual void close() = 0;
 
     virtual void reset() noexcept {
         isInited_ = false;
         isCompleted_ = false;
-        parsedLength_ = 0;
-        parseFrameCount_ = 0;
+        receivedLength_ = 0;
         totalDuration_ = CTime(0);
-        seekPos_.reset();
-        overflowData_.reset();
+        buffer_.reset();
         videoInfo_.reset();
         audioInfo_.reset();
     }
     
-    virtual void setSeekPos(uint64_t pos) noexcept {
-        seekPos_ = pos;
-        overflowData_.reset();
-        parsedLength_ = pos;
+    virtual void seekPos(uint64_t pos) noexcept {
+        receivedLength_ = pos;
+        isCompleted_ = false;
+        if (buffer_) {
+            buffer_->reset();
+            buffer_->setOffset(pos);
+        }
     }
 
-    virtual DemuxerResult parseData(std::unique_ptr<Data> data) = 0;
-    
-    [[nodiscard]] virtual uint64_t getSeekToPos(CTime) = 0;
+    virtual DemuxerResult parseData(std::unique_ptr<Data> data, int64_t offset) noexcept = 0;
+     
+    [[nodiscard]] virtual uint64_t getSeekToPos(long double) noexcept = 0;
 
     [[nodiscard]] bool isInited() const noexcept {
         return isInited_;
@@ -101,26 +103,12 @@ public:
         return videoInfo_;
     }
 
-    [[nodiscard]] const std::shared_ptr<Audio::AudioInfo>& audioInfo() const noexcept {
+    [[nodiscard]] const std::shared_ptr<AudioInfo>& audioInfo() const noexcept {
         return audioInfo_;
     }
 
     [[nodiscard]] const std::shared_ptr<DemuxerHeaderInfo>& headerInfo() const noexcept {
         return headerInfo_;
-    }
-    
-    [[nodiscard]] CTime startTime() const noexcept {
-        if (!isInited_) {
-            return CTime();
-        }
-        if (videoInfo_ && audioInfo_) {
-            return std::min(videoInfo_->startTime, audioInfo_->startTime);
-        } else if (videoInfo_) {
-            return videoInfo_->startTime;
-        } else if (audioInfo_) {
-            return audioInfo_->startTime;
-        }
-        return CTime();
     }
     
     [[nodiscard]] CTime totalDuration() const noexcept {
@@ -130,16 +118,19 @@ public:
         return totalDuration_;
     }
     
+    [[nodiscard]] DemuxerType type() const noexcept {
+        return type_;
+    }
+    
 protected:
     bool isInited_ = false;
     bool isCompleted_ = false;
-    uint32_t parseFrameCount_ = 0;
-    uint64_t parsedLength_ = 0;
-    std::optional<uint64_t> seekPos_;
+    DemuxerType type_ = DemuxerType::Unknown;
+    uint64_t receivedLength_ = 0;
     CTime totalDuration_{0};
-    DataPtr overflowData_;
+    std::unique_ptr<Buffer> buffer_;
     std::shared_ptr<VideoInfo> videoInfo_;
-    std::shared_ptr<Audio::AudioInfo> audioInfo_;
+    std::shared_ptr<AudioInfo> audioInfo_;
     std::shared_ptr<DemuxerHeaderInfo> headerInfo_;
 };
 

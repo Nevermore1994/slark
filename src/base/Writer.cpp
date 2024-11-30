@@ -93,8 +93,8 @@ void Writer::process() noexcept {
                 LogI("{} stoped", worker_.getName());
             }
         } else {
-            constexpr auto kMaxIdleTime = 5s;
-            if ((Time::nowTimeStamp() - idleTime_).toSeconds() > kMaxIdleTime) {
+            constexpr auto kMaxIdleTime = 3000ms;
+            if ((Time::nowTimeStamp() - idleTime_).toMilliSeconds() > kMaxIdleTime) {
                 worker_.pause();
             }
         }
@@ -102,7 +102,6 @@ void Writer::process() noexcept {
     }
     
     bool isSuccess = true;
-    uint32_t writeCount = 0;
     file_.withReadLock([&](auto& file){
         for (auto& data : dataList) {
             if (file->isFailed()){
@@ -111,7 +110,6 @@ void Writer::process() noexcept {
             }
             file->write(*data);
         }
-        writeCount = file->writeCount();
     });
     if (!isSuccess) {
         LogP("error, {} writer state is error.", worker_.getName());

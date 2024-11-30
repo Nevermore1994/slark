@@ -37,9 +37,9 @@ public:
 
     virtual void close() noexcept;
 
-    void seek(int64_t offset) noexcept;
+    virtual void seek(int64_t offset) noexcept;
 
-    [[nodiscard]] int64_t tell() const noexcept;
+    [[nodiscard]] uint64_t tell() const noexcept;
 
     [[nodiscard]] uint64_t fileSize() const noexcept;
 
@@ -107,10 +107,14 @@ public:
     ~ReadFile() override;
 
     std::expected<Data, bool> read(uint32_t size) noexcept;
+    
+    void seek(int64_t offset) noexcept override;
 
     std::expected<uint8_t, bool> readByte() noexcept;
 
     bool read(Data& data) noexcept;
+    
+    bool read(Data& data, uint64_t size) noexcept;
 
     void backFillByte(uint8_t byte) noexcept;
 

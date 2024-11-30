@@ -28,7 +28,9 @@ bool Reader::open(std::string_view path, ReaderSetting&& setting) {
     return isSuccess;
 }
 
-Reader::~Reader() = default;
+Reader::~Reader() {
+    stop();
+}
 
 IOState Reader::state() noexcept {
     IOState state = IOState::Normal;
@@ -40,6 +42,8 @@ IOState Reader::state() noexcept {
         } else if (file->isFailed()) {
             state = IOState::Error;
         } else if(file->readOver()) {
+            state = IOState::EndOfFile;
+        } else if(readRange_.isValid() && file->tell() >= readRange_.end()) {
             state = IOState::EndOfFile;
         }
     });
@@ -93,6 +97,15 @@ void Reader::seek(uint64_t pos) noexcept {
 }
 
 void Reader::process() {
+    if (seekPos_.has_value()) {
+        file_.withReadLock([&](auto& file){
+            if (!file) {
+                return;
+            }
+            file->seek(seekPos_.value());
+        });
+        seekPos_.reset();
+    }
     auto nowState = state();
     if (nowState == IOState::Error) {
         worker_.pause();
@@ -103,24 +116,38 @@ void Reader::process() {
         LogI("read data completed.");
         return;
     }
-    Data data(setting_.readBlockSize);
-    int64_t offset = 0;
+
+    IOData data(setting_.readBlockSize);
     file_.withReadLock([&](auto& file){
         if (!file) {
             return;
         }
-        if (seekPos_.has_value()) {
-            file->seek(seekPos_.value());
-            seekPos_.reset();
-        }
 
-        offset = file->tell();
-        file->read(data);
+        auto tell = file->tell();
+        auto readSize = data.data->capacity;
+        if (readRange_.isValid() && readSize >= (readRange_.end() - tell)) {
+            readSize = readRange_.end() - tell;
+        }
+        data.offset = tell;
+        file->read(*data.data, readSize);
     });
 
     if (setting_.callBack) {
-        setting_.callBack(data.detachData(), offset, state());
+        setting_.callBack(std::move(data), state());
     }
+}
+
+void Reader::setReadRange(ReadRange range) noexcept {
+    if (worker_.isExit()) {
+        LogE("Reader is exit.");
+        return;
+    }
+    readRange_ = range;
+    if (!range.isValid()) {
+        return;
+    }
+    seekPos_ = range.readPos;
+    worker_.resume();
 }
 
 int64_t Reader::tell() noexcept {
@@ -133,5 +160,14 @@ int64_t Reader::tell() noexcept {
     return pos;
 }
 
+uint64_t Reader::size() noexcept {
+    uint64_t size = 0;
+    file_.withReadLock([&](auto& file){
+        if (file) {
+            size = file->fileSize();
+        }
+    });
+    return size;
+}
 }//end namespace slark
 

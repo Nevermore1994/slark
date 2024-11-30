@@ -10,6 +10,7 @@
 #include <deque>
 #include <shared_mutex>
 #include <optional>
+#include <map>
 #include "Reader.hpp"
 #include "Player.h"
 #include "DecoderComponent.h"
@@ -20,20 +21,31 @@
 #include "Event.h"
 #include "AudioRenderComponent.h"
 #include "Synchronized.hpp"
+#include "Buffer.hpp"
+#include "Clock.h"
 
 namespace slark {
 
 struct PlayerSeekRequest {
     bool isAccurate = false;
-    CTime seekTime{0}; //seconds
-    uint64_t seekPos = 0;
+    long double seekTime{0};
 };
 
-struct PlayedTime {
-    CTime audioPlayedTime{0};
-    CTime videoPlayedTime{0};
-    CTime time() const {
-        return std::min(audioPlayedTime, videoPlayedTime);
+struct PlayerStatistics {
+    bool isFirstAudioRendered = false;
+    bool isForceVideoRendered = false;
+    Time::TimePoint audioDecodeDelta{0};
+    Time::TimePoint audioRenderDelta{0};
+    long double audioDemuxedDuration = 0;
+    long double videoDemuxedDuration = 0;
+    
+    void reset() {
+        isFirstAudioRendered = false;
+        isForceVideoRendered = false;
+        audioDecodeDelta = 0;
+        audioRenderDelta = 0;
+        audioDemuxedDuration = 0;
+        videoDemuxedDuration = 0;
     }
 };
 
@@ -52,13 +64,15 @@ public:
     
     void setMute(bool isMute);
      
-    void setRenderSize(RenderSize size);
+    void setRenderSize(uint32_t width, uint32_t height) noexcept;
 
     void seek(long double time, bool isAccurate = false) noexcept;
     
     void addObserver(IPlayerObserverPtr observer) noexcept;
     
-    void removeObserver(IPlayerObserverPtr observer) noexcept;
+    void removeObserver() noexcept;
+    
+    void setRenderImpl(std::weak_ptr<IVideoRender>& render) noexcept;
 public:
     [[nodiscard]] inline const PlayerInfo& info() const noexcept {
         return info_;
@@ -74,14 +88,17 @@ public:
     
     [[nodiscard]] long double currentPlayedTime() noexcept;
     
+    [[nodiscard]] void* requestRender() noexcept;
 private:
     void init() noexcept;
 
     void initPlayerInfo() noexcept;
 
-    void demux() noexcept;
+    void demuxData() noexcept;
     
-    void render() noexcept;
+    void pushAVFrameToRender() noexcept;
+    
+    void pushVideoFrameToRender() noexcept;
 
     void process() noexcept;
     
@@ -97,13 +114,19 @@ private:
     
     void setState(PlayerState state) noexcept;
 
-    bool createDemuxer(DataPtr& data) noexcept;
+    bool createDemuxer(IOData& data) noexcept;
+    
+    bool openDemuxer(IOData& data) noexcept;
+    
+    void createAudioComponent(const PlayerSetting& setting) noexcept;
+    
+    void createVideoComponent(const PlayerSetting& setting) noexcept;
 
-    std::unique_ptr<DecoderComponent> createDecoderComponent(std::string_view mediaInfo, bool isAudio) noexcept;
+    void pushAVFrameDecode() noexcept;
+    
+    void pushAudioFrameDecode() noexcept;
 
-    void decodeAudio() noexcept;
-
-    void decodeVideo() noexcept;
+    void pushVideoFrameDecode(bool isForce = false) noexcept;
     
     void doPlay() noexcept;
     
@@ -111,9 +134,23 @@ private:
     
     void doStop() noexcept;
     
-    void doSeek() noexcept;
+    void doSeek(PlayerSeekRequest seekRequest) noexcept;
+    
+    void doLoop() noexcept;
+    
+    long double demuxedDuration() const noexcept;
+    
+    void checkCacheState() noexcept;
+    
+    bool setupIOHandler() noexcept;
+    
+    long double videoRenderTime() noexcept;
+    
+    long double audioRenderTime() noexcept;
 private:
-    bool isReadCompleted_ = false;
+    bool isSeekingWhilePlaying_ = false;
+    std::atomic_bool isStoped_ = false;
+    std::atomic_bool isReadCompleted_ = false;
     Synchronized<PlayerState, std::shared_mutex> state_;
     std::optional<PlayerSeekRequest> seekRequest_;
     PlayerInfo info_;
@@ -128,8 +165,8 @@ private:
     
     //IO
     std::unique_ptr<Reader> readHandler_ = nullptr;
-    Synchronized<std::vector<DataPtr>> dataList_;
-    DataPtr demuxData_;
+    Synchronized<std::vector<IOData>> dataList_;
+    std::unique_ptr<Buffer> probeBuffer_;
     
     //demux
     std::unique_ptr<IDemuxer> demuxer_ = nullptr;
@@ -137,15 +174,18 @@ private:
     std::deque<AVFramePtr> videoPackets_;
     
     //decode
-    Synchronized<std::deque<AVFramePtr>> audioFrames_;
-    Synchronized<std::deque<AVFramePtr>> videoFrames_;
-    std::unique_ptr<DecoderComponent> audioDecoder_ = nullptr;
-    std::unique_ptr<DecoderComponent> videoDecoder_ = nullptr;
+    Synchronized<std::deque<AVFramePtr>, std::shared_mutex> audioFrames_;
+    Synchronized<std::deque<AVFramePtr>, std::shared_mutex> videoFrames_;
+    std::unique_ptr<DecoderComponent> audioDecodeComponent_ = nullptr;
+    std::unique_ptr<DecoderComponent> videoDecodeComponent_ = nullptr;
     
     //render
-    std::unique_ptr<Audio::AudioRenderComponent> audioRender_ = nullptr;
+    std::unique_ptr<AudioRenderComponent> audioRender_ = nullptr;
+    Synchronized<std::weak_ptr<IVideoRender>, std::shared_mutex> videoRender_;
+    PlayerStatistics statistics_;
     
-    Synchronized<PlayedTime, std::shared_mutex> playedTime;
+    std::mutex releaseMutex_;
+    std::condition_variable cond_;
 };
 
 }

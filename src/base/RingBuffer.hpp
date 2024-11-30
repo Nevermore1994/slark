@@ -13,7 +13,7 @@
 
 namespace slark {
 
-constexpr uint32_t RingBufferLength = 1024 * 1024 * 500;
+constexpr uint32_t RingBufferLength = 1024 * 1024 * 16;
 
 template<typename T, uint32_t Capacity = RingBufferLength>
 class RingBuffer : public NonCopyable {
@@ -31,18 +31,17 @@ public:
 
         size = std::min(size, Capacity - size_); // 确保不会超过可用空间
 
-        uint64_t firstPart = std::min(size, Capacity - writePos_);
+        auto firstPart = std::min(size, Capacity - writePos_);
         std::copy(data, data + firstPart, data_->data() + writePos_);
 
         writePos_ = (writePos_ + firstPart) % Capacity;
 
         if (size > firstPart) {
-            uint64_t secondPart = size - firstPart;
+            auto secondPart = size - firstPart;
             std::copy(data + firstPart, data + firstPart + secondPart, data_->data());
             writePos_ = secondPart;
         }
         size_ += size;
-        readSize_ += size;
     }
 
     void reset() noexcept {
@@ -50,7 +49,6 @@ public:
         writePos_ = 0;
         readPos_ = 0;
         size_ = 0;
-        readSize_ = 0;
     }
 
     uint32_t read(T* data, uint32_t size) noexcept {
@@ -92,16 +90,11 @@ public:
         return size_ == Capacity;
     }
 
-    [[nodiscard]] uint32_t readSize() const noexcept {
-        return readSize_;
-    }
-
 private:
     std::unique_ptr<std::array<T, Capacity>> data_;
     uint32_t readPos_ = 0;
     uint32_t writePos_ = 0;
     uint32_t size_ = 0;
-    uint32_t readSize_ = 0;
 };
 
 }

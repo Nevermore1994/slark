@@ -33,6 +33,9 @@ public:
     uint32_t writeCount() noexcept;
     uint64_t writeSize() noexcept;
     uint32_t getHashId() noexcept;
+    bool isOpen() noexcept {
+        return isOpen_;
+    }
 private:
     void process() noexcept;
 private:
