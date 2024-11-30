@@ -146,9 +146,9 @@ private:
     
     long double audioRenderTime() noexcept;
 private:
+    bool isSeekingWhilePlaying_ = false;
     std::atomic_bool isStoped_ = false;
     std::atomic_bool isReadCompleted_ = false;
-    std::atomic_bool isRenderCompleted_ = false;
     Synchronized<PlayerState, std::shared_mutex> state_;
     std::optional<PlayerSeekRequest> seekRequest_;
     PlayerInfo info_;

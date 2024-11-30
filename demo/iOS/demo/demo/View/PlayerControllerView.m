@@ -221,7 +221,7 @@
 }
 
 - (void)seekDone {
-    !self.onSeekDone ?: self.onSeekDone();
+    !self.onSeekDone ?: self.onSeekDone(self.progressView.value);
 }
 
 - (void)playClick {

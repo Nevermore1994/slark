@@ -458,13 +458,12 @@ void Player::Impl::pushAVFrameToRender() noexcept {
             ptr->clock().setTime(static_cast<uint64_t>(renderPts * Time::kMicroSecondScale));
             if (statistics_.isForceVideoRendered) {
                 if (seekRequest_.has_value()) {
+                    if (seekRequest_.value().isAccurate && isSeekingWhilePlaying_) {
+                        setState(PlayerState::Playing);
+                    }
                     seekRequest_.reset();
                 }
                 statistics_.isForceVideoRendered = false;
-            }
-            if (nowState == PlayerState::Ready || nowState == PlayerState::Pause) {
-                doPause();
-                ownerThread_->pause();
             }
         }
     });
@@ -553,12 +552,15 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
     constexpr long double kSeekThreshold = 0.1;
     auto seekTime = seekRequest.seekTime;
     auto playedTime = currentPlayedTime();
-    if (isEqual(playedTime, seekTime, kSeekThreshold)) {
-        seekRequest_.reset();
+    if (!seekRequest.isAccurate && isEqual(playedTime, seekTime, kSeekThreshold)) {
         return;
     }
-    if (seekRequest_.has_value()) {
+    if (!seekRequest.isAccurate && seekRequest_.has_value()) {
         return;
+    }
+    if (state() == PlayerState::Playing) {
+        isSeekingWhilePlaying_ = true;
+        setState(PlayerState::Pause);
     }
     seekRequest_ = seekRequest;
     auto demuxedTime = demuxedDuration();
@@ -881,7 +883,7 @@ void Player::Impl::checkCacheState() noexcept {
         ownerThread_->resume();
         LogI("read resume");
     } else if (cacheTime >= setting.maxCacheTime || isReadCompleted_) {
-        if (nowState == PlayerState::Ready || nowState == PlayerState::Pause) {
+        if (nowState == PlayerState::Ready) {
             ownerThread_->pause();
         }
         if (readHandler_ && readHandler_->isRunning()) {
