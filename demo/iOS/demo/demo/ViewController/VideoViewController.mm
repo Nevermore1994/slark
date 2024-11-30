@@ -140,11 +140,9 @@ using namespace slark;
             [self.playerController.player seek:time];
             LogI("audio seek:{}", time);
         };
-        _controllerView.onSeekDone = ^{
+        _controllerView.onSeekDone = ^(double time){
             @strongify(self);
-            if (!self.controllerView.isPause) {
-                [self.controllerView setIsPause:NO];
-            }
+            [self.playerController.player seek:time isAccurate:YES];
             LogI("seek done");
         };
         _controllerView.onSetLoopClick = ^(BOOL loop) {
@@ -162,8 +160,10 @@ using namespace slark;
 - (void)notifyState:(NSString *)playerId state:(SlarkPlayerState)state {
     if (state == SlarkPlayerState::PlayerStateReady) {
         [self.controllerView updateTotalTime:CMTimeGetSeconds(self.playerController.player.totalDuration)];
-    } else if (state == SlarkPlayerState::PlayerStateCompleted) {
+    } else if (state == SlarkPlayerState::PlayerStateCompleted || state == SlarkPlayerState::PlayerStatePause) {
         [self.controllerView setIsPause:YES];
+    } else if (state == SlarkPlayerState::PlayerStatePlaying) {
+        [self.controllerView setIsPause:NO];
     }
 }
 

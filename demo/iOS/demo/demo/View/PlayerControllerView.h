@@ -11,7 +11,7 @@
 
 @property(nonatomic, copy) void(^onPlayClick)(BOOL);
 @property(nonatomic, copy) void(^onSeekClick)(double);
-@property(nonatomic, copy) void(^onSeekDone)(void);
+@property(nonatomic, copy) void(^onSeekDone)(double);
 @property(nonatomic, copy) void(^onPrevClick)(void);
 @property(nonatomic, copy) void(^onNextClick)(void);
 @property(nonatomic, copy) void(^onSetLoopClick)(BOOL);
