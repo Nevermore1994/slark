@@ -38,8 +38,10 @@ void DecoderManager::init() noexcept {
 
     decoderInfo_ = {
         {DecoderType::RAW, RawDecoder::info()},
+#if SLARK_IOS
         {DecoderType::VideoHardWareDecoder, iOSVideoHWDecoder::info()},
         {DecoderType::AACHardwareDecoder, iOSAACHWDecoder::info()},
+#endif
     };
 }
 

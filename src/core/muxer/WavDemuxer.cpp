@@ -62,7 +62,7 @@ bool WAVDemuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
         headerInfo_->headerLength = offset;
         receivedLength_ += headerInfo_->headerLength;
         isInited_ = true;
-        buffer->skip(offset);
+        buffer->skip(static_cast<int64_t>(offset));
         buffer_ = std::move(buffer);
     };
     while (remainSize >= 8) {
@@ -228,7 +228,7 @@ DemuxerResult WAVDemuxer::parseData(std::unique_ptr<Data> data, int64_t offset) 
     }
     
     auto length = data->length;
-    if (!buffer_->append(offset, std::move(data))) {
+    if (!buffer_->append(static_cast<uint64_t>(offset), std::move(data))) {
         return {DemuxerResultCode::Normal, AVFrameArray(), AVFrameArray()};
     }
 
@@ -250,7 +250,7 @@ DemuxerResult WAVDemuxer::parseData(std::unique_ptr<Data> data, int64_t offset) 
         frame->data = buffer_->readData(frameLength);
         frame->duration = static_cast<uint32_t>(static_cast<double>(sampleCount) /
                                                 static_cast<double>(audioInfo_->sampleRate) * 1000);
-        frame->pts = static_cast<double>(prasedLength) / scale * audioInfo_->timeScale;
+        frame->pts = static_cast<uint64_t>(static_cast<double>(prasedLength) / scale * audioInfo_->timeScale);
         frame->dts = frame->pts;
         frame->index = ++parsedFrameCount_;
         frame->timeScale = audioInfo_->timeScale;
@@ -265,10 +265,11 @@ DemuxerResult WAVDemuxer::parseData(std::unique_ptr<Data> data, int64_t offset) 
         frame->data = buffer_->readData(buffer_->length());
         frame->duration = static_cast<uint32_t>(static_cast<double>(frame->data->length) / scale * 1000);
         frame->timeScale = audioInfo_->timeScale;
-        frame->pts = ceil(static_cast<double>(prasedLength) / scale * audioInfo_->timeScale);
+        frame->pts = static_cast<uint64_t>(ceil(static_cast<double>(prasedLength) / scale * audioInfo_->timeScale));
         frame->index = ++parsedFrameCount_;
         frame->info = frameInfo;
         frameList.push_back(std::move(frame));
+        isCompleted_ = true;
 
         LogI("file read completed.");
         code = DemuxerResultCode::FileEnd;

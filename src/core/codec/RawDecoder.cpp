@@ -6,11 +6,11 @@
 //
 
 #include "RawDecoder.h"
-#include "Time.hpp"
 
 namespace slark {
 
 bool RawDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept {
+    config_ = config;
     isOpen_ = true;
     return true;
 }

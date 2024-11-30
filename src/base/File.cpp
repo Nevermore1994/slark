@@ -44,10 +44,10 @@ void IFile::seek(int64_t offset) noexcept {
     }
 }
 
-int64_t IFile::tell() const noexcept {
+uint64_t IFile::tell() const noexcept {
     fpos_t pos = 0;
     if (file_ && (fgetpos(file_, &pos) == 0)) {
-        return static_cast<int64_t>(pos);
+        return static_cast<uint64_t>(pos);
     }
     return 0;
 }

@@ -4,7 +4,7 @@ set(FILE_LISTS *.cpp *.hpp *.h
         audio/*.cpp audio/*.hpp audio/*.h
         muxer/*.cpp muxer/*.hpp muxer/*.h
         codec/*.cpp codec/*.hpp codec/*.h
-        public/*.cpp public/*.h
+        video/*.h public/*.cpp public/*.h
 )
 
 FILE(GLOB CORE_FILES ${FILE_LISTS})
@@ -53,5 +53,5 @@ elseif (${BUILD_PLATFORM} STREQUAL "Android")
 endif()
 
 target_include_directories(core PUBLIC public interface)
-target_include_directories(core PRIVATE . muxer audio codec)
+target_include_directories(core PRIVATE . muxer audio codec video)
 target_include_directories(core PRIVATE ../base)

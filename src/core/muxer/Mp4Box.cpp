@@ -16,7 +16,7 @@ std::expected<BoxInfo, bool> Box::tryParseBoxInfo(Buffer& buffer) noexcept {
         return std::unexpected(false);
     }
     BoxInfo info;
-    info.start = buffer.pos();
+    info.start = static_cast<uint32_t>(buffer.pos());
     uint32_t tmpSize = 0;
     if (!buffer.read4ByteBE(tmpSize)) {
         return std::unexpected(false);
@@ -59,7 +59,7 @@ BoxRefPtr Box::getChild(std::string_view childType) const noexcept {
     return nullptr;
 }
 
-bool Box::decode(Buffer& buffer) noexcept {
+bool Box::decode(Buffer&) noexcept {
     return true;
 }
 
@@ -103,7 +103,7 @@ std::string BoxFtyp::description(const std::string& prefix) const noexcept {
 }
 
 bool BoxFtyp::decode(Buffer& buffer) noexcept {
-    int32_t offset;
+    int32_t offset = 0;
     bool res = false;
     do {
         if (!buffer.readString(4, majorBrand)) {
@@ -189,7 +189,7 @@ bool BoxMvhd::decode(Buffer& buffer) noexcept {
     buffer.readByte(lVolume);
     preferredVolume = static_cast<float>(hVolume) + static_cast<float>(lVolume) / 255.0f;
     buffer.readString(10, reserved);
-    for (int i = 0; i < matrix.size(); i++) {
+    for (size_t i = 0; i < matrix.size(); i++) {
         uint32_t v = 0;
         buffer.read4ByteBE(v);
         if ((i + 1) % 3 == 0) {
@@ -353,7 +353,7 @@ bool BoxStsd::decode(Buffer& buffer) noexcept {
             box->append(subBox);
             subBox->decode(buffer);
         }
-        buffer.skip(endPos - buffer.pos());
+        buffer.skip(static_cast<int64_t>(endPos - buffer.pos()));
     }
     return true;
 }
@@ -485,14 +485,14 @@ bool BoxCtts::decode(Buffer& buffer) noexcept {
     
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
-    
-    bool res = true;
+
     for (size_t i = 0; i < entryCount; i++) {
         CttsEntry entry;
         buffer.read4ByteBE(entry.sampleCount);
         buffer.read4ByteBE(entry.sampleOffset);
         entrys.push_back(entry);
     }
+    return true;
 }
 
 bool BoxStss::decode(Buffer& buffer) noexcept {
@@ -504,6 +504,7 @@ bool BoxStss::decode(Buffer& buffer) noexcept {
         buffer.read4ByteBE(index);
         keyIndexs.push_back(index);
     }
+    return true;
 }
 
 std::string BoxEsds::description(const std::string& prefix) const noexcept {
@@ -621,7 +622,7 @@ std::string BoxAvcc::description(const std::string&prefix) const noexcept {
 //  |--- (size) 2字节: PPS length
 //  |--- (size) N字节: PPS data
 bool BoxAvcc::decode(Buffer& buffer) noexcept {
-    auto endpos = info.size + info.start;
+    auto endPos = info.size + info.start;
     buffer.readByte(version);
     buffer.readByte(profileIndication);
     buffer.readByte(profileCompatibility);
@@ -680,7 +681,7 @@ std::string BoxHvcc::description(const std::string&prefix) const noexcept {
 //       |--- Array 2: (类似 Array 1)
 //       |--- ...
 bool BoxHvcc::decode(Buffer& buffer) noexcept {
-    auto endpos = info.size + info.start;
+    auto endPos = info.size + info.start;
     buffer.readByte(version);
     buffer.readByte(profileSpace);
     buffer.read4ByteBE(profileCompatibility);
@@ -713,7 +714,7 @@ bool BoxHvcc::decode(Buffer& buffer) noexcept {
             pps = std::move(vec);
         }
     }
-    auto skip = endpos - buffer.readPos();
+    auto skip = static_cast<int64_t>(endPos - buffer.readPos());
     buffer.skip(skip);
     return true;
 }

@@ -97,6 +97,8 @@ private:
     void demuxData() noexcept;
     
     void pushAVFrameToRender() noexcept;
+    
+    void pushVideoFrameToRender() noexcept;
 
     void process() noexcept;
     
@@ -136,7 +138,7 @@ private:
     
     void doLoop() noexcept;
     
-    long double demuxedDuration() noexcept;
+    long double demuxedDuration() const noexcept;
     
     void checkCacheState() noexcept;
     

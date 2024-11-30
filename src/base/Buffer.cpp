@@ -8,7 +8,6 @@
 #include <utility>
 #include "Buffer.hpp"
 #include "Util.hpp"
-#include "Assert.hpp"
 #include "Log.hpp"
 
 namespace slark {
@@ -65,18 +64,18 @@ std::string_view Buffer::view() const noexcept {
 }
 
 bool Buffer::skipTo(int64_t pos) noexcept {
-    auto p = pos - offset_;
-    if (0 <= p && p <= data_->length) {
-        readPos_ = p;
+    auto p = pos - static_cast<int64_t>(offset_);
+    if (0 <= p && p <= static_cast<int64_t>(data_->length)) {
+        readPos_ = static_cast<uint64_t>(p);
         return true;
     }
     return false;
 }
 
 bool Buffer::skip(int64_t skipOffset) noexcept {
-    auto pos = readPos_ + skipOffset;
-    if (0 <= pos && pos <= data_->length) {
-        readPos_ = pos;
+    auto pos = static_cast<int64_t>(readPos_) + skipOffset;
+    if (0 <= pos && pos <= static_cast<int64_t>(data_->length)) {
+        readPos_ = static_cast<uint64_t>(pos);
         return true;
     }
     return false;
@@ -86,7 +85,7 @@ bool Buffer::read8ByteBE(uint64_t& value) noexcept {
     if (!require(8)) {
         return false;
     }
-    auto view = data_->view().substr(readPos_);
+    auto view = data_->view().substr(static_cast<size_t>(readPos_));
     readPos_ += 8;
     return Util::read8ByteBE(view, value);
 }
@@ -95,7 +94,7 @@ bool Buffer::read4ByteBE(uint32_t& value) noexcept {
     if (!require(4)) {
         return false;
     }
-    auto view = data_->view().substr(readPos_);
+    auto view = data_->view().substr(static_cast<size_t>(readPos_));
     readPos_ += 4;
     return Util::read4ByteBE(view, value);
 }
@@ -104,7 +103,7 @@ bool Buffer::read3ByteBE(uint32_t& value) noexcept {
     if (!require(3)) {
         return false;
     }
-    auto view = data_->view().substr(readPos_);
+    auto view = data_->view().substr(static_cast<size_t>(readPos_));
     readPos_ += 3;
     return Util::read3ByteBE(view, value);
 }
@@ -113,18 +112,18 @@ bool Buffer::read2ByteBE(uint16_t& value) noexcept {
     if (!require(2)) {
         return false;
     }
-    auto view = data_->view().substr(readPos_);
+    auto view = data_->view().substr(static_cast<size_t>(readPos_));
     readPos_ += 2;
     return Util::read2ByteBE(view, value);
 }
 
 bool Buffer::readBE(uint32_t size, uint32_t& value) noexcept {
-    if (!require(size)) {
+    if (!require(size) || size == 0) {
         return false;
     }
-    auto view = data_->view().substr(readPos_);
-    int32_t mx = size - 1;
-    auto func = [&](int32_t pos) {
+    auto view = data_->view().substr(static_cast<size_t>(readPos_));
+    size_t mx = size - 1;
+    auto func = [&](size_t pos) {
         return static_cast<uint32_t>(static_cast<uint8_t>(view[pos]) << ((mx - pos) * 8));
     };
     for(size_t i = 0; i < mx; i++) {
@@ -137,7 +136,7 @@ bool Buffer::readByte(uint8_t& value) noexcept {
     if (empty()) {
         return false;
     }
-    auto view = data_->view().substr(readPos_);
+    auto view = data_->view().substr(static_cast<size_t>(readPos_));
     readPos_ += 1;
     return Util::readByte(view, value);
 }
@@ -146,7 +145,7 @@ bool Buffer::read8ByteLE(uint64_t& value) noexcept {
     if (!require(8)) {
         return false;
     }
-    auto view = data_->view().substr(readPos_);
+    auto view = data_->view().substr(static_cast<size_t>(readPos_));
     readPos_ += 8;
     return Util::read8ByteLE(view, value);
 }
@@ -155,7 +154,7 @@ bool Buffer::read4ByteLE(uint32_t& value) noexcept {
     if (!require(4)) {
         return false;
     }
-    auto view = data_->view().substr(readPos_);
+    auto view = data_->view().substr(static_cast<size_t>(readPos_));
     readPos_ += 4;
     return Util::read4ByteLE(view, value);
 }
@@ -164,7 +163,7 @@ bool Buffer::read3ByteLE(uint32_t& value) noexcept {
     if (!require(3)) {
         return false;
     }
-    auto view = data_->view().substr(readPos_);
+    auto view = data_->view().substr(static_cast<size_t>(readPos_));
     readPos_ += 3;
     return Util::read3ByteLE(view, value);
 }
@@ -173,7 +172,7 @@ bool Buffer::read2ByteLE(uint16_t& value) noexcept {
     if (!require(2)) {
         return false;
     }
-    auto view = data_->view().substr(readPos_);
+    auto view = data_->view().substr(static_cast<size_t>(readPos_));
     readPos_ += 2;
     return Util::read2ByteLE(view, value);
 }
@@ -192,7 +191,7 @@ bool Buffer::readString(uint64_t size, std::string& str) noexcept {
         return false;
     }
     
-    auto view = data_->view().substr(readPos_, static_cast<size_t>(size));
+    auto view = data_->view().substr(static_cast<size_t>(readPos_), static_cast<size_t>(size));
     readPos_ += size;
     str = std::string(view);
     return true;

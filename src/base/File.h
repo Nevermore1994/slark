@@ -39,7 +39,7 @@ public:
 
     virtual void seek(int64_t offset) noexcept;
 
-    [[nodiscard]] int64_t tell() const noexcept;
+    [[nodiscard]] uint64_t tell() const noexcept;
 
     [[nodiscard]] uint64_t fileSize() const noexcept;
 

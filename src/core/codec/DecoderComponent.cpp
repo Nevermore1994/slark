@@ -40,6 +40,8 @@ bool DecoderComponent::open(DecoderType type, std::shared_ptr<DecoderConfig> con
         }
         return decoder_->open(audioConfig);
     }
+    using namespace std::chrono_literals;
+    decodeWorker_.setInterval(2ms);
     return true;
 }
 
@@ -61,9 +63,6 @@ void DecoderComponent::decode() {
     } else if (isReachEnd_ && !decoder_->isFlushed()) {
         std::unique_lock<std::mutex> lock(mutex_);
         decoder_->flush();
-    } else {
-        decodeWorker_.pause();
-        return;
     }
 }
 
