@@ -231,7 +231,7 @@ bool TrackContext::isInRange(Buffer& buffer) const noexcept {
     auto start = stco->chunkOffsets[chunkLogicIndex] + static_cast<uint64_t>(sampleOffset);
     auto end = start + stsz->sampleSizes[stszSampleSizeIndex];
     auto bufferStart = buffer.offset();
-    auto bufferEnd = bufferStart + buffer.length();
+    auto bufferEnd = bufferStart + buffer.totalLength();
     if (bufferStart <= start && end <= bufferEnd) {
         return true;
     }
@@ -245,7 +245,7 @@ bool TrackContext::isInRange(Buffer& buffer, uint64_t& offset) const noexcept {
     auto start = stco->chunkOffsets[chunkLogicIndex] + static_cast<uint64_t>(sampleOffset);
     auto end = start + stsz->sampleSizes[stszSampleSizeIndex];
     auto bufferStart = buffer.offset();
-    auto bufferEnd = bufferStart + buffer.length();
+    auto bufferEnd = bufferStart + buffer.totalLength();
     if (bufferStart <= start && end <= bufferEnd) {
         offset = start;
         return true;
@@ -604,20 +604,18 @@ DemuxerResult Mp4Demuxer::parseData(std::unique_ptr<Data> data, int64_t dataOffs
     if (!data || data->empty() || !isInited_) {
         return {DemuxerResultCode::Failed, AVFrameArray(), AVFrameArray()};
     }
-    auto length = data->length;
     if (!buffer_->append(static_cast<uint64_t>(dataOffset), std::move(data))) {
         return {DemuxerResultCode::Normal, AVFrameArray(), AVFrameArray()};
     }
-    receivedLength_ += length;
     DemuxerResult result;
     while(!buffer_->empty()) {
-        uint64_t offset = INT64_MAX;
+        uint64_t offset = INT64_MAX; //To find the earliest starting track
         std::shared_ptr<TrackContext> parseTrack;
         for (const auto& track : std::views::values(tracks_)) {
             uint64_t tOffset = INT64_MAX;
             if (!track->isInRange(*buffer_, tOffset)) {
                 continue;
-            } else if (tOffset < offset){
+            } else if (tOffset < offset && parseTrack != track){
                 parseTrack = track;
                 offset = tOffset;
             }
@@ -643,7 +641,7 @@ DemuxerResult Mp4Demuxer::parseData(std::unique_ptr<Data> data, int64_t dataOffs
         buffer_->shrink();
     }
     auto mediaDataBox = rootBox_->getChild("mdat");
-    if (mediaDataBox && receivedLength_ >= mediaDataBox->info.size) {
+    if (mediaDataBox && buffer_->pos() >= (mediaDataBox->info.size + mediaDataBox->info.headerSize)) {
         isCompleted_ = true;
     }
     return result;

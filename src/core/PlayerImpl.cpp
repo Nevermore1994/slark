@@ -82,10 +82,11 @@ void Player::Impl::init() noexcept {
     ownerThread_ = std::make_unique<Thread>("playerThread", &Player::Impl::process, this);
     ownerThread_->runLoop(200ms, [this](){
         if (state() == PlayerState::Playing) {
-            notifyTime();
+            notifyPlayedTime();
         }
         if (!isStoped_) {
             checkCacheState();
+            notifyCacheTime();
         }
     });
     
@@ -128,7 +129,7 @@ bool Player::Impl::setupIOHandler() noexcept {
     readHandler_ = std::make_unique<Reader>();
     if (!readHandler_->open(path, std::move(setting))) {
         setState(PlayerState::Error);
-        notifyEvent(PlayerEvent::OnError, std::to_string(static_cast<uint8_t>(PlayerErrorCode::OpenFileError)));
+        notifyPlayerEvent(PlayerEvent::OnError, std::to_string(static_cast<uint8_t>(PlayerErrorCode::OpenFileError)));
         return false;
     }
     probeBuffer_ = std::make_unique<Buffer>(readHandler_->size());
@@ -339,7 +340,10 @@ void Player::Impl::demuxData() noexcept {
         if (!parseResult.audioFrames.empty()) {
             for (auto& packet : parseResult.audioFrames) {
                 auto pts = packet->ptsTime();
-                statistics_.audioDemuxedDuration = pts;
+                statistics_.audioDemuxedDuration = pts + packet->duration / 1000.0;
+                if (demuxer_->isCompleted()) {
+                    statistics_.audioDemuxedDuration = info_.duration;
+                }
                 if (seekRequest_.has_value() && pts < seekRequest_.value().seekTime) {
                     LogI("discard audio frame:{}", packet->pts);
                     continue;
@@ -351,7 +355,10 @@ void Player::Impl::demuxData() noexcept {
         if (!parseResult.videoFrames.empty()) {
             for (auto& packet : parseResult.videoFrames) {
                 auto pts = packet->ptsTime();
-                statistics_.videoDemuxedDuration = pts;
+                statistics_.videoDemuxedDuration = pts + packet->duration / 1000.0;
+                if (demuxer_->isCompleted()) {
+                    statistics_.videoDemuxedDuration = info_.duration;
+                }
                 if (seekRequest_.has_value() && pts < seekRequest_.value().seekTime) {
                     if (!demuxer_->isCompleted()) {
                         packet->isDiscard = true;
@@ -564,12 +571,10 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
     constexpr long double kSeekThreshold = 0.1;
     auto seekTime = seekRequest.seekTime;
     auto playedTime = currentPlayedTime();
-    if (!seekRequest.isAccurate && isEqual(playedTime, seekTime, kSeekThreshold)) {
+    if (!seekRequest.isAccurate && (isEqual(playedTime, seekTime, kSeekThreshold) || seekRequest_.has_value())) {
         return;
     }
-    if (!seekRequest.isAccurate && seekRequest_.has_value()) {
-        return;
-    }
+
     if (state() == PlayerState::Playing) {
         isSeekingWhilePlaying_ = true;
         setState(PlayerState::Pause);
@@ -678,7 +683,7 @@ void Player::Impl::setState(PlayerState state) noexcept {
     } else if (state == PlayerState::Stop) {
         doStop();
     }
-    notifyState(state);
+    notifyPlayerState(state);
 }
 
 std::expected<PlayerState, bool> getStateFromEvent(EventType event) {
@@ -758,7 +763,7 @@ void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
     auto nowTime = currentPlayedTime();
     auto currentState = state();
     if (currentState == PlayerState::Playing && isReadCompleted_ && isgreaterequal(nowTime, info_.duration)) {
-        notifyTime(); //notify time to end
+        notifyPlayedTime(); //notify time to end
         LogI("play end.");
         bool isLoop = false;
         params_.withReadLock([&isLoop](auto& p){
@@ -776,23 +781,23 @@ void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
     }
 }
 
-void Player::Impl::notifyEvent(PlayerEvent event, std::string value) noexcept {
+void Player::Impl::notifyPlayerEvent(PlayerEvent event, std::string value) noexcept {
     observer_.withReadLock([this, event, value = std::move(value)](auto& observer){
         if (auto ptr = observer.lock(); ptr) {
-            ptr->notifyEvent(playerId_, event, value);
+            ptr->notifyPlayerEvent(playerId_, event, value);
         }
     });
 }
 
-void Player::Impl::notifyState(PlayerState state) noexcept {
+void Player::Impl::notifyPlayerState(PlayerState state) noexcept {
     observer_.withReadLock([this, state](auto& observer){
         if (auto ptr = observer.lock(); ptr) {
-            ptr->notifyState(playerId_, state);
+            ptr->notifyPlayerState(playerId_, state);
         }
     });
 }
 
-void Player::Impl::notifyTime() noexcept {
+void Player::Impl::notifyPlayedTime() noexcept {
     long double time = 0.0;
     if (info_.hasAudio && info_.hasVideo) {
         auto videoTime = videoRenderTime();
@@ -801,14 +806,21 @@ void Player::Impl::notifyTime() noexcept {
         LogI("notifyTime:{}, video time:{}, audio time:{}", time, videoTime, audioTime);
     } else if (info_.hasAudio) {
         time = audioRenderTime();
+        LogI("notifyTime:{} (audio)", time);
     } else if (info_.hasVideo) {
         time = videoRenderTime();
+        LogI("notifyTime:{} (video)", time);
     }
     observer_.withReadLock([this, time](auto& observer){
         if (auto ptr = observer.lock(); ptr) {
-            ptr->notifyTime(playerId_, time);
+            ptr->notifyPlayedTime(playerId_, time);
         }
     });
+}
+
+void Player::Impl::notifyCacheTime() noexcept {
+    long double time = demuxedDuration();
+    notifyPlayerEvent(PlayerEvent::UpdateCacheTime, std::to_string(time));
 }
 
 PlayerParams Player::Impl::params() noexcept {

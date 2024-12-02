@@ -31,6 +31,13 @@ uint64_t Buffer::length() const noexcept {
     return data_->length - readPos_;
 }
 
+uint64_t Buffer::totalLength() const noexcept {
+    if (empty()) {
+        return 0;
+    }
+    return data_->length;
+}
+
 bool Buffer::require(uint64_t size) const noexcept {
     return length() >= size;
 }

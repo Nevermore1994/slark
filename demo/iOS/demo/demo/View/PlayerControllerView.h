@@ -22,6 +22,8 @@
 - (void)updateCurrentTime:(NSTimeInterval) value;
 
 - (void)updateTotalTime:(NSTimeInterval) value;
+
+- (void)updateCacheTime:(NSTimeInterval) value;
 @end
 
 #endif /* PlayerControlViewController_h */

@@ -28,6 +28,7 @@
 @property (nonatomic, strong) UIButton* loopButton;
 @property (nonatomic, strong) UIButton* volumeButton;
 @property (nonatomic, strong) UISlider* progressView;
+@property (nonatomic, strong) UIProgressView* cacheProgressView;
 @property (nonatomic, strong) UILabel* currentTimeLabel;
 @property (nonatomic, strong) UILabel* totalTimeLabel;
 @property (nonatomic, assign) NSTimeInterval currentTime;
@@ -50,6 +51,7 @@
     [self addSubview:self.nextButton];
     [self addSubview:self.loopButton];
     [self addSubview:self.volumeButton];
+    [self addSubview:self.cacheProgressView];
     [self addSubview:self.progressView];
     [self addSubview:self.currentTimeLabel];
     [self addSubview:self.totalTimeLabel];
@@ -65,6 +67,14 @@
         make.width.mas_equalTo(self.mas_width).offset(-110);
         make.top.mas_equalTo(self.mas_top).mas_offset(20);
     }];
+    self.progressView.layer.cornerRadius = 10;
+    [self.cacheProgressView mas_makeConstraints:^(MASConstraintMaker *make) {
+        make.height.mas_equalTo(4);
+        make.left.mas_equalTo(self.currentTimeLabel.mas_right).offset(5);
+        make.width.mas_equalTo(self.mas_width).offset(-110);
+        make.top.mas_equalTo(self.mas_top).mas_offset(29);
+    }];
+    self.cacheProgressView.layer.cornerRadius = 2;
     [self.totalTimeLabel mas_makeConstraints:^(MASConstraintMaker *make) {
         make.height.mas_equalTo(20);
         make.width.mas_equalTo(40);
@@ -150,13 +160,24 @@
     return _volumeButton;
 }
 
+- (UIProgressView*)cacheProgressView {
+    if (_cacheProgressView == nil) {
+        _cacheProgressView = [UIProgressView new];
+        _cacheProgressView.trackTintColor = [UIColor whiteColor];
+        _cacheProgressView.progressTintColor = [[UIColor alloc] initWithRed:172.0f / 255.0f  green:32.0f / 255.0f blue:219.0f / 255.0f alpha:1.f];
+        _cacheProgressView.layer.cornerRadius = 2;
+        _cacheProgressView.layer.masksToBounds = YES;
+    }
+    return _cacheProgressView;
+}
+
 - (UISlider*)progressView {
     if (_progressView == nil) {
         _progressView = [UISlider new];
         _progressView.maximumValue = 100.f;
         _progressView.minimumValue = 0.f;
         _progressView.minimumTrackTintColor = [[UIColor alloc] initWithRed:26.0f / 255.0f  green:109.0f / 255.0f  blue:1.f alpha:1.f];
-        _progressView.maximumTrackTintColor = [[UIColor alloc] initWithRed:172.0f / 255.0f  green:32.0f / 255.0f blue:219.0f / 255.0f alpha:1.f];
+        _progressView.maximumTrackTintColor = [UIColor clearColor];
         [_progressView addTarget:self action:@selector(progressChanged) forControlEvents:UIControlEventValueChanged];
         [_progressView addTarget:self action:@selector(seekDone) forControlEvents:UIControlEventTouchUpInside];
         _progressView.layer.cornerRadius = 10;
@@ -278,6 +299,16 @@
     _currentTime = currentTime;
     self.progressView.value = currentTime;
     self.currentTimeLabel.text = [self timeString:_currentTime];
+}
+
+- (void)updateCacheTime:(NSTimeInterval) value {
+    if (_totalTime != 0.0) {
+        double process = value / _totalTime;
+        if (fabs(process - 1.0) < 0.01) {
+            process = 1.0;
+        }
+        self.cacheProgressView.progress = process;
+    }
 }
 
 - (NSString*)timeString:(NSTimeInterval)time {

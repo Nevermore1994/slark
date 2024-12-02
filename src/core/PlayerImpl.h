@@ -106,11 +106,13 @@ private:
     
     void handleSettingUpdate(Event& t) noexcept;
     
-    void notifyState(PlayerState state) noexcept;
+    void notifyPlayerState(PlayerState state) noexcept;
     
-    void notifyEvent(PlayerEvent event, std::string value = "") noexcept;
+    void notifyPlayerEvent(PlayerEvent event, std::string value = "") noexcept;
     
-    void notifyTime() noexcept;
+    void notifyPlayedTime() noexcept;
+    
+    void notifyCacheTime() noexcept;
     
     void setState(PlayerState state) noexcept;
 

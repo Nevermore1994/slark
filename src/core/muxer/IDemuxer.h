@@ -63,7 +63,6 @@ public:
     virtual void reset() noexcept {
         isInited_ = false;
         isCompleted_ = false;
-        receivedLength_ = 0;
         totalDuration_ = CTime(0);
         buffer_.reset();
         videoInfo_.reset();
@@ -71,7 +70,6 @@ public:
     }
     
     virtual void seekPos(uint64_t pos) noexcept {
-        receivedLength_ = pos;
         isCompleted_ = false;
         if (buffer_) {
             buffer_->reset();
@@ -126,7 +124,6 @@ protected:
     bool isInited_ = false;
     bool isCompleted_ = false;
     DemuxerType type_ = DemuxerType::Unknown;
-    uint64_t receivedLength_ = 0;
     CTime totalDuration_{0};
     std::unique_ptr<Buffer> buffer_;
     std::shared_ptr<VideoInfo> videoInfo_;
