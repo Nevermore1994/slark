@@ -28,6 +28,7 @@ typedef enum : NSUInteger {
     PlayerEventFirstFrameRendered,
     PlayerEventSeekDone,
     PlayerEventPlayEnd,
+    PlayerEventUpdateCacheTime,
     PlayerEventOnError,
 } SlarkPlayerEvent;
 

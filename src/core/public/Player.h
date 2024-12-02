@@ -33,6 +33,7 @@ enum class PlayerEvent : uint8_t {
     FirstFrameRendered,
     SeekDone,
     PlayEnd,
+    UpdateCacheTime,
     OnError,
 };
 
@@ -41,11 +42,11 @@ enum class PlayerErrorCode : uint8_t {
 };
 
 struct IPlayerObserver {
-    virtual void notifyTime(std::string_view playerId, long double time) = 0;
+    virtual void notifyPlayedTime(std::string_view playerId, long double time) = 0;
 
-    virtual void notifyState(std::string_view playerId, PlayerState state) = 0;
+    virtual void notifyPlayerState(std::string_view playerId, PlayerState state) = 0;
 
-    virtual void notifyEvent(std::string_view playerId, PlayerEvent event, std::string value) = 0;
+    virtual void notifyPlayerEvent(std::string_view playerId, PlayerEvent event, std::string value) = 0;
     
     virtual ~IPlayerObserver() = default;
 };

@@ -183,6 +183,8 @@ using namespace slark;
 }
 
 - (void)notifyEvent:(NSString *)playerId event:(SlarkPlayerEvent)event value:(NSString *)value {
-
+    if (event == SlarkPlayerEvent::PlayerEventUpdateCacheTime) {
+        [self.controllerView updateCacheTime:[value doubleValue]];
+    }
 }
 @end

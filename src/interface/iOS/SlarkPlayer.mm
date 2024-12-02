@@ -39,25 +39,26 @@ SlarkPlayerEvent convertEvent(slark::PlayerEvent event) {
             EVENT_ENUM_TO_CASE(FirstFrameRendered);
             EVENT_ENUM_TO_CASE(SeekDone);
             EVENT_ENUM_TO_CASE(PlayEnd);
+            EVENT_ENUM_TO_CASE(UpdateCacheTime);
             EVENT_ENUM_TO_CASE(OnError);
     }
 }
 
 struct PlayerObserver final : public slark::IPlayerObserver
 {
-    void notifyTime(std::string_view playerId, long double time) override {
+    void notifyPlayedTime(std::string_view playerId, long double time) override {
         if (notifyTimeFunc) {
             notifyTimeFunc(stringViewToNSString(playerId), time);
         }
     }
 
-    void notifyState(std::string_view playerId, slark::PlayerState state) override {
+    void notifyPlayerState(std::string_view playerId, slark::PlayerState state) override {
         if (notifyStateFunc) {
             notifyStateFunc(stringViewToNSString(playerId), convertState(state));
         }
     }
 
-    void notifyEvent(std::string_view playerId, slark::PlayerEvent event, std::string value) override {
+    void notifyPlayerEvent(std::string_view playerId, slark::PlayerEvent event, std::string value) override {
         if (notifyEventFunc) {
             notifyEventFunc(stringViewToNSString(playerId), convertEvent(event), stringViewToNSString(value));
         }

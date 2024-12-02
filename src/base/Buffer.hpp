@@ -23,6 +23,8 @@ public:
     
     uint64_t length() const noexcept;
     
+    uint64_t totalLength() const noexcept;
+    
     bool append(uint64_t offset, DataPtr) noexcept;
     
     std::string_view view() const noexcept;
