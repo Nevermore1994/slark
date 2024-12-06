@@ -94,6 +94,7 @@ void Reader::seek(uint64_t pos) noexcept {
         return;
     }
     seekPos_ = static_cast<int64_t>(pos);
+    isReadCompleted_ = false;
 }
 
 void Reader::process() {
@@ -113,6 +114,7 @@ void Reader::process() {
         return;
     } else if (nowState == IOState::EndOfFile) {
         worker_.pause();
+        isReadCompleted_ = true;
         LogI("read data completed.");
         return;
     }
@@ -131,9 +133,16 @@ void Reader::process() {
         data.offset = tell;
         file->read(*data.data, readSize);
     });
-
+     
+    nowState = state();
+    if (nowState == IOState::EndOfFile) {
+        isReadCompleted_ = true;
+    } else {
+        isReadCompleted_ = false;
+    }
+    
     if (setting_.callBack) {
-        setting_.callBack(std::move(data), state());
+        setting_.callBack(std::move(data), nowState);
     }
 }
 

@@ -4,13 +4,14 @@ include(GoogleTest)
 
 set(TEST_FILE_LISTS *.cpp)
 file(GLOB TEST_FILES ${TEST_FILE_LISTS})
-add_executable(base_test ${TEST_FILES} )
+add_executable(http_test ${TEST_FILES})
 
-target_link_libraries(base_test
+message("http test")
+target_link_libraries(http_test
         gtest
         gtest_main
         pthread
+        http_request
         base)
 
-gtest_add_tests(TARGET base_test)
-
+gtest_add_tests(TARGET http_test)
