@@ -8,9 +8,9 @@
 #include <functional>
 #include <ranges>
 
-namespace slark::string {
+namespace slark {
 
-std::vector<std::string_view> spiltString(std::string_view stringView, std::string_view delimiter) {
+std::vector<std::string_view> StringUtil::split(std::string_view stringView, std::string_view delimiter) noexcept {
     auto res = stringView | std::ranges::views::split(delimiter) | std::views::filter([](auto&& range) {
         return !range.empty();
     }) | std::ranges::views::transform([](auto&& range) {
@@ -18,6 +18,13 @@ std::vector<std::string_view> spiltString(std::string_view stringView, std::stri
     });
     
     return {res.begin(), res.end()};
+}
+
+std::string& StringUtil::removePrefix(std::string& str, char c) noexcept {
+    if (!str.empty() && str.front() == c) {
+        str.erase(0);
+    }
+    return str;
 }
 
 

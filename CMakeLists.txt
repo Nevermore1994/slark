@@ -34,6 +34,7 @@ endmacro(add_framework)
 # add core library
 set(BUILD_PLATFORM "PC" CACHE STRING "build platform")
 option(DISABLE_TEST "disable test" OFF)
+option(DISABLE_HTTP "disable http" OFF)
 
 function(read_config)
     file(READ ${CMAKE_CURRENT_SOURCE_DIR}/config.json CONFIG_JSON_STRING)
@@ -70,6 +71,10 @@ function(read_config)
         string(JSON DISABLE_TEST_VALUE GET ${CONFIG_JSON_STRING} disable_test)
         set(DISABLE_TEST ${DISABLE_TEST_VALUE} CACHE BOOL "Disable test" FORCE)
     endif()
+
+    string(JSON DISABLE_HTTP_VALUE GET ${CONFIG_JSON_STRING} disable_http)
+    set(DISABLE_HTTP ${DISABLE_HTTP_VALUE} CACHE BOOL "Disable http" FORCE)
+
 endfunction()
 
 read_config()
@@ -88,6 +93,15 @@ if(${BUILD_PLATFORM} STREQUAL "iOS")
 elseif (${BUILD_PLATFORM} STREQUAL "Android")
 
 endif ()
+
+if(NOT DISABLE_HTTP)
+    message(STATUS "enable http")
+    add_subdirectory(src/http)
+    target_link_libraries(${PROJECT_NAME} PRIVATE http_request)
+else()
+    message(STATUS "disable http")
+endif()
+
 
 if(NOT DISABLE_TEST)
     message(STATUS "enable testing")

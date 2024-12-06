@@ -120,10 +120,6 @@ bool Player::Impl::setupIOHandler() noexcept {
         
         if (state == IOState::Error) {
             sender_->send(buildEvent(EventType::ReadError));
-        } else if (state == IOState::EndOfFile) {
-            isReadCompleted_ = true;
-        } else if (state == IOState::Normal) {
-            isReadCompleted_ = false;
         }
     };
     readHandler_ = std::make_unique<Reader>();
@@ -466,9 +462,9 @@ void Player::Impl::pushVideoFrameToRender() noexcept {
         if (seekRequest_.has_value()) {
             if (seekRequest_.value().isAccurate && isSeekingWhilePlaying_) {
                 setState(PlayerState::Playing);
+                isSeekingWhilePlaying_ = false;
             }
             seekRequest_.reset();
-            isSeekingWhilePlaying_ = false;
         }
         statistics_.isForceVideoRendered = false;
     }
@@ -575,12 +571,13 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
         return;
     }
 
-    if (state() == PlayerState::Playing) {
+    auto nowState = state();
+    if (nowState == PlayerState::Playing) {
+        setState(PlayerState::Pause);
         isSeekingWhilePlaying_ = true;
+    } else if (nowState == PlayerState::Completed) {
         setState(PlayerState::Pause);
-    } else if (state() == PlayerState::Completed) {
         isSeekingWhilePlaying_ = false;
-        setState(PlayerState::Pause);
     }
     seekRequest_ = seekRequest;
     auto demuxedTime = demuxedDuration();
@@ -613,7 +610,6 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
         }
         LogI("seek to time:{}", seekTime);
     } else {
-        isReadCompleted_ = false;
         auto seekPos = demuxer_->getSeekToPos(seekTime);
         audioDecodeComponent_->flush();
         videoDecodeComponent_->flush();
@@ -646,7 +642,6 @@ void Player::Impl::doLoop() noexcept {
     if (!demuxer_) {
         return;
     }
-    isReadCompleted_ = false;
     auto seekPos = demuxer_->getSeekToPos(0);
     readHandler_->seek(seekPos);
     readHandler_->pause();
@@ -762,7 +757,7 @@ void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
     }
     auto nowTime = currentPlayedTime();
     auto currentState = state();
-    if (currentState == PlayerState::Playing && isReadCompleted_ && isgreaterequal(nowTime, info_.duration)) {
+    if (currentState == PlayerState::Playing && readHandler_->isReadCompleted() && isgreaterequal(nowTime, info_.duration)) {
         notifyPlayedTime(); //notify time to end
         LogI("play end.");
         bool isLoop = false;
@@ -886,14 +881,13 @@ long double Player::Impl::demuxedDuration() const noexcept {
 }
 
 void Player::Impl::checkCacheState() noexcept {
+    if (!readHandler_ || !ownerThread_ || isStoped_) {
+        return;
+    }
     auto nowState = state();
     if (nowState == PlayerState::Completed) {
-        if (readHandler_) {
-           readHandler_->pause();
-        }
-        if (ownerThread_) {
-           ownerThread_->pause();
-        }
+        readHandler_->pause();
+        ownerThread_->pause();
         return;
     }
     PlayerSetting setting;
@@ -905,8 +899,8 @@ void Player::Impl::checkCacheState() noexcept {
     auto cacheTime = cachedDuration - playedTime;
     cacheTime = std::max(0.0l, cacheTime);
     LogI("demux cache time:{}, demuxedDuration:{} played time:{}", cacheTime, cachedDuration, playedTime);
-    if (cacheTime < setting.minCacheTime && !isReadCompleted_) {
-        if (readHandler_ && !readHandler_->isRunning()) {
+    if (cacheTime < setting.minCacheTime && !readHandler_->isReadCompleted()) {
+        if (!readHandler_->isRunning()) {
             readHandler_->resume();
         }
         ownerThread_->resume();
@@ -915,12 +909,12 @@ void Player::Impl::checkCacheState() noexcept {
         if (nowState == PlayerState::Ready || nowState == PlayerState::Pause) {
             ownerThread_->pause();
         }
-        if (readHandler_ && readHandler_->isRunning()) {
+        if (readHandler_->isRunning()) {
             readHandler_->pause();
         }
         LogI("read & owner pause");
-    } else if (isReadCompleted_) {
-        if (readHandler_ && readHandler_->isRunning()) {
+    } else if (readHandler_->isReadCompleted()) {
+        if (readHandler_->isRunning()) {
             readHandler_->pause();
             LogI("read pause");
         }

@@ -21,7 +21,7 @@ config_data = {
     "platform": "PC",
     "build_type": "Debug",
     "output": "exe",
-    "disable": [],
+    "disable_http": False,
     "disable_test": False
 }
 
@@ -84,7 +84,7 @@ def parse_args():
     parser.add_argument('-t', '--type', action='store', help="build type", default="Debug",
                         choices=["Debug", "Release"])
     parser.add_argument('-o', '--output', action='store', help="output type", default="exe", choices=["lib", "exe"])
-    parser.add_argument('-d', '--disable', action='store', nargs='+', help="disable component", choices=["http"])
+    parser.add_argument('-disable_http', action='store', nargs='+', help="disable http")
     parser.add_argument('-a', '--action', action='store', help="action", choices=["clear", "gen", "build", "run"],
                         default="gen")
     parser.add_argument('-disable_test', action='store_true', help="disable test")
@@ -93,7 +93,7 @@ def parse_args():
     config_data["platform"] = args.platform
     config_data["build_type"] = args.type
     config_data["output"] = args.output
-    config_data["disable"] = args.disable
+    config_data["disable_http"] = args.disable_http
     config_data["disable_test"] = args.disable_test
 
     with open(config_file, mode='w', encoding='utf-8') as f:

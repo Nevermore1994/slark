@@ -110,9 +110,14 @@ public:
         return worker_.isRunning();
     }
     
+    [[nodiscard]] bool isReadCompleted() noexcept {
+        return isReadCompleted_;
+    }
+    
 private:
     void process();
 private:
+    std::atomic_bool isReadCompleted_ = false;
     std::optional<int64_t> seekPos_;
     ReaderSetting setting_;
     ReadRange readRange_;
