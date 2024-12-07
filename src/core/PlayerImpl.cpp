@@ -172,6 +172,7 @@ bool Player::Impl::openDemuxer(IOData& data) noexcept {
             range.readSize = static_cast<int64_t>(demuxer_->headerInfo()->dataSize);
             demuxer_->seekPos(dataStart);
             readHandler_->setReadRange(range);
+            LogI("mp4 seek to:{}", dataStart);
 //#if DEBUG
 //            auto ss = mp4Demuxer->description();
 //            LogI("mp4 info:{}", ss);
@@ -304,7 +305,7 @@ void Player::Impl::initPlayerInfo() noexcept {
         statistics_.isForceVideoRendered = true;
     }
     setState(PlayerState::Ready);
-    LogE("init player success.");
+    LogI("init player success.");
 }
 
 void Player::Impl::demuxData() noexcept {
@@ -721,7 +722,7 @@ void Player::Impl::handleSettingUpdate(Event& t) noexcept {
                 params_.withReadLock([&volume](auto& p){
                     volume = p->setting.volume;
                 });
-                audioRender_->setVolume(volume / 100.f);
+                audioRender_->setVolume(volume);
             }
         }
         LogI("set mute:{}", isMute);

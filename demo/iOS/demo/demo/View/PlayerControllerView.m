@@ -22,6 +22,7 @@
 @interface PlayerControllerView()
 @property (nonatomic, assign) BOOL isPause;
 @property (nonatomic, assign) BOOL isLoop;
+@property (nonatomic, assign) BOOL isMute;
 @property (nonatomic, strong) Button* playButton;
 @property (nonatomic, strong) UIButton* prevButton;
 @property (nonatomic, strong) UIButton* nextButton;
@@ -155,7 +156,7 @@
         _volumeButton = [UIButton new];
         [_volumeButton setImage:[UIImage imageNamed:@"volume"] forState:UIControlStateNormal];
         _volumeButton.imageView.contentMode = UIViewContentModeScaleAspectFit;
-        //[_volumeButton addTarget:self action:@selector(onClick) forControlEvents:UIControlEventTouchUpInside];
+        [_volumeButton addTarget:self action:@selector(volumeClick) forControlEvents:UIControlEventTouchUpInside];
     }
     return _volumeButton;
 }
@@ -260,6 +261,16 @@
 - (void)loopClick {
     self.isLoop = !self.isLoop;
     !self.onSetLoopClick ?: self.onSetLoopClick(self.isLoop);
+}
+
+- (void)volumeClick {
+    self.isMute = !self.isMute;
+    !self.onSetMute ?: self.onSetMute(self.isMute);
+    if (!self.isMute) {
+        [self.volumeButton setImage:[UIImage imageNamed:@"volume"] forState:UIControlStateNormal];
+    } else {
+        [self.volumeButton setImage:[UIImage imageNamed:@"mute"] forState:UIControlStateNormal];
+    }
 }
 
 - (void)setIsLoop:(BOOL)isLoop {

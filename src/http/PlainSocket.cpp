@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2024/5/10.
-// http-request Socket
+// slark Socket
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
 #include "PlainSocket.h"

@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2024/6/10.
-// http-request socket
+// slark socket
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
 #pragma once

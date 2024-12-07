@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2024/6/18.
-// example SSLManager
+// slark SSLManager
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
 #pragma once

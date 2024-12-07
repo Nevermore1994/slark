@@ -1,6 +1,6 @@
 //
 // Created by Nevermore on 2024/5/10.
-// http-request Type
+// slark Type
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
 #pragma once

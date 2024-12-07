@@ -84,7 +84,7 @@ def parse_args():
     parser.add_argument('-t', '--type', action='store', help="build type", default="Debug",
                         choices=["Debug", "Release"])
     parser.add_argument('-o', '--output', action='store', help="output type", default="exe", choices=["lib", "exe"])
-    parser.add_argument('-disable_http', action='store', nargs='+', help="disable http")
+    parser.add_argument('-disable_http', action='store_true', help="disable http")
     parser.add_argument('-a', '--action', action='store', help="action", choices=["clear", "gen", "build", "run"],
                         default="gen")
     parser.add_argument('-disable_test', action='store_true', help="disable test")
