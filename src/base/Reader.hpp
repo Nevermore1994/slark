@@ -111,13 +111,20 @@ public:
     }
     
     [[nodiscard]] bool isReadCompleted() noexcept {
-        return isReadCompleted_;
+        bool hasSeek = false;
+        {
+            std::lock_guard<std::mutex> lock(seekMutex_);
+            hasSeek = seekPos_.has_value();
+        }
+        return isReadCompleted_ && !hasSeek;
     }
     
 private:
-    void process();
+    void process() noexcept;
+    void doSeek() noexcept;
 private:
     std::atomic_bool isReadCompleted_ = false;
+    std::mutex seekMutex_;
     std::optional<int64_t> seekPos_;
     ReaderSetting setting_;
     ReadRange readRange_;

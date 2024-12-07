@@ -149,6 +149,10 @@ using namespace slark;
             @strongify(self);
             [self.playerController.player setLoop:loop];
         };
+        _controllerView.onSetMute = ^(BOOL isMute) {
+            @strongify(self);
+            [self.playerController.player setMute:isMute];
+        };
     }
     return _controllerView;
 }

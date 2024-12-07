@@ -93,11 +93,14 @@ void Reader::seek(uint64_t pos) noexcept {
         LogE("Reader is exit.");
         return;
     }
+    
+    std::lock_guard<std::mutex> lock(seekMutex_);
     seekPos_ = static_cast<int64_t>(pos);
     isReadCompleted_ = false;
 }
 
-void Reader::process() {
+void Reader::doSeek() noexcept {
+    std::lock_guard<std::mutex> lock(seekMutex_);
     if (seekPos_.has_value()) {
         file_.withReadLock([&](auto& file){
             if (!file) {
@@ -107,6 +110,10 @@ void Reader::process() {
         });
         seekPos_.reset();
     }
+}
+
+void Reader::process() noexcept {
+    doSeek();
     auto nowState = state();
     if (nowState == IOState::Error) {
         worker_.pause();

@@ -24,11 +24,16 @@ Pod::Spec.new do |s|
                       'src/base/**/*.h',
                       'src/base/**/*.cpp',
                       'src/base/**/*.mm',
+                    
                       'src/core/**/*.hpp',
                       'src/core/**/*.h',
                       'src/core/**/*.cpp',
                       'src/core/**/*.mm',
-                      'src/third_party/**/*.h',
+                    
+                      'src/http/**/*.h',
+                      'src/http/**/*.hpp',
+                      'src/http/**/*.cpp',
+                    
                       'src/interface/iOS/*.h',
                       'src/interface/iOS/*.cpp',
                       'src/interface/iOS/*.mm'
@@ -52,6 +57,8 @@ Pod::Spec.new do |s|
             '"$(PODS_TARGET_SRCROOT)/core/codec"' \
             '"$(PODS_TARGET_SRCROOT)/core/muxer"' \
             '"$(PODS_TARGET_SRCROOT)/core/platform/iOS"' \
+            '"$(PODS_TARGET_SRCROOT)/http/include"' \
+            '"$(PODS_TARGET_SRCROOT)/http/include/public"' \
             '"$(PODS_TARGET_SRCROOT)/interface/platform/iOS"'
     }
 
