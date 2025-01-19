@@ -22,7 +22,6 @@ enum class DecoderType {
 
 struct DecoderTypeInfo {
     DecoderType type = DecoderType::Unknown;
-    std::string_view mediaInfo;
     std::string decoderName;
 };
 

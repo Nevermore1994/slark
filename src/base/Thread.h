@@ -6,7 +6,6 @@
 #pragma once
 
 #include <chrono>
-#include <cstdio>
 #include <shared_mutex>
 #include <condition_variable>
 #include <print>
@@ -26,10 +25,11 @@ class Thread : public NonCopyable {
 public:
     template <class Func, typename ... Args, typename = std::enable_if_t<!std::is_same_v<std::decay_t<Func>, std::thread>>>
     Thread(std::string name, Func&& f, Args&& ... args)
-        : name_(std::move(name)), mutex_{}, lastRunTimeStamp_(0)
+        : name_(std::move(name))
+        , lastRunTimeStamp_(0)
         , worker_(&Thread::process, this)
         , func_(std::bind(std::forward<Func>(f), std::forward<Args>(args)...)) {
-        printf("Thread create %s \n", name_.c_str());
+        std::println("Thread create:{}", name_);
     }
 
     ~Thread() noexcept override;
@@ -37,8 +37,6 @@ public:
     void start() noexcept;
 
     void pause() noexcept;
-
-    void resume() noexcept;
 
     void stop() noexcept;
 
@@ -79,7 +77,7 @@ public:
         interval_ = ms;
     }
 
-    std::chrono::milliseconds interval () noexcept {
+    std::chrono::milliseconds interval() noexcept {
         std::shared_lock<std::shared_mutex> lock(mutex_);
         return interval_;
     }

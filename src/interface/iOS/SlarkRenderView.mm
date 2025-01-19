@@ -215,8 +215,10 @@ static const GLfloat kColorConversion709FullRange[] = {
 
 #pragma mark - setter
 - (void)setRenderInterval:(NSInteger)renderInterval {
-    _renderInterval = renderInterval;
-    _displayLink.preferredFramesPerSecond = _renderInterval;
+    if (renderInterval != 0 && _renderInterval != renderInterval) {
+        _renderInterval = renderInterval;
+        _displayLink.preferredFramesPerSecond = _renderInterval;
+    }
 }
 
 #pragma mark - private

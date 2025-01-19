@@ -9,19 +9,17 @@
 #define iOSAACHWDecoder_hpp
 
 #include <AudioToolbox/AudioToolbox.h>
+#include <condition_variable>
 #include "MediaDefs.h"
 #include "IDecoder.h"
-#include "RingBuffer.hpp"
 #include "DecoderConfig.h"
-
+#include "Synchronized.hpp"
 
 namespace slark {
 
 class iOSAACHWDecoder : public IDecoder {
 public:
-    iOSAACHWDecoder() {
-        decoderType_ = DecoderType::AACHardwareDecoder;
-    }
+    iOSAACHWDecoder();
     
     ~iOSAACHWDecoder() override;
     
@@ -38,15 +36,29 @@ public:
     inline static const DecoderTypeInfo& info() noexcept {
         static DecoderTypeInfo info = {
             DecoderType::AACHardwareDecoder,
-            MEDIA_MIMETYPE_AUDIO_AAC,
             BaseClass<iOSAACHWDecoder>::registerClass(GetClassName(iOSAACHWDecoder))
         };
         return info;
     }
     
 private:
+    friend OSStatus AACDecodeInputDataProc(AudioConverterRef,
+                                    UInt32 *ioNumberDataPackets,
+                                    AudioBufferList *ioData,
+                                    AudioStreamPacketDescription** outDataPacketDescription,
+                                    void *inUserData);
+    void decode() noexcept;
+    
+    void wait() noexcept;
+    
+    AVFramePtr getDecodeFrame() noexcept;
+private:
+    std::mutex mutex_;
+    std::condition_variable cond_;
     AudioConverterRef decodeSession_ = nullptr;
     std::unique_ptr<AudioBufferList> outputData_;
+    std::deque<AVFramePtr> pendingFrames_;
+    Thread worker_;
 };
 
 

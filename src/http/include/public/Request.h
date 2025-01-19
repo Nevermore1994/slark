@@ -33,7 +33,9 @@ struct RequestInfo {
     IPVersion ipVersion = IPVersion::Auto;
     std::string url;
     HttpMethodType methodType = HttpMethodType::Unknown;
-    std::unordered_map<std::string, std::string> headers;
+    std::unordered_map<std::string, std::string> headers = {
+        {"User-Agent",   "(KHTML, like Gecko)"},
+        {"Accept",       "*/*"}};
     DataRefPtr body = nullptr;
     ///default 30s
     std::chrono::milliseconds timeout{60 * 1000};
@@ -95,10 +97,6 @@ struct ResponseHandler {
 
 class Request {
 public:
-    static bool init();
-    static void clear();
-
-public:
     ///Data copying may result in some performance degradation
     [[maybe_unused]] explicit Request(const RequestInfo&, const ResponseHandler& );
 
@@ -111,6 +109,14 @@ public:
 
     [[maybe_unused]] [[nodiscard]] const std::string& getReqId() const {
         return reqId_;
+    }
+    
+    bool isCompleted() const noexcept {
+        return isCompleted_;
+    }
+    
+    bool isValid() const noexcept {
+        return isValid_;
     }
 private:
     void config() noexcept;
@@ -127,6 +133,7 @@ private:
     void handleErrorResponse(ResultCode code, int32_t errorCode) noexcept;
     void disconnected() noexcept;
 private:
+    std::atomic<bool> isCompleted_ = true;
     uint8_t redirectCount_ = 0;
     std::atomic<bool> isValid_ = true;
     uint64_t startStamp_ = 0;

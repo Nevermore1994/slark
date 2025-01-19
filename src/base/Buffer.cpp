@@ -42,6 +42,18 @@ bool Buffer::require(uint64_t size) const noexcept {
     return length() >= size;
 }
 
+bool Buffer::append(DataPtr ptr) noexcept {
+    if (!ptr) {
+        return false;
+    }
+    if (data_) {
+        data_->append(std::move(ptr));
+    } else {
+        data_ = std::move(ptr);
+    }
+    return true;
+}
+
 bool Buffer::append(uint64_t offset, DataPtr ptr) noexcept {
     if (!ptr) {
         return false;
@@ -54,20 +66,23 @@ bool Buffer::append(uint64_t offset, DataPtr ptr) noexcept {
         data_.reset();
         offset_ = offset;
     }
-    if (data_) {
-        data_->append(std::move(ptr));
-    } else {
-        data_ = std::move(ptr);
-    }
+    append(std::move(ptr));
     isUpdatedOffset = false;
     return true;
 }
 
-std::string_view Buffer::view() const noexcept {
+DataView Buffer::view() const noexcept {
     if (data_) {
         return data_->view();
     }
     return {};
+}
+
+DataView Buffer::shotView() const noexcept {
+    if (!data_) {
+        return {};
+    }
+    return data_->view().substr(static_cast<size_t>(readPos_));
 }
 
 bool Buffer::skipTo(int64_t pos) noexcept {
@@ -200,11 +215,26 @@ bool Buffer::readString(uint64_t size, std::string& str) noexcept {
     
     auto view = data_->view().substr(static_cast<size_t>(readPos_), static_cast<size_t>(size));
     readPos_ += size;
-    str = std::string(view);
+    str = view.str();
     return true;
 }
 
+bool Buffer::readLine(DataView& line) noexcept {
+    auto view = data_->view().substr(static_cast<size_t>(readPos_));
+    auto pos = view.find("\n");
+    if (pos == std::string_view::npos) {
+        return false;
+    }
+    line = view.substr(0, pos);
+    readPos_ += pos + 1; //remove '\n'
+    return true;
+}
+
+//If this function is called, the previous view cannot be used anymore
 void Buffer::shrink() noexcept {
+    if (readPos_ == 0) {
+        return;
+    }
     auto p = data_->copy(readPos_);
     data_.reset();
     data_ = std::move(p);

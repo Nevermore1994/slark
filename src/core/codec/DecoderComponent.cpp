@@ -71,15 +71,15 @@ void DecoderComponent::send(AVFramePtr packet) noexcept {
         packet->stats.prepareDecodeStamp = Time::nowTimeStamp();
         deque.emplace_back(std::move(packet));
     });
-    decodeWorker_.resume();
+    decodeWorker_.start();
 }
 
 void DecoderComponent::pause() noexcept {
     decodeWorker_.pause();
 }
 
-void DecoderComponent::resume() noexcept {
-    decodeWorker_.resume();
+void DecoderComponent::start() noexcept {
+    decodeWorker_.start();
 }
 
 void DecoderComponent::reset() noexcept {

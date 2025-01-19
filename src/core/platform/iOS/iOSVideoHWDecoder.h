@@ -23,7 +23,7 @@ public:
     ~iOSVideoHWDecoder() override;
     void reset() noexcept override;
     
-    bool send(AVFramePtr frame) noexcept override ;
+    bool send(AVFramePtr frame)  override;
 
     void flush() noexcept override;
     
@@ -34,7 +34,6 @@ public:
     inline static const DecoderTypeInfo& info() noexcept {
         static DecoderTypeInfo info = {
             DecoderType::RAW,
-            MEDIA_MIMETYPE_VIDEO_AVC,
             BaseClass<iOSVideoHWDecoder>::registerClass(GetClassName(iOSVideoHWDecoder))
         };
         return info;

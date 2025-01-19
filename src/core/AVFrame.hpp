@@ -15,6 +15,7 @@
 #include "Assert.hpp"
 #include "Data.hpp"
 #include "Log.hpp"
+
 namespace slark {
 
 enum class AVFrameType {
@@ -37,14 +38,28 @@ struct Statistics {
     uint64_t renderedStamp = 0;
 };
 
-struct AudioFrameInfo {
-    uint16_t channels = 0;
-    uint16_t bitsPerSample = 0;
-    uint64_t sampleRate = 0;
+struct FrameInfo {
+    uint32_t refIndex = 0;
+    virtual ~FrameInfo() = default;
+};
+
+struct AudioFrameInfo : public FrameInfo {
+    void copy(std::shared_ptr<AudioFrameInfo> info) noexcept {
+        if (!info) {
+            return;
+        }
+        *info = *this;
+    }
     
     double duration(uint64_t size) const noexcept {
         return static_cast<double>(size) / static_cast<double>(bitsPerSample / 8 * channels * sampleRate);
     }
+    
+    virtual ~AudioFrameInfo() override = default;
+public:
+    uint16_t channels = 0;
+    uint16_t bitsPerSample = 0;
+    uint64_t sampleRate = 0;
 };
 
 enum class VideoFrameType {
@@ -57,28 +72,38 @@ enum class VideoFrameType {
     PPS [[maybe_unused]],
 };
 
-struct VideoFrameInfo {
-    bool isKeyFrame = false;
-    VideoFrameType frameType = VideoFrameType::Unknown;
-    uint32_t width = 0;
-    uint32_t height = 0;
-    uint64_t offset = 0;
-    uint64_t keyIndex = 0;
-    FrameFormat format = FrameFormat::Unknown;
-    
+struct VideoFrameInfo : public FrameInfo {
+public:
+    void copy(std::shared_ptr<VideoFrameInfo> info) noexcept {
+        if (!info) {
+            return;
+        }
+        *info = *this;
+    }
+
     bool isHasContent() const {
         static const std::vector<VideoFrameType> kHasContentFrames = { VideoFrameType::IFrame, VideoFrameType::PFrame, VideoFrameType::BFrame };
         return std::any_of(kHasContentFrames.begin(), kHasContentFrames.end(), [this](auto type){
             return type == frameType;
         });
     }
+    
+    virtual ~VideoFrameInfo() override = default;
+public:
+    bool isIDRFrame = false;
+    VideoFrameType frameType = VideoFrameType::Unknown;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint64_t offset = 0;
+    uint64_t keyIndex = 0;
+    FrameFormat format = FrameFormat::Unknown;
 };
 
 struct AVFrame {
     bool isDiscard = false;
     AVFrameType frameType = AVFrameType::Unknown;
     uint32_t duration = 0; //ms
-    uint64_t timeScale = 0;
+    uint64_t timeScale = 1;
     uint64_t index = 0;
     uint64_t pts = 0;
     uint64_t dts = 0;
@@ -86,15 +111,22 @@ struct AVFrame {
     std::unique_ptr<Data> data; //Undecoded
     void* opaque = nullptr;
     Statistics stats;
-    std::any info;
+    std::shared_ptr<FrameInfo> info;
 
+    AVFrame() = default;
+    
+    explicit AVFrame(AVFrameType type)
+        : frameType(type) {
+        
+    }
+    
     inline void reset() noexcept {
         frameType = AVFrameType::Unknown;
         index = 0;
         info.reset();
         pts = 0;
         dts = 0;
-        data->destroy();
+        data->reset();
     }
 
     inline std::unique_ptr<Data> detachData() noexcept {
@@ -123,7 +155,15 @@ struct AVFrame {
         if (data) {
             frame->data = data->copy();
         }
-        frame->info = info;
+        if (frameType == AVFrameType::Audio) {
+            auto newInfo = std::make_shared<AudioFrameInfo>();
+            std::dynamic_pointer_cast<AudioFrameInfo>(info)->copy(newInfo);
+            frame->info = newInfo;
+        } else if (frameType == AVFrameType::Video) {
+            auto newInfo = std::make_shared<VideoFrameInfo>();
+            std::dynamic_pointer_cast<VideoFrameInfo>(info)->copy(newInfo);
+            frame->info = newInfo;
+        }
         return frame;
     }
 
@@ -142,33 +182,18 @@ struct AVFrame {
     [[nodiscard]] inline bool isAudio() const noexcept {
         return frameType == AVFrameType::Audio;
     }
-
-    [[nodiscard]] std::expected<AudioFrameInfo, bool> audioInfo() const noexcept {
-        if (isVideo()) {
-            std::unexpected(false);
-        }
-        return std::any_cast<AudioFrameInfo>(info);
-    }
-
-    [[nodiscard]] std::expected<VideoFrameInfo, bool> videoInfo() const noexcept {
-        if (isAudio()) {
-            std::unexpected(false);
-        }
-        return std::any_cast<VideoFrameInfo>(info);
-    }
     
-    std::string_view view() const noexcept {
+    DataView view() const noexcept {
         if (data) {
             return data->view();
         }
         return {};
     }
     
-    
 };
 
 using AVFramePtr = std::unique_ptr<AVFrame>;
 using AVFrameRefPtr = std::shared_ptr<AVFrame>;
 using AVFrameRef = AVFrame&;
-using AVFrameArray = std::vector<AVFramePtr>;
+using AVFramePtrArray = std::vector<AVFramePtr>;
 }

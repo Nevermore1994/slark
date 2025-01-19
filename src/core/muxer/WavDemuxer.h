@@ -20,7 +20,7 @@ public:
 
     void close() noexcept override;
 
-    DemuxerResult parseData(std::unique_ptr<Data> data, int64_t offset) noexcept override;
+    DemuxerResult parseData(DataPacket& packet) noexcept override;
     
     [[nodiscard]] uint64_t getSeekToPos(long double time) noexcept override;
     

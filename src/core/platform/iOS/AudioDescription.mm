@@ -21,7 +21,7 @@ AudioStreamBasicDescription convertInfo2Description(const AudioInfo& info) {
     description.mBitsPerChannel = info.bitsPerSample;
     description.mBytesPerFrame = description.mBitsPerChannel * description.mChannelsPerFrame / 8;
     description.mBytesPerPacket = description.mBytesPerFrame * description.mFramesPerPacket;
-    
+    description.mReserved = 0;
     return description;
 }
 

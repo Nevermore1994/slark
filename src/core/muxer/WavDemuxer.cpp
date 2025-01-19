@@ -60,7 +60,7 @@ bool WAVDemuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
         headerInfo_ = std::make_unique<DemuxerHeaderInfo>();
         headerInfo_->dataSize = totalSize;
         headerInfo_->headerLength = offset;
-        isInited_ = true;
+        isOpened_ = true;
         buffer->skip(static_cast<int64_t>(offset));
         buffer_ = std::move(buffer);
     };
@@ -214,21 +214,21 @@ void WAVDemuxer::close() noexcept {
 }
 
 uint64_t WAVDemuxer::getSeekToPos(long double time) noexcept {
-    if (!isInited_) {
+    if (!isOpened_) {
         return 0;
     }
     auto sampleCount = static_cast<uint64_t>(floor(time * static_cast<long double>(audioInfo_->sampleRate)));
     return headerInfo_->headerLength + sampleCount * audioInfo_->bytePerSample(); //byte
 }
 
-DemuxerResult WAVDemuxer::parseData(std::unique_ptr<Data> data, int64_t offset) noexcept {
-    if (!data || data->empty() || !isInited_) {
-        return {DemuxerResultCode::Failed, AVFrameArray(), AVFrameArray()};
+DemuxerResult WAVDemuxer::parseData(DataPacket& packet) noexcept {
+    if (packet.empty() || !isOpened_) {
+        return {DemuxerResultCode::Failed, AVFramePtrArray(), AVFramePtrArray()};
     }
     
-    auto length = data->length;
-    if (!buffer_->append(static_cast<uint64_t>(offset), std::move(data))) {
-        return {DemuxerResultCode::Normal, AVFrameArray(), AVFrameArray()};
+    auto length = packet.data->length;
+    if (!buffer_->append(static_cast<uint64_t>(packet.offset), std::move(packet.data))) {
+        return {DemuxerResultCode::Normal, AVFramePtrArray(), AVFramePtrArray()};
     }
     
     auto receivedLength = buffer_->pos() + buffer_->length();
@@ -236,13 +236,13 @@ DemuxerResult WAVDemuxer::parseData(std::unique_ptr<Data> data, int64_t offset) 
     //frame include 1024 sample
     constexpr uint16_t sampleCount = 1024;
     uint64_t frameLength = audioInfo_->bitsPerSample * audioInfo_->channels * sampleCount / 8;
-    AVFrameArray frameList;
+    AVFramePtrArray frameList;
     SAssert(audioInfo_->sampleRate != 0, "wav demuxer sample rate is invalid.");
     auto scale = static_cast<double>(audioInfo_->bitrate()) / 8;
-    AudioFrameInfo frameInfo;
-    frameInfo.bitsPerSample = audioInfo_->bitsPerSample;
-    frameInfo.channels = audioInfo_->channels;
-    frameInfo.sampleRate = audioInfo_->sampleRate;
+    auto frameInfo = std::make_shared<AudioFrameInfo>();
+    frameInfo->bitsPerSample = audioInfo_->bitsPerSample;
+    frameInfo->channels = audioInfo_->channels;
+    frameInfo->sampleRate = audioInfo_->sampleRate;
     while (buffer_->length() >= frameLength) {
         auto prasedLength = buffer_->pos();
         auto frame = std::make_unique<AVFrame>();
@@ -277,7 +277,7 @@ DemuxerResult WAVDemuxer::parseData(std::unique_ptr<Data> data, int64_t offset) 
         buffer_->shrink();
     }
     LogI("prasedLength {}, frame count {}", receivedLength, parsedFrameCount_);
-    return {code, std::move(frameList), AVFrameArray()};
+    return {code, std::move(frameList), AVFramePtrArray()};
 }
 
 void WAVDemuxer::reset() noexcept {

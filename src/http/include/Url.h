@@ -39,7 +39,7 @@ struct Url {
         return isValid_;
     }
 
-    [[nodiscard]] bool isHttpScheme() const noexcept {
+    [[nodiscard]] bool isSupportScheme() const noexcept {
 #if ENABLE_HTTPS
         return isHttp() || isHttps();
 #else

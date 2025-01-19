@@ -45,10 +45,6 @@ void Thread::pause() noexcept {
     isRunning_ = false;
 }
 
-void Thread::resume() noexcept {
-    start();
-}
-
 void Thread::start() noexcept {
     {
         std::lock_guard<std::shared_mutex> lock(mutex_);

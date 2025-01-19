@@ -62,7 +62,7 @@ protected:
 };
 
 
-class WriteFile : virtual public IFile {
+class WriteFile : public IFile {
     constexpr static uint32_t kCheckCount = 512;
 public:
     explicit WriteFile(std::string path, bool isAppend = false);
@@ -100,7 +100,7 @@ protected:
     uint32_t writeCount_;
 };
 
-class ReadFile : virtual public IFile {
+class ReadFile : public IFile {
 public:
     explicit ReadFile(std::string path);
 

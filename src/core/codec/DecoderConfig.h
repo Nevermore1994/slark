@@ -10,6 +10,7 @@
 namespace slark {
 
 struct AudioDecoderConfig : public DecoderConfig {
+    uint8_t profile{};
     uint16_t channels{};
     uint16_t bitsPerSample{};
     uint64_t sampleRate{};

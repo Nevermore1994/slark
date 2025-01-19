@@ -8,16 +8,14 @@
 #include <cstdint>
 #include <memory>
 #include <algorithm>
-#include <string_view>
-#include <string>
 #include <functional>
+#include "DataView.h"
 
 namespace slark {
 
 struct Data;
 using DataPtr = std::unique_ptr<Data>;
 using DataRefPtr = std::shared_ptr<Data>;
-using DataView = std::string_view;
 
 struct Data {
     uint64_t capacity = 0;
@@ -56,9 +54,22 @@ struct Data {
             length = func(rawData);
         }
     }
+    
+    explicit Data(DataView view)
+        : Data(view.view()) {
+
+    }
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "google-explicit-constructor"
+    Data(std::string_view str)
+        : Data(static_cast<uint64_t>(str.size()), reinterpret_cast<const uint8_t*>(str.data())) {
+
+    }
+#pragma clang diagnostic pop
 
     ~Data() {
-        destroy();
+        reset();
     }
 
     Data(const Data& data)
@@ -82,7 +93,7 @@ struct Data {
         if (&data == this) {
             return *this;
         }
-        destroy();
+        reset();
         rawData = new uint8_t[data.capacity];
         capacity = data.capacity;
         length = data.length;
@@ -94,21 +105,13 @@ struct Data {
         if (&data == this) {
             return *this;
         }
-        destroy();
+        reset();
         capacity = data.capacity;
         length = data.length;
         rawData = data.rawData;
         data.rawData = nullptr;
         return *this;
     }
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "google-explicit-constructor"
-    Data(std::string_view str)
-        : Data(static_cast<uint64_t>(str.size()), reinterpret_cast<const uint8_t*>(str.data())) {
-
-    }
-#pragma clang diagnostic pop
 
     [[nodiscard]] inline DataPtr copy() const noexcept {
         return this->copy(0, static_cast<int64_t>(length));
@@ -131,7 +134,7 @@ struct Data {
         return res;
     }
 
-    inline void destroy() noexcept {
+    inline void reset() {
         if (rawData) {
             delete [] rawData;
             rawData = nullptr;
@@ -151,7 +154,7 @@ struct Data {
     [[maybe_unused]]
     inline void resize(uint64_t size) noexcept {
         if (size == 0) {
-            destroy();
+            reset();
             return;
         }
         if (size == capacity) {
@@ -177,6 +180,10 @@ struct Data {
         return res;
     }
 
+    inline void append(DataView view) noexcept {
+        append(view.view());
+    }
+    
     inline void append(std::string_view str) noexcept {
         if (rawData == nullptr) {
             length = 0;
@@ -217,7 +224,7 @@ struct Data {
         length = expectLength;
     }
 
-    inline void append(std::unique_ptr<Data> appendData) noexcept {
+    inline void append(DataPtr appendData) noexcept {
         if (appendData == nullptr) {
             return;
         }
@@ -255,12 +262,54 @@ struct Data {
         if (rawData == nullptr) {
             return {};
         }
-        return {reinterpret_cast<char*>(rawData), length};
+        return {rawData, length};
     }
 
     [[nodiscard]] inline bool operator==(const Data& data) const noexcept {
         return length == data.length && view() == data.view();
     }
 }; //end of class Data
+
+struct DataPacket {
+    DataPtr data = nullptr;
+    int64_t offset = 0;
+    std::string tag; //data tag, hls is ts index
+    
+    DataPacket() = default;
+    
+    explicit DataPacket(uint64_t size)
+        : data(std::make_unique<Data>(size)) {
+        
+    }
+
+    DataPacket(DataPacket&) = delete;
+    
+    DataPacket& operator=(DataPacket&) = delete;
+    
+    DataPacket(DataPacket&& d) noexcept
+        : data(std::move(d.data))
+        , offset(d.offset)
+        , tag(std::move(d.tag)) {
+        
+    }
+    
+    DataPacket& operator=(DataPacket&& d) noexcept {
+        data = std::move(d.data);
+        offset = d.offset;
+        tag = std::move(d.tag);
+        return *this;
+    }
+    
+    uint64_t length() const noexcept {
+        if (data) {
+            return data->length;
+        }
+        return 0;
+    }
+    
+    bool empty() const noexcept {
+        return length() == 0;
+    }
+};
 
 } //end of namespace slark

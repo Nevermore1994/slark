@@ -20,9 +20,13 @@ void decompressionOutputCallback(void* decompressionOutputRefCon,
                    CMTime) {
     @autoreleasepool {
         auto framePtr = std::unique_ptr<AVFrame>(reinterpret_cast<AVFrame*>(sourceFrameRefCon));
-        auto info = framePtr->videoInfo();
-        if (framePtr->isDiscard || (info.has_value() && !info.value().isHasContent())) {
+        auto videoInfo = std::dynamic_pointer_cast<VideoFrameInfo>(framePtr->info);
+        if (framePtr->isDiscard) {
             LogE("video decode discard frame:{}", framePtr->index);
+            return;
+        }
+        if (videoInfo && !videoInfo->isHasContent()) {
+            LogE("decode sei:{}", framePtr->index);
             return;
         }
         bool isSuccess = false;
@@ -46,11 +50,7 @@ void decompressionOutputCallback(void* decompressionOutputRefCon,
                 break;
             }
             framePtr->stats.decodedStamp = Time::nowTimeStamp();
-            if (framePtr->info.has_value()) {
-                auto videoInfo = std::any_cast<VideoFrameInfo>(framePtr->info);
-                videoInfo.format = FrameFormat::VideoToolBox;
-                framePtr->info = videoInfo;
-            }
+            videoInfo->format = FrameFormat::VideoToolBox;
             framePtr->opaque = CVPixelBufferRetain(pixelBuffer);
             isSuccess = true;
         } while (false);
@@ -101,9 +101,10 @@ void iOSVideoHWDecoder::reset() noexcept {
 
 }
 
-bool iOSVideoHWDecoder::send(AVFramePtr frame) noexcept {
+bool iOSVideoHWDecoder::send(AVFramePtr frame)  {
     frame->stats.prepareDecodeStamp = Time::nowTimeStamp();
     auto data = frame->detachData();
+    auto videoInfo = std::dynamic_pointer_cast<VideoFrameInfo>(frame->info);
     auto sampleBuffer = createSampleBuffer(videoFormatDescription_, static_cast<void*>(data->rawData), static_cast<size_t>(data->length));
     auto framePtr = frame.release();
     uint32_t decoderFlags = 0;
@@ -140,7 +141,7 @@ bool iOSVideoHWDecoder::createDecodeSession() noexcept {
                                                                      2,
                                                                      parameterSetPointers,
                                                                      parameterSetSizes,
-                                                                     static_cast<int>(config->naluHeaderLength + 1),
+                                                                     static_cast<int>(config->naluHeaderLength),
                                                                      &videoFormatDescription_);
     } else {
         if (!VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC)) {

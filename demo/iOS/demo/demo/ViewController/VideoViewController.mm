@@ -99,7 +99,8 @@ using namespace slark;
 - (void)initData {
     NSString *bundlePath = [[NSBundle mainBundle] pathForResource:@"resource" ofType:@"bundle"];
     NSBundle *resouceBundle = [NSBundle bundleWithPath:bundlePath];
-    auto path = [resouceBundle pathForResource:@"Sample.mp4" ofType:@""];
+    //auto path = [resouceBundle pathForResource:@"Sample.mp4" ofType:@""];
+    auto path = @"http://devimages.apple.com/iphone/samples/bipbop/gear1/prog_index.m3u8";
     SlarkPlayer* player = [[SlarkPlayer alloc] init:path];
     player.delegate = self;
     self.playerController = [[SlarkViewController alloc] initWithPlayer:self.view.bounds player:player];

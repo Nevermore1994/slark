@@ -29,7 +29,7 @@ public:
 
     bool contains(DemuxerType type) const noexcept;
 
-    DemuxerType probeDemuxType(std::string_view str) const noexcept;
+    DemuxerType probeDemuxType(DataView str) const noexcept;
 
     std::unique_ptr<IDemuxer> create(DemuxerType type) const noexcept;
 

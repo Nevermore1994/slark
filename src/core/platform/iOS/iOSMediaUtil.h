@@ -12,7 +12,9 @@
 
 namespace slark {
 
-CMSampleBufferRef createSampleBuffer(CMFormatDescriptionRef fmtDesc, void* buff, size_t size);
+CMSampleBufferRef createSampleBuffer(CMFormatDescriptionRef fmtDesc,
+                                     void* buff,
+                                     size_t size);
 
 UIImage* imageFromPixelBuffer(CVPixelBufferRef pixelBuffer);
 }

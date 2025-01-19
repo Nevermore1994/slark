@@ -31,8 +31,8 @@ private:
     bool checkFormat() const noexcept;
     bool setupAudioComponent() noexcept;
 private:
-    AudioUnit volumeUnit_;
-    AudioUnit renderUnit_;
+    AudioUnit volumeUnit_ = nullptr;
+    AudioUnit renderUnit_ = nullptr;
 };
 
 }

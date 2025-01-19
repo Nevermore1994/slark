@@ -8,7 +8,7 @@
 #include <utility>
 #include "AudioRenderComponent.h"
 #include "Log.hpp"
-#include "MediaUtility.hpp"
+#include "MediaBase.h"
 
 namespace slark {
 

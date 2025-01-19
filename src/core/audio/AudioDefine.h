@@ -13,11 +13,19 @@
 
 namespace slark {
 
+enum class AudioProfile : uint8_t {
+    AAC_MAIN,
+    AAC_LC,
+    AAC_SSR,
+    AAC_LTP,
+};
+
 struct AudioInfo {
     uint16_t channels = 0;
     uint16_t bitsPerSample = 0;
     uint64_t sampleRate = 0;
     uint32_t timeScale = 0;
+    AudioProfile profile = AudioProfile::AAC_LC;
     std::string_view mediaInfo;
 
     uint64_t bitrate() const {
