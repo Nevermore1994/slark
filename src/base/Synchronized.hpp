@@ -14,6 +14,7 @@
 #include <cassert>
 #include <condition_variable>
 #include <utility>
+#include <cassert>
 
 template <typename Mutex>
 concept IsMutex = requires (Mutex&& mutex) {
@@ -54,21 +55,21 @@ class Synchronized {
 public:
     void withLock(std::function<void(Container&)> lockFunc)
     requires IsMutex<Mutex> {
-        assert(lockFunc);
+        assert(lockFunc != nullptr);
         std::lock_guard<Mutex> lock(mutex_);
         if (lockFunc) lockFunc(container_);
     }
 
     void withWriteLock(std::function<void(Container&)> lockFunc)
     requires IsSharedMutex<Mutex>  {
-        assert(lockFunc);
+        assert(lockFunc != nullptr);
         std::unique_lock<Mutex> lock(mutex_);
         if (lockFunc) lockFunc(container_);
     }
 
     void withReadLock(std::function<void(const Container&)> lockFunc)
     requires IsSharedMutex<Mutex> {
-        assert(lockFunc);
+        assert(lockFunc != nullptr);
         std::shared_lock<Mutex> lock(mutex_);
         if (lockFunc) lockFunc(std::as_const(container_));
     }
@@ -76,8 +77,8 @@ public:
     template <class Rep, class Period>
     void withTryLockFor(const std::chrono::duration<Rep, Period>& duration, std::function<void(Container&)>&& lockFunc, std::function<void(void)>&& failedFunc)
     requires IsTimeForMutex <Mutex, Rep, Period> {
-        assert(lockFunc);
-        assert(failedFunc);
+        assert(lockFunc != nullptr);
+        assert(failedFunc != nullptr);
         if (mutex_.try_lock_for(duration)) {
             if (lockFunc) lockFunc(container_);
         } else {
@@ -88,8 +89,8 @@ public:
     template <class Clock, class Duration>
     void withTryLockUntil(const std::chrono::time_point<Clock, Duration>& timePoint, std::function<void(Container&)>&& lockFunc, std::function<void(void)>&& failedFunc)
     requires IsTimeUntilMutex<Mutex, Clock, Duration> {
-        assert(lockFunc);
-        assert(failedFunc);
+        assert(lockFunc != nullptr);
+        assert(failedFunc != nullptr);
         if (mutex_.try_lock_until(timePoint)) {
             if (lockFunc) lockFunc(container_);
         } else {
@@ -103,7 +104,7 @@ public:
     }
 
     void wait(std::condition_variable& cond, std::function<bool(void)>&& func) {
-        assert(func);
+        assert(func != nullptr);
         std::unique_lock<Mutex> lock(mutex_);
         cond.wait(lock, func);
     }

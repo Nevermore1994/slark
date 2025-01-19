@@ -52,7 +52,7 @@ using namespace slark;
 - (void)initConfig {
     self.tabDatas = [NSArray arrayWithObjects:
                      @"audio player",
-                     @"video palyer",
+                     @"video player",
                      nil];
     [self.tabView reloadData];
 }

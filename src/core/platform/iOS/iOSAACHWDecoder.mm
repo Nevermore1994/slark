@@ -8,6 +8,7 @@
 #include "iOSAACHWDecoder.hpp"
 #include "AudioDescription.h"
 #include "Log.hpp"
+#include "Util.hpp"
 
 namespace slark {
 
@@ -21,15 +22,23 @@ OSStatus AACDecodeInputDataProc(AudioConverterRef,
     if (inUserData == nullptr) {
         return endOfStream;
     }
-    auto framePtr = reinterpret_cast<AVFrame*>(inUserData);
-    auto audioFrameInfo = std::any_cast<AudioFrameInfo>(framePtr->info);
+    auto decoder = reinterpret_cast<iOSAACHWDecoder*>(inUserData);
+    auto framePtr = decoder->getDecodeFrame();
+    if (!framePtr || !decoder->isOpen_) {
+        decoder->wait();
+        framePtr = decoder->getDecodeFrame();
+    }
+    if (!framePtr) {
+        return endOfStream;
+    }
+    auto audioFrameInfo = std::dynamic_pointer_cast<AudioFrameInfo>(framePtr->info);
     auto dataPtr = framePtr->detachData();
     if (dataPtr == nullptr) {
         LogE("decode audio data is nullptr");
         return noErr;
     }
     ioData->mBuffers[0].mDataByteSize = static_cast<UInt32>(dataPtr->length);
-    ioData->mBuffers[0].mNumberChannels = audioFrameInfo.channels;
+    ioData->mBuffers[0].mNumberChannels = audioFrameInfo->channels;
     std::copy(dataPtr->rawData, dataPtr->rawData + dataPtr->length, static_cast<uint8_t*>(ioData->mBuffers[0].mData));
     *ioNumberDataPackets = 1;
     if (outDataPacketDescription) {
@@ -40,11 +49,22 @@ OSStatus AACDecodeInputDataProc(AudioConverterRef,
     return noErr;
 }
 
+iOSAACHWDecoder::iOSAACHWDecoder()
+    : worker_(Util::genRandomName("iOSAACDecodeThread"), &iOSAACHWDecoder::decode, this){
+    decoderType_ = DecoderType::AACHardwareDecoder;
+}
+
 iOSAACHWDecoder::~iOSAACHWDecoder() {
     close();
 }
 
 void iOSAACHWDecoder::reset() noexcept {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        isOpen_ = false;
+    }
+    cond_.notify_all();
+    worker_.pause();
     @autoreleasepool {
         if (decodeSession_) {
             AudioConverterDispose(decodeSession_);
@@ -57,16 +77,27 @@ void iOSAACHWDecoder::reset() noexcept {
     }
 }
 
-bool iOSAACHWDecoder::send(AVFramePtr frame) noexcept {
-    auto audioConfig = std::dynamic_pointer_cast<AudioDecoderConfig>(config_);
+void iOSAACHWDecoder::decode() noexcept {
+    bool isNeedDecode = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!pendingFrames_.empty()) {
+            isNeedDecode = true;
+        }
+    }
+    if (!isNeedDecode) {
+        worker_.pause();
+        LogI("decode queue empty!");
+        return;
+    }
+
     UInt32 outputDataPacketSize = 1024;
     OSStatus status = AudioConverterFillComplexBuffer(decodeSession_,
                                                       AACDecodeInputDataProc,
-                                                      reinterpret_cast<void*>(frame.get()),
+                                                      reinterpret_cast<void*>(this),
                                                       &outputDataPacketSize,
                                                       outputData_.get(),
                                                       NULL);
-    
     if (status != noErr) {
         LogI("Error during decoding: {}", status);
     } else {
@@ -74,17 +105,45 @@ bool iOSAACHWDecoder::send(AVFramePtr frame) noexcept {
         auto decodeData = std::make_unique<Data>(outputData_->mBuffers[0].mDataByteSize);
         decodeData->length = outputData_->mBuffers[0].mDataByteSize;
         std::copy(data, data + outputData_->mBuffers[0].mDataByteSize, decodeData->rawData);
+        auto frame = std::make_unique<AVFrame>();
         frame->data = std::move(decodeData);
         frame->stats.decodedStamp = Time::nowTimeStamp();
         if (receiveFunc) {
             receiveFunc(std::move(frame));
         }
     }
+}
+
+bool iOSAACHWDecoder::send(AVFramePtr frame) noexcept {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!isOpen_) {
+            return false;
+        }
+        pendingFrames_.push_back(std::move(frame));
+    }
+    worker_.start();
+    cond_.notify_all();
     return true;
 }
 
 void iOSAACHWDecoder::flush() noexcept {
     isFlushed_ = true;
+}
+
+MPEG4ObjectID getAACProfile(uint8_t profile) {
+    switch (profile) {
+        case 0:
+            return kMPEG4Object_AAC_Main;
+        case 1:
+            return kMPEG4Object_AAC_LC;
+        case 2:
+            return kMPEG4Object_AAC_SSR;
+        case 3:
+            return kMPEG4Object_AAC_LTP;
+        default:
+            return kMPEG4Object_AAC_LC;
+    }
 }
 
 bool iOSAACHWDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept {
@@ -95,11 +154,12 @@ bool iOSAACHWDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept {
         LogI("error, isn't audio config");
         return false;
     }
+
     AudioStreamBasicDescription inputFormat;
     inputFormat.mFormatID = kAudioFormatMPEG4AAC;
     inputFormat.mSampleRate = audioConfig->sampleRate;
     inputFormat.mChannelsPerFrame = audioConfig->channels;
-    inputFormat.mFormatFlags = kMPEG4Object_AAC_LC;
+    inputFormat.mFormatFlags = getAACProfile(audioConfig->profile);
     inputFormat.mBitsPerChannel = 0;
     inputFormat.mBytesPerFrame = 0;
     inputFormat.mBytesPerPacket = 0;
@@ -113,7 +173,7 @@ bool iOSAACHWDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept {
     outputFormat.mChannelsPerFrame = audioConfig->channels;
     outputFormat.mFramesPerPacket = 1;
     outputFormat.mFormatFlags = kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagIsPacked;
-    outputFormat.mBitsPerChannel = audioConfig->bitsPerSample;
+    outputFormat.mBitsPerChannel = audioConfig->bitsPerSample == 0 ? 16 : audioConfig->bitsPerSample;
     outputFormat.mBytesPerFrame = outputFormat.mBitsPerChannel * outputFormat.mChannelsPerFrame / 8;
     outputFormat.mBytesPerPacket = outputFormat.mBytesPerFrame * outputFormat.mFramesPerPacket;
     outputFormat.mReserved = 0;
@@ -124,18 +184,34 @@ bool iOSAACHWDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept {
         LogI("Error creating audio converter: {}", status);
         return false;
     }
-    auto bytePerFrame = static_cast<uint64_t>(audioConfig->bitsPerSample * audioConfig->channels / 8);
+    auto bytePerFrame = static_cast<uint64_t>(outputFormat.mBytesPerFrame);
     outputData_ = std::make_unique<AudioBufferList>();
     outputData_->mNumberBuffers = 1;
     outputData_->mBuffers[0].mNumberChannels = audioConfig->channels;
     outputData_->mBuffers[0].mDataByteSize = static_cast<UInt32>(bytePerFrame * 1024);
     outputData_->mBuffers[0].mData = malloc(outputData_->mBuffers[0].mDataByteSize);
-    
+    isOpen_ = true;
     return true;
 }
 
 void iOSAACHWDecoder::close() noexcept {
     reset();
+    worker_.stop();
+}
+
+AVFramePtr iOSAACHWDecoder::getDecodeFrame() noexcept {
+    AVFramePtr frame = nullptr;
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!pendingFrames_.empty()) {
+        frame = std::move(pendingFrames_.front());
+        pendingFrames_.pop_front();
+    }
+    return frame;
+}
+
+void iOSAACHWDecoder::wait() noexcept {
+    std::unique_lock<std::mutex> lock(mutex_);
+    cond_.wait(lock, [this] { return !pendingFrames_.empty() || !isOpen_;});
 }
 
 }

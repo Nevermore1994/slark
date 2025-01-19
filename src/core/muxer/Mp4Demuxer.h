@@ -1,5 +1,5 @@
 //
-//  Mp4Demuxer.hpp
+//  Mp4Demuxer.h
 //  slark
 //
 //  Created by Nevermore
@@ -51,12 +51,22 @@ public:
     uint16_t naluByteSize = 0;
 public:
     bool isInRange(Buffer& buffer) const noexcept;
+    
     bool isInRange(Buffer& buffer, uint64_t& offset) const noexcept;
+    
     void reset() noexcept;
-    void parseData(Buffer& buffer, const std::any& frameInfo, AVFrameArray& packets);
+    
     void seek(uint64_t pos) noexcept;
+    
     uint64_t getSeekPos(long double time) const noexcept;
-    AVFrameArray praseH264FrameData(AVFramePtr ptr, DataPtr data, const std::any& frameInfo);
+    
+    void parseData(Buffer& buffer,
+                   std::shared_ptr<FrameInfo> frameInfo,
+                   AVFramePtrArray& packets);
+    
+    AVFramePtrArray praseH264FrameData(AVFramePtr ptr,
+                                    DataPtr data,
+                                    std::shared_ptr<VideoFrameInfo>frameInfo);
     void calcIndex() noexcept;
 };
 
@@ -67,14 +77,14 @@ public:
     }
 
     ~Mp4Demuxer() override;
-
+    
     bool open(std::unique_ptr<Buffer>& buffer) noexcept override;
 
     void close() noexcept override;
     
     void seekPos(uint64_t pos) noexcept override;
 
-    DemuxerResult parseData(std::unique_ptr<Data> data, int64_t offset) noexcept override;
+    DemuxerResult parseData(DataPacket& packet) noexcept override;
     
     [[nodiscard]] uint64_t getSeekToPos(long double time) noexcept override;
 
@@ -91,7 +101,7 @@ public:
     std::string description() const noexcept;
 private:
     bool parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept;
-    void init() noexcept;
+    void initData() noexcept;
 private:
     BoxRefPtr rootBox_;
     std::unordered_map<CodecId, std::shared_ptr<TrackContext>> tracks_;

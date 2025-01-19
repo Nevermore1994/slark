@@ -89,6 +89,8 @@ struct PlayerInfo {
 
 struct IVideoRender;
 
+class DemuxerHelper;
+
 class Player {
 
 public:
@@ -138,6 +140,7 @@ private:
     void setState(PlayerState state) noexcept;
 
 private:
+    friend class PlayerImplHelper;
     class Impl;
     std::unique_ptr<Impl> pimpl_;
 };

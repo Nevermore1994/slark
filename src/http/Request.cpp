@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <string_view>
 #include <utility>
-#include <sstream>
 #include <ios>
 #include "Request.h"
 #include "TSLSocket.h"
@@ -16,6 +15,7 @@
 #include "Random.hpp"
 #include "StringUtil.h"
 #include "Time.hpp"
+#include "Util.hpp"
 
 namespace slark::http {
 
@@ -124,25 +124,10 @@ Request::Request(RequestInfo&& info, ResponseHandler&& responseHandler)
 }
 
 Request::~Request() {
+    isValid_ = false;
     if (worker_ && worker_->joinable()) {
         worker_->join();
     }
-}
-
-bool Request::init() {
-#ifdef _WIN32
-    WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        return false;
-    }
-#endif
-    return true;
-}
-
-void Request::clear() {
-#ifdef _WIN32
-    WSACleanup();
-#endif
 }
 
 void Request::config() noexcept {
@@ -153,9 +138,6 @@ void Request::config() noexcept {
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "misc-no-recursion"
 #endif
-#ifdef _WIN32
-#pragma comment(lib, "Ws2_32.lib")
-#endif //end _WIN32
 
 void Request::sendRequest() noexcept {
     auto errorHandler = [&](ResultCode code, int32_t errorCode) {
@@ -218,7 +200,7 @@ void Request::redirect(const std::string& url) noexcept {
     }
     redirectCount_++;
     url_ = std::unique_ptr<Url, decltype(&freeUrl)>(new Url(url), freeUrl);
-    if (!url_->isValid() || !url_->isHttpScheme()) {
+    if (!url_->isValid() || !url_->isSupportScheme()) {
         return errorHandler(ResultCode::RedirectError);
     }
     sendRequest();
@@ -238,7 +220,7 @@ void Request::process() noexcept {
         handler(ResultCode::UrlInvalid);
         return;
     }
-    if (!url_->isHttpScheme()) {
+    if (!url_->isSupportScheme()) {
         handler(ResultCode::SchemeNotSupported);
         return;
     }
@@ -268,7 +250,7 @@ bool Request::send() noexcept {
     return true;
 }
 
-std::tuple<bool, int64_t> parseResponseHeader(std::string_view data, ResponseHeader& response) {
+std::tuple<bool, int64_t> parseResponseHeader(DataView data, ResponseHeader& response) {
     constexpr std::string_view kCRLF = "\r\n"sv;
     constexpr std::string_view kHeaderEnd = "\r\n\r\n"sv;
     ///https://www.rfc-editor.org/rfc/rfc7230#section-3.1.2:~:text=header%2Dfield%20CRLF%20)-,CRLF,-%5B%20message%2Dbody%20%5D
@@ -278,26 +260,25 @@ std::tuple<bool, int64_t> parseResponseHeader(std::string_view data, ResponseHea
     }
     auto headerView = data.substr(0, headerEndPos);
 
-    auto headerViews = StringUtil::split(headerView, std::string_view(kCRLF));
+    auto headerViews = headerView.split(kCRLF);
     ///parse version and status
     auto statusView = headerViews[0];
     constexpr std::string_view kHTTPFlag = "HTTP/"sv;
     if (auto versionPos = statusView.find(kHTTPFlag); versionPos != std::string_view::npos) {
         ///HTTP-version SP status-code SP reason-phrase CRLF
-        response.headers["Version"] = statusView.substr(versionPos, kHTTPFlag.size() + 3);
-        response.httpStatusCode = static_cast<HttpStatusCode>(std::stoi(std::string(statusView.substr(kHTTPFlag.size() + 4, 3))));
-        response.reasonPhrase = statusView.substr(versionPos + kHTTPFlag.size() + 3 + 1 + 3 + 1);
+        response.headers["Version"] = statusView.substr(versionPos, kHTTPFlag.size() + 3).view();
+        response.httpStatusCode = static_cast<HttpStatusCode>(std::stoi(statusView.substr(kHTTPFlag.size() + 4, 3).str()));
+        response.reasonPhrase = statusView.substr(versionPos + kHTTPFlag.size() + 3 + 1 + 3 + 1).view();
     }
     for (auto& view : headerViews) {
         if (view.empty() || view.find(':') == std::string_view::npos) {
             continue;
         }
-        auto fieldValue = StringUtil::split(view, ": ");
+        auto fieldValue = view.split(": ");
         if (fieldValue.size() == 2) {
-            auto name = std::string(fieldValue[0]);
-            auto value = std::string(fieldValue[1]);
-            response.headers[std::move(StringUtil::removePrefix(name, ' '))] = std::move(
-            StringUtil::removePrefix(value, ' '));
+            auto& name = fieldValue[0];
+            auto& value = fieldValue[1];
+            response.headers[name.removePrefix(' ').str()] = value.removePrefix(' ').str();
         }
     }
     return {true, headerEndPos + kHeaderEnd.size()};
@@ -335,15 +316,15 @@ bool Request::parseChunk(DataPtr& data, int64_t& chunkSize, bool& isCompleted) n
                 res = false;
                 break;
             }
-            chunkSize = std::stol(std::string(dataView.substr(0, pos)), nullptr, 16);
+            chunkSize = std::stol(dataView.substr(0, pos).str(), nullptr, 16);
             if (chunkSize == 0) {
                 isCompleted = true;
                 break;
             }
             dataView = dataView.substr(pos + kCRLF.size());
         } else {
-            auto size = std::min(static_cast<size_t>(chunkSize), dataView.size());
-            responseData(std::make_unique<Data>(std::string(dataView.substr(0, size))));
+            auto size = std::min(static_cast<uint64_t>(chunkSize), dataView.length());
+            responseData(std::make_unique<Data>(dataView.substr(0, size).view()));
             dataView = dataView.substr(size);
             chunkSize -= static_cast<int64_t>(size);
         }
@@ -354,9 +335,9 @@ bool Request::parseChunk(DataPtr& data, int64_t& chunkSize, bool& isCompleted) n
     }
 
     if (dataView.empty()) {
-        data->destroy();
+        data->reset();
     } else {
-        data = std::make_unique<Data>(std::string(dataView));
+        data = std::make_unique<Data>(dataView.view());
     }
     return res;
 }
@@ -382,6 +363,7 @@ void Request::receive() noexcept {
                 continue;
             }
             if (isCompleted) {
+                isCompleted_ = true;
                 disconnected();
             } else {
                 this->handleErrorResponse(recvResult.resultCode, recvResult.errorCode);
@@ -404,7 +386,7 @@ void Request::receive() noexcept {
             parseFieldValue(response.headers, "Transfer-Encoding", transferCoding);
             responseHeader(std::move(response));
             dataPtr = recvDataPtr->copy(headerSize);
-            recvDataPtr->destroy();
+            recvDataPtr->reset();
         }
 
         recvLength += static_cast<int64_t>(dataPtr->length);
@@ -421,6 +403,7 @@ void Request::receive() noexcept {
         }
 
         if (isCompleted) {
+            isCompleted_ = true;
             disconnected();
             return; //disconnect
         }

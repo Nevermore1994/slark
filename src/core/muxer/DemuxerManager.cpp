@@ -7,7 +7,8 @@
 
 #include "DemuxerManager.h"
 #include "WavDemuxer.h"
-#include "Mp4Demuxer.hpp"
+#include "Mp4Demuxer.h"
+#include "HLSDemuxer.h"
 
 namespace slark {
 
@@ -24,7 +25,8 @@ DemuxerManager::DemuxerManager() {
 void DemuxerManager::init() noexcept {
     demuxers_ = {
         { WAVDemuxer::info().type, WAVDemuxer::info() },
-        { Mp4Demuxer::info().type, Mp4Demuxer::info() }
+        { Mp4Demuxer::info().type, Mp4Demuxer::info() },
+        { HLSDemuxer::info().type, HLSDemuxer::info() },
     };
 }
 
@@ -40,7 +42,7 @@ std::unique_ptr<IDemuxer> DemuxerManager::create(DemuxerType type) const noexcep
     return std::unique_ptr<IDemuxer>(BaseClass<IDemuxer>::create(demuxerInfo.demuxerName));
 }
 
-DemuxerType DemuxerManager::probeDemuxType(std::string_view str) const noexcept {
+DemuxerType DemuxerManager::probeDemuxType(DataView str) const noexcept {
     for (const auto& pair : demuxers_) {
         if (auto pos = str.find(pair.second.symbol); pos != std::string::npos) {
             return pair.second.type;

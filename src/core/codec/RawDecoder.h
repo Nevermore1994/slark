@@ -33,7 +33,6 @@ public:
     inline static const DecoderTypeInfo& info() noexcept {
         static DecoderTypeInfo info = {
             DecoderType::RAW,
-            MEDIA_MIMETYPE_AUDIO_RAW,
             BaseClass<RawDecoder>::registerClass(GetClassName(RawDecoder))
         };
         return info;

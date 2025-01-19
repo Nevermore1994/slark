@@ -7,6 +7,7 @@
 #include <sstream>
 #include <functional>
 #include <ranges>
+#include <algorithm>
 
 namespace slark {
 
@@ -20,12 +21,12 @@ std::vector<std::string_view> StringUtil::split(std::string_view stringView, std
     return {res.begin(), res.end()};
 }
 
-std::string& StringUtil::removePrefix(std::string& str, char c) noexcept {
-    if (!str.empty() && str.front() == c) {
-        str.erase(0);
-    }
-    return str;
+std::string StringUtil::removeSpace(std::string_view view) noexcept {
+    std::string result;
+    std::ranges::copy_if(view, std::back_inserter(result), [](char ch) {
+        return !std::isspace(static_cast<unsigned char>(ch));
+    });
+    return result;
 }
-
 
 } // slark

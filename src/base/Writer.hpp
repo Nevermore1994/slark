@@ -6,33 +6,40 @@
 //  Copyright (c) 2023 Nevermore All rights reserved.
 
 #pragma once
-
-#include "IOHandler.h"
+#include "IOBase.h"
 #include "Thread.h"
 #include "File.h"
 #include "Synchronized.hpp"
 
 namespace slark {
 
-class Writer: public IOHandler {
+class Writer: public NonCopyable {
 public:
     Writer();
     ~Writer() override;
 public:
     bool open(std::string_view path, bool isAppend = false) noexcept;
-    void close() noexcept override;
-    [[nodiscard]] std::string_view path() noexcept override;
-    [[nodiscard]] IOState state() noexcept override;
-    void stop() noexcept;
+    
+    void close() noexcept;
+    
+    [[nodiscard]] std::string_view path() noexcept;
+    
+    [[nodiscard]] IOState state() noexcept;
+    
+    void release() noexcept;
 public:
     bool write(DataPtr data) noexcept;
     bool write(Data&& data) noexcept;
     bool write(const Data& data) noexcept;
     bool write(const std::string& str) noexcept;
     bool write(std::string&& str) noexcept;
+    
     uint32_t writeCount() noexcept;
+    
     uint64_t writeSize() noexcept;
+    
     uint32_t getHashId() noexcept;
+    
     bool isOpen() noexcept {
         return isOpen_;
     }

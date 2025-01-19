@@ -12,7 +12,7 @@ namespace slark {
 
 struct StringUtil {
     static std::vector<std::string_view> split(std::string_view stringView, std::string_view delimiter) noexcept;
-    [[maybe_unused]] static std::string& removePrefix(std::string& str, char c) noexcept;
+    static std::string removeSpace(std::string_view view) noexcept;
 };
 
 

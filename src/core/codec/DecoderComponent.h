@@ -16,13 +16,19 @@ public:
     ~DecoderComponent() override;
 
     bool open(DecoderType type, std::shared_ptr<DecoderConfig> config) noexcept;
-    void send(AVFramePtr packet) noexcept;
-    void pause() noexcept;
-    void resume() noexcept;
-    void reset() noexcept;
+    
     void close() noexcept;
+    
+    void send(AVFramePtr packet) noexcept;
+    
     void flush() noexcept;
-
+    
+    void start() noexcept;
+    
+    void pause() noexcept;
+    
+    void reset() noexcept;
+    
     void setReachEnd(bool isReachEnd) noexcept {
         isReachEnd_ = isReachEnd;
     }

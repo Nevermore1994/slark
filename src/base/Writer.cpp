@@ -38,12 +38,12 @@ bool Writer::open(std::string_view path, bool isAppend) noexcept {
 
 void Writer::close() noexcept {
     isOpen_ = false;
-    worker_.resume();
+    worker_.pause();
 }
 
-void Writer::stop() noexcept {
+void Writer::release() noexcept {
     isStop_ = true;
-    worker_.resume();
+    worker_.stop();
 }
 
 IOState Writer::state() noexcept {
@@ -145,7 +145,7 @@ bool Writer::write(DataPtr data) noexcept {
     dataList_.withLock([&](auto& vec){
         vec.emplace_back(std::move(data));
     });
-    worker_.resume();
+    worker_.start();
     return true;
 }
 

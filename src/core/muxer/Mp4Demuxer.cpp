@@ -8,8 +8,8 @@
 #include <stack>
 #include <ranges>
 #include "IDemuxer.h"
-#include "Mp4Demuxer.hpp"
-#include "Util.hpp"
+#include "Mp4Demuxer.h"
+#include "MediaBase.h"
 
 namespace slark {
 
@@ -253,16 +253,17 @@ bool TrackContext::isInRange(Buffer& buffer, uint64_t& offset) const noexcept {
     return false;
 }
 
-AVFrameArray TrackContext::praseH264FrameData(AVFramePtr frame, DataPtr data, const std::any& frameInfo) {
+AVFramePtrArray TrackContext::praseH264FrameData(AVFramePtr frame,
+                                              DataPtr data,
+                                              std::shared_ptr<VideoFrameInfo> frameInfo) {
     if (naluByteSize == 0) {
         auto avccBox = std::dynamic_pointer_cast<BoxAvcc>(stsd->getChild("avc1")->getChild("avcC"));
         if (avccBox) {
             naluByteSize = avccBox->naluByteSize;
         }
     }
-    AVFrameArray frames;
+    AVFramePtrArray frames;
     auto view = data->view();
-    auto info = std::any_cast<VideoFrameInfo>(frameInfo);
     auto& sttsEntry = stts->entrys[sttsEntryIndex];
     frame->duration = static_cast<uint32_t>(static_cast<double>(sttsEntry.sampleDelta) / static_cast<double>(frame->timeScale) * 1000.0); //ms
     while (!view.empty()) {
@@ -274,13 +275,15 @@ AVFrameArray TrackContext::praseH264FrameData(AVFramePtr frame, DataPtr data, co
         Util::readByte(naluHeaderView, naluHeader);
         uint8_t naluType = naluHeader & 0x1f;
         uint32_t totalSize = naluSize + naluByteSize + 1; //naluSize + header size
+        auto info = std::make_shared<VideoFrameInfo>();
+        frameInfo->copy(info);
         if (naluType == 5 || naluType == 1) {
             if (naluType == 5) {
-                info.isKeyFrame = true;
+                info->isIDRFrame = true;
                 keyIndex = frame->index;
             } else {
-                info.isKeyFrame = false;
-                info.keyIndex = keyIndex;
+                info->isIDRFrame = false;
+                info->keyIndex = keyIndex;
             }
             DataPtr frameData;
             if (totalSize == data->length) {
@@ -291,20 +294,19 @@ AVFrameArray TrackContext::praseH264FrameData(AVFramePtr frame, DataPtr data, co
                 frameData = std::make_unique<Data>(view.substr(0, totalSize));
                 view = view.substr(totalSize);
             }
-            int32_t offset = 0;
-            auto sliceView = frameData->view().substr(4 + 1);
-            uint32_t firstMBInSlice = Util::readUe(sliceView, offset);
-            uint32_t sliceType =  Util::readUe(sliceView, offset);
+            // parseSliceType need skip header
+            auto [firstMBInSlice, sliceType] = parseSliceType(frameData->view().substr(4));
             if (sliceType == 0 || sliceType == 5) {
-                info.frameType = VideoFrameType::PFrame;
+                info->frameType = VideoFrameType::PFrame;
             } else if (sliceType == 1 || sliceType == 6) {
-                info.frameType = VideoFrameType::BFrame;
+                info->frameType = VideoFrameType::BFrame;
             } else if (sliceType == 2 || sliceType == 7) {
-                info.frameType = VideoFrameType::IFrame;
+                info->frameType = VideoFrameType::IFrame;
             }
-            info.keyIndex = keyIndex;
+            info->keyIndex = keyIndex;
             if (view.empty()) {
-                frame->info = info;
+                frame->info = std::make_shared<VideoFrameInfo>();
+                
                 frame->data = std::move(frameData);
                 frames.push_back(std::move(frame));
                 frame.reset();
@@ -315,21 +317,15 @@ AVFrameArray TrackContext::praseH264FrameData(AVFramePtr frame, DataPtr data, co
                 frames.push_back(std::move(newFrame));
             }
         } else if (naluType == 6) {
-            auto seiFrame = frame->copy();
-            info.frameType = VideoFrameType::SEI;
-            seiFrame->info = info;
-            seiFrame->data = std::make_unique<Data>(view.substr(0, totalSize));
-            view = view.substr(totalSize);
-            frames.push_back(std::move(seiFrame));
+            //skip sei
         }  else {
-            LogE("error naluType type:{}", naluType);
-            break;
+            //don't care
         }
     }
     return frames;
 }
 
-void TrackContext::parseData(Buffer& buffer, const std::any& frameInfo, AVFrameArray& packets)  {
+void TrackContext::parseData(Buffer& buffer, std::shared_ptr<FrameInfo> frameInfo, AVFramePtrArray& packets)  {
     if (!isInRange(buffer)) {
         return;
     }
@@ -341,15 +337,15 @@ void TrackContext::parseData(Buffer& buffer, const std::any& frameInfo, AVFrameA
     }
     //LogI("skip to pos:{}, read pos:{}, offset:{}", buffer.pos(), buffer.readPos(), buffer.offset());
     auto frame = std::make_unique<AVFrame>();
-    frame->index = ++index;
+    frame->index = index++;
     frame->dts = dts;
     frame->pts = pts;
     frame->offset = start;
     frame->timeScale = mdhd->timeScale;
     if (type == TrackType::Audio) {
         frame->frameType = AVFrameType::Audio;
-        auto info = std::any_cast<AudioFrameInfo>(frameInfo);
-        frame->duration = static_cast<uint32_t>(info.duration(size) * 1000.0);
+        auto info = std::dynamic_pointer_cast<AudioFrameInfo>(frameInfo);
+        frame->duration = static_cast<uint32_t>(info->duration(size) * 1000.0);
         frame->info = frameInfo;
         frame->data = buffer.readData(size);
         packets.push_back(std::move(frame));
@@ -357,7 +353,9 @@ void TrackContext::parseData(Buffer& buffer, const std::any& frameInfo, AVFrameA
         frame->frameType = AVFrameType::Video;
         auto data = buffer.readData(size);
         if (codecId == CodecId::AVC) {
-            auto frames = praseH264FrameData(std::move(frame), std::move(data), frameInfo);
+            auto frames = praseH264FrameData(std::move(frame),
+                                             std::move(data),
+                                             std::dynamic_pointer_cast<VideoFrameInfo>(frameInfo));
             std::for_each(frames.begin(), frames.end(), [&packets](auto& frame){
                 packets.push_back(std::move(frame));
             });
@@ -444,7 +442,7 @@ bool Mp4Demuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
     if (rootBox_ == nullptr) {
         BoxInfo info;
         info.start = 0;
-        info.size = buffer->totalSize();
+        info.size = config_.fileSize;
         rootBox_ = std::make_shared<Box>(std::move(info));
     }
     auto res = false;
@@ -482,7 +480,7 @@ bool Mp4Demuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
     if (!res) {
         buffer->resetReadPos();
     } else {
-        init();
+        initData();
     }
     return res;
 }
@@ -507,7 +505,7 @@ void initTrack(std::shared_ptr<TrackContext>& track) {
     }
 }
 
-void Mp4Demuxer::init() noexcept {
+void Mp4Demuxer::initData() noexcept {
     auto mvhdBox = std::dynamic_pointer_cast<BoxMvhd>(rootBox_->getChild("moov")->getChild("mvhd"));
     totalDuration_ = CTime(static_cast<double>(mvhdBox->duration) / static_cast<double>(mvhdBox->timeScale));
     for (auto& [codecId, track] : tracks_) {
@@ -550,7 +548,7 @@ void Mp4Demuxer::init() noexcept {
                 if (avccBox) {
                     videoInfo_->sps = avccBox->sps.front();
                     videoInfo_->pps = avccBox->pps.front();
-                    videoInfo_->naluHeaderLength = avccBox->naluByteSize;
+                    videoInfo_->naluHeaderLength = avccBox->naluByteSize + 1;
                 }
             } else if (codecId == CodecId::HEVC) {
                 videoInfo_->mediaInfo = MEDIA_MIMETYPE_VIDEO_HEVC;
@@ -559,14 +557,14 @@ void Mp4Demuxer::init() noexcept {
                     videoInfo_->sps = hvccBox->sps.front();
                     videoInfo_->pps = hvccBox->pps.front();
                     videoInfo_->vps = hvccBox->vps.front();
-                    videoInfo_->naluHeaderLength = hvccBox->naluByteSize;
+                    videoInfo_->naluHeaderLength = hvccBox->naluByteSize + 1;
                 }
             } else {
                 videoInfo_->mediaInfo = MEDIA_MIMETYPE_UNKNOWN;
             }
         }
     }
-    isInited_ = true;
+    isOpened_ = true;
     buffer_ = std::make_unique<Buffer>(rootBox_->info.size);
 }
 
@@ -600,12 +598,12 @@ std::string Mp4Demuxer::description() const noexcept {
     return ss.str();
 }
 
-DemuxerResult Mp4Demuxer::parseData(std::unique_ptr<Data> data, int64_t dataOffset) noexcept {
-    if (!data || data->empty() || !isInited_) {
-        return {DemuxerResultCode::Failed, AVFrameArray(), AVFrameArray()};
+DemuxerResult Mp4Demuxer::parseData(DataPacket& packet) noexcept {
+    if (packet.empty() || !isOpened_) {
+        return {DemuxerResultCode::Failed, AVFramePtrArray(), AVFramePtrArray()};
     }
-    if (!buffer_->append(static_cast<uint64_t>(dataOffset), std::move(data))) {
-        return {DemuxerResultCode::Normal, AVFrameArray(), AVFrameArray()};
+    if (!buffer_->append(static_cast<uint64_t>(packet.offset), std::move(packet.data))) {
+        return {DemuxerResultCode::Normal, AVFramePtrArray(), AVFramePtrArray()};
     }
     DemuxerResult result;
     while(!buffer_->empty()) {
@@ -624,15 +622,15 @@ DemuxerResult Mp4Demuxer::parseData(std::unique_ptr<Data> data, int64_t dataOffs
             break;
         }
         if (parseTrack->type == TrackType::Audio) {
-            AudioFrameInfo info;
-            info.bitsPerSample = audioInfo_->bitsPerSample;
-            info.channels = audioInfo_->channels;
-            info.sampleRate = audioInfo_->sampleRate;
+            auto info = std::make_shared<AudioFrameInfo>();
+            info->bitsPerSample = audioInfo_->bitsPerSample;
+            info->channels = audioInfo_->channels;
+            info->sampleRate = audioInfo_->sampleRate;
             parseTrack->parseData(*buffer_, info, result.audioFrames);
         } else if (parseTrack->type == TrackType::Video) {
-            VideoFrameInfo info;
-            info.width = videoInfo_->width;
-            info.height = videoInfo_->height;
+            auto info = std::make_shared<VideoFrameInfo>();
+            info->width = videoInfo_->width;
+            info->height = videoInfo_->height;
             ///fix me: nalu size
             parseTrack->parseData(*buffer_, info, result.videoFrames);
         }

@@ -26,6 +26,11 @@ enum class DemuxerType {
     WAV,
 };
 
+struct DemuxerConfig {
+    uint64_t fileSize = 0;
+    std::string filePath;
+};
+
 struct DemuxerInfo {
     DemuxerType type = DemuxerType::Unknown;
     std::string symbol;
@@ -40,14 +45,16 @@ struct DemuxerHeaderInfo {
 enum class DemuxerResultCode {
     Normal = 0,
     Failed,
-    NotSupport,
     FileEnd,
+    ParsedHeader,
+    VideoInfoChange,
+    ParsedFPS,
 };
 
 struct DemuxerResult {
     DemuxerResultCode resultCode = DemuxerResultCode::Normal;
-    AVFrameArray audioFrames;
-    AVFrameArray videoFrames;
+    AVFramePtrArray audioFrames;
+    AVFramePtrArray videoFrames;
 };
 
 class IDemuxer : public NonCopyable {
@@ -56,12 +63,12 @@ public:
     ~IDemuxer() override = default;
 
 public:
-    virtual bool open(std::unique_ptr<Buffer>& ) = 0;
+    virtual bool open(std::unique_ptr<Buffer>&) = 0;
 
     virtual void close() = 0;
 
     virtual void reset() noexcept {
-        isInited_ = false;
+        isOpened_ = false;
         isCompleted_ = false;
         totalDuration_ = CTime(0);
         buffer_.reset();
@@ -77,12 +84,12 @@ public:
         }
     }
 
-    virtual DemuxerResult parseData(std::unique_ptr<Data> data, int64_t offset) noexcept = 0;
+    virtual DemuxerResult parseData(DataPacket& packet) noexcept = 0;
      
     [[nodiscard]] virtual uint64_t getSeekToPos(long double) noexcept = 0;
 
-    [[nodiscard]] bool isInited() const noexcept {
-        return isInited_;
+    [[nodiscard]] bool isOpened() const noexcept {
+        return isOpened_;
     }
 
     [[nodiscard]] bool isCompleted() const noexcept {
@@ -110,7 +117,7 @@ public:
     }
     
     [[nodiscard]] CTime totalDuration() const noexcept {
-        if (!isInited_) {
+        if (!isOpened_) {
             return CTime();
         }
         return totalDuration_;
@@ -120,9 +127,14 @@ public:
         return type_;
     }
     
+    virtual void init(DemuxerConfig config) noexcept{
+        config_ = std::move(config);
+    }
+    
 protected:
-    bool isInited_ = false;
+    bool isOpened_ = false;
     bool isCompleted_ = false;
+    DemuxerConfig config_;
     DemuxerType type_ = DemuxerType::Unknown;
     CTime totalDuration_{0};
     std::unique_ptr<Buffer> buffer_;

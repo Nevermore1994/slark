@@ -9,7 +9,7 @@ EXTERNAL SOURCES:
     :path: "../../.."
 
 SPEC CHECKSUMS:
-  slark: 92d596440931e15d0fec9da6641ccdf834aa9deb
+  slark: 8be6a8acf1ae94c4727d709346d30e9b65cd2533
 
 PODFILE CHECKSUM: 22b98425c79d859aa83e431942c1f97edcf331ef
 

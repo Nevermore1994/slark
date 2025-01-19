@@ -16,7 +16,9 @@ namespace slark {
 class Buffer: public NonCopyable {
 public:
     Buffer() = default;
-    Buffer(uint64_t size); //fix me
+    
+    Buffer(uint64_t size);
+    
     bool empty() const noexcept;
 
     bool require(uint64_t) const noexcept;
@@ -25,9 +27,13 @@ public:
     
     uint64_t totalLength() const noexcept;
     
+    bool append(DataPtr) noexcept;
+    
     bool append(uint64_t offset, DataPtr) noexcept;
     
-    std::string_view view() const noexcept;
+    DataView shotView() const noexcept;
+    
+    DataView view() const noexcept;
     
     bool read8ByteLE(uint64_t& value) noexcept;
     
@@ -52,6 +58,8 @@ public:
     DataPtr readData(uint64_t) noexcept;
     
     bool readString(uint64_t size, std::string& str) noexcept;
+    
+    bool readLine(DataView& line) noexcept;
     
     bool skipTo(int64_t pos) noexcept;
     
@@ -86,6 +94,9 @@ public:
         return offset_;
     }
     
+    uint64_t end() const noexcept {
+        return offset() + totalLength();
+    }
 private:
     bool isUpdatedOffset = false;
     DataPtr data_ = nullptr;

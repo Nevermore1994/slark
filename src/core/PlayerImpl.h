@@ -11,18 +11,17 @@
 #include <shared_mutex>
 #include <optional>
 #include <map>
-#include "Reader.hpp"
 #include "Player.h"
 #include "DecoderComponent.h"
 #include "DemuxerManager.h"
 #include "AVFrame.hpp"
-#include "Reader.hpp"
+#include "IReader.h"
 #include "Channel.hpp"
 #include "Event.h"
 #include "AudioRenderComponent.h"
 #include "Synchronized.hpp"
-#include "Buffer.hpp"
 #include "Clock.h"
+#include "PlayerImplHelper.h"
 
 namespace slark {
 
@@ -51,6 +50,7 @@ struct PlayerStatistics {
 
 class Player::Impl {
 public:
+    friend class PlayerImplHelper;
     explicit Impl(std::unique_ptr<PlayerParams> params);
     ~Impl();
     Impl(const Impl&) = delete;
@@ -96,6 +96,10 @@ private:
 
     void demuxData() noexcept;
     
+    void handleAudioPacket(AVFramePtrArray& audioPackets) noexcept;
+    
+    void handleVideoPacket(AVFramePtrArray& videoPackets) noexcept;
+    
     void pushAVFrameToRender() noexcept;
     
     void pushVideoFrameToRender() noexcept;
@@ -116,9 +120,9 @@ private:
     
     void setState(PlayerState state) noexcept;
 
-    bool createDemuxer(IOData& data) noexcept;
+    bool createDemuxer(DataPacket& data) noexcept;
     
-    bool openDemuxer(IOData& data) noexcept;
+    bool openDemuxer(DataPacket& data) noexcept;
     
     void createAudioComponent(const PlayerSetting& setting) noexcept;
     
@@ -144,7 +148,7 @@ private:
     
     void checkCacheState() noexcept;
     
-    bool setupIOHandler() noexcept;
+    bool setupDataProvider() noexcept;
     
     long double videoRenderTime() noexcept;
     
@@ -152,6 +156,7 @@ private:
 private:
     bool isSeekingWhilePlaying_ = false;
     std::atomic_bool isStoped_ = false;
+    std::unique_ptr<PlayerImplHelper> helper_ = nullptr;
     Synchronized<PlayerState, std::shared_mutex> state_;
     std::optional<PlayerSeekRequest> seekRequest_;
     PlayerInfo info_;
@@ -165,12 +170,11 @@ private:
     std::unique_ptr<Thread> ownerThread_ = nullptr;
     
     //IO
-    std::unique_ptr<Reader> readHandler_ = nullptr;
-    Synchronized<std::vector<IOData>> dataList_;
-    std::unique_ptr<Buffer> probeBuffer_;
+    std::unique_ptr<IReader> dataProvider_ = nullptr;
+    Synchronized<std::vector<DataPacket>> dataList_;
     
     //demux
-    std::unique_ptr<IDemuxer> demuxer_ = nullptr;
+    std::shared_ptr<IDemuxer> demuxer_ = nullptr;
     std::deque<AVFramePtr> audioPackets_;
     std::deque<AVFramePtr> videoPackets_;
     
