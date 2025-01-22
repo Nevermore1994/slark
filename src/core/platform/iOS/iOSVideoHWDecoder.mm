@@ -22,11 +22,11 @@ void decompressionOutputCallback(void* decompressionOutputRefCon,
         auto framePtr = std::unique_ptr<AVFrame>(reinterpret_cast<AVFrame*>(sourceFrameRefCon));
         auto videoInfo = std::dynamic_pointer_cast<VideoFrameInfo>(framePtr->info);
         if (framePtr->isDiscard) {
-            LogE("video decode discard frame:{}", framePtr->index);
+            LogE("video decode discard frame:{}", framePtr->ptsTime());
             return;
         }
         if (videoInfo && !videoInfo->isHasContent()) {
-            LogE("decode sei:{}", framePtr->index);
+            LogE("decode no content:{}", framePtr->index);
             return;
         }
         bool isSuccess = false;
@@ -46,7 +46,7 @@ void decompressionOutputCallback(void* decompressionOutputRefCon,
                 break;
             }
             if (kVTDecodeInfo_FrameDropped & infoFlags) {
-                LogI("droped\n");
+                LogI("droped");
                 break;
             }
             framePtr->stats.decodedStamp = Time::nowTimeStamp();

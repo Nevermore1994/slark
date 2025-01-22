@@ -153,7 +153,7 @@ using namespace slark;
         _controllerView.onSeekClick = ^(double time) {
             @strongify(self);
             [self.player seek:time];
-            LogI("audio seek:{}", time);
+            LogI("seek to:{}", time);
         };
         _controllerView.onSeekDone = ^(double time){
             @strongify(self);

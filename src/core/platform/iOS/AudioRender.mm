@@ -13,6 +13,14 @@
 
 #define VOLUME_UNIT_INPUT_BUS0 0
 
+static constexpr AudioUnitElement kAudioRemoteIOUnitOutputBus = 0;
+static constexpr AudioUnitElement kAudioRemoteIOUnitInputBus = 1;
+
+static constexpr AudioUnitElement kMixerInputBus = 0;
+static constexpr AudioUnitElement kMixerOutputBus = 0;
+
+static constexpr AudioUnitElement kEffectInputBus = 0;
+static constexpr AudioUnitElement kEffectOutputBus = 0;
 
 namespace slark {
 
@@ -132,7 +140,7 @@ void AudioRender::flush() noexcept {
         LogI("[audio render] flush return:{}", static_cast<uint32_t>(status_));
         return;
     }
-    checkOSStatus(AudioUnitReset(volumeUnit_, kAudioUnitScope_Global, kAudioUnitOutputBus), "flush error.");
+    checkOSStatus(AudioUnitReset(volumeUnit_, kAudioUnitScope_Global, kMixerOutputBus), "flush error.");
 }
 
 void AudioRender::stop() noexcept {
@@ -217,35 +225,31 @@ bool AudioRender::setupAudioComponent() noexcept {
        return false;
     }
     auto format = convertInfo2Description(*audioInfo_);
-       
-   // Set the format on the output scope of the input element/bus. not necessary
-    if (!checkOSStatus(AudioUnitSetProperty(renderUnit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, kAudioUnitInputBus, &format, sizeof(format)),
-                  "set render unit input format error")) {
-        return false;
-    }
+    
     // Set the format on the input scope of the output element/bus.
     if (!checkOSStatus(AudioUnitSetProperty(renderUnit_, kAudioUnitProperty_StreamFormat,
-                                       kAudioUnitScope_Input, kAudioUnitOutputBus, &format, sizeof(format)),
+                                       kAudioUnitScope_Input, kAudioRemoteIOUnitOutputBus, &format, sizeof(format)),
                   "set Property_StreamFormat on outputbus : input scope")) {
        return false;
     }
     AudioUnitConnection connection;
     connection.sourceAudioUnit = volumeUnit_;
-    connection.sourceOutputNumber = kAudioUnitOutputBus;
-    connection.destInputNumber = kAudioUnitOutputBus;
-    if (!checkOSStatus(AudioUnitSetProperty(renderUnit_, kAudioUnitProperty_MakeConnection, kAudioUnitScope_Input, kAudioUnitOutputBus, &connection, sizeof(connection)), "volume unit connect render unit error")) {
+    connection.sourceOutputNumber = kMixerOutputBus;
+    connection.destInputNumber = kAudioRemoteIOUnitOutputBus; //loudspeaker
+    if (!checkOSStatus(AudioUnitSetProperty(renderUnit_, kAudioUnitProperty_MakeConnection, kAudioUnitScope_Input, kAudioRemoteIOUnitOutputBus, &connection, sizeof(connection)), "volume unit connect render unit error")) {
         return false;
     }
-    if (!checkOSStatus(AudioUnitSetProperty(volumeUnit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, kAudioUnitOutputBus, &format, sizeof(format)), "set volume input format fail")) {
+    
+    if (!checkOSStatus(AudioUnitSetProperty(volumeUnit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, kMixerOutputBus, &format, sizeof(format)), "set volume input format fail")) {
         return false;
     }
     AURenderCallbackStruct callback;
     callback.inputProc = AudioRenderCallback;
     callback.inputProcRefCon = this;
-    if (!checkOSStatus(AudioUnitSetProperty(volumeUnit_, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, VOLUME_UNIT_INPUT_BUS0, &callback, sizeof(AURenderCallbackStruct)), "add data callback fail")) {
+    if (!checkOSStatus(AudioUnitSetProperty(volumeUnit_, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, kMixerInputBus, &callback, sizeof(AURenderCallbackStruct)), "add data callback fail")) {
         return false;
     }
-    if (!checkOSStatus(AudioUnitSetProperty(volumeUnit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, VOLUME_UNIT_INPUT_BUS0, &format, sizeof(format)), "set input format error")) {
+    if (!checkOSStatus(AudioUnitSetProperty(volumeUnit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, kMixerInputBus, &format, sizeof(format)), "set input format error")) {
         return false;
     }
 

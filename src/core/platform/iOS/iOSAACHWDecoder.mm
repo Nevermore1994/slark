@@ -24,19 +24,21 @@ OSStatus AACDecodeInputDataProc(AudioConverterRef,
     }
     auto decoder = reinterpret_cast<iOSAACHWDecoder*>(inUserData);
     auto framePtr = decoder->getDecodeFrame();
-    if (!framePtr || !decoder->isOpen_) {
+    if (!framePtr || !decoder->isOpen()) {
         decoder->wait();
         framePtr = decoder->getDecodeFrame();
     }
     if (!framePtr) {
+        LogI("exit aac decode");
         return endOfStream;
     }
-    auto audioFrameInfo = std::dynamic_pointer_cast<AudioFrameInfo>(framePtr->info);
+    
     auto dataPtr = framePtr->detachData();
     if (dataPtr == nullptr) {
         LogE("decode audio data is nullptr");
         return noErr;
     }
+    auto audioFrameInfo = std::dynamic_pointer_cast<AudioFrameInfo>(framePtr->info);
     ioData->mBuffers[0].mDataByteSize = static_cast<UInt32>(dataPtr->length);
     ioData->mBuffers[0].mNumberChannels = audioFrameInfo->channels;
     std::copy(dataPtr->rawData, dataPtr->rawData + dataPtr->length, static_cast<uint8_t*>(ioData->mBuffers[0].mData));
@@ -46,6 +48,7 @@ OSStatus AACDecodeInputDataProc(AudioConverterRef,
         (*outDataPacketDescription)[0].mVariableFramesInPacket = 1024;
         (*outDataPacketDescription)[0].mDataByteSize = static_cast<UInt32>(dataPtr->length);
     }
+    decoder->setDecodeFrame(std::move(framePtr));
     return noErr;
 }
 
@@ -105,11 +108,14 @@ void iOSAACHWDecoder::decode() noexcept {
         auto decodeData = std::make_unique<Data>(outputData_->mBuffers[0].mDataByteSize);
         decodeData->length = outputData_->mBuffers[0].mDataByteSize;
         std::copy(data, data + outputData_->mBuffers[0].mDataByteSize, decodeData->rawData);
-        auto frame = std::make_unique<AVFrame>();
-        frame->data = std::move(decodeData);
-        frame->stats.decodedStamp = Time::nowTimeStamp();
+        if (!decodeAVFrame) {
+            LogE("decode error, current decode frame is nullptr");
+            return;
+        }
+        decodeAVFrame->data = std::move(decodeData);
+        decodeAVFrame->stats.decodedStamp = Time::nowTimeStamp();
         if (receiveFunc) {
-            receiveFunc(std::move(frame));
+            receiveFunc(std::move(decodeAVFrame));
         }
     }
 }

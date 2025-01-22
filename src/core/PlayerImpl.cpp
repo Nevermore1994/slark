@@ -49,6 +49,7 @@ void Player::Impl::seek(long double time, bool isAccurate) noexcept {
     ptr->data = req;
     sender_->send(std::move(ptr));
     ownerThread_->start();
+    LogI("reveice seek:{}, isAccurate:{}", time, isAccurate);
 }
 
 void Player::Impl::updateState(PlayerState state) noexcept {
@@ -214,7 +215,7 @@ void Player::Impl::createVideoComponent(const PlayerSetting& setting) noexcept  
         return;
     }
     videoDecodeComponent_ = std::make_unique<DecoderComponent>([this](auto frame) {
-        LogI("[seek info] decode info:{}", frame->ptsTime());
+        LogI("decode video frame info:{}", frame->ptsTime());
         videoFrames_.withWriteLock([&frame](auto& frames){
             frames.push_back(std::move(frame));
         });
@@ -445,7 +446,7 @@ void Player::Impl::pushVideoFrameToRender() noexcept {
             ptr->pushVideoFrameRender(framePtr->opaque);
             auto renderPts = framePtr->ptsTime();
             auto nowState = state();
-            LogI("[seek info] push vieo frame render:{}, is force:{}, state:{}", renderPts, statistics_.isForceVideoRendered, static_cast<int>(nowState));
+            LogI("push vieo frame render:{}, is force:{}, state:{}", renderPts, statistics_.isForceVideoRendered, static_cast<int>(nowState));
             ptr->clock().setTime(static_cast<uint64_t>(renderPts * Time::kMicroSecondScale));
             isPushed = true;
         }
@@ -470,7 +471,7 @@ void Player::Impl::pushAVFrameToRender() noexcept {
         if (audioFrames.empty()) {
             return;
         }
-        LogI("[seek info] push audio:{}", audioFrames.front()->ptsTime());
+        LogI("push audio:{}", audioFrames.front()->ptsTime());
         audioRender_->send(std::move(audioFrames.front()));
         audioFrames.pop_front();
         if (statistics_.audioRenderDelta == 0) {
@@ -891,25 +892,29 @@ void Player::Impl::checkCacheState() noexcept {
     auto cacheTime = cachedDuration - playedTime;
     cacheTime = std::max(0.0l, cacheTime);
     LogI("demux cache time:{}, demuxedDuration:{} played time:{}", cacheTime, cachedDuration, playedTime);
-    if (cacheTime < setting.minCacheTime && !dataProvider_->isCompleted()) {
-        if (!dataProvider_->isRunning()) {
-            dataProvider_->start();
-        }
-        ownerThread_->start();
-        LogI("read & owner resume");
-    } else if (cacheTime >= setting.maxCacheTime || isEqualOrGreater(playedTime, info_.duration, 0.1l)) {
-        if (nowState == PlayerState::Ready || nowState == PlayerState::Pause) {
-            ownerThread_->pause();
-        }
-        if (dataProvider_->isRunning()) {
-            dataProvider_->pause();
-        }
-        LogI("read & owner pause");
-    } else if (dataProvider_->isCompleted()) {
-        if (dataProvider_->isRunning()) {
+    auto startRead = [this](bool isPause){
+        auto isRunning = dataProvider_->isRunning();
+        if (isPause && isRunning) {
             dataProvider_->pause();
             LogI("read pause");
+        } else if (!isPause && !isRunning) {
+            dataProvider_->start();
+            LogI("read resume");
         }
+    };
+    if (cacheTime < setting.minCacheTime && !dataProvider_->isCompleted()) {
+        startRead(true);
+        ownerThread_->start();
+        LogI("owner resume");
+    } else if (cacheTime >= setting.maxCacheTime || isEqualOrGreater(playedTime, info_.duration, 0.1l)) {
+        if ((nowState == PlayerState::Ready || nowState == PlayerState::Pause) &&
+            receiver_->empty()) {
+            ownerThread_->pause();
+            LogI("owner pause");
+        }
+        startRead(false);
+    } else if (dataProvider_->isCompleted()) {
+        startRead(false);
     }
 }
 
@@ -932,7 +937,7 @@ long double Player::Impl::audioRenderTime() noexcept {
 
 void* Player::Impl::requestRender() noexcept {
     long double diff = 0;
-    LogI("[seek info] requestRender: {}, {}", audioRenderTime(), videoRenderTime());
+    LogI("requestRender: {}, {}", audioRenderTime(), videoRenderTime());
     if (info_.hasAudio && info_.hasVideo) {
         diff = audioRenderTime() - videoRenderTime();
     } else if(!info_.hasVideo) {
@@ -967,7 +972,7 @@ void* Player::Impl::requestRender() noexcept {
         videoRender_.withReadLock([&framePtr](auto& p){
             if (auto ptr = p.lock(); ptr) {
                 auto t = framePtr->ptsTime();
-                LogI("[seek info] push vieo frame render:{}, pts:{}", t, framePtr->pts);
+                LogI("push vieo frame render:{}, pts:{}", t, framePtr->pts);
                 ptr->clock().setTime(static_cast<uint64_t>(framePtr->ptsTime() * Time::kMicroSecondScale));
             }
         });
