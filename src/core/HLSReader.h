@@ -59,19 +59,19 @@ public:
 private:
     void addRequest(RequestTaskPtr) noexcept;
     void sendRequest() noexcept;
-    void fetchTSDataInOrder() noexcept;
+    void fetchTSData(uint32_t tsIndex) noexcept;
     void sendM3u8Request(const std::string& m3u8Url) noexcept;
-    void sendTSRequest(const std::string& url, Range range) noexcept;
+    void sendTSRequest(uint32_t index, const std::string& url, Range range) noexcept;
     
     void handleM3u8Error(const http::ErrorInfo& info) noexcept;
-    void handleM3u8Data(DataPtr) noexcept;
+    void handleM3u8Data(DataPtr dataPtr) noexcept;
+    void handleM3u8RequestDisconnect() noexcept;
     
     void handleTSHeader(http::ResponseHeader&& header) noexcept;
-    void handleTSData(DataPtr) noexcept;
+    void handleTSData(uint32_t index, DataPtr dataPtr) noexcept;
     void handleTSError(const http::ErrorInfo& info) noexcept;
-    void handleTSDisconnect() noexcept;
+    void handleTSRequestDisconnect(uint32_t tsIndex) noexcept;
 private:
-    int32_t currentTSIndex_ = -1;
     std::atomic_bool isPause_ = false;
     std::atomic_bool isClosed_ = false;
     std::atomic_bool isCompleted_ = false;

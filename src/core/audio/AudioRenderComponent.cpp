@@ -66,7 +66,7 @@ void AudioRenderComponent::process(AVFrameRefPtr frame) noexcept {
             audioBuffer_.append(frames.front()->data->rawData, length);
             if (renderedDataLength_ == 0) {
                 renderedDataLength_ = audioInfo_->timePoint2DataLen(static_cast<uint64_t>(frames.front()->ptsTime() * Time::kMicroSecondScale));
-                LogI("[seek info]audio render set pos:{}", renderedDataLength_);
+                LogI("[seek info]audio render set pos:{}, time:{}", renderedDataLength_, frames.front()->ptsTime());
             }
             frames.pop_front();
         }

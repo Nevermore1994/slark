@@ -86,6 +86,7 @@ public:
 
     virtual DemuxerResult parseData(DataPacket& packet) noexcept = 0;
      
+    ///In HLS, what you get is the TS index, while in other cases, it’s the file offset.
     [[nodiscard]] virtual uint64_t getSeekToPos(long double) noexcept = 0;
 
     [[nodiscard]] bool isOpened() const noexcept {

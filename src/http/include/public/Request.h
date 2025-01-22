@@ -105,6 +105,7 @@ public:
 
     [[maybe_unused]] void cancel() noexcept {
         isValid_ = false;
+        isCompleted_ = true;
     }
 
     [[maybe_unused]] [[nodiscard]] const std::string& getReqId() const {
@@ -133,9 +134,9 @@ private:
     void handleErrorResponse(ResultCode code, int32_t errorCode) noexcept;
     void disconnected() noexcept;
 private:
-    std::atomic<bool> isCompleted_ = true;
-    uint8_t redirectCount_ = 0;
+    std::atomic<bool> isCompleted_ = false;
     std::atomic<bool> isValid_ = true;
+    uint8_t redirectCount_ = 0;
     uint64_t startStamp_ = 0;
     RequestInfo info_;
     ResponseHandler handler_;

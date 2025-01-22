@@ -83,7 +83,7 @@ bool M3U8Parser::parse(Buffer& buffer) noexcept {
             view = view.substr(8);
             view = view.substr(0, view.find(","));
             TSInfo info;
-            info.sequence = index;
+            info.sequence = index++;
             info.duration = std::stod(std::string(view));
             info.startTime = totalDuration_;
             infos_.push_back(info);
@@ -308,13 +308,17 @@ bool TSDemuxer::parseTSPes(DataView data, uint8_t payloadIndicator, TSPESFrame& 
         LogE("start code error:{} {} {}", data[0], data[1], data[2]);
         return false;
     }
-    pes.streamId = data[3];
-    pes.pesPacketLength = (data[4] << 8) | data[5];
-    uint32_t dataOffset = 0;
+    
+    auto isAudio = (&pes == &audioESFrame_);
+    uint8_t streamId = data[3];
+    LogI("{} stream id:{}, pesPacketLength:{}", isAudio ? "audio" : "video",
+         data[3], (data[4] << 8) | data[5]);
+    
     static const std::array<uint8_t, 6> kSpecialStreamArray = {0xbc, 0xbe, 0xbf, 0xf0, 0xf1, 0xff};
-    auto isSpecialStream = std::any_of(kSpecialStreamArray.begin(), kSpecialStreamArray.end(), [pesStreamId = pes.streamId](uint8_t streamId) {
+    auto isSpecialStream = std::any_of(kSpecialStreamArray.begin(), kSpecialStreamArray.end(), [pesStreamId = streamId](uint8_t streamId) {
         return pesStreamId == streamId;
     });
+    uint32_t dataOffset = 0;
     if (!isSpecialStream) {
         if (data.length() < 20) {
             LogE("data length is too short");
@@ -351,7 +355,7 @@ bool TSDemuxer::parseTSPes(DataView data, uint8_t payloadIndicator, TSPESFrame& 
         }
         //pes header (6 byte), flags (3 byte)
         dataOffset = 6 + 3 + headerDataLength;
-    } else if (pes.streamId != 0xbe) {
+    } else if (streamId != 0xbe) {
         dataOffset = 6; //pes header (6 byte)
     }
     SAssert(dataOffset < data.length(), "error! data offset > data length!");
@@ -451,7 +455,7 @@ bool TSDemuxer::packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) n
         frame->index = parseInfo_.videoInfo.frameIndex++;
         info->width = videoInfo_->width;
         info->height = videoInfo_->height;
-        recalculatePtsDts(videoFixInfo_, frame->pts, frame->dts);
+        recalculatePtsDts(frame->pts, frame->dts, false);
         frame->pts -= parseInfo_.videoInfo.firstPts;
         frame->dts -= parseInfo_.videoInfo.firstDts;
     
@@ -471,14 +475,17 @@ bool TSDemuxer::packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) n
     return true;
 }
 
-void TSDemuxer::recalculatePtsDts(TSPtsFixInfo& fixInfo, uint64_t& pts, uint64_t& dts) noexcept {
+void TSDemuxer::recalculatePtsDts(uint64_t& pts, uint64_t& dts, bool isAudio) noexcept {
     //Offset to handle wraparound
+    auto& fixInfo = isAudio ? audioFixInfo_: videoFixInfo_;
     if (dts < fixInfo.preDtsTime) {
         fixInfo.offset += TSPtsFixInfo::kMaxPTS;
+        LogI("dts wraparound:{}, {}, offset:{}", dts, fixInfo.preDtsTime, fixInfo.offset);
     }
     fixInfo.preDtsTime = dts;
     dts += fixInfo.offset;
     pts += fixInfo.offset;
+    LogI("[seek info] {} parse data:{},", isAudio ? "audio" : "video" , fixInfo.preDtsTime);
 }
 
 bool findAdtsHeader(DataView view, uint32_t& pos) noexcept {
@@ -546,6 +553,14 @@ std::optional<int32_t> getSamplingRate(int32_t index) {
     }
 }
 
+void TSDemuxer::resetData() noexcept {
+    audioFixInfo_.reset();
+    videoFixInfo_.reset();
+    videoESFrame_.reset();
+    audioESFrame_.reset();
+    LogI("[seek info] reset data");
+}
+
 bool TSDemuxer::packAudioPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexcept {
     if (audioESFrame_.mediaData.empty()) {
         LogI("media data is empty!");
@@ -590,7 +605,7 @@ bool TSDemuxer::packAudioPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexc
         frame->pts = audioESFrame_.pts;
         frame->dts = audioESFrame_.dts;
         frame->index = parseInfo_.audioInfo.frameIndex++;
-        recalculatePtsDts(audioFixInfo_, frame->pts, frame->dts);
+        recalculatePtsDts(frame->pts, frame->dts, true);
         
         if (audioInfo_ && !parseInfo_.audioInfo.isValid) {
             audioInfo_->channels = header.channel;
@@ -604,7 +619,7 @@ bool TSDemuxer::packAudioPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexc
         }
         
         frame->pts -= parseInfo_.audioInfo.firstPts;
-        frame->dts = parseInfo_.audioInfo.firstDts;
+        frame->dts -= parseInfo_.audioInfo.firstDts;
         frames.push_back(std::move(frame));
         view = view.substr(header.frameLength);
     }
@@ -645,15 +660,24 @@ DemuxerResult HLSDemuxer::parseData(DataPacket& packet) noexcept {
         result.resultCode = DemuxerResultCode::Failed;
         return result;
     }
-    if (!buffer_->append(static_cast<uint64_t>(packet.offset), std::move(packet.data))) {
-        return result;
-    }
-    
-    int32_t tsIndex = 0;
+    uint64_t tsIndex = 0;
     if (!packet.tag.empty()) {
-        tsIndex = std::stoi(packet.tag);
+        tsIndex = static_cast<uint64_t>(std::stoi(packet.tag));
     } else {
         LogI("data packet tag is empty!");
+    }
+    
+    if (seekTsIndex_ != kInvalidTSIndex && seekTsIndex_ != tsIndex) {
+        LogI("[seek info], seek index:{} expired data:{},", seekTsIndex_, tsIndex);
+        return result;
+    } else {
+        seekTsIndex_ = kInvalidTSIndex; //reset
+    }
+    
+    if (!buffer_->append(static_cast<uint64_t>(packet.offset), std::move(packet.data))) {
+        LogE("discard data, ts index:{}, data offset:{}, parse offset:{}",
+             tsIndex, packet.offset, buffer_->offset());
+        return result;
     }
     
     if (!tsDemuxer_->parseData(*buffer_, tsIndex, result)) {
@@ -677,20 +701,32 @@ void HLSDemuxer::init(DemuxerConfig config) noexcept {
 }
 
 bool HLSDemuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
-    auto res = mainParser_->parse(*buffer);
-    if (res) {
-        LogI("parser hls info complete.");
+    if (!mainParser_->isCompleted()) {
+        if (!mainParser_->parse(*buffer)) {
+            LogI("need more data.");
+            return false;
+        }
+        LogI("parser hls info complete:{}", mainParser_->isPlayList() ? "play list" : "normal");
         if (mainParser_->isPlayList()) {
             slinkParser_ = std::make_unique<M3U8Parser>(baseUrl_);
+        } else {
+            totalDuration_ = CTime(mainParser_->totalDuration());
+            isOpened_ = true;
         }
-        totalDuration_ = CTime(mainParser_->totalDuration());
+    } else {
+        if (!slinkParser_->parse(*buffer)) {
+            LogI("need more data.");
+            return false;
+        }
+        LogI("parser hls info complete");
+        totalDuration_ = CTime(slinkParser_->totalDuration());
         isOpened_ = true;
     }
-    return res;
+    return true;
 }
 
 void HLSDemuxer::close()  {
-    currentTsIndex_ = 0;
+    seekTsIndex_ = kInvalidTSIndex;
     baseUrl_.clear();
     buffer_.reset();
     mainParser_.reset();
@@ -698,32 +734,43 @@ void HLSDemuxer::close()  {
     tsDemuxer_.reset();
 }
 
-void HLSDemuxer::seekPos(uint64_t pos) noexcept {
-    IDemuxer::seekPos(pos);
+void HLSDemuxer::seekPos(uint64_t index) noexcept {
+    if (!isOpened_) {
+        LogE("demuxer closed");
+        return;
+    }
+    auto& infos = getTSInfos();
+    auto tsIndex = static_cast<size_t>(index);
+    if (0 <= tsIndex && tsIndex < infos.size()) {
+        auto range = infos[tsIndex].range;
+        auto pos = range.isValid() ? range.pos : 0;
+        IDemuxer::seekPos(pos);
+    }
+    if (tsDemuxer_) {
+        tsDemuxer_->resetData();
+        buffer_->reset();
+    }
+    seekTsIndex_ = tsIndex;
+    LogI("[seek info] seekTsIndex:{}", seekTsIndex_);
 }
 
 uint64_t HLSDemuxer::getSeekToPos(long double time) noexcept {
+    if (!isOpened_) {
+        return kInvalidTSIndex;
+    }
     auto comp = [time](const auto& tsInfo){
         return tsInfo.startTime <= time && time <= tsInfo.endTime();
     };
-    if (mainParser_->isPlayList()) {
-        auto& infos = slinkParser_->TSInfos();
-        auto it = std::find_if(infos.begin(), infos.end(), comp);
-        if (it == infos.end()) {
-            return 0;
-        }
-        return it->range.pos;
-    } else {
-        auto& infos = slinkParser_->TSInfos();
-        auto it = std::find_if(infos.begin(), infos.end(), comp);
-        if (it == infos.end()) {
-            return 0;
-        }
-        return it->range.pos;
+    auto& infos = getTSInfos();
+    auto it = std::find_if(infos.begin(), infos.end(), comp);
+    if (it == infos.end()) {
+        return kInvalidTSIndex;
     }
+    return it->sequence;
 }
 
 const std::vector<TSInfo>& HLSDemuxer::getTSInfos() const noexcept {
+    SAssert(mainParser_ != nullptr, "demuxer closed");
     if (isPlayList()) {
         return slinkParser_->TSInfos();
     }

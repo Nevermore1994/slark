@@ -16,11 +16,11 @@ HLSReader::HLSReader()
     
 }
 
-void HLSReader::handleTSData(DataPtr dataPtr) noexcept {
+void HLSReader::handleTSData(uint32_t index, DataPtr dataPtr) noexcept {
     DataPacket data;
     data.data = std::move(dataPtr);
     data.offset = static_cast<int64_t>(receiveLength_);
-    data.tag = std::to_string(currentTSIndex_);
+    data.tag = std::to_string(index);
     receiveLength_ += data.data->length;
     {
         std::lock_guard<std::mutex> lock(taskMutex_);
@@ -47,8 +47,8 @@ void HLSReader::handleTSError(const http::ErrorInfo& info) noexcept {
     }
 }
 
-void HLSReader::handleTSDisconnect() noexcept {
-    
+void HLSReader::handleTSRequestDisconnect(uint32_t tsIndex) noexcept {
+    fetchTSData(tsIndex + 1);
 }
 
 void HLSReader::handleM3u8Data(DataPtr data) noexcept {
@@ -56,18 +56,21 @@ void HLSReader::handleM3u8Data(DataPtr data) noexcept {
         LogI("append m3u8 data error");
         return;
     }
-    if (!demuxer_->open(m3u8Buffer_)) {
-        LogI("need more m3u8 data.");
-        return;
+    
+    if (demuxer_->open(m3u8Buffer_)) {
+        LogI("parse m3u8 data success.");
     }
+}
+
+void HLSReader::handleM3u8RequestDisconnect() noexcept {
     m3u8Buffer_.reset();
-    if (demuxer_->isPlayList()) {
+    if (demuxer_->isPlayList() && !demuxer_->isOpened()) {
         auto listSize = demuxer_->playListInfos().size();
         auto playList = demuxer_->playListInfos()[listSize / 2];
         sendM3u8Request(playList.m3u8Url);
         LogI("play list, resend m3u8 req:{}, url:{}", playList.name, playList.m3u8Url);
     } else {
-        fetchTSDataInOrder();
+        fetchTSData(0);
     }
 }
 
@@ -91,12 +94,16 @@ void HLSReader::sendM3u8Request(const std::string& m3u8Url) noexcept {
     handler.onError = [this](std::string_view, http::ErrorInfo info) {
         handleM3u8Error(info);
     };
+    handler.onDisconnected = [this](std::string_view) {
+        handleM3u8RequestDisconnect();
+    };
     m3u8Buffer_ = std::make_unique<Buffer>();
     auto task = std::make_unique<HLSRequestTask>();
     task->info = std::move(info);
     task->handler = std::move(handler);
     task->type = HLSRequestTaskType::M3U8;
     addRequest(std::move(task));
+    LogI("send m3u8 request:{}", m3u8Url);
 }
 
 bool HLSReader::open(ReaderTaskPtr task) noexcept {
@@ -115,7 +122,7 @@ bool HLSReader::open(ReaderTaskPtr task) noexcept {
     return true;
 }
 
-void HLSReader::sendTSRequest(const std::string& url, Range range) noexcept {
+void HLSReader::sendTSRequest(uint32_t index, const std::string& url, Range range) noexcept {
     http::RequestInfo info;
     info.url = url;
     info.methodType = http::HttpMethodType::Get;
@@ -124,8 +131,8 @@ void HLSReader::sendTSRequest(const std::string& url, Range range) noexcept {
     }
     
     http::ResponseHandler handler;
-    handler.onData = [this](std::string_view, DataPtr data) {
-        handleTSData(std::move(data));
+    handler.onData = [index, this](std::string_view, DataPtr data) {
+        handleTSData(index, std::move(data));
     };
     handler.onParseHeaderDone = [this](std::string_view, http::ResponseHeader&& header) {
         handleTSHeader(std::move(header));
@@ -133,14 +140,19 @@ void HLSReader::sendTSRequest(const std::string& url, Range range) noexcept {
     handler.onError = [this](std::string_view, http::ErrorInfo info) {
         handleTSError(info);
     };
-    handler.onDisconnected = [this](std::string_view) {
-        handleTSDisconnect();
+    handler.onDisconnected = [index, this](std::string_view) {
+        handleTSRequestDisconnect(index);
     };
     auto task = std::make_unique<HLSRequestTask>();
     task->info = std::move(info);
     task->handler = std::move(handler);
     task->type = HLSRequestTaskType::TS;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        receiveLength_ = range.isValid() ? range.pos : 0;
+    }
     addRequest(std::move(task));
+    LogI("send ts request:{}, url:{}, range:[{}, {}]", index, url, range.pos, range.size);
 }
 
 void HLSReader::updateReadRange(Range) noexcept {
@@ -170,17 +182,15 @@ void HLSReader::setDemuxer(std::shared_ptr<HLSDemuxer> demuxer) noexcept {
     demuxer_ = demuxer;
 }
 
-void HLSReader::fetchTSDataInOrder() noexcept {
-    currentTSIndex_++;
+void HLSReader::fetchTSData(uint32_t tsIndex) noexcept {
     const auto& tsInfos = demuxer_->getTSInfos();
-    if (currentTSIndex_ < 0 ||
-        currentTSIndex_ >= static_cast<int32_t>(tsInfos.size())) {
+    if (tsIndex < 0 ||
+        tsIndex >= static_cast<int32_t>(tsInfos.size())) {
         isCompleted_ = true;
         return;
     }
-    auto index = static_cast<uint32_t>(currentTSIndex_);
-    const auto& info = tsInfos[index];
-    sendTSRequest(info.url, info.range);
+    const auto& info = tsInfos[tsIndex];
+    sendTSRequest(tsIndex, info.url, info.range);
 }
 
 void HLSReader::reset() noexcept {
@@ -189,7 +199,6 @@ void HLSReader::reset() noexcept {
         std::lock_guard<std::mutex> lock(mutex_);
         m3u8Buffer_.reset();
         demuxer_.reset();
-        currentTSIndex_ = -1;
         isErrorOccurred_ = false;
         receiveLength_ = 0;
         link_.reset();
@@ -229,23 +238,33 @@ uint64_t HLSReader::size() noexcept {
 }
 
 void HLSReader::seek(uint64_t pos) noexcept {
-    uint32_t tsIndex = 0;
-    const auto& infos = demuxer_->getTSInfos();
-    for(uint32_t i = 0; i < infos.size(); i++) {
-        if (infos[i].range.pos <= pos && pos < infos[i].range.end()) {
-            tsIndex = i;
-            break;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (link_) {
+            link_->cancel();
         }
     }
-    currentTSIndex_ = static_cast<int32_t>(tsIndex) - 1;
-    fetchTSDataInOrder();
+    requestTasks_.withLock([](auto& tasks) {
+        tasks.clear();
+    });
+    auto tsIndex = static_cast<size_t>(pos);
+    const auto& infos = demuxer_->getTSInfos();
+    if (0 <= tsIndex && tsIndex < infos.size()) {
+        fetchTSData(tsIndex);
+        worker_.start();
+    } else {
+        LogE("seek error:{}, info size:{}", tsIndex, infos.size());
+    }
+    LogI("seek to ts index:{}", tsIndex);
 }
 
 void HLSReader::addRequest(RequestTaskPtr task) noexcept {
     requestTasks_.withLock([&task](auto& tasks){
         tasks.push_back(std::move(task));
     });
-    worker_.start();
+    if (!isPause_) {
+        worker_.start();
+    }
 }
 
 void HLSReader::sendRequest() noexcept {
@@ -256,6 +275,7 @@ void HLSReader::sendRequest() noexcept {
             return;
         }
     }
+    link_.reset();
     RequestTaskPtr task;
     requestTasks_.withLock([&task](auto& tasks){
         if (!tasks.empty()) {
@@ -268,17 +288,6 @@ void HLSReader::sendRequest() noexcept {
         return;
     }
     std::lock_guard<std::mutex> lock(mutex_);
-    receiveLength_ = 0;
-    const auto& tsInfos = demuxer_->getTSInfos();
-    if (task->type == HLSRequestTaskType::TS &&
-        0 <= currentTSIndex_ &&
-        currentTSIndex_ < static_cast<int32_t>(tsInfos.size())) {
-        auto index = static_cast<uint32_t>(currentTSIndex_);
-        const auto& info = demuxer_->getTSInfos()[index];
-        if (info.range.isValid()) {
-            receiveLength_ = info.range.pos;
-        }
-    }
     isErrorOccurred_ = false;
     link_ = std::make_unique<http::Request>(std::move(task->info), std::move(task->handler));
 }

@@ -102,17 +102,11 @@ struct TSPMT {
 };
 
 struct TSPESFrame {
-    uint8_t streamId = 0;
-    uint16_t pesPacketLength = 0;
-    uint8_t headerDataLength = 0;
     uint64_t pts = 0;
     uint64_t dts = 0;
     Data mediaData;
     
     void reset() noexcept {
-        streamId = 0;
-        pesPacketLength = 0;
-        headerDataLength = 0;
         pts = 0;
         dts = 0;
         mediaData.reset();
@@ -181,6 +175,8 @@ public:
         
     }
     
+    void resetData() noexcept;
+    
     bool parseData(Buffer& buffer, uint32_t tsIndex, DemuxerResult& result) noexcept;
 private:
     bool checkPacket(Buffer& buffer, uint32_t& pos) noexcept;
@@ -199,7 +195,7 @@ private:
     
     bool packAudioPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexcept;
     
-    void recalculatePtsDts(TSPtsFixInfo& fixInfo, uint64_t& pts, uint64_t& dts) noexcept;
+    void recalculatePtsDts(uint64_t& pts, uint64_t& dts, bool isAudio) noexcept;
 private:
     static constexpr uint32_t kPacketSize = 188;
     TSPAT pat_;
@@ -229,6 +225,7 @@ public:
     
     DemuxerResult parseData(DataPacket& packet) noexcept override;
     
+    ///In HLS, this function obtains the ts index, not the offset of the file
     uint64_t getSeekToPos(long double) noexcept override;
     
     const std::vector<TSInfo>& getTSInfos() const noexcept;
@@ -254,7 +251,8 @@ public:
     }
     
 private:
-    int32_t currentTsIndex_ = -1;
+    static constexpr uint64_t kInvalidTSIndex = UINT64_MAX;
+    uint64_t seekTsIndex_ = kInvalidTSIndex;
     std::unique_ptr<M3U8Parser> mainParser_;
     std::unique_ptr<M3U8Parser> slinkParser_;
     std::unique_ptr<TSDemuxer> tsDemuxer_;

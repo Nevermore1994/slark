@@ -52,10 +52,15 @@ private:
     void wait() noexcept;
     
     AVFramePtr getDecodeFrame() noexcept;
+    
+    void setDecodeFrame(AVFramePtr ptr) noexcept {
+        decodeAVFrame = std::move(ptr);
+    }
 private:
     std::mutex mutex_;
     std::condition_variable cond_;
     AudioConverterRef decodeSession_ = nullptr;
+    AVFramePtr decodeAVFrame = nullptr;
     std::unique_ptr<AudioBufferList> outputData_;
     std::deque<AVFramePtr> pendingFrames_;
     Thread worker_;

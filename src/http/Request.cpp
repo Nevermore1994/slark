@@ -177,7 +177,7 @@ void Request::sendRequest() noexcept {
     if (!result.isSuccess()) {
         errorHandler(result.resultCode, GetLastError());
         return;
-    } else if (handler_.onConnected) {
+    } else if (isValid_ && handler_.onConnected) {
         handler_.onConnected(reqId_);
     }
     if (!send()) {
@@ -355,6 +355,10 @@ void Request::receive() noexcept {
             return;
         }
         std::this_thread::sleep_for(1ms);
+        if (!isValid_) {
+            disconnected();
+            return;
+        }
         auto [recvResult, dataPtr] = std::move(socket_->receive());
         bool isCompleted = (recvResult.resultCode == ResultCode::Completed ||
                             recvResult.resultCode == ResultCode::Disconnected);
@@ -420,7 +424,7 @@ int64_t Request::getRemainTime() const noexcept {
 }
 
 void Request::handleErrorResponse(ResultCode code, int32_t errorCode) noexcept {
-    if (handler_.onError) {
+    if (isValid_ && handler_.onError) {
         handler_.onError(reqId_ , {code, errorCode});
     }
     disconnected();
