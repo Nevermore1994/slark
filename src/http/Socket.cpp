@@ -86,6 +86,7 @@ void ISocket::close() noexcept {
     if (socket_ == kInvalidSocket) {
         return;
     }
+    shutdown(socket_, SHUT_RDWR);
     ::close(socket_);
     socket_ = kInvalidSocket;
 }

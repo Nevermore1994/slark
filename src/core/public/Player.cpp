@@ -71,7 +71,7 @@ PlayerState Player::state() noexcept {
     return pimpl_->state();
 }
 
-const PlayerInfo& Player::info() noexcept {
+PlayerInfo Player::info() noexcept {
     return pimpl_->info();
 }
 

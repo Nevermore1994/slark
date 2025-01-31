@@ -74,7 +74,7 @@ public:
     
     void setRenderImpl(std::weak_ptr<IVideoRender>& render) noexcept;
 public:
-    [[nodiscard]] inline const PlayerInfo& info() const noexcept {
+    [[nodiscard]] inline PlayerInfo info() const noexcept {
         return info_;
     }
 

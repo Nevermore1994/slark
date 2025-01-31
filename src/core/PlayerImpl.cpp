@@ -86,9 +86,11 @@ void Player::Impl::init() noexcept {
             notifyPlayedTime();
         }
         if (!isStoped_) {
-            checkCacheState();
             notifyCacheTime();
         }
+    });
+    ownerThread_->runLoop(500ms, [this](){
+        checkCacheState();
     });
     
     dataProvider_->start();
@@ -250,6 +252,7 @@ void Player::Impl::createVideoComponent(const PlayerSetting& setting) noexcept  
 }
 
 void Player::Impl::initPlayerInfo() noexcept {
+    info_.isValid = true;
     info_.hasAudio = demuxer_->hasAudio();
     info_.hasVideo = demuxer_->hasVideo();
     info_.duration = demuxer_->totalDuration().second();
@@ -892,12 +895,12 @@ void Player::Impl::checkCacheState() noexcept {
     auto cacheTime = cachedDuration - playedTime;
     cacheTime = std::max(0.0l, cacheTime);
     LogI("demux cache time:{}, demuxedDuration:{} played time:{}", cacheTime, cachedDuration, playedTime);
-    auto startRead = [this](bool isPause){
+    auto startRead = [this](bool isStart){
         auto isRunning = dataProvider_->isRunning();
-        if (isPause && isRunning) {
+        if (!isStart && isRunning) {
             dataProvider_->pause();
             LogI("read pause");
-        } else if (!isPause && !isRunning) {
+        } else if (isStart && !isRunning) {
             dataProvider_->start();
             LogI("read resume");
         }
@@ -906,7 +909,8 @@ void Player::Impl::checkCacheState() noexcept {
         startRead(true);
         ownerThread_->start();
         LogI("owner resume");
-    } else if (cacheTime >= setting.maxCacheTime || isEqualOrGreater(playedTime, info_.duration, 0.1l)) {
+    } else if (cacheTime >= setting.maxCacheTime ||
+               (info_.isValid && isEqualOrGreater(playedTime, info_.duration, 0.1l)) ) {
         if ((nowState == PlayerState::Ready || nowState == PlayerState::Pause) &&
             receiver_->empty()) {
             ownerThread_->pause();
