@@ -12,14 +12,29 @@ namespace slark {
 
 DecoderComponent::DecoderComponent(DecoderReceiveFunc&& callback)
     : callback_(callback)
-    , decodeWorker_(Util::genRandomName("DecodeThread_"), &DecoderComponent::decode, this) {
+    , decodeWorker_(&DecoderComponent::decode, this) {
 }
 
 DecoderComponent::~DecoderComponent() {
     close();
 }
 
+AVFramePtr DecoderComponent::getDecodeFrame() noexcept {
+    std::unique_lock lock(frameMutex_);
+    cond_.wait(lock, [this](){
+        return !pendingDecodePacketQueue_.empty() || !decoder_;
+    });
+    if (!decoder_) {
+        LogI("decoder closed");
+        return nullptr;
+    }
+    auto frame = std::move(pendingDecodePacketQueue_.front());
+    pendingDecodePacketQueue_.pop_front();
+    return frame;
+}
+
 bool DecoderComponent::open(DecoderType type, std::shared_ptr<DecoderConfig> config) noexcept {
+    std::lock_guard lock(decoderMutex_);
     decoder_ = DecoderManager::shareInstance().create(type);
     if (!decoder_) {
         return false;
@@ -27,50 +42,44 @@ bool DecoderComponent::open(DecoderType type, std::shared_ptr<DecoderConfig> con
     decoder_->receiveFunc = [this](auto frame){
         callback_(std::move(frame));
     };
+    decoder_->setProvider(weak_from_this());
     if (decoder_->isVideo()) {
         auto videoConfig = std::dynamic_pointer_cast<VideoDecoderConfig>(config);
         if (!videoConfig) {
             return false;
         }
+        decodeWorker_.setThreadName(Util::genRandomName("videoDecode_"));
         return decoder_->open(videoConfig);
     } else if (decoder_->isAudio()) {
         auto audioConfig = std::dynamic_pointer_cast<AudioDecoderConfig>(config);
         if (!audioConfig) {
             return false;
         }
+        decodeWorker_.setThreadName(Util::genRandomName("audioDecode_"));
         return decoder_->open(audioConfig);
     }
     using namespace std::chrono_literals;
-    decodeWorker_.setInterval(2ms);
+    decodeWorker_.setInterval(5ms);
     return true;
 }
 
 void DecoderComponent::decode() {
-    if (decoder_ == nullptr) {
+    auto frame = getDecodeFrame();
+    std::lock_guard lock(decoderMutex_);
+    if (decoder_ == nullptr || !decoder_->isOpen()) {
         LogE("decoder is nullptr...");
+        decodeWorker_.pause();
         return;
     }
-    AVFramePtr packet;
-    packets_.withWriteLock([&](auto& deque){
-        if (!deque.empty()) {
-            packet = std::move(deque.front());
-            deque.pop_front();
-        }
-    });
-    if(packet) {
-        std::unique_lock<std::mutex> lock(mutex_);
-        decoder_->send(std::move(packet));
-    } else if (isReachEnd_ && !decoder_->isFlushed()) {
-        std::unique_lock<std::mutex> lock(mutex_);
-        decoder_->flush();
-    }
+    decoder_->send(std::move(frame));
 }
 
 void DecoderComponent::send(AVFramePtr packet) noexcept {
-    packets_.withWriteLock([&](auto& deque){
-        packet->stats.prepareDecodeStamp = Time::nowTimeStamp();
-        deque.emplace_back(std::move(packet));
-    });
+    {
+        std::lock_guard lock(frameMutex_);
+        pendingDecodePacketQueue_.push_back(std::move(packet));
+    }
+    cond_.notify_all();
     decodeWorker_.start();
 }
 
@@ -83,13 +92,17 @@ void DecoderComponent::start() noexcept {
 }
 
 void DecoderComponent::reset() noexcept {
-    std::unique_lock<std::mutex> lock(mutex_);
     decodeWorker_.pause();
-    decoder_.reset();
+    {
+        std::lock_guard lock(frameMutex_);
+        pendingDecodePacketQueue_.clear();
+    }
+    {
+        std::lock_guard lock(decoderMutex_);
+        decoder_.reset();
+    }
     isReachEnd_ = false;
-    packets_.withWriteLock([](auto& vec){
-        vec.clear();
-    });
+    cond_.notify_all();
 }
 
 void DecoderComponent::close() noexcept {
@@ -98,13 +111,11 @@ void DecoderComponent::close() noexcept {
 }
 
 void DecoderComponent::flush() noexcept {
-    std::unique_lock<std::mutex> lock(mutex_);
+    std::lock_guard lock(decoderMutex_);
     if (decoder_) {
         decoder_->flush();
     }
-    packets_.withWriteLock([](auto& vec){
-        vec.clear();
-    });
+    cond_.notify_all();
 }
 
 }

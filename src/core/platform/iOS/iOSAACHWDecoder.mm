@@ -24,10 +24,6 @@ OSStatus AACDecodeInputDataProc(AudioConverterRef,
     }
     auto decoder = reinterpret_cast<iOSAACHWDecoder*>(inUserData);
     auto framePtr = decoder->getDecodeFrame();
-    if (!framePtr || !decoder->isOpen()) {
-        decoder->wait();
-        framePtr = decoder->getDecodeFrame();
-    }
     if (!framePtr) {
         LogI("exit aac decode");
         return endOfStream;
@@ -52,8 +48,7 @@ OSStatus AACDecodeInputDataProc(AudioConverterRef,
     return noErr;
 }
 
-iOSAACHWDecoder::iOSAACHWDecoder()
-    : worker_(Util::genRandomName("iOSAACDecodeThread"), &iOSAACHWDecoder::decode, this){
+iOSAACHWDecoder::iOSAACHWDecoder() {
     decoderType_ = DecoderType::AACHardwareDecoder;
 }
 
@@ -62,12 +57,7 @@ iOSAACHWDecoder::~iOSAACHWDecoder() {
 }
 
 void iOSAACHWDecoder::reset() noexcept {
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        isOpen_ = false;
-    }
-    cond_.notify_all();
-    worker_.pause();
+    isOpen_ = false;
     @autoreleasepool {
         if (decodeSession_) {
             AudioConverterDispose(decodeSession_);
@@ -80,20 +70,8 @@ void iOSAACHWDecoder::reset() noexcept {
     }
 }
 
-void iOSAACHWDecoder::decode() noexcept {
-    bool isNeedDecode = false;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (!pendingFrames_.empty()) {
-            isNeedDecode = true;
-        }
-    }
-    if (!isNeedDecode) {
-        worker_.pause();
-        LogI("decode queue empty!");
-        return;
-    }
-
+bool iOSAACHWDecoder::send(AVFramePtr frame) noexcept {
+    decodeFrame = std::move(frame);
     UInt32 outputDataPacketSize = 1024;
     OSStatus status = AudioConverterFillComplexBuffer(decodeSession_,
                                                       AACDecodeInputDataProc,
@@ -108,28 +86,16 @@ void iOSAACHWDecoder::decode() noexcept {
         auto decodeData = std::make_unique<Data>(outputData_->mBuffers[0].mDataByteSize);
         decodeData->length = outputData_->mBuffers[0].mDataByteSize;
         std::copy(data, data + outputData_->mBuffers[0].mDataByteSize, decodeData->rawData);
-        if (!decodeAVFrame) {
+        if (!decodeFrame) {
             LogE("decode error, current decode frame is nullptr");
-            return;
-        }
-        decodeAVFrame->data = std::move(decodeData);
-        decodeAVFrame->stats.decodedStamp = Time::nowTimeStamp();
-        if (receiveFunc) {
-            receiveFunc(std::move(decodeAVFrame));
-        }
-    }
-}
-
-bool iOSAACHWDecoder::send(AVFramePtr frame) noexcept {
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (!isOpen_) {
             return false;
         }
-        pendingFrames_.push_back(std::move(frame));
+        decodeFrame->data = std::move(decodeData);
+        decodeFrame->stats.decodedStamp = Time::nowTimeStamp();
+        if (receiveFunc) {
+            receiveFunc(std::move(decodeFrame));
+        }
     }
-    worker_.start();
-    cond_.notify_all();
     return true;
 }
 
@@ -202,22 +168,19 @@ bool iOSAACHWDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept {
 
 void iOSAACHWDecoder::close() noexcept {
     reset();
-    worker_.stop();
 }
 
 AVFramePtr iOSAACHWDecoder::getDecodeFrame() noexcept {
-    AVFramePtr frame = nullptr;
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (!pendingFrames_.empty()) {
-        frame = std::move(pendingFrames_.front());
-        pendingFrames_.pop_front();
+    if (decodeFrame) {
+        auto frame = std::move(decodeFrame);
+        decodeFrame = nullptr;
+        return frame;
     }
-    return frame;
-}
-
-void iOSAACHWDecoder::wait() noexcept {
-    std::unique_lock<std::mutex> lock(mutex_);
-    cond_.wait(lock, [this] { return !pendingFrames_.empty() || !isOpen_;});
+    if (!provider_.expired()) {
+        auto provider = provider_.lock();
+        return provider->getDecodeFrame();
+    }
+    return nullptr;
 }
 
 }

@@ -10,10 +10,14 @@
 
 namespace slark {
 
-class DecoderComponent : public NonCopyable {
+class DecoderComponent : public DecoderDataProvider,
+                            std::enable_shared_from_this<DecoderComponent> {
 public:
     explicit DecoderComponent(DecoderReceiveFunc&& callback);
+    
     ~DecoderComponent() override;
+    
+    virtual AVFramePtr getDecodeFrame() noexcept override;
 
     bool open(DecoderType type, std::shared_ptr<DecoderConfig> config) noexcept;
     
@@ -35,9 +39,10 @@ public:
     
     bool isNeedPushFrame() noexcept {
         bool isNeed = true;
-        packets_.withReadLock([&isNeed](auto& packets){
-            isNeed = packets.empty();
-        });
+        {
+            std::lock_guard lock(frameMutex_);
+            isNeed = pendingDecodePacketQueue_.empty();
+        }
         return isNeed;
     }
 
@@ -45,11 +50,13 @@ private:
     void decode();
 private:
     std::atomic<bool> isReachEnd_ = false;
-    std::mutex mutex_;
+    std::mutex decoderMutex_;
     std::unique_ptr<IDecoder> decoder_;
+    std::mutex frameMutex_;
+    std::condition_variable cond_;
+    std::deque<AVFramePtr> pendingDecodePacketQueue_;
     DecoderReceiveFunc callback_;
     Thread decodeWorker_;
-    Synchronized<std::deque<AVFramePtr>, std::shared_mutex> packets_;
 };
 
 }

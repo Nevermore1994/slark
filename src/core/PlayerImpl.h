@@ -181,8 +181,8 @@ private:
     //decode
     Synchronized<std::deque<AVFramePtr>, std::shared_mutex> audioFrames_;
     Synchronized<std::deque<AVFramePtr>, std::shared_mutex> videoFrames_;
-    std::unique_ptr<DecoderComponent> audioDecodeComponent_ = nullptr;
-    std::unique_ptr<DecoderComponent> videoDecodeComponent_ = nullptr;
+    std::shared_ptr<DecoderComponent> audioDecodeComponent_ = nullptr;
+    std::shared_ptr<DecoderComponent> videoDecodeComponent_ = nullptr;
     
     //render
     std::unique_ptr<AudioRenderComponent> audioRender_ = nullptr;

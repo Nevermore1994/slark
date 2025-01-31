@@ -14,22 +14,34 @@
 #include <atomic>
 #include <string_view>
 #include <type_traits>
+#include <concepts>
 #include "TimerPool.h"
 #include "Random.hpp"
 #include "NonCopyable.h"
 
 namespace slark {
 
+
 class Thread : public NonCopyable {
 
 public:
-    template <class Func, typename ... Args, typename = std::enable_if_t<!std::is_same_v<std::decay_t<Func>, std::thread>>>
+    template <typename Func, typename ... Args>
+    requires std::is_invocable_v<Func, Args...>
     Thread(std::string name, Func&& f, Args&& ... args)
         : name_(std::move(name))
         , lastRunTimeStamp_(0)
-        , worker_(&Thread::process, this)
-        , func_(std::bind(std::forward<Func>(f), std::forward<Args>(args)...)) {
+        , func_(std::bind(std::forward<Func>(f), std::forward<Args>(args)...))
+        , worker_(&Thread::process, this) {
         std::println("Thread create:{}", name_);
+    }
+    
+    template <typename Func, typename ... Args>
+    requires std::is_invocable_v<Func, Args...>
+    Thread(Func&& f, Args&& ... args)
+        : lastRunTimeStamp_(0)
+        , func_(std::bind(std::forward<Func>(f), std::forward<Args>(args)...))
+        , worker_(&Thread::process, this) {
+        
     }
 
     ~Thread() noexcept override;
@@ -82,23 +94,23 @@ public:
         return interval_;
     }
 
+    void setThreadName(std::string_view nameView) noexcept;
 private:
     void process() noexcept;
-
+    
     void setup() noexcept;
-
 private:
     bool isRunning_ = false;
     bool isExit_ = false;
-    bool isInit_ = false;
+    std::atomic<bool> isInit_ = false;
     std::chrono::milliseconds interval_{0};
     std::string name_;
     std::shared_mutex mutex_;
     std::condition_variable_any cond_;
     std::atomic<uint64_t> lastRunTimeStamp_;
+    std::function<void()> func_;
     std::thread worker_;
     TimerPool timerPool_;
-    std::function<void()> func_;
 };
 
 }//end namespace slark

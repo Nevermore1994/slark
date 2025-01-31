@@ -57,10 +57,10 @@ void Thread::start() noexcept {
 }
 
 void Thread::process() noexcept {
-    if (!isInit_) {
-        setup();
-    }
     while (!isExit_) {
+        if (!isInit_) {
+            setup();
+        }
         if (isRunning_) {
             lastRunTimeStamp_ = Time::nowTimeStamp();
             if (func_) {
@@ -77,6 +77,12 @@ void Thread::process() noexcept {
             });
         }
     }
+}
+
+void Thread::setThreadName(std::string_view nameView) noexcept {
+    std::lock_guard lock(mutex_);
+    name_ = std::string(nameView);
+    isInit_ = false;
 }
 
 void Thread::setup() noexcept {
