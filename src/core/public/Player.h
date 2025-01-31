@@ -82,6 +82,7 @@ struct PlayerParams {
 };
 
 struct PlayerInfo {
+    bool isValid = false;
     bool hasVideo = false;
     bool hasAudio = false;
     long double duration = 0;
@@ -131,7 +132,7 @@ public:
 
     PlayerState state() noexcept;
     
-    const PlayerInfo& info() noexcept;
+    PlayerInfo info() noexcept;
     
     [[nodiscard]] std::string_view playerId() const noexcept;
     

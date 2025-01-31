@@ -74,6 +74,7 @@ public:
     ISocket& operator=(ISocket&& rhs) noexcept;
 
     ///return ResultCode and error code, error code is last error number
+    ///timeout std::chrono::milliseconds
     virtual SocketResult connect(const AddressInfoPtr& address, int64_t timeout) noexcept;
 
     ///return ResultCode and the number of bytes sent successfully

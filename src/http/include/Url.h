@@ -29,7 +29,7 @@ struct Url {
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "google-explicit-constructor"
 #endif
-    Url(const std::string& url) {
+    Url(std::string_view url) {
         parse(url);
     }
 #ifdef __clang__
@@ -56,7 +56,7 @@ struct Url {
     }
 
 private:
-    void parse(const std::string& url) noexcept;
+    void parse(std::string_view url) noexcept;
 private:
     bool isValid_ = true;
 };

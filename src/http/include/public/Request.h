@@ -6,6 +6,8 @@
 
 #include <thread>
 #include <atomic>
+#include <condition_variable>
+#include <deque>
 #include "Data.hpp"
 #include "Type.h"
 
@@ -144,6 +146,54 @@ private:
     std::unique_ptr<Url, decltype(&freeUrl)> url_;
     std::unique_ptr<std::thread> worker_ = nullptr;
     std::string reqId_;
+};
+
+struct RequestSessionTask {
+    std::atomic<bool> isCompleted_ = false;
+    std::atomic<bool> isValid_ = true;
+    std::atomic<bool> isRedirect_ = false;
+    uint64_t startStamp = 0;
+    std::string reqId;
+    std::unique_ptr<RequestInfo> requestInfo;
+};
+
+class RequestSession {
+public:
+    RequestSession();
+    
+    ~RequestSession();
+    
+    bool open(std::string_view host, std::unique_ptr<ResponseHandler>) noexcept;
+    
+    void close() noexcept;
+    
+    std::string request(std::unique_ptr<RequestInfo> requestInfo) noexcept;
+
+private:
+    void setupSocket() noexcept;
+    void sendRequest() noexcept;
+    void redirect(const std::string&) noexcept;
+    void process() noexcept;
+    int64_t getRemainTime() noexcept;
+    bool send() noexcept;
+    bool isReceivable() noexcept;
+    void receive() noexcept;
+    bool parseChunk(DataPtr& data, int64_t& chunkSize, bool& isCompleted) noexcept;
+    void responseHeader(ResponseHeader&&) noexcept;
+    void responseData(DataPtr data) noexcept;
+    void handleErrorResponse(ResultCode code, int32_t errorCode) noexcept;
+    void disconnected() noexcept;
+private:
+    std::mutex mutex_;
+    std::atomic<bool> isOpened_ = true;
+    std::unique_ptr<ResponseHandler> handler_;
+    std::unique_ptr<ISocket, decltype(&freeSocket)> socket_;
+    std::unique_ptr<Url, decltype(&freeUrl)> host_;
+    std::unique_ptr<std::thread> worker_ = nullptr;
+    std::mutex taskMutex_;
+    std::condition_variable cond_;
+    std::deque<std::unique_ptr<RequestSessionTask>> requestTaskQueue_;
+    std::unique_ptr<RequestSessionTask> currentTask_;
 };
 
 }//end of namespace http
