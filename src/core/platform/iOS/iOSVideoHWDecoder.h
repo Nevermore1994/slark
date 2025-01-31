@@ -21,6 +21,7 @@ public:
     }
     
     ~iOSVideoHWDecoder() override;
+    
     void reset() noexcept override;
     
     bool send(AVFramePtr frame)  override;

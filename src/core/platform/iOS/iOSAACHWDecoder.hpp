@@ -41,29 +41,15 @@ public:
         return info;
     }
     
-private:
-    friend OSStatus AACDecodeInputDataProc(AudioConverterRef,
-                                    UInt32 *ioNumberDataPackets,
-                                    AudioBufferList *ioData,
-                                    AudioStreamPacketDescription** outDataPacketDescription,
-                                    void *inUserData);
-    void decode() noexcept;
-    
-    void wait() noexcept;
-    
     AVFramePtr getDecodeFrame() noexcept;
     
     void setDecodeFrame(AVFramePtr ptr) noexcept {
-        decodeAVFrame = std::move(ptr);
+        decodeFrame = std::move(ptr);
     }
 private:
-    std::mutex mutex_;
-    std::condition_variable cond_;
     AudioConverterRef decodeSession_ = nullptr;
-    AVFramePtr decodeAVFrame = nullptr;
+    AVFramePtr decodeFrame = nullptr;
     std::unique_ptr<AudioBufferList> outputData_;
-    std::deque<AVFramePtr> pendingFrames_;
-    Thread worker_;
 };
 
 

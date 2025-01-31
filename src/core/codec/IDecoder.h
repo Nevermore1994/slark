@@ -32,28 +32,39 @@ struct DecoderConfig {
 
 using DecoderReceiveFunc = std::function<void(AVFramePtr)>;
 
+class DecoderDataProvider {
+public:
+    virtual ~DecoderDataProvider() = default;
+    
+    virtual AVFramePtr getDecodeFrame() noexcept = 0;
+};
+
 class IDecoder : public NonCopyable {
 public:
     ~IDecoder() override = default;
 public:
-    [[nodiscard]] inline DecoderType type() const noexcept {
+    [[nodiscard]] DecoderType type() const noexcept {
         return decoderType_;
     }
 
-    [[nodiscard]] inline bool isAudio() const noexcept {
+    [[nodiscard]] bool isAudio() const noexcept {
         return DecoderType::Unknown < decoderType_ && decoderType_ < DecoderType::AudioDecoderEnd;
     }
 
-    [[nodiscard]] inline bool isVideo() const noexcept {
+    [[nodiscard]] bool isVideo() const noexcept {
         return DecoderType::AudioDecoderEnd < decoderType_;
     }
 
-    [[nodiscard]] inline bool isOpen() const noexcept {
+    [[nodiscard]] bool isOpen() const noexcept {
         return isOpen_;
     }
     
-    [[nodiscard]] inline bool isFlushed() const noexcept {
+    [[nodiscard]] bool isFlushed() const noexcept {
         return isFlushed_;
+    }
+    
+    void setProvider(std::weak_ptr<DecoderDataProvider> provider) noexcept {
+        provider_ = provider;
     }
     
     virtual bool send(AVFramePtr frame) = 0;
@@ -65,6 +76,7 @@ public:
     virtual bool open(std::shared_ptr<DecoderConfig> config) noexcept = 0;
     
     virtual void close() noexcept = 0;
+    
 public:
     DecoderReceiveFunc receiveFunc;
 protected:
@@ -72,6 +84,7 @@ protected:
     bool isFlushed_ = false;
     DecoderType decoderType_ = DecoderType::Unknown;
     std::shared_ptr<DecoderConfig> config_;
+    std::weak_ptr<DecoderDataProvider> provider_;
 };
 
 }

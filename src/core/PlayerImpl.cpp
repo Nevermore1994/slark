@@ -181,7 +181,7 @@ void Player::Impl::createAudioComponent(const PlayerSetting& setting) noexcept {
         LogE("not found decoder:media info {}", demuxer_->audioInfo()->mediaInfo);
         return;
     }
-    audioDecodeComponent_ = std::make_unique<DecoderComponent>([this](auto frame) {
+    audioDecodeComponent_ = std::make_shared<DecoderComponent>([this](auto frame) {
         if (!statistics_.isFirstAudioRendered) {                    statistics_.audioDecodeDelta = frame->stats.decodedStamp - frame->stats.prepareDecodeStamp;
         }
         audioFrames_.withWriteLock([&frame](auto& frames){
@@ -216,7 +216,7 @@ void Player::Impl::createVideoComponent(const PlayerSetting& setting) noexcept  
         LogE("not found decoder:media info {}", demuxer_->videoInfo()->mediaInfo);
         return;
     }
-    videoDecodeComponent_ = std::make_unique<DecoderComponent>([this](auto frame) {
+    videoDecodeComponent_ = std::make_shared<DecoderComponent>([this](auto frame) {
         LogI("decode video frame info:{}", frame->ptsTime());
         videoFrames_.withWriteLock([&frame](auto& frames){
             frames.push_back(std::move(frame));
@@ -449,7 +449,7 @@ void Player::Impl::pushVideoFrameToRender() noexcept {
             ptr->pushVideoFrameRender(framePtr->opaque);
             auto renderPts = framePtr->ptsTime();
             auto nowState = state();
-            LogI("push vieo frame render:{}, is force:{}, state:{}", renderPts, statistics_.isForceVideoRendered, static_cast<int>(nowState));
+            LogI("push video frame render:{}, is force:{}, state:{}", renderPts, statistics_.isForceVideoRendered, static_cast<int>(nowState));
             ptr->clock().setTime(static_cast<uint64_t>(renderPts * Time::kMicroSecondScale));
             isPushed = true;
         }
@@ -905,20 +905,25 @@ void Player::Impl::checkCacheState() noexcept {
             LogI("read resume");
         }
     };
+    auto pauseOwnerThread = [this](PlayerState nowState) {
+        if ((nowState == PlayerState::Ready || nowState == PlayerState::Pause) &&
+            receiver_->empty()) {
+            ownerThread_->pause();
+            LogI("owner pause");
+        }
+    };
     if (cacheTime < setting.minCacheTime && !dataProvider_->isCompleted()) {
         startRead(true);
         ownerThread_->start();
         LogI("owner resume");
     } else if (cacheTime >= setting.maxCacheTime ||
                (info_.isValid && isEqualOrGreater(playedTime, info_.duration, 0.1l)) ) {
-        if ((nowState == PlayerState::Ready || nowState == PlayerState::Pause) &&
-            receiver_->empty()) {
-            ownerThread_->pause();
-            LogI("owner pause");
-        }
+        pauseOwnerThread(nowState);
         startRead(false);
     } else if (dataProvider_->isCompleted()) {
         startRead(false);
+    } else if (!dataProvider_->isRunning()) {
+        pauseOwnerThread(nowState);
     }
 }
 
@@ -976,7 +981,7 @@ void* Player::Impl::requestRender() noexcept {
         videoRender_.withReadLock([&framePtr](auto& p){
             if (auto ptr = p.lock(); ptr) {
                 auto t = framePtr->ptsTime();
-                LogI("push vieo frame render:{}, pts:{}", t, framePtr->pts);
+                LogI("push video frame render:{}, pts:{}", t, framePtr->pts);
                 ptr->clock().setTime(static_cast<uint64_t>(framePtr->ptsTime() * Time::kMicroSecondScale));
             }
         });
