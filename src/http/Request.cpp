@@ -526,6 +526,11 @@ void RequestSession::setupSocket() noexcept {
     }
     socket_ = std::unique_ptr<ISocket, decltype(&freeSocket)>(socketPtr, freeSocket);
     auto addressInfoPtr = MakeAddressInfoPtr(addressInfo);
+    if (socket_->setKeepLive()) {
+        LogI("set keep live success");
+    } else {
+        LogE("set keep live failed");
+    }
     auto result = socket_->connect(addressInfoPtr, 60000); //60s
     if (result.isSuccess()) {
         LogI("connect success:{}", host_->host);
@@ -555,7 +560,7 @@ void RequestSession::process() noexcept {
             host_ = std::move(currentTask_->host);
             socket_.reset();
         }
-        if (socket_ == nullptr) {
+        if (socket_ == nullptr || !socket_->isLive()) {
             setupSocket();
         }
         if (!send()) {

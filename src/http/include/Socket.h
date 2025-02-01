@@ -89,6 +89,10 @@ public:
     [[nodiscard]] virtual SocketResult canSend(int64_t timeout) const noexcept;
 
     [[nodiscard]] virtual SocketResult canReceive(int64_t timeout) const noexcept;
+
+    [[nodiscard]] bool setKeepLive() const noexcept;
+
+    [[nodiscard]] bool isLive() const noexcept;
 protected:
     ResultCode config() noexcept;
 private:
