@@ -5,6 +5,8 @@
 //
 #include "Socket.h"
 #include "Time.hpp"
+#include "Log.hpp"
+#include <netinet/tcp.h>
 
 namespace slark::http {
 
@@ -173,6 +175,88 @@ SocketResult ISocket::connect(const AddressInfoPtr& address, int64_t timeout) no
     result.resultCode = connectResult == kInvalid ? ResultCode::ConnectGenericError : ResultCode::Success;
     checkConnectResult(result, timeout);
     return result;
+}
+
+#ifdef __APPLE__
+#define TCP_KEEPIDLE TCP_KEEPALIVE
+#endif
+bool ISocket::setKeepLive() const noexcept {
+    if (socket_ == kInvalidSocket) {
+        return false;
+    }
+    int optval = 1;
+    socklen_t optlen = sizeof(optval);
+
+    if (setsockopt(socket_, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen) < 0) {
+        LogE("setsockopt SO_KEEPALIVE");
+        return false;
+    }
+
+    optval = 60; // 60s
+    if (setsockopt(socket_, IPPROTO_TCP, TCP_KEEPIDLE, &optval, optlen) < 0) {
+        LogE("setsockopt TCP_KEEPIDLE");
+        return false;
+    }
+
+    optval = 3;
+    if (setsockopt(socket_, IPPROTO_TCP, TCP_KEEPCNT, &optval, optlen) < 0) {
+        LogE("setsockopt TCP_KEEPCNT");
+        return false;
+    }
+
+    optval = 10; // 10s
+    if (setsockopt(socket_, IPPROTO_TCP, TCP_KEEPINTVL, &optval, optlen) < 0) {
+        LogE("setsockopt TCP_KEEPINTVL");
+        return false;
+    }
+    return true;
+}
+
+bool ISocket::isLive() const noexcept {
+    fd_set read_fds, write_fds, except_fds;
+    FD_ZERO(&read_fds);
+    FD_ZERO(&write_fds);
+    FD_ZERO(&except_fds);
+
+    FD_SET(socket_, &read_fds);
+    FD_SET(socket_, &write_fds);
+    FD_SET(socket_, &except_fds);
+
+    struct timeval timeout {
+        .tv_sec = 0,
+        .tv_usec = 0
+    };
+
+    int result = select(socket_ + 1, &read_fds, &write_fds, &except_fds, &timeout);
+    if (result < 0) {
+        LogE("select error:{}", result);
+        return false;
+    }
+
+    if (result == 0) {
+        return true;
+    }
+
+    if (FD_ISSET(socket_, &except_fds)) {
+        return false;
+    }
+
+    if (FD_ISSET(socket_, &read_fds) || FD_ISSET(socket_, &write_fds)) {
+        char buffer;
+        ssize_t n = recv(socket_, &buffer, sizeof(buffer), MSG_PEEK | MSG_DONTWAIT);
+        if (n == 0) {
+            return false;//peer close
+        } else if (n < 0) {
+            if (errno == EWOULDBLOCK || errno == EAGAIN) {
+                return true;
+            } else {
+                return false;
+            }
+        } else {
+            return true;
+        }
+    }
+    return true;
 }
 
 }//end of namespace slark::http
