@@ -20,7 +20,7 @@ namespace slark::http {
 using namespace slark;
 class ISocket;
 
-class Url;
+struct Url;
 
 extern void freeSocket(ISocket*) noexcept;
 
@@ -152,18 +152,17 @@ struct RequestSessionTask {
     std::atomic<bool> isCompleted_ = false;
     std::atomic<bool> isValid_ = true;
     std::atomic<bool> isRedirect_ = false;
+    std::unique_ptr<Url, decltype(&freeUrl)> host{nullptr, &freeUrl};
     uint64_t startStamp = 0;
     std::string reqId;
-    std::unique_ptr<RequestInfo> requestInfo;
+    std::unique_ptr<RequestInfo> requestInfo = nullptr;
 };
 
 class RequestSession {
 public:
-    RequestSession();
+    RequestSession(std::unique_ptr<ResponseHandler> handler);
     
     ~RequestSession();
-    
-    bool open(std::string_view host, std::unique_ptr<ResponseHandler>) noexcept;
     
     void close() noexcept;
     
@@ -171,7 +170,6 @@ public:
 
 private:
     void setupSocket() noexcept;
-    void sendRequest() noexcept;
     void redirect(const std::string&) noexcept;
     void process() noexcept;
     int64_t getRemainTime() noexcept;
@@ -185,11 +183,11 @@ private:
     void disconnected() noexcept;
 private:
     std::mutex mutex_;
-    std::atomic<bool> isOpened_ = true;
-    std::unique_ptr<ResponseHandler> handler_;
+    std::atomic<bool> isExited_ = false;
     std::unique_ptr<ISocket, decltype(&freeSocket)> socket_;
     std::unique_ptr<Url, decltype(&freeUrl)> host_;
     std::unique_ptr<std::thread> worker_ = nullptr;
+    std::unique_ptr<ResponseHandler> handler_;
     std::mutex taskMutex_;
     std::condition_variable cond_;
     std::deque<std::unique_ptr<RequestSessionTask>> requestTaskQueue_;

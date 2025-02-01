@@ -38,12 +38,12 @@ bool Writer::open(std::string_view path, bool isAppend) noexcept {
 
 void Writer::close() noexcept {
     isOpen_ = false;
-    worker_.pause();
+    worker_.start();
 }
 
 void Writer::release() noexcept {
     isStop_ = true;
-    worker_.stop();
+    worker_.start();
 }
 
 IOState Writer::state() noexcept {

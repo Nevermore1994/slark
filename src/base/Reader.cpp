@@ -19,7 +19,19 @@ Reader::Reader()
 }
 
 Reader::~Reader() {
-    close();
+    worker_.pause();
+    file_.withWriteLock([](auto& file){
+        if (file) {
+            file->close();
+            LogI("{} reader closed", file->path());
+        }
+        file.reset();
+    });
+    {
+        std::lock_guard<std::mutex> lock(taskMutex_);
+        task_.reset();
+    }
+    worker_.stop();
 }
 
 bool Reader::open(ReaderTaskPtr ptr) noexcept {
@@ -62,9 +74,11 @@ IOState Reader::state() noexcept {
         } else if(file->readOver()) {
             state = IOState::EndOfFile;
         }
-        tell = file->tell();
+        if (file) {
+            tell = file->tell();
+        }
     });
-    do{
+    do {
         std::lock_guard<std::mutex> lock(taskMutex_);
         if (!task_) {
             break;
@@ -73,7 +87,7 @@ IOState Reader::state() noexcept {
         if(readRange.isValid() && tell >= readRange.end()) {
             state = IOState::EndOfFile;
         }
-    } while(0);
+    } while(false);
     return state;
 }
 
@@ -90,7 +104,7 @@ void Reader::reset() noexcept {
     file_.withWriteLock([](auto& file){
         if (file) {
             file->close();
-            LogI("{} readr closed", file->path());
+            LogI("{} reader closed", file->path());
         }
         file.reset();
     });

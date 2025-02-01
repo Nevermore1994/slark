@@ -21,7 +21,7 @@ TEST(Thread, state) {
     thread.pause();
     ASSERT_EQ(thread.isRunning(), false);
     ASSERT_EQ(thread.isExit(), false);
-    thread.resume();
+    thread.start();
     ASSERT_EQ(thread.isRunning(), true);
     ASSERT_EQ(thread.isExit(), false);
     thread.pause();
