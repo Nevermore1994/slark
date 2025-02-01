@@ -10,7 +10,7 @@ using namespace slark;
 
 TEST(Data, release) {
     Data data("test");
-    data.destroy();
+    data.reset();
     ASSERT_EQ(data.empty(), true);
     ASSERT_EQ(data.rawData, nullptr);
 }
@@ -20,7 +20,7 @@ TEST(Data, detachData) {
     auto dataPtr = data.detachData();
     ASSERT_EQ(data.empty(), true);
     ASSERT_EQ(data.rawData, nullptr);
-    dataPtr->destroy();
+    dataPtr->reset();
     ASSERT_EQ(dataPtr->empty(), true);
     ASSERT_EQ(dataPtr->rawData, nullptr);
 }
@@ -43,28 +43,28 @@ TEST(Data, copy) {
     ASSERT_EQ(data3.rawData, nullptr);
 
     auto p1 = data.copy(0,4);
-    ASSERT_EQ(p1->view(), std::string_view("test"));
+    ASSERT_EQ(p1->view().view(), std::string_view("test"));
     auto p2 = data.copy(10,4);
-    ASSERT_EQ(p2->view(), std::string_view("copy"));
+    ASSERT_EQ(p2->view().view(), std::string_view("copy"));
     auto p3 = data.copy(0, 20);
-    ASSERT_EQ(p3->view(), std::string_view("test data copy."));
+    ASSERT_EQ(p3->view().view(), std::string_view("test data copy."));
     auto p4 = data.copy(0, 0);
-    ASSERT_EQ(p4->view(), std::string_view(""));
+    ASSERT_EQ(p4->view().view(), std::string_view(""));
     auto p5 = data.copy(5, 0);
-    ASSERT_EQ(p5->view(), std::string_view(""));
+    ASSERT_EQ(p5->view().view(), std::string_view(""));
     auto p6 = data.copy(128, 0);
-    ASSERT_EQ(p6->view(), std::string_view(""));
+    ASSERT_EQ(p6->view().view(), std::string_view(""));
     auto p7 = data.copy(0, 15);
     ASSERT_EQ(p7->view(), dataPtr->view());
     auto p8 = data.copy(10, 15);
-    ASSERT_EQ(p8->view(), std::string_view("copy."));
+    ASSERT_EQ(p8->view().view(), std::string_view("copy."));
 }
 
 TEST(Data, append) {
     {
         Data data("hello");
         data.append(" world!");
-        ASSERT_EQ(data.view(), std::string_view("hello world!"));
+        ASSERT_EQ(data.view().view(), std::string_view("hello world!"));
     }
     using namespace std::string_literals;
     auto str = "This section provides definitions for the specific terminology and the concepts used when describing the C++ programming language.\n"
@@ -75,20 +75,20 @@ TEST(Data, append) {
                ""s;
     Data data("");
     data.append(str);
-    ASSERT_EQ(data.view(), std::string_view(str));
+    ASSERT_EQ(data.view().view(), std::string_view(str));
     ASSERT_EQ(data.length, str.length());
 
     Data data1("hello");
     data1 += {" world!"};
     auto data2 = data1 + Data{"xxxxx"};
-    ASSERT_EQ(data1.view(), std::string_view("hello world!"));
-    ASSERT_EQ(data2.view(), std::string_view("hello world!xxxxx"));
+    ASSERT_EQ(data1.view().view(), std::string_view("hello world!"));
+    ASSERT_EQ(data2.view().view(), std::string_view("hello world!xxxxx"));
 }
 
 TEST(Data, reset) {
     using namespace std::string_literals;
     Data data("you can use data");
     data.resetData();
-    ASSERT_EQ(data.view(), "");
+    ASSERT_EQ(data.view().view(), "");
     ASSERT_EQ(data.length, 0);
 }

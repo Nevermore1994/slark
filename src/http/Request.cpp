@@ -13,7 +13,6 @@
 #include "PlainSocket.h"
 #include "Url.h"
 #include "Random.hpp"
-#include "StringUtil.h"
 #include "Time.hpp"
 #include "Util.hpp"
 #include "Log.hpp"
@@ -65,7 +64,7 @@ std::string base64Encode(const std::string& str) {
     std::string res;
     res.reserve(str.length());
     int val = 0, valb = -6;
-    for (unsigned char c : str) {
+    for (const auto& c : str) {
         val = (val << 8) + c;
         valb += 8;
         while (valb >= 0) {
@@ -106,21 +105,22 @@ std::string htmlEncode(RequestInfo& info, const Url& url) noexcept {
 using namespace std::chrono_literals;
 
 Request::Request(const RequestInfo& info, const ResponseHandler& responseHandler)
-    : info_(info)
+    : startStamp_(Time::nowTimeStamp())
+    , info_(info)
     , handler_(responseHandler)
-    , startStamp_(Time::nowTimeStamp())
-    , reqId_(Random::randomString(20))
     , socket_(nullptr, freeSocket)
-    , url_(nullptr, freeUrl) {
+    , url_(nullptr, freeUrl)
+    , reqId_(Random::randomString(20)) {
     config();
 }
 
 Request::Request(RequestInfo&& info, ResponseHandler&& responseHandler)
-    : info_(std::move(info))
+    : startStamp_(Time::nowTimeStamp())
+    , info_(std::move(info))
     , handler_(std::move(responseHandler))
-    , startStamp_(Time::nowTimeStamp())
-    , reqId_(Random::randomString(20)), socket_(nullptr,freeSocket)
-    , url_(nullptr, freeUrl) {
+    , socket_(nullptr,freeSocket)
+    , url_(nullptr, freeUrl)
+    , reqId_(Random::randomString(20)) {
     config();
 }
 
@@ -288,8 +288,8 @@ std::tuple<bool, int64_t> parseResponseHeader(DataView data, ResponseHeader& res
 bool parseChunkHandler(DataPtr& data,
                 int64_t& chunkSize,
                 bool& isCompleted,
-                std::function<void(ResultCode, int32_t)> errorHandler,
-                std::function<void(DataPtr)> dataHandler) noexcept {
+                const std::function<void(ResultCode, int32_t)>& errorHandler,
+                const std::function<void(DataPtr)>& dataHandler) noexcept {
     constexpr std::string_view kCRLF = "\r\n"sv;
     bool res = true;
     auto dataView = data->view();
@@ -466,34 +466,21 @@ void Request::disconnected() noexcept {
 }
 
 
-RequestSession::RequestSession()
-    : host_(nullptr, freeUrl)
-    , socket_(nullptr, freeSocket)
-    , worker_(std::make_unique<std::thread>(&RequestSession::process, this)){
+RequestSession::RequestSession(std::unique_ptr<ResponseHandler> handler)
+    : socket_(nullptr, freeSocket)
+    , host_(nullptr, freeUrl)
+    , worker_(std::make_unique<std::thread>(&RequestSession::process, this))
+    , handler_(std::move(handler)) {
 
 }
 
 RequestSession::~RequestSession() {
-    if (isOpened_) {
+    if (!isExited_) {
         close();
     }
-}
-
-bool RequestSession::open(std::string_view host,
-                          std::unique_ptr<ResponseHandler> handler) noexcept {
-    std::lock_guard<std::mutex> lock(mutex_);
-    isOpened_ = false;
-    host_ = std::unique_ptr<Url, decltype(&freeUrl)>(new Url(host), freeUrl);
-    if (!host_->isValid()) {
-        return false;
+    if (worker_->joinable()) {
+        worker_->detach();
     }
-    if (!host_->isSupportScheme()) {
-        LogE("scheme not support");
-        return false;
-    }
-    isOpened_ = true;
-    handler_ = std::move(handler);
-    return true;
 }
 
 void RequestSession::close() noexcept {
@@ -504,9 +491,10 @@ void RequestSession::close() noexcept {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         handler_.reset();
-        isOpened_ = false;
+        isExited_ = true;
     }
     cond_.notify_all();
+    LogI("RequestSession close");
 }
 
 void RequestSession::setupSocket() noexcept {
@@ -518,6 +506,7 @@ void RequestSession::setupSocket() noexcept {
     hints.ai_socktype = SOCK_STREAM; //tcp
     addrinfo* addressInfo = nullptr;
     ResponseHeader responseData;
+    LogI("host:{}, port:{}", host_->host, host_->port);
     if (getaddrinfo(host_->host.data(), host_->port.data(), &hints, &addressInfo) != 0 ||
         addressInfo == nullptr) {
         LogE("get addr info failed.");
@@ -547,21 +536,23 @@ void RequestSession::setupSocket() noexcept {
 
 void RequestSession::process() noexcept {
     while (true) {
+        std::string host;
         if (currentTask_ && currentTask_->isRedirect_) {
             currentTask_->isRedirect_ = false;
         } else {
             currentTask_.reset();
             std::unique_lock<std::mutex> lock(taskMutex_);
-            cond_.wait(lock, [this](){ return !requestTaskQueue_.empty() || !isOpened_; });
-            if (!isOpened_ || requestTaskQueue_.empty()) {
+            cond_.wait(lock, [this](){ return !requestTaskQueue_.empty() || isExited_; });
+            if (isExited_ || requestTaskQueue_.empty()) {
                 return;
             }
             currentTask_ = std::move(requestTaskQueue_.front());
             requestTaskQueue_.pop_front();
         }
-        auto taskUrl = std::unique_ptr<Url, decltype(&freeUrl)> (new Url(currentTask_->requestInfo->url), freeUrl);
-        if (host_->host != taskUrl->host) {
-            host_ = std::move(taskUrl);
+        LogI("current task url:{}", currentTask_->requestInfo->url);
+        if (!host_ || (host_ && host_->host != currentTask_->host->host) ) {
+            LogI("host change");
+            host_ = std::move(currentTask_->host);
             socket_.reset();
         }
         if (socket_ == nullptr) {
@@ -576,20 +567,25 @@ void RequestSession::process() noexcept {
 
 bool RequestSession::send() noexcept {
     auto canSend = socket_->canSend(getRemainTime());
-    if (!canSend.isSuccess()) {
+    if (!currentTask_ || !canSend.isSuccess()) {
         handleErrorResponse(canSend.resultCode, canSend.errorCode);
         return false;
     }
     std::this_thread::sleep_for(1ms);
-    auto sendData = encode::htmlEncode(*currentTask_->requestInfo, *host_);
+    currentTask_->requestInfo->headers["Connection"] = "keep-alive";
+    if (!currentTask_->host) {
+        currentTask_->host = std::unique_ptr<Url, decltype(&freeUrl)>(new Url(currentTask_->requestInfo->url), freeUrl);
+    }
+    auto sendData = encode::htmlEncode(*currentTask_->requestInfo, *currentTask_->host);
     auto dataView = std::string_view(sendData);
+    LogI("send data: {}", dataView);
     do {
         auto [sendResult, sendSize] = socket_->send(dataView);
         if (!sendResult.isSuccess()) {
             handleErrorResponse(sendResult.resultCode, sendResult.errorCode);
             return false;
         } else if (sendSize < dataView.size()) {
-            dataView = dataView.substr(sendSize);
+            dataView = dataView.substr(static_cast<uint64_t>(sendSize));
         } else {
             break;
         }
@@ -599,23 +595,37 @@ bool RequestSession::send() noexcept {
 
 std::string RequestSession::request(std::unique_ptr<RequestInfo> requestInfo) noexcept {
     auto taskPtr = std::make_unique<RequestSessionTask>();
+    auto host = std::unique_ptr<Url, decltype(&freeUrl)>(new Url(requestInfo->url), freeUrl);
+    if (!host->isValid()) {
+        LogE("host is invalid");
+        return "";
+    }
+    if (!host->isSupportScheme()) {
+        LogE("scheme not support");
+        return "";
+    }
     taskPtr->requestInfo = std::move(requestInfo);
-    taskPtr->reqId = Random::randomString(12);
+    taskPtr->host = std::move(host);
+    auto reqId = Random::randomString(12);
+    taskPtr->reqId = reqId;
+    taskPtr->startStamp = Time::nowTimeStamp();
     {
         std::lock_guard<std::mutex> lock(taskMutex_);
         requestTaskQueue_.push_back(std::move(taskPtr));
         cond_.notify_all();
     }
-    return taskPtr->reqId;
+    LogI("send request:{}", reqId);
+    return reqId;
 }
 
 bool RequestSession::isReceivable() noexcept {
     while (true) {
-        if (!currentTask_->isValid_ || !isOpened_) {
+        if (!currentTask_->isValid_ || isExited_) {
             disconnected();
             return false;
         }
         auto timeout = getRemainTime();
+        LogI("remain time:{}", timeout);
         auto canReceive = socket_->canReceive(timeout);
         if (canReceive.isSuccess()) {
             return true;
@@ -624,7 +634,7 @@ bool RequestSession::isReceivable() noexcept {
         if (timeout > 0 && canReceive.resultCode == ResultCode::Retry) {
             continue;
         }
-        this->handleErrorResponse(canReceive.resultCode, canReceive.errorCode);
+        handleErrorResponse(canReceive.resultCode, canReceive.errorCode);
         return false;//disconnect
     }
 }
@@ -640,6 +650,7 @@ bool RequestSession::parseChunk(DataPtr& data, int64_t& chunkSize, bool& isCompl
 }
 
 void RequestSession::redirect(const std::string& host) noexcept {
+    LogI("redirect:{}", host);
     bool isSuccess = false;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -668,11 +679,12 @@ void RequestSession::receive() noexcept {
             return;
         }
         std::this_thread::sleep_for(1ms);
-        if (!currentTask_->isValid_ || !isOpened_) {
+        if (!currentTask_->isValid_ || isExited_) {
             disconnected();
             return;
         }
-        auto [recvResult, dataPtr] = std::move(socket_->receive());
+
+        auto [recvResult, dataPtr] = socket_->receive();
         bool isCompleted = (recvResult.resultCode == ResultCode::Completed ||
                             recvResult.resultCode == ResultCode::Disconnected);
         if (!recvResult.isSuccess()) {
@@ -702,7 +714,7 @@ void RequestSession::receive() noexcept {
             parseFieldValue(response.headers, "Content-Length", contentLength);
             parseFieldValue(response.headers, "Transfer-Encoding", transferCoding);
             responseHeader(std::move(response));
-            dataPtr = recvDataPtr->copy(headerSize);
+            dataPtr = recvDataPtr->copy(static_cast<uint64_t>(headerSize));
             recvDataPtr->reset();
         }
 
@@ -729,7 +741,7 @@ void RequestSession::receive() noexcept {
 
 void RequestSession::responseHeader(ResponseHeader&& header) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (currentTask_ && handler_ && handler_->onData) {
+    if (currentTask_ && handler_ && handler_->onParseHeaderDone) {
         handler_->onParseHeaderDone(currentTask_->reqId, std::move(header));
     }
 }
@@ -743,14 +755,14 @@ void RequestSession::responseData(DataPtr data) noexcept {
 
 void RequestSession::handleErrorResponse(ResultCode code, int32_t errorCode) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (currentTask_ && handler_ && handler_->onData) {
+    if (currentTask_ && handler_ && handler_->onError) {
         handler_->onError(currentTask_->reqId, {code, errorCode});
     }
 }
 
 void RequestSession::disconnected() noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (currentTask_ && handler_ && handler_->onData) {
+    if (currentTask_ && handler_ && handler_->onDisconnected) {
         handler_->onDisconnected(currentTask_->reqId);
     }
 }

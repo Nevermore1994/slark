@@ -42,3 +42,4 @@ config.json
 demo/iOS/demo/demo.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
 demo/iOS/demo/demo.xcworkspace/xcuserdata/rolf.tan.xcuserdatad/WorkspaceSettings.xcsettings
 sr.png
+src/http/cmake-build-debug

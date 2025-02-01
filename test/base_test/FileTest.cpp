@@ -5,9 +5,11 @@
 //
 
 #include <gtest/gtest.h>
+#include <utility>
+#include "IReader.h"
 #include "Writer.hpp"
 #include "FileUtil.h"
-#include "Reader.hpp"
+#include "Reader.h"
 
 using namespace slark;
 
@@ -30,7 +32,11 @@ TEST(Writer, getPath) {
 
 TEST(Reader, getPath) {
     Reader reader;
-    reader.open("test1.txt", ReaderSetting());
+    auto task = std::make_unique<ReaderTask>([](DataPacket, IOState) {
+
+    });
+    task->path = "test1.txt";
+    reader.open(std::move(task));
     auto path = reader.path();
     ASSERT_EQ(path, std::string_view("test1.txt"));
     reader.close();
@@ -51,11 +57,15 @@ TEST(Reader, open) {
     writer.reset();
 
     Reader reader;
-    reader.open("test_read.txt", ReaderSetting([&str](IOData data, IOState state){
+    auto task = std::make_unique<ReaderTask>([&str](DataPacket data, IOState state) {
+        std::cout << data.data->view().view() << std::endl;
         ASSERT_EQ(data.offset, 0);
         ASSERT_EQ(state, IOState::EndOfFile);
-        ASSERT_EQ(data.data->view(), std::string_view(str));
-    }));
+        ASSERT_EQ(data.data->view().view(), std::string_view(str));
+    });
+    task->path = "test_read.txt";
+    reader.open(std::move(task));
+    reader.start();
     std::this_thread::sleep_for(2s);
     reader.close();
     ASSERT_EQ(reader.state(), IOState::Closed);

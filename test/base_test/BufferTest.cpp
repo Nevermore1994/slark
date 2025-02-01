@@ -72,13 +72,13 @@ TEST(BufferTest, ReadData) {
     auto data = std::make_unique<Data>("abcd");
     buffer.append(0,std::move(data));
     auto ptr = buffer.readData(buffer.length());
-    EXPECT_EQ(ptr->view(), std::string_view("abcd"));
+    EXPECT_EQ(ptr->view().view(), std::string_view("abcd"));
     EXPECT_TRUE(buffer.empty());
     EXPECT_EQ(buffer.pos(), 4);
 
     data = std::make_unique<Data>("hello world!");
     buffer.append(0, std::move(data));
     ptr = buffer.readData(buffer.length());
-    EXPECT_EQ(ptr->view().data(), std::string_view("hello world!"));
+    EXPECT_EQ(ptr->view().view(), std::string_view("hello world!"));
     EXPECT_EQ(buffer.pos(), 12 + 4);
 }

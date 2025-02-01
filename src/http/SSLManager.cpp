@@ -3,6 +3,7 @@
 // slark SSLManager
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
+#include <_types/_uint64_t.h>
 #if ENABLE_HTTPS
 #include "SSLManager.h"
 #include "Socket.h"
@@ -128,7 +129,7 @@ std::tuple<SocketResult, DataPtr> SSLManager::read(const SSLPtr& sslPtr) noexcep
     int32_t retryCount = 0;
     do {
         retryCount++;
-        auto recvLength = SSL_read(sslPtr.get(), data->rawData, kDefaultReadSize);
+        auto recvLength = static_cast<uint64_t>(SSL_read(sslPtr.get(), data->rawData, kDefaultReadSize));
         if (recvLength == 0) {
             res.resultCode = ResultCode::Disconnected;
             break;

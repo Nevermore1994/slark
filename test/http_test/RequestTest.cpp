@@ -12,8 +12,8 @@
 
 using namespace slark::http;
 
+
 TEST(Request, Get) {
-    Request::init();
     std::condition_variable cond;
     std::mutex mutex;
     bool isFinished = false;
@@ -40,11 +40,9 @@ TEST(Request, Get) {
     Request request(std::move(info), std::move(handler));
     std::unique_lock lock(mutex);
     cond.wait(lock, [&] { return isFinished; });
-    Request::clear();
 }
 
 TEST(Request, Post) {
-    Request::init();
     std::condition_variable cond;
     std::mutex mutex;
     bool isFinished = false;
@@ -72,11 +70,9 @@ TEST(Request, Post) {
     Request request(std::move(info), std::move(handler));
     std::unique_lock lock(mutex);
     cond.wait(lock, [&] { return isFinished; });
-    Request::clear();
 }
 
 TEST(Request, Put) {
-    Request::init();
     std::condition_variable cond;
     std::mutex mutex;
     bool isFinished = false;
@@ -104,11 +100,10 @@ TEST(Request, Put) {
     Request request(std::move(info), std::move(handler));
     std::unique_lock lock(mutex);
     cond.wait(lock, [&] { return isFinished; });
-    Request::clear();
 }
 
 TEST(Request, Delete) {
-    Request::init();
+
     std::condition_variable cond;
     std::mutex mutex;
     bool isFinished = false;
@@ -135,11 +130,9 @@ TEST(Request, Delete) {
     Request request(std::move(info), std::move(handler));
     std::unique_lock lock(mutex);
     cond.wait(lock, [&] { return isFinished; });
-    Request::clear();
 }
 
 TEST(Request, Patch) {
-    Request::init();
     std::condition_variable cond;
     std::mutex mutex;
     bool isFinished = false;
@@ -167,11 +160,9 @@ TEST(Request, Patch) {
     Request request(std::move(info), std::move(handler));
     std::unique_lock lock(mutex);
     cond.wait(lock, [&] { return isFinished; });
-    Request::clear();
 }
 
 TEST(Request, Options) {
-    Request::init();
     std::condition_variable cond;
     std::mutex mutex;
     bool isFinished = false;
@@ -201,5 +192,4 @@ TEST(Request, Options) {
     Request request(std::move(info), std::move(handler));
     std::unique_lock lock(mutex);
     cond.wait(lock, [&] { return isFinished; });
-    Request::clear();
 }
