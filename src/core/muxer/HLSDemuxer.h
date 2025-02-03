@@ -179,7 +179,7 @@ public:
     
     bool parseData(Buffer& buffer, uint32_t tsIndex, DemuxerResult& result) noexcept;
 private:
-    bool checkPacket(Buffer& buffer, uint32_t& pos) noexcept;
+    static bool checkPacket(Buffer& buffer, uint64_t& pos) noexcept;
     
     bool parsePacket(DataView data, uint32_t tsIndex, DemuxerResult& result) noexcept;
     
@@ -191,7 +191,7 @@ private:
     
     bool packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexcept;
     
-    void writeVideoData(AVFramePtr& frame, DataView view) noexcept;
+    static static void writeVideoData(AVFramePtr& frame, DataView view) noexcept;
     
     bool packAudioPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexcept;
     

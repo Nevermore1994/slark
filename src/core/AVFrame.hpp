@@ -55,7 +55,7 @@ struct AudioFrameInfo : public FrameInfo {
         return static_cast<double>(size) / static_cast<double>(bitsPerSample / 8 * channels * sampleRate);
     }
     
-    virtual ~AudioFrameInfo() override = default;
+    ~AudioFrameInfo() override = default;
 public:
     uint16_t channels = 0;
     uint16_t bitsPerSample = 0;
@@ -74,7 +74,7 @@ enum class VideoFrameType {
 
 struct VideoFrameInfo : public FrameInfo {
 public:
-    void copy(std::shared_ptr<VideoFrameInfo> info) noexcept {
+    void copy(std::shared_ptr<VideoFrameInfo> info) const noexcept {
         if (!info) {
             return;
         }
@@ -88,7 +88,7 @@ public:
         });
     }
     
-    virtual ~VideoFrameInfo() override = default;
+    ~VideoFrameInfo() override = default;
 public:
     bool isIDRFrame = false;
     VideoFrameType frameType = VideoFrameType::Unknown;
@@ -108,7 +108,7 @@ struct AVFrame {
     uint64_t pts = 0;
     uint64_t dts = 0;
     uint64_t offset = 0;
-    std::unique_ptr<Data> data; //Undecoded
+    std::unique_ptr<Data> data; //Undecided
     void* opaque = nullptr;
     Statistics stats;
     std::shared_ptr<FrameInfo> info;
