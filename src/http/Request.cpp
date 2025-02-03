@@ -19,6 +19,8 @@
 
 namespace slark::http {
 
+#define MakeUrlPtr(url) std::unique_ptr<Url, decltype(&freeUrl)>(new Url(url), freeUrl)
+
 constexpr const char* kMethodNameArray[] = {"Unknown", "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"};
 
 std::string getMethodName(HttpMethodType type) {
@@ -109,8 +111,7 @@ Request::Request(const RequestInfo& info, const ResponseHandler& responseHandler
     , info_(info)
     , handler_(responseHandler)
     , socket_(nullptr, freeSocket)
-    , url_(nullptr, freeUrl)
-    , reqId_(Random::randomString(20)) {
+    , url_(nullptr, freeUrl) {
     config();
 }
 
@@ -119,8 +120,7 @@ Request::Request(RequestInfo&& info, ResponseHandler&& responseHandler)
     , info_(std::move(info))
     , handler_(std::move(responseHandler))
     , socket_(nullptr,freeSocket)
-    , url_(nullptr, freeUrl)
-    , reqId_(Random::randomString(20)) {
+    , url_(nullptr, freeUrl) {
     config();
 }
 
@@ -132,6 +132,7 @@ Request::~Request() {
 }
 
 void Request::config() noexcept {
+    info_.reqId = Random::randomString(20);
     worker_ = std::make_unique<std::thread>(&Request::process, this);
 }
 
@@ -142,7 +143,7 @@ void Request::config() noexcept {
 
 void Request::sendRequest() noexcept {
     auto errorHandler = [&](ResultCode code, int32_t errorCode) {
-        this->handleErrorResponse(code, errorCode);
+        this->onError(code, errorCode);
     };
     addrinfo hints{};
     hints.ai_family = GetAddressFamily(info_.ipVersion);
@@ -167,7 +168,7 @@ void Request::sendRequest() noexcept {
     } else {
         socketPtr = new PlainSocket(ipVersion);
     }
-    socket_ = std::unique_ptr<ISocket, decltype(&freeSocket)>(socketPtr, freeSocket);
+    socket_ = std::unique_ptr<ISocket, decltype(&freeSocket)>(socketPtr, &freeSocket);
     auto addressInfoPtr = MakeAddressInfoPtr(addressInfo);
     auto timeout = getRemainTime();
     if (timeout <= 0) {
@@ -179,7 +180,7 @@ void Request::sendRequest() noexcept {
         errorHandler(result.resultCode, GetLastError());
         return;
     } else if (isValid_ && handler_.onConnected) {
-        handler_.onConnected(reqId_);
+        handler_.onConnected(info_);
     }
     if (!send()) {
         return;
@@ -189,7 +190,7 @@ void Request::sendRequest() noexcept {
 
 void Request::redirect(const std::string& url) noexcept {
     auto errorHandler = [this](ResultCode code) {
-        handleErrorResponse(code, 0);
+        onError(code, 0);
     };
     constexpr uint8_t redirectMaxCount = 7;
     if (url.empty()) {
@@ -209,7 +210,7 @@ void Request::redirect(const std::string& url) noexcept {
 
 void Request::process() noexcept {
     auto handler = [&](ResultCode code) {
-        this->handleErrorResponse(code, 0);
+        this->onError(code, 0);
     };
     if (info_.methodType == HttpMethodType::Unknown) {
         handler(ResultCode::MethodError);
@@ -231,7 +232,7 @@ void Request::process() noexcept {
 bool Request::send() noexcept {
     auto canSend = socket_->canSend(getRemainTime());
     if (!canSend.isSuccess()) {
-        handleErrorResponse(canSend.resultCode, canSend.errorCode);
+        onError(canSend.resultCode, canSend.errorCode);
         return false;
     }
     std::this_thread::sleep_for(1ms);
@@ -240,7 +241,7 @@ bool Request::send() noexcept {
     do {
         auto [sendResult, sendSize] = socket_->send(dataView);
         if (!sendResult.isSuccess()) {
-            this->handleErrorResponse(sendResult.resultCode, sendResult.errorCode);
+            this->onError(sendResult.resultCode, sendResult.errorCode);
             return false;
         } else if (sendSize < dataView.size()) {
             dataView = dataView.substr(sendSize);
@@ -330,7 +331,7 @@ bool parseChunkHandler(DataPtr& data,
 bool Request::isReceivable() noexcept {
     while (true) {
         if (!isValid_) {
-            disconnected();
+            onCompleted();
             return false;
         }
         auto timeout = getRemainTime();
@@ -342,7 +343,7 @@ bool Request::isReceivable() noexcept {
         if (timeout > 0 && canReceive.resultCode == ResultCode::Retry) {
             continue;
         }
-        handleErrorResponse(canReceive.resultCode, canReceive.errorCode);
+        onError(canReceive.resultCode, canReceive.errorCode);
         return false;//disconnect
     }
 }
@@ -350,10 +351,10 @@ bool Request::isReceivable() noexcept {
 bool Request::parseChunk(DataPtr& data, int64_t& chunkSize, bool& isCompleted) noexcept {
     return parseChunkHandler(data, chunkSize, isCompleted,
         [this](ResultCode resultCode, int32_t errorCode){
-            handleErrorResponse(resultCode, errorCode);
+            onError(resultCode, errorCode);
         },
         [this](DataPtr data) {
-            responseData(std::move(data));
+            onResponseData(std::move(data));
         });
 }
 
@@ -371,7 +372,7 @@ void Request::receive() noexcept {
         }
         std::this_thread::sleep_for(1ms);
         if (!isValid_) {
-            disconnected();
+            onCompleted();
             return;
         }
         auto [recvResult, dataPtr] = std::move(socket_->receive());
@@ -383,9 +384,9 @@ void Request::receive() noexcept {
             }
             if (isCompleted) {
                 isCompleted_ = true;
-                disconnected();
+                onCompleted();
             } else {
-                this->handleErrorResponse(recvResult.resultCode, recvResult.errorCode);
+                this->onError(recvResult.resultCode, recvResult.errorCode);
             }
             return;
         }
@@ -403,7 +404,7 @@ void Request::receive() noexcept {
             }
             parseFieldValue(response.headers, "Content-Length", contentLength);
             parseFieldValue(response.headers, "Transfer-Encoding", transferCoding);
-            responseHeader(std::move(response));
+            onResponseHeader(std::move(response));
             dataPtr = recvDataPtr->copy(headerSize);
             recvDataPtr->reset();
         }
@@ -417,13 +418,13 @@ void Request::receive() noexcept {
         } else {
             isCompleted = isCompleted || recvLength >= contentLength;
             if (parseHeaderSuccess && !dataPtr->empty()){
-                responseData(std::move(dataPtr));
+                onResponseData(std::move(dataPtr));
             }
         }
 
         if (isCompleted) {
             isCompleted_ = true;
-            disconnected();
+            onCompleted();
             return; //disconnect
         }
     }
@@ -438,29 +439,28 @@ int64_t Request::getRemainTime() const noexcept {
     return std::max<int64_t>(diff.count(), 0ll);
 }
 
-void Request::handleErrorResponse(ResultCode code, int32_t errorCode) noexcept {
+void Request::onError(ResultCode code, int32_t errorCode) noexcept {
     if (isValid_ && handler_.onError) {
-        handler_.onError(reqId_ , {code, errorCode});
+        handler_.onError(info_, {code, errorCode});
     }
-    disconnected();
+    onCompleted();
 }
 
-void Request::responseHeader(ResponseHeader&& header) noexcept {
+void Request::onResponseHeader(ResponseHeader&& header) noexcept {
     if (isValid_ && handler_.onParseHeaderDone) {
-        handler_.onParseHeaderDone(reqId_, std::move(header));
+        handler_.onParseHeaderDone(info_, std::move(header));
     }
 }
 
-void Request::responseData(DataPtr dataPtr) noexcept {
+void Request::onResponseData(DataPtr dataPtr) noexcept {
     if (isValid_ && handler_.onData) {
-        handler_.onData(reqId_, std::move(dataPtr));
+        handler_.onData(info_, std::move(dataPtr));
     }
 }
 
-
-void Request::disconnected() noexcept {
-    if (isValid_ && handler_.onDisconnected) {
-        handler_.onDisconnected(reqId_);
+void Request::onCompleted() noexcept {
+    if (isValid_ && handler_.onCompleted) {
+        handler_.onCompleted(info_);
         socket_.reset(); //release resource
     }
 }
@@ -479,8 +479,9 @@ RequestSession::~RequestSession() {
         close();
     }
     if (worker_->joinable()) {
-        worker_->detach();
+        worker_->join();
     }
+    worker_.reset();
 }
 
 void RequestSession::close() noexcept {
@@ -491,8 +492,8 @@ void RequestSession::close() noexcept {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         handler_.reset();
-        isExited_ = true;
     }
+    isExited_ = true;
     cond_.notify_all();
     LogI("RequestSession close");
 }
@@ -524,7 +525,7 @@ void RequestSession::setupSocket() noexcept {
     } else {
         socketPtr = new PlainSocket(ipVersion);
     }
-    socket_ = std::unique_ptr<ISocket, decltype(&freeSocket)>(socketPtr, freeSocket);
+    socket_ = std::unique_ptr<ISocket, decltype(&freeSocket)>(socketPtr, &freeSocket);
     auto addressInfoPtr = MakeAddressInfoPtr(addressInfo);
     if (socket_->setKeepLive()) {
         LogI("set keep live success");
@@ -554,6 +555,14 @@ void RequestSession::process() noexcept {
             currentTask_ = std::move(requestTaskQueue_.front());
             requestTaskQueue_.pop_front();
         }
+        if (!currentTask_) {
+            LogE("error task");
+            continue;
+        }
+        if (!currentTask_->host) {
+            currentTask_->host = MakeUrlPtr(currentTask_->requestInfo->url);
+        }
+        isBusy_ = true;
         LogI("current task url:{}", currentTask_->requestInfo->url);
         if (!host_ || (host_ && host_->host != currentTask_->host->host) ) {
             LogI("host change");
@@ -573,7 +582,7 @@ void RequestSession::process() noexcept {
 bool RequestSession::send() noexcept {
     auto canSend = socket_->canSend(getRemainTime());
     if (!currentTask_ || !canSend.isSuccess()) {
-        handleErrorResponse(canSend.resultCode, canSend.errorCode);
+        onError(canSend.resultCode, canSend.errorCode);
         return false;
     }
     std::this_thread::sleep_for(1ms);
@@ -587,7 +596,7 @@ bool RequestSession::send() noexcept {
     do {
         auto [sendResult, sendSize] = socket_->send(dataView);
         if (!sendResult.isSuccess()) {
-            handleErrorResponse(sendResult.resultCode, sendResult.errorCode);
+            onError(sendResult.resultCode, sendResult.errorCode);
             return false;
         } else if (sendSize < dataView.size()) {
             dataView = dataView.substr(static_cast<uint64_t>(sendSize));
@@ -598,7 +607,7 @@ bool RequestSession::send() noexcept {
     return true;
 }
 
-std::string RequestSession::request(std::unique_ptr<RequestInfo> requestInfo) noexcept {
+std::string RequestSession::request(RequestInfoPtr requestInfo) noexcept {
     auto taskPtr = std::make_unique<RequestSessionTask>();
     auto host = std::unique_ptr<Url, decltype(&freeUrl)>(new Url(requestInfo->url), freeUrl);
     if (!host->isValid()) {
@@ -612,7 +621,7 @@ std::string RequestSession::request(std::unique_ptr<RequestInfo> requestInfo) no
     taskPtr->requestInfo = std::move(requestInfo);
     taskPtr->host = std::move(host);
     auto reqId = Random::randomString(12);
-    taskPtr->reqId = reqId;
+    taskPtr->requestInfo ->reqId = reqId;
     taskPtr->startStamp = Time::nowTimeStamp();
     {
         std::lock_guard<std::mutex> lock(taskMutex_);
@@ -626,7 +635,7 @@ std::string RequestSession::request(std::unique_ptr<RequestInfo> requestInfo) no
 bool RequestSession::isReceivable() noexcept {
     while (true) {
         if (!currentTask_->isValid_ || isExited_) {
-            disconnected();
+            onCompleted();
             return false;
         }
         auto timeout = getRemainTime();
@@ -639,7 +648,7 @@ bool RequestSession::isReceivable() noexcept {
         if (timeout > 0 && canReceive.resultCode == ResultCode::Retry) {
             continue;
         }
-        handleErrorResponse(canReceive.resultCode, canReceive.errorCode);
+        onError(canReceive.resultCode, canReceive.errorCode);
         return false;//disconnect
     }
 }
@@ -647,10 +656,10 @@ bool RequestSession::isReceivable() noexcept {
 bool RequestSession::parseChunk(DataPtr& data, int64_t& chunkSize, bool& isCompleted) noexcept {
     return parseChunkHandler(data, chunkSize, isCompleted,
         [this](ResultCode resultCode, int32_t errorCode){
-            handleErrorResponse(resultCode, errorCode);
+            onError(resultCode, errorCode);
         },
         [this](DataPtr data) {
-            responseData(std::move(data));
+            onResponseData(std::move(data));
         });
 }
 
@@ -659,9 +668,9 @@ void RequestSession::redirect(const std::string& host) noexcept {
     bool isSuccess = false;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        host_ = std::unique_ptr<Url, decltype(&freeUrl)>(new Url(host), freeUrl);
+        host_ = MakeUrlPtr(host);
         if (!host_->isValid() || !host_->isSupportScheme()) {
-            handleErrorResponse(ResultCode::RedirectError, 0);
+            onError(ResultCode::RedirectError, 0);
         } else {
             isSuccess = true;
         }
@@ -685,7 +694,7 @@ void RequestSession::receive() noexcept {
         }
         std::this_thread::sleep_for(1ms);
         if (!currentTask_->isValid_ || isExited_) {
-            disconnected();
+            onCompleted();
             return;
         }
 
@@ -698,9 +707,9 @@ void RequestSession::receive() noexcept {
             }
             if (isCompleted) {
                 currentTask_->isCompleted_ = true;
-                disconnected();
+                onCompleted();
             } else {
-                handleErrorResponse(recvResult.resultCode, recvResult.errorCode);
+                onError(recvResult.resultCode, recvResult.errorCode);
             }
             return;
         }
@@ -718,7 +727,7 @@ void RequestSession::receive() noexcept {
             }
             parseFieldValue(response.headers, "Content-Length", contentLength);
             parseFieldValue(response.headers, "Transfer-Encoding", transferCoding);
-            responseHeader(std::move(response));
+            onResponseHeader(std::move(response));
             dataPtr = recvDataPtr->copy(static_cast<uint64_t>(headerSize));
             recvDataPtr->reset();
         }
@@ -732,47 +741,51 @@ void RequestSession::receive() noexcept {
         } else {
             isCompleted = isCompleted || recvLength >= contentLength;
             if (parseHeaderSuccess && !dataPtr->empty()){
-                responseData(std::move(dataPtr));
+                onResponseData(std::move(dataPtr));
             }
         }
 
         if (isCompleted) {
             currentTask_->isCompleted_ = true;
-            disconnected();
+            onCompleted();
             return; //disconnect
         }
     }
 }
 
-void RequestSession::responseHeader(ResponseHeader&& header) noexcept {
+void RequestSession::onResponseHeader(ResponseHeader&& header) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     if (currentTask_ && handler_ && handler_->onParseHeaderDone) {
-        handler_->onParseHeaderDone(currentTask_->reqId, std::move(header));
+        handler_->onParseHeaderDone(*currentTask_->requestInfo, std::move(header));
     }
 }
 
-void RequestSession::responseData(DataPtr data) noexcept {
+void RequestSession::onResponseData(DataPtr data) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     if (currentTask_ && handler_ && handler_->onData) {
-        handler_->onData(currentTask_->reqId, std::move(data));
+        handler_->onData(*currentTask_->requestInfo, std::move(data));
     }
 }
 
-void RequestSession::handleErrorResponse(ResultCode code, int32_t errorCode) noexcept {
+void RequestSession::onError(ResultCode code, int32_t errorCode) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     if (currentTask_ && handler_ && handler_->onError) {
-        handler_->onError(currentTask_->reqId, {code, errorCode});
+        handler_->onError(*currentTask_->requestInfo, {code, errorCode});
     }
 }
 
-void RequestSession::disconnected() noexcept {
+void RequestSession::onCompleted() noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (currentTask_ && handler_ && handler_->onDisconnected) {
-        handler_->onDisconnected(currentTask_->reqId);
+    isBusy_ = false;
+    if (currentTask_ && handler_ && handler_->onCompleted) {
+        handler_->onCompleted(*currentTask_->requestInfo);
     }
 }
 
 int64_t RequestSession::getRemainTime() noexcept {
+    if (!currentTask_) {
+        return 0;
+    }
     auto t = Time::nowTimeStamp() - Time::TimePoint(currentTask_->startStamp);
     auto diff = currentTask_->requestInfo->timeout - t.toMilliSeconds();
     return std::max<int64_t>(diff.count(), 0ll);

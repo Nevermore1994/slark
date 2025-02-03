@@ -19,14 +19,6 @@ enum class HLSRequestTaskType {
     TS
 };
 
-struct HLSRequestTask {
-    http::RequestInfo info;
-    http::ResponseHandler handler;
-    HLSRequestTaskType type = HLSRequestTaskType::M3U8;
-};
-
-using RequestTaskPtr = std::unique_ptr<HLSRequestTask>;
-
 class HLSReader : public IReader {
 public:
     HLSReader();
@@ -57,31 +49,33 @@ public:
     
     void setDemuxer(std::shared_ptr<HLSDemuxer> demuxer) noexcept;
 private:
-    void addRequest(RequestTaskPtr) noexcept;
+    void setupDataProvoider() noexcept;
+    void addRequest(http::RequestInfoPtr) noexcept;
     void sendRequest() noexcept;
     void fetchTSData(uint32_t tsIndex) noexcept;
     void sendM3u8Request(const std::string& m3u8Url) noexcept;
     void sendTSRequest(uint32_t index, const std::string& url, Range range) noexcept;
     
-    void handleM3u8Error(const http::ErrorInfo& info) noexcept;
+    void handleM3u8Header(const http::ResponseHeader& header) noexcept;
     void handleM3u8Data(DataPtr dataPtr) noexcept;
-    void handleM3u8RequestDisconnect() noexcept;
+    void handleM3u8Completed() noexcept;
     
-    void handleTSHeader(http::ResponseHeader&& header) noexcept;
+    void handleTSHeader(const http::ResponseHeader& header) noexcept;
     void handleTSData(uint32_t index, DataPtr dataPtr) noexcept;
-    void handleTSError(const http::ErrorInfo& info) noexcept;
-    void handleTSRequestDisconnect(uint32_t tsIndex) noexcept;
+    void handleTSCompleted(uint32_t tsIndex) noexcept;
+    void handleError(const http::ErrorInfo& info) noexcept;
 private:
     std::atomic_bool isPause_ = false;
     std::atomic_bool isClosed_ = false;
     std::atomic_bool isCompleted_ = false;
-    bool isErrorOccurred_ = false;
-    uint64_t receiveLength_ = 0;
-    std::mutex mutex_;
+    std::atomic_bool isErrorOccurred_ = false;
+    std::atomic<uint64_t> receiveLength_ = 0;
+    std::mutex requestMutex_;
     std::unique_ptr<Buffer> m3u8Buffer_;
-    std::unique_ptr<http::Request> link_;
+    std::unique_ptr<http::RequestSession> requestSession_;
     std::shared_ptr<HLSDemuxer> demuxer_;
-    Synchronized<std::deque<RequestTaskPtr>> requestTasks_;
+    Synchronized<std::deque<http::RequestInfoPtr>> requestTasks_;
+    Synchronized<std::unordered_map<std::string, HLSRequestTaskType>> request;
     Thread worker_;
 };
 

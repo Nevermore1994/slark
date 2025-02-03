@@ -39,8 +39,12 @@ struct RequestInfo {
         {"User-Agent",   "(KHTML, like Gecko)"},
         {"Accept",       "*/*"}};
     DataRefPtr body = nullptr;
-    ///default 30s
+    ///default 60s
     std::chrono::milliseconds timeout{60 * 1000};
+    ///request id, Automatically generate
+    std::string reqId;
+    ///info tag
+    std::string tag;
 
     [[nodiscard]] inline uint64_t bodySize() const noexcept {
         return body ? body->length : 0;
@@ -50,6 +54,8 @@ struct RequestInfo {
         return !body || body->empty();
     }
 };
+
+using RequestInfoPtr = std::unique_ptr<RequestInfo>;
 
 struct ErrorInfo {
     ResultCode retCode = ResultCode::Success;
@@ -77,23 +83,24 @@ struct ResponseHeader {
 
 struct ResponseHandler {
     ///reqId
-    using OnConnectedFunc = std::function<void(std::string_view)>;
+    ///Will not be called in the RequestSession
+    using OnConnectedFunc = std::function<void(const RequestInfo&)>;
     OnConnectedFunc onConnected = nullptr;
 
     ///reqId, ResponseHeader
-    using ParseHeaderDoneFunc = std::function<void(std::string_view, ResponseHeader&&)>;
+    using ParseHeaderDoneFunc = std::function<void(const RequestInfo&, ResponseHeader&&)>;
     ParseHeaderDoneFunc onParseHeaderDone = nullptr;
 
     ///reqId, data
-    using ResponseDataFunc = std::function<void(std::string_view, DataPtr data)>;
+    using ResponseDataFunc = std::function<void(const RequestInfo&, DataPtr data)>;
     ResponseDataFunc onData = nullptr;
 
     ///reqId
-    using OnDisconnectedFunc = std::function<void(std::string_view)>;
-    OnDisconnectedFunc onDisconnected = nullptr;
+    using OnCompletedFunc = std::function<void(const RequestInfo&)>;
+    OnCompletedFunc onCompleted = nullptr;
 
     ///reqId, ErrorInfo
-    using OnErrorFunc = std::function<void(std::string_view, ErrorInfo)>;
+    using OnErrorFunc = std::function<void(const RequestInfo&, ErrorInfo)>;
     OnErrorFunc onError = nullptr;
 };
 
@@ -111,7 +118,7 @@ public:
     }
 
     [[maybe_unused]] [[nodiscard]] const std::string& getReqId() const {
-        return reqId_;
+        return info_.reqId;
     }
     
     bool isCompleted() const noexcept {
@@ -131,10 +138,10 @@ private:
     bool isReceivable() noexcept;
     void receive() noexcept;
     bool parseChunk(DataPtr& data, int64_t& chunkSize, bool& isCompleted) noexcept;
-    void responseHeader(ResponseHeader&&) noexcept;
-    void responseData(DataPtr data) noexcept;
-    void handleErrorResponse(ResultCode code, int32_t errorCode) noexcept;
-    void disconnected() noexcept;
+    void onResponseHeader(ResponseHeader&&) noexcept;
+    void onResponseData(DataPtr data) noexcept;
+    void onError(ResultCode code, int32_t errorCode) noexcept;
+    void onCompleted() noexcept;
 private:
     std::atomic<bool> isCompleted_ = false;
     std::atomic<bool> isValid_ = true;
@@ -145,7 +152,6 @@ private:
     std::unique_ptr<ISocket, decltype(&freeSocket)> socket_;
     std::unique_ptr<Url, decltype(&freeUrl)> url_;
     std::unique_ptr<std::thread> worker_ = nullptr;
-    std::string reqId_;
 };
 
 struct RequestSessionTask {
@@ -154,8 +160,7 @@ struct RequestSessionTask {
     std::atomic<bool> isRedirect_ = false;
     std::unique_ptr<Url, decltype(&freeUrl)> host{nullptr, &freeUrl};
     uint64_t startStamp = 0;
-    std::string reqId;
-    std::unique_ptr<RequestInfo> requestInfo = nullptr;
+    RequestInfoPtr requestInfo = nullptr;
 };
 
 class RequestSession {
@@ -166,7 +171,11 @@ public:
     
     void close() noexcept;
     
-    std::string request(std::unique_ptr<RequestInfo> requestInfo) noexcept;
+    std::string request(RequestInfoPtr requestInfo) noexcept;
+    
+    bool isBusy() const noexcept {
+        return isBusy_;
+    }
 
 private:
     void setupSocket() noexcept;
@@ -177,21 +186,22 @@ private:
     bool isReceivable() noexcept;
     void receive() noexcept;
     bool parseChunk(DataPtr& data, int64_t& chunkSize, bool& isCompleted) noexcept;
-    void responseHeader(ResponseHeader&&) noexcept;
-    void responseData(DataPtr data) noexcept;
-    void handleErrorResponse(ResultCode code, int32_t errorCode) noexcept;
-    void disconnected() noexcept;
+    void onResponseHeader(ResponseHeader&&) noexcept;
+    void onResponseData(DataPtr data) noexcept;
+    void onError(ResultCode code, int32_t errorCode) noexcept;
+    void onCompleted() noexcept;
 private:
-    std::mutex mutex_;
-    std::atomic<bool> isExited_ = false;
-    std::unique_ptr<ISocket, decltype(&freeSocket)> socket_;
-    std::unique_ptr<Url, decltype(&freeUrl)> host_;
-    std::unique_ptr<std::thread> worker_ = nullptr;
-    std::unique_ptr<ResponseHandler> handler_;
-    std::mutex taskMutex_;
-    std::condition_variable cond_;
+    std::mutex mutex_; //64
+    std::mutex taskMutex_; //64
+    std::atomic<bool> isExited_ = false;//1
+    std::atomic<bool> isBusy_ = false; //1
+    std::condition_variable cond_;//48
+    std::unique_ptr<ISocket, decltype(&freeSocket)> socket_; //16
+    std::unique_ptr<Url, decltype(&freeUrl)> host_; //16
+    std::unique_ptr<std::thread> worker_ = nullptr; //8
+    std::unique_ptr<ResponseHandler> handler_ = nullptr;//8
     std::deque<std::unique_ptr<RequestSessionTask>> requestTaskQueue_;
-    std::unique_ptr<RequestSessionTask> currentTask_;
+    std::unique_ptr<RequestSessionTask> currentTask_ = nullptr;
 };
 
 }//end of namespace http
