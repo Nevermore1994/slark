@@ -53,18 +53,22 @@ bool RemoteReader::open(ReaderTaskPtr task) noexcept {
     }
     
     http::ResponseHandler handler;
-    handler.onData = [this](std::string_view, DataPtr data) {
+    handler.onData = [this](const http::RequestInfo& info,
+                            DataPtr data) {
         handleData(std::move(data));
     };
-    handler.onParseHeaderDone = [this](std::string_view, http::ResponseHeader&& header) {
+    handler.onParseHeaderDone = [this](const http::RequestInfo& info,
+                                       http::ResponseHeader&& header) {
         handleHeader(std::move(header));
     };
-    handler.onError = [this](std::string_view, http::ErrorInfo info) {
-        handleError(info);
+    handler.onError = [this](const http::RequestInfo& info,
+                             http::ErrorInfo errorInfo) {
+        handleError(errorInfo);
     };
-    handler.onDisconnected = [this](std::string_view) {
+    handler.onCompleted = [this](const http::RequestInfo& info) {
         handleDisconnect();
     };
+    
     {
         std::lock_guard<std::mutex> lock(taskMutex_);
         task_ = std::move(task);
