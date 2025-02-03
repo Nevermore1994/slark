@@ -6,8 +6,6 @@
 //
 
 #include "HLSDemuxer.h"
-#include "StringUtil.h"
-#include "Log.hpp"
 #include "Util.hpp"
 #include "MediaBase.h"
 #include <format>
@@ -81,7 +79,7 @@ bool M3U8Parser::parse(Buffer& buffer) noexcept {
         auto view = std::string_view(content);
         if(view.starts_with("#EXTINF:")) {
             view = view.substr(8);
-            view = view.substr(0, view.find(","));
+            view = view.substr(0, view.find(','));
             TSInfo info;
             info.sequence = index++;
             info.duration = std::stod(std::string(view));
@@ -96,14 +94,14 @@ bool M3U8Parser::parse(Buffer& buffer) noexcept {
             }
             auto& info = infos_.back();
             info.isSupportByteRange = true;
-            auto pos = view.find("@");
+            auto pos = view.find('@');
             if (pos == std::string_view::npos) {
                 LogE("parse byte range error");
                 break;
             }
             auto lengthView = view.substr(0, pos);
             auto offsetView = view.substr(pos + 1);
-            info.range.pos = std::stol(std::string(offsetView));
+            info.range.pos = static_cast<uint64_t>(std::stol(std::string(offsetView)));
             info.range.size = std::stol(std::string(lengthView));
         } else if (view.starts_with("#EXT-X-DISCONTINUITY")) {
             if (!infos_.empty()) {
@@ -113,11 +111,10 @@ bool M3U8Parser::parse(Buffer& buffer) noexcept {
             //play list
             isPlayList_ = true;
             view = view.substr(18);
-            auto pos = view.find("=");
-            view = view.substr(0, view.find(","));
-            view = view.substr(view.find("=") + 1);
+            view = view.substr(0, view.find(','));
+            view = view.substr(view.find('=') + 1);
             PlayListInfo info;
-            info.codeRate = std::stol(std::string(view));
+            info.codeRate = static_cast<uint32_t>(std::stoi(std::string(view)));
             playListInfos_.push_back(info);
         } else if(view.starts_with("#EXT-X-ENDLIST")) {
             isCompleted_ = true;
@@ -129,7 +126,7 @@ bool M3U8Parser::parse(Buffer& buffer) noexcept {
                     break;
                 }
                 playListInfos_.back().m3u8Url = spliceUrl(baseUrl_, view);
-                auto pos = view.find(".");
+                auto pos = view.find('.');
                 if (pos == std::string_view::npos) {
                     playListInfos_.back().name = view;
                 } else {
@@ -157,7 +154,7 @@ bool M3U8Parser::parse(Buffer& buffer) noexcept {
     return isCompleted_;
 }
 
-bool TSDemuxer::checkPacket(Buffer& buffer, uint32_t& pos) noexcept {
+bool TSDemuxer::checkPacket(Buffer& buffer, uint64_t& pos) noexcept {
     constexpr char kSyncByte = 0x47;
     auto view = buffer.shotView();
     auto p = view.find(kSyncByte);
@@ -176,7 +173,9 @@ bool TSDemuxer::parsePacket(DataView data, uint32_t tsIndex, DemuxerResult& resu
     Util::readByte(data, header.syncbyte);
     header.payloadUinitIndicator = (static_cast<uint8_t>(data[1]) & 0x40) >> 6;
     header.errorIndicator = (static_cast<uint8_t>(data[1]) & 0x80) >> 7;
-    header.pid = ((static_cast<uint8_t>(data[1]) & 0x1f) << 8 ) | (static_cast<uint8_t>(data[2]));
+    header.pid = static_cast<uint16_t>(
+        ((static_cast<uint8_t>(data[1]) & 0x1f) << 8) | (static_cast<uint8_t>(data[2]))
+    );
     header.adaptationFieldControl = (static_cast<uint8_t>(data[3]) & 0x30) >> 4;
     data = data.substr(4);
     if (header.syncbyte != 0x47) {
@@ -233,15 +232,19 @@ bool TSDemuxer::parseTSPAT(DataView data) noexcept {
         LogE("syntax indicator != 1, {}", syntaxIndicator);
         return false;
     }
-    pat_.sectionLength = (static_cast<uint8_t>(data[1]) & 0x0f << 8) |
-                            (static_cast<uint8_t>(data[2]));
+    pat_.sectionLength = ( static_cast<uint8_t>(data[1]) & 0x0f << 8) |
+                            static_cast<uint8_t>(data[2] );
     pat_.currentNextIndicator = static_cast<uint8_t>(data[5]) & 0x01;
     data = data.substr(8);
     if (pat_.currentNextIndicator == 1) {
         auto infoLength = pat_.sectionLength - 5 - 4; //streamId, sectionNumber + crc32
         while (infoLength >= 4) {
-            uint16_t pnum = (static_cast<uint8_t>(data[0]) << 8) | static_cast<uint8_t>(data[1]);
-            uint16_t pid = ((static_cast<uint8_t>(data[2]) & 0x1f) << 8) | static_cast<uint8_t>(data[3]);
+            auto pnum = static_cast<uint16_t>(
+                (static_cast<uint8_t>(data[0]) << 8) | static_cast<uint8_t>(data[1])
+            );
+            auto pid = static_cast<uint16_t>(
+                ((static_cast<uint8_t>(data[2]) & 0x1f) << 8) | static_cast<uint8_t>(data[3])
+            );
             if (pnum == 0x0001) {
                 pat_.pmtPid = pid;
             }
@@ -265,8 +268,8 @@ bool TSDemuxer::parseTSPMT(DataView view) noexcept {
     auto infoLength = pmt_.sectionLength - 4 - 9 - pmt_.progamInfoLength;
     while (infoLength >= 5) {
         uint8_t streamType = view[0];
-        uint16_t pid = ((view[1] & 0x1f) << 8) | view[2];
-        uint16_t esInfoLength = ((view[3] & 0x0f) << 8) | view[4];
+        auto pid = static_cast<uint16_t>(((view[1] & 0x1f) << 8) | view[2]);
+        auto esInfoLength = static_cast<uint16_t>(((view[3] & 0x0f) << 8) | view[4]);
         if (streamType == 0x1b || streamType == 0x24) {
             //h264
             pmt_.videoPid = pid;
@@ -330,11 +333,9 @@ bool TSDemuxer::parseTSPes(DataView data, uint8_t payloadIndicator, TSPESFrame& 
         if (ptsFlag & 0x02) {
             if (headerDataLength >= 5) {
                 //PTS = PTS[32..30] + PTS[29..15] + PTS[14..0]
-                pes.pts = ((data[9] & 0x0e) << 29) |
-                    ((data[10] & 0xff) << 22) |
-                    ((data[11] & 0xfe) << 14) |
-                    ((data[12] & 0xff) << 7)  |
-                    ((data[13] & 0xfe) >> 1);
+                pes.pts = static_cast<uint64_t>(((data[9] & 0x0e) << 29) | ((data[10] & 0xff) << 22) |
+                                                ((data[11] & 0xfe) << 14) | ((data[12] & 0xff) << 7) |
+                                                ((data[13] & 0xfe) >> 1));
             } else {
                 LogE("pes header data length error:{}", headerDataLength);
             }
@@ -342,11 +343,9 @@ bool TSDemuxer::parseTSPes(DataView data, uint8_t payloadIndicator, TSPESFrame& 
         if (ptsFlag & 0x01) {
             if (headerDataLength >= 10) {
                 //DTS = DTS[32..30] + PTS[29..15] + PTS[14..0]
-                pes.dts = ((data[14] & 0x0e) << 29) |
-                    ((data[15] & 0xff) << 22) |
-                    ((data[16] & 0xfe) << 14) |
-                    ((data[17] & 0xff) << 7)  |
-                    ((data[18] & 0xfe) >> 1);
+                pes.dts = static_cast<uint64_t>(((data[14] & 0x0e) << 29) | ((data[15] & 0xff) << 22) |
+                                                ((data[16] & 0xfe) << 14) | ((data[17] & 0xff) << 7) |
+                                                ((data[18] & 0xfe) >> 1));
             } else {
                 LogE("pes header data length error:{}", headerDataLength);
             }
@@ -366,10 +365,10 @@ bool TSDemuxer::parseTSPes(DataView data, uint8_t payloadIndicator, TSPESFrame& 
 void TSDemuxer::writeVideoData(AVFramePtr& frame, DataView view) noexcept {
     Data header(4);
     auto length = static_cast<uint32_t>(view.length());
-    header.rawData[0] = length >> 24;
-    header.rawData[1] = length >> 16;
-    header.rawData[2] = length >> 8;
-    header.rawData[3] = length;
+    header.rawData[0] = static_cast<uint8_t>(length >> 24);
+    header.rawData[1] = static_cast<uint8_t>(length >> 16);
+    header.rawData[2] = static_cast<uint8_t>(length >> 8);
+    header.rawData[3] = static_cast<uint8_t>(length);
     header.length = 4;
     frame->data->append(header); //write header
     frame->data->append(view);
@@ -387,7 +386,7 @@ bool TSDemuxer::packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) n
     }
     std::vector<Range> naluRanges;
     auto view = videoESFrame_.mediaData.view();
-    uint32_t pos = 0;
+    uint64_t pos = 0;
     while(!view.empty()) {
         Range range;
         if (!findNaluUnit(view, range)) {
@@ -401,7 +400,7 @@ bool TSDemuxer::packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) n
     
     view = videoESFrame_.mediaData.view();
     for(const auto& range : naluRanges) {
-        auto dataView = view.substr(range.pos, range.size);
+        auto dataView = view.substr(range.pos, static_cast<size_t>(range.size));
         auto naluType = static_cast<uint8_t>(dataView[0]) & 0x1f;
         auto info = std::make_shared<VideoFrameInfo>();
         if (naluType == 7) {
@@ -461,8 +460,9 @@ bool TSDemuxer::packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) n
     
         if (parseInfo_.calculatedFps == 0) {
             if (frame->index != 0) {
-                frame->duration = (frame->ptsTime() / frame->index) * 1000;
-                parseInfo_.calculatedFps = round(1000.0 / static_cast<double>(frame->duration));
+                frame->duration = static_cast<uint32_t>( (frame->ptsTime() /
+                    static_cast<long double>(frame->index)) * 1000);
+                parseInfo_.calculatedFps = static_cast<uint32_t>(round(1000.0 / static_cast<double>(frame->duration)));
             } else {
                 frame->duration = 33; //default 33 ms
             }
@@ -505,7 +505,7 @@ bool parseAdtsHeader(DataView dataView, AACAdtsHeader& header) noexcept {
         LogE("parse header, data length is insufficient!");
         return false;
     }
-    uint16_t syncword = (dataView[0] << 4) | (dataView[1] >> 4);
+    auto syncword = static_cast<uint16_t>((dataView[0] << 4) | (dataView[1] >> 4));
     if (syncword != 0xFFF) {
         LogE("sync word error!");
         return false;
@@ -515,8 +515,8 @@ bool parseAdtsHeader(DataView dataView, AACAdtsHeader& header) noexcept {
     header.hasCRC = !(dataView[1] & 0x1); //1 no CRC data
     header.profile = (dataView[2] >> 6) & 0x3;
     header.samplingIndex = (dataView[2] >> 2) & 0xF;
-    header.channel = ((dataView[2] & 0x1) << 2) | ((dataView[3] >> 6) & 0x3);
-    header.frameLength = ((dataView[3] & 0x3) << 11) | (dataView[4] << 3) | (dataView[5] >> 5);
+    header.channel = static_cast<uint8_t>(((dataView[2] & 0x1) << 2) | ((dataView[3] >> 6) & 0x3));
+    header.frameLength = static_cast<uint16_t>(((dataView[3] & 0x3) << 11) | (dataView[4] << 3) | (dataView[5] >> 5));
     header.bufferFullness = ((dataView[5] & 0x1F) << 6) | ((dataView[6] >> 2) & 0x3f);
     header.blockCount = dataView[6] & 0x3;
     return true;
@@ -591,11 +591,11 @@ bool TSDemuxer::packAudioPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexc
             header.channel = 2;
         }
         auto dataView = view.substr(0, header.frameLength);
-        dataView = dataView.substr(headerLength);
+        dataView = dataView.substr(static_cast<uint64_t>(headerLength));
         auto info = std::make_shared<AudioFrameInfo>();
         info->channels = header.channel;
         auto sampleRate = getSamplingRate(header.samplingIndex);
-        info->sampleRate = sampleRate.has_value() ? sampleRate.value() : 44100;
+        info->sampleRate = sampleRate.has_value() ? static_cast<uint64_t>(sampleRate.value()) : 44100ull;
         info->refIndex = tsIndex;
         auto frame = std::make_unique<AVFrame>(AVFrameType::Audio);
         frame->data = std::make_unique<Data>(dataView);
@@ -624,31 +624,32 @@ bool TSDemuxer::packAudioPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexc
         view = view.substr(header.frameLength);
     }
     audioESFrame_.reset();
+    return true;
 }
 
 bool TSDemuxer::parseData(Buffer& buffer, uint32_t tsIndex, DemuxerResult& result) noexcept {
     if (!buffer.require(kPacketSize)) {
         return false;
     }
-    uint32_t pos = std::string_view::npos;
+    uint64_t pos = std::string_view::npos;
     auto isNotifiedHeader = parseInfo_.isNotifiedHeader;
     while (checkPacket(buffer, pos)) {
-        buffer.skipTo(pos);
+        buffer.skipTo(static_cast<int64_t>(pos));
         auto view = buffer.shotView().substr(0, kPacketSize);
         parsePacket(view, tsIndex, result);
-        buffer.skipTo(pos + kPacketSize);
+        buffer.skipTo(static_cast<int64_t>(pos + kPacketSize));
     }
     if (!result.videoFrames.empty() || !result.audioFrames.empty()) {
         buffer.shrink();
     }
     if (!parseInfo_.isNotifiedHeader && parseInfo_.isReady()) {
         if (videoInfo_->fps == 0) {
-            videoInfo_->fps = parseInfo_.calculatedFps;
+            videoInfo_->fps = static_cast<uint16_t>(parseInfo_.calculatedFps);
         }
         parseInfo_.isNotifiedHeader = true;
         result.resultCode = isNotifiedHeader ? DemuxerResultCode::VideoInfoChange :  DemuxerResultCode::ParsedHeader;
     } else if (videoInfo_->fps == 0 && parseInfo_.isNotifiedHeader) {
-        videoInfo_->fps = parseInfo_.calculatedFps;
+        videoInfo_->fps = static_cast<uint16_t>(parseInfo_.calculatedFps);
         result.resultCode = DemuxerResultCode::ParsedFPS;
     }
     return true;
@@ -680,7 +681,7 @@ DemuxerResult HLSDemuxer::parseData(DataPacket& packet) noexcept {
         return result;
     }
     
-    if (!tsDemuxer_->parseData(*buffer_, tsIndex, result)) {
+    if (!tsDemuxer_->parseData(*buffer_, static_cast<uint32_t>(tsIndex), result)) {
         LogE("parse ts data error! offset:{}, ts index:{}", packet.offset, tsIndex);
         result.resultCode = DemuxerResultCode::Failed;
     }
@@ -689,7 +690,7 @@ DemuxerResult HLSDemuxer::parseData(DataPacket& packet) noexcept {
 
 void HLSDemuxer::init(DemuxerConfig config) noexcept {
     IDemuxer::init(std::move(config));
-    auto pos = config_.filePath.find_last_of("/");
+    auto pos = config_.filePath.find_last_of('/');
     if (pos != std::string::npos) {
         baseUrl_ = config_.filePath.substr(0, pos);
     } else {
@@ -741,7 +742,7 @@ void HLSDemuxer::seekPos(uint64_t index) noexcept {
     }
     auto& infos = getTSInfos();
     auto tsIndex = static_cast<size_t>(index);
-    if (0 <= tsIndex && tsIndex < infos.size()) {
+    if (tsIndex < infos.size()) {
         auto range = infos[tsIndex].range;
         auto pos = range.isValid() ? range.pos : 0;
         IDemuxer::seekPos(pos);

@@ -25,7 +25,7 @@ bool findNaluUnit(DataView dataView, Range& range) noexcept;
 //first first_mb_in_slice, second slice type
 std::tuple<uint32_t, uint32_t> parseSliceType(DataView naluView) noexcept;
 
-void parseH264Sps(DataView bitstream, std::shared_ptr<VideoInfo> videoInfo) noexcept;
+void parseH264Sps(DataView bitstream, const std::shared_ptr<VideoInfo>& videoInfo) noexcept;
 
-void parseH265Sps(DataView bitstream, std::shared_ptr<VideoInfo> videoInfo) noexcept;
+void parseH265Sps(DataView bitstream, const std::shared_ptr<VideoInfo>& videoInfo) noexcept;
 }

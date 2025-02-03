@@ -24,13 +24,13 @@ TEST(Request, Get) {
                     {"User-Agent",   "runscope/0.1"},
                     {"Accept",       "*/*"}};
     ResponseHandler handler;
-    handler.onParseHeaderDone = [](std::string_view , http::ResponseHeader&& header) {
+    handler.onParseHeaderDone = [](const RequestInfo& , http::ResponseHeader&& header) {
         ASSERT_EQ(header.httpStatusCode, HttpStatusCode::OK);
     };
-    handler.onError = [](std::string_view , ErrorInfo info) {
+    handler.onError = [](const RequestInfo& , ErrorInfo info) {
         ASSERT_EQ(info.retCode, ResultCode::Success);
     };
-    handler.onDisconnected = [&](std::string_view ) {
+    handler.onCompleted = [&](const RequestInfo& ) {
         {
             std::lock_guard lock(mutex);
             isFinished = true;
@@ -54,13 +54,13 @@ TEST(Request, Post) {
                     {"Accept",       "*/*"}};
     info.body = std::make_unique<Data>(R"({"name": "JohnDoe", "age": 30})");
     ResponseHandler handler;
-    handler.onParseHeaderDone = [](std::string_view , http::ResponseHeader&& header) {
+    handler.onParseHeaderDone = [](const RequestInfo& , http::ResponseHeader&& header) {
         ASSERT_EQ(header.httpStatusCode, HttpStatusCode::OK);
     };
-    handler.onError = [](std::string_view , ErrorInfo info) {
+    handler.onError = [](const RequestInfo& , ErrorInfo info) {
         ASSERT_EQ(info.retCode, ResultCode::Success);
     };
-    handler.onDisconnected = [&](std::string_view ) {
+    handler.onCompleted = [&](const RequestInfo& ) {
         {
             std::lock_guard lock(mutex);
             isFinished = true;
@@ -84,13 +84,13 @@ TEST(Request, Put) {
                     {"Accept",       "*/*"}};
     info.body = std::make_unique<Data>(R"({"name": "JohnDoe", "age": 30})");
     ResponseHandler handler;
-    handler.onParseHeaderDone = [](std::string_view , http::ResponseHeader&& header) {
+    handler.onParseHeaderDone = [](const RequestInfo& , http::ResponseHeader&& header) {
         ASSERT_EQ(header.httpStatusCode, HttpStatusCode::OK);
     };
-    handler.onError = [](std::string_view , ErrorInfo info) {
+    handler.onError = [](const RequestInfo& , ErrorInfo info) {
         ASSERT_EQ(info.retCode, ResultCode::Success);
     };
-    handler.onDisconnected = [&](std::string_view ) {
+    handler.onCompleted = [&](const RequestInfo&) {
         {
             std::lock_guard lock(mutex);
             isFinished = true;
@@ -114,13 +114,13 @@ TEST(Request, Delete) {
                     {"User-Agent",   "runscope/0.1"},
                     {"Accept",       "*/*"}};
     ResponseHandler handler;
-    handler.onParseHeaderDone = [](std::string_view , http::ResponseHeader&& header) {
+    handler.onParseHeaderDone = [](const RequestInfo&, http::ResponseHeader&& header) {
         ASSERT_EQ(header.httpStatusCode, HttpStatusCode::OK);
     };
-    handler.onError = [](std::string_view , ErrorInfo info) {
+    handler.onError = [](const RequestInfo& , ErrorInfo info) {
         ASSERT_EQ(info.retCode, ResultCode::Success);
     };
-    handler.onDisconnected = [&](std::string_view ) {
+    handler.onCompleted = [&](const RequestInfo& ) {
         {
             std::lock_guard lock(mutex);
             isFinished = true;
@@ -144,13 +144,13 @@ TEST(Request, Patch) {
                     {"Accept",       "*/*"}};
     info.body = std::make_unique<Data>(R"({"name": "JohnDoe", "age": 30})");
     ResponseHandler handler;
-    handler.onParseHeaderDone = [](std::string_view , http::ResponseHeader&& header) {
+    handler.onParseHeaderDone = [](const RequestInfo& , http::ResponseHeader&& header) {
         ASSERT_EQ(header.httpStatusCode, HttpStatusCode::OK);
     };
-    handler.onError = [](std::string_view , ErrorInfo info) {
+    handler.onError = [](const RequestInfo& , ErrorInfo info) {
         ASSERT_EQ(info.retCode, ResultCode::Success);
     };
-    handler.onDisconnected = [&](std::string_view ) {
+    handler.onCompleted = [&](const RequestInfo& ) {
         {
             std::lock_guard lock(mutex);
             isFinished = true;
@@ -176,13 +176,13 @@ TEST(Request, Options) {
                     {"Access-Control-Request-Headers", "X-PINGOTHER, Content-Type"}};
     ResponseHandler handler;
 
-    handler.onParseHeaderDone = [](std::string_view , http::ResponseHeader&& header) {
+    handler.onParseHeaderDone = [](const RequestInfo& , http::ResponseHeader&& header) {
         ASSERT_EQ(header.httpStatusCode, HttpStatusCode::OK);
     };
-    handler.onError = [](std::string_view , ErrorInfo info) {
+    handler.onError = [](const RequestInfo& , ErrorInfo info) {
         ASSERT_EQ(info.retCode, ResultCode::Success);
     };
-    handler.onDisconnected = [&](std::string_view ) {
+    handler.onCompleted = [&](const RequestInfo& ) {
         {
             std::lock_guard lock(mutex);
             isFinished = true;

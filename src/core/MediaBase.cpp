@@ -9,6 +9,8 @@
 #include "Log.hpp"
 #include "VideoInfo.h"
 
+#define ReadUINT8(view, offset, count)  static_cast<uint8_t>(Golomb::readBits(view, offset, count))
+
 namespace slark {
 
 constexpr uint32_t kInvalidPos = static_cast<uint32_t>(std::string_view::npos);
@@ -53,7 +55,7 @@ bool findNaluUnit(DataView dataView, Range& range) noexcept {
     auto remainView = dataView.substr(start);
     auto size = findNaluStartCode(remainView);
     if (size == kInvalidPos) {
-        size = remainView.size();
+        size = static_cast<uint32_t>(remainView.size());
     }
     range.pos = start;
     range.size = size;
@@ -75,7 +77,7 @@ void parseHrd(DataView bitstream, int32_t& offset) {
     offset += 4; // bit_rate_scale
     offset += 4; // cpb_size_scale
     
-    for (auto i = 0; i < cpbCntMinus1 + 1; i++) {
+    for (uint32_t i = 0; i < cpbCntMinus1 + 1; i++) {
         Golomb::readUe(bitstream, offset);
         Golomb::readUe(bitstream, offset);
         Golomb::readBits(bitstream, offset, 1);
@@ -84,33 +86,34 @@ void parseHrd(DataView bitstream, int32_t& offset) {
     offset += 5;
     offset += 5;
     offset += 5;
-};
+}
 
 double parseH264Vui(DataView bitstream, int32_t& offset) {
     using namespace Util;
     double fps = 0.0;
     do {
-        uint8_t vuiParametersPresentFlag = Golomb::readBits(bitstream, offset, 1);
+        auto vuiParametersPresentFlag = ReadUINT8(bitstream, offset, 1);
         if (!vuiParametersPresentFlag) {
             break;
         }
         
-        uint8_t aspectRatioInfoPresentFlag = Golomb::readBits(bitstream, offset, 1);
+        auto aspectRatioInfoPresentFlag = ReadUINT8(bitstream, offset, 1);
         // Skip aspect ratio and overscan info for now (can be expanded)
         if (aspectRatioInfoPresentFlag) {
-            auto aspectRatioIdc = Golomb::readBits(bitstream, offset, 8); //aspectRatioIdc
+            //aspectRatioIdc
+            auto aspectRatioIdc = Golomb::readBits(bitstream, offset, 8);
             if (aspectRatioIdc == 255) {
                 offset += 16; //sar width
                 offset += 16; //sar height
             }
         }
         
-        uint8_t overscanInfoPresentFlag = Golomb::readBits(bitstream, offset, 1);
+        auto overscanInfoPresentFlag = ReadUINT8(bitstream, offset, 1);
         if (overscanInfoPresentFlag) {
             offset += 1;
         }
         
-        uint8_t videoSignalTypePresentFlag = Golomb::readBits(bitstream, offset, 1);
+        auto videoSignalTypePresentFlag = ReadUINT8(bitstream, offset, 1);
         if (videoSignalTypePresentFlag) {
             // Skip video_signal_type (can be expanded)
             offset += 3; //videoFormat
@@ -129,9 +132,9 @@ double parseH264Vui(DataView bitstream, int32_t& offset) {
             Golomb::readUe(bitstream, offset); //chroma type bottom field
         }
         
-        uint8_t frameRateInfoPresentFlag = Golomb::readBits(bitstream, offset, 1);
+        auto frameRateInfoPresentFlag = ReadUINT8(bitstream, offset, 1);
         if (frameRateInfoPresentFlag) {
-            uint32_t timeScale = Golomb::readBits(bitstream, offset, 32);
+            auto timeScale = Golomb::readBits(bitstream, offset, 32);
             uint32_t numUnitsInTick = Golomb::readBits(bitstream, offset, 32);
             auto fixFlag = Golomb::readBits(bitstream, offset, 1);
             if (fixFlag) {
@@ -159,14 +162,14 @@ double parseH264Vui(DataView bitstream, int32_t& offset) {
 }
 
 // Modify parseSps to call parseVui
-void parseH264Sps(DataView bitstream, std::shared_ptr<VideoInfo> videoInfo) noexcept {
+void parseH264Sps(DataView bitstream, const std::shared_ptr<VideoInfo>& videoInfo) noexcept {
     using namespace Util;
     bitstream = bitstream.substr(1); //skip header
     int32_t offset = 0;
-    uint8_t profileIdc = Golomb::readBits(bitstream, offset, 8);
+    auto profileIdc = ReadUINT8(bitstream, offset, 8);
     offset += 8; //skip flags + reserved
-    uint8_t levelIdc = Golomb::readBits(bitstream, offset, 8);
-    uint32_t seqParameterSetId = Golomb::readUe(bitstream, offset);
+    [[maybe_unused]] auto levelIdc = ReadUINT8(bitstream, offset, 8);
+    [[maybe_unused]] uint32_t seqParameterSetId = Golomb::readUe(bitstream, offset);
     uint32_t chromaFormatIdc = 1; //default 420
     static const std::vector<uint8_t> kSpecialProfile = {100, 110, 122, 244, 44, 83, 86, 118, 128};
     if (std::find(kSpecialProfile.begin(), kSpecialProfile.end(), profileIdc) != kSpecialProfile.end()) {
@@ -180,7 +183,7 @@ void parseH264Sps(DataView bitstream, std::shared_ptr<VideoInfo> videoInfo) noex
         auto seqScalingMatrixPresentFlag = Golomb::readBits(bitstream, offset, 1);// seq_scaling_matrix_present_flag
         if (seqScalingMatrixPresentFlag) {
             for (auto i = 0; i < (chromaFormatIdc != 3 ? 8 : 12); i++) {
-                auto seqScalingMatrixPresentFlag = Golomb::readBits(bitstream, offset, 1);// seq_scaling_list_present_flag
+                seqScalingMatrixPresentFlag = Golomb::readBits(bitstream, offset, 1);// seq_scaling_list_present_flag
                 if (seqScalingMatrixPresentFlag) {
                     auto count = i < 6 ? 4 : 8;
                     offset += count * count;
@@ -197,10 +200,10 @@ void parseH264Sps(DataView bitstream, std::shared_ptr<VideoInfo> videoInfo) noex
         uint32_t log2MaxPicOrderCntLsbMinus4 = Golomb::readUe(bitstream, offset);
         LogI("log2MaxPicOrderCntLsbMinus4:{}", log2MaxPicOrderCntLsbMinus4);
     } else if (picOrderCntType == 1) {
-        uint8_t deltaPicOrderAlwaysZeroFlag = Golomb::readBits(bitstream, offset, 1);
-        int32_t offsetForNonRefPic = Golomb::readUe(bitstream, offset);
-        int32_t offsetForTopToBottomField = Golomb::readUe(bitstream, offset);
-        uint32_t numRefFramesInPicOrderCntCycle = Golomb::readUe(bitstream, offset);
+        auto deltaPicOrderAlwaysZeroFlag = ReadUINT8(bitstream, offset, 1);
+        auto offsetForNonRefPic = static_cast<int32_t>(Golomb::readUe(bitstream, offset));
+        auto offsetForTopToBottomField = static_cast<int32_t>(Golomb::readUe(bitstream, offset));
+        auto numRefFramesInPicOrderCntCycle = Golomb::readUe(bitstream, offset);
 
         LogI("deltaPicOrderAlwaysZeroFlag:{}, offsetForNonRefPic:{}, "
              "offsetForTopToBottomField:{}, numRefFramesInPicOrderCntCycle:{}",
@@ -209,7 +212,7 @@ void parseH264Sps(DataView bitstream, std::shared_ptr<VideoInfo> videoInfo) noex
     }
 
     uint32_t numRefFrames = Golomb::readUe(bitstream, offset);
-    uint8_t gapsInFrameNumValueAllowedFlag = Golomb::readBits(bitstream, offset, 1);
+    [[maybe_unused]] auto gapsInFrameNumValueAllowedFlag = ReadUINT8(bitstream, offset, 1);
     uint32_t picWidthInMbsMinus1 = Golomb::readUe(bitstream, offset);
     uint32_t picHeightInMapUnitsMinus1 = Golomb::readUe(bitstream, offset);
 
@@ -256,17 +259,17 @@ void parseH264Sps(DataView bitstream, std::shared_ptr<VideoInfo> videoInfo) noex
     }
     // Parse VUI for FPS
     LogI("width:{}, height:{}", width, height);
-    videoInfo->fps = parseH264Vui(bitstream, offset);
+    videoInfo->fps = static_cast<uint16_t>(parseH264Vui(bitstream, offset));
 }
 
 double parseH265Vui(DataView bitstream, int32_t& offset) noexcept {
     using namespace Util;
     do {
-        uint8_t vuiParametersPresentFlag = Golomb::readBits(bitstream, offset, 1);
+        auto vuiParametersPresentFlag = ReadUINT8(bitstream, offset, 1);
         if (!vuiParametersPresentFlag) {
             break;
         }
-        uint8_t frameRateInfoPresentFlag = Golomb::readBits(bitstream, offset, 1);
+        auto frameRateInfoPresentFlag = ReadUINT8(bitstream, offset, 1);
         if (!frameRateInfoPresentFlag) {
             break;
         }
@@ -302,7 +305,7 @@ void profileTierLevel(DataView bitstream, int32_t& offset, uint8_t profilePresen
     offset += 8; // general_level_idc
 
     std::vector<uint32_t> subLayerProfilePresentFlags;
-    for (auto i = 0; i < maxNumSubLayersMinus; i++) {
+    for (uint32_t i = 0; i < maxNumSubLayersMinus; i++) {
         auto subLayerProfilePresentFlag = Util::Golomb::readBits(bitstream, offset, 1);
         offset += 1; // sub_layer_level_present_flag
         subLayerProfilePresentFlags.push_back(subLayerProfilePresentFlag);
@@ -314,7 +317,7 @@ void profileTierLevel(DataView bitstream, int32_t& offset, uint8_t profilePresen
         }
     }
 
-    for (auto i = 0; i < maxNumSubLayersMinus; i++) {
+    for (uint32_t i = 0; i < maxNumSubLayersMinus; i++) {
         if (subLayerProfilePresentFlags[i]) {
             offset += 2; // sub_layer_profile_space
             offset += 1; // sub_layer_tier_flag
@@ -333,7 +336,7 @@ void profileTierLevel(DataView bitstream, int32_t& offset, uint8_t profilePresen
     }
 }
 
-void parseH265Sps(DataView bitstream, std::shared_ptr<VideoInfo> videoInfo) noexcept {
+void parseH265Sps(DataView bitstream, const std::shared_ptr<VideoInfo>& videoInfo) noexcept {
     using namespace Util;
     int32_t offset = 0;
     offset += 8;//skip header
@@ -358,13 +361,13 @@ void parseH265Sps(DataView bitstream, std::shared_ptr<VideoInfo> videoInfo) noex
         auto bottomOffset = Golomb::readUe(bitstream, offset);
         auto subWidth = ( (1 == chromaFormatIdc) ||(2 == chromaFormatIdc)) && (0 == separateColourPlaneFlag) ? 2 : 1;
         auto subHeight = (1 == chromaFormatIdc) && (0 == separateColourPlaneFlag) ? 2 : 1;
-        picWidthInMbsMinus  -= (subWidth * leftOffset + subWidth * rightOffset);
-        picHeightInMapUnitsMinus -= (subHeight * topOffset + subHeight * bottomOffset);
+        picWidthInMbsMinus  -= (static_cast<uint32_t>(subWidth) * leftOffset + static_cast<uint32_t>(subWidth) * rightOffset);
+        picHeightInMapUnitsMinus -= (static_cast<uint32_t>(subHeight) * topOffset + static_cast<uint32_t>(subHeight) * bottomOffset);
     }
     videoInfo->width = picWidthInMbsMinus;
     videoInfo->height = picHeightInMapUnitsMinus;
     // Parse VUI for FPS
-    videoInfo->fps = parseH265Vui(bitstream, offset);
+    videoInfo->fps = static_cast<uint16_t>(parseH265Vui(bitstream, offset));
 }
 
 }//end namespace slark

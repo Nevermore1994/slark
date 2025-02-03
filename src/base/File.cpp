@@ -149,7 +149,7 @@ std::expected<uint8_t, bool> ReadFile::readByte() noexcept {
     }
     uint8_t byte = 0;
     auto res = fread(&byte, 1, 1, file_);
-    if (feof(file_) || tell() == static_cast<int64_t>(fileSize())) {
+    if (feof(file_) || tell() == fileSize()) {
         readOver_ = true;
     }
     if (res == 0 && !readOver_) {
@@ -181,7 +181,7 @@ bool ReadFile::read(Data& data, uint64_t size) noexcept {
         return false;
     }
     auto res = fread(data.rawData, 1, size, file_);
-    if (feof(file_) || tell() == static_cast<int64_t>(fileSize())) {
+    if (feof(file_) || tell() == fileSize()) {
         readOver_ = true;
     }
     if (res == 0 && !readOver_) {

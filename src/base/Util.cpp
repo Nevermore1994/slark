@@ -160,7 +160,7 @@ std::string uint32ToByteBE(uint32_t value) noexcept {
 }
 
 bool Golomb::readBit(DataView view, int32_t& offset) noexcept {
-    int32_t byteIndex = offset / 8;
+    auto byteIndex = static_cast<uint32_t>(offset / 8);
     int32_t bitIndex = 7 - (offset % 8);
     ++offset;
     return (view[byteIndex] >> bitIndex) & 0x01;
