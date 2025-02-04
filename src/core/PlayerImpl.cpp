@@ -166,7 +166,6 @@ bool Player::Impl::openDemuxer(DataPacket& data) noexcept {
         return false;
     }
     if (auto res = helper_->openDemuxer(); res) {
-        helper_->resetProbeData();
         LogI("open demuxer success.");
         initPlayerInfo();
     }

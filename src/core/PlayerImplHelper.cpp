@@ -56,6 +56,9 @@ bool PlayerImplHelper::openDemuxer() noexcept {
     if (demuxerType == DemuxerType::MP4) {
         handleOpenMp4DemuxerResult(res);
     }
+    if (res) {
+        resetProbeData();
+    }
     return res;
 }
 
