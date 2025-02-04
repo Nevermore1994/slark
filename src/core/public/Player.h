@@ -143,7 +143,7 @@ private:
 private:
     friend class PlayerImplHelper;
     class Impl;
-    std::unique_ptr<Impl> pimpl_;
+    std::shared_ptr<Impl> pimpl_;
 };
 
 }//end namespace slark

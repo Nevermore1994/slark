@@ -15,6 +15,11 @@
 
 namespace slark {
 
+PlayerImplHelper::PlayerImplHelper(std::weak_ptr<Player::Impl> player)
+    : player_(player) {
+    
+}
+
 bool PlayerImplHelper::createDataProvider(const std::string& path, void* ptr, ReaderDataCallBack callback) noexcept  {
     if (path.empty()) {
         return false;
@@ -40,31 +45,34 @@ bool PlayerImplHelper::createDataProvider(const std::string& path, void* ptr, Re
     return true;
 }
 
-void PlayerImplHelper::handleOpenDemuxerResult(bool isSuccess, void* ptr) noexcept {
-    if (ptr == nullptr) {
-        return;
+bool PlayerImplHelper::openDemuxer() noexcept {
+    auto player = player_.lock();
+    if (!player) {
+        LogE("player is nullptr.");
+        return false;
     }
-    
-    auto impl = reinterpret_cast<Player::Impl*>(ptr);
-    auto demuxerType = impl->demuxer_->type();
+    auto res = player->demuxer_->open(probeBuffer_);
+    auto demuxerType = player->demuxer_->type();
     if (demuxerType == DemuxerType::MP4) {
-        handleOpenMp4DemuxerResult(isSuccess, impl);
+        handleOpenMp4DemuxerResult(res);
     }
+    return res;
 }
 
-void PlayerImplHelper::handleOpenMp4DemuxerResult(bool isSuccess, void* ptr) noexcept {
-    if (ptr == nullptr) {
+void PlayerImplHelper::handleOpenMp4DemuxerResult(bool isSuccess) noexcept {
+    auto player = player_.lock();
+    if (!player) {
+        LogE("player is nullptr.");
         return;
     }
-    auto impl = reinterpret_cast<Player::Impl*>(ptr);
-    auto mp4Demuxer = dynamic_cast<Mp4Demuxer*>(impl->demuxer_.get());
+    auto mp4Demuxer = std::dynamic_pointer_cast<Mp4Demuxer>(player->demuxer_);
     if (isSuccess) {
         auto dataStart = mp4Demuxer->headerInfo()->headerLength + 8; //skip size and type
         Range range;
         range.pos = dataStart;
         range.size = static_cast<int64_t>(mp4Demuxer->headerInfo()->dataSize);
         mp4Demuxer->seekPos(dataStart);
-        impl->dataProvider_->updateReadRange(range);
+        player->dataProvider_->updateReadRange(range);
         LogI("mp4 seek to:{}", dataStart);
 //#if DEBUG
 //            auto ss = mp4Demuxer->description();
@@ -83,7 +91,7 @@ void PlayerImplHelper::handleOpenMp4DemuxerResult(bool isSuccess, void* ptr) noe
             if (headerInfo) {
                 pos = static_cast<int64_t>(headerInfo->headerLength + headerInfo->dataSize);
             } else {
-                pos = static_cast<int64_t>(impl->dataProvider_->size()) - kMb;
+                pos = static_cast<int64_t>(player->dataProvider_->size()) - kMb;
             }
         } else {
             pos -= kMb;
@@ -92,9 +100,8 @@ void PlayerImplHelper::handleOpenMp4DemuxerResult(bool isSuccess, void* ptr) noe
             return;
         }
         auto probePos = static_cast<uint64_t>(pos);
-
-        impl->demuxer_->seekPos(probePos);
-        impl->dataProvider_->seek(probePos);
+        player->demuxer_->seekPos(probePos);
+        player->dataProvider_->seek(probePos);
         probeBuffer_->reset();
         probeBuffer_->setOffset(probePos);
     }
