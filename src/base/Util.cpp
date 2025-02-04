@@ -106,7 +106,7 @@ bool read8ByteLE(DataView view, uint64_t& value) noexcept {
     if (view.size() < 8) {
         return false;
     }
-    static auto func = [&](size_t pos) {
+    auto func = [&](size_t pos) {
         return view[pos] << (pos * 8);
     };
     value = static_cast<uint64_t>(func(7) | func(6) | func(5) | func(4) | func(3) | func(2) | func(1) | func(0));
@@ -118,7 +118,7 @@ bool readBE(DataView view, uint32_t size, uint32_t& value) noexcept {
         return false;
     }
     auto mx = static_cast<size_t>(size - 1);
-    static auto func = [&](size_t pos) {
+    auto func = [&](size_t pos) {
         return static_cast<uint32_t>(view[pos] << ((mx - pos) * 8));
     };
     for(size_t i = 0; i <= mx; i++) {

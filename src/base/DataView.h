@@ -27,9 +27,19 @@ public:
         
     }
     
+    DataView(const DataView& view)
+        : view_(view.view_) {
+        
+    }
+    
     DataView(const uint8_t* data, uint64_t size)
         : view_(std::string_view(reinterpret_cast<const char*>(data), size)){
         
+    }
+    
+    DataView& operator=(const DataView& rhs) {
+        view_ = rhs.view_;
+        return *this;
     }
     
     uint8_t operator[](uint64_t index) const noexcept {
