@@ -280,7 +280,6 @@ void Player::Impl::initPlayerInfo() noexcept {
         ownerThread_->start();
         statistics_.isForceVideoRendered = true;
     }
-    setState(PlayerState::Ready);
     LogI("init player success.");
 }
 
@@ -459,8 +458,12 @@ void Player::Impl::pushVideoFrameToRender() noexcept {
             if (seekRequest_.value().isAccurate && isSeekingWhilePlaying_) {
                 setState(PlayerState::Playing);
                 isSeekingWhilePlaying_ = false;
+            } else {
+                setState(PlayerState::Ready);
             }
             seekRequest_.reset();
+        } else if (state() == PlayerState::Buffering) {
+            setState(PlayerState::Ready);
         }
         statistics_.isForceVideoRendered = false;
     }
@@ -492,7 +495,7 @@ void Player::Impl::process() noexcept {
     }
     demuxData();
     pushAVFrameDecode();
-    if (seekRequest_.has_value() || nowState == PlayerState::Ready) {
+    if (seekRequest_.has_value() || nowState == PlayerState::Buffering) {
         pushVideoFrameToRender();
     } else if (nowState == PlayerState::Playing) {
         pushAVFrameToRender();
@@ -575,6 +578,7 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
         setState(PlayerState::Pause);
         isSeekingWhilePlaying_ = false;
     }
+    setState(PlayerState::Buffering);
     seekRequest_ = seekRequest;
     auto demuxedTime = demuxedDuration();
     auto videoInfo = demuxer_->videoInfo();
