@@ -157,11 +157,17 @@ struct AVFrame {
         }
         if (frameType == AVFrameType::Audio) {
             auto newInfo = std::make_shared<AudioFrameInfo>();
-            std::dynamic_pointer_cast<AudioFrameInfo>(info)->copy(newInfo);
+            if (auto audioFrameInfo = std::dynamic_pointer_cast<AudioFrameInfo>(info);
+                audioFrameInfo) {
+                audioFrameInfo->copy(newInfo);
+            }
             frame->info = newInfo;
         } else if (frameType == AVFrameType::Video) {
             auto newInfo = std::make_shared<VideoFrameInfo>();
-            std::dynamic_pointer_cast<VideoFrameInfo>(info)->copy(newInfo);
+            if (auto videoInfo = std::dynamic_pointer_cast<VideoFrameInfo>(info);
+                videoInfo) {
+                videoInfo->copy(newInfo);
+            }
             frame->info = newInfo;
         }
         return frame;

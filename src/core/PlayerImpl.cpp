@@ -29,7 +29,6 @@ Player::Impl::Impl(std::unique_ptr<PlayerParams> params)
     params_.withWriteLock([&params](auto& p){
         p = std::move(params);
     });
-    init();
 }
 
 Player::Impl::~Impl() {
@@ -130,7 +129,7 @@ bool Player::Impl::setupDataProvider() noexcept {
         notifyPlayerEvent(PlayerEvent::OnError, std::to_string(static_cast<uint8_t>(PlayerErrorCode::OpenFileError)));
         return false;
     }
-    helper_ = std::make_unique<PlayerImplHelper>();
+    helper_ = std::make_unique<PlayerImplHelper>(weak_from_this());
     return true;
 }
 
@@ -166,13 +165,12 @@ bool Player::Impl::openDemuxer(DataPacket& data) noexcept {
     if (demuxer_ == nullptr) {
         return false;
     }
-    auto res = false;
-    if (res = demuxer_->open(helper_->probeBuffer()), res) {
+    if (auto res = helper_->openDemuxer(); res) {
         helper_->resetProbeData();
         LogI("open demuxer success.");
         initPlayerInfo();
     }
-    return res;
+    return false;
 }
 
 void Player::Impl::createAudioComponent(const PlayerSetting& setting) noexcept {

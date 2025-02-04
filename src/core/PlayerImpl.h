@@ -11,7 +11,6 @@
 #include <shared_mutex>
 #include <optional>
 #include <map>
-#include "Player.h"
 #include "DecoderComponent.h"
 #include "DemuxerManager.h"
 #include "AVFrame.hpp"
@@ -48,7 +47,7 @@ struct PlayerStatistics {
     }
 };
 
-class Player::Impl {
+class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
 public:
     friend class PlayerImplHelper;
     explicit Impl(std::unique_ptr<PlayerParams> params);
@@ -56,6 +55,8 @@ public:
     Impl(const Impl&) = delete;
     Impl& operator=(const Impl&) = delete;
 public:
+    void init() noexcept;
+    
     void updateState(PlayerState state) noexcept;
 
     void setLoop(bool isLoop);
@@ -90,7 +91,6 @@ public:
     
     [[nodiscard]] void* requestRender() noexcept;
 private:
-    void init() noexcept;
 
     void initPlayerInfo() noexcept;
 

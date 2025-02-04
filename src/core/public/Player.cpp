@@ -13,7 +13,8 @@
 namespace slark {
 
 Player::Player(std::unique_ptr<PlayerParams> params)
-    : pimpl_(std::make_unique<Player::Impl>(std::move(params))) {
+    : pimpl_(std::make_shared<Player::Impl>(std::move(params))) {
+    pimpl_->init();
 }
 
 Player::~Player() = default;

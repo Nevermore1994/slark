@@ -305,8 +305,7 @@ AVFramePtrArray TrackContext::praseH264FrameData(AVFramePtr frame,
             }
             info->keyIndex = keyIndex;
             if (view.empty()) {
-                frame->info = std::make_shared<VideoFrameInfo>();
-                
+                frame->info = info;
                 frame->data = std::move(frameData);
                 frames.push_back(std::move(frame));
                 frame.reset();
@@ -316,10 +315,9 @@ AVFramePtrArray TrackContext::praseH264FrameData(AVFramePtr frame,
                 newFrame->data = std::move(frameData);
                 frames.push_back(std::move(newFrame));
             }
-        } else if (naluType == 6) {
-            //skip sei
-        }  else {
+        } else {
             //don't care
+            view = view.substr(totalSize);
         }
     }
     return frames;
