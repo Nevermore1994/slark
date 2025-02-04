@@ -21,6 +21,7 @@ using namespace slark;
 @property (nonatomic, strong) UILabel* nameLabel;
 @property (nonatomic, assign) BOOL hasAuthorization;
 @property (nonatomic, strong) SlarkViewController* playerController;
+@property (nonatomic, strong) UIImageView* loadingView;
 @end
 
 @implementation VideoViewController
@@ -88,12 +89,34 @@ using namespace slark;
     [self.navigationController.navigationBar setTitleTextAttributes:@{NSForegroundColorAttributeName:[UIColor blackColor]}];
     self.view.backgroundColor = [UIColor blackColor];
     [self.view addSubview:self.controllerView];
+    [self.view addSubview:self.loadingView];
     [self.controllerView mas_makeConstraints:^(MASConstraintMaker *make) {
         make.width.mas_equalTo(self.view.mas_width);
         make.height.mas_equalTo(120);
         make.centerX.equalTo(self.view);
         make.bottom.mas_equalTo(-SafeBottomHeight).mas_offset(-30);
     }];
+    [self.loadingView mas_makeConstraints:^(MASConstraintMaker *make) {
+        make.width.mas_equalTo(54);
+        make.height.mas_equalTo(54);
+        make.centerX.equalTo(self.view);
+        make.centerY.equalTo(self.view);
+    }];
+}
+
+- (UIImageView*)loadingView {
+    if (_loadingView == nil) {
+        const CGFloat size = 100;
+        _loadingView = [[UIImageView alloc] initWithFrame:CGRectMake((CGRectGetWidth(self.view.bounds) - size) / 2, (CGRectGetHeight(self.view.bounds) - size) / 2, size, size)];
+        [_loadingView setImage:[UIImage imageNamed:@"loading"]];
+        CABasicAnimation *rotateAnimation = [CABasicAnimation animationWithKeyPath:@"transform.rotation"];
+        rotateAnimation.fromValue = @(0.0);
+        rotateAnimation.toValue = @(M_PI * 2.0);
+        rotateAnimation.duration = 1.0;
+        rotateAnimation.repeatCount = HUGE_VALF;
+        [_loadingView.layer addAnimation:rotateAnimation forKey:@"rotationAnimation"];
+    }
+    return _loadingView;
 }
 
 - (void)initData {
@@ -165,10 +188,15 @@ using namespace slark;
 - (void)notifyState:(NSString *)playerId state:(SlarkPlayerState)state {
     if (state == SlarkPlayerState::PlayerStateReady) {
         [self.controllerView updateTotalTime:CMTimeGetSeconds(self.playerController.player.totalDuration)];
+        self.loadingView.hidden = YES;
     } else if (state == SlarkPlayerState::PlayerStateCompleted || state == SlarkPlayerState::PlayerStatePause) {
         [self.controllerView setIsPause:YES];
+        self.loadingView.hidden = YES;
     } else if (state == SlarkPlayerState::PlayerStatePlaying) {
         [self.controllerView setIsPause:NO];
+        self.loadingView.hidden = YES;
+    } else if (state == SlarkPlayerState::PlayerStateBuffering) {
+        self.loadingView.hidden = NO;
     }
 }
 
