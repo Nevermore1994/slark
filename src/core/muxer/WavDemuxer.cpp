@@ -226,7 +226,6 @@ DemuxerResult WAVDemuxer::parseData(DataPacket& packet) noexcept {
         return {DemuxerResultCode::Failed, AVFramePtrArray(), AVFramePtrArray()};
     }
     
-    auto length = packet.data->length;
     if (!buffer_->append(static_cast<uint64_t>(packet.offset), std::move(packet.data))) {
         return {DemuxerResultCode::Normal, AVFramePtrArray(), AVFramePtrArray()};
     }

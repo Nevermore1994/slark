@@ -25,11 +25,11 @@ bool parseTsTag(const std::string& tag, uint32_t& tsIndex) noexcept {
 }
 
 HLSReader::HLSReader()
-    : worker_(Util::genRandomName("HLSRead_"), &HLSReader::sendRequest, this)
-    , m3u8Buffer_(std::make_unique<Buffer>()){
+    : m3u8Buffer_(std::make_unique<Buffer>())
+    , worker_(Util::genRandomName("HLSRead_"), &HLSReader::sendRequest, this) {
 }
 
-void HLSReader::handleError(const http::ErrorInfo& info) noexcept {
+void HLSReader::handleError(const http::ErrorInfo&) noexcept {
     isErrorOccurred_ = true;
     {
         std::lock_guard<std::mutex> lock(taskMutex_);
@@ -213,7 +213,7 @@ void HLSReader::setDemuxer(std::shared_ptr<HLSDemuxer> demuxer) noexcept {
 void HLSReader::fetchTSData(uint32_t tsIndex) noexcept {
     const auto& tsInfos = demuxer_->getTSInfos();
     if (tsIndex < 0 ||
-        tsIndex >= static_cast<int32_t>(tsInfos.size())) {
+        tsIndex >= tsInfos.size()) {
         isCompleted_ = true;
         return;
     }

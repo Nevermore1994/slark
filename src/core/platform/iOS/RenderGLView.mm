@@ -8,7 +8,7 @@
 #import <AVFoundation/AVUtilities.h>
 #import <OpenGLES/ES2/gl.h>
 #import <OpenGLES/ES2/glext.h>
-#import "SlarkRenderView.h"
+#import "RenderGLView.h"
 #import "Log.hpp"
 #import "GLProgram.h"
 #import "GLShader.h"
@@ -100,7 +100,7 @@ static const GLfloat kColorConversion709FullRange[] = {
     1.574f, -0.468f, 0.000f,
 };
 
-@interface SlarkRenderView()
+@interface RenderGLView()
 {
     IEGLContextRefPtr _context;
     std::unique_ptr<GLProgram> _program;
@@ -123,11 +123,10 @@ static const GLfloat kColorConversion709FullRange[] = {
 @property(nonatomic, assign) GLint height;
 @property(nonatomic, assign) GLuint frameBuffer;
 @property(nonatomic, assign) GLuint renderBuffer;
-@property(nonatomic, assign) CGRect renderRect; //bounds
 
 @end
 
-@implementation SlarkRenderView
+@implementation RenderGLView
 
 + (Class) layerClass {
     return [CAEAGLLayer class];
@@ -223,12 +222,11 @@ static const GLfloat kColorConversion709FullRange[] = {
 
 #pragma mark - private
 - (void)initData {
-    _renderInterval = 30; //default 30 fps
+    _renderInterval = 24; //default 30 fps
     _isRendering = NO;
     _isActive = YES;
     _preferredConversion = kColorConversion709VideoRange;
     _pixelbuffer = NULL;
-    _renderRect = self.bounds;
     [self setupRenderDelegate];
     [self setupLayer];
 }
@@ -463,7 +461,7 @@ static const GLfloat kColorConversion709FullRange[] = {
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     
-    CGRect viewBounds = self.renderRect;
+    CGRect viewBounds = self.bounds;
     CGSize contentSize = CGSizeMake(frameWidth, frameHeight);
     
     CGRect vertexSamplingRect = AVMakeRectWithAspectRatioInsideRect(contentSize, viewBounds);
@@ -522,8 +520,9 @@ static const GLfloat kColorConversion709FullRange[] = {
     }
 }
 
-- (void)updateRenderRect{
-    _renderRect = self.bounds;
+- (void)setFrame:(CGRect)frame {
+    [super setFrame:frame];
+    //update render rect
 }
 
 - (void)doRender:(id) isPushRender{

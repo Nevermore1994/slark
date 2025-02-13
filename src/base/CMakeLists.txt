@@ -24,8 +24,4 @@ elseif (${BUILD_PLATFORM} STREQUAL "Android")
 
 endif()
 
-if(DISABLE_TEST)
-    target_include_directories(base PRIVATE .)
-else()
-    target_include_directories(base PUBLIC .)
-endif ()
+target_include_directories(base PUBLIC .)

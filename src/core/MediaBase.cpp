@@ -193,7 +193,7 @@ void parseH264Sps(DataView bitstream, const std::shared_ptr<VideoInfo>& videoInf
     }
     
     // Additional fields (Chroma Format, Bit Depth, etc.) would be here
-    uint32_t log2MaxFrameNumMinus4 = Golomb::readUe(bitstream, offset);
+    [[maybe_unused]] uint32_t log2MaxFrameNumMinus4 = Golomb::readUe(bitstream, offset);
     uint32_t picOrderCntType = Golomb::readUe(bitstream, offset);
 
     if (picOrderCntType == 0) {

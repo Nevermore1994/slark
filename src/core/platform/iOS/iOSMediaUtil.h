@@ -9,6 +9,7 @@
 #define iOSMediaUtil_h
 
 #import <VideoToolbox/VideoToolbox.h>
+#import <UIKit/UIImage.h>
 
 namespace slark {
 
