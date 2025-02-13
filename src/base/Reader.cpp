@@ -188,7 +188,7 @@ void Reader::process() noexcept {
         if (readRange.isValid() && readSize >= (readRange.end() - tell)) {
             readSize = readRange.end() - tell;
         }
-        data.offset = tell;
+        data.offset = static_cast<int64_t>(tell);
         file->read(*data.data, readSize);
     });
      
@@ -221,7 +221,7 @@ int64_t Reader::tell() noexcept {
     int64_t pos = 0;
     file_.withReadLock([&](auto& file){
         if (file) {
-            pos = file->tell();
+            pos = static_cast<int64_t>(file->tell());
         }
     });
     return pos;

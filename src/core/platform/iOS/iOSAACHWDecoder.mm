@@ -131,7 +131,7 @@ bool iOSAACHWDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept {
     inputFormat.mFormatID = kAudioFormatMPEG4AAC;
     inputFormat.mSampleRate = audioConfig->sampleRate;
     inputFormat.mChannelsPerFrame = audioConfig->channels;
-    inputFormat.mFormatFlags = getAACProfile(audioConfig->profile);
+    inputFormat.mFormatFlags = static_cast<AudioFormatFlags>(getAACProfile(audioConfig->profile));
     inputFormat.mBitsPerChannel = 0;
     inputFormat.mBytesPerFrame = 0;
     inputFormat.mBytesPerPacket = 0;

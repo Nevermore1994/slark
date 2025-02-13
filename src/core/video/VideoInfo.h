@@ -8,7 +8,6 @@
 #pragma once
 
 #include "Data.hpp"
-#include "MediaDefs.h"
 #include "Clock.h"
 
 namespace slark {

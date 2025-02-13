@@ -11,8 +11,6 @@
 
 namespace slark {
 
-static const std::string kNetworkReaderPrefixName = "NetReader_";
-
 RemoteReader::RemoteReader() {
     type_ = ReaderType::NetWork;
 }
@@ -53,19 +51,19 @@ bool RemoteReader::open(ReaderTaskPtr task) noexcept {
     }
     
     http::ResponseHandler handler;
-    handler.onData = [this](const http::RequestInfo& info,
+    handler.onData = [this](const http::RequestInfo&,
                             DataPtr data) {
         handleData(std::move(data));
     };
-    handler.onParseHeaderDone = [this](const http::RequestInfo& info,
+    handler.onParseHeaderDone = [this](const http::RequestInfo&,
                                        http::ResponseHeader&& header) {
         handleHeader(std::move(header));
     };
-    handler.onError = [this](const http::RequestInfo& info,
+    handler.onError = [this](const http::RequestInfo&,
                              http::ErrorInfo errorInfo) {
         handleError(errorInfo);
     };
-    handler.onCompleted = [this](const http::RequestInfo& info) {
+    handler.onCompleted = [this](const http::RequestInfo&) {
         handleDisconnect();
     };
     

@@ -76,8 +76,4 @@ struct IVideoRender;
 - (SlarkPlayerState)state;
 
 - (NSString*)playerId;
-
-- (CVPixelBufferRef)requestRender;
-
-- (void)setRenderImpl:(std::weak_ptr<slark::IVideoRender>) ptr;
 @end

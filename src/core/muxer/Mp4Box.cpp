@@ -286,7 +286,7 @@ CodecId BoxStsd::getCodecId() {
 //  ├── version_and_flags: 0x000000
 //  ├── entry_count: 2
 //  ├── sample_entries:
-//  │   ├── [0]: mp4a (音频样本描述)
+//  │   ├── [0]: mp4a (audio description)
 //  │   │   ├── size: 32
 //  │   │   ├── type: 'mp4a'
 //  │   │   ├── version_and_flags: 0x000000
@@ -299,7 +299,7 @@ CodecId BoxStsd::getCodecId() {
 //  │   │   ├── avg_bytes_per_second: 128000
 //  │   │   ├── extra_data_size: 6
 //  │   │   └── extra_data: { 0x13, 0x10, 0x00, 0x00, 0x02, 0x00 }
-//  │   └── [1]: avc1 (视频样本描述)
+//  │   └── [1]: avc1 (video description)
 //  │       ├── size: 40
 //  │       ├── type: 'avc1'
 //  │       ├── version_and_flags: 0x000000
@@ -522,7 +522,7 @@ bool BoxEsds::decode(Buffer& buffer) noexcept {
     uint8_t esDescTag = 0;
     buffer.readByte(esDescTag);
     
-    auto descLen = getDescrLen(buffer);
+    [[maybe_unused]]auto descLen = getDescrLen(buffer);
     
     if (esDescTag == 0x03) {
         buffer.skip(2);
@@ -610,19 +610,18 @@ std::string BoxAvcc::description(const std::string&prefix) const noexcept {
 }
 
 //avcC (size)
-//  |--- (size) 1字节: configurationVersion
-//  |--- (size) 1字节: AVCProfileIndication
-//  |--- (size) 1字节: profile_compatibility
-//  |--- (size) 1字节: AVCLevelIndication
-//  |--- (size) 6位 reserved + 2位 lengthSizeMinusOne
-//  |--- (size) 3位 reserved + 5位 numOfSPS
-//  |--- (size) 2字节: SPS length
-//  |--- (size) N字节: SPS data
-//  |--- (size) 1字节: numOfPPS
-//  |--- (size) 2字节: PPS length
-//  |--- (size) N字节: PPS data
+//  |--- (size) 1byte: configurationVersion
+//  |--- (size) 1byte: AVCProfileIndication
+//  |--- (size) 1byte: profile_compatibility
+//  |--- (size) 1byte: AVCLevelIndication
+//  |--- (size) 6bit reserved + 2bit lengthSizeMinusOne
+//  |--- (size) 3bit reserved + 5bit numOfSPS
+//  |--- (size) 2byte: SPS length
+//  |--- (size) Nbyte: SPS data
+//  |--- (size) 1byte: numOfPPS
+//  |--- (size) 2byte: PPS length
+//  |--- (size) Nbyte: PPS data
 bool BoxAvcc::decode(Buffer& buffer) noexcept {
-    auto endPos = info.size + info.start;
     buffer.readByte(version);
     buffer.readByte(profileIndication);
     buffer.readByte(profileCompatibility);
@@ -661,24 +660,24 @@ std::string BoxHvcc::description(const std::string&prefix) const noexcept {
 }
 
 //hvcC (size)
-//  |--- (1字节) configurationVersion: 配置版本，通常为 1
-//  |--- (1字节) general_profile_space
-//  |--- (4字节) general_profile_compatibility_flags
-//  |--- (6字节) general_constraint_indicator_flags
-//  |--- (1字节) general_level_idc
-//  |--- (2字节) min_spatial_segmentation_idc
-//  |--- (1字节) parallelismType
-//  |--- (1字节) chromaFormat
-//  |--- (1字节) bitDepthLumaMinus8
-//  |--- (1字节) bitDepthChromaMinus8
-//  |--- (2字节) avgFrameRate
-//  |--- (1字节) constantFrameRate, numTemporalLayers, temporalIdNested, lengthSizeMinusOne
-//  |--- (1字节) numOfArrays: NALU 数组的数量
-//       |--- Array 1: (1字节) NAL unit type
-//                    (2字节) numNalus
-//                    (2字节) nalUnitLength
-//                    NALU data (如 VPS, SPS, PPS)
-//       |--- Array 2: (类似 Array 1)
+//  |--- (1byte) configurationVersion:
+//  |--- (1byte) general_profile_space
+//  |--- (4byte) general_profile_compatibility_flags
+//  |--- (6byte) general_constraint_indicator_flags
+//  |--- (1byte) general_level_idc
+//  |--- (2byte) min_spatial_segmentation_idc
+//  |--- (1byte) parallelismType
+//  |--- (1byte) chromaFormat
+//  |--- (1byte) bitDepthLumaMinus8
+//  |--- (1byte) bitDepthChromaMinus8
+//  |--- (2byte) avgFrameRate
+//  |--- (1byte) constantFrameRate, numTemporalLayers, temporalIdNested, lengthSizeMinusOne
+//  |--- (1byte) numOfArrays: NALU size
+//       |--- Array 1: (1byte) NAL unit type
+//                    (2byte) numNalus
+//                    (2byte) nalUnitLength
+//                    NALU data (VPS, SPS, PPS)
+//       |--- Array 2: (like Array 1)
 //       |--- ...
 bool BoxHvcc::decode(Buffer& buffer) noexcept {
     auto endPos = info.size + info.start;

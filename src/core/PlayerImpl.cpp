@@ -134,7 +134,7 @@ bool Player::Impl::setupDataProvider() noexcept {
 }
 
 bool Player::Impl::createDemuxer(DataPacket& data) noexcept {
-    if (!helper_->appendProbeData(data.offset, std::move(data.data))) {
+    if (!helper_->appendProbeData(static_cast<uint64_t>(data.offset), std::move(data.data))) {
         return false;
     }
     auto dataView = helper_->probeView();
@@ -159,7 +159,7 @@ bool Player::Impl::createDemuxer(DataPacket& data) noexcept {
 }
 
 bool Player::Impl::openDemuxer(DataPacket& data) noexcept {
-    if (!helper_->appendProbeData(data.offset, std::move(data.data))) {
+    if (!helper_->appendProbeData(static_cast<uint64_t>(data.offset), std::move(data.data))) {
         return false;
     }
     if (demuxer_ == nullptr) {

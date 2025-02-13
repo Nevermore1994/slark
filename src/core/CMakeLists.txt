@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
+project(core)
+
 set(FILE_LISTS *.cpp *.hpp *.h
         audio/*.cpp audio/*.hpp audio/*.h
         muxer/*.cpp muxer/*.hpp muxer/*.h
@@ -9,7 +11,7 @@ set(FILE_LISTS *.cpp *.hpp *.h
 
 FILE(GLOB CORE_FILES ${FILE_LISTS})
 
-add_library(core ${CORE_FILES})
+add_library(${PROJECT_NAME} ${CORE_FILES})
 
 if(${BUILD_PLATFORM} STREQUAL "iOS")
     SET(CORE_iOS_FILES_LISTS
@@ -23,36 +25,21 @@ if(${BUILD_PLATFORM} STREQUAL "iOS")
             interface/iOS/*.mm
             )
     file(GLOB CORE_iOS_FILES ${CORE_iOS_FILES_LISTS})
-    target_sources(core PUBLIC ${CORE_iOS_FILES})
+    target_sources(${PROJECT_NAME} PUBLIC ${CORE_iOS_FILES})
 
-    add_framework(AVFoundation core)
-    add_framework(VideoToolBox core)
-    add_framework(AudioToolBox core)
-    add_framework(CoreMedia core)
-    target_include_directories(core PUBLIC ./platform/iOS)
-    target_include_directories(core PUBLIC ../base/platform/iOS)
+    add_framework(AVFoundation ${PROJECT_NAME})
+    add_framework(VideoToolBox ${PROJECT_NAME})
+    add_framework(AudioToolBox ${PROJECT_NAME})
+    add_framework(CoreMedia ${PROJECT_NAME})
+    target_include_directories(${PROJECT_NAME} PUBLIC ./platform/iOS)
+    target_include_directories(${PROJECT_NAME} PUBLIC ../base/platform/iOS)
 
-    set_target_properties(${PROJECT_NAME} PROPERTIES
-            FRAMEWORK TRUE
-            FRAMEWORK_VERSION C
-            # "current version" in semantic format in Mach-O binary file
-            VERSION 0.0.1
-            # "compatibility version" in semantic format in Mach-O binary file
-            SOVERSION 0.0.1
-            MACOSX_FRAMEWORK_IDENTIFIER "com.slark.slarkFramework"
-            PUBLIC_HEADER ${PROJECT_NAME}Framework.h
-            XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD "c++23"
-            XCODE_ATTRIBUTE_CLANG_ENABLE_OBJC_ARC "YES"
-            XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH[variant=Debug] "YES"
-            XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH[variant=Release] "NO"
-            XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "iPhone Developer"
-            XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY "libc++"
-            )
 elseif (${BUILD_PLATFORM} STREQUAL "Android")
 
 endif()
 
-target_include_directories(core PUBLIC public interface)
-target_include_directories(core PRIVATE . muxer audio codec video)
-target_include_directories(core PRIVATE ../base)
-target_include_directories(core PRIVATE ../http/include/public)
+target_include_directories(${PROJECT_NAME} PUBLIC public)
+target_include_directories(${PROJECT_NAME} PUBLIC ../base)
+target_include_directories(${PROJECT_NAME} PUBLIC ../http/include/public)
+target_include_directories(${PROJECT_NAME} PUBLIC . muxer audio codec video opengles)
+target_compile_definitions(${PROJECT_NAME} PRIVATE GLES_SILENCE_DEPRECATION)

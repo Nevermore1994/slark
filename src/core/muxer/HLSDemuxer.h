@@ -191,7 +191,7 @@ private:
     
     bool packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexcept;
     
-    static static void writeVideoData(AVFramePtr& frame, DataView view) noexcept;
+    static void writeVideoData(AVFramePtr& frame, DataView view) noexcept;
     
     bool packAudioPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexcept;
     

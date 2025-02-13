@@ -114,7 +114,7 @@ bool PlayerImplHelper::appendProbeData(uint64_t offset, DataPtr ptr) noexcept {
     if (probeBuffer_ == nullptr) {
         probeBuffer_ = std::make_unique<Buffer>();
     }
-    if (!probeBuffer_->append(static_cast<uint64_t>(offset), std::move(ptr))) {
+    if (!probeBuffer_->append(offset, std::move(ptr))) {
         LogE("append data error:{}", offset);
         return false;
     }

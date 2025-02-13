@@ -7,7 +7,6 @@
 #import "SlarkPlayer.h"
 #import "iOSUtil.h"
 #import "Player.h"
-#import "VideoInfo.h"
 #import "GLContextManager.h"
 
 
@@ -73,10 +72,11 @@ struct PlayerObserver final : public slark::IPlayerObserver
 
 @interface SlarkPlayer()
 {
-    std::unique_ptr<slark::Player> player_;
-    std::shared_ptr<PlayerObserver> observer_;
+    std::unique_ptr<slark::Player> _player;
+    std::shared_ptr<PlayerObserver> _observer;
 }
 
+- (std::unique_ptr<slark::Player>&) player;
 @end
 
 @implementation SlarkPlayer
@@ -96,11 +96,11 @@ struct PlayerObserver final : public slark::IPlayerObserver
             params->item.displayDuration = CMTimeGetSeconds(range.duration);
         }
         params->mainGLContext = std::shared_ptr<slark::IEGLContext>(std::move(context));
-        player_ = std::make_unique<slark::Player>(std::move(params));
-        observer_ = std::make_shared<PlayerObserver>();
-        player_->addObserver(observer_);
+        _player = std::make_unique<slark::Player>(std::move(params));
+        _observer = std::make_shared<PlayerObserver>();
+        _player->addObserver(_observer);
         __weak __typeof(self) weakSelf = self;
-        observer_->notifyTimeFunc = [weakSelf](NSString* playerId, long double time){
+        _observer->notifyTimeFunc = [weakSelf](NSString* playerId, long double time){
             dispatch_async(dispatch_get_main_queue(), ^{
                 __strong __typeof(weakSelf) strongSelf = weakSelf;
                 if ([strongSelf.delegate respondsToSelector:@selector(notifyTime:time:)]) {
@@ -108,7 +108,7 @@ struct PlayerObserver final : public slark::IPlayerObserver
                 }
             });
         };
-        observer_->notifyStateFunc = [weakSelf](NSString* playerId, SlarkPlayerState state){
+        _observer->notifyStateFunc = [weakSelf](NSString* playerId, SlarkPlayerState state){
             dispatch_async(dispatch_get_main_queue(), ^{
                 __strong __typeof(weakSelf) strongSelf = weakSelf;
                 if ([strongSelf.delegate respondsToSelector:@selector(notifyState:state:)]) {
@@ -116,7 +116,7 @@ struct PlayerObserver final : public slark::IPlayerObserver
                 }
             });
         };
-        observer_->notifyEventFunc = [weakSelf](NSString* playerId, SlarkPlayerEvent evnt, NSString* value){
+        _observer->notifyEventFunc = [weakSelf](NSString* playerId, SlarkPlayerEvent evnt, NSString* value){
             dispatch_async(dispatch_get_main_queue(), ^{
                 __strong __typeof(weakSelf) strongSelf = weakSelf;
                 if ([strongSelf.delegate respondsToSelector:@selector(notifyEvent:event:value:)]) {
@@ -128,63 +128,60 @@ struct PlayerObserver final : public slark::IPlayerObserver
     return self;
 }
 
+- (std::unique_ptr<slark::Player>&) player {
+    return _player;
+}
+
 - (void)play {
-    player_->play();
+    _player->play();
 }
 
 - (void)pause {
-    player_->pause();
+    _player->pause();
 }
 
 - (void)stop {
-    player_->stop();
+    _player->stop();
 }
  
 - (void)seek:(double) seekToTime {
-    player_->seek(seekToTime);
+    _player->seek(seekToTime);
 }
 
 - (void)seek:(double) seekToTime isAccurate:(BOOL)isAccurate {
-    player_->seek(seekToTime, static_cast<bool>(isAccurate));
+    _player->seek(seekToTime, static_cast<bool>(isAccurate));
 }
 
 - (void)setLoop:(BOOL) isLoop {
-    player_->setLoop(static_cast<bool>(isLoop));
+    _player->setLoop(static_cast<bool>(isLoop));
 }
 
 - (void)setVolume:(float) volume {
-    player_->setVolume(volume);
+    _player->setVolume(volume);
 }
 
 - (void)setMute:(BOOL) isMute {
-    player_->setMute(static_cast<bool>(isMute));
+    _player->setMute(static_cast<bool>(isMute));
 }
 
 - (void)setRenderSize:(int) width height:(int) height {
-    player_->setRenderSize(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+    _player->setRenderSize(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 }
 
 - (CMTime)totalDuration {
-    return CMTimeMakeWithSeconds(player_->info().duration, 1000);
+    return CMTimeMakeWithSeconds(_player->info().duration, 1000);
 }
 
 - (CMTime)currentTime {
-    return CMTimeMakeWithSeconds(player_->currentPlayedTime(), 1000);
+    return CMTimeMakeWithSeconds(_player->currentPlayedTime(), 1000);
 }
 
 - (SlarkPlayerState)state {
-    return convertState(player_->state());
+    return convertState(_player->state());
 }
 
 - (NSString*)playerId {
-    return [NSString stringWithUTF8String:player_->playerId().data()];
+    return [NSString stringWithUTF8String:_player->playerId().data()];
 }
 
-- (CVPixelBufferRef)requestRender {
-    return static_cast<CVPixelBufferRef>(player_->requestRender());
-}
-
-- (void)setRenderImpl:(std::weak_ptr<slark::IVideoRender>) ptr {
-    player_->setRenderImpl(ptr);
-}
 @end

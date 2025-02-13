@@ -5,6 +5,7 @@
 //  Created by Nevermore on 
 //
 #import "iOSUtil.h"
+#import <UIKit/UIKit.h>
 
 bool isIphoneXSeries()
 {

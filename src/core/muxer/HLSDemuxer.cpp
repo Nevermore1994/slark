@@ -517,7 +517,7 @@ bool parseAdtsHeader(DataView dataView, AACAdtsHeader& header) noexcept {
     header.samplingIndex = (dataView[2] >> 2) & 0xF;
     header.channel = static_cast<uint8_t>(((dataView[2] & 0x1) << 2) | ((dataView[3] >> 6) & 0x3));
     header.frameLength = static_cast<uint16_t>(((dataView[3] & 0x3) << 11) | (dataView[4] << 3) | (dataView[5] >> 5));
-    header.bufferFullness = ((dataView[5] & 0x1F) << 6) | ((dataView[6] >> 2) & 0x3f);
+    header.bufferFullness = static_cast<uint16_t>(((dataView[5] & 0x1F) << 6) | ((dataView[6] >> 2) & 0x3f));
     header.blockCount = dataView[6] & 0x3;
     return true;
 }

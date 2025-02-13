@@ -63,6 +63,24 @@ function(read_config)
         source_group("SourceFiles" FILES src/main.cpp)
     else()
         add_library(${PROJECT_NAME} SHARED "")
+        if(${BUILD_PLATFORM_VALUE} STREQUAL "iOS")
+            set_target_properties(${PROJECT_NAME} PROPERTIES
+                    FRAMEWORK TRUE
+                    FRAMEWORK_VERSION C
+                    # "current version" in semantic format in Mach-O binary file
+                    VERSION 0.0.1
+                    # "compatibility version" in semantic format in Mach-O binary file
+                    SOVERSION 0.0.1
+                    MACOSX_FRAMEWORK_IDENTIFIER "com.slark.slarkFramework"
+                    PUBLIC_HEADER src/interface/iOS/*.h
+                    XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD "c++23"
+                    XCODE_ATTRIBUTE_CLANG_ENABLE_OBJC_ARC "YES"
+                    XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH[variant=Debug] "YES"
+                    XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH[variant=Release] "NO"
+                    XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "iPhone Developer"
+                    XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY "libc++"
+                    )
+        endif()
     endif()
 
     if(${BUILD_PLATFORM_VALUE} STREQUAL "iOS" OR ${BUILD_PLATFORM_VALUE} STREQUAL "Android")
@@ -84,20 +102,22 @@ add_subdirectory(src/base)
 
 #add core library
 add_subdirectory(src/core)
-target_link_libraries(${PROJECT_NAME} PRIVATE core)
+target_link_libraries(${PROJECT_NAME} PUBLIC core)
 
 if(${BUILD_PLATFORM} STREQUAL "iOS")
     message(STATUS "add iOS interface")
     add_subdirectory(src/interface/iOS)
     target_link_libraries(${PROJECT_NAME} PUBLIC iOS_INTERFACE)
 elseif (${BUILD_PLATFORM} STREQUAL "Android")
-
+    message(STATUS "add Android interface")
+    add_subdirectory(src/interface/Android)
+    target_link_libraries(${PROJECT_NAME} PUBLIC Android_INTERFACE)
 endif ()
 
 if(NOT DISABLE_HTTP)
     message(STATUS "enable http")
     add_subdirectory(src/http)
-    target_link_libraries(${PROJECT_NAME} PRIVATE http_request)
+    target_link_libraries(${PROJECT_NAME} PUBLIC http_request)
 else()
     message(STATUS "disable http")
 endif()
@@ -112,9 +132,8 @@ else()
     message(STATUS "disable testing")
 endif()
 
-
 target_link_libraries(${PROJECT_NAME}
-        PRIVATE
+        PUBLIC
             base
         PUBLIC
             ${CMAKE_THREAD_LIBS_INIT}

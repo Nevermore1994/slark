@@ -7,11 +7,40 @@
 
 #import <Foundation/Foundation.h>
 #import "SlarkViewController.h"
-#import "SlarkRenderView.h"
+#import "RenderGLView.h"
 #import "GLContextManager.h"
+#import "Player.h"
 
-@interface SlarkViewController() <SlarkRenderViewDelegate>
-@property(nonatomic, strong) SlarkRenderView* renderView;
+@interface SlarkPlayer()
+- (std::unique_ptr<slark::Player>&) player;
+@end
+
+@interface SlarkPlayer(Render)
+- (void)setRenderImpl:(std::weak_ptr<slark::IVideoRender>) ptr;
+
+- (CVPixelBufferRef)requestRender;
+@end
+
+@implementation SlarkPlayer(Render)
+
+- (CVPixelBufferRef)requestRender {
+    auto& player = [self player];
+    if (player) {
+        return static_cast<CVPixelBufferRef>(player->requestRender());
+    }
+    return nil;
+}
+
+- (void)setRenderImpl:(std::weak_ptr<slark::IVideoRender>) ptr {
+    auto& player = [self player];
+    if (player) {
+        player->setRenderImpl(ptr);
+    }
+}
+@end
+
+@interface SlarkViewController() <RenderViewDelegate>
+@property(nonatomic, strong) RenderGLView* renderView;
 @property(nonatomic, strong) SlarkPlayer* player;
 @end
 
@@ -20,7 +49,7 @@
 - (instancetype)initWithPlayer:(CGRect) frame player:(SlarkPlayer*) player {
     if (self = [self init]) {
         self.player = player;
-        self.renderView = [[SlarkRenderView alloc] initWithFrame:frame];
+        self.renderView = [[RenderGLView alloc] initWithFrame:frame];
         self.renderView.delegate = self;
         NSString* playerId = [self.player playerId];
         auto shareContext = slark::GLContextManager::shareInstance().createShareContextWithId([playerId UTF8String]);
@@ -49,7 +78,6 @@
 
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
-    [self.renderView updateRenderRect];
 }
 
 - (void)deviceOrientationDidChange:(NSNotification *)notification {
