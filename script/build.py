@@ -1,7 +1,6 @@
 # base type is macOS and linux, only test base and core library
 # -p platform: "base", "iOS", "Android"
 # -t build_type: "Debug", "Release"
-# -o output: "lib", "exe" build library or executable
 # -d disable component: "audio" or more
 # -a clear: clear cmake cache
 #  gen: generate project file build: generate and compile run: if executable file, build and run
@@ -20,7 +19,6 @@ config_file = os.path.join(root_path, "config.json")
 config_data = {
     "platform": "PC",
     "build_type": "Debug",
-    "output": "exe",
     "disable_http": False,
     "disable_test": False
 }
@@ -91,7 +89,6 @@ def parse_args():
                         choices=["PC", "iOS", "Android"])
     parser.add_argument('-t', '--type', action='store', help="build type", default="Debug",
                         choices=["Debug", "Release"])
-    parser.add_argument('-o', '--output', action='store', help="output type", default="exe", choices=["lib", "exe"])
     parser.add_argument('-disable_http', action='store_true', help="disable http")
     parser.add_argument('-a', '--action', action='store', help="action", choices=["clear", "gen", "build"],
                         default="gen")
@@ -101,7 +98,6 @@ def parse_args():
 
     config_data["platform"] = args.platform
     config_data["build_type"] = args.type
-    config_data["output"] = args.output
     config_data["disable_http"] = args.disable_http
     config_data["disable_test"] = args.disable_test
     need_gen_demo = args.demo
