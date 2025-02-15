@@ -17,26 +17,12 @@ find_package(Threads REQUIRED)
 # print current path
 message(STATUS "current path: " ${CMAKE_CURRENT_SOURCE_DIR})
 
-macro(add_framework FRAME_WORK_NAME APPEND_NAME)
-    find_library(FRAMEWORK_${FRAME_WORK_NAME}
-            NAMES ${FRAME_WORK_NAME}
-            PATHS ${CMAKE_OSX_SYSROOT}/System/Library
-            PATH_SUFFIXES Frameworks
-            NO_DEFAULT_PATH)
-    if( ${FRAMEWORK_${FRAME_WORK_NAME}} STREQUAL FRAMEWORK_${FRAME_WORK_NAME}-NOTFOUND)
-        MESSAGE(ERROR ": Framework ${FRAME_WORK_NAME} not found")
-    else()
-        target_link_libraries(${APPEND_NAME} "${FRAMEWORK_${FRAME_WORK_NAME}}")
-        MESSAGE(STATUS "Framework ${FRAME_WORK_NAME} found at ${FRAMEWORK_${FRAME_WORK_NAME}}")
-    endif()
-endmacro(add_framework)
-
 # add core library
 set(BUILD_PLATFORM "PC" CACHE STRING "build platform")
 option(DISABLE_TEST "disable test" OFF)
 option(DISABLE_HTTP "disable http" OFF)
 
-function(read_config)
+macro(read_config)
     file(READ ${CMAKE_CURRENT_SOURCE_DIR}/config.json CONFIG_JSON_STRING)
 
     #parse build platform
@@ -47,40 +33,11 @@ function(read_config)
     string(JSON BUILD_TYPE GET ${CONFIG_JSON_STRING} build_type)
     message(STATUS "build:${BUILD_TYPE}")
     if(${BUILD_TYPE} STREQUAL "Debug")
-        set(CMAKE_BUILD_TYPE DEBUG PARENT_SCOPE)
+        set(CMAKE_BUILD_TYPE DEBUG)
         add_definitions(-DDEBUG) #set DEBUG = 1
     else()
-        set(CMAKE_BUILD_TYPE RELEASE PARENT_SCOPE)
+        set(CMAKE_BUILD_TYPE RELEASE)
         add_definitions(-DRELEASE) #set RELEASE = 1
-    endif()
-
-    #parse and set output type
-    string(JSON BUILD_OUTPUT_TYPE GET ${CONFIG_JSON_STRING} output)
-    message(STATUS "output:${BUILD_OUTPUT_TYPE}")
-    if(${BUILD_OUTPUT_TYPE} STREQUAL "exe")
-        add_executable(${PROJECT_NAME} "")
-        target_sources(${PROJECT_NAME} PUBLIC src/main.cpp)
-        source_group("SourceFiles" FILES src/main.cpp)
-    else()
-        add_library(${PROJECT_NAME} SHARED "")
-        if(${BUILD_PLATFORM_VALUE} STREQUAL "iOS")
-            set_target_properties(${PROJECT_NAME} PROPERTIES
-                    FRAMEWORK TRUE
-                    FRAMEWORK_VERSION C
-                    # "current version" in semantic format in Mach-O binary file
-                    VERSION 0.0.1
-                    # "compatibility version" in semantic format in Mach-O binary file
-                    SOVERSION 0.0.1
-                    MACOSX_FRAMEWORK_IDENTIFIER "com.slark.slarkFramework"
-                    PUBLIC_HEADER src/interface/iOS/*.h
-                    XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD "c++23"
-                    XCODE_ATTRIBUTE_CLANG_ENABLE_OBJC_ARC "YES"
-                    XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH[variant=Debug] "YES"
-                    XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH[variant=Release] "NO"
-                    XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "iPhone Developer"
-                    XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY "libc++"
-                    )
-        endif()
     endif()
 
     if(${BUILD_PLATFORM_VALUE} STREQUAL "iOS" OR ${BUILD_PLATFORM_VALUE} STREQUAL "Android")
@@ -93,24 +50,53 @@ function(read_config)
     string(JSON DISABLE_HTTP_VALUE GET ${CONFIG_JSON_STRING} disable_http)
     set(DISABLE_HTTP ${DISABLE_HTTP_VALUE} CACHE BOOL "Disable http" FORCE)
 
-endfunction()
+endmacro()
+
+#add base file
+macro(add_base_file TARGET_NAME)
+    set(BASE_FILE_LISTS src/base/*.cpp src/base/*.hpp src/base/*.h)
+    file(GLOB BASE_FILES ${BASE_FILE_LISTS})
+
+    target_sources(${TARGET_NAME} PUBLIC ${BASE_FILES})
+    target_include_directories(${TARGET_NAME} PUBLIC src/base)
+endmacro()
+
+macro(add_core_file TARGET_NAME)
+    set(CORE_FILE_LISTS src/core/*.cpp src/core/*.hpp src/core/*.h
+            src/core/audio/*.cpp src/core/audio/*.hpp src/core/audio/*.h
+            src/core/muxer/*.cpp src/core/muxer/*.hpp src/core/muxer/*.h
+            src/core/codec/*.cpp src/core/codec/*.hpp src/core/codec/*.h
+            src/core/video/*.h src/core/public/*.cpp public/*.h
+            )
+    file(GLOB CORE_FILES ${CORE_FILE_LISTS})
+    target_sources(${TARGET_NAME} PUBLIC ${CORE_FILES})
+
+    target_include_directories(${TARGET_NAME} PUBLIC src/core/public)
+    target_include_directories(${TARGET_NAME} PUBLIC src/core
+        src/core/muxer
+        src/core/audio
+        src/core/codec
+        src/core/video
+        src/core/opengles
+    )
+endmacro()
 
 read_config()
+add_library(${PROJECT_NAME} SHARED "")
 
-#add base library
-add_subdirectory(src/base)
-
-#add core library
-add_subdirectory(src/core)
-target_link_libraries(${PROJECT_NAME} PUBLIC core)
+#add base file
+add_base_file(${PROJECT_NAME})
+#add core file
+add_core_file(${PROJECT_NAME})
 
 if(${BUILD_PLATFORM} STREQUAL "iOS")
     message(STATUS "add iOS interface")
-    add_subdirectory(src/interface/iOS)
-    target_link_libraries(${PROJECT_NAME} PUBLIC iOS_INTERFACE)
+    include(CMake-ios.cmake)
+    add_ios_sources(${PROJECT_NAME})
+    configure_ios_target(${PROJECT_NAME})
 elseif (${BUILD_PLATFORM} STREQUAL "Android")
+    include(cmake/android.cmake)
     message(STATUS "add Android interface")
-    add_subdirectory(src/interface/Android)
     target_link_libraries(${PROJECT_NAME} PUBLIC Android_INTERFACE)
 endif ()
 
@@ -132,11 +118,5 @@ else()
     message(STATUS "disable testing")
 endif()
 
-target_link_libraries(${PROJECT_NAME}
-        PUBLIC
-            base
-        PUBLIC
-            ${CMAKE_THREAD_LIBS_INIT}
-        )
+target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_THREAD_LIBS_INIT})
 
-#target_link_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
