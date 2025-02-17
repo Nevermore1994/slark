@@ -59,7 +59,7 @@ def gen(platform, need_build_demo):
     elif platform == "Android":
         command = "cmake .. -B ../build/Android -G 'Ninja' " \
                   "-DCMAKE_SYSTEM_NAME=Android " \
-                  "-DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake " \
+                  "-DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake " \
                   "-DANDROID_ABI=arm64-v8a " \
                   "-DANDROID_PLATFORM=29 " \
                   "-DOPENSSL_CRYPTO_LIBRARY=${OPENSSL_ROOT_DIR}/lib " \

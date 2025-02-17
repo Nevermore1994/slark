@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 
-#set(OPENSSL_ROOT_DIR "/opt/homebrew/opt/openssl@1.1")
-#set(OPENSSL_INCLUDE_DIR "/opt/homebrew/opt/openssl@1.1/include")
+set(OPENSSL_INCLUDE_DIR $ENV{OPENSSL_ROOT_DIR}/include)
+set(OPENSSL_CRYPTO_LIBRARY $ENV{OPENSSL_ROOT_DIR}/lib/libcrypto.dylib)
+set(OPENSSL_SSL_LIBRARY $ENV{OPENSSL_ROOT_DIR}/lib/libssl.dylib)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
