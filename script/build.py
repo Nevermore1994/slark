@@ -41,8 +41,8 @@ def delete_cmake_cache(file_path):
 def gen(platform, need_build_demo):
     print("-------gen start -------\n")
     if platform == "iOS":
-        command = "cmake .. -B {} -G Xcode " \
-                  "-DCMAKE_TOOLCHAIN_FILE=../ios.toolchain.cmake " \
+        command = "cmake .. -B {}/iOS -G Xcode " \
+                  "-DCMAKE_TOOLCHAIN_FILE=../../ios.toolchain.cmake " \
                   "-DPLATFORM=OS64 " \
                   "-DENABLE_BITCODE=FALSE " \
                   "-DDEPLOYMENT_TARGET=16.3 ".format(build_path)
@@ -54,15 +54,16 @@ def gen(platform, need_build_demo):
             print(command)
             command = "cd ../demo/iOS/demo && open demo.xcworkspace"
         else:
-            command = "open ../build/slark.xcodeproj"
+            command = "open {}/iOS/slark.xcodeproj".format(build_path)
 
     elif platform == "Android":
-        command = "cmake -B build -G Ninja " \
-                  "-DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake " \
+        command = "cmake .. -B ../build/Android -G 'Ninja' " \
+                  "-DCMAKE_SYSTEM_NAME=Android " \
+                  "-DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake " \
                   "-DANDROID_ABI=arm64-v8a " \
-                  "-DANDROID_PLATFORM=29 "
-        print(command)
-        os.system(command)
+                  "-DANDROID_PLATFORM=29 " \
+                  "-DOPENSSL_CRYPTO_LIBRARY=${OPENSSL_ROOT_DIR}/lib " \
+                  "-DOPENSSL_INCLUDE_DIR=${OPENSSL_ROOT_DIR}/include "
     else:
         command = "cmake -DCMAKE_MAKE_PROGRAM=/usr/bin/make -S {} -B {} -G 'Unix Makefiles'".format(root_path,
                                                                                                     build_path)

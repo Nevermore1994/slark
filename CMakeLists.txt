@@ -1,3 +1,7 @@
+if(${CMAKE_VERSION} VERSION_LESS "3.20")
+    message(FATAL_ERROR "CMake >= 3.20 required")
+endif()
+
 cmake_minimum_required(VERSION 3.20)
 
 project(slark)
@@ -91,13 +95,13 @@ add_core_file(${PROJECT_NAME})
 
 if(${BUILD_PLATFORM} STREQUAL "iOS")
     message(STATUS "add iOS interface")
-    include(CMake-ios.cmake)
+    include(CMake-iOS.cmake)
     add_ios_sources(${PROJECT_NAME})
     configure_ios_target(${PROJECT_NAME})
 elseif (${BUILD_PLATFORM} STREQUAL "Android")
-    include(cmake/android.cmake)
     message(STATUS "add Android interface")
-    target_link_libraries(${PROJECT_NAME} PUBLIC Android_INTERFACE)
+    include(CMake-Android.cmake)
+    add_android_sources(${PROJECT_NAME})
 endif ()
 
 if(NOT DISABLE_HTTP)
