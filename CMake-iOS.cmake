@@ -31,6 +31,7 @@ macro(configure_ios_target TARGET_NAME)
 
     # Add iOS frameworks
     target_compile_definitions(${TARGET_NAME} PRIVATE GLES_SILENCE_DEPRECATION)
+    target_compile_definitions(${TARGET_NAME} PUBLIC SLARK_IOS)
     add_framework(Foundation ${TARGET_NAME})
     add_framework(AVFoundation ${TARGET_NAME})
     add_framework(VideoToolBox ${TARGET_NAME})
@@ -41,16 +42,11 @@ endmacro()
 # iOS source files configuration
 macro(add_ios_sources TARGET_NAME)
     set(iOS_SOURCE_PATTERNS
-            src/base/platform/iOS/*.cpp
-            src/base/platform/iOS/*.hpp
-            src/base/platform/iOS/*.h
-            src/base/platform/iOS/*.m
-            src/base/platform/iOS/*.mm
-            src/core/platform/iOS/*.cpp
-            src/core/platform/iOS/*.hpp
-            src/core/platform/iOS/*.h
-            src/core/platform/iOS/*.m
-            src/core/platform/iOS/*.mm
+            src/platform/iOS/*.cpp
+            src/platform/iOS/*.hpp
+            src/platform/iOS/*.h
+            src/platform/iOS/*.m
+            src/platform/iOS/*.mm
             interface/iOS/*.h
             interface/iOS/*.m
             interface/iOS/*.mm
@@ -60,9 +56,6 @@ macro(add_ios_sources TARGET_NAME)
     target_sources(${TARGET_NAME} PUBLIC ${iOS_FILES})
 
     # Add iOS-specific include directories
-    target_include_directories(${TARGET_NAME} PUBLIC
-            src/interface/iOS
-            src/base/platform/iOS
-            src/src/platform/iOS
-            )
+    target_include_directories(${TARGET_NAME} PUBLIC src/interface/iOS)
+    target_include_directories(${TARGET_NAME} PUBLIC src/platform/iOS)
 endmacro()

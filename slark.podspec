@@ -76,7 +76,7 @@ Pod::Spec.new do |s|
     s.xcconfig = { 
         'CLANG_C_LANGUAGE_STANDARD' => 'c17',
         'CLANG_CXX_LANGUAGE_STANDARD' => 'c++23',
-        "GCC_PREPROCESSOR_DEFINITIONS" => "SLARK_IOS=1 GLES_SILENCE_DEPRECATION=1 ENABLE_HTTPS=#{enable_https_flag}",
+        "GCC_PREPROCESSOR_DEFINITIONS" => "ENABLE_HTTPS=#{enable_https_flag}",
         'OTHER_CPLUSPLUSFLAGS' => '-Wall -Wextra -Wpedantic -Wcast-align -Wcast-qual -Wconversion -Wdisabled-optimization -Wendif-labels -Wfloat-equal -Winit-self -Winline -Wmissing-include-dirs -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual -Wpacked -Wpointer-arith -Wredundant-decls -Wshadow -Wsign-promo -Wvariadic-macros -Wwrite-strings -Wno-variadic-macros -Wno-unknown-pragmas'
     }
     s.frameworks = 'Foundation', 'AVFoundation', 'VideoToolBox', 'AudioToolBox', 'CoreMedia'
