@@ -43,3 +43,9 @@ demo/iOS/demo/demo.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
 demo/iOS/demo/demo.xcworkspace/xcuserdata/rolf.tan.xcuserdatad/WorkspaceSettings.xcsettings
 sr.png
 src/http/cmake-build-debug
+src/platform/Android/.gradle
+local.properties
+src/platform/Android/app/build
+src/platform/Android/app/.cxx
+src/platform/Android/.idea
+src/platform/Android/app/src/main/cpp/.idea
