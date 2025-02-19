@@ -76,8 +76,10 @@ struct Data {
         : capacity (data.capacity)
         , length (data.length)
         , rawData(nullptr) {
-        rawData = new uint8_t[data.capacity];
-        std::copy(data.rawData, data.rawData + data.length, rawData);
+        if (!data.empty()) {
+            rawData = new uint8_t[data.capacity];
+            std::copy(data.rawData, data.rawData + data.length, rawData);
+        }
     }
 
     Data(Data&& data) noexcept
@@ -300,14 +302,14 @@ struct DataPacket {
         return *this;
     }
     
-    uint64_t length() const noexcept {
+    [[nodiscard]] uint64_t length() const noexcept {
         if (data) {
             return data->length;
         }
         return 0;
     }
     
-    bool empty() const noexcept {
+    [[nodiscard]] bool empty() const noexcept {
         return length() == 0;
     }
 };

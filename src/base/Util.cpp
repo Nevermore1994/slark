@@ -131,11 +131,11 @@ bool readLE(DataView view, uint32_t size, uint32_t& value) noexcept {
     if (view.size() < size) {
         return false;
     }
-    auto mx = static_cast<size_t>(size - 1);
+    auto mx = static_cast<int32_t>(size - 1);
     auto func = [&](size_t pos) {
         return static_cast<uint32_t>(view[pos] << ((mx - pos) * 8));
     };
-    for(size_t i = mx; i >= 0; i--) {
+    for(int32_t i = mx; i >= 0; i--) {
         value |= func(i);
     }
     return true;

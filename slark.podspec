@@ -51,7 +51,7 @@ Pod::Spec.new do |s|
     }
 
     if is_enable_https
-        s.libraries = 'ssl', 'crypto'
+        s.dependency "OpenSSL-Universal"
     end
 
     s.pod_target_xcconfig = { 
