@@ -3,7 +3,6 @@
 // slark SSLManager
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
-#include <_types/_uint64_t.h>
 #if ENABLE_HTTPS
 #include "SSLManager.h"
 #include "Socket.h"
