@@ -8,6 +8,7 @@
 
 #include <limits>
 #include <type_traits>
+#include <cmath>
 
 namespace slark {
 

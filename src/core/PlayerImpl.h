@@ -178,7 +178,7 @@ private:
     std::deque<AVFramePtr> audioPackets_;
     std::deque<AVFramePtr> videoPackets_;
     
-    //decode
+    //pushFrameDecode
     Synchronized<std::deque<AVFramePtr>, std::shared_mutex> audioFrames_;
     Synchronized<std::deque<AVFramePtr>, std::shared_mutex> videoFrames_;
     std::shared_ptr<DecoderComponent> audioDecodeComponent_ = nullptr;

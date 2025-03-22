@@ -49,3 +49,4 @@ src/platform/Android/app/build
 src/platform/Android/app/.cxx
 src/platform/Android/.idea
 src/platform/Android/app/src/main/cpp/.idea
+src/platform/Android/sdk/.cxx

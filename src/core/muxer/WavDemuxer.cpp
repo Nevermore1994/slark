@@ -192,7 +192,7 @@ bool WAVDemuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
 
             int64_t durationUs = 0;
             if (format == WaveFormat::MSGSM) {
-                // 65 bytes decode to 320 8kHz samples
+                // 65 bytes pushFrameDecode to 320 8kHz samples
                 durationUs = static_cast<int64_t>(1000000 * (dataSize / 65 * 320) / 8000);
             } else {
                 size_t bytesPerSample = bitsPerSample >> 3;

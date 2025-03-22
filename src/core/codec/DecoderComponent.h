@@ -11,15 +11,13 @@
 namespace slark {
 
 class DecoderComponent : public DecoderDataProvider,
-                            std::enable_shared_from_this<DecoderComponent> {
+        public std::enable_shared_from_this<DecoderComponent> {
 public:
     explicit DecoderComponent(DecoderReceiveFunc&& callback);
     
-    ~DecoderComponent() override;
-    
-    virtual AVFramePtr getDecodeFrame() noexcept override;
+    ~DecoderComponent();
 
-    bool open(DecoderType type, std::shared_ptr<DecoderConfig> config) noexcept;
+    bool open(DecoderType type, const std::shared_ptr<DecoderConfig>& config) noexcept;
     
     void close() noexcept;
     
@@ -30,33 +28,30 @@ public:
     void start() noexcept;
     
     void pause() noexcept;
-    
-    void reset() noexcept;
-    
-    void setReachEnd(bool isReachEnd) noexcept {
+
+    bool isReachEnd() const noexcept {
+        return isReachEnd_;
+    }
+
+    void setReachEnd(bool isReachEnd) noexcept{
         isReachEnd_ = isReachEnd;
     }
-    
-    bool isNeedPushFrame() noexcept {
-        bool isNeed = true;
-        {
-            std::lock_guard lock(frameMutex_);
-            isNeed = pendingDecodePacketQueue_.empty();
-        }
-        return isNeed;
+
+    bool empty() noexcept {
+        std::lock_guard lock(mutex_);
+        return pendingDecodeQueue_.empty();
     }
 
 private:
-    void decode();
+    void pushFrameDecode();
 private:
-    std::atomic<bool> isReachEnd_ = false;
-    std::mutex decoderMutex_;
-    std::unique_ptr<IDecoder> decoder_;
-    std::mutex frameMutex_;
-    std::condition_variable cond_;
-    std::deque<AVFramePtr> pendingDecodePacketQueue_;
+    std::atomic_bool isReachEnd_ = false;
     DecoderReceiveFunc callback_;
-    Thread decodeWorker_;
+    Synchronized<std::shared_ptr<IDecoder>> decoder_;
+    Synchronized<std::unique_ptr<Thread>> decodeWorker_;
+    std::mutex mutex_;
+    std::deque<AVFramePtr> pendingDecodeQueue_;
+    std::condition_variable cond_;
 };
 
 }

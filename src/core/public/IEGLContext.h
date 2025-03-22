@@ -15,11 +15,11 @@ class IEGLContext {
 public:
     virtual ~IEGLContext() = default;
     
-    virtual bool init(void* context = nullptr) = 0;
+    virtual bool init(void* context) = 0;
     
     virtual void release() = 0;
     
-    virtual void acttachContext() = 0;
+    virtual void attachContext() = 0;
     
     virtual void detachContext() = 0;
     

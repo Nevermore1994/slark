@@ -14,6 +14,8 @@
 
 #ifdef SLARK_IOS
 #include "iOSBase.h"
+#elif  SLARK_ANDROID
+#include "AndroidBase.h"
 #endif
 
 namespace slark {
@@ -42,6 +44,7 @@ void printLog(LogType level, std::string_view format, Args&& ...args) {
 #ifdef SLARK_IOS
     outputLog(logStr);
 #elif SLARK_ANDROID
+    outputLog(logStr);
 #else
     std::print("{}", logStr);
     fflush(stdout);
