@@ -22,7 +22,7 @@ public:
     
     void close() noexcept;
     
-    [[nodiscard]] std::string_view path() noexcept;
+    [[nodiscard]] std::string path() noexcept;
     
     [[nodiscard]] IOState state() noexcept;
     
@@ -50,7 +50,7 @@ private:
     std::atomic_bool isStop_ = false;
     Time::TimePoint idleTime_ = 0;
     Synchronized<std::vector<DataPtr>> dataList_;
-    Synchronized<std::unique_ptr<FileUtil::WriteFile>, std::shared_mutex> file_;
+    Synchronized<std::unique_ptr<FileUtil::WriteFile>> file_;
     Thread worker_;
 };
 

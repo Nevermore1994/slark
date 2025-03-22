@@ -61,9 +61,7 @@ def gen(platform, need_build_demo):
                   "-DCMAKE_SYSTEM_NAME=Android " \
                   "-DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake " \
                   "-DANDROID_ABI=arm64-v8a " \
-                  "-DANDROID_PLATFORM=29 " \
-                  "-DOPENSSL_CRYPTO_LIBRARY=${OPENSSL_ROOT_DIR}/lib " \
-                  "-DOPENSSL_INCLUDE_DIR=${OPENSSL_ROOT_DIR}/include "
+                  "-DANDROID_PLATFORM=29 "
     else:
         command = "cmake -DCMAKE_MAKE_PROGRAM=/usr/bin/make -S {} -B {} -G 'Unix Makefiles'".format(root_path,
                                                                                                     build_path)

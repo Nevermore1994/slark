@@ -16,7 +16,7 @@ Pod::Spec.new do |s|
    
     s.license      = { :type => "MIT", :file => "LICENSE" }
 
-    s.author        = { "Nevermore-" => "875229565@qq.com" }
+    s.author       = { "Nevermore-" => "875229565@qq.com" }
 
     s.source       = { :git => "https://github.com/Nevermore1994/slark.git", :tag => "#{s.version}" }
     

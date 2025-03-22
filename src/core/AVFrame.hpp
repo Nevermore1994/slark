@@ -12,6 +12,7 @@
 #include <exception>
 #include <memory>
 #include <expected>
+#include <ranges>
 #include "Assert.hpp"
 #include "Data.hpp"
 #include "Log.hpp"
@@ -27,6 +28,7 @@ enum class AVFrameType {
 enum class FrameFormat {
     Unknown = 0,
     VideoToolBox = 1,
+    MediaCodec = 2,
 };
 
 struct Statistics {
@@ -39,6 +41,7 @@ struct Statistics {
 };
 
 struct FrameInfo {
+    bool isEndOfStream = false;
     uint32_t refIndex = 0;
     virtual ~FrameInfo() = default;
 };
@@ -74,7 +77,7 @@ enum class VideoFrameType {
 
 struct VideoFrameInfo : public FrameInfo {
 public:
-    void copy(std::shared_ptr<VideoFrameInfo> info) const noexcept {
+    void copy(std::shared_ptr<VideoFrameInfo>& info) const noexcept {
         if (!info) {
             return;
         }
@@ -83,7 +86,7 @@ public:
 
     bool isHasContent() const {
         static const std::vector<VideoFrameType> kHasContentFrames = { VideoFrameType::IFrame, VideoFrameType::PFrame, VideoFrameType::BFrame };
-        return std::any_of(kHasContentFrames.begin(), kHasContentFrames.end(), [this](auto type){
+        return std::ranges::any_of(kHasContentFrames, [this](auto type){
             return type == frameType;
         });
     }

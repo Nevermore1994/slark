@@ -105,21 +105,21 @@ public:
         return audioInfo_ != nullptr;
     }
 
-    [[nodiscard]] const std::shared_ptr<VideoInfo>& videoInfo() const noexcept {
+    [[nodiscard]] std::shared_ptr<VideoInfo>& videoInfo() noexcept {
         return videoInfo_;
     }
 
-    [[nodiscard]] const std::shared_ptr<AudioInfo>& audioInfo() const noexcept {
+    [[nodiscard]] std::shared_ptr<AudioInfo>& audioInfo() noexcept {
         return audioInfo_;
     }
 
-    [[nodiscard]] const std::shared_ptr<DemuxerHeaderInfo>& headerInfo() const noexcept {
+    [[nodiscard]] std::shared_ptr<DemuxerHeaderInfo>& headerInfo() noexcept {
         return headerInfo_;
     }
     
     [[nodiscard]] CTime totalDuration() const noexcept {
         if (!isOpened_) {
-            return CTime();
+            return {};
         }
         return totalDuration_;
     }

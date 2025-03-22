@@ -22,7 +22,7 @@ Writer::~Writer() = default;
 
 bool Writer::open(std::string_view path, bool isAppend) noexcept {
     bool isSuccess = false;
-    file_.withWriteLock([&](auto& file){
+    file_.withLock([&](auto& file){
         file = std::make_unique<FileUtil::WriteFile>(std::string(path), isAppend);
         if (!file->open()) {
             LogE("open file failed. {}", path);
@@ -51,7 +51,7 @@ IOState Writer::state() noexcept {
         return IOState::Closed;
     }
     IOState state = IOState::Normal;
-    file_.withReadLock([&](auto& file){
+    file_.withLock([&](auto& file){
         if (!file) {
             state = IOState::Closed;
         } else if(file->isFailed()) {
@@ -61,9 +61,9 @@ IOState Writer::state() noexcept {
     return state;
 }
 
-std::string_view Writer::path() noexcept {
-    std::string_view path;
-    file_.withReadLock([&](auto& file){
+std::string Writer::path() noexcept {
+    std::string path;
+    file_.withLock([&](auto& file){
         if (file) {
             path = file->path();
         }
@@ -79,7 +79,7 @@ void Writer::process() noexcept {
     });
     if (dataList.empty()) {
         if (!isOpen_ || isStop_) {
-            file_.withWriteLock([](auto& file){
+            file_.withLock([](auto& file){
                 if (file) {
                     file->close();
                 }
@@ -102,7 +102,7 @@ void Writer::process() noexcept {
     }
     
     bool isSuccess = true;
-    file_.withReadLock([&](auto& file){
+    file_.withLock([&](auto& file){
         for (auto& data : dataList) {
             if (file->isFailed()){
                 isSuccess = false;
@@ -123,7 +123,7 @@ uint32_t Writer::getHashId() noexcept {
 
 uint32_t Writer::writeCount() noexcept {
     uint32_t count = 0;
-    file_.withReadLock([&](auto& file){
+    file_.withLock([&](auto& file){
         count = file->writeCount();
     });
     return count;
@@ -131,7 +131,7 @@ uint32_t Writer::writeCount() noexcept {
 
 uint64_t Writer::writeSize() noexcept {
     uint64_t size = 0;
-    file_.withReadLock([&](auto& file){
+    file_.withLock([&](auto& file){
         size = file->writeSize();
     });
     return size;

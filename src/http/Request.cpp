@@ -59,7 +59,7 @@ bool parseFieldValue(const std::unordered_map<std::string, std::string>& headers
 }
 
 namespace encode {
-///https://stackoverflow.com/questions/180947/base64-decode-snippet-in-c
+///https://stackoverflow.com/questions/180947/base64-pushFrameDecode-snippet-in-c
 constexpr std::string_view kBase64Content = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"sv;
 
 std::string base64Encode(const std::string& str) {

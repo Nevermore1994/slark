@@ -57,7 +57,7 @@ enum class HttpStatusCode : uint16_t {
     PartialContent = 206, //!< Indicates that the server is successfully fulfilling a range request for the target resource by transferring one or more parts of the selected representation that correspond to the satisfiable ranges found in the requests's Range header field.
     MultiStatus = 207, //!< Provides status for multiple independent operations.
     AlreadyReported = 208, //!< Used inside a DAV:propstat response element to avoid enumerating the internal members of multiple bindings to the same collection repeatedly. [RFC 5842]
-    IMUsed = 226, //!< The server has fulfilled a GET request for the resource, and the response is a representation of the result of one or more instance-manipulations applied to the current instance.
+    IMUsed = 226, //!< The server has fulfilled a GET request for the resource, and the response is a representation of the result of one or more instance-manipulations applied to the current shareInstance.
 
     /*####### 3xx - Redirection #######*/
     /* Indicates that further action needs to be taken by the user agent

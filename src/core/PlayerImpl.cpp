@@ -48,7 +48,7 @@ void Player::Impl::seek(long double time, bool isAccurate) noexcept {
     ptr->data = req;
     sender_->send(std::move(ptr));
     ownerThread_->start();
-    LogI("reveice seek:{}, isAccurate:{}", time, isAccurate);
+    LogI("receive seek:{}, isAccurate:{}", time, isAccurate);
 }
 
 void Player::Impl::updateState(PlayerState state) noexcept {
@@ -186,25 +186,27 @@ void Player::Impl::createAudioComponent(const PlayerSetting& setting) noexcept {
         });
     });
     if (!audioDecodeComponent_) {
-        LogI("create audio decode Component error:{}", demuxer_->audioInfo()->mediaInfo);
+        LogI("create audio pushFrameDecode Component error:{}", demuxer_->audioInfo()->mediaInfo);
         return;
     }
     auto config = std::make_shared<AudioDecoderConfig>();
-    config->bitsPerSample = demuxer_->audioInfo()->bitsPerSample;
-    config->channels = demuxer_->audioInfo()->channels;
-    config->sampleRate = demuxer_->audioInfo()->sampleRate;
-    config->timeScale = demuxer_->audioInfo()->timeScale;
-    config->profile = static_cast<uint8_t>(demuxer_->audioInfo()->profile);
+    const auto& audioInfo = demuxer_->audioInfo();
+    config->mediaInfo = audioInfo->mediaInfo;
+    config->bitsPerSample = audioInfo->bitsPerSample;
+    config->channels = audioInfo->channels;
+    config->sampleRate = audioInfo->sampleRate;
+    config->timeScale = audioInfo->timeScale;
+    config->profile = static_cast<uint8_t>(audioInfo->profile);
     if (!audioDecodeComponent_->open(decodeType, config)) {
-        LogI("create audio decode component successs");
+        LogI("create audio pushFrameDecode component success");
         return ;
     }
-    audioRender_ = std::make_unique<AudioRenderComponent>(demuxer_->audioInfo());
+    audioRender_ = std::make_unique<AudioRenderComponent>(audioInfo);
     audioRender_->firstFrameRenderCallBack = [this](Time::TimePoint timestamp){
         statistics_.isFirstAudioRendered = true;
         statistics_.audioRenderDelta = timestamp - statistics_.audioRenderDelta;
     };
-    LogI("create audio render successs");
+    LogI("create audio render success");
 }
 
 void Player::Impl::createVideoComponent(const PlayerSetting& setting) noexcept  {
@@ -214,7 +216,7 @@ void Player::Impl::createVideoComponent(const PlayerSetting& setting) noexcept  
         return;
     }
     videoDecodeComponent_ = std::make_shared<DecoderComponent>([this](auto frame) {
-        LogI("decode video frame info:{}", frame->ptsTime());
+        LogI("pushFrameDecode video frame info:{}", frame->ptsTime());
         videoFrames_.withWriteLock([&frame](auto& frames){
             frames.push_back(std::move(frame));
         });
@@ -226,6 +228,7 @@ void Player::Impl::createVideoComponent(const PlayerSetting& setting) noexcept  
     auto config = std::make_shared<VideoDecoderConfig>();
     const auto& videoInfo = demuxer_->videoInfo();
     if (videoInfo) {
+        config->mediaInfo = videoInfo->mediaInfo;
         config->width = videoInfo->width;
         config->height = videoInfo->height;
         config->naluHeaderLength = videoInfo->naluHeaderLength;
@@ -237,7 +240,7 @@ void Player::Impl::createVideoComponent(const PlayerSetting& setting) noexcept  
     }
 
     if (videoDecodeComponent_->open(decodeType, config)) {
-        LogI("create video decode component success");
+        LogI("create video pushFrameDecode component success");
     } else {
         return;
     }
@@ -383,7 +386,7 @@ void Player::Impl::pushAudioFrameDecode() noexcept {
     if (!isNeedPushFrame) {
         return;
     }
-    LogI("push audio frame decode:{} dts: {} delta:{}, audioClockTime:{}", audioPackets_.front()->index, audioPackets_.front()->dtsTime(), delta, audioClockTime);
+    LogI("push audio frame pushFrameDecode:{} dts: {} delta:{}, audioClockTime:{}", audioPackets_.front()->index, audioPackets_.front()->dtsTime(), delta, audioClockTime);
     audioPackets_.front()->stats.prepareDecodeStamp = Time::nowTimeStamp();
     audioDecodeComponent_->send(std::move(audioPackets_.front()));
     audioPackets_.pop_front();
@@ -400,7 +403,7 @@ void Player::Impl::pushVideoFrameDecode(bool ) noexcept {
     ///TODO: FIX DTS
     if (videoDecodeComponent_ && videoDecodeComponent_->isNeedPushFrame()) {
         if (!videoPackets_.empty()) {
-            LogI("push video frame decode:{}", videoPackets_.front()->index);
+            LogI("push video frame pushFrameDecode:{}", videoPackets_.front()->index);
             videoDecodeComponent_->send(std::move(videoPackets_.front()));
             videoPackets_.pop_front();
         }

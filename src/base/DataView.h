@@ -27,20 +27,14 @@ public:
         
     }
     
-    DataView(const DataView& view)
-        : view_(view.view_) {
-        
-    }
+    DataView(const DataView& view) = default;
     
     DataView(const uint8_t* data, uint64_t size)
         : view_(std::string_view(reinterpret_cast<const char*>(data), size)){
         
     }
     
-    DataView& operator=(const DataView& rhs) {
-        view_ = rhs.view_;
-        return *this;
-    }
+    DataView& operator=(const DataView& rhs) = default;
     
     uint8_t operator[](uint64_t index) const noexcept {
         SAssert(index < length(), "out of range!");
@@ -61,7 +55,7 @@ public:
     
     DataView substr(uint64_t pos, size_t size = std::string_view::npos) const noexcept {
         if (pos >= length()) {
-            return DataView();
+            return {};
         }
         return DataView(view_.substr(pos, size));
     }
