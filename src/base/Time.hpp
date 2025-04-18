@@ -10,6 +10,7 @@
 #include <cmath>
 #include <algorithm>
 #include <string>
+#include <type_traits>
 #include "Assert.hpp"
 
 namespace slark {
@@ -31,7 +32,13 @@ struct Time {
         constexpr TimePoint(uint64_t t = 0)
             : count(t) {
         }
-        
+
+        template <typename T> requires std::is_floating_point_v<T>
+        constexpr TimePoint(T time)
+            : count(static_cast<uint64_t>(time * kMicroSecondScale)) {
+
+        }
+
         constexpr TimePoint(std::chrono::microseconds micros)
             : count(static_cast<uint64_t>(micros.count())) {
 
@@ -55,10 +62,10 @@ struct Time {
 
     };
     static TimePoint nowTimeStamp() noexcept;
-    [[maybe_unused]] static std::chrono::milliseconds nowTime() noexcept;
+    [[maybe_unused]] static std::chrono::milliseconds nowUTCTime() noexcept;
     static std::chrono::seconds offsetFromUTC() noexcept;
-    static std::string localTime() noexcept;
-    static std::string localShortTime() noexcept;
+    static std::string localTimeStr() noexcept;
+    static std::string localShortTimeStr() noexcept;
 };
 
 struct CTime {

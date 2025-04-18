@@ -16,7 +16,8 @@ public:
     ~VideoHardwareDecoder() override = default;
 public:
     bool open(std::shared_ptr<DecoderConfig> config) noexcept override;
-    bool decode(AVFramePtr frame) noexcept override;
+
+    DecoderErrorCode decode(AVFrameRefPtr& frame) noexcept override;
 };
 
 } // slark

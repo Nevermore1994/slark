@@ -64,9 +64,9 @@ public:
                    std::shared_ptr<FrameInfo> frameInfo,
                    AVFramePtrArray& packets);
     
-    AVFramePtrArray praseH264FrameData(AVFramePtr ptr,
-                                    DataPtr data,
-                                    std::shared_ptr<VideoFrameInfo>frameInfo);
+    AVFramePtrArray parseH264FrameData(AVFramePtr frame,
+                                       DataPtr data,
+                                       std::shared_ptr<VideoFrameInfo>frameInfo);
     void calcIndex() noexcept;
 };
 

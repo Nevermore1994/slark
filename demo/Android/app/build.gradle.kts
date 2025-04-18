@@ -37,7 +37,7 @@ android {
     buildFeatures {
         compose = true
     }
-    ndkVersion = "28.0.13004108"
+    ndkVersion = "29.0.13113456"
 }
 
 dependencies {

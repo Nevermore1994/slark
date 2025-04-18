@@ -17,10 +17,10 @@ namespace slark::Util {
 
 template <typename T>
 std::expected<uint64_t, bool> getWeakPtrAddress(const std::weak_ptr<T>& ptr) noexcept {
-    if (ptr.expired()) {
-        return std::unexpected(false);
+    if (auto p = ptr.lock()) {
+        return std::hash<std::shared_ptr<T>>()(p);
     }
-    return reinterpret_cast<uint64_t>(ptr.lock().get());
+    return std::unexpected(false);
 }
 
 std::string genRandomName(const std::string& namePrefix) noexcept;

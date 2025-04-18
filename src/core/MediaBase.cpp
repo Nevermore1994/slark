@@ -26,6 +26,37 @@ bool isHlsLink(const std::string& url) noexcept {
     return std::regex_match(url, hlsRegex);
 }
 
+AudioProfile getAudioProfile(uint8_t profile) {
+    switch (profile) {
+        case 0:
+            return AudioProfile::AAC_MAIN;
+        case 1:
+            return AudioProfile::AAC_LC;
+        case 2:
+            return AudioProfile::AAC_SSR;
+        case 3:
+            return AudioProfile::AAC_LTP;
+        default:
+            return AudioProfile::AAC_LC;
+    }
+}
+
+int32_t getAACSamplingRate(int32_t index) {
+    static const std::unordered_map<int32_t, int32_t> samplingRateTable = {
+            {0, 96000}, {1, 88200}, {2, 64000}, {3, 48000},
+            {4, 44100}, {5, 32000}, {6, 24000}, {7, 22050},
+            {8, 16000}, {9, 12000}, {10, 11025}, {11, 8000},
+            {12, 7350}
+    };
+
+    auto it = samplingRateTable.find(index);
+    if (it != samplingRateTable.end()) {
+        return it->second;
+    } else {
+        return 44100;
+    }
+}
+
 uint32_t findNaluStartCode(DataView dataView) noexcept {
     static const auto func = [](DataView view) {
         uint32_t p = 0;

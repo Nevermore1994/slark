@@ -8,22 +8,24 @@
 
 namespace slark {
 
-bool AudioHardwareDecoder::decode(slark::AVFramePtr frame) noexcept {
+DecoderErrorCode AudioHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
     assert(frame && frame->isAudio());
     auto pts = frame->pts;
     if (decodeFrames_.contains(pts)) {
         LogE("decode same pts frame, {}", pts);
-        return false;
+        return DecoderErrorCode::InputDataError;
     }
 
-    auto data = frame->detachData();
     NativeDecodeFlag flag = NativeDecodeFlag::None;
     if (frame->info->isEndOfStream) {
         flag = NativeDecodeFlag::EndOfStream;
     }
-    decodeFrames_[pts] = std::move(frame);
-    NativeHardwareDecoder::sendData(decoderId_, std::move(data), pts, flag);
-    return true;
+    auto res = NativeHardwareDecoder::sendPacket(decoderId_, frame->data, pts, flag);
+    if (res == DecoderErrorCode::Success) {
+        decodeFrames_[pts] = frame;
+    }
+    LogE("decode frame error:{}", static_cast<int>(res));
+    return res;
 }
 
 bool AudioHardwareDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept {
@@ -32,10 +34,7 @@ bool AudioHardwareDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept 
         LogE("audio decoder config is invalid");
         return false;
     }
-    decoderId_ = NativeHardwareDecoder::createAudio(audioConfig->mediaInfo,
-                                                    audioConfig->sampleRate,
-                                                    audioConfig->channels,
-                                                    audioConfig->profile);
+    decoderId_ = NativeHardwareDecoder::createAudio(audioConfig);
     if (decoderId_.empty()) {
         LogE("create audio decoder failed");
         return false;

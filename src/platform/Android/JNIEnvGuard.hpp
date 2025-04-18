@@ -2,16 +2,17 @@
 // Created by Nevermore on 2025/3/8.
 //
 
-#include <jni.h>
+#pragma once
+#include "JNIBase.hpp"
 #include <stdexcept>
 
-namespace slark {
+namespace slark::JNI {
 
 class JNIEnvGuard {
 public:
     explicit JNIEnvGuard(JavaVM* jvm) : jvm_(jvm), env_(nullptr), needDetach_(false) {
         if (!jvm_) {
-            throw std::runtime_error("Null JavaVM pointer");
+            throw std::runtime_error("nullptr JavaVM pointer");
         }
 
         int status = jvm_->GetEnv(reinterpret_cast<void**>(&env_), JNI_VERSION_1_6);
@@ -69,7 +70,7 @@ public:
         }
     }
 
-    JNIEnv* get() const noexcept {
+    [[nodiscard]] JNIEnv* get() const noexcept {
         return env_;
     }
 
@@ -83,7 +84,7 @@ public:
 
 private:
     JavaVM* jvm_;
-    JNIEnv* env_;
+    JNIEnvPtr env_;
     bool needDetach_;
 };
 

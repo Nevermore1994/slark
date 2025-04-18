@@ -119,8 +119,8 @@ void Reader::close() noexcept {
     worker_.stop();
 }
 
-std::string_view Reader::path() noexcept {
-    std::string_view path;
+std::string Reader::path() noexcept {
+    std::string path;
     file_.withReadLock([&](auto& file){
         if (file) {
             path = file->path();

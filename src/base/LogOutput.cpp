@@ -17,7 +17,7 @@ std::string LogFileName() {
         LogP("create log folder failed.");
         return "";
     }
-    return logDir + "/" + Time::localShortTime() + ".log";
+    return logDir + "/" + Time::localShortTimeStr() + ".log";
 }
 
 constexpr uint32_t kMaxWriteLogCount = 8 * 1024;

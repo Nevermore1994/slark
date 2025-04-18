@@ -15,7 +15,7 @@ class DecoderComponent : public DecoderDataProvider,
 public:
     explicit DecoderComponent(DecoderReceiveFunc&& callback);
     
-    ~DecoderComponent();
+    ~DecoderComponent() override;
 
     bool open(DecoderType type, const std::shared_ptr<DecoderConfig>& config) noexcept;
     
@@ -29,28 +29,23 @@ public:
     
     void pause() noexcept;
 
-    bool isReachEnd() const noexcept {
-        return isReachEnd_;
-    }
-
-    void setReachEnd(bool isReachEnd) noexcept{
-        isReachEnd_ = isReachEnd;
-    }
-
     bool empty() noexcept {
         std::lock_guard lock(mutex_);
         return pendingDecodeQueue_.empty();
     }
 
+    AVFrameRefPtr requestDecodeFrame(bool isBlocking) noexcept override;
 private:
     void pushFrameDecode();
+
+    AVFrameRefPtr peekDecodeFrame() noexcept;
 private:
-    std::atomic_bool isReachEnd_ = false;
+    std::atomic_bool isOpened_ = false;
     DecoderReceiveFunc callback_;
     Synchronized<std::shared_ptr<IDecoder>> decoder_;
-    Synchronized<std::unique_ptr<Thread>> decodeWorker_;
+    Thread decodeWorker_;
     std::mutex mutex_;
-    std::deque<AVFramePtr> pendingDecodeQueue_;
+    std::deque<AVFrameRefPtr> pendingDecodeQueue_;
     std::condition_variable cond_;
 };
 

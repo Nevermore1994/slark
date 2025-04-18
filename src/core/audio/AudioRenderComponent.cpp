@@ -135,7 +135,7 @@ void AudioRenderComponent::flush() noexcept {
     }
 }
 
-void AudioRenderComponent::seek(Time::TimePoint time) noexcept {
+void AudioRenderComponent::seek(long double time) noexcept {
     std::unique_lock<std::mutex> lock(renderMutex_);
     flush();
     frames_.withWriteLock([this](auto& frames) {
@@ -143,7 +143,7 @@ void AudioRenderComponent::seek(Time::TimePoint time) noexcept {
         audioBuffer_.reset();
         renderedDataLength_ = 0;
     });
-    clock_.setTime(time);
+    clock_.setTime(Time::TimePoint(time));
 }
 
 }

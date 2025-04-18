@@ -46,10 +46,15 @@ struct AudioInfo {
     }
      
     uint64_t timePoint2DataLen(Time::TimePoint point) const {
-        return static_cast<uint64_t>(point.second() * bytePerSecond());
+        return static_cast<uint64_t>(point.second() * static_cast<long double>(bytePerSecond()));
     }
 };
 
+enum class AudioDataFlag {
+    Normal,
+    EndOfStream,
+    Silence,
+};
 
 class IAudioRender {
 public:
@@ -85,7 +90,7 @@ public:
         return volume_;
     }
     
-    std::function<uint32_t(uint8_t*, uint32_t)> requestAudioData;
+    std::function<uint32_t(uint8_t*, uint32_t, AudioDataFlag&)> requestAudioData;
 protected:
     float volume_ = 100.f; // 0 ~ 100
     std::shared_ptr<AudioInfo> audioInfo_ = nullptr;

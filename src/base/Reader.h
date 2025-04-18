@@ -43,7 +43,7 @@ public:
 public:
     //public function
     int64_t tell() noexcept;
-    std::string_view path() noexcept;
+    std::string path() noexcept;
 private:
     void process() noexcept;
     void doSeek() noexcept;

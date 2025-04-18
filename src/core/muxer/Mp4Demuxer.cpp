@@ -253,9 +253,9 @@ bool TrackContext::isInRange(Buffer& buffer, uint64_t& offset) const noexcept {
     return false;
 }
 
-AVFramePtrArray TrackContext::praseH264FrameData(AVFramePtr frame,
-                                              DataPtr data,
-                                              std::shared_ptr<VideoFrameInfo> frameInfo) {
+AVFramePtrArray TrackContext::parseH264FrameData(AVFramePtr frame,
+                                                 DataPtr data,
+                                                 std::shared_ptr<VideoFrameInfo> frameInfo) {
     if (naluByteSize == 0) {
         auto avccBox = std::dynamic_pointer_cast<BoxAvcc>(stsd->getChild("avc1")->getChild("avcC"));
         if (avccBox) {
@@ -351,7 +351,7 @@ void TrackContext::parseData(Buffer& buffer, std::shared_ptr<FrameInfo> frameInf
         frame->frameType = AVFrameType::Video;
         auto data = buffer.readData(size);
         if (codecId == CodecId::AVC) {
-            auto frames = praseH264FrameData(std::move(frame),
+            auto frames = parseH264FrameData(std::move(frame),
                                              std::move(data),
                                              std::dynamic_pointer_cast<VideoFrameInfo>(frameInfo));
             std::for_each(frames.begin(), frames.end(), [&packets](auto& frame){

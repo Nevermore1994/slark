@@ -29,6 +29,6 @@ public:
 using IEGLContextPtr = std::unique_ptr<IEGLContext>;
 using IEGLContextRefPtr = std::shared_ptr<IEGLContext>;
 
-IEGLContextPtr createEGLContext();
+IEGLContextPtr createEGLContext() noexcept;
 
 }

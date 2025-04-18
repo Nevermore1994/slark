@@ -63,9 +63,9 @@ public:
     ~IDemuxer() override = default;
 
 public:
-    virtual bool open(std::unique_ptr<Buffer>&) = 0;
+    virtual bool open(std::unique_ptr<Buffer>&) noexcept = 0;
 
-    virtual void close() = 0;
+    virtual void close() noexcept = 0;
 
     virtual void reset() noexcept {
         isOpened_ = false;

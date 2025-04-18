@@ -22,12 +22,34 @@ public:
     void setVolume(float volume) noexcept override;
 
     void flush() noexcept override;
+
+    void sendAudioData(DataPtr audioData) noexcept;
 private:
     void init() noexcept;
 
 private:
     std::string playerId_;
 };
+
+class AudioRenderManager {
+public:
+    static AudioRenderManager& shareInstance() noexcept;
+
+    ~AudioRenderManager() = default;
+public:
+    std::shared_ptr<AudioRender> find(const std::string& decoderId) const noexcept;
+
+    void add(const std::string& decoderId, std::shared_ptr<AudioRender> ptr) noexcept;
+
+    void remove(const std::string& decoderId) noexcept;
+private:
+    AudioRenderManager() = default;
+
+private:
+    mutable std::mutex mutex_;
+    std::unordered_map<std::string, std::shared_ptr<AudioRender>> players_;
+};
+
 
 } // slark
 

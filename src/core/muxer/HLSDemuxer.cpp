@@ -105,7 +105,7 @@ bool M3U8Parser::parse(Buffer& buffer) noexcept {
             info.range.size = std::stol(std::string(lengthView));
         } else if (view.starts_with("#EXT-X-DISCONTINUITY")) {
             if (!infos_.empty()) {
-                infos_.back().isDiscontinuty = true; //The next TS needs to reset the decoder
+                infos_.back().isDiscontinuity = true; //The next TS needs to reset the decoder
             }
         } else if (view.starts_with("#EXT-X-STREAM-INF:")) {
             //play list
@@ -399,7 +399,7 @@ bool TSDemuxer::packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) n
     }
     
     view = videoESFrame_.mediaData.view();
-    for(const auto& range : naluRanges) {
+    for (const auto& range : naluRanges) {
         auto dataView = view.substr(range.pos, static_cast<size_t>(range.size));
         auto naluType = static_cast<uint8_t>(dataView[0]) & 0x1f;
         auto info = std::make_shared<VideoFrameInfo>();
@@ -522,37 +522,6 @@ bool parseAdtsHeader(DataView dataView, AACAdtsHeader& header) noexcept {
     return true;
 }
 
-AudioProfile getProfile(uint8_t profile) {
-    switch (profile) {
-        case 0:
-            return AudioProfile::AAC_MAIN;
-        case 1:
-            return AudioProfile::AAC_LC;
-        case 2:
-            return AudioProfile::AAC_SSR;
-        case 3:
-            return AudioProfile::AAC_LTP;
-        default:
-            return AudioProfile::AAC_LC;
-    }
-}
-
-std::optional<int32_t> getSamplingRate(int32_t index) {
-    static const std::unordered_map<int32_t, int32_t> samplingRateTable = {
-        {0, 96000}, {1, 88200}, {2, 64000}, {3, 48000},
-        {4, 44100}, {5, 32000}, {6, 24000}, {7, 22050},
-        {8, 16000}, {9, 12000}, {10, 11025}, {11, 8000},
-        {12, 7350}
-    };
-
-    auto it = samplingRateTable.find(index);
-    if (it != samplingRateTable.end()) {
-        return it->second;
-    } else {
-        return std::nullopt;
-    }
-}
-
 void TSDemuxer::resetData() noexcept {
     audioFixInfo_.reset();
     videoFixInfo_.reset();
@@ -594,8 +563,7 @@ bool TSDemuxer::packAudioPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexc
         dataView = dataView.substr(static_cast<uint64_t>(headerLength));
         auto info = std::make_shared<AudioFrameInfo>();
         info->channels = header.channel;
-        auto sampleRate = getSamplingRate(header.samplingIndex);
-        info->sampleRate = sampleRate.has_value() ? static_cast<uint64_t>(sampleRate.value()) : 44100ull;
+        info->sampleRate = getAACSamplingRate(header.samplingIndex);
         info->refIndex = tsIndex;
         auto frame = std::make_unique<AVFrame>(AVFrameType::Audio);
         frame->data = std::make_unique<Data>(dataView);
@@ -609,7 +577,7 @@ bool TSDemuxer::packAudioPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexc
         
         if (audioInfo_ && !parseInfo_.audioInfo.isValid) {
             audioInfo_->channels = header.channel;
-            audioInfo_->profile = getProfile(header.profile);
+            audioInfo_->profile = getAudioProfile(header.profile);
             audioInfo_->sampleRate = info->sampleRate;
             audioInfo_->timeScale = 90000;
             audioInfo_->bitsPerSample = 16; //default uint16
@@ -726,7 +694,7 @@ bool HLSDemuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
     return true;
 }
 
-void HLSDemuxer::close()  {
+void HLSDemuxer::close() noexcept {
     seekTsIndex_ = kInvalidTSIndex;
     baseUrl_.clear();
     buffer_.reset();

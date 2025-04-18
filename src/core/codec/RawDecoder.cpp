@@ -17,23 +17,20 @@ bool RawDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept {
 
 void RawDecoder::reset() noexcept {
     isOpen_ = false;
-    isFlushed_ = false;
 }
 
 void RawDecoder::close() noexcept {
     reset();
 }
 
-bool RawDecoder::send(AVFramePtr frame) {
+DecoderErrorCode RawDecoder::decode(AVFrameRefPtr& frame) noexcept {
     frame->stats.decodedStamp = Time::nowTimeStamp();
-    if (receiveFunc) {
-        receiveFunc(std::move(frame));
-    }
-    return true;
+    invokeReceiveFunc(std::move(frame));
+    return DecoderErrorCode::Success;
 }
 
 void RawDecoder::flush() noexcept {
-    isFlushed_ = true;
+
 }
 
 

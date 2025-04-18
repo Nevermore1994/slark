@@ -5,4 +5,9 @@
 #pragma once
 #include "JNIEnvGuard.hpp"
 
+namespace slark {
+
 JavaVM* getJavaVM();
+
+}
+
