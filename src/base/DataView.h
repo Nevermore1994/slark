@@ -30,7 +30,10 @@ public:
     DataView(const DataView& view) = default;
     
     DataView(const uint8_t* data, uint64_t size)
-        : view_(std::string_view(reinterpret_cast<const char*>(data), size)){
+        : view_(std::string_view(
+                reinterpret_cast<const char*>(data),
+                static_cast<size_t>(size)
+                )){
         
     }
     

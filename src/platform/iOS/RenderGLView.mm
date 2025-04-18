@@ -160,6 +160,13 @@ static const GLfloat kColorConversion709FullRange[] = {
         CFRelease(_videoTextureCache);
         _videoTextureCache = NULL;
     }
+    if (_videoRenderImpl) {
+        _videoRenderImpl->notifyVideoInfoFunc = nullptr;
+        _videoRenderImpl->startFunc = nullptr;
+        _videoRenderImpl->pauseFunc = nullptr;
+        _videoRenderImpl->pushVideoFrameRenderFunc = nullptr;
+        _videoRenderImpl.reset();
+    }
     _context.reset();
 }
 
@@ -236,18 +243,30 @@ static const GLfloat kColorConversion709FullRange[] = {
     __weak __typeof(self) weakSelf = self;
     _videoRenderImpl->notifyVideoInfoFunc = [weakSelf](std::shared_ptr<VideoInfo> info) {
         __strong __typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) {
+            return;
+        }
         [strongSelf setRenderInterval:info->fps];
     };
     _videoRenderImpl->startFunc = [weakSelf]() {
         __strong __typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) {
+            return;
+        }
         strongSelf.isActive = YES;
     };
     _videoRenderImpl->pauseFunc = [weakSelf](){
         __strong __typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) {
+            return;
+        }
         strongSelf.isActive = NO;
     };
     _videoRenderImpl->pushVideoFrameRenderFunc = [weakSelf](void* frame) {
         __strong __typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) {
+            return;
+        }
         [strongSelf pushRenderPixelBuffer:frame];
     };
 }

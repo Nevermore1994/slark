@@ -6,6 +6,7 @@
 
 #include <string>
 #include "Data.hpp"
+#include "DecoderConfig.h"
 
 namespace slark {
 
@@ -16,13 +17,15 @@ enum NativeDecodeFlag {
     EndOfStream = 4,
 };
 
+enum class DecoderErrorCode;
+
 struct NativeHardwareDecoder {
-    static std::string createVideo(const std::string& mediaInfo, int32_t width, int32_t height);
+    static std::string createVideo(const std::shared_ptr<VideoDecoderConfig>& decoderConfig);
 
-    static std::string createAudio(const std::string& mediaInfo, uint64_t sampleRate,
-                                   uint8_t channelCount, uint8_t profile);
+    static std::string createAudio(const std::shared_ptr<AudioDecoderConfig>& decoderConfig);
 
-    static void sendData(std::string_view decoderId, DataPtr data, uint64_t pts, NativeDecodeFlag flag);
+    static DecoderErrorCode sendPacket(std::string_view decoderId, DataPtr& data,
+                                       uint64_t pts, NativeDecodeFlag flag);
 
     static void release(std::string_view decoderId);
 

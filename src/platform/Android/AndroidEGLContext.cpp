@@ -10,11 +10,11 @@ namespace slark {
 
 AndroidEGLContext::AndroidEGLContext() = default;
 
-AndroidEGLContext::~AndroidEGLContext() {
+AndroidEGLContext::~AndroidEGLContext() noexcept {
     destroy();
 }
 
-bool AndroidEGLContext::init(void* context) {
+bool AndroidEGLContext::init(void* context) noexcept {
     if (isInit_) {
         return true;
     }
@@ -65,19 +65,19 @@ bool AndroidEGLContext::init(void* context) {
     return false;
 }
 
-void AndroidEGLContext::release() {
+void AndroidEGLContext::release() noexcept {
     destroy();
 }
 
-void AndroidEGLContext::attachContext() {
+void AndroidEGLContext::attachContext() noexcept {
     attachContext(EGL_NO_SURFACE);
 }
 
-void AndroidEGLContext::attachContext(EGLSurface surface) {
+void AndroidEGLContext::attachContext(EGLSurface surface) noexcept {
     attachContext(surface, surface);
 }
 
-void AndroidEGLContext::attachContext(EGLSurface drawSurface, EGLSurface readSurface) {
+void AndroidEGLContext::attachContext(EGLSurface drawSurface, EGLSurface readSurface) noexcept {
     if (!isInit_) {
         LogE("gl context is uninitialized");
         return;
@@ -91,7 +91,7 @@ void AndroidEGLContext::attachContext(EGLSurface drawSurface, EGLSurface readSur
 }
 
 
-void AndroidEGLContext::detachContext() {
+void AndroidEGLContext::detachContext() noexcept {
     if (!isInit_) {
         LogE("gl context is uninitialized");
         return;
@@ -104,11 +104,11 @@ void AndroidEGLContext::detachContext() {
     }
 }
 
-void AndroidEGLContext::releaseSurface(EGLSurface eglSurface) {
+void AndroidEGLContext::releaseSurface(EGLSurface eglSurface) noexcept {
     eglDestroySurface(display_, eglSurface);
 }
 
-EGLSurface AndroidEGLContext::createWindowSurface(ANativeWindow* surface) {
+EGLSurface AndroidEGLContext::createWindowSurface(ANativeWindow* surface) noexcept {
     if (surface == nullptr) {
         LogE("ANativeWindow is NULL!");
         return nullptr;
@@ -124,7 +124,7 @@ EGLSurface AndroidEGLContext::createWindowSurface(ANativeWindow* surface) {
     return eglSurface;
 }
 
-EGLSurface AndroidEGLContext::createOffscreenSurface(int width, int height) {
+EGLSurface AndroidEGLContext::createOffscreenSurface(int width, int height) noexcept {
     int surfaceAttributes[] = {
             EGL_WIDTH, width,
             EGL_HEIGHT, height,
@@ -138,7 +138,7 @@ EGLSurface AndroidEGLContext::createOffscreenSurface(int width, int height) {
     return eglSurface;
 }
 
-EGLConfig AndroidEGLContext::getConfig(int version) {
+EGLConfig AndroidEGLContext::getConfig(int version) noexcept {
     int renderableType = EGL_OPENGL_ES2_BIT;
     if (version >= 3) {
         renderableType = EGL_OPENGL_ES3_BIT;
@@ -161,11 +161,11 @@ EGLConfig AndroidEGLContext::getConfig(int version) {
     return configs;
 }
 
-void* AndroidEGLContext::nativeContext() {
+void* AndroidEGLContext::nativeContext() noexcept {
     return context_;
 }
 
-void AndroidEGLContext::destroy() {
+void AndroidEGLContext::destroy() noexcept {
     if (display_ != EGL_NO_DISPLAY) {
         eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         eglDestroyContext(display_, context_);
@@ -178,7 +178,7 @@ void AndroidEGLContext::destroy() {
     config_ = nullptr;
 }
 
-IEGLContextPtr createEGLContext() {
+IEGLContextPtr createEGLContext() noexcept {
     return std::make_unique<AndroidEGLContext>();
 }
 

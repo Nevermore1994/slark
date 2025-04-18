@@ -15,7 +15,7 @@
 namespace slark {
 
 struct TSInfo {
-    bool isDiscontinuty = false;
+    bool isDiscontinuity = false;
     bool isSupportByteRange = false;
     uint32_t sequence = 0;
     double duration = 0.0;
@@ -219,7 +219,7 @@ public:
     
     bool open(std::unique_ptr<Buffer>& buffer) noexcept override;
     
-    void close() override;
+    void close() noexcept override;
     
     void seekPos(uint64_t pos) noexcept override;
     

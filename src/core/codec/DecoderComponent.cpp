@@ -11,11 +11,44 @@
 namespace slark {
 
 DecoderComponent::DecoderComponent(DecoderReceiveFunc&& callback)
-    : callback_(callback) {
+    : callback_(callback)
+    , decodeWorker_("decoder", &DecoderComponent::pushFrameDecode, this){
 }
 
 DecoderComponent::~DecoderComponent() {
     close();
+}
+
+AVFrameRefPtr DecoderComponent::requestDecodeFrame(bool isBlocking) noexcept {
+    AVFrameRefPtr frame;
+    if (isBlocking) {
+        std::unique_lock lock(mutex_);
+        cond_.wait(lock, [this]{
+            return !pendingDecodeQueue_.empty() || !isOpened_;
+        });
+        if (!isOpened_) {
+            LogE("decoder closed");
+            return nullptr;
+        }
+        frame = std::move(pendingDecodeQueue_.front());
+        pendingDecodeQueue_.pop_front();
+    } else {
+        std::lock_guard lock(mutex_);
+        if (!pendingDecodeQueue_.empty()) {
+            return nullptr;
+        }
+        frame = std::move(pendingDecodeQueue_.front());
+        pendingDecodeQueue_.pop_front();
+    }
+    return frame;
+}
+
+AVFrameRefPtr DecoderComponent::peekDecodeFrame() noexcept {
+    std::lock_guard lock(mutex_);
+    if (!pendingDecodeQueue_.empty()) {
+        return nullptr;
+    }
+    return pendingDecodeQueue_.front();
 }
 
 bool DecoderComponent::open(DecoderType type, const std::shared_ptr<DecoderConfig>& config) noexcept {
@@ -32,83 +65,81 @@ bool DecoderComponent::open(DecoderType type, const std::shared_ptr<DecoderConfi
         return false;
     }
     auto isVideo = decoder->isVideo();
-    if (decoder->isPushMode()) {
-        using namespace std::chrono_literals;
-        auto workerName = Util::genRandomName(isVideo ?
-                std::string("videoDecode_") : std::string("audioDecode_"));
-        auto thread = std::make_unique<Thread>(workerName, &DecoderComponent::pushFrameDecode, this);
-        thread->setInterval(5ms);
-        thread->setThreadName(workerName);
-        decodeWorker_.withLock([&thread](auto& worker) {
-            worker = std::move(thread);
-        });
-    }
+    using namespace std::chrono_literals;
+    auto workerName = Util::genRandomName(isVideo ?
+            std::string("videoDecode_") : std::string("audioDecode_"));
+    decodeWorker_.setInterval(5ms);
+    decodeWorker_.setThreadName(workerName);
     decoder_.withLock([&decoder](auto& coder){
         coder = std::move(decoder);
     });
+    isOpened_ = true;
     return true;
 }
 
 void DecoderComponent::pushFrameDecode() {
-    AVFramePtr frame = getDecodeFrame(true);
+    auto frame = peekDecodeFrame();
     if (!frame) {
-        LogE("got frame is nullptr...");
+        LogE("got frame is nullptr");
         pause();
         return;
     }
-    bool isSuccess = false;
-    decoder_.withLock([&frame, &isSuccess](auto& decoder){
-        if (!decoder || !decoder->isOpen() || !decoder->isPushMode()) {
-            isSuccess = false;
+    bool isPushed = false;
+    decoder_.withLock([&frame, &isPushed](auto& decoder){
+        if (!decoder || !decoder->isOpen()) {
             return;
         }
-        decoder->decode(std::move(frame));
+        if (auto code = decoder->decode(frame); code == DecoderErrorCode::Success) {
+            isPushed = true;
+        } else {
+            LogE("push frame error:{}", static_cast<int>(code));
+        }
     });
-    if (!isSuccess) {
-        LogE("push decode error");
-        pause();
+    if (isPushed) {
+        std::lock_guard lock(mutex_);
+        pendingDecodeQueue_.pop_front();
     }
 }
 
 void DecoderComponent::send(AVFramePtr packet) noexcept {
     {
         std::lock_guard lock(mutex_);
-        pendingDecodeQueue_.push_back(std::move(packet));
+        pendingDecodeQueue_.emplace_back(std::move(packet));
     }
     cond_.notify_all();
 }
 
 void DecoderComponent::pause() noexcept {
-    decodeWorker_.withLock([](auto& worker) {
-        if (worker) {
-            worker->pause();
-        }
-    });
+    decodeWorker_.pause();
 }
 
 void DecoderComponent::start() noexcept {
-    decodeWorker_.withLock([](auto& worker) {
-        if (worker) {
-            worker->start();
-        }
-    });
+    decodeWorker_.start();
 }
 
 void DecoderComponent::close() noexcept {
     decoder_.withLock([](auto& coder){
         coder.reset();
     });
-    decodeWorker_.withLock([](auto& worker) {
-        worker.reset();
-    });
+    {
+        std::lock_guard lock(mutex_);
+        pendingDecodeQueue_.clear();
+    }
+    isOpened_ = false;
+    cond_.notify_all();
 }
 
 void DecoderComponent::flush() noexcept {
     decoder_.withLock([](auto& coder){
-        coder->flush();
+        if (coder) {
+            coder->flush();
+        }
     });
+    {
+        std::lock_guard lock(mutex_);
+        pendingDecodeQueue_.clear();
+    }
 }
-
 
 
 }

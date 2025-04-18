@@ -11,8 +11,6 @@
 
 namespace slark  {
 
-///Because this is synchronous decoding (in the same C++ thread),
-///there is no need for locking.
 class NativeDecoder: public IDecoder {
 public:
     explicit NativeDecoder(DecoderType type)
@@ -30,7 +28,8 @@ public:
     AVFramePtr getDecodingFrame(uint64_t pts) noexcept;
 protected:
     std::string decoderId_;
-    std::unordered_map<uint64_t, AVFramePtr> decodeFrames_;
+    std::mutex mutex_;
+    std::unordered_map<uint64_t, AVFrameRefPtr> decodeFrames_;
 };
 
 using NativeDecoderRefPtr = std::shared_ptr<NativeDecoder>;

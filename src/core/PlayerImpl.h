@@ -8,9 +8,6 @@
 #pragma once
 
 #include <deque>
-#include <shared_mutex>
-#include <optional>
-#include <map>
 #include "DecoderComponent.h"
 #include "DemuxerManager.h"
 #include "AVFrame.hpp"
@@ -29,21 +26,32 @@ struct PlayerSeekRequest {
     long double seekTime{0};
 };
 
-struct PlayerStatistics {
+struct PlayerStats {
     bool isFirstAudioRendered = false;
     bool isForceVideoRendered = false;
     Time::TimePoint audioDecodeDelta{0};
     Time::TimePoint audioRenderDelta{0};
-    long double audioDemuxedDuration = 0;
-    long double videoDemuxedDuration = 0;
+    long double audioDemuxedTime = 0;
+    long double videoDemuxedTime = 0;
+    long double audioDecodedTime = 0;
+    long double videoDecodedTime = 0;
     
     void reset() {
         isFirstAudioRendered = false;
         isForceVideoRendered = false;
         audioDecodeDelta = 0;
         audioRenderDelta = 0;
-        audioDemuxedDuration = 0;
-        videoDemuxedDuration = 0;
+        audioDemuxedTime = 0;
+        videoDemuxedTime = 0;
+        audioDecodedTime = 0;
+        videoDecodedTime = 0;
+    }
+
+    void setSeekTime(long double seekTime) {
+        audioDemuxedTime = seekTime;
+        videoDemuxedTime = seekTime;
+        audioDecodedTime = seekTime;
+        videoDecodedTime = seekTime;
     }
 };
 
@@ -153,9 +161,11 @@ private:
     long double videoRenderTime() noexcept;
     
     long double audioRenderTime() noexcept;
+
+    void setVideoRenderTime(long double time) noexcept;
 private:
     bool isSeekingWhilePlaying_ = false;
-    std::atomic_bool isStoped_ = false;
+    std::atomic_bool isStopped_ = false;
     std::unique_ptr<PlayerImplHelper> helper_ = nullptr;
     Synchronized<PlayerState, std::shared_mutex> state_;
     std::optional<PlayerSeekRequest> seekRequest_;
@@ -179,15 +189,15 @@ private:
     std::deque<AVFramePtr> videoPackets_;
     
     //pushFrameDecode
-    Synchronized<std::deque<AVFramePtr>, std::shared_mutex> audioFrames_;
-    Synchronized<std::deque<AVFramePtr>, std::shared_mutex> videoFrames_;
+    Synchronized<std::deque<AVFrameRefPtr>> audioFrames_;
+    Synchronized<std::deque<AVFrameRefPtr>> videoFrames_;
     std::shared_ptr<DecoderComponent> audioDecodeComponent_ = nullptr;
     std::shared_ptr<DecoderComponent> videoDecodeComponent_ = nullptr;
     
     //render
     std::unique_ptr<AudioRenderComponent> audioRender_ = nullptr;
-    Synchronized<std::weak_ptr<IVideoRender>, std::shared_mutex> videoRender_;
-    PlayerStatistics statistics_;
+    AtomicWeakPtr<IVideoRender> videoRender_;
+    PlayerStats stats_;
     
     std::mutex releaseMutex_;
     std::condition_variable cond_;

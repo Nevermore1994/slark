@@ -22,9 +22,15 @@ enum class DecoderType {
     VideoHardWareDecoder = 2001,
 };
 
-enum class DecoderMode {
-    Push,
-    Pull,
+enum class DecoderErrorCode {
+    Success,
+    Unknown,
+    NotProcessed,
+    NotStart,
+    InputDataError,
+    InputDataTooLarge,
+    NotFoundDecoder,
+    ErrorDecoder,
 };
 
 struct DecoderTypeInfo {
@@ -42,10 +48,10 @@ class DecoderDataProvider {
 public:
     virtual ~DecoderDataProvider() = default;
 
-    virtual AVFramePtr getDecodeFrame(bool isBlocking) noexcept = 0;
+    virtual AVFrameRefPtr requestDecodeFrame(bool isBlocking) noexcept = 0;
 };
 
-using DecoderReceiveFunc = std::function<void(AVFramePtr)>;
+using DecoderReceiveFunc = std::function<void(AVFrameRefPtr)>;
 
 class IDecoder : public NonCopyable {
 public:
@@ -53,7 +59,9 @@ public:
         : decoderType_(type) {
 
     }
-    ~IDecoder() override = default;
+    ~IDecoder() override {
+        setReceiveFunc(nullptr);
+    }
 public:
     [[nodiscard]] DecoderType type() const noexcept {
         return decoderType_;
@@ -71,16 +79,8 @@ public:
         return isOpen_;
     }
 
-    AVFramePtr getDecodeFrame(bool isBlocking = true) noexcept {
-        return provider_->getDecodeFrame(isBlocking);
-    }
-
-    constexpr bool isPushMode() const noexcept {
-        return mode_ == DecoderMode::Push;
-    }
-
-    constexpr bool isPullMode() const noexcept {
-        return mode_ == DecoderMode::Pull;
+    AVFrameRefPtr requestDecodeFrame(bool isBlocking = true) noexcept {
+        return provider_->requestDecodeFrame(isBlocking);
     }
 
     virtual void flush() noexcept = 0;
@@ -96,20 +96,28 @@ public:
         reset();
     }
 
-    virtual bool decode(AVFramePtr frame) noexcept = 0;
+    virtual DecoderErrorCode decode(AVFrameRefPtr& frame) noexcept = 0;
 
     void setReceiveFunc(DecoderReceiveFunc&& func) noexcept {
-        receiveFunc_ = std::move(func);
+        auto* newFunc = new DecoderReceiveFunc(std::move(func));
+        auto* oldFunc = receiveFunc_.exchange(newFunc);
+        delete oldFunc;
     }
 
     void setDataProvider(std::shared_ptr<DecoderDataProvider> provider) noexcept {
         provider_ = std::move(provider);
     }
+
+protected:
+    void invokeReceiveFunc(AVFrameRefPtr frame) noexcept {
+        if (auto* func = receiveFunc_.load()) {
+            (*func)(frame);
+        }
+    }
 protected:
     std::atomic_bool isOpen_ = false;
-    DecoderMode mode_ = DecoderMode::Push;
     std::shared_ptr<DecoderDataProvider> provider_;
-    DecoderReceiveFunc receiveFunc_;
+    std::atomic<DecoderReceiveFunc*> receiveFunc_;
     DecoderType decoderType_ = DecoderType::Unknown;
     std::shared_ptr<DecoderConfig> config_;
 };

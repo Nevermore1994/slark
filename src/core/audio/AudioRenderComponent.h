@@ -15,10 +15,8 @@
 #include "Time.hpp"
 #include "Clock.h"
 
-#ifdef SLARK_IOS
+#if defined(SLARK_IOS) || defined(SLARK_ANDROID)
 #include "AudioRender.h"
-#else
-
 #endif
 
 namespace slark {
@@ -40,7 +38,7 @@ public:
     void stop() noexcept;
     void setVolume(float volume) noexcept;
     void flush() noexcept;
-    void seek(Time::TimePoint time) noexcept;
+    void seek(long double time) noexcept;
 
     Time::TimePoint playedTime() {
         return clock_.time();
@@ -78,7 +76,7 @@ private:
     std::shared_ptr<AudioInfo> audioInfo_;
     RingBuffer<uint8_t, kDefaultAudioBufferSize> audioBuffer_;
     Synchronized<std::deque<AVFrameRefPtr>, std::shared_mutex> frames_;
-    std::unique_ptr<IAudioRender> pimpl_;
+    std::shared_ptr<IAudioRender> pimpl_;
 };
 
 }

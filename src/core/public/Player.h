@@ -124,7 +124,7 @@ public:
 
     void* requestRender() noexcept;
     
-    void setRenderImpl(std::weak_ptr<IVideoRender>& render);
+    void setRenderImpl(std::weak_ptr<IVideoRender>& render) noexcept;
 public:
     PlayerParams peek() noexcept;
     
@@ -137,8 +137,6 @@ public:
     [[nodiscard]] std::string_view playerId() const noexcept;
     
     [[nodiscard]] long double currentPlayedTime() noexcept;
-private:
-    void setState(PlayerState state) noexcept;
 
 private:
     friend class PlayerImplHelper;

@@ -8,7 +8,7 @@
 
 namespace slark {
 
-void outputLog(const std::string& logStr);
+void printLog(const std::string& logStr);
 
 } // slark
 

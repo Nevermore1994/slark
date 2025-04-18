@@ -9,10 +9,6 @@ jobject gApplicationContext = nullptr;
 
 using namespace slark;
 
-JavaVM* getJavaVM() {
-    return gJavaVM;
-}
-
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* /* reserved */) {
     gJavaVM = vm;
     JNIEnv* env;
@@ -88,7 +84,13 @@ bool getAppPath(JNIEnv* env, jobject context, const std::string& methodName, std
 
 namespace slark {
 
-void outputLog(const std::string& logStr) {
+using namespace slark::JNI;
+
+JavaVM* getJavaVM() {
+    return gJavaVM;
+}
+
+void printLog(const std::string& logStr) {
     JNIEnvGuard guard(gJavaVM);
     Java_com_slark_sdk_SlarkNativeBridge_logout(guard.get(), nullptr, logStr);
 }

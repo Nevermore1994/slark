@@ -2,16 +2,62 @@ package com.slark.sdk
 
 import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioTimestamp
 import android.media.AudioTrack
-import android.media.MediaCodecInfo
-import android.media.PlaybackParams
-import android.os.Build
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
+
+enum class DataFlag {
+    NORMAL,
+    END_OF_STREAM,
+    SILENCE,
+}
+
+data class AudioDataResult (
+    val data: ByteArray?,
+    val flag: DataFlag
+)
 
 class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
     private var audioTrack: AudioTrack? = null
     private var bufferSize = 0
+    private val lock = ReentrantLock()
+    private var isCompleted = false
+    private val positionUpdateListener = object : AudioTrack.OnPlaybackPositionUpdateListener {
+        override fun onMarkerReached(track: AudioTrack) {
+        }
+
+        override fun onPeriodicNotification(track: AudioTrack) {
+            val available = getAvailableSpace()
+            if (available == 0) {
+                return
+            }
+            if (isCompleted) {
+                write(ByteArray(available){0}) //write silence data
+                return
+            }
+            val result = requestAudioData(hashCode().toString(), available)
+            when (result.flag) {
+                DataFlag.NORMAL -> result.data?.let { write(it) }
+                DataFlag.END_OF_STREAM -> isCompleted = true
+                DataFlag.SILENCE -> write(ByteArray(available){0})
+            }
+        }
+    }
 
     init {
+        lock.withLock {
+            try {
+                initAudioTrack()
+            } catch (e: Exception) {
+                SlarkLog.e(LOG_TAG, "Failed to initialize AudioTrack: ${e.message}")
+                throw RuntimeException("Audio initialization failed", e)
+            }
+        }
+    }
+
+    private fun initAudioTrack() {
         val channelConfig = when (channelCount) {
             1 -> AudioFormat.CHANNEL_OUT_MONO
             2 -> AudioFormat.CHANNEL_OUT_STEREO
@@ -25,6 +71,11 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
             channelConfig,
             AudioFormat.ENCODING_PCM_16BIT
         )
+
+        val minBufferSize = ((BUFFER_TIME_SIZE / 1000.0) * sampleRate * 2 * channelCount).toInt()
+        if (bufferSize < minBufferSize) {
+            bufferSize = minBufferSize
+        }
 
         audioTrack = AudioTrack.Builder()
             .setAudioAttributes(
@@ -43,15 +94,35 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
             .setTransferMode(AudioTrack.MODE_STREAM)
             .setBufferSizeInBytes(bufferSize)
             .build()
+        audioTrack?.setPositionNotificationPeriod((PULL_DATA_PERIOD / 1000.0 * sampleRate).toInt())
+        audioTrack?.setPlaybackPositionUpdateListener(positionUpdateListener)
     }
 
+    enum class Action {
+        PLAY,
+        PAUSE,
+        FLUSH,
+        RELEASE
+    }
 
-    fun write(data: ByteArray) {
-        audioTrack?.write(data, 0, data.size, AudioTrack.WRITE_NON_BLOCKING)
+    enum class Config {
+        PLAY_RATE,
+        PLAY_VOL,
+    }
+
+    fun write(data: ByteArray): Int {
+        return audioTrack?.let { track ->
+            try {
+                track.write(data, 0, data.size, AudioTrack.WRITE_NON_BLOCKING)
+            } catch (e: IllegalStateException) {
+                SlarkLog.e(LOG_TAG,"AudioTrack write failed: ${e.message}")
+                AudioTrack.ERROR
+            }
+        } ?: AudioTrack.ERROR
     }
 
     fun pause() {
-        audioTrack?.stop()
+        audioTrack?.pause()
     }
 
     fun play() {
@@ -59,8 +130,17 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
     }
 
     fun release() {
-        audioTrack?.release()
-        audioTrack = null
+        lock.withLock {
+            try {
+                audioTrack?.stop()
+                audioTrack?.flush()
+                audioTrack?.release()
+            } catch (e: Exception) {
+                SlarkLog.e(LOG_TAG, "AudioTrack release failed: ${e.message}")
+            } finally {
+                audioTrack = null
+            }
+        }
     }
 
     fun flush() {
@@ -79,28 +159,33 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
         }
     }
 
-    enum class Action {
-        PLAY,
-        PAUSE,
-        FLUSH,
-        RELEASE
+    fun getAvailableSpace(): Int {
+        return audioTrack?.let { track ->
+            val written = track.playbackHeadPosition
+            bufferSize - (written % bufferSize)
+        } ?: 0
     }
 
-    enum class Config {
-        PLAY_RATE,
-        PLAY_VOL,
+    fun getPlaybackPositionInMs(): Long {
+        return audioTrack?.let { track ->
+            val frames = track.playbackHeadPosition
+            (frames * 1000L) / sampleRate
+        } ?: 0L
     }
+
+    external fun requestAudioData(playerId: String, requestSize: Int): AudioDataResult
 
     companion object {
         init {
             System.loadLibrary("sdk")
         }
 
-        const val BUFFER_TIME_MS = 10
+        const val PULL_DATA_PERIOD = 10 //ms
+        const val BUFFER_TIME_SIZE = 100 //ms
+        const val LOG_TAG = "AudioPlayer"
+        private val players = ConcurrentHashMap<String, AudioPlayer>()
 
-        private val players = HashMap<String, AudioPlayer>()
-
-        @JvmStatic @Synchronized
+        @JvmStatic
         fun createAudioPlayer(sampleRate: Int, channelCount: Int): String {
             val player = AudioPlayer(sampleRate, channelCount)
             val playerId = player.hashCode().toString()
@@ -108,7 +193,7 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
             return playerId
         }
 
-        @JvmStatic @Synchronized
+        @JvmStatic
         fun sendAudioData(playerId: String, data: ByteArray){
             if (!players.contains(playerId)) {
                 return
@@ -116,7 +201,7 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
             players[playerId]?.write(data)
         }
 
-        @JvmStatic @Synchronized
+        @JvmStatic
         fun audioPlayerAction(playerId: String, action : Action) {
             if (!players.contains(playerId)) {
                 return
@@ -132,14 +217,14 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
             }
         }
 
-        @JvmStatic @Synchronized
+        @JvmStatic
         fun audioPlayerConfig(playerId: String, config: Config, value: Float) {
             if (!players.contains(playerId)) {
                 return
             }
             when (config) {
-                Config.PLAY_RATE -> players[playerId]?.setVolume(value)
-                Config.PLAY_VOL -> players[playerId]?.setPlayRate(value)
+                Config.PLAY_RATE -> players[playerId]?.setPlayRate(value)
+                Config.PLAY_VOL -> players[playerId]?.setVolume(value)
             }
         }
 

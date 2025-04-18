@@ -60,13 +60,10 @@ struct Data {
 
     }
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "google-explicit-constructor"
-    Data(std::string_view str)
+    explicit Data(std::string_view str)
         : Data(static_cast<uint64_t>(str.size()), reinterpret_cast<const uint8_t*>(str.data())) {
 
     }
-#pragma clang diagnostic pop
 
     ~Data() {
         reset();

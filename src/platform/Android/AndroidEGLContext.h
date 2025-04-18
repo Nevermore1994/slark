@@ -13,31 +13,31 @@ class AndroidEGLContext : public IEGLContext {
 public:
     AndroidEGLContext();
 
-    ~AndroidEGLContext() override;
+    ~AndroidEGLContext() noexcept override;
 
-    bool init(void* context) override;
+    bool init(void* context) noexcept override;
 
-    void release() override;
+    void release() noexcept override;
 
-    void attachContext() override;
+    void attachContext() noexcept override;
 
-    void detachContext() override;
+    void detachContext() noexcept override;
 
-    void attachContext(EGLSurface surface);
+    void attachContext(EGLSurface surface) noexcept;
 
-    void attachContext(EGLSurface drawSurface, EGLSurface readSurface);
+    void attachContext(EGLSurface drawSurface, EGLSurface readSurface) noexcept;
 
-    void* nativeContext() override;
+    void* nativeContext() noexcept override;
 
-    void releaseSurface(EGLSurface eglSurface);
+    void releaseSurface(EGLSurface eglSurface) noexcept;
 
-    EGLSurface createWindowSurface(ANativeWindow* surface);
+    EGLSurface createWindowSurface(ANativeWindow* surface) noexcept;
 
-    EGLSurface createOffscreenSurface(int width, int height);
+    EGLSurface createOffscreenSurface(int width, int height) noexcept;
 private:
-    EGLConfig getConfig(int version);
+    EGLConfig getConfig(int version) noexcept;
 
-    void destroy();
+    void destroy() noexcept;
 private:
     bool isInit_ = false;
     EGLConfig config_ = nullptr;

@@ -9,6 +9,7 @@
 namespace slark {
 
 void NativeDecoder::flush() noexcept {
+    std::lock_guard lock(mutex_);
     decodeFrames_.clear();
     NativeHardwareDecoder::flush(decoderId_);
 }
@@ -25,16 +26,20 @@ void NativeDecoder::close() noexcept {
     NativeDecoderManager::shareInstance().remove(decoderId_);
     LogI("release video decoder:{}", decoderId_);
     decoderId_.clear();
+    {
+        std::lock_guard lock(mutex_);
+        decodeFrames_.clear();
+    }
 }
 
 AVFramePtr NativeDecoder::getDecodingFrame(uint64_t pts) noexcept {
+    std::lock_guard lock(mutex_);
     if (decodeFrames_.contains(pts)) {
         auto ptr = std::move(decodeFrames_[pts]);
         decodeFrames_.erase(pts);
     }
     return nullptr;
 }
-
 
 NativeDecoderManager& NativeDecoderManager::shareInstance() noexcept {
     static auto instance_ = std::unique_ptr<NativeDecoderManager>(new NativeDecoderManager());

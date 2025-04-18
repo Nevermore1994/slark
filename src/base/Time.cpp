@@ -66,7 +66,7 @@ Time::TimePoint Time::nowTimeStamp() noexcept {
     return static_cast<uint64_t>(tp.time_since_epoch().count());
 }
 
-std::chrono::milliseconds Time::nowTime() noexcept {
+std::chrono::milliseconds Time::nowUTCTime() noexcept {
     auto tp = time_point_cast<milliseconds>(system_clock::now());
     return tp.time_since_epoch();
 }
@@ -80,14 +80,14 @@ std::chrono::seconds Time::offsetFromUTC() noexcept {
     return offset;
 }
 
-std::string Time::localTime() noexcept {
+std::string Time::localTimeStr() noexcept {
     using std::chrono::system_clock;
     auto tp = system_clock::now();
     tp += Time::offsetFromUTC();
     return std::format("{}", tp);
 }
 
-std::string Time::localShortTime() noexcept {
+std::string Time::localShortTimeStr() noexcept {
     auto tp = time_point_cast<seconds>(system_clock::now());
     tp += Time::offsetFromUTC();
     return std::format("{:%Y-%m-%d %H:%M:%S}", tp);
