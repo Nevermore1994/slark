@@ -2,8 +2,9 @@ package com.slark.sdk
 
 import android.media.AudioAttributes
 import android.media.AudioFormat
-import android.media.AudioTimestamp
 import android.media.AudioTrack
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -12,12 +13,9 @@ enum class DataFlag {
     NORMAL,
     END_OF_STREAM,
     SILENCE,
+    ERROR,
 }
 
-data class AudioDataResult (
-    val data: ByteArray?,
-    val flag: DataFlag
-)
 
 class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
     private var audioTrack: AudioTrack? = null
@@ -37,11 +35,14 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
                 write(ByteArray(available){0}) //write silence data
                 return
             }
-            val result = requestAudioData(hashCode().toString(), available)
-            when (result.flag) {
-                DataFlag.NORMAL -> result.data?.let { write(it) }
+            val buffer = ByteBuffer.allocateDirect(available)
+            buffer.order(ByteOrder.nativeOrder())
+            val result = requestAudioData(hashCode().toString(), buffer)
+            when (result) {
+                DataFlag.NORMAL -> { write(buffer.array()) }
                 DataFlag.END_OF_STREAM -> isCompleted = true
                 DataFlag.SILENCE -> write(ByteArray(available){0})
+                DataFlag.ERROR -> {}
             }
         }
     }
@@ -173,7 +174,7 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
         } ?: 0L
     }
 
-    external fun requestAudioData(playerId: String, requestSize: Int): AudioDataResult
+    external fun requestAudioData(playerId: String, requestBuffer: ByteBuffer): DataFlag
 
     companion object {
         init {

@@ -131,29 +131,42 @@ void Native_AudioPlayer_setAudioConfig(JNIEnv *env, const std::string& playerId,
 
 extern "C"
 JNIEXPORT jobject JNICALL
-Java_com_slark_sdk_AudioPlayer_requestAudioData(JNIEnv *env, jobject thiz, jstring jPlayerId, jint requestSize) {
-    constexpr std::string_view kAudioDataResultClass = "com/slark/sdk/AudioDataResult";
+Java_com_slark_sdk_AudioPlayer_requestAudioData(JNIEnv *env, jobject thiz, jstring jPlayerId, jobject buffer) {
     constexpr std::string_view kDataFlagClass = "com/slark/sdk/DataFlag";
-    auto playerId = FromJVM::toString(env, jPlayerId);
-    Data data(requestSize);
-    if (auto player = AudioRenderManager::shareInstance().find(playerId);
-        player && player->requestAudioData) {
-        AudioDataFlag flag = AudioDataFlag::Normal;
-        auto size = player->requestAudioData(data.rawData, requestSize, flag);
-        data.length = size;
-        auto resultClass= JNICache::shareInstance().getClass(env, kAudioDataResultClass);
-        auto signature = JNI::makeJNISignature(JNI::Void, JNI::makeArray(JNI::Byte), JNI::makeObject(kDataFlagClass));
-        auto constructorMethodId = JNICache::shareInstance().getMethodId(resultClass, "<init>", signature);
-        if (!constructorMethodId) {
-            LogE("not found method!");
+    void* nativePtr = env->GetDirectBufferAddress(buffer);
+    jlong requestSize = env->GetDirectBufferCapacity(buffer);
+    AudioDataFlag flag = AudioDataFlag::Error;
+    do {
+        if (nativePtr == nullptr || requestSize <= 0) {
+            break;
         }
-        auto dataArray = ToJVM::toByteArray(env, data);
-        jobject result = env->NewObject(resultClass.get(), constructorMethodId.get(), dataArray.get(), flag);
-        return result;
-    } else {
-        LogE("not found player");
+
+        auto playerId = FromJVM::toString(env, jPlayerId);
+        if (auto player = AudioRenderManager::shareInstance().find(playerId);
+            player && player->requestAudioData) {
+            auto size= player->requestAudioData(reinterpret_cast<uint8_t*>(nativePtr), requestSize, flag);
+            LogI("request audio data: {}, already applied: {}", requestSize, size);
+            if (size != requestSize) {
+                if (flag == AudioDataFlag::EndOfStream) {
+                    LogI("render audio data end of stream");
+                } else {
+                    LogE("missing data may result in noise");
+                }
+            }
+        } else {
+            LogE("not found player");
+            break;
+        }
+    } while(false);
+    std::string_view fieldView;
+    switch (flag) {
+        case AudioDataFlag::Error : { fieldView = "ERROR"; break; }
+        case AudioDataFlag::Normal : { fieldView = "NORMAL"; break; }
+        case AudioDataFlag::EndOfStream : { fieldView = "END_OF_STREAM"; break; }
+        case AudioDataFlag::Silence : { fieldView = "SILENCE"; break; }
     }
-    return nullptr;
+    auto field = JNICache::shareInstance().getEnumField(env, kDataFlagClass, fieldView);
+    return field.get();
 }
 
 namespace slark {

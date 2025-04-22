@@ -47,9 +47,9 @@ bool readBE(DataView view, uint32_t size, uint32_t& value) noexcept;
 
 bool readLE(DataView view, uint32_t size, uint32_t& value) noexcept;
 
-[[maybe_unused]] std::string uint32ToByteLE(uint32_t value) noexcept;
+[[maybe_unused]] std::string uint32ToStringLE(uint32_t value) noexcept;
 
-[[maybe_unused]] std::string uint32ToByteBE(uint32_t value) noexcept;
+[[maybe_unused]] std::string uint32ToStringBE(uint32_t value) noexcept;
 
 struct Golomb {
     static bool readBit(DataView view, int32_t& offset) noexcept;

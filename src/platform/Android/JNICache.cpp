@@ -5,7 +5,7 @@
 #include "JNICache.h"
 #include "JNISignature.h"
 
-namespace slark {
+namespace slark::JNI {
 
 JNICache& JNICache::shareInstance() noexcept {
     static auto instance = std::unique_ptr<JNICache>(new JNICache());

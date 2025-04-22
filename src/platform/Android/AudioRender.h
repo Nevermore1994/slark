@@ -24,11 +24,14 @@ public:
     void flush() noexcept override;
 
     void sendAudioData(DataPtr audioData) noexcept;
+
+    Time::TimePoint latency() noexcept override;
 private:
     void init() noexcept;
 
 private:
     std::string playerId_;
+    Time::TimePoint latency_;
 };
 
 class AudioRenderManager {

@@ -98,15 +98,15 @@ void Thread::setup() noexcept {
 }
 
 TimerId Thread::runAt(Time::TimePoint timeStamp, TimerTask func) noexcept {
-    return timerPool_.runAt(timeStamp, std::move(func));
+    return timerPool_.runAt(timeStamp, std::move(func), ExecuteMode::Serial);
 }
 
 TimerId Thread::runAfter(milliseconds delayTime, TimerTask func) noexcept {
-    return timerPool_.runAfter(delayTime, std::move(func));
+    return timerPool_.runAfter(delayTime, std::move(func), ExecuteMode::Serial);
 }
 
 TimerId Thread::runLoop(milliseconds timeInterval, TimerTask func) noexcept {
-    return timerPool_.runLoop(timeInterval, std::move(func));
+    return timerPool_.runLoop(timeInterval, std::move(func), ExecuteMode::Serial);
 }
 
 }//end namespace slark

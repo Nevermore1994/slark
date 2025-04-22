@@ -54,6 +54,7 @@ enum class AudioDataFlag {
     Normal,
     EndOfStream,
     Silence,
+    Error,
 };
 
 class IAudioRender {
