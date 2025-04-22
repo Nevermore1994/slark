@@ -30,7 +30,6 @@ public:
     void send(AVFrameRefPtr frame) noexcept override;
     void process(AVFrameRefPtr frame) noexcept override;
     [[nodiscard]] std::shared_ptr<AudioInfo> audioInfo() const noexcept;
-    void clear() noexcept;
     void reset() noexcept;
     
     void play() noexcept;
@@ -41,20 +40,20 @@ public:
     void seek(long double time) noexcept;
 
     Time::TimePoint playedTime() {
-        return clock_.time();
+        Time::TimePoint latency;
+        if (auto pimpl = pimpl_.load()) {
+            latency = pimpl->latency();
+        }
+        return clock_.time() - latency;
     }
     
-    bool isFull() noexcept {
-        bool isFull = false;
-        frames_.withReadLock([&](auto&){
-            isFull = audioBuffer_.isFull();
-        });
-        return isFull;
+    bool require(uint32_t size) noexcept {
+        return audioBuffer_.require(size);
     }
     
     RenderStatus status() const {
-        if (pimpl_) {
-            return pimpl_->status();
+        if (auto pimpl = pimpl_.load()) {
+            return pimpl->status();
         }
         return RenderStatus::Unknown;
     }
@@ -70,13 +69,11 @@ public:
     std::function<void(Time::TimePoint)> firstFrameRenderCallBack;
 private:
     bool isFirstFrameRendered = false;
-    uint64_t renderedDataLength_ = 0;
+    std::atomic<uint64_t> renderedDataLength_ = 0;
     Clock clock_;
-    std::mutex renderMutex_;
     std::shared_ptr<AudioInfo> audioInfo_;
-    RingBuffer<uint8_t, kDefaultAudioBufferSize> audioBuffer_;
-    Synchronized<std::deque<AVFrameRefPtr>, std::shared_mutex> frames_;
-    std::shared_ptr<IAudioRender> pimpl_;
+    SPSCRingBuffer<uint8_t, kDefaultAudioBufferSize> audioBuffer_;
+    AtomicSharedPtr<IAudioRender> pimpl_;
 };
 
 }

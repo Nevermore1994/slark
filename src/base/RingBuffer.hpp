@@ -1,7 +1,7 @@
 //
-// Created by Nevermore on 2023/11/20.
-// slark Buffer
-// Copyright (c) 2023 Nevermore All rights reserved.
+// Created by Nevermore on 2025/4/21.
+// test RingBufferImpl
+// Copyright (c) 2025 Nevermore All rights reserved.
 //
 #pragma once
 
@@ -10,18 +10,64 @@
 #include <algorithm>
 #include <memory>
 #include <cassert>
-#include "NonCopyable.h"
+#include <atomic>
 
 namespace slark {
 
-constexpr uint32_t RingBufferLength = 1024 * 1024 * 16;
-
-template<typename T, uint32_t Capacity = RingBufferLength>
-class RingBuffer : public NonCopyable {
+class NormalSync {
 public:
-    RingBuffer()
-        : data_(std::make_unique<std::array<T, Capacity>>()) {}
-    ~RingBuffer() override = default;
+    using CounterType = uint32_t;
+
+    static void store(CounterType& dest, uint32_t value) noexcept {
+        dest = value;
+    }
+
+    static uint32_t load(const CounterType& src) noexcept {
+        return src;
+    }
+
+    static void increment(CounterType& counter, uint32_t value) noexcept {
+        counter += value;
+    }
+
+    static void decrement(CounterType& counter, uint32_t value) noexcept {
+        counter -= value;
+    }
+};
+
+class LockFreeSync {
+public:
+    using CounterType = std::atomic<uint32_t>;
+
+    static void store(CounterType& dest, uint32_t value) noexcept {
+        dest.store(value, std::memory_order_release);
+    }
+
+    static uint32_t load(const CounterType& src) noexcept {
+        return src.load(std::memory_order_acquire);
+    }
+
+    static void increment(CounterType& counter, uint32_t value) noexcept {
+        counter.fetch_add(value, std::memory_order_acq_rel);
+    }
+
+    static void decrement(CounterType& counter, uint32_t value) noexcept {
+        counter.fetch_sub(value, std::memory_order_acq_rel);
+    }
+};
+
+constexpr uint32_t RingBufferLength = 1024 * 4;
+
+template<typename T, uint32_t Capacity = RingBufferLength, typename SyncStrategy = NormalSync>
+class RingBufferImpl {
+public:
+    using Counter = typename SyncStrategy::CounterType;
+
+    RingBufferImpl()
+            : data_(std::make_unique<std::array<T, Capacity>>())
+            , readPos_(0)
+            , writePos_(0)
+            , size_(0) {}
 public:
     /**
      * @brief Appends data to the ring buffer.
@@ -36,18 +82,22 @@ public:
         if (size == 0 || isFull()) {
             return 0;
         }
-        size = std::min(size, tail()); // Adjust size to available space
+        size = std::min(size, tail());
 
-        auto firstPart = std::min(size, Capacity - writePos_);
-        std::copy(data, data + firstPart, data_->data() + writePos_);
-        writePos_ = (writePos_ + firstPart) % Capacity;
+        auto writePosition = getWritePos();
+        auto firstPart = std::min(size, Capacity - writePosition);
+        std::copy(data, data + firstPart, data_->data() + writePosition);
+
         if (size > firstPart) {
             auto secondPart = size - firstPart;
-            std::copy(data + firstPart, data + firstPart + secondPart, data_->data());
-            writePos_ = secondPart;
+            std::copy(data + firstPart, data + size, data_->data());
+            setWritePos(secondPart);
+        } else {
+            setWritePos((writePosition + size) % Capacity);
         }
-        size_ += size;
-        return size;  // Return actual written size
+
+        incrementSize(size);
+        return size;
     }
 
     /**
@@ -57,24 +107,28 @@ public:
      * @return The actual number of elements read.
      */
     uint32_t read(T* data, uint32_t size) noexcept {
-        assert(data != nullptr);
+        if (data == nullptr) {
+            return 0;
+        }
         if (size == 0 || isEmpty()) {
             return 0;
         }
 
-        size = std::min(size, length()); // Adjust size to available data
+        size = std::min(size, length());
+        auto readPosition = getReadPos();
 
-        auto firstPart = std::min(size, Capacity - readPos_);
-        std::copy(data_->data() + readPos_, data_->data() + readPos_ + firstPart, data);
+        auto firstPart = std::min(size, Capacity - readPosition);
+        std::copy(data_->data() + readPosition, data_->data() + readPosition + firstPart, data);
 
-        readPos_ = (readPos_ + firstPart) % Capacity;
-
-        if (size > firstPart && size_ > 0) {
-            auto secondPart = std::min(size - firstPart, size_);
+        if (size > firstPart) {
+            auto secondPart = size - firstPart;
             std::copy(data_->data(), data_->data() + secondPart, data + firstPart);
-            readPos_ = secondPart;
+            setReadPos(secondPart);
+        } else {
+            setReadPos((readPosition + size) % Capacity);
         }
-        size_ -= size;
+
+        decrementSize(size);
         return size;
     }
 
@@ -100,11 +154,11 @@ public:
     }
 
     /**
-     * @brief Reads data from the ring buffer only if there is enough data available.
-     * @param data Pointer to the buffer where the data will be stored.
-     * @param size Number of elements to read.
-     * @return True if the data was successfully read, false otherwise.
-     */
+    * @brief Reads data from the ring buffer only if there is enough data available.
+    * @param data Pointer to the buffer where the data will be stored.
+    * @param size Number of elements to read.
+    * @return True if the data was successfully read, false otherwise.
+    */
     bool readExact(T* data, uint32_t size) noexcept {
         if (data == nullptr) {
             return false;
@@ -125,10 +179,9 @@ public:
      * Note: This does release the memory and the buffer state.
      */
     void reset() noexcept {
-        data_.reset();
-        writePos_ = 0;
-        readPos_ = 0;
-        size_ = 0;
+        setSize(0);
+        setReadPos(0);
+        setWritePos(0);
     }
 
     /**
@@ -136,7 +189,7 @@ public:
      * @return The number of elements that can still be written to the buffer.
      */
     [[nodiscard]] uint32_t tail() const noexcept {
-        return Capacity - size_;
+        return Capacity - getSize();
     }
 
     /**
@@ -151,8 +204,8 @@ public:
      * @brief Returns the current size of the ring buffer.
      * @return The number of elements currently stored in the buffer.
      */
-    [[nodiscard]] inline uint32_t length() const noexcept {
-        return size_;
+    [[nodiscard]] uint32_t length() const noexcept {
+        return getSize();
     }
 
     /**
@@ -160,7 +213,7 @@ public:
      * @return True if the buffer is empty, false otherwise.
      */
     [[nodiscard]] bool isEmpty() const noexcept {
-        return size_ == 0;
+        return getSize() == 0;
     }
 
     /**
@@ -168,17 +221,56 @@ public:
      * @return True if the buffer is full, false otherwise.
      */
     [[nodiscard]] bool isFull() const noexcept {
-        return size_ == Capacity;
+        return getSize() == Capacity;
+    }
+
+    [[nodiscard]] bool require(uint32_t size) const noexcept {
+        return tail() >= size;
+    }
+private:
+    [[nodiscard]] uint32_t getSize() const noexcept {
+        return SyncStrategy::load(size_);
+    }
+
+    [[nodiscard]] uint32_t getReadPos() const noexcept {
+        return SyncStrategy::load(readPos_);
+    }
+
+    [[nodiscard]] uint32_t getWritePos() const noexcept {
+        return SyncStrategy::load(writePos_);
+    }
+
+    void setSize(uint32_t size) noexcept {
+        SyncStrategy::store(size_, size);
+    }
+
+    void setReadPos(uint32_t pos) noexcept {
+        SyncStrategy::store(readPos_, pos);
+    }
+
+    void setWritePos(uint32_t pos) noexcept {
+        SyncStrategy::store(writePos_, pos);
+    }
+
+    void incrementSize(uint32_t delta) noexcept {
+        SyncStrategy::increment(size_, delta);
+    }
+
+    void decrementSize(uint32_t delta) noexcept {
+        SyncStrategy::decrement(size_, delta);
     }
 
 private:
     std::unique_ptr<std::array<T, Capacity>> data_;
-    uint32_t readPos_ = 0;
-    uint32_t writePos_ = 0;
-    uint32_t size_ = 0;
+    Counter readPos_;
+    Counter writePos_;
+    Counter size_;
 };
 
-}
+template<typename T, uint32_t Capacity = RingBufferLength>
+using RingBuffer = RingBufferImpl<T, Capacity, NormalSync>;
 
+template<typename T, uint32_t Capacity = RingBufferLength>
+using SPSCRingBuffer = RingBufferImpl<T, Capacity, LockFreeSync>;
 
-
+} // namespace slark

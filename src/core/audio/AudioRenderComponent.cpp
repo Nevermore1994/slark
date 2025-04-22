@@ -18,18 +18,16 @@ AudioRenderComponent::AudioRenderComponent(std::shared_ptr<AudioInfo> info)
 }
 
 void AudioRenderComponent::init() noexcept {
-    clock_.reset();
-    pimpl_.reset();
-    pimpl_ = createAudioRender(audioInfo_);
-    pimpl_->requestAudioData = [this](uint8_t* data, uint32_t size) {
-        std::unique_lock<std::mutex> lock(renderMutex_);
+    reset();
+    auto pimpl = createAudioRender(audioInfo_);
+    pimpl->requestAudioData = [this](uint8_t* data, uint32_t size, AudioDataFlag& flag) {
         uint32_t tSize = 0;
         frames_.withWriteLock([this, size, data, &tSize](auto& frames) {
             tSize = audioBuffer_.read(data, size);
             if (tSize < size && !frames.empty()) {
                 while (!frames.empty() && audioBuffer_.tail() >= frames.front()->data->length) {
                     auto length = static_cast<uint32_t>(frames.front()->data->length);
-                    audioBuffer_.append(frames.front()->data->rawData, length);
+                    audioBuffer_.writeExact(frames.front()->data->rawData, length);
                     frames.pop_front();
                 }
                 auto secondReadSize = audioBuffer_.read(data + tSize, size - tSize);
@@ -37,7 +35,7 @@ void AudioRenderComponent::init() noexcept {
             }
             renderedDataLength_ += tSize;
         });
-        ///TODO: Fix audio data latency
+
         if (tSize != 0) {
             clock_.setTime(audioInfo_->dataLen2TimePoint(renderedDataLength_));
             LogI("[seek info]push audio frame render:{}", clock_.time().second());
@@ -59,11 +57,11 @@ void AudioRenderComponent::send(AVFrameRefPtr frame) noexcept {
 }
 
 void AudioRenderComponent::process(AVFrameRefPtr frame) noexcept {
-    frames_.withWriteLock([&](auto& frames){
+    frames_.withLock([&](auto& frames){
         frames.push_back(frame);
         while (!frames.empty() && audioBuffer_.tail() >= frames.front()->data->length) {
             auto length = static_cast<uint32_t>(frames.front()->data->length);
-            audioBuffer_.append(frames.front()->data->rawData, length);
+            audioBuffer_.writeExact(frames.front()->data->rawData, length);
             if (renderedDataLength_ == 0) {
                 renderedDataLength_ = audioInfo_->timePoint2DataLen(static_cast<uint64_t>(frames.front()->ptsTime() * Time::kMicroSecondScale));
                 LogI("[seek info]audio render set pos:{}, time:{}", renderedDataLength_, frames.front()->ptsTime());
@@ -73,17 +71,12 @@ void AudioRenderComponent::process(AVFrameRefPtr frame) noexcept {
     });
 }
 
-void AudioRenderComponent::clear() noexcept {
-    frames_.withWriteLock([this](auto& frames) {
+void AudioRenderComponent::reset() noexcept {
+    frames_.withLock([this](auto& frames) {
         audioBuffer_.reset();
         frames.clear();
         renderedDataLength_ = 0;
     });
-}
-
-void AudioRenderComponent::reset() noexcept {
-    clear();
-    init();
     clock_.reset();
 }
 
@@ -93,56 +86,52 @@ std::shared_ptr<AudioInfo> AudioRenderComponent::audioInfo() const noexcept {
 }
 
 void AudioRenderComponent::play() noexcept {
-    if (pimpl_) {
-        pimpl_->play();
-        clock_.start();
+    if (auto pimpl = pimpl_.load()) {
+        pimpl->play();
     } else {
         LogE("audio render is nullptr.");
     }
+    clock_.start();
 }
 
 void AudioRenderComponent::pause() noexcept {
-    if (pimpl_) {
-        pimpl_->pause();
-        clock_.pause();
+    if (auto pimpl = pimpl_.load()) {
+        pimpl->pause();
     } else {
         LogE("audio render is nullptr.");
     }
+    clock_.pause();
 }
 
 void AudioRenderComponent::stop() noexcept {
-    if (pimpl_) {
-        pimpl_->stop();
-        clock_.reset();
+    if (auto pimpl = pimpl_.load()) {
+        pimpl->stop();
     } else {
         LogE("audio render is nullptr.");
     }
+    clock_.reset();
 }
 
 void AudioRenderComponent::setVolume(float volume) noexcept {
-    if (pimpl_) {
-        pimpl_->setVolume(volume);
+    if (auto pimpl = pimpl_.load()) {
+        pimpl->setVolume(volume);
     } else {
         LogE("audio render is nullptr.");
     }
 }
 
 void AudioRenderComponent::flush() noexcept {
-    if (pimpl_) {
-        pimpl_->flush();
+    if (auto pimpl = pimpl_.load()) {
+        pimpl->flush();
     } else {
         LogE("audio render is nullptr.");
     }
 }
 
 void AudioRenderComponent::seek(long double time) noexcept {
-    std::unique_lock<std::mutex> lock(renderMutex_);
     flush();
-    frames_.withWriteLock([this](auto& frames) {
-        frames.clear();
-        audioBuffer_.reset();
-        renderedDataLength_ = 0;
-    });
+    audioBuffer_.reset();
+    renderedDataLength_ = 0;
     clock_.setTime(Time::TimePoint(time));
 }
 

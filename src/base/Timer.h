@@ -4,11 +4,9 @@
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 
-
 #pragma once
 
-#include <chrono>
-#include <cstdint>
+#include <atomic>
 #include <functional>
 #include "Time.hpp"
 
@@ -18,9 +16,15 @@ using TimerTask = std::function<void()>;
 
 using TimerId = uint32_t;
 
+enum class ExecuteMode {
+    Serial,
+    Parallel
+};
+
 struct TimerInfo {
     Time::TimePoint expireTime;
-    TimerId timerId;
+    TimerId timerId{};
+    ExecuteMode mode = ExecuteMode::Serial;
 
     bool isLoop = false;
     std::chrono::milliseconds loopInterval{};
@@ -51,9 +55,9 @@ struct Timer {
 
     Timer(Time::TimePoint timePoint, TimerTask f);
 
-    Timer(const Timer& timer) = default;
+    Timer(const Timer& timer) = delete;
 
-    Timer& operator=(const Timer& timer) = default;
+    Timer& operator=(const Timer& timer) = delete;
 
     Timer(Timer&& timer) noexcept;
 
@@ -62,7 +66,7 @@ struct Timer {
 public:
     TimerInfo timerInfo;
     TimerTask func;
-    bool isValid = true;
+    std::atomic_bool isValid = true;
 };
 
 }

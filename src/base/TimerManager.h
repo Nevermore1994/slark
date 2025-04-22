@@ -21,11 +21,17 @@ public:
 
     ~TimerManager() final;
 
-    TimerId runAt(Time::TimePoint timePoint, TimerTask func) noexcept;
+    TimerId runAt(Time::TimePoint timePoint,
+                  TimerTask func,
+                  ExecuteMode mode = ExecuteMode::Serial) noexcept;
 
-    TimerId runAfter(std::chrono::milliseconds timeStamp, TimerTask func) noexcept;
+    TimerId runAfter(std::chrono::milliseconds timeStamp,
+                     TimerTask func,
+                     ExecuteMode mode = ExecuteMode::Serial) noexcept;
 
-    TimerId runLoop(std::chrono::milliseconds timeStamp, TimerTask func) noexcept;
+    TimerId runLoop(std::chrono::milliseconds timeStamp,
+                    TimerTask func,
+                    ExecuteMode mode = ExecuteMode::Serial) noexcept;
 
     void cancel(TimerId id) noexcept;
 
@@ -35,6 +41,9 @@ private:
     void loop();
 
 private:
+    bool isExited_ = false;
+    std::mutex mutex_;
+    std::condition_variable cond_;
     std::unique_ptr<Thread> timerThread_;
     TimerPool pool_;
 };

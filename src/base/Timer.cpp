@@ -40,14 +40,14 @@ Timer::Timer(Time::TimePoint timePoint, TimerTask f)
 Timer::Timer(Timer&& timer) noexcept
     : timerInfo(timer.timerInfo)
     , func(std::move(timer.func))
-    , isValid(timer.isValid) {
-
+    , isValid() {
+    isValid.store(timer.isValid.load(std::memory_order_acquire), std::memory_order_release);
 }
 
 Timer& Timer::operator=(Timer&& timer) noexcept {
-    this->timerInfo = timer.timerInfo;
-    this->isValid = timer.isValid;
-    this->func = std::move(timer.func);
+    timerInfo = timer.timerInfo;
+    isValid.store(timer.isValid.load(std::memory_order_acquire), std::memory_order_release);
+    func = std::move(timer.func);
     return *this;
 }
 

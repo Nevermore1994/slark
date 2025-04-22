@@ -38,7 +38,7 @@ std::expected<BoxInfo, bool> Box::tryParseBoxInfo(Buffer& buffer) noexcept {
     } else if (info.size == 0) {
         info.size = buffer.totalSize() - buffer.pos() + info.headerSize;
     }
-    info.symbol = Util::uint32ToByteBE(info.type);
+    info.symbol = Util::uint32ToStringLE(info.type);
     return info;
 }
 

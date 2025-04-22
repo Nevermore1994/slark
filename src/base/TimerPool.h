@@ -10,44 +10,45 @@
 #include <queue>
 #include <unordered_map>
 #include <mutex>
-#include "Time.hpp"
+#include "NonCopyable.hpp"
 #include "Timer.h"
 
 namespace slark {
 
-class TimerPool {
+class TimerPool: public NonCopyable {
 public:
     TimerPool() = default;
 
-    ~TimerPool();
+    ~TimerPool() override;
 
-    TimerPool(const TimerPool&) = delete;
+    TimerId runAt(Time::TimePoint timePoint, TimerTask func, ExecuteMode mode) noexcept;
 
-    TimerPool& operator=(const TimerPool&) = delete;
+    TimerId runAfter(std::chrono::milliseconds ms, TimerTask func, ExecuteMode mode) noexcept;
 
-    TimerPool(TimerPool&&) noexcept;
-
-    TimerPool& operator=(TimerPool&&) noexcept;
-
-    TimerId runAt(Time::TimePoint timePoint, TimerTask func) noexcept;
-
-    TimerId runAfter(std::chrono::milliseconds ms, TimerTask func) noexcept;
-    TimerId runLoop(std::chrono::milliseconds interval, TimerTask func) noexcept;
+    TimerId runLoop(std::chrono::milliseconds interval, TimerTask func, ExecuteMode mode) noexcept;
 
     void cancel(TimerId id) noexcept;
 
     void cancel(const std::vector<TimerId>& timers) noexcept;
 
+    ///execution of the current thread
     void loop() noexcept;
+
+    ///the caller is responsible for handling the task
+    void loop(std::function<void(ExecuteMode, TimerTask&&)>&& doTask) noexcept;
 
     void clear() noexcept;
 
+    bool empty() noexcept;
 private:
-    TimerId addTimer(Time::TimePoint timePoint, TimerTask func, bool isLoop, std::chrono::milliseconds timeInterval = {}) noexcept;
-
-    void remove(TimerId id) noexcept;
+    TimerId addTimer(Time::TimePoint timePoint,
+                     TimerTask func,
+                     bool isLoop,
+                     std::chrono::milliseconds timeInterval = {},
+                     ExecuteMode mode = ExecuteMode::Serial) noexcept;
 
 private:
+    bool isExited_ = false;
     std::priority_queue<TimerInfo, std::vector<TimerInfo>, decltype(TimerInfoCompare())> timerInfos_;
     std::unordered_map<TimerId, Timer> timers_;
     std::mutex mutex_;

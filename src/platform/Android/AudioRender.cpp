@@ -6,7 +6,7 @@
 #include "SlarkNative.h"
 #include "AudioPlayerNative.h"
 #include "Log.hpp"
-#include <cstdio>
+#include "TimerManager.h"
 
 #define CheckAudioPlayer() \
     do {                  \
@@ -21,7 +21,7 @@ namespace slark {
 
 
 AudioRender::AudioRender(std::shared_ptr<AudioInfo> audioInfo)
-    : IAudioRender(std::move(audioInfo) ){
+    : IAudioRender(std::move(audioInfo)){
     init();
 }
 
@@ -31,6 +31,10 @@ void AudioRender::init() noexcept {
         LogE("create audio player failed.");
         return;
     }
+    using namespace std::chrono_literals;
+    TimerManager::shareInstance().runLoop(3000ms, [this](){
+
+    });
 }
 
 void AudioRender::play() noexcept {
@@ -63,6 +67,9 @@ void AudioRender::sendAudioData(DataPtr audioData) noexcept {
     NativeAudioPlayer::sendAudioData(playerId_, std::move(audioData));
 }
 
+Time::TimePoint AudioRender::latency() noexcept  {
+    return latency_;
+}
 
 AudioRenderManager& AudioRenderManager::shareInstance() noexcept {
     static auto instance_ = std::unique_ptr<AudioRenderManager>(new AudioRenderManager());

@@ -19,17 +19,6 @@ TimerPool::~TimerPool() {
     clear();
 }
 
-TimerPool::TimerPool(TimerPool&& lhs) noexcept {
-    timerInfos_.swap(lhs.timerInfos_);
-    timers_.swap(lhs.timers_);
-}
-
-TimerPool& TimerPool::operator=(TimerPool&& lhs) noexcept {
-    timerInfos_.swap(lhs.timerInfos_);
-    timers_.swap(lhs.timers_);
-    return *this;
-}
-
 void TimerPool::clear() noexcept {
     decltype(timerInfos_) temp;
     std::lock_guard<std::mutex> lock(mutex_);
@@ -37,49 +26,73 @@ void TimerPool::clear() noexcept {
     timers_.clear();
 }
 
-void TimerPool::loop() noexcept {
-    auto now = Time::nowTimeStamp();
-    std::vector<TimerInfo> expireTimes;
-    decltype(timers_) timers;
+bool TimerPool::empty() noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return timerInfos_.empty();
+}
+
+void TimerPool::loop(std::function<void(ExecuteMode, TimerTask&&)>&& doTask) noexcept {
+    std::vector<TimerInfo> expiredTimers;
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::unique_lock<std::mutex> lock(mutex_);
+        auto now = Time::nowTimeStamp();
         while (!timerInfos_.empty() && now >= timerInfos_.top().expireTime) {
-            auto expireTimeInfo = timerInfos_.top();
-            expireTimes.push_back(expireTimeInfo);
+            expiredTimers.push_back(timerInfos_.top());
             timerInfos_.pop();
         }
-        timers.insert(timers_.begin(), timers_.end());
-        if (expireTimes.empty()) {
-            return;
-        }
     }
-    for (auto& expireTimeInfo : expireTimes) {
-        auto id = expireTimeInfo.timerId;
 
-        if (timers.count(id) == 0) {
+    if (expiredTimers.empty()) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto& expiredTimer : expiredTimers) {
+        auto it = timers_.find(expiredTimer.timerId);
+        if (it == timers_.end()) {
             continue;
         }
-        auto& timer = timers[id];
+
+        Timer& timer = it->second;
         if (timer.isValid && timer.func) {
-            timer.func();
+            auto task = timer.func;
+            mutex_.unlock();
+            doTask(expiredTimer.mode, std::move(task));
+            mutex_.lock();
+
+            it = timers_.find(expiredTimer.timerId);
+            if (it == timers_.end() || !it->second.isValid) {
+                continue;
+            }
         }
+
         if (!timer.isValid || !timer.timerInfo.isLoop) {
-            remove(id);
+            timers_.erase(it);
         } else {
-            //add timer again
-            TimerInfo timerInfo = timer.timerInfo;
-            timerInfo.expireTime = now + timerInfo.loopInterval;
-            std::unique_lock<std::mutex> lock(mutex_);
-            timerInfos_.push(timerInfo);
+            TimerInfo newInfo = timer.timerInfo;
+            newInfo.expireTime = Time::nowTimeStamp() + newInfo.loopInterval;
+            timerInfos_.push(newInfo);
         }
     }
 }
 
-TimerId TimerPool::addTimer(Time::TimePoint timeStamp, TimerTask func, bool isLoop, std::chrono::milliseconds timeInterval) noexcept {
+void TimerPool::loop() noexcept {
+    loop([](ExecuteMode, TimerTask&& task){
+        task();
+    });
+}
+
+TimerId TimerPool::addTimer(Time::TimePoint timeStamp,
+                            TimerTask func,
+                            bool isLoop,
+                            std::chrono::milliseconds timeInterval,
+                            ExecuteMode mode) noexcept {
     Timer timer(timeStamp, std::move(func));
     timer.timerInfo.isLoop = isLoop;
     timer.timerInfo.loopInterval = timeInterval;
-    TimerId id = timer.timerInfo.timerId;
+    timer.timerInfo.mode = mode;
+    auto id = Random::u32Random();
+    timer.timerInfo.timerId = id;
     {
         std::unique_lock<std::mutex> lock(mutex_);
         timerInfos_.push(timer.timerInfo);
@@ -88,38 +101,33 @@ TimerId TimerPool::addTimer(Time::TimePoint timeStamp, TimerTask func, bool isLo
     return id;
 }
 
-TimerId TimerPool::runAt(Time::TimePoint timeStamp, TimerTask func) noexcept {
-    return addTimer(timeStamp, std::move(func), false);
+TimerId TimerPool::runAt(Time::TimePoint timeStamp, TimerTask func, ExecuteMode mode) noexcept {
+    return addTimer(timeStamp, std::move(func), false, 0ms, mode);
 }
 
-TimerId TimerPool::runAfter(milliseconds delayTime, TimerTask func) noexcept {
+TimerId TimerPool::runAfter(milliseconds delayTime, TimerTask func, ExecuteMode mode) noexcept {
     auto now = Time::nowTimeStamp();
-    return addTimer(now + delayTime, std::move(func), false);
+    return addTimer(now + delayTime, std::move(func), false, 0ms, mode);
 }
 
-TimerId TimerPool::runLoop(milliseconds timeInterval, TimerTask func) noexcept {
-    return addTimer(Time::nowTimeStamp() + timeInterval, std::move(func), true, timeInterval);
+TimerId TimerPool::runLoop(milliseconds timeInterval, TimerTask func, ExecuteMode mode) noexcept {
+    return addTimer(Time::nowTimeStamp() + timeInterval, std::move(func), true, timeInterval, mode);
 }
 
 void TimerPool::cancel(TimerId id) noexcept {
-    std::unique_lock<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     if (auto it = timers_.find(id); it != timers_.end()) {
         it->second.isValid = false;
     }
 }
 
 void TimerPool::cancel(const std::vector<TimerId>& timers) noexcept {
-    std::unique_lock<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     std::ranges::for_each(timers, [this](const TimerId& id){
         if (auto it = timers_.find(id); it != timers_.end()) {
             it->second.isValid = false;
         }
     });
-}
-
-void TimerPool::remove(TimerId id) noexcept {
-    std::unique_lock<std::mutex> lock(mutex_);
-    timers_.erase(id);
 }
 
 }//end namespace slark
