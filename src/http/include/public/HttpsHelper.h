@@ -5,7 +5,10 @@
 //
 #if ENABLE_HTTPS
 #pragma once
+#include "Base.h"
+DISABLE_WARNINGS
 #include <openssl/ssl.h>
+ENABLE_WARNINGS
 #include <functional>
 
 namespace slark::http {

@@ -9,6 +9,7 @@
 #include "Thread.h"
 #include "Timer.h"
 #include "TimerPool.h"
+#include "ThreadPool.hpp"
 
 namespace slark {
 
@@ -45,7 +46,8 @@ private:
     std::mutex mutex_;
     std::condition_variable cond_;
     std::unique_ptr<Thread> timerThread_;
-    TimerPool pool_;
+    TimerPool timerPool_;
+    ThreadPool workPool_;
 };
 
 }

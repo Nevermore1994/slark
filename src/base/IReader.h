@@ -8,7 +8,7 @@
 #include "IOBase.h"
 #include "NonCopyable.h"
 #include "Data.hpp"
-#include "Base.h"
+#include "Range.h"
 #include <mutex>
 
 namespace slark {

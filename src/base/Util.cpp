@@ -72,8 +72,8 @@ bool read4ByteLE(DataView view, uint32_t& value) noexcept {
     return readLE<uint32_t>(view, 4, value);
 }
 
-bool read8ByteLE(DataView view, uint32_t& value) noexcept {
-    return readLE<uint32_t>(view, 8, value);
+bool read8ByteLE(DataView view, uint64_t& value) noexcept {
+    return readLE<uint64_t>(view, 8, value);
 }
 
 bool readBE(DataView view, uint32_t size, uint32_t& value) noexcept {

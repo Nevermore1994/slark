@@ -10,6 +10,8 @@
 #include "MediaDefs.h"
 #include "AVFrame.hpp"
 #include "Time.hpp"
+#include "Synchronized.hpp"
+#include "Clock.h"
 
 namespace slark {
 
@@ -28,24 +30,24 @@ struct AudioInfo {
     AudioProfile profile = AudioProfile::AAC_LC;
     std::string_view mediaInfo;
 
-    uint64_t bitrate() const {
+    [[nodiscard]] uint64_t bitrate() const {
         return sampleRate * channels * bitsPerSample;
     }
-    
-    uint64_t bytePerSecond() const {
+
+    [[nodiscard]] uint64_t bytePerSecond() const {
         return sampleRate * channels * bitsPerSample / 8;
     }
-    
-    uint64_t bytePerSample() const {
+
+    [[nodiscard]] uint64_t bytePerSample() const {
         return channels * bitsPerSample / 8;
     }
-    
-    Time::TimePoint dataLen2TimePoint(uint64_t dataLen) const {
+
+    [[nodiscard]] Time::TimePoint dataLen2TimePoint(uint64_t dataLen) const {
         auto t = static_cast<uint64_t>(static_cast<long double>(dataLen) / static_cast<long double>(bytePerSample() * sampleRate) * 1000000);
         return t;
     }
-     
-    uint64_t timePoint2DataLen(Time::TimePoint point) const {
+
+    [[nodiscard]]  uint64_t timePoint2DataLen(Time::TimePoint point) const {
         return static_cast<uint64_t>(point.second() * static_cast<long double>(bytePerSecond()));
     }
 };
@@ -57,6 +59,10 @@ enum class AudioDataFlag {
     Error,
 };
 
+class IAudioRender;
+
+using RequestAudioDataFunc = std::function<uint32_t(uint8_t*, uint32_t, AudioDataFlag&)>;
+
 class IAudioRender {
 public:
     explicit IAudioRender(std::shared_ptr<AudioInfo> audioInfo)
@@ -66,23 +72,28 @@ public:
     virtual ~IAudioRender() = default;
     
     virtual void play() noexcept = 0;
+
     virtual void pause() noexcept = 0;
+
     virtual void stop() noexcept = 0;
+
     virtual void setVolume(float volume) noexcept = 0;
+
     virtual void flush() noexcept = 0;
-    virtual Time::TimePoint latency() noexcept = 0;
-    
-    [[nodiscard]] virtual bool isNeedRequestData() const noexcept = 0;
+
+    virtual void reset() noexcept = 0;
+
+    virtual Time::TimePoint playedTime() noexcept = 0;
     
     [[nodiscard]] inline RenderStatus status() const noexcept {
         return status_;
     }
     
-    [[nodiscard]] inline bool isErrorState() const noexcept {
+    [[nodiscard]] bool isNormal() const noexcept {
         return status_ == RenderStatus::Error;
     }
-    
-    inline const std::shared_ptr<AudioInfo>& info() const noexcept {
+
+    [[nodiscard]] const std::shared_ptr<AudioInfo>& info() const noexcept {
         SAssert(audioInfo_ != nullptr, "audio render info is nullptr");
         return audioInfo_;
     }
@@ -90,12 +101,39 @@ public:
     [[nodiscard]] inline float volume() const noexcept {
         return volume_;
     }
-    
-    std::function<uint32_t(uint8_t*, uint32_t, AudioDataFlag&)> requestAudioData;
+
+    void setProvider(RequestAudioDataFunc&& func) noexcept {
+        dataFunc_.reset(std::make_shared<RequestAudioDataFunc>(func));
+    }
+
+    void seek(long double time) noexcept {
+        flush();
+        renderedDataLength_ = 0;
+        clock_.setTime(Time::TimePoint(time));
+    }
+
+    void setRenderedLength(uint64_t length) noexcept {
+        renderedDataLength_.store(length);
+    }
+
+    uint32_t requestAudioData(uint8_t* data, uint32_t size, AudioDataFlag& flag) noexcept {
+        if (auto func = dataFunc_.load()) {
+            auto getSize = (*func)(data, size, flag);
+            renderedDataLength_ += getSize;
+            return getSize;
+        } else {
+            flag = AudioDataFlag::Error;
+            LogE("request data func is null");
+        }
+        return 0;
+    }
 protected:
     float volume_ = 100.f; // 0 ~ 100
     std::shared_ptr<AudioInfo> audioInfo_ = nullptr;
+    std::atomic<uint64_t> renderedDataLength_ = 0;
+    Clock clock_;
     RenderStatus status_ = RenderStatus::Unknown;
+    AtomicSharedPtr<RequestAudioDataFunc> dataFunc_;
 };
 
 #if (SLARK_IOS || SLARK_ANDROID)

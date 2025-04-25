@@ -1,6 +1,7 @@
 //
 // Created by Nevermore on 2025/4/16.
 //
+#pragma once
 
 #include <jni.h>
 #include <type_traits>

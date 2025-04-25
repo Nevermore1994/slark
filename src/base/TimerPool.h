@@ -10,7 +10,7 @@
 #include <queue>
 #include <unordered_map>
 #include <mutex>
-#include "NonCopyable.hpp"
+#include "NonCopyable.h"
 #include "Timer.h"
 
 namespace slark {

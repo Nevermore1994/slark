@@ -22,33 +22,39 @@
 namespace slark {
 
 constexpr uint64_t kDefaultAudioBufferSize = 16 * 1024;
-class AudioRenderComponent: public slark::NonCopyable, public InputNode {
+
+class AudioRenderComponent: public slark::NonCopyable,
+        public InputNode,
+        public std::enable_shared_from_this<AudioRenderComponent> {
 public:
     explicit AudioRenderComponent(std::shared_ptr<AudioInfo> info);
+
     ~AudioRenderComponent() override = default;
 
-    void send(AVFrameRefPtr frame) noexcept override;
-    void process(AVFrameRefPtr frame) noexcept override;
+    bool send(AVFrameRefPtr frame) noexcept override;
+
+    bool process(AVFrameRefPtr frame) noexcept override;
+
     [[nodiscard]] std::shared_ptr<AudioInfo> audioInfo() const noexcept;
+
     void reset() noexcept;
     
     void play() noexcept;
+
     void pause() noexcept;
+
     void stop() noexcept;
+
     void setVolume(float volume) noexcept;
+
     void flush() noexcept;
+
     void seek(long double time) noexcept;
 
-    Time::TimePoint playedTime() {
-        Time::TimePoint latency;
-        if (auto pimpl = pimpl_.load()) {
-            latency = pimpl->latency();
-        }
-        return clock_.time() - latency;
-    }
+    Time::TimePoint playedTime() noexcept;
     
-    bool require(uint32_t size) noexcept {
-        return audioBuffer_.require(size);
+    bool requireAvailableSpace(uint32_t size) noexcept {
+        return audioBuffer_.tail() >= size;
     }
     
     RenderStatus status() const {
@@ -58,10 +64,6 @@ public:
         return RenderStatus::Unknown;
     }
     
-    Clock& clock() noexcept {
-        return clock_;
-    }
-    
 private:
     void init() noexcept;
 public:
@@ -69,10 +71,8 @@ public:
     std::function<void(Time::TimePoint)> firstFrameRenderCallBack;
 private:
     bool isFirstFrameRendered = false;
-    std::atomic<uint64_t> renderedDataLength_ = 0;
-    Clock clock_;
     std::shared_ptr<AudioInfo> audioInfo_;
-    SPSCRingBuffer<uint8_t, kDefaultAudioBufferSize> audioBuffer_;
+    SyncRingBuffer<uint8_t, kDefaultAudioBufferSize> audioBuffer_;
     AtomicSharedPtr<IAudioRender> pimpl_;
 };
 

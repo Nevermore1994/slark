@@ -14,6 +14,7 @@ android {
         consumerProguardFiles("consumer-rules.pro")
         externalNativeBuild {
             cmake {
+                abiFilters("arm64-v8a")
                 cppFlags("-std=c++23")
                 arguments("-DCMAKE_BUILD_TYPE=Debug")
             }

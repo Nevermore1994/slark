@@ -16,7 +16,6 @@ protected:
     RingBuffer<int, TEST_CAPACITY> buffer;
 };
 
-// 基础功能测试
 TEST_F(RingBufferTest, InitialState) {
     EXPECT_TRUE(buffer.isEmpty());
     EXPECT_FALSE(buffer.isFull());
@@ -42,7 +41,7 @@ TEST_F(RingBufferTest, WriteExact) {
     EXPECT_TRUE(buffer.writeExact(data, 3));
     EXPECT_EQ(buffer.length(), 3);
 
-    // 尝试写入超过剩余空间的数据
+
     EXPECT_FALSE(buffer.writeExact(data, TEST_CAPACITY));
 }
 
@@ -56,7 +55,6 @@ TEST_F(RingBufferTest, ReadExact) {
         EXPECT_EQ(readData[i], data[i]);
     }
 
-    // 尝试读取超过可用数据的数量
     EXPECT_FALSE(buffer.readExact(readData, 1));
 }
 
@@ -66,18 +64,15 @@ TEST_F(RingBufferTest, WrapAround) {
         data[i] = i;
     }
 
-    // 填充缓冲区
     EXPECT_EQ(buffer.write(data.data(), data.size()), data.size());
 
-    // 读取部分数据
+
     std::vector<int> readData(TEST_CAPACITY/2);
     EXPECT_EQ(buffer.read(readData.data(), TEST_CAPACITY/2), TEST_CAPACITY/2);
 
-    // 写入新数据，触发环绕
     int newData[] = {100, 101, 102};
     EXPECT_EQ(buffer.write(newData, 3), 3);
 
-    // 验证所有数据
     auto remainSize = buffer.length();
     std::vector<int> allData(remainSize);
     EXPECT_EQ(buffer.read(allData.data(), remainSize), remainSize);
@@ -85,13 +80,11 @@ TEST_F(RingBufferTest, WrapAround) {
 }
 
 TEST_F(RingBufferTest, EdgeCases) {
-    // 空指针测试
     EXPECT_EQ(buffer.write(nullptr, 5), 0);
     EXPECT_EQ(buffer.read(nullptr, 5), 0);
     EXPECT_FALSE(buffer.writeExact(nullptr, 5));
     EXPECT_FALSE(buffer.readExact(nullptr, 5));
 
-    // 零长度测试
     int data[1];
     EXPECT_EQ(buffer.write(data, 0), 0);
     EXPECT_EQ(buffer.read(data, 0), 0);
@@ -108,7 +101,6 @@ TEST_F(RingBufferTest, Reset) {
     EXPECT_EQ(buffer.length(), 0);
     EXPECT_EQ(buffer.tail(), TEST_CAPACITY);
 
-    // 确保重置后可以正常写入
     EXPECT_EQ(buffer.write(data, 3), 3);
 }
 
@@ -122,19 +114,18 @@ TEST_F(RingBufferTest, FullBuffer) {
     EXPECT_TRUE(buffer.isFull());
     EXPECT_EQ(buffer.tail(), 0);
 
-    // 尝试继续写入
     int extraData = 100;
     EXPECT_EQ(buffer.write(&extraData, 1), 0);
 }
 
 
-class LockFreeRingBufferTest : public ::testing::Test {
+class SyncRingBufferTest : public ::testing::Test {
 protected:
     static constexpr uint32_t TEST_CAPACITY = 1024;
-    SPSCRingBuffer<int, TEST_CAPACITY> buffer;
+    SyncRingBuffer<int, TEST_CAPACITY> buffer;
 };
 
-TEST_F(LockFreeRingBufferTest, InitialState) {
+TEST_F(SyncRingBufferTest, InitialState) {
     EXPECT_TRUE(buffer.isEmpty());
     EXPECT_FALSE(buffer.isFull());
     EXPECT_EQ(buffer.length(), 0);
@@ -142,7 +133,7 @@ TEST_F(LockFreeRingBufferTest, InitialState) {
     EXPECT_EQ(buffer.tail(), TEST_CAPACITY);
 }
 
-TEST_F(LockFreeRingBufferTest, WriteAndRead) {
+TEST_F(SyncRingBufferTest, WriteAndRead) {
     int data[] = {1, 2, 3, 4, 5};
     EXPECT_EQ(buffer.write(data, 5), 5);
     EXPECT_EQ(buffer.length(), 5);
@@ -154,16 +145,15 @@ TEST_F(LockFreeRingBufferTest, WriteAndRead) {
     }
 }
 
-TEST_F(LockFreeRingBufferTest, WriteExact) {
+TEST_F(SyncRingBufferTest, WriteExact) {
     int data[] = {1, 2, 3};
     EXPECT_TRUE(buffer.writeExact(data, 3));
     EXPECT_EQ(buffer.length(), 3);
-
-    // 尝试写入超过剩余空间的数据
+    
     EXPECT_FALSE(buffer.writeExact(data, TEST_CAPACITY));
 }
 
-TEST_F(LockFreeRingBufferTest, ReadExact) {
+TEST_F(SyncRingBufferTest, ReadExact) {
     int data[] = {1, 2, 3};
     buffer.write(data, 3);
 
@@ -172,43 +162,35 @@ TEST_F(LockFreeRingBufferTest, ReadExact) {
     for(int i = 0; i < 3; ++i) {
         EXPECT_EQ(readData[i], data[i]);
     }
-
-    // 尝试读取超过可用数据的数量
     EXPECT_FALSE(buffer.readExact(readData, 1));
 }
 
-TEST_F(LockFreeRingBufferTest, WrapAround) {
+TEST_F(SyncRingBufferTest, WrapAround) {
     std::vector<int> data(TEST_CAPACITY - 2);
     for(int i = 0; i < TEST_CAPACITY - 2; ++i) {
         data[i] = i;
     }
-
-    // 填充缓冲区
+    
     EXPECT_EQ(buffer.write(data.data(), data.size()), data.size());
-
-    // 读取部分数据
+    
     std::vector<int> readData(TEST_CAPACITY/2);
     EXPECT_EQ(buffer.read(readData.data(), TEST_CAPACITY/2), TEST_CAPACITY/2);
 
-    // 写入新数据，触发环绕
     int newData[] = {100, 101, 102};
     EXPECT_EQ(buffer.write(newData, 3), 3);
-
-    // 验证所有数据
+    
     auto remainSize = buffer.length();
     std::vector<int> allData(remainSize);
     EXPECT_EQ(buffer.read(allData.data(), remainSize), remainSize);
     EXPECT_TRUE(buffer.isEmpty());
 }
 
-TEST_F(LockFreeRingBufferTest, EdgeCases) {
-    // 空指针测试
+TEST_F(SyncRingBufferTest, EdgeCases) {
     EXPECT_EQ(buffer.write(nullptr, 5), 0);
     EXPECT_EQ(buffer.read(nullptr, 5), 0);
     EXPECT_FALSE(buffer.writeExact(nullptr, 5));
     EXPECT_FALSE(buffer.readExact(nullptr, 5));
-
-    // 零长度测试
+    
     int data[1];
     EXPECT_EQ(buffer.write(data, 0), 0);
     EXPECT_EQ(buffer.read(data, 0), 0);
@@ -216,7 +198,7 @@ TEST_F(LockFreeRingBufferTest, EdgeCases) {
     EXPECT_TRUE(buffer.readExact(data, 0));
 }
 
-TEST_F(LockFreeRingBufferTest, Reset) {
+TEST_F(SyncRingBufferTest, Reset) {
     int data[] = {1, 2, 3};
     buffer.write(data, 3);
 
@@ -224,12 +206,11 @@ TEST_F(LockFreeRingBufferTest, Reset) {
     EXPECT_TRUE(buffer.isEmpty());
     EXPECT_EQ(buffer.length(), 0);
     EXPECT_EQ(buffer.tail(), TEST_CAPACITY);
-
-    // 确保重置后可以正常写入
+    
     EXPECT_EQ(buffer.write(data, 3), 3);
 }
 
-TEST_F(LockFreeRingBufferTest, FullBuffer) {
+TEST_F(SyncRingBufferTest, FullBuffer) {
     std::vector<int> data(TEST_CAPACITY);
     for(int i = 0; i < TEST_CAPACITY; ++i) {
         data[i] = i;
@@ -238,22 +219,20 @@ TEST_F(LockFreeRingBufferTest, FullBuffer) {
     EXPECT_EQ(buffer.write(data.data(), TEST_CAPACITY), TEST_CAPACITY);
     EXPECT_TRUE(buffer.isFull());
     EXPECT_EQ(buffer.tail(), 0);
-
-    // 尝试继续写入
+    
     int extraData = 100;
     EXPECT_EQ(buffer.write(&extraData, 1), 0);
 }
 
-// 并发测试
-TEST_F(LockFreeRingBufferTest, ConcurrentWriteRead) {
+
+TEST_F(SyncRingBufferTest, ConcurrentWriteRead) {
     static constexpr int NUM_ITEMS = 10000;
     std::atomic<bool> startFlag{false};
     std::atomic<int> readSum{0};
     std::atomic<int> writeSum{0};
-
-    // 生产者线程
+    
     std::thread producer([&]() {
-        while(!startFlag.load()) {} // 等待开始信号
+        while(!startFlag.load()) {} 
 
         for(int i = 1; i <= NUM_ITEMS; ++i) {
             while(!buffer.writeExact(&i, 1)) {
@@ -262,10 +241,9 @@ TEST_F(LockFreeRingBufferTest, ConcurrentWriteRead) {
             writeSum += i;
         }
     });
-
-    // 消费者线程
+    
     std::thread consumer([&]() {
-        while(!startFlag.load()) {} // 等待开始信号
+        while(!startFlag.load()) {}
 
         int count = 0;
         while(count < NUM_ITEMS) {
@@ -279,22 +257,21 @@ TEST_F(LockFreeRingBufferTest, ConcurrentWriteRead) {
         }
     });
 
-    startFlag.store(true); // 开始测试
+    startFlag.store(true); 
     producer.join();
     consumer.join();
 
     EXPECT_EQ(writeSum.load(), readSum.load());
 }
 
-TEST_F(LockFreeRingBufferTest, SPSCBatchReadWrite) {
+TEST_F(SyncRingBufferTest, SPSCBatchReadWrite) {
     static constexpr int BATCH_SIZE = 4;
     static constexpr int NUM_BATCHES = 1000;
 
     std::atomic<bool> startFlag{false};
     std::atomic<int> readCount{0};
     std::atomic<int> writeCount{0};
-
-    // 生产者线程
+    
     std::thread producer([&]() {
         while(!startFlag.load()) {}
 
@@ -309,8 +286,7 @@ TEST_F(LockFreeRingBufferTest, SPSCBatchReadWrite) {
             writeCount += BATCH_SIZE;
         }
     });
-
-    // 消费者线程
+    
     std::thread consumer([&]() {
         while(!startFlag.load()) {}
 
@@ -332,14 +308,13 @@ TEST_F(LockFreeRingBufferTest, SPSCBatchReadWrite) {
     EXPECT_EQ(writeCount.load(), NUM_BATCHES * BATCH_SIZE);
 }
 
-TEST_F(LockFreeRingBufferTest, StressTest) {
+TEST_F(SyncRingBufferTest, StressTest) {
     static constexpr int NUM_ITERATIONS = 100000;
     std::atomic<bool> startFlag{false};
     std::atomic<bool> stopFlag{false};
     std::atomic<uint64_t> totalWritten{0};
     std::atomic<uint64_t> totalRead{0};
-
-    // 生产者线程
+    
     std::thread producer([&]() {
         while(!startFlag.load()) {}
 
@@ -350,8 +325,7 @@ TEST_F(LockFreeRingBufferTest, StressTest) {
             std::this_thread::yield();
         }
     });
-
-    // 消费者线程
+    
     std::thread consumer([&]() {
         while(!startFlag.load()) {}
 
@@ -372,4 +346,104 @@ TEST_F(LockFreeRingBufferTest, StressTest) {
     consumer.join();
 
     EXPECT_EQ(totalWritten.load(), totalRead.load());
+}
+
+
+TEST_F(SyncRingBufferTest, MultiThreadedReadWrite) {
+    static constexpr int NUM_PRODUCERS = 4;
+    static constexpr int NUM_CONSUMERS = 4;
+    static constexpr int ITEMS_PER_PRODUCER = 1000;
+
+    std::atomic<bool> startFlag{false};
+    std::atomic<int> totalWritten{0};
+    std::atomic<int> totalRead{0};
+    std::vector<std::thread> producers;
+    std::vector<std::thread> consumers;
+    
+    for (int p = 0; p < NUM_PRODUCERS; ++p) {
+        producers.emplace_back([&, p]() {
+            while (!startFlag.load()) {}
+
+            for (int i = 0; i < ITEMS_PER_PRODUCER; ++i) {
+                int value = p * ITEMS_PER_PRODUCER + i + 1;
+                while (!buffer.writeExact(&value, 1)) {
+                    std::this_thread::yield();
+                }
+                totalWritten.fetch_add(1);
+            }
+        });
+    }
+    
+    for (int c = 0; c < NUM_CONSUMERS; ++c) {
+        consumers.emplace_back([&]() {
+            while (!startFlag.load()) {}
+
+            while (totalRead < NUM_PRODUCERS * ITEMS_PER_PRODUCER) {
+                int value;
+                if (buffer.readExact(&value, 1)) {
+                    totalRead.fetch_add(1);
+                } else {
+                    std::this_thread::yield();
+                }
+            }
+        });
+    }
+
+    startFlag.store(true);
+
+    for (auto& p : producers) {
+        p.join();
+    }
+    for (auto& c : consumers) {
+        c.join();
+    }
+
+    EXPECT_EQ(totalWritten.load(), NUM_PRODUCERS * ITEMS_PER_PRODUCER);
+    EXPECT_EQ(totalRead.load(), NUM_PRODUCERS * ITEMS_PER_PRODUCER);
+    EXPECT_TRUE(buffer.isEmpty());
+}
+
+TEST_F(SyncRingBufferTest, RestTest) {
+    static constexpr int NUM_ITERATIONS = 100000;
+    std::atomic<bool> startFlag{false};
+    std::atomic<bool> stopFlag{false};
+    std::atomic<uint64_t> totalWritten{0};
+    std::atomic<uint64_t> totalRead{0};
+    std::atomic<uint64_t> totalDiscard{0};
+
+    std::thread producer([&]() {
+        while(!startFlag.load()) {}
+
+        for(int i = 1; i <= NUM_ITERATIONS && !stopFlag.load(); ++i) {
+            if(buffer.writeExact(&i, 1)) {
+                totalWritten++;
+            }
+            if (i % 20 == 0) {
+                auto discard = buffer.reset();
+                totalDiscard.fetch_add(static_cast<uint64_t>(discard));
+            }
+            std::this_thread::yield();
+        }
+    });
+
+    std::thread consumer([&]() {
+        while(!startFlag.load()) {}
+
+        int value;
+        while(!stopFlag.load() || !buffer.isEmpty()) {
+            if(buffer.readExact(&value, 1)) {
+                totalRead++;
+            }
+            std::this_thread::yield();
+        }
+    });
+
+    startFlag.store(true);
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    stopFlag.store(true);
+
+    producer.join();
+    consumer.join();
+
+    EXPECT_EQ(totalWritten.load(), totalRead.load() + totalDiscard.load());
 }
