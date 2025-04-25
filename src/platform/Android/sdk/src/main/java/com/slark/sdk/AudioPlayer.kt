@@ -21,6 +21,8 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
     private var audioTrack: AudioTrack? = null
     private var bufferSize = 0
     private val lock = ReentrantLock()
+    private var lastRawPosition: Int = 0
+    private var wrapCount: Long = 0
     private var isCompleted = false
     private val positionUpdateListener = object : AudioTrack.OnPlaybackPositionUpdateListener {
         override fun onMarkerReached(track: AudioTrack) {
@@ -146,6 +148,8 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
 
     fun flush() {
         audioTrack?.flush()
+        lastRawPosition = 0
+        wrapCount = 0
     }
 
     fun setVolume(vol: Float) {
@@ -167,9 +171,17 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
         } ?: 0
     }
 
+    private fun getAbsolutePosition(currentRawPosition: Int): Long {
+        if (currentRawPosition < lastRawPosition) {
+            wrapCount++
+        }
+        lastRawPosition = currentRawPosition
+        return (wrapCount shl 32) + (currentRawPosition.toLong() and 0xFFFFFFFFL)
+    }
+
     fun getPlaybackPositionInMs(): Long {
         return audioTrack?.let { track ->
-            val frames = track.playbackHeadPosition
+            val frames = getAbsolutePosition(track.playbackHeadPosition)
             (frames * 1000L) / sampleRate
         } ?: 0L
     }
@@ -195,11 +207,12 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
         }
 
         @JvmStatic
-        fun sendAudioData(playerId: String, data: ByteArray){
+        fun getPlayedTime(playerId: String): Long {
             if (!players.contains(playerId)) {
-                return
+                SlarkLog.e(LOG_TAG,"not found player")
+                return 0
             }
-            players[playerId]?.write(data)
+            return players[playerId]?.getPlaybackPositionInMs() ?: 0L
         }
 
         @JvmStatic

@@ -10,18 +10,18 @@
 namespace slark::JNI {
 
 namespace FromJVM {
-    static std::string toString(JNIEnvPtr env, jstring str) noexcept;
+    std::string toString(JNIEnvPtr env, jstring str) noexcept;
 
-    static DataPtr toData(JNIEnvPtr env, jbyteArray byteArray) noexcept;
+    DataPtr toData(JNIEnvPtr env, jbyteArray byteArray) noexcept;
 }
 
 namespace ToJVM {
-    static StringReference toString(JNIEnvPtr env, const std::string& ) noexcept;
+    StringReference toString(JNIEnvPtr env, const std::string& ) noexcept;
 
-    static JNIReference<jbyteArray> toByteArray(JNIEnvPtr env, const Data& data) noexcept;
+    JNIReference<jbyteArray> toByteArray(JNIEnvPtr env, const Data& data) noexcept;
 
     ///write header length
-    static JNIReference<jbyteArray> toNaluByteArray(JNIEnvPtr env, const Data& data) noexcept;
+    JNIReference<jbyteArray> toNaluByteArray(JNIEnvPtr env, const Data& data) noexcept;
 }
 
 }

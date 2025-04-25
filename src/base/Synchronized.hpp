@@ -209,20 +209,15 @@ public:
     explicit AtomicSharedPtr(std::shared_ptr<T> ptr) : ptr_(std::move(ptr)) {}
 
     void reset(std::shared_ptr<T> ptr = nullptr) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        ptr_ = std::move(ptr);
+        std::atomic_store(&ptr_, ptr);
     }
 
     std::shared_ptr<T> swap(std::shared_ptr<T> rhs) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        auto p = std::move(ptr_);
-        ptr_ = std::move(rhs);
-        return p;
+        return std::atomic_exchange(&ptr_, rhs);
     }
 
     std::shared_ptr<T> load() const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return ptr_;
+        return std::atomic_load(&ptr_);
     }
 
 private:

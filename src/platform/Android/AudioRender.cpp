@@ -7,6 +7,7 @@
 #include "AudioPlayerNative.h"
 #include "Log.hpp"
 #include "TimerManager.h"
+#include "AudioRenderComponent.h"
 
 #define CheckAudioPlayer() \
     do {                  \
@@ -26,30 +27,39 @@ AudioRender::AudioRender(std::shared_ptr<AudioInfo> audioInfo)
 }
 
 void AudioRender::init() noexcept {
-    playerId_ = NativeAudioPlayer::create (audioInfo_->sampleRate, audioInfo_->channels);
+    playerId_ = NativeAudioPlayer::create(audioInfo_->sampleRate, static_cast<uint8_t>(audioInfo_->channels));
     if (playerId_.empty()) {
         LogE("create audio player failed.");
         return;
     }
     using namespace std::chrono_literals;
     TimerManager::shareInstance().runLoop(3000ms, [this](){
-
+        auto renderedTime = Time::TimePoint(NativeAudioPlayer::getPlayedTime(playerId_));
+        latency_ = clock_.time() - renderedTime;
     });
 }
 
 void AudioRender::play() noexcept {
     CheckAudioPlayer();
     NativeAudioPlayer::doAction(playerId_, AudioPlayerAction::Play);
+    clock_.start();
 }
 
 void AudioRender::pause() noexcept {
     CheckAudioPlayer();
     NativeAudioPlayer::doAction(playerId_, AudioPlayerAction::Pause);
+    clock_.pause();
 }
 
 void AudioRender::stop() noexcept {
     CheckAudioPlayer();
     NativeAudioPlayer::doAction(playerId_, AudioPlayerAction::Release);
+    clock_.pause();
+}
+
+void AudioRender::reset() noexcept {
+    clock_.reset();
+    renderedDataLength_ = 0;
 }
 
 void AudioRender::flush() noexcept {
@@ -62,13 +72,8 @@ void AudioRender::setVolume(float volume) noexcept {
     NativeAudioPlayer::setConfig(playerId_, AudioPlayerConfig::Volume, volume);
 }
 
-void AudioRender::sendAudioData(DataPtr audioData) noexcept {
-    CheckAudioPlayer();
-    NativeAudioPlayer::sendAudioData(playerId_, std::move(audioData));
-}
-
-Time::TimePoint AudioRender::latency() noexcept  {
-    return latency_;
+Time::TimePoint AudioRender::playedTime() noexcept {
+    return clock_.time() - latency_;
 }
 
 AudioRenderManager& AudioRenderManager::shareInstance() noexcept {
@@ -94,5 +99,8 @@ void AudioRenderManager::remove(const std::string& playerId) noexcept {
     players_.erase(playerId);
 }
 
+std::unique_ptr<IAudioRender> createAudioRender(std::shared_ptr<AudioInfo> audioInfo) {
+    return std::make_unique<AudioRender>(audioInfo);
+}
 
 } // slark

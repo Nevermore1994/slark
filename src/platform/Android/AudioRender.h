@@ -9,6 +9,7 @@
 namespace slark {
 
 class AudioRender : public IAudioRender {
+public:
     explicit AudioRender(std::shared_ptr<AudioInfo> audioInfo);
 
     ~AudioRender() override = default;
@@ -23,9 +24,9 @@ public:
 
     void flush() noexcept override;
 
-    void sendAudioData(DataPtr audioData) noexcept;
+    void reset() noexcept override;
 
-    Time::TimePoint latency() noexcept override;
+    Time::TimePoint playedTime() noexcept override;
 private:
     void init() noexcept;
 

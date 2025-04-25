@@ -9,7 +9,6 @@
 #include "Type.h"
 #include <thread>
 
-
 namespace slark::http {
 
 #ifdef __clang__

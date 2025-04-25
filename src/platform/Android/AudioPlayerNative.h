@@ -24,7 +24,7 @@ namespace slark {
 struct NativeAudioPlayer {
     static std::string create(uint64_t sampleRate, uint8_t channelCount);
 
-    static void sendAudioData(const std::string& playerId, DataPtr data);
+    static uint64_t getPlayedTime(const std::string& playerId);
 
     static void doAction(const std::string& playerId, AudioPlayerAction action);
 

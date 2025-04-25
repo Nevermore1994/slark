@@ -373,7 +373,7 @@ void Player::Impl::pushAudioFrameDecode() noexcept {
         return;
     }
     auto pendingFrameDtsTime = audioPackets_.front()->dtsTime();
-    auto audioClockTime = audioRender_->clock().time().second();
+    auto audioClockTime = audioRenderTime();
     bool isNeedPushFrame = false;
     auto delta = (stats_.audioDecodeDelta + stats_.audioRenderDelta).second() + static_cast<double>(audioPackets_.front()->duration) / 1000.0;
     if (!stats_.isFirstAudioRendered || audioClockTime >= (pendingFrameDtsTime - delta)) {
@@ -466,17 +466,19 @@ void Player::Impl::pushVideoFrameToRender() noexcept {
 
 void Player::Impl::pushAVFrameToRender() noexcept {
     audioFrames_.withLock([this](auto& audioFrames){
-        if (!info_.hasAudio || !audioRender_ || audioRender_->isFull()) {
+        if (!info_.hasAudio || !audioRender_) {
             return;
         }
         if (audioFrames.empty()) {
             return;
         }
-        LogI("push audio:{}", audioFrames.front()->ptsTime());
-        audioRender_->send(std::move(audioFrames.front()));
-        audioFrames.pop_front();
-        if (stats_.audioRenderDelta == 0) {
-            stats_.audioRenderDelta = Time::nowTimeStamp();
+        auto& frame = audioFrames.front();
+        if (audioRender_->send(frame)) {
+            LogI("push audio:{}", frame->ptsTime());
+            audioFrames.pop_front();
+            if (stats_.audioRenderDelta == 0) {
+                stats_.audioRenderDelta = Time::nowTimeStamp();
+            }
         }
     });
     pushVideoFrameToRender();
@@ -901,7 +903,7 @@ void Player::Impl::checkCacheState() noexcept {
         ownerThread_->start();
         LogI("owner resume");
     } else if (cacheTime >= setting.maxCacheTime ||
-               (info_.isValid && isEqualOrGreater(playedTime, info_.duration, 0.1l)) ) {
+        (info_.isValid && isEqualOrGreater(playedTime, info_.duration, 0.1l)) ) {
         pauseOwnerThread(nowState);
         startRead(false);
     } else if (dataProvider_->isCompleted()) {

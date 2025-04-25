@@ -47,13 +47,14 @@ void OutputNode::receive(std::shared_ptr<AVFrame> frame) noexcept {
     notifyTargets(std::move(frame));
 }
 
-void Node::process(std::shared_ptr<AVFrame> /*frame*/) noexcept {
-
+bool Node::process(std::shared_ptr<AVFrame> /*frame*/) noexcept {
+    return true;
 }
 
-void Node::send(std::shared_ptr<AVFrame> frame) noexcept {
+bool Node::send(std::shared_ptr<AVFrame> frame) noexcept {
     process(frame);
     receive(frame);
+    return true;
 }
 
 }//end namespace slark

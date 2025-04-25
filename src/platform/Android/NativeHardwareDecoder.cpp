@@ -34,11 +34,11 @@ std::string Native_HardwareDecoder_createVideoDecoder(JNIEnv* env,
         return {};
     }
     auto jMediaInfo= ToJVM::toString(env, decoderConfig->mediaInfo);
-    auto jDecoderId = (jstring)env->CallStaticObjectMethod(decoderClass.get(),
+    auto jDecoderId = reinterpret_cast<jstring>(env->CallStaticObjectMethod(decoderClass.get(),
                                                            createDecoderMethod.get(),
                                                            jMediaInfo.get(),
                                                            decoderConfig->width,
-                                                           decoderConfig->height);
+                                                           decoderConfig->height));
     return FromJVM::toString(env, jDecoderId);
 }
 
@@ -58,12 +58,12 @@ std::string Native_HardwareDecoder_createAudioDecoder(JNIEnv* env,
         return "";
     }
     jstring jMediaInfo = env->NewStringUTF(decoderConfig->mediaInfo.data());
-    auto jDecoderId = (jstring)env->CallStaticObjectMethod(decoderClass.get(),
+    auto jDecoderId = reinterpret_cast<jstring>(env->CallStaticObjectMethod(decoderClass.get(),
                                                            createDecoderMethod.get(),
                                                            jMediaInfo,
                                                            decoderConfig->sampleRate,
                                                            decoderConfig->channels,
-                                                           decoderConfig->profile);
+                                                           decoderConfig->profile));
     auto decoderId = FromJVM::toString(env, jDecoderId);
     return decoderId;
 }
@@ -87,7 +87,7 @@ DecoderErrorCode Native_HardwareDecoder_sendPacket(JNIEnv* env, std::string_view
         LogE("create decoder failed, not found send data method");
         return DecoderErrorCode::Unknown;
     }
-    auto byteArray = std::move(ToJVM::toByteArray(env, *data));
+    auto byteArray = ToJVM::toByteArray(env, *data);
     jstring jDecodeId = env->NewStringUTF(decoderId.data());
     int res = env->CallStaticIntMethod(decoderClass.get(), methodId.get(),
                               jDecodeId, byteArray.get(), static_cast<jlong>(pts), static_cast<jint>(flag));
@@ -143,7 +143,7 @@ Java_com_slark_sdk_MediaCodecDecoder_processRawData(JNIEnv* env, jobject /* thiz
         LogE("not found decoder");
         return;
     }
-    auto frame = decoder->getDecodingFrame(pts);
+    auto frame = decoder->getDecodingFrame(static_cast<uint64_t>(pts));
     if (!frame) {
         LogE("not found frame");
         return;

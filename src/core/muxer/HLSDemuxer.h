@@ -10,7 +10,7 @@
 #include "Buffer.hpp"
 #include "IDemuxer.h"
 #include "IOBase.h"
-#include "Base.h"
+#include "Range.h"
 
 namespace slark {
 

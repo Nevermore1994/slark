@@ -1,7 +1,7 @@
 //
-// Created by Nevermore on 2021/10/22.
+// Created by Nevermore on 2025/10/22.
 // slark TimerManager
-// Copyright (c) 2021 Nevermore All rights reserved.
+// Copyright (c) 2025 Nevermore All rights reserved.
 //
 
 #include <chrono>
@@ -26,57 +26,67 @@ TimerManager::~TimerManager() {
         std::lock_guard lock(mutex_);
         isExited_ = true;
     }
-    pool_.clear();
+    cond_.notify_all(); 
     timerThread_->stop();
+    timerPool_.clear();
 }
 
 void TimerManager::loop() {
     {
         std::unique_lock lock(mutex_);
         cond_.wait(lock, [this](){
-            return !pool_.empty() || isExited_;
+            return !timerPool_.empty() || isExited_;
         });
-        if (!isExited_) {
+        if (isExited_) {
             return;
         }
     }
-    std::vector<std::thread> workers;
-    pool_.loop([&](ExecuteMode mode, TimerTask&& task) {
-        if (mode == ExecuteMode::Serial) {
-            task();
-        } else {
-            workers.emplace_back([task = std::move(task)](){
+
+    timerPool_.loop([&](ExecuteMode mode, TimerTask&& task) {
+        auto safeTask = [task = std::move(task)]() {
+            try {
                 task();
-            });
+            } catch (const std::exception& e) {
+                LogE("Timer task exception: {}", e.what());
+            } catch (...) {
+                LogE("Timer task unknown exception");
+            }
+        };
+        if (mode == ExecuteMode::Serial) {
+            safeTask();
+        } else {
+            auto result = workPool_.submit(safeTask);
+            if (result.error()) {
+                LogE("Timer task execution error");
+            }
         }
     });
-    std::ranges::for_each(workers, std::mem_fn(&std::thread::join));
 }
 
 TimerId TimerManager::runAt(Time::TimePoint timeStamp, TimerTask func, ExecuteMode mode) noexcept {
-    auto timerId = pool_.runAt(timeStamp, std::move(func), mode);
-    cond_.notify_all();
+    auto timerId = timerPool_.runAt(timeStamp, std::move(func), mode);
+    cond_.notify_one();
     return timerId;
 }
 
 TimerId TimerManager::runAfter(std::chrono::milliseconds delayTime, TimerTask func, ExecuteMode mode) noexcept {
-    auto timerId = pool_.runAfter(delayTime, std::move(func), mode);
-    cond_.notify_all();
+    auto timerId = timerPool_.runAfter(delayTime, std::move(func), mode);
+    cond_.notify_one();
     return timerId;
 }
 
 TimerId TimerManager::runLoop(std::chrono::milliseconds timeInterval, TimerTask func, ExecuteMode mode) noexcept {
-    auto timerId = pool_.runLoop(timeInterval, std::move(func), mode);
-    cond_.notify_all();
+    auto timerId = timerPool_.runLoop(timeInterval, std::move(func), mode);
+    cond_.notify_one();
     return timerId;
 }
 
 void TimerManager::cancel(TimerId id) noexcept {
-    pool_.cancel(id);
+    timerPool_.cancel(id);
 }
 
 void TimerManager::clear() noexcept {
-    pool_.clear();
+    timerPool_.clear();
 }
 
 }//end namespace slark

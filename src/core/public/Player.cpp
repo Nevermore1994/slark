@@ -114,7 +114,7 @@ void* Player::requestRender() noexcept {
     return pimpl_->requestRender();
 }
 
-void Player::setRenderImpl(std::weak_ptr<IVideoRender>& render) {
+void Player::setRenderImpl(std::weak_ptr<IVideoRender>& render) noexcept {
     if (!pimpl_) {
         return;
     }

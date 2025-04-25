@@ -30,32 +30,12 @@ std::string Native_AudioPlayer_createAudioPlayer(JNIEnv *env, jint sampleRate,
         LogE("create player failed, not found method");
         return "";
     }
-    auto jPlayerId = (jstring)env->CallStaticObjectMethod(audioPlayerClass.get(),
+    auto jPlayerId = reinterpret_cast<jstring>(env->CallStaticObjectMethod(audioPlayerClass.get(),
                                                           createMethod.get(),
                                                           sampleRate,
-                                                          channelCount);
+                                                          channelCount));
     auto playerId = JNI::FromJVM::toString(env, jPlayerId);
     return playerId;
-}
-
-void Native_AudioPlayer_sendAudioData(JNIEnv *env,
-                                      const std::string& playerId,
-                                      DataPtr data) {
-    auto audioPlayerClass = JNICache::shareInstance().getClass(env, kAudioPlayerClass);
-    if (!audioPlayerClass) {
-        LogE("create player failed, not found audio player class");
-        return;
-    }
-    auto signature = JNI::makeJNISignature(JNI::Void, JNI::String, JNI::makeArray(JNI::Byte));
-    auto method = JNICache::shareInstance().getStaticMethodId(audioPlayerClass, "sendAudioData", signature);
-    if (!method) {
-        LogE("create player failed, not found audio player method");
-        return;
-    }
-
-    auto jPlayerId = ToJVM::toString(env, playerId);
-    auto dataArray = ToJVM::toByteArray(env, *data);
-    env->CallStaticVoidMethod(audioPlayerClass.get(), method.get(), jPlayerId.get(), dataArray.get());
 }
 
 void Native_AudioPlayer_audioPlayerAction(JNIEnv *env, const std::string& playerId,
@@ -129,12 +109,29 @@ void Native_AudioPlayer_setAudioConfig(JNIEnv *env, const std::string& playerId,
                               static_cast<jfloat>(value));
 }
 
+uint64_t Native_AudioPlayer_getPlayedTime(JNIEnv *env, const std::string& playerId) {
+    auto audioPlayerClass = JNICache::shareInstance().getClass(env, kAudioPlayerClass);
+    if (!audioPlayerClass) {
+        LogE("not found audio player class");
+        return 0;
+    }
+    auto signature = JNI::makeJNISignature(JNI::Long, JNI::String);
+    auto method = JNICache::shareInstance().getStaticMethodId(audioPlayerClass, "", signature);
+    if (!method) {
+        LogE("not found audio player method");
+        return 0;
+    }
+    auto jPlayerId = ToJVM::toString(env, playerId);
+    auto playedTime = env->CallStaticLongMethod(audioPlayerClass.get(), method.get(), jPlayerId.get());
+    return static_cast<uint64_t>(playedTime);
+}
+
 extern "C"
 JNIEXPORT jobject JNICALL
-Java_com_slark_sdk_AudioPlayer_requestAudioData(JNIEnv *env, jobject thiz, jstring jPlayerId, jobject buffer) {
+Java_com_slark_sdk_AudioPlayer_requestAudioData(JNIEnv *env, jobject /*thiz*/, jstring jPlayerId, jobject buffer) {
     constexpr std::string_view kDataFlagClass = "com/slark/sdk/DataFlag";
     void* nativePtr = env->GetDirectBufferAddress(buffer);
-    jlong requestSize = env->GetDirectBufferCapacity(buffer);
+    auto requestSize = static_cast<uint32_t>(env->GetDirectBufferCapacity(buffer));
     AudioDataFlag flag = AudioDataFlag::Error;
     do {
         if (nativePtr == nullptr || requestSize <= 0) {
@@ -143,7 +140,7 @@ Java_com_slark_sdk_AudioPlayer_requestAudioData(JNIEnv *env, jobject thiz, jstri
 
         auto playerId = FromJVM::toString(env, jPlayerId);
         if (auto player = AudioRenderManager::shareInstance().find(playerId);
-            player && player->requestAudioData) {
+            player) {
             auto size= player->requestAudioData(reinterpret_cast<uint8_t*>(nativePtr), requestSize, flag);
             LogI("request audio data: {}, already applied: {}", requestSize, size);
             if (size != requestSize) {
@@ -179,18 +176,18 @@ std::string NativeAudioPlayer::create(uint64_t sampleRate, uint8_t channelCount)
     return playerId;
 }
 
-void NativeAudioPlayer::sendAudioData(const std::string &playerId, DataPtr data) {
+uint64_t NativeAudioPlayer::getPlayedTime(const std::string& playerId) {
     JNIEnvGuard envGuard(getJavaVM());
-    Native_AudioPlayer_sendAudioData(envGuard.get(), playerId, std::move(data));
+    return Native_AudioPlayer_getPlayedTime(envGuard.get(), playerId);
 }
+
 
 void NativeAudioPlayer::doAction(const std::string &playerId, AudioPlayerAction action) {
     JNIEnvGuard envGuard(getJavaVM());
     Native_AudioPlayer_audioPlayerAction(envGuard.get(), playerId, action);
 }
 
-void
-NativeAudioPlayer::setConfig(const std::string &playerId, AudioPlayerConfig config, float value) {
+void NativeAudioPlayer::setConfig(const std::string &playerId, AudioPlayerConfig config, float value) {
     JNIEnvGuard envGuard(getJavaVM());
     Native_AudioPlayer_setAudioConfig(envGuard.get(), playerId, config, value);
 }

@@ -86,7 +86,7 @@ public:
     virtual void flush() noexcept = 0;
     
     virtual void reset() noexcept {
-        IDecoder::flush();
+        flush();
         isOpen_ = false;
     }
     

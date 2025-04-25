@@ -14,7 +14,7 @@ namespace slark {
 #pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 #endif
 
-#if DEBUG
+#ifdef DEBUG
 
 template <typename ...Args>
 void AssertMessage(bool result, std::string_view format, Args&& ...args){

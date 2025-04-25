@@ -6,8 +6,11 @@
 #pragma once
 
 #if ENABLE_HTTPS
+#include "Base.h"
 #include <mutex>
+DISABLE_WARNINGS
 #include <openssl/err.h>
+ENABLE_WARNINGS
 
 #include "PlainSocket.h"
 #include "HttpsHelper.h"
