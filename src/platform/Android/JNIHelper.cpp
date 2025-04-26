@@ -31,7 +31,7 @@ DataPtr FromJVM::toData(JNIEnvPtr env, jbyteArray byteArray) noexcept {
     return dataPtr;
 }
 
-StringReference ToJVM::toString(JNIEnvPtr env, const std::string& str) noexcept {
+StringReference ToJVM::toString(JNIEnvPtr env, std::string_view str) noexcept {
     jstring jMediaInfo = env->NewStringUTF(str.data());
     return StringReference{env, jMediaInfo};
 }

@@ -43,7 +43,8 @@ Java_com_slark_sdk_SlarkNativeBridge_logout(JNIEnv *env, jobject /* this*/, cons
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_com_slark_sdk_SlarkNativeBridge_setContext(JNIEnv *env, jobject /*this*/, jobject context) {
+Java_com_slark_sdk_SlarkNativeBridge_00024Companion_setContext(JNIEnv *env, jobject thiz,
+                                                               jobject context) {
     if (gApplicationContext) {
         env->DeleteGlobalRef(gApplicationContext);
     }

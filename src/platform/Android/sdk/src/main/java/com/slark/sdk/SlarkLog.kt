@@ -26,7 +26,29 @@ class SlarkLog {
             val tag: String,
             val format: String,
             val args: Array<out Any?>
-        )
+        ) {
+            override fun equals(other: Any?): Boolean {
+                if (this === other) return true
+                if (javaClass != other?.javaClass) return false
+
+                other as LogMessage
+
+                if (level != other.level) return false
+                if (tag != other.tag) return false
+                if (format != other.format) return false
+                if (!args.contentEquals(other.args)) return false
+
+                return true
+            }
+
+            override fun hashCode(): Int {
+                var result = level.hashCode()
+                result = 31 * result + tag.hashCode()
+                result = 31 * result + format.hashCode()
+                result = 31 * result + args.contentHashCode()
+                return result
+            }
+        }
 
         init {
             startLogging()
@@ -89,9 +111,7 @@ class SlarkLog {
         fun cleanup() {
             runBlocking {
                 logChannel.close()
-
                 job.cancelAndJoin()
-
                 logScope.cancel()
             }
         }

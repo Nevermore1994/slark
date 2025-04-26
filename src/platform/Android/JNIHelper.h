@@ -16,7 +16,7 @@ namespace FromJVM {
 }
 
 namespace ToJVM {
-    StringReference toString(JNIEnvPtr env, const std::string& ) noexcept;
+    StringReference toString(JNIEnvPtr env, std::string_view) noexcept;
 
     JNIReference<jbyteArray> toByteArray(JNIEnvPtr env, const Data& data) noexcept;
 
