@@ -3,8 +3,8 @@ package com.slark.sdk
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
-import com.slark.sdk.SlarkLog
 import java.nio.ByteBuffer
+import java.util.concurrent.ConcurrentHashMap
 
 fun Int.hasFlag(flag: Int) = (this and flag) == flag
 
@@ -13,18 +13,18 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
     private var isRunning: Boolean = false
 
     enum class Action {
-        FLUSH,
+        Flush,
     }
 
     enum class ErrorCode {
-        SUCCESS,
-        UNKNOWN,
-        NOT_PROCESSED,
-        NOT_START,
-        INPUT_DATA_ERROR,
-        INPUT_DATA_TOO_LARGE,
-        NOT_FOUND_DECODER,
-        ERROR_DECODER
+        Success,
+        Unknown,
+        NotProcessed,
+        NotStart,
+        InputDataError,
+        InputDataTooLarge,
+        NotFoundDecoder,
+        ErrorDecoder,
     }
 
     init {
@@ -40,9 +40,9 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
     /// BUFFER_FLAG_KEY_FRAME: 1
     /// BUFFER_FLAG_PARTIAL_FRAME: 8
     fun sendPacket(byteBuffer: ByteArray?, presentationTimeUs: Long, flag: Int): Int {
-        var errorCode: ErrorCode = ErrorCode.UNKNOWN
+        var errorCode: ErrorCode = ErrorCode.Unknown
         if (!isRunning) {
-            errorCode = ErrorCode.NOT_START
+            errorCode = ErrorCode.NotStart
             return errorCode.ordinal
         }
 
@@ -51,7 +51,7 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
                 decoder?.dequeueInputBuffer(10_000) ?: return@execute //10 ms
             if (inputBufferIndex == -1) {
                 //TODO: add log
-                errorCode = ErrorCode.NOT_PROCESSED
+                errorCode = ErrorCode.NotProcessed
                 return@execute
             }
             val inputBuffer = decoder!!.getInputBuffer(inputBufferIndex)!!
@@ -60,18 +60,18 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
                 decoder?.queueInputBuffer(inputBufferIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
             } else {
                 if (byteBuffer == null || byteBuffer.isEmpty()) {
-                    errorCode = ErrorCode.INPUT_DATA_ERROR
+                    errorCode = ErrorCode.InputDataError
                     return@execute
                 }
                 if (inputBuffer.capacity() < byteBuffer.size) {
                     //TODO: add log
-                    errorCode = ErrorCode.INPUT_DATA_TOO_LARGE
+                    errorCode = ErrorCode.InputDataTooLarge
                     return@execute
                 }
                 inputBuffer.put(byteBuffer)
                 decoder?.queueInputBuffer(inputBufferIndex, 0, byteBuffer.size, presentationTimeUs, 0)
             }
-            errorCode = ErrorCode.SUCCESS
+            errorCode = ErrorCode.Success
         }
 
         execute {
@@ -120,9 +120,9 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
 
     companion object {
         public const val LOG_TAG = "MediaCodec"
-        private val decoders = HashMap<String, MediaCodecDecoder>()
+        private val decoders = ConcurrentHashMap<String, MediaCodecDecoder>()
 
-        @JvmStatic @Synchronized
+        @JvmStatic
         fun createVideoDecoder(mediaInfo: String, width: Int, height: Int,
                                spsData: ByteArray, ppsData: ByteArray, vpsData: ByteArray): String {
             val format = MediaFormat.createVideoFormat(mediaInfo, width, height)
@@ -145,7 +145,7 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
             return decoderId
         }
 
-        @JvmStatic @Synchronized
+        @JvmStatic
         fun createAudioDecoder(mediaInfo: String, sampleRate: Int, channelCount: Int,
                                profile: Int): String {
             val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, channelCount)
@@ -169,31 +169,24 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
             val decoder = MediaCodecDecoder(mediaInfo, format)
             val decoderId = decoder.hashCode().toString()
             decoders[decoderId] = decoder
+            SlarkLog.i(LOG_TAG, "create: $decoderId")
             return decoderId
         }
 
-        @JvmStatic @Synchronized
+        @JvmStatic
         fun releaseDecoder(decoderId: String) {
             if (!decoders.contains(decoderId)) {
                 return
             }
             decoders[decoderId]?.release()
             decoders.remove(decoderId)
-        }
-
-        @JvmStatic @Synchronized
-        fun sendPacket(decoderId: String, byteBuffer: ByteArray?, pts: Long, flag: Int): Int {
-            if (!decoders.contains(decoderId)) {
-                return ErrorCode.NOT_FOUND_DECODER.ordinal
-            }
-            val res = decoders[decoderId]?.sendPacket(byteBuffer, pts, flag)
-            return res ?: ErrorCode.ERROR_DECODER.ordinal
+            SlarkLog.i(LOG_TAG, "release: $decoderId")
         }
 
         @JvmStatic @Synchronized
         fun doAction(decoderId: String, action: Action) {
             when (action) {
-                Action.FLUSH -> decoders[decoderId]?.flush()
+                Action.Flush -> decoders[decoderId]?.flush()
             }
         }
 
@@ -225,6 +218,5 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
             }
         }
     }
-
 
 }

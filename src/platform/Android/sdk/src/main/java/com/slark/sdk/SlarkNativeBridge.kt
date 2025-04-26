@@ -4,8 +4,6 @@ import android.content.Context
 
 class SlarkNativeBridge {
 
-    external fun setContext(context: Context?)
-
     companion object {
         init {
             System.loadLibrary("sdk")
@@ -15,6 +13,7 @@ class SlarkNativeBridge {
         fun logout(logString: String) {
             println(logString)
         }
-    }
 
+        external fun setContext(context: Context?)
+    }
 }

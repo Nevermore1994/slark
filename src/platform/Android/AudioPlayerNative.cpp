@@ -44,16 +44,16 @@ void Native_AudioPlayer_audioPlayerAction(JNIEnv *env, const std::string& player
     std::string_view fieldView;
     switch (action) {
         case AudioPlayerAction::Play:
-            fieldView = "PLAY";
+            fieldView = "Play";
             break;
         case AudioPlayerAction::Pause:
-            fieldView = "PAUSE";
+            fieldView = "Pause";
             break;
         case AudioPlayerAction::Flush:
-            fieldView = "FLUSH";
+            fieldView = "Flush";
             break;
         case AudioPlayerAction::Release:
-            fieldView = "RELEASE";
+            fieldView = "Release";
             break;
         default:
             std::unreachable();
@@ -81,9 +81,9 @@ void Native_AudioPlayer_setAudioConfig(JNIEnv *env, const std::string& playerId,
     constexpr std::string_view kConfigClass = "com/slark/sdk/AudioPlayer$Config";
     std::string_view fieldView;
     if (config == AudioPlayerConfig::PlayRate) {
-        fieldView = "PLAY_RATE";
+        fieldView = "Rate";
     } else if (config == AudioPlayerConfig::Volume) {
-        fieldView = "PLAY_VOL";
+        fieldView = "Volume";
     }
 
     auto enumValue = JNICache::shareInstance().getEnumField(env, kConfigClass, fieldView);
@@ -157,10 +157,10 @@ Java_com_slark_sdk_AudioPlayer_requestAudioData(JNIEnv *env, jobject /*thiz*/, j
     } while(false);
     std::string_view fieldView;
     switch (flag) {
-        case AudioDataFlag::Error : { fieldView = "ERROR"; break; }
-        case AudioDataFlag::Normal : { fieldView = "NORMAL"; break; }
-        case AudioDataFlag::EndOfStream : { fieldView = "END_OF_STREAM"; break; }
-        case AudioDataFlag::Silence : { fieldView = "SILENCE"; break; }
+        case AudioDataFlag::Error : { fieldView = "Error"; break; }
+        case AudioDataFlag::Normal : { fieldView = "Normal"; break; }
+        case AudioDataFlag::EndOfStream : { fieldView = "EndOfStream"; break; }
+        case AudioDataFlag::Silence : { fieldView = "Silence"; break; }
     }
     auto field = JNICache::shareInstance().getEnumField(env, kDataFlagClass, fieldView);
     return field.get();

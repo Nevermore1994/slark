@@ -120,7 +120,7 @@ void Native_HardwareDecoder_flush(JNIEnv* env, std::string_view decoderId) {
         return;
     }
     jstring jDecoderId = env->NewStringUTF(decoderId.data());
-    auto enumValue = JNICache::shareInstance().getEnumField(env, kActionClass, "FLUSH");
+    auto enumValue = JNICache::shareInstance().getEnumField(env, kActionClass, "Flush");
     auto methodSignature = JNI::makeJNISignature(JNI::Void, JNI::String, JNI::makeObject(kActionClass));
     auto methodId= JNICache::shareInstance().getStaticMethodId(decoderClass,
                                                                "doAction",

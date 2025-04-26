@@ -5,6 +5,7 @@
 #pragma once
 #include <utility>
 #include "AudioDefine.h"
+#include "Manager.hpp"
 
 namespace slark {
 
@@ -35,25 +36,7 @@ private:
     Time::TimePoint latency_;
 };
 
-class AudioRenderManager {
-public:
-    static AudioRenderManager& shareInstance() noexcept;
-
-    ~AudioRenderManager() = default;
-public:
-    std::shared_ptr<AudioRender> find(const std::string& decoderId) const noexcept;
-
-    void add(const std::string& decoderId, std::shared_ptr<AudioRender> ptr) noexcept;
-
-    void remove(const std::string& decoderId) noexcept;
-private:
-    AudioRenderManager() = default;
-
-private:
-    mutable std::mutex mutex_;
-    std::unordered_map<std::string, std::shared_ptr<AudioRender>> players_;
-};
-
+using AudioRenderManager = Manager<AudioRender>;
 
 } // slark
 

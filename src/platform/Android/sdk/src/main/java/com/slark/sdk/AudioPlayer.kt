@@ -10,12 +10,11 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
 enum class DataFlag {
-    NORMAL,
-    END_OF_STREAM,
-    SILENCE,
-    ERROR,
+    Normal,
+    EndOfStream,
+    Silence,
+    Error,
 }
-
 
 class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
     private var audioTrack: AudioTrack? = null
@@ -41,10 +40,10 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
             buffer.order(ByteOrder.nativeOrder())
             val result = requestAudioData(hashCode().toString(), buffer)
             when (result) {
-                DataFlag.NORMAL -> { write(buffer.array()) }
-                DataFlag.END_OF_STREAM -> isCompleted = true
-                DataFlag.SILENCE -> write(ByteArray(available){0})
-                DataFlag.ERROR -> {}
+                DataFlag.Normal -> { write(buffer.array()) }
+                DataFlag.EndOfStream -> isCompleted = true
+                DataFlag.Silence -> write(ByteArray(available){0})
+                DataFlag.Error -> {}
             }
         }
     }
@@ -102,15 +101,15 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
     }
 
     enum class Action {
-        PLAY,
-        PAUSE,
-        FLUSH,
-        RELEASE
+        Play,
+        Pause,
+        Flush,
+        Release
     }
 
     enum class Config {
-        PLAY_RATE,
-        PLAY_VOL,
+        Rate,
+        Volume,
     }
 
     fun write(data: ByteArray): Int {
@@ -221,10 +220,10 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
                 return
             }
             when (action) {
-                Action.PLAY  -> players[playerId]?.play()
-                Action.PAUSE -> players[playerId]?.pause()
-                Action.FLUSH -> players[playerId]?.flush()
-                Action.RELEASE -> {
+                Action.Play  -> players[playerId]?.play()
+                Action.Pause -> players[playerId]?.pause()
+                Action.Flush -> players[playerId]?.flush()
+                Action.Release -> {
                     players[playerId]?.release()
                     players.remove(playerId)
                 }
@@ -237,8 +236,8 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
                 return
             }
             when (config) {
-                Config.PLAY_RATE -> players[playerId]?.setPlayRate(value)
-                Config.PLAY_VOL -> players[playerId]?.setVolume(value)
+                Config.Rate -> players[playerId]?.setPlayRate(value)
+                Config.Volume -> players[playerId]?.setVolume(value)
             }
         }
 
