@@ -30,13 +30,12 @@ add_subdirectory(${SLARK_PROJECT_PATH} slark)
 # System.loadLibrary() and pass the name of the library defined here;
 # for GameActivity/NativeActivity derived applications, the same library name must be
 # used in the AndroidManifest.xml file.
-set(SOURCE_FILE_DIR ${CMAKE_SOURCE_DIR}/../../../..)
-set(SOURCE_FILE_LISTS ${SOURCE_FILE_DIR}/*.cpp)
+set(SOURCE_FILE_LISTS *.cpp)
 file(GLOB SOURCE_FILE ${SOURCE_FILE_LISTS})
 
 add_library(${CMAKE_PROJECT_NAME} SHARED)
 target_sources(${CMAKE_PROJECT_NAME} PUBLIC ${SOURCE_FILE})
-target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC ${SOURCE_FILE_DIR})
+target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC .)
 
 # Specifies libraries CMake should link to your target library. You
 # can link libraries from various origins, such as libraries defined in this
