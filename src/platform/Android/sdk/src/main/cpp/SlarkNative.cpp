@@ -1,6 +1,6 @@
 #include <string>
 #include <mutex>
-#include "SlarkNative.h"
+#include "JNIEnvGuard.hpp"
 #include "AndroidBase.h"
 #include "FileUtil.h"
 
@@ -85,11 +85,14 @@ bool getAppPath(JNIEnv* env, jobject context, const std::string& methodName, std
 
 namespace slark {
 
-using namespace slark::JNI;
+namespace JNI {
 
 JavaVM* getJavaVM() {
     return gJavaVM;
 }
+
+}
+using namespace JNI;
 
 void printLog(const std::string& logStr) {
     JNIEnvGuard guard(gJavaVM);

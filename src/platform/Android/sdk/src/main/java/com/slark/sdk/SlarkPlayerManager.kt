@@ -1,6 +1,9 @@
 package com.slark.sdk
 
+import com.slark.api.SlarkPlayer
+import com.slark.api.SlarkPlayerEvent
 import com.slark.api.SlarkPlayerState
+import java.util.concurrent.ConcurrentHashMap
 
 class SlarkPlayerManager {
     enum class Action {
@@ -11,6 +14,33 @@ class SlarkPlayerManager {
     }
 
     companion object {
+        private val players = ConcurrentHashMap<String, SlarkPlayer>()
+
+        @JvmStatic
+        fun addPlayer(playerId: String, player: SlarkPlayer) {
+            players[playerId] = player
+        }
+
+        @JvmStatic
+        fun removePlayer(playerId: String) {
+            players.remove(playerId)
+        }
+
+        @JvmStatic
+        fun notifyPlayerState(playerId: String, state: SlarkPlayerState) {
+            players[playerId]?.observer?.notifyState(playerId, state)
+        }
+
+        @JvmStatic
+        fun notifyPlayerEvent(playerId: String, event: SlarkPlayerEvent, value: String) {
+            players[playerId]?.observer?.notifyEvent(playerId, event, value)
+        }
+
+        @JvmStatic
+        fun notifyPlayerTime(playerId: String, time: Double) {
+            players[playerId]?.observer?.notifyTime(playerId, time)
+        }
+
         external fun createPlayer(path: String, start: Double, duration: Double): String
 
         external fun doAction(playerId: String, action: Int)

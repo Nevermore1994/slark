@@ -1,7 +1,9 @@
 package com.slark.api
 
 import android.util.Size
+import com.slark.sdk.AudioPlayer
 import com.slark.sdk.SlarkPlayerManager
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * @param path A local file or a network link.
@@ -9,7 +11,9 @@ import com.slark.sdk.SlarkPlayerManager
  */
 class SlarkPlayer(path: String, timeRange: KtTimeRange = KtTimeRange.zero) {
     var observer:SlarkPlayerObserver? = null
-    private lateinit var playerId: String
+    private var playerId: String = SlarkPlayerManager.createPlayer(path,
+        timeRange.start.toSeconds(),
+        timeRange.duration.toSeconds())
 
     var isLoop: Boolean = false
         set(value) {
@@ -30,9 +34,7 @@ class SlarkPlayer(path: String, timeRange: KtTimeRange = KtTimeRange.zero) {
         }
 
     init {
-        playerId = SlarkPlayerManager.createPlayer(path,
-            timeRange.start.toSeconds(),
-            timeRange.duration.toSeconds())
+        SlarkPlayerManager.addPlayer(playerId, this)
     }
 
     fun play() {
@@ -49,6 +51,7 @@ class SlarkPlayer(path: String, timeRange: KtTimeRange = KtTimeRange.zero) {
 
     fun release() {
         SlarkPlayerManager.doAction(playerId, SlarkPlayerManager.Action.RELEASE.ordinal)
+        SlarkPlayerManager.removePlayer(playerId)
     }
 
     fun seek(time: Double, isAccurate: Boolean = false) {
@@ -74,4 +77,9 @@ class SlarkPlayer(path: String, timeRange: KtTimeRange = KtTimeRange.zero) {
     fun state(): SlarkPlayerState {
         return SlarkPlayerManager.state(playerId)
     }
+
+    fun setObserver(observer: SlarkPlayerObserver) {
+        this.observer = observer
+    }
+
 }

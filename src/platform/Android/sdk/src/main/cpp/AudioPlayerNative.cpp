@@ -9,6 +9,7 @@
 #include "JNICache.h"
 #include "JNISignature.h"
 #include "JNIHelper.h"
+#include "JNIEnvGuard.hpp"
 #include "AudioRender.h"
 
 using namespace slark;
@@ -167,6 +168,8 @@ Java_com_slark_sdk_AudioPlayer_requestAudioData(JNIEnv *env, jobject /*thiz*/, j
 }
 
 namespace slark {
+
+using namespace slark::JNI;
 
 std::string NativeAudioPlayer::create(uint64_t sampleRate, uint8_t channelCount) {
     JNIEnvGuard envGuard(getJavaVM());

@@ -3,14 +3,24 @@ package com.slark.sdk
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
+import android.util.Size
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
 fun Int.hasFlag(flag: Int) = (this and flag) == flag
 
+fun MediaFormat.isAudioFormat(): Boolean {
+    return this.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+}
+
+fun MediaFormat.isVideoFormat(): Boolean {
+    return this.getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
+}
+
 class MediaCodecDecoder(private val mediaInfo: String, private val format: MediaFormat) {
     private var decoder: MediaCodec? = null
     private var isRunning: Boolean = false
+    private var surface: RenderSurface? = null
 
     enum class Action {
         Flush,
@@ -29,7 +39,15 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
 
     init {
         decoder = MediaCodec.createDecoderByType(mediaInfo)
-        decoder?.configure(format, null, null, 0)
+        if (format.isVideoFormat()) {
+            surface = RenderSurface()
+            format.setInteger(MediaFormat.KEY_COLOR_FORMAT,
+                MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+            decoder?.configure(format, surface?.surface(), null, 0)
+        } else {
+            decoder?.configure(format, null, null, 0)
+        }
+
         decoder?.start()
         isRunning = true
     }
@@ -116,10 +134,20 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
         }
     }
 
+    fun requestRenderFrame(waitTime: Long, width: Int, height: Int): Int {
+        surface?.let {
+            if (it.awaitFrame(waitTime)) {
+                it.drawFrame(format, Size(width, height))
+                return ErrorCode.Success.ordinal
+            }
+        }
+        return ErrorCode.Unknown.ordinal
+    }
+
     private external fun processRawData(decoderId: String, byteBuffer: ByteArray, presentationTimeUs: Long)
 
     companion object {
-        public const val LOG_TAG = "MediaCodec"
+        const val LOG_TAG = "MediaCodec"
         private val decoders = ConcurrentHashMap<String, MediaCodecDecoder>()
 
         @JvmStatic
@@ -171,6 +199,24 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
             decoders[decoderId] = decoder
             SlarkLog.i(LOG_TAG, "create: $decoderId")
             return decoderId
+        }
+
+        @JvmStatic
+        fun sendPacket(decoderId: String, byteBuffer: ByteArray?, presentationTimeUs: Long, flag: Int): Int {
+            if (!decoders.contains(decoderId)) {
+                SlarkLog.e(LOG_TAG, "not found decoder")
+                return ErrorCode.NotFoundDecoder.ordinal
+            }
+            return decoders[decoderId]?.sendPacket(byteBuffer, presentationTimeUs, flag) ?: ErrorCode.NotFoundDecoder.ordinal
+        }
+
+        @JvmStatic
+        fun requestRenderFrame(decoderId: String, waitTime: Long, width: Int, height: Int): Int {
+            if (!decoders.contains(decoderId)) {
+                SlarkLog.e(LOG_TAG, "not found decoder")
+                return ErrorCode.NotFoundDecoder.ordinal
+            }
+            return decoders[decoderId]?.requestRenderFrame(waitTime, width, height) ?: ErrorCode.NotFoundDecoder.ordinal
         }
 
         @JvmStatic

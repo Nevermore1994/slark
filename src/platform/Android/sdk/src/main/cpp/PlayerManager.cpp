@@ -3,14 +3,128 @@
 //
 #include "JNIHelper.h"
 #include "JNICache.h"
+#include "JNIEnvGuard.hpp"
 #include "Player.h"
 #include "Manager.hpp"
 #include "Log.hpp"
+#include "JNISignature.h"
 
 namespace slark {
 
-using PlayerManager = Manager<Player>;
+class PlayerObserver: public IPlayerObserver {
+public:
+    void notifyPlayedTime(std::string_view playerId, long double time) override {
+        using namespace slark::JNI;
+        JNIEnvGuard jniGuard(getJavaVM());
+        auto jPlayerId = JNI::ToJVM::toString(jniGuard.get(), playerId);
+        auto jTime = static_cast<jdouble>(time);
+        auto playerClass = JNICache::shareInstance().getClass(jniGuard.get(),
+                                                              kPlayerManagerClass);
+        if (!playerClass) {
+            LogE("not found player manager class");
+            return;
+        }
+        auto methodSignature = JNI::makeJNISignature(JNI::Void, JNI::String, JNI::Double);
+        auto methodId = JNICache::shareInstance().getStaticMethodId(playerClass,
+                                                                    "notifyPlayerTime",
+                                                                    methodSignature);
+        if (!methodId) {
+            LogE("not found method");
+            return;
+        }
+        jniGuard.get()->CallStaticVoidMethod(playerClass.get(),
+                                             methodId.get(),
+                                             jPlayerId.get(),
+                                             jTime);
+    }
 
+    void notifyPlayerState(std::string_view playerId, PlayerState state) override {
+        using namespace slark::JNI;
+        JNIEnvGuard jniGuard(getJavaVM());
+        auto jPlayerId = JNI::ToJVM::toString(jniGuard.get(), playerId);
+        auto playerClass = JNICache::shareInstance().getClass(jniGuard.get(),
+                                                              kPlayerManagerClass);
+        if (!playerClass) {
+            LogE("not found player manager class");
+            return;
+        }
+
+        auto methodSignature = JNI::makeJNISignature(JNI::Void, JNI::String, JNI::makeObject(kPlayerStateClass));
+        auto methodId = JNICache::shareInstance().getStaticMethodId(playerClass,
+                                                                    "notifyPlayerState",
+                                                                    methodSignature);
+        if (!methodId) {
+            LogE("not found method");
+            return;
+        }
+        std::string_view fieldView = "Unknown";
+        static std::vector<std::string_view> stateNames = {
+            "Initializing",
+            "Buffering",
+            "Ready",
+            "Playing",
+            "Pause",
+            "Stop",
+            "Error",
+            "Completed"
+        };
+        if (static_cast<uint8_t>(state) < stateNames.size()) {
+            fieldView = stateNames[static_cast<uint8_t>(state)];
+        }
+        auto stateEnum = JNICache::shareInstance().getEnumField(jniGuard.get(), kPlayerStateClass, fieldView);
+        jniGuard.get()->CallStaticVoidMethod(playerClass.get(),
+                                             methodId.get(),
+                                             jPlayerId.get(),
+                                             stateEnum.get());
+    }
+
+    void notifyPlayerEvent(std::string_view playerId, slark::PlayerEvent event, std::string value) override {
+        using namespace slark::JNI;
+        JNIEnvGuard jniGuard(getJavaVM());
+        auto jPlayerId = JNI::ToJVM::toString(jniGuard.get(), playerId);
+        auto playerClass = JNICache::shareInstance().getClass(jniGuard.get(),
+                                                              kPlayerManagerClass);
+        if (!playerClass) {
+            LogE("not found player manager class");
+            return;
+        }
+
+        auto methodSignature = JNI::makeJNISignature(JNI::Void, JNI::String, JNI::makeObject(kPlayerEventClass), JNI::String);
+        auto methodId = JNICache::shareInstance().getStaticMethodId(playerClass,
+                                                                    "notifyPlayerEvent",
+                                                                    methodSignature);
+        if (!methodId) {
+            LogE("not found method");
+            return;
+        }
+        std::string_view fieldView = "Unknown";
+        static std::vector<std::string_view> eventNames = {
+            "FirstFrameRendered",
+            "SeekDone",
+            "PlayEnd",
+            "UpdateCacheTime",
+            "OnError"
+        };
+        if (static_cast<uint8_t>(event) < eventNames.size()) {
+            fieldView = eventNames[static_cast<uint8_t>(event)];
+        }
+        auto eventEnum = JNICache::shareInstance().getEnumField(jniGuard.get(), kPlayerEventClass, fieldView);
+        auto jValue = JNI::ToJVM::toString(jniGuard.get(), value);
+        jniGuard.get()->CallStaticVoidMethod(playerClass.get(),
+                                             methodId.get(),
+                                             jPlayerId.get(),
+                                             eventEnum.get(),
+                                             jValue.get());
+    }
+private:
+    const std::string_view kPlayerManagerClass = "com/slark/sdk/SlarkPlayerManager";
+    const std::string_view kPlayerStateClass = "com/slark/api/SlarkPlayerState";
+    const std::string_view kPlayerEventClass = "com/slark/api/SlarkPlayerEvent";
+};
+
+
+using PlayerManager = Manager<Player>;
+using PlayerObserverManager = Manager<PlayerObserver>;
 }
 
 enum class Action {
@@ -22,6 +136,8 @@ enum class Action {
 
 using namespace slark;
 using namespace slark::JNI;
+
+
 
 extern "C"
 JNIEXPORT jstring JNICALL
@@ -36,8 +152,11 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_createPlayer(JNIEnv *env, j
     context->init(nullptr);
     playerParams->mainGLContext = std::move(context);
     auto player = std::make_shared<Player>(std::move(playerParams));
+    auto observer = std::make_shared<PlayerObserver>();
+    player->addObserver(observer);
     auto playerId = std::string(player->playerId());
     PlayerManager::shareInstance().add(playerId, player);
+    PlayerObserverManager::shareInstance().add(playerId, observer);
     return JNI::ToJVM::toString(env, playerId).get();
 }
 
@@ -63,6 +182,7 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_doAction(JNIEnv *env, jobje
                 break;
             case Action::Release: {
                 player->stop();
+                PlayerObserverManager::shareInstance().remove(playerId);
                 PlayerManager::shareInstance().remove(playerId);
             }
                 break;
@@ -189,3 +309,4 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_state(JNIEnv *env, jobject 
     auto stateValue = JNICache::shareInstance().getEnumField(env, kPlayerStateClass, fieldView);
     return stateValue.get();
 }
+
