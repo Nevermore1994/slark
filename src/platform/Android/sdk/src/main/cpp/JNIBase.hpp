@@ -8,7 +8,9 @@
 #include <string_view>
 #include <string>
 
-namespace slark {
+namespace slark::JNI {
+
+JavaVM* getJavaVM();
 
 using JNIEnvPtr = JNIEnv*;
 

@@ -958,7 +958,7 @@ void* Player::Impl::requestRender() noexcept {
         }
     });
     if (framePtr) {
-        auto pts = framePtr->ptsTime();
+        auto pts= framePtr->ptsTime();
         LogI("push video frame render:{}, pts:{}", pts, framePtr->pts);
         setVideoRenderTime(pts);
         stats_.isForceVideoRendered = false;
