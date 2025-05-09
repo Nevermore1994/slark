@@ -75,6 +75,15 @@ public:
         }
         return 4;
     }
+
+    static uint8_t bytePerPixel(BitMapFormat format) noexcept {
+        if (format == BitMapFormat::RGB) {
+            return 3;
+        } else if (format == BitMapFormat::GRAY || format == BitMapFormat::APLHA) {
+            return 1;
+        }
+        return 4;
+    }
 private:
     BitMapFormat format_;
     uint32_t width_ = 0;
@@ -82,5 +91,7 @@ private:
     DataPtr data_;
 };
 
+using BitMapPtr = std::unique_ptr<BitMap>;
+using BitMapRefPtr = std::shared_ptr<BitMap>;
 } // slark
 

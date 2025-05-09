@@ -28,7 +28,7 @@ enum class AVFrameType {
 enum class FrameFormat {
     Unknown = 0,
     VideoToolBox = 1,
-    MediaCodec = 2,
+    MediaCodecSurface = 2,
 };
 
 struct Statistics {

@@ -30,6 +30,9 @@ struct NativeHardwareDecoder {
     static void release(std::string_view decoderId);
 
     static void flush(std::string_view decoderId);
+
+    static uint64_t requestVideoFrame(std::string_view decoderId,
+                                      uint64_t waitTime, uint32_t width, uint32_t height);
 };
 
 }

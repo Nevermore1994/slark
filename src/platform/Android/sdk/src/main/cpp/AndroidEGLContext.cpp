@@ -69,10 +69,6 @@ void AndroidEGLContext::release() noexcept {
     destroy();
 }
 
-void AndroidEGLContext::attachContext() noexcept {
-    attachContext(EGL_NO_SURFACE);
-}
-
 void AndroidEGLContext::attachContext(EGLSurface surface) noexcept {
     attachContext(surface, surface);
 }
@@ -124,10 +120,10 @@ EGLSurface AndroidEGLContext::createWindowSurface(ANativeWindow* surface) noexce
     return eglSurface;
 }
 
-EGLSurface AndroidEGLContext::createOffscreenSurface(int width, int height) noexcept {
+EGLSurface AndroidEGLContext::createOffscreenSurface(uint32_t width, uint32_t height) noexcept {
     int surfaceAttributes[] = {
-            EGL_WIDTH, width,
-            EGL_HEIGHT, height,
+            EGL_WIDTH, static_cast<int>(width),
+            EGL_HEIGHT, static_cast<int>(height),
             EGL_NONE
     };
     EGLSurface eglSurface = eglCreatePbufferSurface(display_, config_, surfaceAttributes);

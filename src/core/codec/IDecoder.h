@@ -10,6 +10,7 @@
 #include "NonCopyable.h"
 #include "AVFrame.hpp"
 #include "Reflection.hpp"
+#include "Synchronized.hpp"
 
 namespace slark {
 
@@ -99,9 +100,7 @@ public:
     virtual DecoderErrorCode decode(AVFrameRefPtr& frame) noexcept = 0;
 
     void setReceiveFunc(DecoderReceiveFunc&& func) noexcept {
-        auto* newFunc = new DecoderReceiveFunc(std::move(func));
-        auto* oldFunc = receiveFunc_.exchange(newFunc);
-        delete oldFunc;
+        receiveFunc_.reset(std::make_shared<DecoderReceiveFunc>(std::move(func)));
     }
 
     void setDataProvider(std::shared_ptr<DecoderDataProvider> provider) noexcept {
@@ -110,14 +109,14 @@ public:
 
 protected:
     void invokeReceiveFunc(AVFrameRefPtr frame) noexcept {
-        if (auto* func = receiveFunc_.load()) {
-            (*func)(frame);
+        if (auto func = receiveFunc_.load()) {
+            (*func)(std::move(frame));
         }
     }
 protected:
     std::atomic_bool isOpen_ = false;
     std::shared_ptr<DecoderDataProvider> provider_;
-    std::atomic<DecoderReceiveFunc*> receiveFunc_;
+    AtomicSharedPtr<DecoderReceiveFunc> receiveFunc_;
     DecoderType decoderType_ = DecoderType::Unknown;
     std::shared_ptr<DecoderConfig> config_;
 };

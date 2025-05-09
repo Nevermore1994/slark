@@ -9,6 +9,7 @@
 #include "JNICache.h"
 #include "JNISignature.h"
 #include "JNIHelper.h"
+#include "JNIEnvGuard.hpp"
 
 using namespace slark;
 using namespace slark::JNI;
@@ -128,6 +129,7 @@ void Native_HardwareDecoder_flush(JNIEnv* env, std::string_view decoderId) {
     env->CallStaticVoidMethod(decoderClass.get(), methodId.get(), jDecoderId, enumValue.get());
 }
 
+//only for audio decoder
 extern "C"
 JNIEXPORT void JNICALL
 Java_com_slark_sdk_MediaCodecDecoder_processRawData(JNIEnv* env, jobject /* thiz */,
@@ -153,6 +155,32 @@ Java_com_slark_sdk_MediaCodecDecoder_processRawData(JNIEnv* env, jobject /* thiz
     if (decoder->isVideo()) {
         std::dynamic_pointer_cast<VideoFrameInfo>(frame->info)->format = FrameFormat::MediaCodec;
     }
+}
+
+/// \brief Request a video frame from the hardware decoder
+uint64_t Native_HardwareDecoder_requestVideoFrame(JNIEnv* env, std::string_view decoderId,
+                                              uint64_t waitTime, uint32_t width,
+                                              uint32_t height) {
+    auto decoderClass = JNICache::shareInstance().getClass(env, kMediaCodecDecoderClass);
+    if (!decoderClass) {
+        LogE("not found video decoder class");
+        return 0;
+    }
+    auto jDecoderId = ToJVM::toString(env, decoderId);
+    auto methodSignature = JNI::makeJNISignature(JNI::Long, JNI::String, JNI::Long, JNI::Int, JNI::Int);
+    auto methodId = JNICache::shareInstance().getStaticMethodId(decoderClass,
+                                                                "renderVideoFrame",
+                                                                methodSignature);
+    if (!methodId) {
+        LogE("not found renderVideoFrame method");
+        return 0;
+    }
+    auto packed = env->CallStaticLongMethod(decoderClass.get(), methodId.get(),
+                                             jDecoderId.get(),
+                                             static_cast<jlong>(waitTime),
+                                             static_cast<jint>(width),
+                                             static_cast<jint>(height));
+    return static_cast<uint64_t>(packed);
 }
 
 namespace slark {
@@ -200,4 +228,13 @@ void NativeHardwareDecoder::flush(std::string_view decoderId) {
     Native_HardwareDecoder_flush(envGuard.get(), decoderId);
 }
 
+uint64_t NativeHardwareDecoder::requestVideoFrame(std::string_view decoderId,
+                                                  uint64_t waitTime, uint32_t width,
+                                                   uint32_t height) {
+    if (decoderId.empty()) {
+        LogE("decoderId is empty");
+        return 0;
+    }
+    JNIEnvGuard envGuard(getJavaVM());
+    return Native_HardwareDecoder_requestVideoFrame(envGuard.get(), decoderId, waitTime, width, height);
 }

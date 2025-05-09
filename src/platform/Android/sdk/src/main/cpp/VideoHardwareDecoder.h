@@ -4,20 +4,37 @@
 
 #pragma once
 #include "NativeDecoderManager.h"
+#include "AndroidEGLContext.h"
+#include "FrameBufferPool.h"
 
 namespace slark {
+
+enum class DecodeMode {
+    Texture,
+    ByteBuffer,
+};
 
 class VideoHardwareDecoder: public NativeDecoder,
         public std::enable_shared_from_this<VideoHardwareDecoder> {
 public:
-    VideoHardwareDecoder()
-        : NativeDecoder(DecoderType::VideoHardWareDecoder) {
+    VideoHardwareDecoder(DecodeMode mode = DecodeMode::Texture)
+        : NativeDecoder(DecoderType::VideoHardWareDecoder)
+        , mode_(mode) {
     }
-    ~VideoHardwareDecoder() override = default;
+    ~VideoHardwareDecoder() noexcept override;
 public:
     bool open(std::shared_ptr<DecoderConfig> config) noexcept override;
 
     DecoderErrorCode decode(AVFrameRefPtr& frame) noexcept override;
+
+    void initContext() noexcept;
+
+    void requestVideoFrame() noexcept;
+private:
+    DecodeMode mode_;
+    std::shared_ptr<AndroidEGLContext> context_;
+    EGLSurface surface_ = nullptr;
+    std::unique_ptr<FrameBufferPool> frameBufferPool_;
 };
 
 } // slark
