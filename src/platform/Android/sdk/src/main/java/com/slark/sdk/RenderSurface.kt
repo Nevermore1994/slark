@@ -44,26 +44,30 @@ class RenderSurface : SurfaceTexture.OnFrameAvailableListener {
         surfaceTexture?.let { render?.drawFrame(it, format, size) }
     }
 
-    fun awaitFrame(waitTime: Long): Boolean {
+    fun awaitFrame(waitTime: Long): Pair<Boolean, Long> {
         synchronized(mutex) {
             mutex.wait(waitTime) // wait some time for frame available
             if (!isFrameAvailable) {
                 SlarkLog.e(LOG_TAG, "wait frame timeout")
-                return false
+                return false to 0
             }
             isFrameAvailable = false
         }
         if (!checkGLStatus("wait frame")) {
             SlarkLog.e(LOG_TAG, "checkGLStatus failed")
-            return false
+            return false to 0
         }
+        var timestamp = 0L
         try {
-            surfaceTexture?.updateTexImage()
+            surfaceTexture?.let {
+                it.updateTexImage()
+                timestamp = it.timestamp / 1000000L //to ms
+            }
         } catch (e: Exception) {
             SlarkLog.e(LOG_TAG, "updateTexImage failed: ${e.message}")
-            return false
+            return false to 0
         }
-        return true
+        return true to timestamp
     }
 
     companion object {

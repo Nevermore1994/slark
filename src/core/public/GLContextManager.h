@@ -1,5 +1,5 @@
 //
-//  GLContextManager.hpp
+//  GLContextManager.h
 //  slark
 //
 //  Created by Nevermore on 2024/11/7.

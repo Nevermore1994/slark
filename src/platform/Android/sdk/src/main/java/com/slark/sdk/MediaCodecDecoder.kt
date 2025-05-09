@@ -134,14 +134,16 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
         }
     }
 
-    fun requestRenderFrame(waitTime: Long, width: Int, height: Int): Int {
+    fun requestVideoFrame(waitTime: Long, width: Int, height: Int): Long {
         surface?.let {
-            if (it.awaitFrame(waitTime)) {
+            val res = it.awaitFrame(waitTime)
+            if (res.first) {
                 it.drawFrame(format, Size(width, height))
-                return ErrorCode.Success.ordinal
+                // set high bit to indicate frame available
+                return 1L shl 63 or (res.second and 0x7FFFFFFFFFFFFFFF)
             }
         }
-        return ErrorCode.Unknown.ordinal
+        return 0L
     }
 
     private external fun processRawData(decoderId: String, byteBuffer: ByteArray, presentationTimeUs: Long)
@@ -211,12 +213,12 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
         }
 
         @JvmStatic
-        fun requestRenderFrame(decoderId: String, waitTime: Long, width: Int, height: Int): Int {
+        fun requestVideoFrame(decoderId: String, waitTime: Long, width: Int, height: Int): Long {
             if (!decoders.contains(decoderId)) {
                 SlarkLog.e(LOG_TAG, "not found decoder")
-                return ErrorCode.NotFoundDecoder.ordinal
+                return 0L
             }
-            return decoders[decoderId]?.requestRenderFrame(waitTime, width, height) ?: ErrorCode.NotFoundDecoder.ordinal
+            return decoders[decoderId]?.requestVideoFrame(waitTime, width, height) ?: 0L
         }
 
         @JvmStatic

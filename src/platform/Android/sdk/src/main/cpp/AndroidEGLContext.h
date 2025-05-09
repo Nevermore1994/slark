@@ -19,13 +19,11 @@ public:
 
     void release() noexcept override;
 
-    void attachContext() noexcept override;
-
     void detachContext() noexcept override;
 
-    void attachContext(EGLSurface surface) noexcept;
+    void attachContext(EGLSurface surface) noexcept override;
 
-    void attachContext(EGLSurface drawSurface, EGLSurface readSurface) noexcept;
+    void attachContext(EGLSurface drawSurface, EGLSurface readSurface) noexcept override;
 
     void* nativeContext() noexcept override;
 
@@ -33,7 +31,7 @@ public:
 
     EGLSurface createWindowSurface(ANativeWindow* surface) noexcept;
 
-    EGLSurface createOffscreenSurface(int width, int height) noexcept;
+    EGLSurface createOffscreenSurface(uint32_t width, uint32_t height) noexcept;
 private:
     EGLConfig getConfig(int version) noexcept;
 

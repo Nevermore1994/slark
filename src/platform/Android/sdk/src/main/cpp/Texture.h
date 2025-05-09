@@ -6,6 +6,7 @@
 #include "BitMap.h"
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
+#include <GLES2/gl2ext.h>
 
 namespace slark {
 
@@ -57,10 +58,22 @@ public:
     [[nodiscard]] bool isValid() const noexcept {
         return textureId_ != 0;
     }
+
+    void bind() const noexcept {
+        glBindTexture(GL_TEXTURE_EXTERNAL_OES, textureId_);
+    }
+
+    void unbind() const noexcept {
+        glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
+    }
+
 private:
     uint32_t width_;
     uint32_t height_;
     TextureConfig config_;
     GLuint textureId_ = 0;
 };
+
+using TexturePtr = std::unique_ptr<Texture>;
+using TextureRefPtr = std::shared_ptr<Texture>;
 }
