@@ -36,20 +36,7 @@ bool AndroidEGLContext::init(void* context) noexcept {
         return false;
     }
 
-    EGLConfig config = getConfig(3);
-    int openGLESAttrib3[] = {
-            EGL_CONTEXT_CLIENT_VERSION, 3,
-            EGL_NONE
-    };
-    context_ = eglCreateContext(display_, config,context, openGLESAttrib3);
-    if (eglGetError() == EGL_SUCCESS) {
-        LogI("create opengl es 3.0 success");
-        isInit_ = true;
-        config_ = config;
-        return true;
-    }
-
-    config = getConfig(2);
+    auto config = getConfig(2);
     int openGLESAttrib2[] = {
             EGL_CONTEXT_CLIENT_VERSION, 2,
             EGL_NONE
@@ -136,9 +123,6 @@ EGLSurface AndroidEGLContext::createOffscreenSurface(uint32_t width, uint32_t he
 
 EGLConfig AndroidEGLContext::getConfig(int version) noexcept {
     int renderableType = EGL_OPENGL_ES2_BIT;
-    if (version >= 3) {
-        renderableType = EGL_OPENGL_ES3_BIT;
-    }
     int attribList[] = {
             EGL_RED_SIZE, 8,
             EGL_GREEN_SIZE, 8,

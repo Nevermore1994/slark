@@ -79,6 +79,7 @@ void VideoHardwareDecoder::requestVideoFrame() noexcept {
     videoFrameInfo->height = videoConfig->height;
     videoFrameInfo->format = FrameFormat::MediaCodecSurface;
     frame->info = std::move(videoFrameInfo);
+    context_->detachContext();
     invokeReceiveFunc(std::move(frame));
 }
 
@@ -93,6 +94,7 @@ void VideoHardwareDecoder::initContext() noexcept {
     }
     auto videoConfig = std::dynamic_pointer_cast<VideoDecoderConfig>(config_);
     surface_ = context_->createOffscreenSurface(videoConfig->width, videoConfig->height);
+    frameBufferPool_ = std::make_unique<FrameBufferPool>();
 }
 
 VideoHardwareDecoder::~VideoHardwareDecoder() noexcept {
@@ -105,7 +107,7 @@ VideoHardwareDecoder::~VideoHardwareDecoder() noexcept {
     }
     NativeDecoderManager::shareInstance().remove(decoderId_);
     decoderId_.clear();
-    frameBufferPool_ = std::make_unique<FrameBufferPool>();
+    frameBufferPool_.reset();
 }
 
 bool VideoHardwareDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept {

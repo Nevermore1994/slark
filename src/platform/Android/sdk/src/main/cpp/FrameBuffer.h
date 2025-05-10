@@ -11,7 +11,7 @@ namespace slark {
 
 class FrameBuffer {
 public:
-    explicit FrameBuffer(TextureRefPtr texture = nullptr);
+    explicit FrameBuffer(TexturePtr texture = nullptr);
 
     ~FrameBuffer();
 
@@ -21,7 +21,7 @@ public:
 
     bool init(uint32_t width, uint32_t height) noexcept;
 
-    void update(TextureRefPtr texture) noexcept;
+    void update(TexturePtr texture) noexcept;
 
     [[nodiscard]] bool isValid() const noexcept {
         return frameBufferId_ != 0;

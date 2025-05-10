@@ -12,7 +12,7 @@ Texture::Texture(uint32_t width, uint32_t height, TextureConfig config, DataPtr 
     , height_(height)
     , config_(config) {
     glGenTextures(1, &textureId_);
-    glBindTexture(GL_TEXTURE_2D, textureId_);
+    bind();
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, config_.warp.s);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, config_.warp.t);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, config_.filter.min);
