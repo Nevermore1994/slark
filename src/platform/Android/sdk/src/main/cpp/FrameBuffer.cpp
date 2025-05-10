@@ -9,7 +9,7 @@
 
 namespace slark {
 
-FrameBuffer::FrameBuffer(TextureRefPtr texture)
+FrameBuffer::FrameBuffer(TexturePtr texture)
     : texture_(std::move(texture)) {
     init();
 }
@@ -46,7 +46,7 @@ bool FrameBuffer::init() noexcept {
     return true;
 }
 
-void FrameBuffer::update(TextureRefPtr texture) noexcept {
+void FrameBuffer::update(TexturePtr texture) noexcept {
     release();
     texture_ = std::move(texture);
     if (texture_ && !init()) {
@@ -87,7 +87,7 @@ void FrameBuffer::bind(bool isRebinding) noexcept {
 
 void FrameBuffer::unbind(bool isRollback) noexcept {
     if (isRollback) {
-        glBindFramebuffer(GL_FRAMEBUFFER, prevFrameBufferId_);
+        glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prevFrameBufferId_));
     } else {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
