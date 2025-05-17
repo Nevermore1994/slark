@@ -52,7 +52,7 @@ void VideoHardwareDecoder::requestVideoFrame() noexcept {
     constexpr int64_t kWaitTime = 30; // 30ms
     constexpr int32_t kMaxRetryCount = 3;
     auto videoConfig = std::dynamic_pointer_cast<VideoDecoderConfig>(config_);
-    auto frameBuffer = frameBufferPool_->fetch(videoConfig->width, videoConfig->height);
+    auto frameBuffer = frameBufferPool_->acquire(videoConfig->width, videoConfig->height);
     glViewport(0, 0, static_cast<int>(videoConfig->width), static_cast<int>(videoConfig->height));
     frameBuffer->bind(true);
     int32_t retryCount = 0;
@@ -74,6 +74,7 @@ void VideoHardwareDecoder::requestVideoFrame() noexcept {
     frame->pts = pts;
     auto texture = frameBuffer->detachTexture();
     frame->opaque = texture.release();
+    frameBuffer->unbind(true);
     auto videoFrameInfo = std::make_shared<VideoFrameInfo>();
     videoFrameInfo->width = videoConfig->width;
     videoFrameInfo->height = videoConfig->height;

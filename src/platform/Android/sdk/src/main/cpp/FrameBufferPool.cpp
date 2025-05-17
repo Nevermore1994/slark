@@ -12,12 +12,12 @@ std::string generateKey(uint32_t width, uint32_t height, std::thread::id id) {
     return std::format("{}_{}_{}", threadIdHash(id), width, height);
 }
 
-FrameBufferRefPtr FrameBufferPool::fetch(uint32_t width, uint32_t height) noexcept {
+FrameBufferRefPtr FrameBufferPool::acquire(uint32_t width, uint32_t height) noexcept {
     auto key = generateKey(width, height, std::this_thread::get_id());
     auto it = frameBufferPool_.find(key);
     if (it != frameBufferPool_.end()) {
         std::erase_if(it->second.useList, [&](auto& frameBuffer) {
-            if (frameBuffer.use_count() == 1 && frameBuffer->texture().use_count() == 1) {
+            if (frameBuffer.use_count() == 1) {
                 it->second.freeList.push_back(frameBuffer);
                 return true;
             }
@@ -32,9 +32,10 @@ FrameBufferRefPtr FrameBufferPool::fetch(uint32_t width, uint32_t height) noexce
     } else {
         frameBufferPool_.try_emplace(key, maxFrameBufferCount_);
     }
+    auto texture = texturePool_->acquire(width, height);
     auto& node = frameBufferPool_.at(key);
-    auto frameBuffer = std::make_shared<FrameBuffer>();
-    if (frameBuffer->init(width, height)) {
+    auto frameBuffer = std::make_shared<FrameBuffer>(std::move(texture));
+    if (frameBuffer->isValid()) {
         node.useList.push_back(frameBuffer);
     } else {
         LogE("Failed to create framebuffer");

@@ -32,6 +32,10 @@ public:
     EGLSurface createWindowSurface(ANativeWindow* surface) noexcept;
 
     EGLSurface createOffscreenSurface(uint32_t width, uint32_t height) noexcept;
+
+    EGLDisplay getDisplay() const noexcept {
+        return display_;
+    }
 private:
     EGLConfig getConfig(int version) noexcept;
 

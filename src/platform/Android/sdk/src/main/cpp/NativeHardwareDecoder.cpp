@@ -3,7 +3,6 @@
 //
 
 #include "NativeHardwareDecoder.h"
-#include "SlarkNative.h"
 #include "NativeDecoderManager.h"
 #include "AVFrame.hpp"
 #include "JNICache.h"
@@ -153,7 +152,7 @@ Java_com_slark_sdk_MediaCodecDecoder_processRawData(JNIEnv* env, jobject /* thiz
     auto dataPtr = FromJVM::toData(env, byteBuffer);
     frame->data = std::move(dataPtr);
     if (decoder->isVideo()) {
-        std::dynamic_pointer_cast<VideoFrameInfo>(frame->info)->format = FrameFormat::MediaCodec;
+        std::dynamic_pointer_cast<VideoFrameInfo>(frame->info)->format = FrameFormat::MediaCodecSurface;
     }
 }
 
@@ -186,7 +185,7 @@ uint64_t Native_HardwareDecoder_requestVideoFrame(JNIEnv* env, std::string_view 
 namespace slark {
 
 std::string
-NativeHardwareDecoder::createVideo(const std::shared_ptr<VideoDecoderConfig>& decoderConfig) {
+NativeHardwareDecoder::createVideo(const std::shared_ptr<VideoDecoderConfig> &decoderConfig) {
     if (!decoderConfig) {
         return {};
     }
@@ -195,12 +194,12 @@ NativeHardwareDecoder::createVideo(const std::shared_ptr<VideoDecoderConfig>& de
 }
 
 std::string
-NativeHardwareDecoder::createAudio(const std::shared_ptr<AudioDecoderConfig>& decoderConfig ) {
+NativeHardwareDecoder::createAudio(const std::shared_ptr<AudioDecoderConfig> &decoderConfig) {
     JNIEnvGuard envGuard(getJavaVM());
     return Native_HardwareDecoder_createAudioDecoder(envGuard.get(), decoderConfig);
 }
 
-DecoderErrorCode NativeHardwareDecoder::sendPacket(std::string_view decoderId, DataPtr& data,
+DecoderErrorCode NativeHardwareDecoder::sendPacket(std::string_view decoderId, DataPtr &data,
                                                    uint64_t pts, NativeDecodeFlag flag) {
     if (decoderId.empty()) {
         LogE("decoderId is empty");
@@ -230,11 +229,14 @@ void NativeHardwareDecoder::flush(std::string_view decoderId) {
 
 uint64_t NativeHardwareDecoder::requestVideoFrame(std::string_view decoderId,
                                                   uint64_t waitTime, uint32_t width,
-                                                   uint32_t height) {
+                                                  uint32_t height) {
     if (decoderId.empty()) {
         LogE("decoderId is empty");
         return 0;
     }
     JNIEnvGuard envGuard(getJavaVM());
-    return Native_HardwareDecoder_requestVideoFrame(envGuard.get(), decoderId, waitTime, width, height);
+    return Native_HardwareDecoder_requestVideoFrame(envGuard.get(), decoderId, waitTime, width,
+                                                    height);
+}
+
 }

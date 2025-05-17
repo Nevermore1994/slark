@@ -8,11 +8,18 @@
 #include "Manager.hpp"
 #include "Log.hpp"
 #include "JNISignature.h"
+#include "GLContextManager.h"
+#include "Manager.hpp"
+#include "VideoRender.h"
 
 namespace slark {
 
 class PlayerObserver: public IPlayerObserver {
 public:
+    PlayerObserver() {
+
+    }
+
     void notifyPlayedTime(std::string_view playerId, long double time) override {
         using namespace slark::JNI;
         JNIEnvGuard jniGuard(getJavaVM());
@@ -122,7 +129,6 @@ private:
     const std::string_view kPlayerEventClass = "com/slark/api/SlarkPlayerEvent";
 };
 
-
 using PlayerManager = Manager<Player>;
 using PlayerObserverManager = Manager<PlayerObserver>;
 }
@@ -137,33 +143,45 @@ enum class Action {
 using namespace slark;
 using namespace slark::JNI;
 
-
-
 extern "C"
 JNIEXPORT jstring JNICALL
-Java_com_slark_sdk_SlarkPlayerManager_00024Companion_createPlayer(JNIEnv *env, jobject /*thiz*/,
-                                                                  jstring path, jdouble start,
-                                                                  jdouble duration) {
+Java_com_slark_sdk_SlarkPlayerManager_00024Companion_createPlayer(
+    JNIEnv *env,
+    jobject /*thiz*/,
+    jstring path,
+    jdouble start,
+    jdouble duration
+) {
     auto playerParams = std::make_unique<PlayerParams>();
     playerParams->item.path = JNI::FromJVM::toString(env, path);
     playerParams->item.displayStart = start;
     playerParams->item.displayDuration = duration;
-    auto context = slark::createEGLContext();
-    context->init(nullptr);
-    playerParams->mainGLContext = std::move(context);
+    playerParams->mainGLContext = createMainGLContext();
+    auto mainContext = playerParams->mainGLContext;
     auto player = std::make_shared<Player>(std::move(playerParams));
+    auto playerId = std::string(player->playerId());
+
+    //set observer
     auto observer = std::make_shared<PlayerObserver>();
     player->addObserver(observer);
-    auto playerId = std::string(player->playerId());
     PlayerManager::shareInstance().add(playerId, player);
     PlayerObserverManager::shareInstance().add(playerId, observer);
+
+    //set render
+    auto render = std::make_shared<VideoRender>();
+    render->setPlayerId(playerId);
+    player->setRenderImpl(render);
     return JNI::ToJVM::toString(env, playerId).get();
 }
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_com_slark_sdk_SlarkPlayerManager_00024Companion_doAction(JNIEnv *env, jobject /*thiz*/,
-                                                              jstring jPlayerId, jint actionId) {
+Java_com_slark_sdk_SlarkPlayerManager_00024Companion_doAction(
+    JNIEnv *env,
+    jobject /*thiz*/,
+    jstring jPlayerId,
+    jint actionId
+) {
     auto playerId = JNI::FromJVM::toString(env, jPlayerId);
     if (auto player = PlayerManager::shareInstance().find(playerId)) {
         auto action = static_cast<Action>(actionId);
@@ -183,6 +201,7 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_doAction(JNIEnv *env, jobje
             case Action::Release: {
                 player->stop();
                 PlayerObserverManager::shareInstance().remove(playerId);
+                VideoRenderManager::shareInstance().remove(playerId);
                 PlayerManager::shareInstance().remove(playerId);
             }
                 break;
@@ -194,8 +213,12 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_doAction(JNIEnv *env, jobje
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_com_slark_sdk_SlarkPlayerManager_00024Companion_setLoop(JNIEnv *env, jobject /*thiz*/,
-                                                             jstring jPlayerId, jboolean isLoop) {
+Java_com_slark_sdk_SlarkPlayerManager_00024Companion_setLoop(
+    JNIEnv *env,
+    jobject /*thiz*/,
+    jstring jPlayerId,
+    jboolean isLoop
+) {
     auto playerId = JNI::FromJVM::toString(env, jPlayerId);
     if (auto player = PlayerManager::shareInstance().find(playerId)) {
         player->setLoop(static_cast<bool>(isLoop));
@@ -206,8 +229,12 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_setLoop(JNIEnv *env, jobjec
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_com_slark_sdk_SlarkPlayerManager_00024Companion_setMute(JNIEnv *env, jobject /*thiz*/,
-                                                             jstring jPlayerId, jboolean isMute) {
+Java_com_slark_sdk_SlarkPlayerManager_00024Companion_setMute(
+    JNIEnv *env,
+    jobject /*thiz*/,
+    jstring jPlayerId,
+    jboolean isMute
+) {
     auto playerId = JNI::FromJVM::toString(env, jPlayerId);
     if (auto player = PlayerManager::shareInstance().find(playerId)) {
         player->setMute(static_cast<bool>(isMute));
@@ -218,12 +245,16 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_setMute(JNIEnv *env, jobjec
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_com_slark_sdk_SlarkPlayerManager_00024Companion_setRenderSize(JNIEnv *env, jobject /*thiz*/,
-                                                                   jstring jPlayerId, jint width,
-                                                                   jint height) {
+Java_com_slark_sdk_SlarkPlayerManager_00024Companion_setRenderSize(
+        JNIEnv *env,
+        jobject /*thiz*/,
+        jstring jPlayerId,
+        jint width,
+        jint height
+) {
     auto playerId = JNI::FromJVM::toString(env, jPlayerId);
     if (auto player = PlayerManager::shareInstance().find(playerId)) {
-        player->setRenderSize(width, height);
+        player->setRenderSize(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
     } else {
         LogE("not found player, {}", playerId);
     }
@@ -231,11 +262,15 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_setRenderSize(JNIEnv *env, 
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_com_slark_sdk_SlarkPlayerManager_00024Companion_seek(JNIEnv *env, jobject /*thiz*/,
-                                                          jstring jPlayerId, jdouble time, jboolean isAccurate) {
+Java_com_slark_sdk_SlarkPlayerManager_00024Companion_seek(
+        JNIEnv *env,
+        jobject /*thiz*/,
+        jstring jPlayerId,
+        jdouble time
+) {
     auto playerId = JNI::FromJVM::toString(env, jPlayerId);
     if (auto player = PlayerManager::shareInstance().find(playerId)) {
-        player->seek(time, static_cast<bool>(isAccurate));
+        player->seek(time);
     } else {
         LogE("not found player, {}", playerId);
     }
@@ -243,8 +278,10 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_seek(JNIEnv *env, jobject /
 
 extern "C"
 JNIEXPORT jdouble JNICALL
-Java_com_slark_sdk_SlarkPlayerManager_00024Companion_totalDuration(JNIEnv *env, jobject /*thiz*/,
-                                                                   jstring jPlayerId) {
+Java_com_slark_sdk_SlarkPlayerManager_00024Companion_totalDuration(
+    JNIEnv *env,
+    jobject /*thiz*/,
+    jstring jPlayerId) {
     auto playerId = JNI::FromJVM::toString(env, jPlayerId);
     auto duration = 0.0;
     if (auto player = PlayerManager::shareInstance().find(playerId)) {
@@ -257,8 +294,11 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_totalDuration(JNIEnv *env, 
 
 extern "C"
 JNIEXPORT jdouble JNICALL
-Java_com_slark_sdk_SlarkPlayerManager_00024Companion_currentPlayedTime(JNIEnv *env, jobject /*thiz*/,
-                                                                       jstring jPlayerId) {
+Java_com_slark_sdk_SlarkPlayerManager_00024Companion_currentPlayedTime(
+    JNIEnv *env,
+    jobject /*thiz*/,
+    jstring jPlayerId
+) {
     auto playerId = JNI::FromJVM::toString(env, jPlayerId);
     auto playedTime = 0.0;
     if (auto player = PlayerManager::shareInstance().find(playerId)) {
@@ -271,8 +311,12 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_currentPlayedTime(JNIEnv *e
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_com_slark_sdk_SlarkPlayerManager_00024Companion_setVolume(JNIEnv *env, jobject /*thiz*/,
-                                                               jstring jPlayerId, jfloat volume) {
+Java_com_slark_sdk_SlarkPlayerManager_00024Companion_setVolume(
+    JNIEnv *env,
+    jobject /*thiz*/,
+    jstring jPlayerId,
+    jfloat volume
+) {
     auto playerId = JNI::FromJVM::toString(env, jPlayerId);
     if (auto player = PlayerManager::shareInstance().find(playerId)) {
         player->setVolume(volume);
@@ -283,8 +327,11 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_setVolume(JNIEnv *env, jobj
 
 extern "C"
 JNIEXPORT jobject JNICALL
-Java_com_slark_sdk_SlarkPlayerManager_00024Companion_state(JNIEnv *env, jobject  /*thiz*/,
-                                                           jstring jPlayerId) {
+Java_com_slark_sdk_SlarkPlayerManager_00024Companion_state(
+    JNIEnv *env,
+    jobject  /*thiz*/,
+    jstring jPlayerId
+) {
     constexpr std::string_view kPlayerStateClass = "com/slark/api/SlarkPlayerState";
     auto playerId = FromJVM::toString(env, jPlayerId);
     std::string_view fieldView = "Unknown";

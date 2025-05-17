@@ -7,8 +7,12 @@
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
+#include <vector>
+#include <mutex>
 
 namespace slark {
+
+class TexturePool;
 
 struct TextureConfig {
     struct Warp {
@@ -51,7 +55,7 @@ public:
         return textureId_;
     }
 
-    [[nodiscard]] const TextureConfig& config() const noexcept {
+    [[nodiscard]] const TextureConfig &config() const noexcept {
         return config_;
     }
 
@@ -67,13 +71,22 @@ public:
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
+    void setManager(std::weak_ptr<TexturePool> manager) noexcept {
+        manager_ = std::move(manager);
+    }
+
+    [[nodiscard]] std::weak_ptr<TexturePool> manager() const noexcept {
+        return manager_;
+    }
 private:
     uint32_t width_;
     uint32_t height_;
     TextureConfig config_;
     GLuint textureId_ = 0;
+    std::weak_ptr<TexturePool> manager_;
 };
 
 using TexturePtr = std::unique_ptr<Texture>;
 using TextureRefPtr = std::shared_ptr<Texture>;
-}
+
+} // namespace slark
