@@ -4,6 +4,10 @@ data class KtTimeRange(val start: KtTime, val duration: KtTime) {
     val end: KtTime
         get() = start + duration
 
+    fun get(): Pair<Double, Double> {
+        return Pair(start.toSeconds(), end.toSeconds())
+    }
+
     fun contains(time: KtTime): Boolean {
         return time >= start && time < end
     }

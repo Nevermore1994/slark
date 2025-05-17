@@ -1,7 +1,7 @@
 //
 // Created by Nevermore on 2025/4/26.
 //
-
+#pragma once
 #include <unordered_map>
 #include <memory>
 #include <mutex>
@@ -20,23 +20,23 @@ public:
 
     ~Manager() override = default;
 public:
-    RefPtr find(const std::string& decoderId) noexcept {
+    RefPtr find(const std::string& itemId) noexcept {
         std::lock_guard lock(mutex_);
-        if (manager_.contains(decoderId)) {
-            return manager_.at(decoderId);
+        if (manager_.contains(itemId)) {
+            return manager_.at(itemId);
         }
         return nullptr;
     }
 
-    void add(const std::string& decoderId, RefPtr ptr) noexcept {
+    void add(const std::string& itemId, RefPtr ptr) noexcept {
         std::lock_guard lock(mutex_);
-        manager_[decoderId] = std::move(ptr);
+        manager_[itemId] = std::move(ptr);
     }
 
 
-    void remove(const std::string& decoderId) noexcept {
+    void remove(const std::string& itemId) noexcept {
         std::lock_guard lock(mutex_);
-        manager_.erase(decoderId);
+        manager_.erase(itemId);
     }
 private:
     Manager() = default;

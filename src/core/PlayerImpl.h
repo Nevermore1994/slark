@@ -81,7 +81,7 @@ public:
     
     void removeObserver() noexcept;
     
-    void setRenderImpl(std::weak_ptr<IVideoRender>& render) noexcept;
+    void setRenderImpl(std::weak_ptr<IVideoRender> render) noexcept;
 public:
     [[nodiscard]] inline PlayerInfo info() const noexcept {
         return info_;
@@ -97,7 +97,8 @@ public:
     
     [[nodiscard]] long double currentPlayedTime() noexcept;
     
-    [[nodiscard]] void* requestRender() noexcept;
+    [[nodiscard]] AVFrameRefPtr requestRender() noexcept;
+
 private:
 
     void initPlayerInfo() noexcept;

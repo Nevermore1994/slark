@@ -108,8 +108,6 @@ public:
 
     void seek(long double time) noexcept;
 
-    void seek(long double time, bool isAccurate) noexcept;
-
     void setLoop(bool isLoop);
     
     void setVolume(float volume);
@@ -121,10 +119,9 @@ public:
     void addObserver(IPlayerObserverPtr observer) noexcept;
     
     void removeObserver() noexcept;
-
-    void* requestRender() noexcept;
     
-    void setRenderImpl(std::weak_ptr<IVideoRender>& render) noexcept;
+    void setRenderImpl(std::weak_ptr<IVideoRender> render) noexcept;
+
 public:
     PlayerParams peek() noexcept;
     

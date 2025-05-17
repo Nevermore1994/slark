@@ -441,7 +441,7 @@ void Player::Impl::pushVideoFrameToRender() noexcept {
     if (!framePtr) {
         return;
     }
-    render->pushVideoFrameRender(framePtr->opaque);
+    render->pushVideoFrameRender(framePtr);
     auto renderTime = framePtr->ptsTime();
     auto nowState = state();
     LogI("push video frame render time:{}, is force:{}, state:{}",
@@ -928,7 +928,7 @@ long double Player::Impl::audioRenderTime() noexcept {
     return 0;
 }
 
-void* Player::Impl::requestRender() noexcept {
+AVFrameRefPtr Player::Impl::requestRender() noexcept {
     long double diff = 0;
     LogI("requestRender: {}, {}", audioRenderTime(), videoRenderTime());
     if (info_.hasAudio && info_.hasVideo) {
@@ -963,11 +963,17 @@ void* Player::Impl::requestRender() noexcept {
         setVideoRenderTime(pts);
         stats_.isForceVideoRendered = false;
     }
-    return framePtr ? framePtr->opaque : nullptr;
+    return framePtr;
 }
 
-void Player::Impl::setRenderImpl(std::weak_ptr<IVideoRender>& render) noexcept {
+void Player::Impl::setRenderImpl(std::weak_ptr<IVideoRender> render) noexcept {
     videoRender_.store(render);
+    auto ptr = videoRender_.load();
+    if (ptr) {
+        ptr->setRequestRenderFunc([this]() -> AVFrameRefPtr{
+            return requestRender();
+        });
+    }
 }
 
 void Player::Impl::setVideoRenderTime(long double time) noexcept {

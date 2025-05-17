@@ -11,15 +11,13 @@ namespace slark {
 
 class FrameBuffer {
 public:
-    explicit FrameBuffer(TexturePtr texture = nullptr);
+    explicit FrameBuffer(TexturePtr texture);
 
     ~FrameBuffer();
 
     void bind(bool isRebinding = false) noexcept;
 
     void unbind(bool isRollback = false) noexcept;
-
-    bool init(uint32_t width, uint32_t height) noexcept;
 
     void update(TexturePtr texture) noexcept;
 

@@ -46,7 +46,6 @@ bool WAVDemuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
     uint16_t bitsPerSample = 0;
     uint32_t channelMask = 0;
     bool isValid = false;
-    uint64_t dataOffset = 0;
     uint64_t dataSize = 0;
     double duration = 0.0;
     auto completion = [&]() {

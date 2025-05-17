@@ -3,9 +3,9 @@
 //
 
 #include "FrameBuffer.h"
-
-#include <utility>
 #include "Log.hpp"
+#include "TexturePool.h"
+#include <utility>
 
 namespace slark {
 
@@ -60,12 +60,6 @@ void FrameBuffer::release() noexcept {
         frameBufferId_ = 0;
     }
     texture_.reset();
-}
-
-bool FrameBuffer::init(uint32_t width, uint32_t height) noexcept {
-    release();
-    texture_ = std::make_unique<Texture>(width, height);
-    return init();
 }
 
 void FrameBuffer::bind(bool isRebinding) noexcept {

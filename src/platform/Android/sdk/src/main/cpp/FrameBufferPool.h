@@ -4,6 +4,7 @@
 
 #pragma once
 #include "FrameBuffer.h"
+#include "TexturePool.h"
 #include "NonCopyable.h"
 #include <list>
 #include <unordered_map>
@@ -31,17 +32,19 @@ struct FrameBufferNode {
 class FrameBufferPool: public NonCopyable {
 public:
     explicit FrameBufferPool(uint8_t maxSlotCount = kMaxFrameBufferCount)
-        : maxFrameBufferCount_(maxSlotCount) {
+        : maxFrameBufferCount_(maxSlotCount)
+        , texturePool_(std::make_shared<TexturePool>()) {
 
     }
 
     ~FrameBufferPool() override = default;
 
-    FrameBufferRefPtr fetch(uint32_t width, uint32_t height) noexcept;
+    FrameBufferRefPtr acquire(uint32_t width, uint32_t height) noexcept;
 
 private:
     uint8_t maxFrameBufferCount_ = kMaxFrameBufferCount;
     std::unordered_map<std::string, FrameBufferNode> frameBufferPool_;
+    std::shared_ptr<TexturePool> texturePool_;
 };
 
 } // slark

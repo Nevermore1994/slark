@@ -1,6 +1,5 @@
 package com.slark.sdk
 
-import com.slark.api.SlarkPlayer
 import com.slark.api.SlarkPlayerEvent
 import com.slark.api.SlarkPlayerState
 import java.util.concurrent.ConcurrentHashMap
@@ -14,10 +13,10 @@ class SlarkPlayerManager {
     }
 
     companion object {
-        private val players = ConcurrentHashMap<String, SlarkPlayer>()
+        private val players = ConcurrentHashMap<String, SlarkPlayerImpl>()
 
         @JvmStatic
-        fun addPlayer(playerId: String, player: SlarkPlayer) {
+        fun addPlayer(playerId: String, player: SlarkPlayerImpl) {
             players[playerId] = player
         }
 
@@ -28,17 +27,22 @@ class SlarkPlayerManager {
 
         @JvmStatic
         fun notifyPlayerState(playerId: String, state: SlarkPlayerState) {
-            players[playerId]?.observer?.notifyState(playerId, state)
+            players[playerId]?.observer()?.notifyState(playerId, state)
         }
 
         @JvmStatic
         fun notifyPlayerEvent(playerId: String, event: SlarkPlayerEvent, value: String) {
-            players[playerId]?.observer?.notifyEvent(playerId, event, value)
+            players[playerId]?.observer()?.notifyEvent(playerId, event, value)
         }
 
         @JvmStatic
         fun notifyPlayerTime(playerId: String, time: Double) {
-            players[playerId]?.observer?.notifyTime(playerId, time)
+            players[playerId]?.observer()?.notifyTime(playerId, time)
+        }
+
+        @JvmStatic
+        fun requestRender(playerId: String, textureId: Int) {
+            players[playerId]?.requestRender(textureId)
         }
 
         external fun createPlayer(path: String, start: Double, duration: Double): String
@@ -53,7 +57,7 @@ class SlarkPlayerManager {
 
         external fun setRenderSize(playerId: String, width: Int, height: Int)
 
-        external fun seek(playerId: String, time: Double, isAccurate: Boolean)
+        external fun seek(playerId: String, time: Double)
 
         external fun totalDuration(playerId: String):Double
 

@@ -158,8 +158,14 @@ void AndroidEGLContext::destroy() noexcept {
     config_ = nullptr;
 }
 
-IEGLContextPtr createEGLContext() noexcept {
-    return std::make_unique<AndroidEGLContext>();
+IEGLContextRefPtr createGLContext() noexcept {
+    return std::make_shared<AndroidEGLContext>();
+}
+
+IEGLContextRefPtr createMainGLContext() noexcept {
+    auto context = createGLContext();
+    context->init(nullptr);
+    return context;
 }
 
 } // slark

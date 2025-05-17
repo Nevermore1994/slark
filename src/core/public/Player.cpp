@@ -56,10 +56,6 @@ std::string_view Player::playerId() const noexcept {
     return pimpl_->playerId();
 }
 
-void Player::seek(long double time, bool isAccurate) noexcept {
-    pimpl_->seek(time, isAccurate);
-}
-
 PlayerParams Player::peek() noexcept {
     return pimpl_->params();
 }
@@ -107,14 +103,7 @@ long double Player::currentPlayedTime() noexcept {
     return pimpl_->currentPlayedTime();
 }
 
-void* Player::requestRender() noexcept {
-    if (!pimpl_) {
-        return nullptr;
-    }
-    return pimpl_->requestRender();
-}
-
-void Player::setRenderImpl(std::weak_ptr<IVideoRender>& render) noexcept {
+void Player::setRenderImpl(std::weak_ptr<IVideoRender> render) noexcept {
     if (!pimpl_) {
         return;
     }
