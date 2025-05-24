@@ -1,13 +1,12 @@
 package com.slark.api
 
-import android.view.Surface
+import com.slark.sdk.SlarkPlayerImpl
 
 /**
  * SlarkPlayer interface that defines the methods for a media player.
  */
 
 interface SlarkPlayer {
-    fun setConfig(config: SlarkPlayerConfig): Boolean
 
     fun getPlayerId(): String
 
@@ -21,7 +20,14 @@ interface SlarkPlayer {
 
     fun release()
 
-    fun setObserver(observer: SlarkPlayerObserver)
+    fun setObserver(observer: SlarkPlayerObserver?)
 
     fun setRenderTarget(renderTarget: SlarkRenderTarget)
+}
+
+object SlarkPlayerFactory {
+    fun createPlayer(config: SlarkPlayerConfig): SlarkPlayer? {
+        val player = SlarkPlayerImpl()
+        return player.create(config)
+    }
 }

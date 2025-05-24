@@ -3,10 +3,15 @@ package com.slark.sdk
 import android.content.Context
 
 class SlarkNativeBridge {
-
     companion object {
         init {
-            System.loadLibrary("sdk")
+            try {
+                System.loadLibrary("sdk")
+                android.util.Log.d("SlarkSdk", "Library loaded successfully")
+            } catch (e: UnsatisfiedLinkError) {
+                android.util.Log.e("SlarkSdk", "Failed to load library: ${e.message}")
+                throw e
+            }
         }
 
         @JvmStatic

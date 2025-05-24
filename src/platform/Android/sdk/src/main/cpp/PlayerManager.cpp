@@ -16,9 +16,7 @@ namespace slark {
 
 class PlayerObserver: public IPlayerObserver {
 public:
-    PlayerObserver() {
-
-    }
+    PlayerObserver() = default;
 
     void notifyPlayedTime(std::string_view playerId, long double time) override {
         using namespace slark::JNI;
@@ -146,11 +144,11 @@ using namespace slark::JNI;
 extern "C"
 JNIEXPORT jstring JNICALL
 Java_com_slark_sdk_SlarkPlayerManager_00024Companion_createPlayer(
-    JNIEnv *env,
-    jobject /*thiz*/,
-    jstring path,
-    jdouble start,
-    jdouble duration
+        JNIEnv *env,
+        jobject thiz,
+        jstring path,
+        jdouble start,
+        jdouble duration
 ) {
     auto playerParams = std::make_unique<PlayerParams>();
     playerParams->item.path = JNI::FromJVM::toString(env, path);
@@ -171,6 +169,7 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_createPlayer(
     auto render = std::make_shared<VideoRender>();
     render->setPlayerId(playerId);
     player->setRenderImpl(render);
+    VideoRenderManager::shareInstance().add(playerId, render);
     return JNI::ToJVM::toString(env, playerId).get();
 }
 

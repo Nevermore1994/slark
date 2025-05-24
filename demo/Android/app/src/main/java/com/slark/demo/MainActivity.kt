@@ -16,12 +16,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.slark.demo.ui.navigation.Screen
+import com.slark.demo.ui.navigation.AppNavHost
+import com.slark.api.SlarkSdk
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        val myApp = application
+        SlarkSdk.init(myApp)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
@@ -57,31 +60,17 @@ fun HomeScreen(innerPadding: PaddingValues,
 
 @Composable
 fun HomeScreenRoute(navController: NavHostController) {
-    Scaffold(modifier = Modifier.fillMaxSize()
+    Scaffold(
+        modifier = Modifier.fillMaxSize()
     ) { innerPadding ->
         HomeScreen(
             innerPadding = innerPadding,
             onItemClick = { index ->
                 when (index) {
-                    0 -> navController.navigate(Screen.LocalPlayerScreen.route)
+                    0 -> navController.navigate(Screen.VideoPickerScreen.route)
                 }
             }
         )
     }
 }
 
-@Composable
-fun AppNavHost(navController: NavHostController) {
-    NavHost(
-        navController = navController,
-        startDestination = Screen.HomeScreen.route
-    ) {
-        composable(Screen.HomeScreen.route) {
-            HomeScreenRoute(navController)
-        }
-
-        composable(Screen.LocalPlayerScreen.route) {
-            LocalPlayerScreen()
-        }
-    }
-}

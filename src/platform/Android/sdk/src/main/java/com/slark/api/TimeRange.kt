@@ -30,6 +30,10 @@ data class KtTimeRange(val start: KtTime, val duration: KtTime) {
         return KtTimeRange(newStart, newEnd - newStart)
     }
 
+    fun isValid(): Boolean {
+        return start.isValid() && duration.isValid() && duration > KtTime.zero
+    }
+
     companion object {
         val zero = KtTimeRange(KtTime.zero, KtTime.zero)
     }
