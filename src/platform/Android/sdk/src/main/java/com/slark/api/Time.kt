@@ -29,6 +29,10 @@ data class KtTime(val value: Long, val timescale: Int = 1000) : Comparable<KtTim
         return diff.value.compareTo(0)
     }
 
+    fun isValid(): Boolean {
+        return value >= 0 && timescale > 0
+    }
+
     companion object {
         fun fromSeconds(seconds: Double, timescale: Int = 600): KtTime {
             return KtTime((seconds * timescale).toLong(), timescale)

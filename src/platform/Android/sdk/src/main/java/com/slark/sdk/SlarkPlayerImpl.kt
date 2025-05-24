@@ -39,15 +39,15 @@ class SlarkPlayerImpl: SlarkPlayer {
             SlarkPlayerManager.setVolume(playerId, value)
         }
 
-    override fun setConfig(config: SlarkPlayerConfig): Boolean {
+    fun create(config: SlarkPlayerConfig): SlarkPlayer? {
         if (config.dataSource.isEmpty()) {
             SlarkLog.e(LOG_TAG, "dataSource is empty")
-            return false
+            return null
         }
         val (start, duration) = config.timeRange.get()
         playerId = SlarkPlayerManager.createPlayer(config.dataSource, start, duration)
         SlarkPlayerManager.addPlayer(playerId, this)
-        return true
+        return this
     }
 
     override fun getPlayerId(): String {
@@ -75,7 +75,7 @@ class SlarkPlayerImpl: SlarkPlayer {
         SlarkPlayerManager.seek(playerId, time)
     }
 
-    override fun setObserver(observer: SlarkPlayerObserver) {
+    override fun setObserver(observer: SlarkPlayerObserver?) {
         playerObserver = observer
     }
 

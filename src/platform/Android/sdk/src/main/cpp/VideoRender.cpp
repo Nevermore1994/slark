@@ -46,7 +46,6 @@ VideoRender::VideoRender()
                  &VideoRender::requestRender,
                   this)
 ) {
-    VideoRenderManager::shareInstance().add(playerId_, shared_from_this());
     using namespace std::chrono_literals;
     renderThread_->setInterval(33ms); //30fps
 }
@@ -56,7 +55,6 @@ VideoRender::~VideoRender() noexcept {
         renderThread_->stop();
         renderThread_.reset();
     }
-    VideoRenderManager::shareInstance().remove(playerId_);
 }
 
 void VideoRender::start() noexcept {

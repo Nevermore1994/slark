@@ -186,7 +186,6 @@ bool WAVDemuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
             if (!isValid) {
                 continue;
             }
-            dataOffset = offset;
             dataSize = chunkSize;
 
             int64_t durationUs = 0;
