@@ -30,7 +30,7 @@ public:
         static DemuxerInfo info = {
             DemuxerType::WAV,
             "WAVE",
-            BaseClass<WAVDemuxer>::registerClass(GetClassName(WAVDemuxer))
+            BaseClass::registerClass<WAVDemuxer>(GetClassName(WAVDemuxer))
         };
         return info;
     }

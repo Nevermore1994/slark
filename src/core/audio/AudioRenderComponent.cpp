@@ -17,6 +17,15 @@ AudioRenderComponent::AudioRenderComponent(std::shared_ptr<AudioInfo> info)
     init();
 }
 
+AudioRenderComponent::~AudioRenderComponent() {
+    if (auto pimpl = pimpl_.load()) {
+        pimpl->stop();
+    }
+    audioBuffer_.reset();
+    pimpl_.reset();
+    isFirstFrameRendered = false;
+}
+
 void AudioRenderComponent::init() noexcept {
     reset();
     auto pimpl = createAudioRender(audioInfo_);

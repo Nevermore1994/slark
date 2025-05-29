@@ -22,6 +22,8 @@ namespace slark {
 
 const long double kAVSyncMinThreshold = 0.1; //100ms
 const long double kAVSyncMaxThreshold = 10; //10s
+const uint32_t kMaxCacheDecodedVideoFrame = 3;
+const uint32_t kMaxCacheDecodedAudioFrame = 10;
 
 Player::Impl::Impl(std::unique_ptr<PlayerParams> params)
     : playerId_(Random::uuid()) {
@@ -32,11 +34,11 @@ Player::Impl::Impl(std::unique_ptr<PlayerParams> params)
 }
 
 Player::Impl::~Impl() {
-    updateState(PlayerState::Stop);
     isStopped_ = true;
+    updateState(PlayerState::Stop);
     std::unique_lock<std::mutex> lock(releaseMutex_);
     cond_.wait(lock, [this]{
-        return state() == PlayerState::Stop;
+        return isReleased_.load();
     });
 }
 
@@ -193,6 +195,7 @@ void Player::Impl::createAudioComponent(const PlayerSetting& setting) noexcept {
     }
     auto config = std::make_shared<AudioDecoderConfig>();
     const auto& audioInfo = demuxer_->audioInfo();
+    config->playerId = playerId_;
     config->mediaInfo = audioInfo->mediaInfo;
     config->bitsPerSample = audioInfo->bitsPerSample;
     config->channels = audioInfo->channels;
@@ -230,6 +233,7 @@ void Player::Impl::createVideoComponent(const PlayerSetting& setting) noexcept  
     auto config = std::make_shared<VideoDecoderConfig>();
     const auto& videoInfo = demuxer_->videoInfo();
     if (videoInfo) {
+        config->playerId = playerId_;
         config->mediaInfo = videoInfo->mediaInfo;
         config->width = videoInfo->width;
         config->height = videoInfo->height;
@@ -281,6 +285,7 @@ void Player::Impl::initPlayerInfo() noexcept {
         stats_.isForceVideoRendered = true;
     }
     LogI("init player success.");
+    setState(PlayerState::Ready);
 }
 
 void Player::Impl::handleAudioPacket(AVFramePtrArray& audioPackets) noexcept {
@@ -392,10 +397,6 @@ void Player::Impl::pushVideoFrameDecode(bool ) noexcept {
     if (!videoDecodeComponent_) {
         return;
     }
-    if (videoPackets_.empty() && demuxer_ && demuxer_->isCompleted()) {
-        videoDecodeComponent_->pause();
-        return;
-    }
     ///TODO: FIX DTS
     if (videoDecodeComponent_) {
         if (!videoPackets_.empty()) {
@@ -458,8 +459,6 @@ void Player::Impl::pushVideoFrameToRender() noexcept {
             setState(PlayerState::Ready);
         }
         seekRequest_.reset();
-    } else if (state() == PlayerState::Buffering) {
-        setState(PlayerState::Ready);
     }
     stats_.isForceVideoRendered = false;
 }
@@ -536,9 +535,11 @@ void Player::Impl::doStop() noexcept {
         dataProvider_->close();
         dataProvider_.reset();
     }
+    audioRender_->stop();
     audioRender_.reset();
     demuxer_.reset();
     audioDecodeComponent_.reset();
+    videoDecodeComponent_.reset();
     if (ownerThread_) {
         ownerThread_->stop();
     }
@@ -546,6 +547,7 @@ void Player::Impl::doStop() noexcept {
         render->pause();
     }
     GLContextManager::shareInstance().removeMainContext(playerId_);
+    isReleased_ = true;
     cond_.notify_all();
     LogI("do stop end");
 }

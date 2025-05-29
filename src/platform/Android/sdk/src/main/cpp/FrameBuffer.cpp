@@ -42,7 +42,6 @@ bool FrameBuffer::init() noexcept {
     }
     glBindTexture(GL_TEXTURE_2D, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    activeThreads_.insert(std::this_thread::get_id());
     return true;
 }
 
@@ -73,6 +72,12 @@ void FrameBuffer::bind(bool isRebinding) noexcept {
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                                GL_TEXTURE_2D, texture_->textureId(), 0);
         glBindFramebuffer(GL_FRAMEBUFFER, frameBufferId_);
+        auto status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        if (status != GL_FRAMEBUFFER_COMPLETE) {
+            LogE("Framebuffer is not complete: {}", status);
+            unbind(isRebinding);
+            return;
+        }
         activeThreads_.insert(std::this_thread::get_id());
     } else {
         LogE("Framebuffer is not valid");
@@ -85,6 +90,7 @@ void FrameBuffer::unbind(bool isRollback) noexcept {
     } else {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
+    activeThreads_.erase(std::this_thread::get_id());
 }
 
 } // slark

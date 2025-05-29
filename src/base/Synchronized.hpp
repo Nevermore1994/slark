@@ -163,7 +163,7 @@ public:
     }
 
 private:
-    Container container_;
+    Container container_{};
     mutable Mutex mutex_;
 };
 

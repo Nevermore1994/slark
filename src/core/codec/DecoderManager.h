@@ -24,7 +24,7 @@ public:
     void init() noexcept;
     DecoderType getDecoderType(std::string_view mediaInfo, bool isSoftDecode) const;
     bool contains(DecoderType coderType) const noexcept;
-    std::unique_ptr<IDecoder> create(DecoderType type) const noexcept;
+    std::shared_ptr<IDecoder> create(DecoderType type) const noexcept;
 
 private:
     std::unordered_map<std::string, DecoderType> mediaInfo_;

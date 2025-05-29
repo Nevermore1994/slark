@@ -25,7 +25,9 @@ std::string Native_HardwareDecoder_createVideoDecoder(JNIEnv* env,
         LogE("create decoder failed, not found video decoder class");
         return {};
     }
-    auto methodSignature = JNI::makeJNISignature(JNI::String, JNI::String, JNI::Int, JNI::Int);
+    auto methodSignature = JNI::makeJNISignature(JNI::String,
+                                                 JNI::String, JNI::Int, JNI::Int,
+                                                 JNI::makeArray(JNI::Byte), JNI::makeArray(JNI::Byte), JNI::makeArray(JNI::Byte));
     auto createDecoderMethod = JNICache::shareInstance().getStaticMethodId(decoderClass,
                                                                            "createVideoDecoder",
                                                                            methodSignature);
@@ -33,12 +35,22 @@ std::string Native_HardwareDecoder_createVideoDecoder(JNIEnv* env,
         LogE("create decoder failed, not found decoder method");
         return {};
     }
+    auto sps = ToJVM::toByteArray(env, *decoderConfig->sps);
+    auto pps = ToJVM::toByteArray(env, *decoderConfig->pps);
+    Data vpsData;
+    auto vps = ToJVM::toByteArray(env, vpsData);
+    if (decoderConfig->vps) {
+        vps = ToJVM::toByteArray(env, *decoderConfig->vps);
+    }
     auto jMediaInfo= ToJVM::toString(env, decoderConfig->mediaInfo);
     auto jDecoderId = reinterpret_cast<jstring>(env->CallStaticObjectMethod(decoderClass.get(),
                                                            createDecoderMethod.get(),
                                                            jMediaInfo.get(),
                                                            decoderConfig->width,
-                                                           decoderConfig->height));
+                                                           decoderConfig->height,
+                                                           sps.detach(),
+                                                           pps.detach(),
+                                                           vps.detach()));
     return FromJVM::toString(env, jDecoderId);
 }
 
@@ -57,10 +69,10 @@ std::string Native_HardwareDecoder_createAudioDecoder(JNIEnv* env,
         LogE("create decoder failed, not found decoder method");
         return "";
     }
-    jstring jMediaInfo = env->NewStringUTF(decoderConfig->mediaInfo.data());
+    auto jMediaInfo = ToJVM::toString(env, decoderConfig->mediaInfo);
     auto jDecoderId = reinterpret_cast<jstring>(env->CallStaticObjectMethod(decoderClass.get(),
                                                            createDecoderMethod.get(),
-                                                           jMediaInfo,
+                                                           jMediaInfo.detach(),
                                                            decoderConfig->sampleRate,
                                                            decoderConfig->channels,
                                                            decoderConfig->profile));
@@ -88,9 +100,9 @@ DecoderErrorCode Native_HardwareDecoder_sendPacket(JNIEnv* env, std::string_view
         return DecoderErrorCode::Unknown;
     }
     auto byteArray = ToJVM::toByteArray(env, *data);
-    jstring jDecodeId = env->NewStringUTF(decoderId.data());
+    auto jDecodeId = ToJVM::toString(env, decoderId);
     int res = env->CallStaticIntMethod(decoderClass.get(), methodId.get(),
-                              jDecodeId, byteArray.get(), static_cast<jlong>(pts), static_cast<jint>(flag));
+                              jDecodeId.detach(), byteArray.detach(), static_cast<jlong>(pts), static_cast<jint>(flag));
     return static_cast<DecoderErrorCode>(res);
 }
 
@@ -168,14 +180,14 @@ uint64_t Native_HardwareDecoder_requestVideoFrame(JNIEnv* env, std::string_view 
     auto jDecoderId = ToJVM::toString(env, decoderId);
     auto methodSignature = JNI::makeJNISignature(JNI::Long, JNI::String, JNI::Long, JNI::Int, JNI::Int);
     auto methodId = JNICache::shareInstance().getStaticMethodId(decoderClass,
-                                                                "renderVideoFrame",
+                                                                "requestVideoFrame",
                                                                 methodSignature);
     if (!methodId) {
-        LogE("not found renderVideoFrame method");
+        LogE("not found requestVideoFrame method");
         return 0;
     }
     auto packed = env->CallStaticLongMethod(decoderClass.get(), methodId.get(),
-                                             jDecoderId.get(),
+                                             jDecoderId.detach(),
                                              static_cast<jlong>(waitTime),
                                              static_cast<jint>(width),
                                              static_cast<jint>(height));
@@ -187,6 +199,10 @@ namespace slark {
 std::string
 NativeHardwareDecoder::createVideo(const std::shared_ptr<VideoDecoderConfig> &decoderConfig) {
     if (!decoderConfig) {
+        return {};
+    }
+    if (decoderConfig->sps == nullptr || decoderConfig->pps == nullptr) {
+        LogE("sps or pps is nullptr");
         return {};
     }
     JNIEnvGuard envGuard(getJavaVM());

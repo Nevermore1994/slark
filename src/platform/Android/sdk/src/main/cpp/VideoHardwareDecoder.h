@@ -29,6 +29,17 @@ public:
 
     void initContext() noexcept;
 
+    inline static const DecoderTypeInfo& info() noexcept {
+        static DecoderTypeInfo info = {
+                DecoderType::RAW,
+                BaseClass::registerClass<VideoHardwareDecoder>(GetClassName(VideoHardwareDecoder))
+        };
+        return info;
+    }
+private:
+    DecoderErrorCode sendPacket(AVFrameRefPtr& frame) noexcept;
+    DecoderErrorCode decodeByteBufferMode(AVFrameRefPtr& frame) noexcept;
+    DecoderErrorCode decodeTextureMode(AVFrameRefPtr& frame) noexcept;
     void requestVideoFrame() noexcept;
 private:
     DecodeMode mode_;

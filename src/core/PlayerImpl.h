@@ -167,6 +167,7 @@ private:
 private:
     bool isSeekingWhilePlaying_ = false;
     std::atomic_bool isStopped_ = false;
+    std::atomic_bool isReleased_ = false;
     std::unique_ptr<PlayerImplHelper> helper_ = nullptr;
     Synchronized<PlayerState, std::shared_mutex> state_;
     std::optional<PlayerSeekRequest> seekRequest_;

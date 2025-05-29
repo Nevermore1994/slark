@@ -65,7 +65,13 @@ class SlarkLog {
         private external fun nativeLog(message: String)
 
         private fun formatMessage(format: String, vararg args: Any?): String {
-            return MessageFormat.format(format, *(args ?: emptyArray()))
+            try {
+                return MessageFormat.format(format, *(args ?: emptyArray()))
+            } catch (e: Exception) {
+                // If formatting fails, return the original format string
+                return format + " [formatting error: ${e.message}]" + ", $format"
+            }
+
         }
 
         private fun processLog(message: LogMessage) {

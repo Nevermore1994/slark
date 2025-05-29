@@ -1,10 +1,12 @@
 package com.slark.demo.ui.screen.LocalPlayer
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -14,28 +16,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import com.slark.api.SlarkPlayer
 import com.slark.api.SlarkPlayerConfig
 import com.slark.api.SlarkPlayerFactory
 import com.slark.demo.ui.model.PlayerViewModel
-import com.slark.demo.ui.model.PlayerViewModelFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import com.slark.demo.ui.navigation.Screen
 
 class SharedViewModel : ViewModel() {
     val selectedVideoUris = mutableStateListOf<Uri>()
 }
 
 @Composable
-fun LocalPlayerScreenRoute(navController: NavHostController) {
+fun LocalPlayerScreenRoute(navController: NavHostController, sharedViewModel: SharedViewModel) {
     var playerViewModel by remember { mutableStateOf<PlayerViewModel?>(null) }
     var context = LocalContext.current
     val activity = context as ComponentActivity
-    val sharedViewModel: SharedViewModel = viewModel(activity)
 
     LaunchedEffect(sharedViewModel.selectedVideoUris) {
         val copiedPaths = copyMultipleVideosToCache(context, sharedViewModel.selectedVideoUris)
@@ -44,9 +44,15 @@ fun LocalPlayerScreenRoute(navController: NavHostController) {
         }
         val config = SlarkPlayerConfig(copiedPaths[0])
         val slarkPlayer: SlarkPlayer? = SlarkPlayerFactory.createPlayer(config)
-        if (slarkPlayer != null) {
-            val factory = PlayerViewModelFactory(slarkPlayer)
-            playerViewModel = ViewModelProvider(activity, factory)[PlayerViewModel::class.java]
+        playerViewModel = PlayerViewModel(slarkPlayer)
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            playerViewModel?.let { viewModel ->
+                viewModel.release()
+                playerViewModel = null
+            }
         }
     }
 

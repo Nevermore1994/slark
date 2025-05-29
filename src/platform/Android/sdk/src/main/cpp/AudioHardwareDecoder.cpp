@@ -41,6 +41,7 @@ bool AudioHardwareDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept 
     }
     NativeDecoderManager::shareInstance().add(decoderId_, shared_from_this());
     LogI("create audio decoder:{}", decoderId_);
+    isOpen_ = true;
     return true;
 }
 

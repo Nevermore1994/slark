@@ -13,7 +13,7 @@ class AudioRender : public IAudioRender {
 public:
     explicit AudioRender(std::shared_ptr<AudioInfo> audioInfo);
 
-    ~AudioRender() override = default;
+    ~AudioRender() override;
 public:
     void play() noexcept override;
 
@@ -31,8 +31,10 @@ public:
 private:
     void init() noexcept;
 
+    void release() noexcept;
 private:
     std::string playerId_;
+    TimerId timerId_;
     Time::TimePoint latency_;
 };
 

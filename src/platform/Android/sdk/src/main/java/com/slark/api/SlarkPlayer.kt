@@ -1,5 +1,6 @@
 package com.slark.api
 
+import android.util.Size
 import com.slark.sdk.SlarkPlayerImpl
 
 /**
@@ -7,6 +8,13 @@ import com.slark.sdk.SlarkPlayerImpl
  */
 
 interface SlarkPlayer {
+    var isLoop: Boolean
+
+    var isMute: Boolean
+
+    var volume: Float
+
+    fun prepare()
 
     fun getPlayerId(): String
 
@@ -23,11 +31,17 @@ interface SlarkPlayer {
     fun setObserver(observer: SlarkPlayerObserver?)
 
     fun setRenderTarget(renderTarget: SlarkRenderTarget)
+
+    fun totalDuration(): Double
+
+    fun currentTime(): Double
+
+    fun setRenderSize(size: Size)
 }
 
 object SlarkPlayerFactory {
     fun createPlayer(config: SlarkPlayerConfig): SlarkPlayer? {
-        val player = SlarkPlayerImpl()
-        return player.create(config)
+        val player = SlarkPlayerImpl.create(config)
+        return player
     }
 }

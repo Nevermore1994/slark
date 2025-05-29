@@ -33,7 +33,7 @@ public:
     inline static const DecoderTypeInfo& info() noexcept {
         static DecoderTypeInfo info = {
             DecoderType::RAW,
-            BaseClass<RawDecoder>::registerClass(GetClassName(RawDecoder))
+            BaseClass::registerClass<RawDecoder>(GetClassName(RawDecoder))
         };
         return info;
     }

@@ -14,10 +14,21 @@ namespace slark {
 
 Player::Player(std::unique_ptr<PlayerParams> params)
     : pimpl_(std::make_shared<Player::Impl>(std::move(params))) {
-    pimpl_->init();
 }
 
 Player::~Player() = default;
+
+void Player::prepare() noexcept {
+    if (!pimpl_) {
+        LogE("Player is not initialized.");
+        return;
+    }
+    if (pimpl_->state() != PlayerState::Unknown) {
+        LogI("Player is already prepared, state:{}", static_cast<int>(pimpl_->state()));
+        return;
+    }
+    pimpl_->init();
+}
 
 void Player::play() noexcept {
     if (pimpl_->state() == PlayerState::Playing) {
@@ -29,7 +40,7 @@ void Player::play() noexcept {
 }
 
 void Player::stop() noexcept {
-    if (pimpl_->state() == PlayerState::Stop) {
+    if (pimpl_->state() == PlayerState::Stop || pimpl_->state() == PlayerState::Unknown) {
         LogI("already stopped.");
         return;
     }
