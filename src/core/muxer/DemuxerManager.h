@@ -31,7 +31,7 @@ public:
 
     DemuxerType probeDemuxType(DataView str) const noexcept;
 
-    std::unique_ptr<IDemuxer> create(DemuxerType type) const noexcept;
+    std::shared_ptr<IDemuxer> create(DemuxerType type) const noexcept;
 
 private:
     std::unordered_map<DemuxerType, DemuxerInfo> demuxers_;

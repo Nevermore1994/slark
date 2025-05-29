@@ -116,7 +116,7 @@ uint64_t Native_AudioPlayer_getPlayedTime(JNIEnv *env, const std::string& player
         return 0;
     }
     auto signature = JNI::makeJNISignature(JNI::Long, JNI::String);
-    auto method = JNICache::shareInstance().getStaticMethodId(audioPlayerClass, "", signature);
+    auto method = JNICache::shareInstance().getStaticMethodId(audioPlayerClass, "getPlayedTime", signature);
     if (!method) {
         LogE("not found audio player method");
         return 0;

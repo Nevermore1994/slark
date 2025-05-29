@@ -34,12 +34,12 @@ bool DemuxerManager::contains(DemuxerType type) const noexcept {
     return demuxers_.contains(type);
 }
 
-std::unique_ptr<IDemuxer> DemuxerManager::create(DemuxerType type) const noexcept {
+std::shared_ptr<IDemuxer> DemuxerManager::create(DemuxerType type) const noexcept {
     if (!contains(type)) {
         return nullptr;
     }
     auto& demuxerInfo = demuxers_.at(type);
-    return std::unique_ptr<IDemuxer>(BaseClass<IDemuxer>::create(demuxerInfo.demuxerName));
+    return BaseClass::create<IDemuxer>(demuxerInfo.demuxerName);
 }
 
 DemuxerType DemuxerManager::probeDemuxType(DataView str) const noexcept {

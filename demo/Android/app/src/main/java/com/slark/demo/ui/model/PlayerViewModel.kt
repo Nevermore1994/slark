@@ -14,6 +14,7 @@ import com.slark.api.SlarkPlayerEvent
 import com.slark.api.SlarkPlayerObserver
 import com.slark.api.SlarkPlayerState
 import com.slark.api.SlarkRenderTarget
+import com.slark.sdk.SlarkLog
 
 class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
     var isPlaying by mutableStateOf(false)
@@ -25,15 +26,18 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
     var totalTime by mutableStateOf(0.0)
         //private set
 
+    var cacheTime by mutableStateOf(0.0)
+        //private set
+
     var volume by mutableStateOf(100.0f)
 
     private val observer = object: SlarkPlayerObserver {
         override fun notifyTime(playerId: String, time: Double) {
             currentTime = time
-
         }
 
         override fun notifyState(playerId: String, state: SlarkPlayerState) {
+            SlarkLog.d("PlayerViewModel", "Player state changed: $state")
             when (state) {
                 SlarkPlayerState.Playing -> {
                     isPlaying = true
@@ -50,18 +54,26 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
                 SlarkPlayerState.Completed -> {
                     isPlaying = false
                 }
+                SlarkPlayerState.Ready -> {
+                    totalTime = player?.totalDuration() ?: 0.0
+                }
+                SlarkPlayerState.Error -> {
+                    SlarkLog.e("PlayerViewModel", "Player error occurred")
+                }
                 else -> {}
             }
         }
 
         override fun notifyEvent(playerId: String, event: SlarkPlayerEvent, value: String) {
+            SlarkLog.d("notifyEvent","$event $value")
             when (event) {
                 SlarkPlayerEvent.FirstFrameRendered -> {
                 }
                 SlarkPlayerEvent.SeekDone -> {
-                    totalTime = value.toDouble()
+
                 }
                 SlarkPlayerEvent.UpdateCacheTime -> {
+                    cacheTime = value.toDouble()
                 }
                 else -> {}
             }
@@ -82,6 +94,10 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
 
     fun skipNext() {
         // Implement skip next logic
+    }
+
+    fun prepare() {
+        player?.prepare()
     }
 
     fun play(playing : Boolean) {
@@ -108,7 +124,7 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
         player?.stop()
     }
 
-    private fun release() {
+    fun release() {
         player?.stop()
         player?.release()
     }
@@ -116,18 +132,5 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
     override fun onCleared() {
         super.onCleared()
         release()
-    }
-}
-
-class PlayerViewModelFactory(
-    private val slarkPlayer: SlarkPlayer
-) : ViewModelProvider.Factory {
-
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(PlayerViewModel::class.java)) {
-            return PlayerViewModel(slarkPlayer) as T
-        }
-        throw IllegalArgumentException("Unknown ViewModel class")
     }
 }

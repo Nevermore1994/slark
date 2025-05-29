@@ -150,6 +150,7 @@ class TextureRender {
     companion object {
         const val LOG_TAG = "TextureRender"
         val VERTEX_SHADER = """
+            #version 100
             precision mediump float;
             
             attribute vec4 a_position;
@@ -168,7 +169,8 @@ class TextureRender {
         """.trimIndent()
 
         val FRAGMENT_SHADER = """
-            #extension GL_OES_EGL_image_external_essl3 : require
+            #version 100
+            #extension GL_OES_EGL_image_external : require
             precision mediump float;
 
             varying vec2 v_texCoord;

@@ -6,6 +6,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 class SlarkPlayerManager {
     enum class Action {
+        PREPARE,
         PLAY,
         PAUSE,
         STOP,

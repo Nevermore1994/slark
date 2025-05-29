@@ -234,7 +234,7 @@ public:
         static DemuxerInfo info = {
             DemuxerType::HLS,
             "#EXTM3U",
-            BaseClass<HLSDemuxer>::registerClass(GetClassName(HLSDemuxer))
+            BaseClass::registerClass<HLSDemuxer>(GetClassName(HLSDemuxer))
         };
         return info;
     }

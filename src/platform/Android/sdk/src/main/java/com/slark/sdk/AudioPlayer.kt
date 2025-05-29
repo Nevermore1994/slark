@@ -207,7 +207,7 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
 
         @JvmStatic
         fun getPlayedTime(playerId: String): Long {
-            if (!players.contains(playerId)) {
+            if (!players.containsKey(playerId)) {
                 SlarkLog.e(LOG_TAG,"not found player")
                 return 0
             }
@@ -216,7 +216,7 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
 
         @JvmStatic
         fun audioPlayerAction(playerId: String, action : Action) {
-            if (!players.contains(playerId)) {
+            if (!players.containsKey(playerId)) {
                 return
             }
             when (action) {

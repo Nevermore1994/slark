@@ -39,6 +39,11 @@ enum class PlayerEvent : uint8_t {
 
 enum class PlayerErrorCode : uint8_t {
     OpenFileError,
+    NetWorkError,
+    NotSupport,
+    DemuxError,
+    DecodeError,
+    RenderError,
 };
 
 struct IPlayerObserver {
@@ -65,9 +70,9 @@ struct ResourceItem {
 
 struct PlayerSetting {
     bool isLoop = false;
+    bool isMute = false;
     bool enableAudioSoftDecode = false;
     bool enableVideoSoftDecode = false;
-    bool isMute = false;
     uint32_t width = 0;
     uint32_t height = 0;
     float volume = 100.0f;
@@ -100,6 +105,8 @@ public:
     ~Player();
 
 public:
+    void prepare() noexcept;
+
     void play() noexcept;
 
     void stop() noexcept;

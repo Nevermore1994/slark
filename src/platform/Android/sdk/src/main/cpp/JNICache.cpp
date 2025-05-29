@@ -18,15 +18,15 @@ MethodReference JNICache::findMethodCache(const ClassReference& clazz,
     auto env = clazz.env();
     auto it = methodCache_.find(key);
     if (it == methodCache_.end()) {
-        return {nullptr};
+        return {env, nullptr};
     }
     auto oldClass = ClassReference(env, (jclass)(env->NewLocalRef(it->second.classRef)));
     if (oldClass) {
         if (env->IsSameObject(oldClass.get(), clazz.get())) {
-            return {it->second.methodId};
+            return {env, it->second.methodId};
         }
     }
-    return {nullptr};
+    return {env, nullptr};
 }
 
 MethodReference JNICache::updateMethodCache(const ClassReference& clazz,
@@ -39,7 +39,7 @@ MethodReference JNICache::updateMethodCache(const ClassReference& clazz,
         auto oldClass = ClassReference(env,(jclass)(env->NewLocalRef(it->second.classRef)));
         if (oldClass) {
             if (env->IsSameObject(oldClass.get(), clazz.get())) {
-                return {it->second.methodId};
+                return {env, it->second.methodId};
             }
         }
         env->DeleteWeakGlobalRef(it->second.classRef);
@@ -52,7 +52,7 @@ MethodReference JNICache::updateMethodCache(const ClassReference& clazz,
             env->NewWeakGlobalRef(clazz.get())
         };
     }
-    return {methodId};
+    return {env, methodId};
 }
 
 MethodReference JNICache::getStaticMethodId(const ClassReference& clazz,
@@ -65,10 +65,10 @@ MethodReference JNICache::getStaticMethodId(const ClassReference& clazz,
     }
     auto methodId = env->GetStaticMethodID(clazz.get(), methodName.data(), signature.data());
     if (methodId == nullptr) {
-        return MethodReference{nullptr};
+        return MethodReference{env, nullptr};
     }
     updateMethodCache(clazz, key, methodId);
-    return MethodReference{methodId};
+    return MethodReference{env, methodId};
 }
 
 MethodReference JNICache::getMethodId(const ClassReference& clazz,
@@ -81,10 +81,10 @@ MethodReference JNICache::getMethodId(const ClassReference& clazz,
     }
     auto methodId = env->GetMethodID(clazz.get(), methodName.data(), signature.data());
     if (methodId == nullptr) {
-        return {nullptr};
+        return {env, nullptr};
     }
     updateMethodCache(clazz, key, methodId);
-    return {methodId};
+    return {env, methodId};
 }
 
 ClassReference JNICache::getClass(JNIEnv* env, std::string_view className) noexcept {
@@ -129,7 +129,7 @@ ObjectReference JNICache::getEnumField(JNIEnv* env,
                                        std::string_view className,
                                        std::string_view fieldName) noexcept {
     auto enumClass = getClass(env, className);
-    if (enumClass) {
+    if (!enumClass) {
         return {env, nullptr, fieldName};
     }
 

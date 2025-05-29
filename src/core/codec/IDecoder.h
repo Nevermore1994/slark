@@ -40,6 +40,7 @@ struct DecoderTypeInfo {
 };
 
 struct DecoderConfig {
+    std::string playerId;
     uint32_t timeScale{};
     std::string mediaInfo;
     virtual ~DecoderConfig() = default;

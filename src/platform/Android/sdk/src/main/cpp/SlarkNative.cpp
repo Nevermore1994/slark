@@ -1,6 +1,11 @@
 #include <string>
 #include <mutex>
+#include <vector>
+#include <algorithm>
+#include "Log.hpp"
 #include "JNIEnvGuard.hpp"
+#include "JNICache.h"
+#include "JNIHelper.h"
 #include "AndroidBase.h"
 #include "FileUtil.h"
 
@@ -9,12 +14,33 @@ jobject gApplicationContext = nullptr;
 
 using namespace slark;
 
+void loadClassCache(JNIEnv* env) {
+    using namespace slark::JNI;
+    std::vector<std::string> classes = {
+        "com/slark/sdk/SlarkNativeBridge",
+        "com/slark/sdk/SlarkPlayerManager",
+        "com/slark/api/SlarkPlayerState",
+        "com/slark/api/SlarkPlayerEvent",
+        "com/slark/sdk/MediaCodecDecoder$Action",
+        "com/slark/sdk/MediaCodecDecoder",
+        "com/slark/sdk/AudioPlayer",
+        "com/slark/sdk/AudioPlayer$Action",
+    };
+    std::for_each(classes.begin(), classes.end(), [&](const std::string& className) {
+        auto classRef = JNICache::shareInstance().getClass(env, className);
+        if (!classRef) {
+            LogE("Failed to find class: {}", className);
+        }
+    });
+}
+
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* /* reserved */) {
     gJavaVM = vm;
     JNIEnv* env;
     if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) {
         return -1;
     }
+    loadClassCache(env);
     return JNI_VERSION_1_6;
 }
 
@@ -31,14 +57,23 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* /* reserved */) {
 extern "C"
 JNIEXPORT void JNICALL
 Java_com_slark_sdk_SlarkNativeBridge_logout(JNIEnv *env, jobject /* this*/, const std::string& log) {
-    jclass nativeBridgeClass = env->FindClass("com/slark/sdk/SlarkNativeBridge");
-    if (!nativeBridgeClass) return;
-
-    jmethodID methodId = env->GetStaticMethodID(nativeBridgeClass, "logout", "(Ljava/lang/String;)V");
-    if (!methodId) return;
-    jstring message = env->NewStringUTF(log.c_str());
-
-    env->CallStaticVoidMethod(nativeBridgeClass, methodId, message);
+    using namespace slark::JNI;
+    auto bridgeClass = JNICache::shareInstance().getClass(env, "com/slark/sdk/SlarkNativeBridge");
+    if (!bridgeClass) {
+        LogE("Failed to find SlarkNativeBridge class");
+        return;
+    }
+    auto methodId = JNICache::shareInstance().getStaticMethodId(bridgeClass, "logout", "(Ljava/lang/String;)V");
+    if (!methodId) {
+        LogE("Failed to find logout method in SlarkNativeBridge class");
+        return;
+    }
+    auto message = ToJVM::toString(env, log);
+    if (!message) {
+        LogE("Failed to convert log message to jstring");
+        return;
+    }
+    env->CallStaticVoidMethod(bridgeClass.get(), methodId.get(), message.get());
 }
 
 extern "C"

@@ -29,7 +29,7 @@ class AudioRenderComponent: public slark::NonCopyable,
 public:
     explicit AudioRenderComponent(std::shared_ptr<AudioInfo> info);
 
-    ~AudioRenderComponent() override = default;
+    ~AudioRenderComponent() override;
 
     bool send(AVFrameRefPtr frame) noexcept override;
 

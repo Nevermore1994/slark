@@ -39,7 +39,7 @@ public:
         }
         jniGuard.get()->CallStaticVoidMethod(playerClass.get(),
                                              methodId.get(),
-                                             jPlayerId.get(),
+                                             jPlayerId.detach(),
                                              jTime);
     }
 
@@ -64,6 +64,7 @@ public:
         }
         std::string_view fieldView = "Unknown";
         static std::vector<std::string_view> stateNames = {
+            "Unknown",
             "Initializing",
             "Buffering",
             "Ready",
@@ -79,8 +80,8 @@ public:
         auto stateEnum = JNICache::shareInstance().getEnumField(jniGuard.get(), kPlayerStateClass, fieldView);
         jniGuard.get()->CallStaticVoidMethod(playerClass.get(),
                                              methodId.get(),
-                                             jPlayerId.get(),
-                                             stateEnum.get());
+                                             jPlayerId.detach(),
+                                             stateEnum.detach());
     }
 
     void notifyPlayerEvent(std::string_view playerId, slark::PlayerEvent event, std::string value) override {
@@ -117,9 +118,9 @@ public:
         auto jValue = JNI::ToJVM::toString(jniGuard.get(), value);
         jniGuard.get()->CallStaticVoidMethod(playerClass.get(),
                                              methodId.get(),
-                                             jPlayerId.get(),
-                                             eventEnum.get(),
-                                             jValue.get());
+                                             jPlayerId.detach(),
+                                             eventEnum.detach(),
+                                             jValue.detach());
     }
 private:
     const std::string_view kPlayerManagerClass = "com/slark/sdk/SlarkPlayerManager";
@@ -132,6 +133,7 @@ using PlayerObserverManager = Manager<PlayerObserver>;
 }
 
 enum class Action {
+    Prepare = 0,
     Play,
     Pause,
     Stop,
@@ -144,11 +146,11 @@ using namespace slark::JNI;
 extern "C"
 JNIEXPORT jstring JNICALL
 Java_com_slark_sdk_SlarkPlayerManager_00024Companion_createPlayer(
-        JNIEnv *env,
-        jobject thiz,
-        jstring path,
-        jdouble start,
-        jdouble duration
+    JNIEnv *env,
+    jobject thiz,
+    jstring path,
+    jdouble start,
+    jdouble duration
 ) {
     auto playerParams = std::make_unique<PlayerParams>();
     playerParams->item.path = JNI::FromJVM::toString(env, path);
@@ -170,7 +172,7 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_createPlayer(
     render->setPlayerId(playerId);
     player->setRenderImpl(render);
     VideoRenderManager::shareInstance().add(playerId, render);
-    return JNI::ToJVM::toString(env, playerId).get();
+    return JNI::ToJVM::toString(env, playerId).detach();
 }
 
 extern "C"
@@ -185,6 +187,10 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_doAction(
     if (auto player = PlayerManager::shareInstance().find(playerId)) {
         auto action = static_cast<Action>(actionId);
         switch (action) {
+            case Action::Prepare: {
+                player->prepare();
+            }
+                break;
             case Action::Play: {
                 player->play();
             }
@@ -245,11 +251,11 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_setMute(
 extern "C"
 JNIEXPORT void JNICALL
 Java_com_slark_sdk_SlarkPlayerManager_00024Companion_setRenderSize(
-        JNIEnv *env,
-        jobject /*thiz*/,
-        jstring jPlayerId,
-        jint width,
-        jint height
+    JNIEnv *env,
+    jobject /*thiz*/,
+    jstring jPlayerId,
+    jint width,
+    jint height
 ) {
     auto playerId = JNI::FromJVM::toString(env, jPlayerId);
     if (auto player = PlayerManager::shareInstance().find(playerId)) {
@@ -280,7 +286,8 @@ JNIEXPORT jdouble JNICALL
 Java_com_slark_sdk_SlarkPlayerManager_00024Companion_totalDuration(
     JNIEnv *env,
     jobject /*thiz*/,
-    jstring jPlayerId) {
+    jstring jPlayerId
+) {
     auto playerId = JNI::FromJVM::toString(env, jPlayerId);
     auto duration = 0.0;
     if (auto player = PlayerManager::shareInstance().find(playerId)) {
@@ -353,6 +360,6 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_state(
         LogE("not found player, {}", playerId);
     }
     auto stateValue = JNICache::shareInstance().getEnumField(env, kPlayerStateClass, fieldView);
-    return stateValue.get();
+    return stateValue.detach();
 }
 

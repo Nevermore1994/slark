@@ -73,14 +73,14 @@ void PlayerImplHelper::handleOpenMp4DemuxerResult(bool isSuccess) noexcept {
         auto dataStart = mp4Demuxer->headerInfo()->headerLength + 8; //skip size and type
         Range range;
         range.pos = dataStart;
-        range.size = static_cast<int64_t>(mp4Demuxer->headerInfo()->dataSize);
+        range.size = static_cast<int64_t>(mp4Demuxer->headerInfo()->dataSize) - 8; //skip size and type
         mp4Demuxer->seekPos(dataStart);
         player->dataProvider_->updateReadRange(range);
         LogI("mp4 seek to:{}", dataStart);
-//#if DEBUG
-//            auto ss = mp4Demuxer->description();
-//            LogI("mp4 info:{}", ss);
-//#endif
+#if DEBUG
+        auto ss = mp4Demuxer->description();
+        LogI("mp4 info:{}", ss);
+#endif
     } else {
         int64_t moovBoxStart = 0;
         uint32_t moovBoxSize = 0;

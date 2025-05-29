@@ -45,7 +45,7 @@ AVFrameRefPtr DecoderComponent::requestDecodeFrame(bool isBlocking) noexcept {
 
 AVFrameRefPtr DecoderComponent::peekDecodeFrame() noexcept {
     std::lock_guard lock(mutex_);
-    if (!pendingDecodeQueue_.empty()) {
+    if (pendingDecodeQueue_.empty()) {
         return nullptr;
     }
     return pendingDecodeQueue_.front();
@@ -73,7 +73,6 @@ bool DecoderComponent::open(DecoderType type, const std::shared_ptr<DecoderConfi
     decoder_.withLock([&decoder](auto& coder){
         coder = std::move(decoder);
     });
-    isOpened_ = true;
     return true;
 }
 
@@ -106,7 +105,8 @@ void DecoderComponent::send(AVFramePtr packet) noexcept {
         std::lock_guard lock(mutex_);
         pendingDecodeQueue_.emplace_back(std::move(packet));
     }
-    cond_.notify_all();
+    cond_.notify_one();
+    decodeWorker_.start();
 }
 
 void DecoderComponent::pause() noexcept {

@@ -2,6 +2,8 @@ package com.slark.sdk
 
 import android.graphics.SurfaceTexture
 import android.media.MediaFormat
+import android.os.Handler
+import android.os.HandlerThread
 import android.util.Size
 import android.view.Surface
 
@@ -12,10 +14,22 @@ class RenderSurface : SurfaceTexture.OnFrameAvailableListener {
     private val mutex = Object()
     private var isFrameAvailable = false
 
+    private var handlerThread: HandlerThread? = null
+    private var handler: Handler? = null
+
     fun init() {
         render = TextureRender()
-        surfaceTexture = SurfaceTexture(render?.getTextureId() ?: 0)
-        surfaceTexture!!.setOnFrameAvailableListener(this)
+        if (render?.isValid() == false) {
+            SlarkLog.e(LOG_TAG, "TextureRender initialization failed")
+            throw RuntimeException("Render initialization failed")
+        }
+        handlerThread = HandlerThread("SurfaceCallbackThread")
+        handlerThread?.start()
+        handler = Handler(handlerThread!!.looper)
+
+        surfaceTexture = SurfaceTexture(render?.getTextureId() ?: 0).apply {
+            setOnFrameAvailableListener(this@RenderSurface, handler)
+        }
         surface = Surface(surfaceTexture)
     }
 
@@ -27,7 +41,10 @@ class RenderSurface : SurfaceTexture.OnFrameAvailableListener {
     }
 
     fun surface(): Surface? {
-        return surface
+        if (surface?.isValid == true) {
+            return surface
+        }
+        return null
     }
 
     fun release() {

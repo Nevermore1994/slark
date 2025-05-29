@@ -98,12 +98,24 @@ template<>
 class JNIReference<jmethodID> {
 public:
     JNIReference() noexcept : methodId_(nullptr) {}
-    JNIReference(jmethodID methodId) noexcept : methodId_(methodId) {}
+    JNIReference(JNIEnv* env, jmethodID methodId) noexcept
+        : env_(env)
+        , methodId_(methodId) {
+
+    }
 
     jmethodID get() const noexcept { return methodId_; }
     explicit operator bool() const noexcept { return methodId_ != nullptr; }
 
+    ~JNIReference() noexcept {
+        if (env_ && env_->ExceptionCheck()) {
+            env_->ExceptionDescribe();
+            env_->ExceptionClear();
+        }
+        env_ = nullptr;
+    }
 private:
+    JNIEnvPtr env_;
     jmethodID methodId_;
 };
 

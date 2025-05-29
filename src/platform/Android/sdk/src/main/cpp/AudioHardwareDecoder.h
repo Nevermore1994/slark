@@ -19,6 +19,14 @@ public:
     DecoderErrorCode decode(AVFrameRefPtr& frame) noexcept override;
 
     bool open(std::shared_ptr<DecoderConfig> config) noexcept override;
+
+    inline static const DecoderTypeInfo& info() noexcept {
+        static DecoderTypeInfo info = {
+                DecoderType::RAW,
+                BaseClass::registerClass<AudioHardwareDecoder>(GetClassName(AudioHardwareDecoder))
+        };
+        return info;
+    }
 };
 
 } // slark

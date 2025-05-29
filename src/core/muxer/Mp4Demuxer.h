@@ -92,7 +92,7 @@ public:
         static DemuxerInfo info = {
             DemuxerType::MP4,
             "ftyp",
-            BaseClass<Mp4Demuxer>::registerClass(GetClassName(Mp4Demuxer))
+            BaseClass::registerClass<Mp4Demuxer>(GetClassName(Mp4Demuxer))
         };
         return info;
     }

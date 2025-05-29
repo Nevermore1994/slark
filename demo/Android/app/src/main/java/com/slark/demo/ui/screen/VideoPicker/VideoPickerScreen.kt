@@ -1,5 +1,7 @@
 package com.slark.demo.ui.screen.VideoPicker
 
+import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -15,11 +17,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.sp
-import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.decode.VideoFrameDecoder
+import coil.memory.MemoryCache
+import coil.ImageLoader
 import coil.request.ImageRequest
 import coil.request.videoFrameMicros
 import kotlinx.coroutines.Dispatchers
@@ -95,16 +97,37 @@ fun VideoPickerScreen(
     }
 }
 
+object ImageLoaderFactory {
+    private var imageLoader: ImageLoader? = null
+    private const val MEMORY_CACHE_SIZE = 20 * 1024 * 1024 // 20MB
+
+    fun create(context: Context): ImageLoader {
+        if (imageLoader == null) {
+            imageLoader = ImageLoader.Builder(context)
+                .components {
+                    add(VideoFrameDecoder.Factory())
+                }
+                .memoryCache {
+                    MemoryCache.Builder(context)
+                        .maxSizeBytes(MEMORY_CACHE_SIZE)
+                        .build()
+                }
+                .build()
+        }
+        return imageLoader!!
+    }
+
+    fun clear() {
+        imageLoader?.memoryCache?.clear()
+    }
+}
+
 @Composable
 fun VideoThumbnail(uri: Uri, modifier: Modifier = Modifier) {
     val context = LocalContext.current
 
     val imageLoader = remember {
-        ImageLoader.Builder(context)
-            .components {
-                add(VideoFrameDecoder.Factory())
-            }
-            .build()
+        ImageLoaderFactory.create(context)
     }
 
     AsyncImage(

@@ -15,43 +15,35 @@ import com.slark.api.SlarkPlayerState
 import com.slark.api.SlarkRenderTarget
 
 
-class SlarkPlayerImpl: SlarkPlayer {
+class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: String): SlarkPlayer {
     private var playerObserver: SlarkPlayerObserver? = null
     private var renderThread: EGLRenderThread? = null
-    private lateinit var playerId: String
     private var renderView: View? = null
 
-    var isLoop: Boolean = false
+    override var isLoop: Boolean = false
         set(value) {
             field = value
             SlarkPlayerManager.setLoop(playerId, value)
         }
 
-    var isMute: Boolean = false
+    override var isMute: Boolean = false
         set(value) {
             field = value
             SlarkPlayerManager.setMute(playerId, value)
         }
 
-    var volume: Float = 100.0f
+    override var volume: Float = 100.0f
         set(value) {
             field = value
             SlarkPlayerManager.setVolume(playerId, value)
         }
 
-    fun create(config: SlarkPlayerConfig): SlarkPlayer? {
-        if (config.dataSource.isEmpty()) {
-            SlarkLog.e(LOG_TAG, "dataSource is empty")
-            return null
-        }
-        val (start, duration) = config.timeRange.get()
-        playerId = SlarkPlayerManager.createPlayer(config.dataSource, start, duration)
-        SlarkPlayerManager.addPlayer(playerId, this)
-        return this
-    }
-
     override fun getPlayerId(): String {
         return playerId
+    }
+
+    override fun prepare() {
+        SlarkPlayerManager.doAction(playerId, SlarkPlayerManager.Action.PREPARE.ordinal)
     }
 
     override fun play() {
@@ -94,15 +86,15 @@ class SlarkPlayerImpl: SlarkPlayer {
         }
     }
 
-    fun setRenderSize(size: Size) {
+    override fun setRenderSize(size: Size) {
         SlarkPlayerManager.setRenderSize(playerId, size.width, size.height)
     }
 
-    fun totalDuration(): Double {
+    override fun totalDuration(): Double {
         return SlarkPlayerManager.totalDuration(playerId)
     }
 
-    fun currentTime(): Double {
+    override fun currentTime(): Double {
         return SlarkPlayerManager.currentPlayedTime(playerId)
     }
 
@@ -166,5 +158,16 @@ class SlarkPlayerImpl: SlarkPlayer {
 
     companion object {
         const val LOG_TAG = "SlarkPlayerImpl"
+
+        fun create(config: SlarkPlayerConfig): SlarkPlayerImpl {
+            if (config.dataSource.isEmpty()) {
+                throw IllegalArgumentException("dataSource is empty")
+            }
+            val (start, duration) = config.timeRange.get()
+            val playerId = SlarkPlayerManager.createPlayer(config.dataSource, start, duration)
+            val player = SlarkPlayerImpl(config, playerId)
+            SlarkPlayerManager.addPlayer(playerId, player)
+            return player
+        }
     }
 }

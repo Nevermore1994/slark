@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.constraintlayout.compose.Dimension
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.LaunchedEffect
 import com.slark.demo.R
 import com.slark.demo.ui.model.PlayerViewModel
 
@@ -33,8 +34,6 @@ fun PlayerControls(viewModel: PlayerViewModel) {
             if (total > 0)  current.toFloat() / total.toFloat() else 0f
         }
     }
-    val currentTime = viewModel.currentTime
-    val totalTime = viewModel.totalTime
 
     Column(
         modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -43,6 +42,9 @@ fun PlayerControls(viewModel: PlayerViewModel) {
         PlayerProgressBar(viewModel)
         Spacer(modifier = Modifier.height(2.dp))
         PlayerControlBar(viewModel)
+    }
+    LaunchedEffect(Unit) {
+        viewModel.prepare()
     }
 }
 
@@ -149,6 +151,10 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
 
 @Composable
 fun PlayerProgressBar(viewModel: PlayerViewModel) {
+    val currentTime = viewModel.currentTime * 1000 // Convert to milliseconds
+    val totalTime = viewModel.totalTime * 1000 // Convert to milliseconds
+    val cacheTime = viewModel.cacheTime * 1000 // Convert to milliseconds
+
     ConstraintLayout(
         modifier = Modifier
             .fillMaxWidth()
@@ -157,13 +163,15 @@ fun PlayerProgressBar(viewModel: PlayerViewModel) {
         val (startTime, endTime, slider) = createRefs()
 
         CustomSlider(
-            value = if (viewModel.totalTime > 0) {
-                (viewModel.currentTime / viewModel.totalTime).toFloat()
+            value = if (totalTime > 0) {
+                (currentTime / totalTime).toFloat()
             } else 0f,
-            onValueChange = { viewModel.seekTo(it * viewModel.totalTime) },
+            onValueChange = { viewModel.seekTo(it * totalTime) },
             valueRange = 0f..1f,
             bufferedColor = Color.Gray,
-            bufferedValue = 0.5f,
+            bufferedValue =  if (totalTime > 0) {
+                (cacheTime / totalTime).toFloat()
+            } else 0f,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(24.dp)
@@ -175,7 +183,7 @@ fun PlayerProgressBar(viewModel: PlayerViewModel) {
         )
 
         Text(
-            text = formatTime(viewModel.currentTime.toInt()),
+            text = formatTime(currentTime.toInt()),
             modifier = Modifier.constrainAs(startTime) {
                 start.linkTo(parent.start)
                 top.linkTo(slider.bottom, margin = 2.dp)
@@ -184,7 +192,7 @@ fun PlayerProgressBar(viewModel: PlayerViewModel) {
         )
 
         Text(
-            text = formatTime(viewModel.totalTime.toInt()),
+            text = formatTime(totalTime.toInt()),
             modifier = Modifier.constrainAs(endTime) {
                 end.linkTo(parent.end)
                 top.linkTo(slider.bottom, margin = 2.dp)
