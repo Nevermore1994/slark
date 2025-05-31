@@ -330,9 +330,9 @@ public:
 class BoxAvcc : public Box {
 public:
     uint8_t version{};
-    uint8_t profileIndication{};
+    uint8_t profileIdc{};
     uint8_t profileCompatibility{};
-    uint8_t levelIndication{};
+    uint8_t levelIdc{};
     uint8_t naluByteSize{};
     
     std::vector<DataRefPtr> sps;

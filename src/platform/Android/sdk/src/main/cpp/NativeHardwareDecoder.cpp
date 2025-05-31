@@ -14,6 +14,8 @@ using namespace slark;
 using namespace slark::JNI;
 constexpr std::string_view kMediaCodecDecoderClass = "com/slark/sdk/MediaCodecDecoder";
 
+DecoderErrorCode Native_HardwareDecoder_sendPacket(JNIEnv* env, std::string_view decoderId,
+                                                   DataPtr& data, uint64_t pts, NativeDecodeFlag flag);
 std::string Native_HardwareDecoder_createVideoDecoder(JNIEnv* env,
                                                      const std::shared_ptr<VideoDecoderConfig>& decoderConfig) {
     if (!decoderConfig) {
@@ -25,9 +27,8 @@ std::string Native_HardwareDecoder_createVideoDecoder(JNIEnv* env,
         LogE("create decoder failed, not found video decoder class");
         return {};
     }
-    auto methodSignature = JNI::makeJNISignature(JNI::String,
-                                                 JNI::String, JNI::Int, JNI::Int,
-                                                 JNI::makeArray(JNI::Byte), JNI::makeArray(JNI::Byte), JNI::makeArray(JNI::Byte));
+    auto methodSignature = JNI::makeJNISignature(JNI::String, JNI::String,
+                                                 JNI::makeArray(JNI::Int));
     auto createDecoderMethod = JNICache::shareInstance().getStaticMethodId(decoderClass,
                                                                            "createVideoDecoder",
                                                                            methodSignature);
@@ -35,23 +36,41 @@ std::string Native_HardwareDecoder_createVideoDecoder(JNIEnv* env,
         LogE("create decoder failed, not found decoder method");
         return {};
     }
-    auto sps = ToJVM::toByteArray(env, *decoderConfig->sps);
-    auto pps = ToJVM::toByteArray(env, *decoderConfig->pps);
-    Data vpsData;
-    auto vps = ToJVM::toByteArray(env, vpsData);
-    if (decoderConfig->vps) {
-        vps = ToJVM::toByteArray(env, *decoderConfig->vps);
-    }
+    auto videoInfo = ToJVM::toIntArray(env,{
+            static_cast<int>(decoderConfig->width),
+            static_cast<int>(decoderConfig->height),
+            static_cast<int>(decoderConfig->profile),
+            static_cast<int>(decoderConfig->level)
+    });
     auto jMediaInfo= ToJVM::toString(env, decoderConfig->mediaInfo);
     auto jDecoderId = reinterpret_cast<jstring>(env->CallStaticObjectMethod(decoderClass.get(),
                                                            createDecoderMethod.get(),
                                                            jMediaInfo.get(),
-                                                           decoderConfig->width,
-                                                           decoderConfig->height,
-                                                           sps.detach(),
-                                                           pps.detach(),
-                                                           vps.detach()));
-    return FromJVM::toString(env, jDecoderId);
+                                                           videoInfo.detach()));
+
+    auto decoderId = FromJVM::toString(env, jDecoderId);
+    if (decoderId.empty()) {
+        LogE("create video decoder failed, decoderId is empty");
+        return {};
+    }
+
+    auto decoderInfo = std::make_unique<Data>();
+    Data naluHeader(4);
+    naluHeader.rawData[0] = 0x00;
+    naluHeader.rawData[1] = 0x00;
+    naluHeader.rawData[2] = 0x00;
+    naluHeader.rawData[3] = 0x01;
+    naluHeader.length = 4;
+    decoderInfo->append(naluHeader);
+    decoderInfo->append(*decoderConfig->sps);
+    decoderInfo->append(naluHeader);
+    decoderInfo->append(*decoderConfig->pps);
+    if (decoderConfig->vps) {
+        decoderInfo->append(naluHeader);
+        decoderInfo->append(*decoderConfig->vps);
+    }
+    Native_HardwareDecoder_sendPacket(env, decoderId, decoderInfo, 0, NativeDecodeFlag::CodecConfig);
+    return decoderId;
 }
 
 std::string Native_HardwareDecoder_createAudioDecoder(JNIEnv* env,
@@ -99,7 +118,7 @@ DecoderErrorCode Native_HardwareDecoder_sendPacket(JNIEnv* env, std::string_view
         LogE("create decoder failed, not found send data method");
         return DecoderErrorCode::Unknown;
     }
-    auto byteArray = ToJVM::toByteArray(env, *data);
+    auto byteArray = ToJVM::toNaluByteArray(env, data->view());
     auto jDecodeId = ToJVM::toString(env, decoderId);
     int res = env->CallStaticIntMethod(decoderClass.get(), methodId.get(),
                               jDecodeId.detach(), byteArray.detach(), static_cast<jlong>(pts), static_cast<jint>(flag));
@@ -197,7 +216,7 @@ uint64_t Native_HardwareDecoder_requestVideoFrame(JNIEnv* env, std::string_view 
 namespace slark {
 
 std::string
-NativeHardwareDecoder::createVideo(const std::shared_ptr<VideoDecoderConfig> &decoderConfig) {
+NativeHardwareDecoder::createVideoDecoder(const std::shared_ptr<VideoDecoderConfig> &decoderConfig) {
     if (!decoderConfig) {
         return {};
     }

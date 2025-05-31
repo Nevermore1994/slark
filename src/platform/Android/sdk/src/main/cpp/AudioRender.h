@@ -4,7 +4,7 @@
 
 #pragma once
 #include <utility>
-#include "AudioDefine.h"
+#include "AudioInfo.h"
 #include "Manager.hpp"
 
 namespace slark {

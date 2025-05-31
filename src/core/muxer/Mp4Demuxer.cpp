@@ -547,6 +547,8 @@ void Mp4Demuxer::initData() noexcept {
                     videoInfo_->sps = avccBox->sps.front();
                     videoInfo_->pps = avccBox->pps.front();
                     videoInfo_->naluHeaderLength = avccBox->naluByteSize + 1;
+                    videoInfo_->profile = avccBox->profileIdc;
+                    videoInfo_->level = avccBox->levelIdc;
                 }
             } else if (codecId == CodecId::HEVC) {
                 videoInfo_->mediaInfo = MEDIA_MIMETYPE_VIDEO_HEVC;
@@ -556,6 +558,8 @@ void Mp4Demuxer::initData() noexcept {
                     videoInfo_->pps = hvccBox->pps.front();
                     videoInfo_->vps = hvccBox->vps.front();
                     videoInfo_->naluHeaderLength = hvccBox->naluByteSize + 1;
+                    videoInfo_->profile = hvccBox->profileIdc;
+                    videoInfo_->level = hvccBox->levelIdc;
                 }
             } else {
                 videoInfo_->mediaInfo = MEDIA_MIMETYPE_UNKNOWN;

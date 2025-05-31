@@ -199,7 +199,9 @@ void parseH264Sps(DataView bitstream, const std::shared_ptr<VideoInfo>& videoInf
     int32_t offset = 0;
     auto profileIdc = ReadUINT8(bitstream, offset, 8);
     offset += 8; //skip flags + reserved
+    videoInfo->profile = profileIdc;
     [[maybe_unused]] auto levelIdc = ReadUINT8(bitstream, offset, 8);
+    videoInfo->level = levelIdc;
     [[maybe_unused]] uint32_t seqParameterSetId = Golomb::readUe(bitstream, offset);
     uint32_t chromaFormatIdc = 1; //default 420
     static const std::vector<uint8_t> kSpecialProfile = {100, 110, 122, 244, 44, 83, 86, 118, 128};

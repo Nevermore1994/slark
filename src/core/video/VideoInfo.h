@@ -19,6 +19,8 @@ struct VideoInfo {
     uint32_t width{};
     uint32_t height{};
     uint32_t timeScale{};
+    uint8_t profile{};
+    uint8_t level{};
     std::string_view mediaInfo;
     DataRefPtr sps;
     DataRefPtr pps;
