@@ -20,7 +20,7 @@ enum NativeDecodeFlag {
 enum class DecoderErrorCode;
 
 struct NativeHardwareDecoder {
-    static std::string createVideo(const std::shared_ptr<VideoDecoderConfig>& decoderConfig);
+    static std::string createVideoDecoder(const std::shared_ptr<VideoDecoderConfig>& decoderConfig);
 
     static std::string createAudio(const std::shared_ptr<AudioDecoderConfig>& decoderConfig);
 

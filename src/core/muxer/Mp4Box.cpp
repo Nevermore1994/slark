@@ -601,12 +601,12 @@ std::string BoxAvcc::description(const std::string&prefix) const noexcept {
     auto desc = Box::description(prefix);
     desc.pop_back();
     return desc +
-        std::format("version: {}, profileIndication: {}, "
-                "profileCompatibility: {}, levelIndication: {},"
+        std::format("version: {}, profileIdc: {}, "
+                "profileCompatibility: {}, levelIdc: {},"
                 "naluByteSize: {}\n",
-                version, profileIndication,
-                profileCompatibility, levelIndication,
-                naluByteSize);
+                    version, profileIdc,
+                    profileCompatibility, levelIdc,
+                    naluByteSize);
 }
 
 //avcC (size)
@@ -623,9 +623,9 @@ std::string BoxAvcc::description(const std::string&prefix) const noexcept {
 //  |--- (size) Nbyte: PPS data
 bool BoxAvcc::decode(Buffer& buffer) noexcept {
     buffer.readByte(version);
-    buffer.readByte(profileIndication);
+    buffer.readByte(profileIdc);
     buffer.readByte(profileCompatibility);
-    buffer.readByte(levelIndication);
+    buffer.readByte(levelIdc);
     buffer.readByte(naluByteSize);
     naluByteSize = naluByteSize & 0x03;
     uint8_t spsCount = 0;

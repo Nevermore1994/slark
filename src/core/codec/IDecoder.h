@@ -43,6 +43,8 @@ struct DecoderConfig {
     std::string playerId;
     uint32_t timeScale{};
     std::string mediaInfo;
+    uint8_t profile{};
+    uint8_t level{};
     virtual ~DecoderConfig() = default;
 };
 

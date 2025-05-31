@@ -11,7 +11,7 @@
 #include "Range.h"
 #include "Util.hpp"
 #include "DataView.h"
-#include "AudioDefine.h"
+#include "AudioInfo.h"
 
 namespace slark {
 

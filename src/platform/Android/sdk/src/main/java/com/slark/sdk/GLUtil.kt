@@ -24,7 +24,8 @@ fun checkGLStatus(tag: String): Boolean {
 
 fun checkEGLContext(): Boolean {
     val egl = EGL14.eglGetCurrentContext()
-    return egl != EGL14.EGL_NO_CONTEXT
+    val isValid = egl != EGL14.EGL_NO_CONTEXT
+    return isValid
 }
 
 fun loadShader(type: Int, shaderStr: String): Int {

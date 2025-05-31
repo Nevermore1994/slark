@@ -33,11 +33,11 @@ DecoderErrorCode VideoHardwareDecoder::sendPacket(AVFrameRefPtr& frame) noexcept
     } else if (frameInfo->isEndOfStream){
         flag = NativeDecodeFlag::EndOfStream;
     }
-    auto res = NativeHardwareDecoder::sendPacket(decoderId_, frame->data, frame->pts, flag);
+    auto res = NativeHardwareDecoder::sendPacket(decoderId_, frame->data, uint64_t(frame->ptsTime() * 1000000), flag);
     if (res != DecoderErrorCode::Success) {
-        LogE("send packet failed, {}", static_cast<int>(res));
+        LogE("send video packet failed, {}", static_cast<int>(res));
     } else {
-        LogI("send packet success, dts:{}, pts:{}", frame->dts, frame->pts);
+        LogI("send video packet success, dts:{}, pts:{}", frame->dts, frame->pts);
     }
     return res;
 }
@@ -58,9 +58,6 @@ DecoderErrorCode VideoHardwareDecoder::decodeByteBufferMode(AVFrameRefPtr& frame
 }
 
 DecoderErrorCode VideoHardwareDecoder::decodeTextureMode(AVFrameRefPtr& frame) noexcept {
-    if (!context_) {
-        initContext();
-    }
     if (!context_ || !frameBufferPool_) {
         LogE("context is null");
         return DecoderErrorCode::NotProcessed;
@@ -108,7 +105,6 @@ void VideoHardwareDecoder::requestVideoFrame() noexcept {
     videoFrameInfo->height = videoConfig->height;
     videoFrameInfo->format = FrameFormat::MediaCodecSurface;
     frame->info = std::move(videoFrameInfo);
-    context_->detachContext();
     invokeReceiveFunc(std::move(frame));
 }
 
@@ -120,6 +116,7 @@ void VideoHardwareDecoder::initContext() noexcept {
     context_ = std::dynamic_pointer_cast<AndroidEGLContext>(context);
     if (!context_) {
         LogE("create context, not AndroidEGLContext");
+        return;
     }
     auto videoConfig = std::dynamic_pointer_cast<VideoDecoderConfig>(config_);
     surface_ = context_->createOffscreenSurface(videoConfig->width, videoConfig->height);
@@ -146,13 +143,28 @@ bool VideoHardwareDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept 
         return false;
     }
     config_ = config;
-    decoderId_ = NativeHardwareDecoder::createVideo(videoConfig);
+    if (mode_ == DecodeMode::Texture) {
+        initContext();
+        if (!context_) {
+            LogE("init context failed");
+            return false;
+        }
+        if (!frameBufferPool_) {
+            LogE("create frame buffer pool failed");
+            return false;
+        }
+        context_->attachContext(surface_);
+    }
+    decoderId_ = NativeHardwareDecoder::createVideoDecoder(videoConfig);
     if (decoderId_.empty()) {
         LogE("create video decoder failed!");
         return false;
     }
     NativeDecoderManager::shareInstance().add(decoderId_, shared_from_this());
     LogI("create video decoder:{}", decoderId_);
+    if (mode_ == DecodeMode::Texture) {
+        context_->detachContext();
+    }
     isOpen_ = true;
     return true;
 }

@@ -18,10 +18,12 @@ namespace FromJVM {
 namespace ToJVM {
     StringReference toString(JNIEnvPtr env, std::string_view) noexcept;
 
-    JNIReference<jbyteArray> toByteArray(JNIEnvPtr env, const Data& data) noexcept;
+    JNIReference<jbyteArray> toByteArray(JNIEnvPtr env, DataView data) noexcept;
 
     ///write header length
-    JNIReference<jbyteArray> toNaluByteArray(JNIEnvPtr env, const Data& data) noexcept;
+    JNIReference<jbyteArray> toNaluByteArray(JNIEnvPtr env, DataView data, bool isRawData = false) noexcept;
+
+    JNIReference<jintArray> toIntArray(JNIEnvPtr env, const std::vector<int32_t>& data) noexcept;
 }
 
 }

@@ -7,7 +7,7 @@
 
 #include <functional>
 #include <shared_mutex>
-#include "AudioDefine.h"
+#include "AudioInfo.h"
 #include "NonCopyable.h"
 #include "Node.h"
 #include "Synchronized.hpp"

@@ -2,8 +2,14 @@ package com.slark.sdk
 
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
+import android.media.MediaCodecList
 import android.media.MediaFormat
+import android.opengl.EGL14
+import android.util.Log
 import android.util.Size
+import android.view.Surface
+import android.view.SurfaceView
+import android.view.TextureView
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
@@ -19,8 +25,7 @@ fun MediaFormat.isVideoFormat(): Boolean {
 
 class MediaCodecDecoder(private val mediaInfo: String, private val format: MediaFormat) {
     private var decoder: MediaCodec? = null
-    private var isExited: Boolean = false
-    private var isStarted: Boolean = false
+    private var isRunning: Boolean = false
     private var surface: RenderSurface? = null
 
     enum class Action {
@@ -40,40 +45,15 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
 
     init {
         decoder = MediaCodec.createDecoderByType(mediaInfo)
-    }
-
-    fun start() {
-        if (decoder == null) {
-            SlarkLog.e(LOG_TAG, "decoder is null")
-            return
-        }
-        if (isStarted) {
-            SlarkLog.w(LOG_TAG, "decoder already started")
-            return
-        }
-        if (isExited) {
-            SlarkLog.w(LOG_TAG, "decoder already exited")
-            return
-        }
         if (format.isVideoFormat()) {
-            surface = RenderSurface().apply {
-                init()
-            }
-            format.setInteger(MediaFormat.KEY_COLOR_FORMAT,
-                MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-            surface?.surface() ?.let { outputSurface ->
-                decoder?.configure(format, outputSurface, null, 0)
-            } ?: run {
-                SlarkLog.e(LOG_TAG, "Failed to create output surface")
-                throw IllegalStateException("Failed to create output surface")
-            }
-
+            format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
+            decoder?.configure(format, null, null, 0)
         } else {
+            decoder = MediaCodec.createDecoderByType(mediaInfo)
             decoder?.configure(format, null, null, 0)
         }
-
         decoder?.start()
-        isStarted = true
+        isRunning = true
     }
 
     /// BUFFER_FLAG_CODEC_CONFIG: 2
@@ -82,12 +62,9 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
     /// BUFFER_FLAG_KEY_FRAME: 1
     /// BUFFER_FLAG_PARTIAL_FRAME: 8
     fun sendPacket(byteBuffer: ByteArray?, presentationTimeUs: Long, flag: Int): Int {
-        if (!isStarted) {
-            start();
-        }
-
+        val isVideo =  if (format.isVideoFormat()) "video " else "audio "
         var errorCode: ErrorCode = ErrorCode.Unknown
-        if (isExited) {
+        if (!isRunning) {
             errorCode = ErrorCode.NotStart
             return errorCode.ordinal
         }
@@ -96,7 +73,7 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
             val inputBufferIndex =
                 decoder?.dequeueInputBuffer(10_000) ?: return@execute //10 ms
             if (inputBufferIndex == -1) {
-                SlarkLog.e(LOG_TAG, "no input buffer available")
+                SlarkLog.e(LOG_TAG,  isVideo + "no input buffer available")
                 errorCode = ErrorCode.NotProcessed
                 return@execute
             }
@@ -109,13 +86,15 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
                     errorCode = ErrorCode.InputDataError
                     return@execute
                 }
+                val size = byteBuffer.size
                 if (inputBuffer.capacity() < byteBuffer.size) {
-                    SlarkLog.e(LOG_TAG, "input buffer too small: ${inputBuffer.capacity()} < ${byteBuffer.size}")
+                    SlarkLog.e(LOG_TAG, isVideo + "input buffer too small: ${inputBuffer.capacity()} < ${byteBuffer.size}")
                     errorCode = ErrorCode.InputDataTooLarge
                     return@execute
                 }
                 inputBuffer.put(byteBuffer)
                 decoder?.queueInputBuffer(inputBufferIndex, 0, byteBuffer.size, presentationTimeUs, 0)
+                SlarkLog.i(LOG_TAG, isVideo + "queued input buffer: $inputBufferIndex, size: $size, time: $presentationTimeUs")
             }
             errorCode = ErrorCode.Success
         }
@@ -123,30 +102,35 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
         execute {
             val info = MediaCodec.BufferInfo()
             val outputBufferIndex =
-                decoder?.dequeueOutputBuffer(info, 2_000) ?: return@execute //2 ms
+                decoder?.dequeueOutputBuffer(info, 10_000) ?: return@execute //10 ms
             when (outputBufferIndex) {
                 MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                    SlarkLog.i(LOG_TAG, "output format changed: ${decoder?.outputFormat}")
+                    SlarkLog.i(LOG_TAG, isVideo + "output format changed: ${decoder?.outputFormat}")
                     val newFormat = decoder?.outputFormat
                     format
                     return@execute
                 }
                 MediaCodec.INFO_TRY_AGAIN_LATER -> {
-                    SlarkLog.i(LOG_TAG, "no output buffer available")
+                    SlarkLog.i(LOG_TAG, isVideo + "no output buffer available")
                     return@execute
                 }
                 MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED -> {
-                    SlarkLog.i(LOG_TAG, "output buffers changed")
+                    SlarkLog.i(LOG_TAG, isVideo + "output buffers changed")
                     @Suppress("DEPRECATION")
-                    val outputBuffers = decoder?.outputBuffers
                     return@execute
                 }
                 else -> {
-                    val outputBuffer =
-                        decoder?.getOutputBuffer(outputBufferIndex) ?: return@execute
-                    val rawData = ByteArray(info.size)
-                    outputBuffer.get(rawData)
-                    processRawData(decoder?.hashCode().toString(), rawData, info.presentationTimeUs)
+                    if (format.isAudioFormat()) {
+                        val outputBuffer =
+                            decoder?.getOutputBuffer(outputBufferIndex) ?: return@execute
+                        val rawData = ByteArray(info.size)
+                        outputBuffer.get(rawData)
+                        processRawData(decoder?.hashCode().toString(), rawData, info.presentationTimeUs)
+                        decoder?.releaseOutputBuffer(outputBufferIndex, false)
+                    } else {
+                        decoder?.releaseOutputBuffer(outputBufferIndex, false)
+                    }
+
                     return@execute
                 }
             }
@@ -155,8 +139,7 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
     }
 
     fun release() {
-        isExited = true
-        isStarted = false
+        isRunning = false
         flush()
         decoder?.release()
         decoder = null
@@ -179,6 +162,11 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
     }
 
     fun requestVideoFrame(waitTime: Long, width: Int, height: Int): Long {
+        val context = EGL14.eglGetCurrentContext()
+        if (context == EGL14.EGL_NO_CONTEXT) {
+            SlarkLog.e(LOG_TAG, "EGL context is not valid")
+            return 0L
+        }
         surface?.let {
             val res = it.awaitFrame(waitTime)
             if (res.first) {
@@ -196,22 +184,47 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
         const val LOG_TAG = "MediaCodec"
         private val decoders = ConcurrentHashMap<String, MediaCodecDecoder>()
 
+        fun selectDecoder(mediaInfo: String, format: MediaFormat): MediaCodec? {
+            val codecList = MediaCodecList(MediaCodecList.ALL_CODECS)
+            val codecName = codecList.findDecoderForFormat(format)
+
+            for (codecInfo in codecList.codecInfos) {
+                if (codecInfo.isEncoder) {
+                    continue
+                }
+                val types = codecInfo?.supportedTypes
+                if (types?.contains(mediaInfo) == true) {
+                    val caps = codecInfo.getCapabilitiesForType(mediaInfo)
+                    if (caps.colorFormats.contains(MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)) {
+                        Log.d("Codec", "✅ ${codecInfo.name} supports Surface")
+                        return MediaCodec.createByCodecName(codecInfo.name)
+                    } else {
+                        Log.d("Codec", "❌ ${codecInfo.name} does NOT support Surface")
+                    }
+                }
+            }
+            return null
+        }
+
+        fun createVideoFormat(mediaInfo: String, videoInfos: IntArray): MediaFormat {
+            if (videoInfos.size < 4) {
+                throw IllegalArgumentException("Invalid video info format")
+            }
+            return MediaFormat.createVideoFormat(mediaInfo, videoInfos[0].toInt(), videoInfos[1].toInt()).apply {
+                setInteger(MediaFormat.KEY_PROFILE,  videoInfos[2].toInt())
+                setInteger(MediaFormat.KEY_LEVEL,  videoInfos[3].toInt())
+            }
+        }
+
         @JvmStatic
-        fun createVideoDecoder(mediaInfo: String, width: Int, height: Int,
-                               spsData: ByteArray, ppsData: ByteArray, vpsData: ByteArray): String {
-            val format = MediaFormat.createVideoFormat(mediaInfo, width, height)
+        fun createVideoDecoder(mediaInfo: String, videoInfos: IntArray): String {
+            val format = createVideoFormat(mediaInfo, videoInfos)
             val extractorMaxSize = format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE, -1)
             if (extractorMaxSize > 0) {
                 format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, extractorMaxSize)
             } else {
                 format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 1048576 * 2) //2MB
             }
-            val csd0Buffer = ByteBuffer.wrap(spsData)
-            if (vpsData.isNotEmpty()) {
-                csd0Buffer.put(vpsData) //write vps
-            }
-            format.setByteBuffer("csd-0", ByteBuffer.wrap(spsData))
-            format.setByteBuffer("csd-1", ByteBuffer.wrap(ppsData))
 
             val decoder = MediaCodecDecoder(mediaInfo, format)
             val decoderId = decoder.hashCode().toString()
@@ -309,6 +322,7 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
                 else -> 2
             }
         }
+        var testSurface: Surface? = null
     }
 
 }

@@ -75,7 +75,7 @@ class SlarkLog {
         }
 
         private fun processLog(message: LogMessage) {
-            val logStr = "{${message.level}} [${message.tag}] ${formatMessage(message.format, *message.args)}"
+            val logStr = "${message.level} [${message.tag}] ${formatMessage(message.format, *message.args)}"
             if (message.level != LOG_PRINT) {
                 nativeLog(logStr)
             }

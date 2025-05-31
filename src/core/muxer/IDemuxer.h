@@ -12,7 +12,7 @@
 #include "NonCopyable.h"
 #include "AVFrame.hpp"
 #include "VideoInfo.h"
-#include "AudioDefine.h"
+#include "AudioInfo.h"
 #include "Reflection.hpp"
 #include "Buffer.hpp"
 

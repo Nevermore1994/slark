@@ -176,9 +176,10 @@ bool Player::Impl::openDemuxer(DataPacket& data) noexcept {
 }
 
 void Player::Impl::createAudioComponent(const PlayerSetting& setting) noexcept {
-    auto decodeType = DecoderManager::shareInstance().getDecoderType(demuxer_->audioInfo()->mediaInfo, setting.enableAudioSoftDecode);
+    auto audioInfo = demuxer_->audioInfo();
+    auto decodeType = DecoderManager::shareInstance().getDecoderType(audioInfo->mediaInfo, setting.enableAudioSoftDecode);
     if (!DecoderManager::shareInstance().contains(decodeType)) {
-        LogE("not found decoder:media info {}", demuxer_->audioInfo()->mediaInfo);
+        LogE("not found decoder:media info {}", audioInfo->mediaInfo);
         return;
     }
     audioDecodeComponent_ = std::make_shared<DecoderComponent>([this](auto frame) {
@@ -190,18 +191,12 @@ void Player::Impl::createAudioComponent(const PlayerSetting& setting) noexcept {
         });
     });
     if (!audioDecodeComponent_) {
-        LogI("create audio pushFrameDecode Component error:{}", demuxer_->audioInfo()->mediaInfo);
+        LogI("create audio pushFrameDecode Component error:{}", audioInfo->mediaInfo);
         return;
     }
     auto config = std::make_shared<AudioDecoderConfig>();
-    const auto& audioInfo = demuxer_->audioInfo();
     config->playerId = playerId_;
-    config->mediaInfo = audioInfo->mediaInfo;
-    config->bitsPerSample = audioInfo->bitsPerSample;
-    config->channels = audioInfo->channels;
-    config->sampleRate = audioInfo->sampleRate;
-    config->timeScale = audioInfo->timeScale;
-    config->profile = static_cast<uint8_t>(audioInfo->profile);
+    config->initWithAudioInfo(audioInfo);
     if (!audioDecodeComponent_->open(decodeType, config)) {
         LogI("create audio pushFrameDecode component success");
         return ;
@@ -231,19 +226,8 @@ void Player::Impl::createVideoComponent(const PlayerSetting& setting) noexcept  
         return;
     }
     auto config = std::make_shared<VideoDecoderConfig>();
-    const auto& videoInfo = demuxer_->videoInfo();
-    if (videoInfo) {
-        config->playerId = playerId_;
-        config->mediaInfo = videoInfo->mediaInfo;
-        config->width = videoInfo->width;
-        config->height = videoInfo->height;
-        config->naluHeaderLength = videoInfo->naluHeaderLength;
-        config->sps = videoInfo->sps;
-        config->pps = videoInfo->pps;
-    } else {
-        LogE("video info is nullptr!");
-        return;
-    }
+    config->playerId = playerId_;
+    config->initWithVideoInfo(demuxer_->videoInfo());
 
     if (videoDecodeComponent_->open(decodeType, config)) {
         LogI("create video pushFrameDecode component success");
