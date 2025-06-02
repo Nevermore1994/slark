@@ -39,17 +39,17 @@ void TrackContext::init() noexcept {
     }
 }
 
-uint64_t TrackContext::getSeekPos(long double targetTime) const noexcept {
+uint64_t TrackContext::getSeekPos(double targetTime) const noexcept {
     if (type != TrackType::Video) {
         return 0;
     }
     uint32_t sampleIndex = 0;
-    auto timeScale = static_cast<long double>(mdhd->timeScale);
+    auto timeScale = static_cast<double>(mdhd->timeScale);
     double currentDTS = 0;
     for (auto & entry : stts->entrys) {
         double entryDuration = entry.sampleCount * entry.sampleDelta;
         if (currentDTS + entryDuration >= targetTime) {
-            sampleIndex += static_cast<uint32_t>((targetTime - currentDTS) / (static_cast<long double>(entry.sampleDelta) / timeScale));
+            sampleIndex += static_cast<uint32_t>((targetTime - currentDTS) / (static_cast<double>(entry.sampleDelta) / timeScale));
             break;
         }
         currentDTS += entryDuration;
@@ -654,7 +654,7 @@ DemuxerResult Mp4Demuxer::parseData(DataPacket& packet) noexcept {
     return result;
 }
 
-uint64_t Mp4Demuxer::getSeekToPos(long double time) noexcept {
+uint64_t Mp4Demuxer::getSeekToPos(double time) noexcept {
     auto offset = headerInfo_->headerLength + 8;//skip size and type
     for (const auto& track:std::views::values(tracks_)) {
         if (track->type == TrackType::Video) {

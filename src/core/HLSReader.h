@@ -49,20 +49,26 @@ public:
     
     void setDemuxer(std::shared_ptr<HLSDemuxer> demuxer) noexcept;
 private:
-    void setupDataProvoider() noexcept;
+    void setupDataProvider() noexcept;
+
     void addRequest(http::RequestInfoPtr) noexcept;
+
     void sendRequest() noexcept;
+
     void fetchTSData(uint32_t tsIndex) noexcept;
+
     void sendM3u8Request(const std::string& m3u8Url) noexcept;
+
     void sendTSRequest(uint32_t index, const std::string& url, Range range) noexcept;
-    
-    void handleM3u8Header(const http::ResponseHeader& header) noexcept;
+
     void handleM3u8Data(DataPtr dataPtr) noexcept;
+
     void handleM3u8Completed() noexcept;
-    
-    void handleTSHeader(const http::ResponseHeader& header) noexcept;
+
     void handleTSData(uint32_t index, DataPtr dataPtr) noexcept;
+
     void handleTSCompleted(uint32_t tsIndex) noexcept;
+
     void handleError(const http::ErrorInfo& info) noexcept;
 private:
     std::atomic_bool isPause_ = false;

@@ -180,12 +180,12 @@ class MediaCodecDecoder(
     }
 
     fun requestVideoFrame(waitTime: Long, width: Int, height: Int): Long {
+        checkGLStatus("requestVideoFrame")
         val context = EGL14.eglGetCurrentContext()
         if (context == EGL14.EGL_NO_CONTEXT) {
             SlarkLog.e(LOG_TAG, "EGL context is not valid")
             return 0L
         }
-        checkGLStatus("requestVideoFrame")
         surface?.let {
             val res = it.awaitFrame(waitTime)
             if (res.first) {

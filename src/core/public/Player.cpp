@@ -59,7 +59,7 @@ void Player::pause() noexcept {
 }
 
 
-void Player::seek(long double time) noexcept {
+void Player::seek(double time) noexcept {
     pimpl_->seek(time);
 }
 
@@ -107,7 +107,7 @@ void Player::removeObserver() noexcept {
     pimpl_->removeObserver();
 }
 
-long double Player::currentPlayedTime() noexcept {
+double Player::currentPlayedTime() noexcept {
     if (!pimpl_) {
         return 0;
     }

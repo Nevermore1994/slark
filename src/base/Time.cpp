@@ -20,8 +20,8 @@ using std::chrono::microseconds;
     return std::chrono::milliseconds(static_cast<uint64_t>( std::round(static_cast<double>(count) / 1000.0)));
 }
 
-long double Time::TimePoint::second() const noexcept {
-    return std::round(static_cast<long double>(count) / 1000.0) / 1000;
+double Time::TimePoint::second() const noexcept {
+    return std::round(static_cast<double>(count) / 1000.0) / 1000;
 }
 
 Time::TimePoint Time::TimePoint::operator+(std::chrono::milliseconds delta) const noexcept {

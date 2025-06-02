@@ -36,6 +36,8 @@ public:
         return info;
     }
 
+    void decodeComplete(DataPtr data, int64_t pts) noexcept override;
+
 private:
     DecoderErrorCode sendPacket(AVFrameRefPtr &frame) noexcept;
 

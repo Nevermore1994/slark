@@ -49,7 +49,7 @@ public:
 
     void flush() noexcept;
 
-    void seek(long double time) noexcept;
+    void seek(double time) noexcept;
 
     Time::TimePoint playedTime() noexcept;
     

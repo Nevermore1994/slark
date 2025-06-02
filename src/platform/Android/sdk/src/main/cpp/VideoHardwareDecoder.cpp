@@ -39,7 +39,7 @@ DecoderErrorCode VideoHardwareDecoder::sendPacket(
     auto res = NativeHardwareDecoder::sendPacket(
         decoderId_,
         frame->data,
-        uint64_t(frame->ptsTime() * 1000000),
+        int64_t(frame->ptsTime() * 1000000), // convert to microseconds
         flag
     );
     if (res != DecoderErrorCode::Success) {
@@ -58,19 +58,37 @@ DecoderErrorCode VideoHardwareDecoder::decodeByteBufferMode(
     AVFrameRefPtr &frame
 ) noexcept {
     auto pts = frame->pts;
-    if (decodeFrames_.contains(pts)) {
-        LogE("decode same pts frame, {}",
-             pts);
-        return DecoderErrorCode::InputDataError;
-    }
     auto res = sendPacket(frame);
     if (res != DecoderErrorCode::Success) {
-        LogE("send packet failed, {}",
-             static_cast<int>(res));
+        LogE("send packet failed, {}", static_cast<int>(res));
     } else {
-        decodeFrames_[pts] = std::move(frame);
+        LogI("send video packet success, pts:{}, dts:{}",
+             pts,
+             frame->dts
+        );
     }
     return res;
+}
+
+void VideoHardwareDecoder::decodeComplete(
+    DataPtr data,
+    int64_t pts
+) noexcept {
+    if (!data || data->empty()) {
+        LogE("data is empty");
+        return;
+    }
+    auto videoConfig = std::dynamic_pointer_cast<VideoDecoderConfig>(config_);
+    auto frame = std::make_unique<AVFrame>(AVFrameType::Video);
+    frame->pts = pts;
+    frame->timeScale = 1000000; //us
+    frame->data = std::move(data);
+    auto videoFrameInfo = std::make_shared<VideoFrameInfo>();
+    videoFrameInfo->format = FrameFormat::MediaCodecByteBuffer;
+    videoFrameInfo->width = videoConfig->width;
+    videoFrameInfo->height = videoConfig->height;
+    frame->info = std::move(videoFrameInfo);
+    invokeReceiveFunc(std::move(frame));
 }
 
 DecoderErrorCode VideoHardwareDecoder::decodeTextureMode(
@@ -88,7 +106,7 @@ DecoderErrorCode VideoHardwareDecoder::decodeTextureMode(
 }
 
 void VideoHardwareDecoder::requestVideoFrame() noexcept {
-    constexpr int64_t kWaitTime = 30; // 30ms
+    constexpr int64_t kWaitTime = 10; // 10ms
     constexpr int32_t kMaxRetryCount = 3;
     auto videoConfig = std::dynamic_pointer_cast<VideoDecoderConfig>(config_);
     auto frameBuffer = frameBufferPool_->acquire(
@@ -105,7 +123,10 @@ void VideoHardwareDecoder::requestVideoFrame() noexcept {
         LogE("set view port error!");
         return;
     }
-    frameBuffer->bind(true);
+    if (!frameBuffer->bind(true)) {
+        LogE("frame buffer bind failed");
+        return;
+    }
     if (eglGetError() != EGL_SUCCESS) {
         LogE("frame buffer bind error!");
         return;
@@ -139,7 +160,7 @@ void VideoHardwareDecoder::requestVideoFrame() noexcept {
     }
     auto frame = std::make_unique<AVFrame>(AVFrameType::Video);
     frame->pts = pts;
-    frame->timeScale = 1000; //
+    frame->timeScale = 1000; //ms
     auto texture = frameBuffer->detachTexture();
     frame->opaque = texture.release();
     frameBuffer->unbind(true);

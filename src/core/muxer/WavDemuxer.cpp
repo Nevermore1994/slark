@@ -211,11 +211,11 @@ void WAVDemuxer::close() noexcept {
     reset();
 }
 
-uint64_t WAVDemuxer::getSeekToPos(long double time) noexcept {
+uint64_t WAVDemuxer::getSeekToPos(double time) noexcept {
     if (!isOpened_) {
         return 0;
     }
-    auto sampleCount = static_cast<uint64_t>(floor(time * static_cast<long double>(audioInfo_->sampleRate)));
+    auto sampleCount = static_cast<uint64_t>(floor(time * static_cast<double>(audioInfo_->sampleRate)));
     return headerInfo_->headerLength + sampleCount * audioInfo_->bytePerSample(); //byte
 }
 

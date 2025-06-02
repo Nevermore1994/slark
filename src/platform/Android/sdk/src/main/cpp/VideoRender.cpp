@@ -45,13 +45,12 @@ void Native_RequestRender(
         LogE("not found method");
         return;
     }
-    env.get()
-        ->CallStaticVoidMethod(
-            playerClass.get(),
-            methodId.get(),
-            jPlayer.get(),
-            jTextureId
-        );
+    env.get()->CallStaticVoidMethod(
+        playerClass.get(),
+        methodId.get(),
+        jPlayer.get(),
+        jTextureId
+    );
 
 }
 
@@ -126,7 +125,10 @@ void VideoRender::renderFrame(const AVFrameRefPtr &frame) noexcept {
         );
         {
             std::lock_guard lock(mutex_);
-            renderFrames_[textureId] = std::move(texture);
+            renderInfos_.try_emplace(
+                textureId,
+                RenderInfo(frame->ptsTime(), std::move(texture))
+            );
         }
     } else {
         LogE("not support frame format:{}",
@@ -137,14 +139,15 @@ void VideoRender::renderFrame(const AVFrameRefPtr &frame) noexcept {
 void VideoRender::renderComplete(int32_t id) noexcept {
     std::lock_guard lock(mutex_);
     auto textureId = static_cast<uint32_t>(id);
-    if (renderFrames_.contains(textureId)) {
-        auto texture = std::move(renderFrames_[textureId]);
-        renderFrames_.erase(textureId);
-        auto manager = texture->manager()
-            .lock();
+    if (renderInfos_.contains(textureId)) {
+        auto info = std::move(renderInfos_[textureId]);
+        renderInfos_.erase(textureId);
+        auto manager = info.texture->manager().lock();
         if (manager) {
-            manager->release(std::move(texture));
+            manager->restore(std::move(info.texture));
         }
+        videoClock_.setTime(info.ptsTime);
+        LogI("render complete, ptsTime:{}", info.ptsTime);
     }
 }
 

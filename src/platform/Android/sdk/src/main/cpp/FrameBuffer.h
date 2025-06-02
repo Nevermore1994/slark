@@ -16,7 +16,7 @@ public:
 
     ~FrameBuffer();
 
-    void bind(bool isRebinding = false) noexcept;
+    bool bind(bool isRebinding = false) noexcept;
 
     void unbind(bool isRollback = false) noexcept;
 
@@ -38,7 +38,7 @@ public:
         return frameBufferId_;
     }
 
-    [[nodiscard]] const TexturePtr &texture() const noexcept {
+    [[nodiscard]] const TexturePtr& texture() const noexcept {
         return texture_;
     }
 

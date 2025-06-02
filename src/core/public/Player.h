@@ -20,6 +20,7 @@ namespace slark {
 enum class PlayerState : uint8_t {
     Unknown = 0,
     Initializing,
+    Prepared,
     Buffering,
     Ready,
     Playing,
@@ -47,7 +48,7 @@ enum class PlayerErrorCode : uint8_t {
 };
 
 struct IPlayerObserver {
-    virtual void notifyPlayedTime(std::string_view playerId, long double time) = 0;
+    virtual void notifyPlayedTime(std::string_view playerId, double time) = 0;
 
     virtual void notifyPlayerState(std::string_view playerId, PlayerState state) = 0;
 
@@ -76,8 +77,8 @@ struct PlayerSetting {
     uint32_t width = 0;
     uint32_t height = 0;
     float volume = 100.0f;
-    long double maxCacheTime = 30.0; //seconds
-    long double minCacheTime = 5.0; //seconds
+    double maxCacheTime = 30.0; //seconds
+    double minCacheTime = 5.0; //seconds
 };
 
 struct PlayerParams {
@@ -90,7 +91,7 @@ struct PlayerInfo {
     bool isValid = false;
     bool hasVideo = false;
     bool hasAudio = false;
-    long double duration = 0;
+    double duration = 0;
 };
 
 struct IVideoRender;
@@ -113,7 +114,7 @@ public:
 
     void pause() noexcept;
 
-    void seek(long double time) noexcept;
+    void seek(double time) noexcept;
 
     void setLoop(bool isLoop);
     
@@ -140,7 +141,7 @@ public:
     
     [[nodiscard]] std::string_view playerId() const noexcept;
     
-    [[nodiscard]] long double currentPlayedTime() noexcept;
+    [[nodiscard]] double currentPlayedTime() noexcept;
 
 private:
     friend class PlayerImplHelper;

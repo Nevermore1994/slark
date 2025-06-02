@@ -24,12 +24,10 @@ public:
 
     void close() noexcept override;
 
-    AVFramePtr getDecodingFrame(uint64_t pts) noexcept;
+    virtual void decodeComplete(DataPtr data, int64_t pts) noexcept = 0;
 
 protected:
     std::string decoderId_;
-    std::mutex mutex_;
-    std::unordered_map<int64_t, AVFrameRefPtr> decodeFrames_;
 };
 
 using NativeDecoderManager = Manager<NativeDecoder>;

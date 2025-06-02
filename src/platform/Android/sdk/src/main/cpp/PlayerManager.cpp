@@ -20,7 +20,7 @@ public:
 
     void notifyPlayedTime(
         std::string_view playerId,
-        long double time
+        double time
     ) override {
         using namespace slark::JNI;
         JNIEnvGuard jniGuard(getJavaVM());
@@ -51,13 +51,12 @@ public:
             LogE("not found method");
             return;
         }
-        jniGuard.get()
-            ->CallStaticVoidMethod(
-                playerClass.get(),
-                methodId.get(),
-                jPlayerId.detach(),
-                jTime
-            );
+        jniGuard.get()->CallStaticVoidMethod(
+            playerClass.get(),
+            methodId.get(),
+            jPlayerId.detach(),
+            jTime
+        );
     }
 
     void notifyPlayerState(
@@ -112,12 +111,12 @@ public:
             kPlayerStateClass,
             fieldView
         );
-        jniGuard.get()
-            ->CallStaticVoidMethod(
-                playerClass.get(),
-                methodId.get(),
-                jPlayerId.detach(),
-                stateEnum.detach());
+        jniGuard.get()->CallStaticVoidMethod(
+            playerClass.get(),
+            methodId.get(),
+            jPlayerId.detach(),
+            stateEnum.detach()
+        );
     }
 
     void notifyPlayerEvent(
@@ -175,13 +174,13 @@ public:
             jniGuard.get(),
             value
         );
-        jniGuard.get()
-            ->CallStaticVoidMethod(
-                playerClass.get(),
-                methodId.get(),
-                jPlayerId.detach(),
-                eventEnum.detach(),
-                jValue.detach());
+        jniGuard.get()->CallStaticVoidMethod(
+            playerClass.get(),
+            methodId.get(),
+            jPlayerId.detach(),
+            eventEnum.detach(),
+            jValue.detach()
+        );
     }
 
 private:
@@ -209,7 +208,7 @@ extern "C"
 JNIEXPORT jstring JNICALL
 Java_com_slark_sdk_SlarkPlayerManager_00024Companion_createPlayer(
     JNIEnv *env,
-    jobject thiz,
+    jobject /*thiz*/,
     jstring path,
     jdouble start,
     jdouble duration
@@ -463,6 +462,7 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_state(
         constexpr std::string_view playerStateNames[] = {
             "Unknown",
             "Initializing",
+            "Prepared",
             "Buffering",
             "Ready",
             "Playing",
@@ -485,4 +485,3 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_state(
     );
     return stateValue.detach();
 }
-

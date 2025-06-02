@@ -26,11 +26,11 @@ struct VideoInfo {
     DataRefPtr pps;
     DataRefPtr vps;
     
-    long double frameDuration() const noexcept {
+    double frameDuration() const noexcept {
         if (fps == 0) {
             return 33.0 / 1000.0;
         }
-        return 1.0 / static_cast<long double>(fps);
+        return 1.0 / static_cast<double>(fps);
     }
 
     std::chrono::milliseconds frameDurationMs() const noexcept {

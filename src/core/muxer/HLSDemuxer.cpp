@@ -461,7 +461,7 @@ bool TSDemuxer::packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) n
         if (parseInfo_.calculatedFps == 0) {
             if (frame->index != 0) {
                 frame->duration = static_cast<uint32_t>( (frame->ptsTime() /
-                    static_cast<long double>(frame->index)) * 1000);
+                    static_cast<double>(frame->index)) * 1000);
                 parseInfo_.calculatedFps = static_cast<uint32_t>(round(1000.0 / static_cast<double>(frame->duration)));
             } else {
                 frame->duration = 33; //default 33 ms
@@ -723,7 +723,7 @@ void HLSDemuxer::seekPos(uint64_t index) noexcept {
     LogI("[seek info] seekTsIndex:{}", seekTsIndex_);
 }
 
-uint64_t HLSDemuxer::getSeekToPos(long double time) noexcept {
+uint64_t HLSDemuxer::getSeekToPos(double time) noexcept {
     if (!isOpened_) {
         return kInvalidTSIndex;
     }

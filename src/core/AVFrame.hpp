@@ -29,6 +29,7 @@ enum class FrameFormat {
     Unknown = 0,
     VideoToolBox = 1,
     MediaCodecSurface = 2,
+    MediaCodecByteBuffer = 3,
 };
 
 struct Statistics {
@@ -47,14 +48,14 @@ struct FrameInfo {
 };
 
 struct AudioFrameInfo : public FrameInfo {
-    void copy(std::shared_ptr<AudioFrameInfo> info) noexcept {
+    void copy(std::shared_ptr<AudioFrameInfo> info) const noexcept {
         if (!info) {
             return;
         }
         *info = *this;
     }
     
-    double duration(uint64_t size) const noexcept {
+    [[nodiscard]] double duration(uint64_t size) const noexcept {
         return static_cast<double>(size) / static_cast<double>(bitsPerSample / 8 * channels * sampleRate);
     }
     
@@ -138,12 +139,12 @@ struct AVFrame {
         return d;
     }
     
-    long double dtsTime() const noexcept {
-        return std::round(static_cast<long double>(dts) / static_cast<long double>(timeScale) * 1000) / 1000;
+    [[nodiscard]] double dtsTime() const noexcept {
+        return std::round(static_cast<double>(dts) / static_cast<double>(timeScale) * 1000) / 1000;
     }
     
-    long double ptsTime() const noexcept {
-        return std::round(static_cast<long double>(pts) / static_cast<long double>(timeScale) * 1000) / 1000;
+    [[nodiscard]] double ptsTime() const noexcept {
+        return std::round(static_cast<double>(pts) / static_cast<double>(timeScale) * 1000) / 1000;
     }
 
     [[nodiscard]] inline std::unique_ptr<AVFrame> copy() const noexcept {
@@ -192,7 +193,7 @@ struct AVFrame {
         return frameType == AVFrameType::Audio;
     }
     
-    DataView view() const noexcept {
+    [[nodiscard]] DataView view() const noexcept {
         if (data) {
             return data->view();
         }
