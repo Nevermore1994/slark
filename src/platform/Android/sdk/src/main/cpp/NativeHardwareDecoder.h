@@ -20,19 +20,30 @@ enum NativeDecodeFlag {
 enum class DecoderErrorCode;
 
 struct NativeHardwareDecoder {
-    static std::string createVideoDecoder(const std::shared_ptr<VideoDecoderConfig>& decoderConfig);
+    static std::string createVideoDecoder(
+        const std::shared_ptr<VideoDecoderConfig> &decoderConfig,
+        DecodeMode mode
+    );
 
-    static std::string createAudio(const std::shared_ptr<AudioDecoderConfig>& decoderConfig);
+    static std::string createAudioDecoder(const std::shared_ptr<AudioDecoderConfig> &decoderConfig);
 
-    static DecoderErrorCode sendPacket(std::string_view decoderId, DataPtr& data,
-                                       uint64_t pts, NativeDecodeFlag flag);
+    static DecoderErrorCode sendPacket(
+        std::string_view decoderId,
+        DataPtr &data,
+        uint64_t pts,
+        NativeDecodeFlag flag
+    );
 
     static void release(std::string_view decoderId);
 
     static void flush(std::string_view decoderId);
 
-    static uint64_t requestVideoFrame(std::string_view decoderId,
-                                      uint64_t waitTime, uint32_t width, uint32_t height);
+    static uint64_t requestVideoFrame(
+        std::string_view decoderId,
+        uint64_t waitTime,
+        uint32_t width,
+        uint32_t height
+    );
 };
 
 }

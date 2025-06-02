@@ -74,6 +74,7 @@ class PreviewRender(): GLSurfaceView.Renderer {
         GLES20.glUniform1i(textureHandle, 0)
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
 
+        checkGLStatus("render frame")
         GLES20.glDisableVertexAttribArray(positionHandle)
         GLES20.glDisableVertexAttribArray(texCoordHandle)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)

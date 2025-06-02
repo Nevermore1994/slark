@@ -101,6 +101,13 @@ EGLSurface AndroidEGLContext::createWindowSurface(ANativeWindow* surface) noexce
     };
 
     EGLSurface eglSurface = eglCreateWindowSurface(display_, config_, surface, surfaceAttributes);
+    auto error = eglGetError();
+    if (error == EGL_SUCCESS) {
+        LogI("create window surface success");
+    } else {
+        LogE("create window surface failed:{}", error);
+        return nullptr;
+    }
     if (eglSurface == nullptr) {
         LogE("EGLSurface is NULL!");
     }

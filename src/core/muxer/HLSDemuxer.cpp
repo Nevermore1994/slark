@@ -333,7 +333,7 @@ bool TSDemuxer::parseTSPes(DataView data, uint8_t payloadIndicator, TSPESFrame& 
         if (ptsFlag & 0x02) {
             if (headerDataLength >= 5) {
                 //PTS = PTS[32..30] + PTS[29..15] + PTS[14..0]
-                pes.pts = static_cast<uint64_t>(((data[9] & 0x0e) << 29) | ((data[10] & 0xff) << 22) |
+                pes.pts = static_cast<int64_t>(((data[9] & 0x0e) << 29) | ((data[10] & 0xff) << 22) |
                                                 ((data[11] & 0xfe) << 14) | ((data[12] & 0xff) << 7) |
                                                 ((data[13] & 0xfe) >> 1));
             } else {
@@ -343,7 +343,7 @@ bool TSDemuxer::parseTSPes(DataView data, uint8_t payloadIndicator, TSPESFrame& 
         if (ptsFlag & 0x01) {
             if (headerDataLength >= 10) {
                 //DTS = DTS[32..30] + PTS[29..15] + PTS[14..0]
-                pes.dts = static_cast<uint64_t>(((data[14] & 0x0e) << 29) | ((data[15] & 0xff) << 22) |
+                pes.dts = static_cast<int64_t>(((data[14] & 0x0e) << 29) | ((data[15] & 0xff) << 22) |
                                                 ((data[16] & 0xfe) << 14) | ((data[17] & 0xff) << 7) |
                                                 ((data[18] & 0xfe) >> 1));
             } else {
@@ -475,7 +475,7 @@ bool TSDemuxer::packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) n
     return true;
 }
 
-void TSDemuxer::recalculatePtsDts(uint64_t& pts, uint64_t& dts, bool isAudio) noexcept {
+void TSDemuxer::recalculatePtsDts(int64_t& pts, int64_t& dts, bool isAudio) noexcept {
     //Offset to handle wraparound
     auto& fixInfo = isAudio ? audioFixInfo_: videoFixInfo_;
     if (dts < fixInfo.preDtsTime) {

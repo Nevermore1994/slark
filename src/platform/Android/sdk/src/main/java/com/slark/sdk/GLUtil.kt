@@ -29,10 +29,6 @@ fun checkEGLContext(): Boolean {
 }
 
 fun loadShader(type: Int, shaderStr: String): Int {
-    if (!checkEGLContext()) {
-        SlarkLog.e(LOG_TAG, "EGL context is not valid")
-        return 0
-    }
     val shader = GLES20.glCreateShader(type)
     checkGLStatus("create shader ${type}")
     if (shader == 0) {
@@ -53,6 +49,10 @@ fun loadShader(type: Int, shaderStr: String): Int {
 }
 
 fun createGLProgram(vertexStr: String, fragmentStr: String): Int {
+    if (!checkEGLContext()) {
+        SlarkLog.e(LOG_TAG, "EGL context is not valid")
+        return 0
+    }
     val vertexShader = loadShader(GLES20.GL_VERTEX_SHADER, vertexStr)
     if (vertexShader == 0) {
         return 0

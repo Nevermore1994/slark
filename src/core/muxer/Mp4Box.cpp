@@ -481,7 +481,8 @@ uint32_t BoxStts::sampleSize() const noexcept {
 }
 
 bool BoxCtts::decode(Buffer& buffer) noexcept {
-    buffer.skip(1 + 3); //version + flags
+    buffer.readByte(version);
+    buffer.skip(3); //flags
     
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
@@ -489,7 +490,9 @@ bool BoxCtts::decode(Buffer& buffer) noexcept {
     for (size_t i = 0; i < entryCount; i++) {
         CttsEntry entry;
         buffer.read4ByteBE(entry.sampleCount);
-        buffer.read4ByteBE(entry.sampleOffset);
+        uint32_t sampleOffset = 0;
+        buffer.read4ByteBE(sampleOffset);
+        entry.sampleOffset = static_cast<int32_t>(sampleOffset);
         entrys.push_back(entry);
     }
     return true;

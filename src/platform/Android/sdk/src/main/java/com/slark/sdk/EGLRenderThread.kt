@@ -24,7 +24,11 @@ class EGLRenderThread(
             SlarkLog.e(LOG_TAG, "playerId is empty")
             return
         }
-        createEGLContext(playerId, surface)
+        val isSuccess = createEGLContext(playerId, surface)
+        if (!isSuccess) {
+            SlarkLog.e(LOG_TAG, "createEGLContext failed")
+            return
+        }
         renderer.onSurfaceCreated(null, null)
         renderer.onSurfaceChanged(null, width, height)
 

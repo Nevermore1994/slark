@@ -247,11 +247,12 @@ public:
 
 struct CttsEntry {
     uint32_t sampleCount{};
-    uint32_t sampleOffset{};
+    int32_t sampleOffset{};
 };
 
 class BoxCtts : public Box {
 public:
+    uint8_t version{};
     std::vector<CttsEntry> entrys;
 public:
     BoxCtts(BoxInfo&& boxInfo)
