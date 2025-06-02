@@ -108,8 +108,8 @@ struct AVFrame {
     uint32_t duration = 0; //ms
     uint64_t timeScale = 1;
     uint64_t index = 0;
-    uint64_t pts = 0;
-    uint64_t dts = 0;
+    int64_t pts = 0;
+    int64_t dts = 0;
     uint64_t offset = 0;
     std::unique_ptr<Data> data; //Undecided
     void* opaque = nullptr;

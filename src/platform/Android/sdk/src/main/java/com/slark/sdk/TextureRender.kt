@@ -67,6 +67,7 @@ class TextureRender {
             textureLocation = GLES20.glGetUniformLocation(program, "uTexture")
             positionLocation = GLES20.glGetAttribLocation(program, "a_position")
             texCoordLocation = GLES20.glGetAttribLocation(program, "a_texCoord")
+            if (!checkGLStatus("get location failed")) break
         } while(false)
     }
 
@@ -93,15 +94,15 @@ class TextureRender {
         }
     }
 
-    fun drawFrame(texture: SurfaceTexture, format: MediaFormat, size: Size) {
+    fun drawFrame(texture: SurfaceTexture, format: MediaFormat, size: Size): Boolean {
         if (!isValid()) {
             SlarkLog.e(LOG_TAG, "program is not valid")
-            return
+            return false
         }
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
 
         GLES20.glUseProgram(program)
-        if (!checkGLStatus("use program")) return
+        if (!checkGLStatus("use program")) return false
 
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, vbo[0])
         GLES20.glEnableVertexAttribArray(positionLocation)
@@ -143,8 +144,9 @@ class TextureRender {
         GLES20.glFlush()
         if (!checkGLStatus("drawFrame")) {
             SlarkLog.e(LOG_TAG, "GL error in drawFrame")
-            return
+            return false
         }
+        return true
     }
 
     companion object {

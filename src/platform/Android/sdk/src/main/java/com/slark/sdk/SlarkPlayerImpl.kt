@@ -118,6 +118,7 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
         renderThread?.shutdown()
         renderThread = null
         renderThread = EGLRenderThread(surface, width, height)
+        renderThread?.playerId = playerId
         renderThread?.start()
     }
 

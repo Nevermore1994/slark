@@ -22,6 +22,10 @@ DecoderErrorCode AudioHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
     }
     auto res = NativeHardwareDecoder::sendPacket(decoderId_, frame->data, pts, flag);
     if (res == DecoderErrorCode::Success) {
+        LogE("send audio packet success, pts:{}, dts:{}",
+             frame->pts,
+             frame->dts
+        );
         decodeFrames_[pts] = frame;
     }
     LogE("decode frame error:{}", static_cast<int>(res));
@@ -34,7 +38,7 @@ bool AudioHardwareDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept 
         LogE("audio decoder config is invalid");
         return false;
     }
-    decoderId_ = NativeHardwareDecoder::createAudio(audioConfig);
+    decoderId_ = NativeHardwareDecoder::createAudioDecoder(audioConfig);
     if (decoderId_.empty()) {
         LogE("create audio decoder failed");
         return false;

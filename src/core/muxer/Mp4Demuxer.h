@@ -44,8 +44,8 @@ public:
     uint32_t cttsEntryIndex = 0;
     uint32_t cttsEntrySampleIndex = 0;
     
-    uint64_t dts = 0;
-    uint64_t pts = 0;
+    int64_t dts = 0;
+    int64_t pts = 0;
     uint64_t index = 0;
     uint64_t keyIndex = 0;
     uint16_t naluByteSize = 0;
@@ -68,6 +68,8 @@ public:
                                        DataPtr data,
                                        std::shared_ptr<VideoFrameInfo>frameInfo);
     void calcIndex() noexcept;
+
+    void init() noexcept;
 };
 
 class Mp4Demuxer: public IDemuxer {
@@ -98,9 +100,10 @@ public:
     }
     
     bool probeMoovBox(Buffer& buffer, int64_t& start, uint32_t& size) noexcept;
-    std::string description() const noexcept;
+    [[nodiscard]] std::string description() const noexcept;
 private:
     bool parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept;
+
     void initData() noexcept;
 private:
     BoxRefPtr rootBox_;

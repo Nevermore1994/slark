@@ -10,9 +10,10 @@
 
 namespace slark {
 
-DecoderErrorCode VideoHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
+DecoderErrorCode VideoHardwareDecoder::decode(
+    AVFrameRefPtr &frame
+) noexcept {
     assert(frame && frame->isVideo());
-    auto pts = frame->pts;
     if (!isOpen_) {
         LogE("decoder is not open");
         return DecoderErrorCode::NotStart;
@@ -25,39 +26,56 @@ DecoderErrorCode VideoHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
     }
 }
 
-DecoderErrorCode VideoHardwareDecoder::sendPacket(AVFrameRefPtr& frame) noexcept {
+DecoderErrorCode VideoHardwareDecoder::sendPacket(
+    AVFrameRefPtr &frame
+) noexcept {
     NativeDecodeFlag flag = NativeDecodeFlag::None;
     auto frameInfo = std::dynamic_pointer_cast<VideoFrameInfo>(frame->info);
     if (frameInfo->isIDRFrame) {
         flag = NativeDecodeFlag::KeyFrame;
-    } else if (frameInfo->isEndOfStream){
+    } else if (frameInfo->isEndOfStream) {
         flag = NativeDecodeFlag::EndOfStream;
     }
-    auto res = NativeHardwareDecoder::sendPacket(decoderId_, frame->data, uint64_t(frame->ptsTime() * 1000000), flag);
+    auto res = NativeHardwareDecoder::sendPacket(
+        decoderId_,
+        frame->data,
+        uint64_t(frame->ptsTime() * 1000000),
+        flag
+    );
     if (res != DecoderErrorCode::Success) {
-        LogE("send video packet failed, {}", static_cast<int>(res));
+        LogE("send video packet failed, {}",
+             static_cast<int>(res));
     } else {
-        LogI("send video packet success, dts:{}, pts:{}", frame->dts, frame->pts);
+        LogI("send video packet success, pts:{}, dts:{}",
+             frame->pts,
+             frame->dts
+        );
     }
     return res;
 }
 
-DecoderErrorCode VideoHardwareDecoder::decodeByteBufferMode(AVFrameRefPtr& frame) noexcept {
+DecoderErrorCode VideoHardwareDecoder::decodeByteBufferMode(
+    AVFrameRefPtr &frame
+) noexcept {
     auto pts = frame->pts;
     if (decodeFrames_.contains(pts)) {
-        LogE("decode same pts frame, {}", pts);
+        LogE("decode same pts frame, {}",
+             pts);
         return DecoderErrorCode::InputDataError;
     }
     auto res = sendPacket(frame);
     if (res != DecoderErrorCode::Success) {
-        LogE("send packet failed, {}", static_cast<int>(res));
+        LogE("send packet failed, {}",
+             static_cast<int>(res));
     } else {
         decodeFrames_[pts] = std::move(frame);
     }
     return res;
 }
 
-DecoderErrorCode VideoHardwareDecoder::decodeTextureMode(AVFrameRefPtr& frame) noexcept {
+DecoderErrorCode VideoHardwareDecoder::decodeTextureMode(
+    AVFrameRefPtr &frame
+) noexcept {
     if (!context_ || !frameBufferPool_) {
         LogE("context is null");
         return DecoderErrorCode::NotProcessed;
@@ -73,30 +91,55 @@ void VideoHardwareDecoder::requestVideoFrame() noexcept {
     constexpr int64_t kWaitTime = 30; // 30ms
     constexpr int32_t kMaxRetryCount = 3;
     auto videoConfig = std::dynamic_pointer_cast<VideoDecoderConfig>(config_);
-    auto frameBuffer = frameBufferPool_->acquire(videoConfig->width, videoConfig->height);
-    glViewport(0, 0, static_cast<int>(videoConfig->width), static_cast<int>(videoConfig->height));
+    auto frameBuffer = frameBufferPool_->acquire(
+        videoConfig->width,
+        videoConfig->height
+    );
+    glViewport(
+        0,
+        0,
+        static_cast<int>(videoConfig->width),
+        static_cast<int>(videoConfig->height)
+    );
+    if (eglGetError() != EGL_SUCCESS) {
+        LogE("set view port error!");
+        return;
+    }
     frameBuffer->bind(true);
+    if (eglGetError() != EGL_SUCCESS) {
+        LogE("frame buffer bind error!");
+        return;
+    }
     int32_t retryCount = 0;
     bool isSuccess = false;
-    uint64_t pts = 0;
+    int64_t pts = 0;
     do {
         retryCount++;
-        auto packed = NativeHardwareDecoder::requestVideoFrame(decoderId_, kWaitTime, videoConfig->width, videoConfig->height);
+        auto packed = NativeHardwareDecoder::requestVideoFrame(
+            decoderId_,
+            kWaitTime,
+            videoConfig->width,
+            videoConfig->height
+        );
         isSuccess = (packed & (1ULL << 63)) != 0;
-        pts = packed & 0x7FFFFFFFFFFFFFFF;
+        pts = static_cast<int64_t>(packed) & 0x7FFFFFFFFFFFFFFF;
         if (!isSuccess) {
-            LogE("request video frame failed:{}", retryCount);
+            LogE("request video frame failed:{}",
+                 retryCount);
         } else {
-            LogI("request video frame success:{}", pts);
+            LogI("request video frame success:{}",
+                 pts);
             break;
         }
     } while (!isSuccess && retryCount < kMaxRetryCount);
     if (!isSuccess) {
-        LogE("request video frame failed after {} retries", retryCount);
+        LogE("request video frame failed after {} retries",
+             retryCount);
         return;
     }
     auto frame = std::make_unique<AVFrame>(AVFrameType::Video);
     frame->pts = pts;
+    frame->timeScale = 1000; //
     auto texture = frameBuffer->detachTexture();
     frame->opaque = texture.release();
     frameBuffer->unbind(true);
@@ -119,7 +162,10 @@ void VideoHardwareDecoder::initContext() noexcept {
         return;
     }
     auto videoConfig = std::dynamic_pointer_cast<VideoDecoderConfig>(config_);
-    surface_ = context_->createOffscreenSurface(videoConfig->width, videoConfig->height);
+    surface_ = context_->createOffscreenSurface(
+        videoConfig->width,
+        videoConfig->height
+    );
     frameBufferPool_ = std::make_unique<FrameBufferPool>();
 }
 
@@ -136,7 +182,9 @@ VideoHardwareDecoder::~VideoHardwareDecoder() noexcept {
     frameBufferPool_.reset();
 }
 
-bool VideoHardwareDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept {
+bool VideoHardwareDecoder::open(
+    std::shared_ptr<DecoderConfig> config
+) noexcept {
     auto videoConfig = std::dynamic_pointer_cast<VideoDecoderConfig>(config);
     if (!videoConfig) {
         LogE("video decoder config is invalid");
@@ -155,13 +203,17 @@ bool VideoHardwareDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept 
         }
         context_->attachContext(surface_);
     }
-    decoderId_ = NativeHardwareDecoder::createVideoDecoder(videoConfig);
+    decoderId_ = NativeHardwareDecoder::createVideoDecoder(videoConfig, mode_);
     if (decoderId_.empty()) {
         LogE("create video decoder failed!");
         return false;
     }
-    NativeDecoderManager::shareInstance().add(decoderId_, shared_from_this());
-    LogI("create video decoder:{}", decoderId_);
+    NativeDecoderManager::shareInstance().add(
+        decoderId_,
+        shared_from_this()
+    );
+    LogI("create video decoder:{}",
+         decoderId_);
     if (mode_ == DecodeMode::Texture) {
         context_->detachContext();
     }

@@ -6,18 +6,14 @@
 #include "NativeDecoderManager.h"
 #include "AndroidEGLContext.h"
 #include "FrameBufferPool.h"
+#include "DecoderConfig.h"
 
 namespace slark {
-
-enum class DecodeMode {
-    Texture,
-    ByteBuffer,
-};
 
 class VideoHardwareDecoder: public NativeDecoder,
         public std::enable_shared_from_this<VideoHardwareDecoder> {
 public:
-    VideoHardwareDecoder(DecodeMode mode = DecodeMode::Texture)
+    explicit VideoHardwareDecoder(DecodeMode mode = DecodeMode::Texture)
         : NativeDecoder(DecoderType::VideoHardWareDecoder)
         , mode_(mode) {
     }

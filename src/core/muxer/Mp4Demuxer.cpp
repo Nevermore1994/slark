@@ -31,6 +31,14 @@ bool isContainerBox(std::string_view symbol) noexcept {
     });
 }
 
+void TrackContext::init() noexcept {
+    if (type == TrackType::Video && ctts) {
+        //Set pts to 0 and calculate the initial value of dts, which may be a negative number.
+        dts = pts - ctts->entrys[0].sampleOffset;
+        cttsEntrySampleIndex = 1;
+    }
+}
+
 uint64_t TrackContext::getSeekPos(long double targetTime) const noexcept {
     if (type != TrackType::Video) {
         return 0;
@@ -172,21 +180,14 @@ void TrackContext::reset() noexcept {
     pts = 0;
     index = 0;
     isCompleted = false;
+    init();
 }
 
 void TrackContext::calcIndex() noexcept {
     auto size = stsz->sampleSizes[stszSampleSizeIndex];
     auto& entry = stsc->entrys[stscEntryIndex];
-    auto& sttsEntry = stts->entrys[sttsEntryIndex];
-    dts += sttsEntry.sampleDelta;
-    if (ctts) {
-        pts = dts + ctts->entrys[cttsEntryIndex].sampleOffset;
-    } else {
-        pts = dts;
-    }
-    
     stszSampleSizeIndex++;
-    
+
     sampleOffset += size;
     entrySampleIndex++;
     if (entrySampleIndex >= entry.samplesPerChunk) {
@@ -198,7 +199,14 @@ void TrackContext::calcIndex() noexcept {
         sampleOffset = 0;
         entrySampleIndex = 0;
     }
-    
+
+    if (stscEntryIndex + 1 < stsc->entrys.size()) {
+        if (chunkLogicIndex >= (stsc->entrys[stscEntryIndex + 1].firstChunk - 1)) {
+            stscEntryIndex++;
+        }
+    }
+
+    auto& sttsEntry = stts->entrys[sttsEntryIndex];
     sttsEntrySampleIndex++;
     if (sttsEntrySampleIndex >= sttsEntry.sampleCount) {
         sttsEntrySampleIndex = 0;
@@ -206,21 +214,19 @@ void TrackContext::calcIndex() noexcept {
             sttsEntryIndex++;
         }
     }
-    
+    dts += sttsEntry.sampleDelta;
+
     if (ctts) {
         cttsEntrySampleIndex++;
-        if (cttsEntrySampleIndex > ctts->entrys[cttsEntryIndex].sampleCount) {
+        if (cttsEntrySampleIndex >= ctts->entrys[cttsEntryIndex].sampleCount) {
             if (cttsEntryIndex + 1 < ctts->entrys.size()) {
                 cttsEntryIndex ++;
             }
             cttsEntrySampleIndex = 0;
         }
-    }
-    
-    if (stscEntryIndex + 1 < stsc->entrys.size()) {
-        if (chunkLogicIndex >= (stsc->entrys[stscEntryIndex + 1].firstChunk - 1)) {
-            stscEntryIndex++;
-        }
+        pts = dts + ctts->entrys[cttsEntryIndex].sampleOffset;
+    } else {
+        pts = dts;
     }
 }
 
@@ -501,6 +507,7 @@ void initTrack(std::shared_ptr<TrackContext>& track) {
             track->stss = std::dynamic_pointer_cast<BoxStss>(child);
         }
     }
+    track->init();
 }
 
 void Mp4Demuxer::initData() noexcept {
@@ -641,7 +648,7 @@ DemuxerResult Mp4Demuxer::parseData(DataPacket& packet) noexcept {
         buffer_->shrink();
     }
     auto mediaDataBox = rootBox_->getChild("mdat");
-    if (mediaDataBox && buffer_->pos() >= (mediaDataBox->info.size + mediaDataBox->info.headerSize)) {
+    if (mediaDataBox && buffer_->pos() >= (mediaDataBox->info.size + mediaDataBox->info.start)) {
         isCompleted_ = true;
     }
     return result;

@@ -7,9 +7,6 @@ import android.media.MediaFormat
 import android.opengl.EGL14
 import android.util.Log
 import android.util.Size
-import android.view.Surface
-import android.view.SurfaceView
-import android.view.TextureView
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
@@ -23,7 +20,22 @@ fun MediaFormat.isVideoFormat(): Boolean {
     return this.getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
 }
 
-class MediaCodecDecoder(private val mediaInfo: String, private val format: MediaFormat) {
+enum class DecodeMode(val value: Int) {
+    Texture(0),
+    ByteBuffer(1);
+
+    companion object {
+        fun fromInt(value: Int): DecodeMode {
+            return entries.firstOrNull { it.value == value } ?: Texture
+        }
+    }
+}
+
+class MediaCodecDecoder(
+    mediaInfo: String,
+    private val format: MediaFormat,
+    private val decodeMode: DecodeMode
+) {
     private var decoder: MediaCodec? = null
     private var isRunning: Boolean = false
     private var surface: RenderSurface? = null
@@ -46,8 +58,15 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
     init {
         decoder = MediaCodec.createDecoderByType(mediaInfo)
         if (format.isVideoFormat()) {
-            format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
-            decoder?.configure(format, null, null, 0)
+            if (decodeMode == DecodeMode.Texture) {
+                surface = RenderSurface()
+                surface?.init()
+                decoder?.configure(format, surface?.surface(), null, 0)
+            } else {
+                // Use flexible color format for YUV420
+                format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
+                decoder?.configure(format, null, null, 0)
+            }
         } else {
             decoder = MediaCodec.createDecoderByType(mediaInfo)
             decoder?.configure(format, null, null, 0)
@@ -69,7 +88,7 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
             return errorCode.ordinal
         }
 
-        execute() {
+        execute {
             val inputBufferIndex =
                 decoder?.dequeueInputBuffer(10_000) ?: return@execute //10 ms
             if (inputBufferIndex == -1) {
@@ -103,11 +122,11 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
             val info = MediaCodec.BufferInfo()
             val outputBufferIndex =
                 decoder?.dequeueOutputBuffer(info, 10_000) ?: return@execute //10 ms
+            @Suppress("DEPRECATION")
             when (outputBufferIndex) {
                 MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                     SlarkLog.i(LOG_TAG, isVideo + "output format changed: ${decoder?.outputFormat}")
                     val newFormat = decoder?.outputFormat
-                    format
                     return@execute
                 }
                 MediaCodec.INFO_TRY_AGAIN_LATER -> {
@@ -120,17 +139,16 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
                     return@execute
                 }
                 else -> {
-                    if (format.isAudioFormat()) {
+                    if (format.isVideoFormat() && decodeMode == DecodeMode.Texture) {
+                        decoder?.releaseOutputBuffer(outputBufferIndex, true)
+                    } else {
                         val outputBuffer =
                             decoder?.getOutputBuffer(outputBufferIndex) ?: return@execute
                         val rawData = ByteArray(info.size)
                         outputBuffer.get(rawData)
                         processRawData(decoder?.hashCode().toString(), rawData, info.presentationTimeUs)
                         decoder?.releaseOutputBuffer(outputBufferIndex, false)
-                    } else {
-                        decoder?.releaseOutputBuffer(outputBufferIndex, false)
                     }
-
                     return@execute
                 }
             }
@@ -167,6 +185,7 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
             SlarkLog.e(LOG_TAG, "EGL context is not valid")
             return 0L
         }
+        checkGLStatus("requestVideoFrame")
         surface?.let {
             val res = it.awaitFrame(waitTime)
             if (res.first) {
@@ -183,28 +202,6 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
     companion object {
         const val LOG_TAG = "MediaCodec"
         private val decoders = ConcurrentHashMap<String, MediaCodecDecoder>()
-
-        fun selectDecoder(mediaInfo: String, format: MediaFormat): MediaCodec? {
-            val codecList = MediaCodecList(MediaCodecList.ALL_CODECS)
-            val codecName = codecList.findDecoderForFormat(format)
-
-            for (codecInfo in codecList.codecInfos) {
-                if (codecInfo.isEncoder) {
-                    continue
-                }
-                val types = codecInfo?.supportedTypes
-                if (types?.contains(mediaInfo) == true) {
-                    val caps = codecInfo.getCapabilitiesForType(mediaInfo)
-                    if (caps.colorFormats.contains(MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)) {
-                        Log.d("Codec", "✅ ${codecInfo.name} supports Surface")
-                        return MediaCodec.createByCodecName(codecInfo.name)
-                    } else {
-                        Log.d("Codec", "❌ ${codecInfo.name} does NOT support Surface")
-                    }
-                }
-            }
-            return null
-        }
 
         fun createVideoFormat(mediaInfo: String, videoInfos: IntArray): MediaFormat {
             if (videoInfos.size < 4) {
@@ -226,7 +223,7 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
                 format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 1048576 * 2) //2MB
             }
 
-            val decoder = MediaCodecDecoder(mediaInfo, format)
+            val decoder = MediaCodecDecoder(mediaInfo, format, DecodeMode.fromInt(if (videoInfos.size >=5) videoInfos[4] else 0 ))
             val decoderId = decoder.hashCode().toString()
             decoders[decoderId] = decoder
             return decoderId
@@ -253,7 +250,7 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
             val csd0 = ByteBuffer.wrap(config)
             format.setByteBuffer("csd-0", csd0)
 
-            val decoder = MediaCodecDecoder(MediaFormat.MIMETYPE_AUDIO_AAC, format)
+            val decoder = MediaCodecDecoder(MediaFormat.MIMETYPE_AUDIO_AAC, format, DecodeMode.ByteBuffer)
             val decoderId = decoder.hashCode().toString()
             decoders[decoderId] = decoder
             SlarkLog.i(LOG_TAG, "create: $decoderId")
@@ -322,7 +319,6 @@ class MediaCodecDecoder(private val mediaInfo: String, private val format: Media
                 else -> 2
             }
         }
-        var testSurface: Surface? = null
     }
 
 }

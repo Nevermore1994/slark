@@ -57,8 +57,14 @@ class RenderSurface : SurfaceTexture.OnFrameAvailableListener {
         render = null
     }
 
-    fun drawFrame(format: MediaFormat, size: Size) {
-        surfaceTexture?.let { render?.drawFrame(it, format, size) }
+    fun drawFrame(format: MediaFormat, size: Size): Boolean {
+        val tex = surfaceTexture
+        val r = render
+        if (tex == null || r == null) {
+            SlarkLog.e(LOG_TAG, "drawFrame skipped: surfaceTexture or render is null")
+            return false
+        }
+        return r.drawFrame(tex, format, size)
     }
 
     fun awaitFrame(waitTime: Long): Pair<Boolean, Long> {

@@ -53,17 +53,17 @@ Java_com_slark_sdk_EGLRenderThread_createEGLContext(
     }
     eglContext->attachContext(eglSurface);
     ANativeWindow_release(window);
-    auto isSuccess = eglGetError() == 0;
-    if (isSuccess) {
-        auto info = std::make_shared<SharedEGLContextInfo>();
-        info->playerId = playerId;
-        info->context = eglContext;
-        info->surface = eglSurface;
-        SharedEGLContextManager::shareInstance().add(playerId, std::move(info));
-    } else {
-        LogE("failed to attach EGL context");
+    auto error = eglGetError();
+    if (error != EGL_SUCCESS) {
+        LogE("failed to attach EGL context to surface, error: {}", error);
+        return false;
     }
-    return isSuccess;
+    auto info = std::make_shared<SharedEGLContextInfo>();
+    info->playerId = playerId;
+    info->context = eglContext;
+    info->surface = eglSurface;
+    SharedEGLContextManager::shareInstance().add(playerId, std::move(info));
+    return true;
 }
 
 extern "C"
@@ -117,6 +117,10 @@ Java_com_slark_sdk_EGLRenderThread_swapGLBuffers(
     auto result = eglSwapBuffers(display, contextInfo->surface);
     if (result == EGL_FALSE) {
         LogE("failed to swap buffers for playerId: {} {}", playerId, eglGetError());
+    }
+    auto error = eglGetError();
+    if (error != EGL_SUCCESS) {
+        LogE("EGL error after swapBuffers: {}", error);
     }
     if (textureId != 0) {
         auto render = VideoRenderManager::shareInstance().find(playerId);

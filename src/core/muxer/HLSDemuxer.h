@@ -102,8 +102,8 @@ struct TSPMT {
 };
 
 struct TSPESFrame {
-    uint64_t pts = 0;
-    uint64_t dts = 0;
+    int64_t pts = 0;
+    int64_t dts = 0;
     Data mediaData;
     
     void reset() noexcept {
@@ -195,7 +195,7 @@ private:
     
     bool packAudioPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexcept;
     
-    void recalculatePtsDts(uint64_t& pts, uint64_t& dts, bool isAudio) noexcept;
+    void recalculatePtsDts(int64_t& pts, int64_t& dts, bool isAudio) noexcept;
 private:
     static constexpr uint32_t kPacketSize = 188;
     TSPAT pat_;

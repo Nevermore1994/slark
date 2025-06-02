@@ -26,7 +26,7 @@ public:
 protected:
     std::string decoderId_;
     std::mutex mutex_;
-    std::unordered_map<uint64_t, AVFrameRefPtr> decodeFrames_;
+    std::unordered_map<int64_t, AVFrameRefPtr> decodeFrames_;
 };
 
 using NativeDecoderManager = Manager<NativeDecoder>;

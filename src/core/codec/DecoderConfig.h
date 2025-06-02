@@ -11,6 +11,11 @@
 
 namespace slark {
 
+enum class DecodeMode {
+    Texture,
+    ByteBuffer,
+};
+
 struct AudioDecoderConfig: public DecoderConfig {
     uint16_t channels{};
     uint16_t bitsPerSample{};

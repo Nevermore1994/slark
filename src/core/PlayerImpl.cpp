@@ -183,6 +183,9 @@ void Player::Impl::createAudioComponent(const PlayerSetting& setting) noexcept {
         return;
     }
     audioDecodeComponent_ = std::make_shared<DecoderComponent>([this](auto frame) {
+        if (isStopped_) {
+            return;
+        }
         if (!stats_.isFirstAudioRendered) {
             stats_.audioDecodeDelta = frame->stats.decodedStamp - frame->stats.prepareDecodeStamp;
         }
@@ -203,6 +206,9 @@ void Player::Impl::createAudioComponent(const PlayerSetting& setting) noexcept {
     }
     audioRender_ = std::make_unique<AudioRenderComponent>(audioInfo);
     audioRender_->firstFrameRenderCallBack = [this](Time::TimePoint timestamp){
+        if (isStopped_) {
+            return;
+        }
         stats_.isFirstAudioRendered = true;
         stats_.audioRenderDelta = timestamp - stats_.audioRenderDelta;
     };
@@ -216,6 +222,9 @@ void Player::Impl::createVideoComponent(const PlayerSetting& setting) noexcept  
         return;
     }
     videoDecodeComponent_ = std::make_shared<DecoderComponent>([this](auto frame) {
+        if (isStopped_) {
+            return;
+        }
         LogI("pushFrameDecode video frame info:{}", frame->ptsTime());
         videoFrames_.withLock([&frame](auto& frames){
             frames.emplace_back(std::move(frame));

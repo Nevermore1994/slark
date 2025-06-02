@@ -95,6 +95,10 @@ void VideoRender::renderFrame(const AVFrameRefPtr& frame) noexcept {
     auto videoFrameInfo = std::dynamic_pointer_cast<VideoFrameInfo>(frame->info);
     if (videoFrameInfo->format == FrameFormat::MediaCodecSurface) {
         auto texture = std::unique_ptr<Texture>(static_cast<Texture*>(frame->opaque));
+        if (texture == nullptr) {
+            LogE("texture is nullptr");
+            return;
+        }
         frame->opaque = nullptr;
         auto textureId = texture->textureId();
         Native_RequestRender(playerId_, textureId);
