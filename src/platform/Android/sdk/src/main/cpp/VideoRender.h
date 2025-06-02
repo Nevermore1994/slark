@@ -3,6 +3,7 @@
 //
 
 #pragma once
+
 #include "VideoInfo.h"
 #include "Thread.h"
 #include "Manager.hpp"
@@ -10,7 +11,9 @@
 
 namespace slark {
 
-class VideoRender: public IVideoRender, public std::enable_shared_from_this<VideoRender> {
+class VideoRender
+    : public IVideoRender,
+      public std::enable_shared_from_this<VideoRender> {
 public:
     VideoRender();
 
@@ -27,10 +30,12 @@ public:
     void pushVideoFrameRender(AVFrameRefPtr frame) noexcept override;
 
     void renderComplete(int32_t textureId) noexcept;
+
 private:
     void requestRender() noexcept;
 
-    void renderFrame(const AVFrameRefPtr& frame) noexcept;
+    void renderFrame(const AVFrameRefPtr &frame) noexcept;
+
 public:
     std::unique_ptr<Thread> renderThread_;
     std::mutex mutex_;

@@ -9,12 +9,16 @@
 
 namespace slark {
 
-class TexturePool: public std::enable_shared_from_this <TexturePool> {
+class TexturePool : public std::enable_shared_from_this<TexturePool> {
 public:
     explicit TexturePool(size_t maxSize = 8)
-            : maxSize_(maxSize) {}
+        : maxSize_(maxSize) {}
 
-    TexturePtr acquire(uint32_t width, uint32_t height, TextureConfig config = {});
+    TexturePtr acquire(
+        uint32_t width,
+        uint32_t height,
+        TextureConfig config = {}
+    );
 
     void release(TexturePtr texture);
 

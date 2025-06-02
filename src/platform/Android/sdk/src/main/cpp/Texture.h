@@ -3,6 +3,7 @@
 //
 
 #pragma once
+
 #include "BitMap.h"
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
@@ -32,11 +33,19 @@ struct TextureConfig {
 
 class Texture {
 public:
-    Texture(uint32_t width, uint32_t height, TextureConfig config = {}, DataPtr data = nullptr);
+    Texture(
+        uint32_t width,
+        uint32_t height,
+        TextureConfig config = {},
+        DataPtr data = nullptr
+    );
 
     ~Texture() {
         if (textureId_) {
-            glDeleteTextures(1, &textureId_);
+            glDeleteTextures(
+                1,
+                &textureId_
+            );
             textureId_ = 0;
         }
     }
@@ -64,11 +73,17 @@ public:
     }
 
     void bind() const noexcept {
-        glBindTexture(GL_TEXTURE_2D, textureId_);
+        glBindTexture(
+            GL_TEXTURE_2D,
+            textureId_
+        );
     }
 
     void unbind() const noexcept {
-        glBindTexture(GL_TEXTURE_2D, 0);
+        glBindTexture(
+            GL_TEXTURE_2D,
+            0
+        );
     }
 
     void setManager(std::weak_ptr<TexturePool> manager) noexcept {
@@ -78,6 +93,7 @@ public:
     [[nodiscard]] std::weak_ptr<TexturePool> manager() const noexcept {
         return manager_;
     }
+
 private:
     uint32_t width_;
     uint32_t height_;

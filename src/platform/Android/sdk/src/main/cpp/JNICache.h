@@ -13,31 +13,46 @@ namespace slark::JNI {
 
 class JNICache {
 public:
-    static JNICache& shareInstance() noexcept;
+    static JNICache &shareInstance() noexcept;
 
     ~JNICache() = default;
 
-    MethodReference getStaticMethodId(const ClassReference& clazz,
-                                       std::string_view methodName,
-                                       std::string_view signature) noexcept;
+    MethodReference getStaticMethodId(
+        const ClassReference &clazz,
+        std::string_view methodName,
+        std::string_view signature
+    ) noexcept;
 
-    MethodReference getMethodId(const ClassReference& clazz,
-                                 std::string_view methodName,
-                                 std::string_view signature) noexcept;                                   
+    MethodReference getMethodId(
+        const ClassReference &clazz,
+        std::string_view methodName,
+        std::string_view signature
+    ) noexcept;
 
-    ClassReference getClass(JNIEnv* env, std::string_view className) noexcept;
+    ClassReference getClass(
+        JNIEnv *env,
+        std::string_view className
+    ) noexcept;
 
-    ObjectReference getEnumField(JNIEnv* env, std::string_view className,
-                                    std::string_view fieldName) noexcept;
+    ObjectReference getEnumField(
+        JNIEnv *env,
+        std::string_view className,
+        std::string_view fieldName
+    ) noexcept;
+
 private:
     JNICache() = default;
 
-    MethodReference findMethodCache(const ClassReference& clazz,
-                                     const std::string& key) noexcept;
+    MethodReference findMethodCache(
+        const ClassReference &clazz,
+        const std::string &key
+    ) noexcept;
 
-    MethodReference updateMethodCache(const ClassReference& clazz,
-                                       const std::string& key,
-                                       jmethodID methodId) noexcept;
+    MethodReference updateMethodCache(
+        const ClassReference &clazz,
+        const std::string &key,
+        jmethodID methodId
+    ) noexcept;
 
 private:
     struct ClassInfo {

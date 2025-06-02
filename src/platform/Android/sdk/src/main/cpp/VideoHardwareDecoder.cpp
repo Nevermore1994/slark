@@ -203,7 +203,10 @@ bool VideoHardwareDecoder::open(
         }
         context_->attachContext(surface_);
     }
-    decoderId_ = NativeHardwareDecoder::createVideoDecoder(videoConfig, mode_);
+    decoderId_ = NativeHardwareDecoder::createVideoDecoder(
+        videoConfig,
+        mode_
+    );
     if (decoderId_.empty()) {
         LogE("create video decoder failed!");
         return false;

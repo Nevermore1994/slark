@@ -21,7 +21,7 @@ namespace slark {
 
 
 AudioRender::AudioRender(std::shared_ptr<AudioInfo> audioInfo)
-    : IAudioRender(std::move(audioInfo)){
+    : IAudioRender(std::move(audioInfo)) {
     init();
 }
 
@@ -30,20 +30,25 @@ AudioRender::~AudioRender() {
 }
 
 void AudioRender::init() noexcept {
-    playerId_ = NativeAudioPlayer::create(audioInfo_->sampleRate, static_cast<uint8_t>(audioInfo_->channels));
+    playerId_ = NativeAudioPlayer::create(
+        audioInfo_->sampleRate,
+        static_cast<uint8_t>(audioInfo_->channels));
     if (playerId_.empty()) {
         LogE("create audio player failed.");
         return;
     }
     using namespace std::chrono_literals;
-    timerId_ = TimerManager::shareInstance().runLoop(3000ms, [this](){
-        if (status_ == RenderStatus::Stop || status_ == RenderStatus::Unknown) {
-            LogI("audio render stop, no need to check played time.");
-            return;
+    timerId_ = TimerManager::shareInstance().runLoop(
+        3000ms,
+        [this]() {
+            if (status_ == RenderStatus::Stop || status_ == RenderStatus::Unknown) {
+                LogI("audio render stop, no need to check played time.");
+                return;
+            }
+            auto renderedTime = Time::TimePoint(NativeAudioPlayer::getPlayedTime(playerId_));
+            latency_ = clock_.time() - renderedTime;
         }
-        auto renderedTime = Time::TimePoint(NativeAudioPlayer::getPlayedTime(playerId_));
-        latency_ = clock_.time() - renderedTime;
-    });
+    );
     status_ = RenderStatus::Ready;
 }
 
@@ -52,7 +57,10 @@ void AudioRender::play() noexcept {
         return;
     }
     CheckAudioPlayer();
-    NativeAudioPlayer::doAction(playerId_, AudioPlayerAction::Play);
+    NativeAudioPlayer::doAction(
+        playerId_,
+        AudioPlayerAction::Play
+    );
     clock_.start();
     status_ = RenderStatus::Play;
 }
@@ -62,7 +70,10 @@ void AudioRender::pause() noexcept {
         return;
     }
     CheckAudioPlayer();
-    NativeAudioPlayer::doAction(playerId_, AudioPlayerAction::Pause);
+    NativeAudioPlayer::doAction(
+        playerId_,
+        AudioPlayerAction::Pause
+    );
     clock_.pause();
     status_ = RenderStatus::Pause;
 }
@@ -73,7 +84,10 @@ void AudioRender::release() noexcept {
     }
     CheckAudioPlayer();
     TimerManager::shareInstance().cancel(timerId_);
-    NativeAudioPlayer::doAction(playerId_, AudioPlayerAction::Release);
+    NativeAudioPlayer::doAction(
+        playerId_,
+        AudioPlayerAction::Release
+    );
     clock_.pause();
     playerId_.clear();
     status_ = RenderStatus::Stop;
@@ -90,12 +104,19 @@ void AudioRender::reset() noexcept {
 
 void AudioRender::flush() noexcept {
     CheckAudioPlayer();
-    NativeAudioPlayer::doAction(playerId_, AudioPlayerAction::Flush);
+    NativeAudioPlayer::doAction(
+        playerId_,
+        AudioPlayerAction::Flush
+    );
 }
 
 void AudioRender::setVolume(float volume) noexcept {
     CheckAudioPlayer();
-    NativeAudioPlayer::setConfig(playerId_, AudioPlayerConfig::Volume, volume);
+    NativeAudioPlayer::setConfig(
+        playerId_,
+        AudioPlayerConfig::Volume,
+        volume
+    );
 }
 
 Time::TimePoint AudioRender::playedTime() noexcept {

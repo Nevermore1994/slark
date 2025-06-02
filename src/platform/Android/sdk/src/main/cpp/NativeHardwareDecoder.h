@@ -30,7 +30,7 @@ struct NativeHardwareDecoder {
     static DecoderErrorCode sendPacket(
         std::string_view decoderId,
         DataPtr &data,
-        uint64_t pts,
+        int64_t pts,
         NativeDecodeFlag flag
     );
 

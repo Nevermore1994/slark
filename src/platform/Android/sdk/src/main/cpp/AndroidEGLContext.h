@@ -3,6 +3,7 @@
 //
 
 #pragma once
+
 #include "IEGLContext.h"
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
@@ -15,7 +16,7 @@ public:
 
     ~AndroidEGLContext() noexcept override;
 
-    bool init(void* context) noexcept override;
+    bool init(void *context) noexcept override;
 
     void release() noexcept override;
 
@@ -23,23 +24,31 @@ public:
 
     void attachContext(EGLSurface surface) noexcept override;
 
-    void attachContext(EGLSurface drawSurface, EGLSurface readSurface) noexcept override;
+    void attachContext(
+        EGLSurface drawSurface,
+        EGLSurface readSurface
+    ) noexcept override;
 
-    void* nativeContext() noexcept override;
+    void *nativeContext() noexcept override;
 
     void releaseSurface(EGLSurface eglSurface) noexcept;
 
-    EGLSurface createWindowSurface(ANativeWindow* surface) noexcept;
+    EGLSurface createWindowSurface(ANativeWindow *surface) noexcept;
 
-    EGLSurface createOffscreenSurface(uint32_t width, uint32_t height) noexcept;
+    EGLSurface createOffscreenSurface(
+        uint32_t width,
+        uint32_t height
+    ) noexcept;
 
     EGLDisplay getDisplay() const noexcept {
         return display_;
     }
+
 private:
     EGLConfig getConfig(int version) noexcept;
 
     void destroy() noexcept;
+
 private:
     bool isInit_ = false;
     EGLConfig config_ = nullptr;

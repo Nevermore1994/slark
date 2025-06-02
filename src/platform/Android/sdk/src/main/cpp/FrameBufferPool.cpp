@@ -7,38 +7,72 @@
 
 namespace slark {
 
-std::string generateKey(uint32_t width, uint32_t height, std::thread::id id) {
+std::string generateKey(
+    uint32_t width,
+    uint32_t height,
+    std::thread::id id
+) {
     static std::hash<std::thread::id> threadIdHash;
-    return std::format("{}_{}_{}", threadIdHash(id), width, height);
+    return std::format(
+        "{}_{}_{}",
+        threadIdHash(id),
+        width,
+        height
+    );
 }
 
-FrameBufferRefPtr FrameBufferPool::acquire(uint32_t width, uint32_t height) noexcept {
-    auto key = generateKey(width, height, std::this_thread::get_id());
+FrameBufferRefPtr FrameBufferPool::acquire(
+    uint32_t width,
+    uint32_t height
+) noexcept {
+    auto key = generateKey(
+        width,
+        height,
+        std::this_thread::get_id());
     auto it = frameBufferPool_.find(key);
     FrameBufferRefPtr frameBuffer;
     if (it != frameBufferPool_.end()) {
-        std::erase_if(it->second.useList, [&](auto& frameBuffer) {
-            if (frameBuffer.use_count() == 1) {
-                it->second.freeList.push_back(frameBuffer);
-                return true;
+        std::erase_if(
+            it->second
+                .useList,
+            [&](auto &frameBuffer) {
+                if (frameBuffer.use_count() == 1) {
+                    it->second
+                        .freeList
+                        .push_back(frameBuffer);
+                    return true;
+                }
+                return false;
             }
-            return false;
-        });
-        if (!it->second.freeList.empty()) {
-            frameBuffer = it->second.freeList.front();
-            it->second.freeList.pop_front();
+        );
+        if (!it->second
+            .freeList
+            .empty()) {
+            frameBuffer = it->second
+                .freeList
+                .front();
+            it->second
+                .freeList
+                .pop_front();
         }
     } else {
-        frameBufferPool_.try_emplace(key, maxFrameBufferCount_);
+        frameBufferPool_.try_emplace(
+            key,
+            maxFrameBufferCount_
+        );
     }
     if (!frameBuffer) {
         frameBuffer = std::make_shared<FrameBuffer>(nullptr);
     }
-    auto texture = texturePool_->acquire(width, height);
-    auto& node = frameBufferPool_.at(key);
+    auto texture = texturePool_->acquire(
+        width,
+        height
+    );
+    auto &node = frameBufferPool_.at(key);
     frameBuffer->update(std::move(texture));
     if (frameBuffer->isValid()) {
-        node.useList.push_back(frameBuffer);
+        node.useList
+            .push_back(frameBuffer);
     } else {
         LogE("Failed to create framebuffer");
     }
@@ -47,10 +81,12 @@ FrameBufferRefPtr FrameBufferPool::acquire(uint32_t width, uint32_t height) noex
     }
 
     while (node.isFull()) {
-        if (node.freeList.empty()) {
+        if (node.freeList
+            .empty()) {
             break;
         }
-        node.freeList.pop_back();
+        node.freeList
+            .pop_back();
     }
     return frameBuffer;
 }

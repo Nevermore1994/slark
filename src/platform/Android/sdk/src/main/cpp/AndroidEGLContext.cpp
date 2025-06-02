@@ -14,7 +14,7 @@ AndroidEGLContext::~AndroidEGLContext() noexcept {
     destroy();
 }
 
-bool AndroidEGLContext::init(void* context) noexcept {
+bool AndroidEGLContext::init(void *context) noexcept {
     if (isInit_) {
         return true;
     }
@@ -30,7 +30,11 @@ bool AndroidEGLContext::init(void* context) noexcept {
     display_ = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     assert(display_ != EGL_NO_DISPLAY);
 
-    if (!eglInitialize(display_, nullptr, nullptr)) {
+    if (!eglInitialize(
+        display_,
+        nullptr,
+        nullptr
+    )) {
         display_ = EGL_NO_DISPLAY;
         LogE("unable to initialize EGL");
         return false;
@@ -38,10 +42,15 @@ bool AndroidEGLContext::init(void* context) noexcept {
 
     auto config = getConfig(2);
     int openGLESAttrib2[] = {
-            EGL_CONTEXT_CLIENT_VERSION, 2,
-            EGL_NONE
+        EGL_CONTEXT_CLIENT_VERSION, 2,
+        EGL_NONE
     };
-    context_ = eglCreateContext(display_, config,context, openGLESAttrib2);
+    context_ = eglCreateContext(
+        display_,
+        config,
+        context,
+        openGLESAttrib2
+    );
     if (eglGetError() == EGL_SUCCESS) {
         LogI("create opengl es 2.0 success");
         isInit_ = true;
@@ -57,10 +66,16 @@ void AndroidEGLContext::release() noexcept {
 }
 
 void AndroidEGLContext::attachContext(EGLSurface surface) noexcept {
-    attachContext(surface, surface);
+    attachContext(
+        surface,
+        surface
+    );
 }
 
-void AndroidEGLContext::attachContext(EGLSurface drawSurface, EGLSurface readSurface) noexcept {
+void AndroidEGLContext::attachContext(
+    EGLSurface drawSurface,
+    EGLSurface readSurface
+) noexcept {
     if (!isInit_) {
         LogE("gl context is uninitialized");
         return;
@@ -68,11 +83,15 @@ void AndroidEGLContext::attachContext(EGLSurface drawSurface, EGLSurface readSur
     if (display_ == EGL_NO_DISPLAY) {
         LogE("not set display");
     }
-    if (!eglMakeCurrent(display_, drawSurface, readSurface, context_)) {
+    if (!eglMakeCurrent(
+        display_,
+        drawSurface,
+        readSurface,
+        context_
+    )) {
         LogE("attach context error");
     }
 }
-
 
 void AndroidEGLContext::detachContext() noexcept {
     if (!isInit_) {
@@ -82,30 +101,43 @@ void AndroidEGLContext::detachContext() noexcept {
     if (display_ == EGL_NO_DISPLAY) {
         LogE("not set display");
     }
-    if (!eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT)) {
+    if (!eglMakeCurrent(
+        display_,
+        EGL_NO_SURFACE,
+        EGL_NO_SURFACE,
+        EGL_NO_CONTEXT)) {
         LogE("detach context error");
     }
 }
 
 void AndroidEGLContext::releaseSurface(EGLSurface eglSurface) noexcept {
-    eglDestroySurface(display_, eglSurface);
+    eglDestroySurface(
+        display_,
+        eglSurface
+    );
 }
 
-EGLSurface AndroidEGLContext::createWindowSurface(ANativeWindow* surface) noexcept {
+EGLSurface AndroidEGLContext::createWindowSurface(ANativeWindow *surface) noexcept {
     if (surface == nullptr) {
         LogE("ANativeWindow is NULL!");
         return nullptr;
     }
     int surfaceAttributes[] = {
-            EGL_NONE
+        EGL_NONE
     };
 
-    EGLSurface eglSurface = eglCreateWindowSurface(display_, config_, surface, surfaceAttributes);
+    EGLSurface eglSurface = eglCreateWindowSurface(
+        display_,
+        config_,
+        surface,
+        surfaceAttributes
+    );
     auto error = eglGetError();
     if (error == EGL_SUCCESS) {
         LogI("create window surface success");
     } else {
-        LogE("create window surface failed:{}", error);
+        LogE("create window surface failed:{}",
+             error);
         return nullptr;
     }
     if (eglSurface == nullptr) {
@@ -114,13 +146,20 @@ EGLSurface AndroidEGLContext::createWindowSurface(ANativeWindow* surface) noexce
     return eglSurface;
 }
 
-EGLSurface AndroidEGLContext::createOffscreenSurface(uint32_t width, uint32_t height) noexcept {
+EGLSurface AndroidEGLContext::createOffscreenSurface(
+    uint32_t width,
+    uint32_t height
+) noexcept {
     int surfaceAttributes[] = {
-            EGL_WIDTH, static_cast<int>(width),
-            EGL_HEIGHT, static_cast<int>(height),
-            EGL_NONE
+        EGL_WIDTH, static_cast<int>(width),
+        EGL_HEIGHT, static_cast<int>(height),
+        EGL_NONE
     };
-    EGLSurface eglSurface = eglCreatePbufferSurface(display_, config_, surfaceAttributes);
+    EGLSurface eglSurface = eglCreatePbufferSurface(
+        display_,
+        config_,
+        surfaceAttributes
+    );
     if (eglSurface == nullptr) {
         LogE("Surface was null");
         return nullptr;
@@ -131,31 +170,44 @@ EGLSurface AndroidEGLContext::createOffscreenSurface(uint32_t width, uint32_t he
 EGLConfig AndroidEGLContext::getConfig(int version) noexcept {
     int renderableType = EGL_OPENGL_ES2_BIT;
     int attribList[] = {
-            EGL_RED_SIZE, 8,
-            EGL_GREEN_SIZE, 8,
-            EGL_BLUE_SIZE, 8,
-            EGL_ALPHA_SIZE, 8,
-            EGL_DEPTH_SIZE, 16,
-            EGL_STENCIL_SIZE, 8,
-            EGL_RENDERABLE_TYPE, renderableType,
-            EGL_NONE,
+        EGL_RED_SIZE, 8,
+        EGL_GREEN_SIZE, 8,
+        EGL_BLUE_SIZE, 8,
+        EGL_ALPHA_SIZE, 8,
+        EGL_DEPTH_SIZE, 16,
+        EGL_STENCIL_SIZE, 8,
+        EGL_RENDERABLE_TYPE, renderableType,
+        EGL_NONE,
     };
     EGLConfig configs = nullptr;
     int numConfigs;
-    if (!eglChooseConfig(display_, attribList, &configs, 1, &numConfigs)) {
+    if (!eglChooseConfig(
+        display_,
+        attribList,
+        &configs,
+        1,
+        &numConfigs
+    )) {
         return nullptr;
     }
     return configs;
 }
 
-void* AndroidEGLContext::nativeContext() noexcept {
+void *AndroidEGLContext::nativeContext() noexcept {
     return context_;
 }
 
 void AndroidEGLContext::destroy() noexcept {
     if (display_ != EGL_NO_DISPLAY) {
-        eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-        eglDestroyContext(display_, context_);
+        eglMakeCurrent(
+            display_,
+            EGL_NO_SURFACE,
+            EGL_NO_SURFACE,
+            EGL_NO_CONTEXT);
+        eglDestroyContext(
+            display_,
+            context_
+        );
         eglReleaseThread();
         eglTerminate(display_);
     }

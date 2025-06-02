@@ -3,6 +3,7 @@
 //
 
 #pragma once
+
 #include "FrameBuffer.h"
 #include "TexturePool.h"
 #include "NonCopyable.h"
@@ -13,6 +14,7 @@ namespace slark {
 using FrameBufferRefPtrList = std::list<FrameBufferRefPtr>;
 
 constexpr uint8_t kMaxFrameBufferCount = 3;
+
 struct FrameBufferNode {
     FrameBufferRefPtrList useList;
     FrameBufferRefPtrList freeList;
@@ -29,17 +31,20 @@ struct FrameBufferNode {
     uint8_t capacity = kMaxFrameBufferCount;
 };
 
-class FrameBufferPool: public NonCopyable {
+class FrameBufferPool : public NonCopyable {
 public:
     explicit FrameBufferPool(uint8_t maxSlotCount = kMaxFrameBufferCount)
-        : maxFrameBufferCount_(maxSlotCount)
-        , texturePool_(std::make_shared<TexturePool>()) {
+        : maxFrameBufferCount_(maxSlotCount),
+          texturePool_(std::make_shared<TexturePool>()) {
 
     }
 
     ~FrameBufferPool() override = default;
 
-    FrameBufferRefPtr acquire(uint32_t width, uint32_t height) noexcept;
+    FrameBufferRefPtr acquire(
+        uint32_t width,
+        uint32_t height
+    ) noexcept;
 
 private:
     uint8_t maxFrameBufferCount_ = kMaxFrameBufferCount;
