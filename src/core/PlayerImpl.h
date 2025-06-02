@@ -8,6 +8,7 @@
 #pragma once
 
 #include <deque>
+#include <map>
 #include "DecoderComponent.h"
 #include "DemuxerManager.h"
 #include "AVFrame.hpp"
@@ -23,7 +24,7 @@ namespace slark {
 
 struct PlayerSeekRequest {
     bool isAccurate = false;
-    long double seekTime{0};
+    double seekTime{0};
 };
 
 struct PlayerStats {
@@ -31,10 +32,9 @@ struct PlayerStats {
     bool isForceVideoRendered = false;
     Time::TimePoint audioDecodeDelta{0};
     Time::TimePoint audioRenderDelta{0};
-    long double audioDemuxedTime = 0;
-    long double videoDemuxedTime = 0;
-    long double audioDecodedTime = 0;
-    long double videoDecodedTime = 0;
+    double audioDemuxedTime = 0;
+    double videoDemuxedTime = 0;
+
     
     void reset() {
         isFirstAudioRendered = false;
@@ -43,15 +43,11 @@ struct PlayerStats {
         audioRenderDelta = 0;
         audioDemuxedTime = 0;
         videoDemuxedTime = 0;
-        audioDecodedTime = 0;
-        videoDecodedTime = 0;
     }
 
-    void setSeekTime(long double seekTime) {
+    void setSeekTime(double seekTime) {
         audioDemuxedTime = seekTime;
         videoDemuxedTime = seekTime;
-        audioDecodedTime = seekTime;
-        videoDecodedTime = seekTime;
     }
 };
 
@@ -75,7 +71,7 @@ public:
      
     void setRenderSize(uint32_t width, uint32_t height) noexcept;
 
-    void seek(long double time, bool isAccurate = false) noexcept;
+    void seek(double time, bool isAccurate = false) noexcept;
     
     void addObserver(IPlayerObserverPtr observer) noexcept;
     
@@ -95,13 +91,13 @@ public:
         return std::string_view(playerId_);
     }
     
-    [[nodiscard]] long double currentPlayedTime() noexcept;
+    [[nodiscard]] double currentPlayedTime() noexcept;
     
     [[nodiscard]] AVFrameRefPtr requestRender() noexcept;
 
 private:
 
-    void initPlayerInfo() noexcept;
+    void preparePlayerInfo() noexcept;
 
     void demuxData() noexcept;
     
@@ -139,9 +135,9 @@ private:
 
     void pushAVFrameDecode() noexcept;
     
-    void pushAudioFrameDecode() noexcept;
+    void pushAudioPacketDecode() noexcept;
 
-    void pushVideoFrameDecode(bool isForce = false) noexcept;
+    void pushVideoPacketDecode(bool isForce = false) noexcept;
     
     void doPlay() noexcept;
     
@@ -153,17 +149,21 @@ private:
     
     void doLoop() noexcept;
     
-    long double demuxedDuration() const noexcept;
+    double demuxedDuration() const noexcept;
     
     void checkCacheState() noexcept;
     
     bool setupDataProvider() noexcept;
     
-    long double videoRenderTime() noexcept;
+    double videoRenderTime() noexcept;
     
-    long double audioRenderTime() noexcept;
+    double audioRenderTime() noexcept;
 
-    void setVideoRenderTime(long double time) noexcept;
+    void setVideoRenderTime(double time) noexcept;
+
+    bool isVideoNeedDecode() noexcept;
+
+    bool isAudioNeedDecode() noexcept;
 private:
     bool isSeekingWhilePlaying_ = false;
     std::atomic_bool isStopped_ = false;
@@ -190,9 +190,9 @@ private:
     std::deque<AVFramePtr> audioPackets_;
     std::deque<AVFramePtr> videoPackets_;
     
-    //pushFrameDecode
+    //decoded frames
     Synchronized<std::deque<AVFrameRefPtr>> audioFrames_;
-    Synchronized<std::deque<AVFrameRefPtr>> videoFrames_;
+    Synchronized<std::map<int64_t, AVFrameRefPtr>> videoFrames_;
     std::shared_ptr<DecoderComponent> audioDecodeComponent_ = nullptr;
     std::shared_ptr<DecoderComponent> videoDecodeComponent_ = nullptr;
     

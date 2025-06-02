@@ -22,7 +22,7 @@ public:
 
     DemuxerResult parseData(DataPacket& packet) noexcept override;
     
-    [[nodiscard]] uint64_t getSeekToPos(long double time) noexcept override;
+    [[nodiscard]] uint64_t getSeekToPos(double time) noexcept override;
     
     void reset() noexcept override;
 

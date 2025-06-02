@@ -33,10 +33,9 @@ DecoderErrorCode AudioHardwareDecoder::decode(AVFrameRefPtr &frame) noexcept {
              frame->pts,
              frame->dts
         );
-        decodeFrames_[pts] = frame;
+    } else {
+        LogE("decode frame error:{}", static_cast<int>(res));
     }
-    LogE("decode frame error:{}",
-         static_cast<int>(res));
     return res;
 }
 
@@ -58,6 +57,24 @@ bool AudioHardwareDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept 
          decoderId_);
     isOpen_ = true;
     return true;
+}
+
+void AudioHardwareDecoder::decodeComplete(DataPtr data, int64_t pts) noexcept {
+    if (!data || data->empty()) {
+        LogE("data is empty");
+        return;
+    }
+    auto audioConfig = std::dynamic_pointer_cast<AudioDecoderConfig>(config_);
+    auto frame = std::make_unique<AVFrame>(AVFrameType::Audio);
+    frame->pts = pts;
+    frame->timeScale = 1000000; //us
+    frame->data = std::move(data);
+    auto audioFrameInfo = std::make_shared<AudioFrameInfo>();
+    audioFrameInfo->sampleRate = audioConfig->sampleRate;
+    audioFrameInfo->channels = audioConfig->channels;
+    audioFrameInfo->bitsPerSample = audioConfig->bitsPerSample;
+    frame->info = std::move(audioFrameInfo);
+    invokeReceiveFunc(std::move(frame));
 }
 
 

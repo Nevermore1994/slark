@@ -18,7 +18,7 @@ DecoderErrorCode Native_HardwareDecoder_sendPacket(
     JNIEnv *env,
     std::string_view decoderId,
     DataPtr &data,
-    uint64_t pts,
+    int64_t pts,
     NativeDecodeFlag flag
 ) {
     if (data == nullptr || data->empty()) {
@@ -278,8 +278,7 @@ Java_com_slark_sdk_MediaCodecDecoder_processRawData(
     jlong pts
 ) {
     using namespace slark;
-    LogI("native decode success:{}",
-         pts);
+    LogI("native decode success:{}", pts);
     auto decoderId = FromJVM::toString(
         env,
         jDecoderId
@@ -287,22 +286,14 @@ Java_com_slark_sdk_MediaCodecDecoder_processRawData(
     //send to manager
     auto decoder = NativeDecoderManager::shareInstance().find(decoderId);
     if (!decoder) {
-        LogE("not found decoder");
-        return;
-    }
-    auto frame = decoder->getDecodingFrame(static_cast<uint64_t>(pts));
-    if (!frame) {
-        LogE("not found frame");
+        LogE("not found decoder, decoderId:{}", decoderId);
         return;
     }
     auto dataPtr = FromJVM::toData(
         env,
         byteBuffer
     );
-    frame->data = std::move(dataPtr);
-    if (decoder->isVideo()) {
-        std::dynamic_pointer_cast<VideoFrameInfo>(frame->info)->format = FrameFormat::MediaCodecSurface;
-    }
+    decoder->decodeComplete(std::move(dataPtr), pts);
 }
 
 /// \brief Request a video frame from the hardware decoder

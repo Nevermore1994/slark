@@ -114,7 +114,7 @@ void AudioRenderComponent::flush() noexcept {
     }
 }
 
-void AudioRenderComponent::seek(long double time) noexcept {
+void AudioRenderComponent::seek(double time) noexcept {
     audioBuffer_.reset();
     if (auto pimpl = pimpl_.load()) {
         pimpl->seek(time);

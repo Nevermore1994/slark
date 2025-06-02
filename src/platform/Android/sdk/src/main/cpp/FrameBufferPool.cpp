@@ -32,28 +32,18 @@ FrameBufferRefPtr FrameBufferPool::acquire(
     auto it = frameBufferPool_.find(key);
     FrameBufferRefPtr frameBuffer;
     if (it != frameBufferPool_.end()) {
-        std::erase_if(
-            it->second
-                .useList,
-            [&](auto &frameBuffer) {
+        std::erase_if(it->second.useList,
+                  [&](auto &frameBuffer) {
                 if (frameBuffer.use_count() == 1) {
-                    it->second
-                        .freeList
-                        .push_back(frameBuffer);
+                    it->second.freeList.push_back(frameBuffer);
                     return true;
                 }
                 return false;
             }
         );
-        if (!it->second
-            .freeList
-            .empty()) {
-            frameBuffer = it->second
-                .freeList
-                .front();
-            it->second
-                .freeList
-                .pop_front();
+        if (!it->second.freeList.empty()) {
+            frameBuffer = it->second.freeList.front();
+            it->second.freeList.pop_front();
         }
     } else {
         frameBufferPool_.try_emplace(
@@ -64,29 +54,27 @@ FrameBufferRefPtr FrameBufferPool::acquire(
     if (!frameBuffer) {
         frameBuffer = std::make_shared<FrameBuffer>(nullptr);
     }
-    auto texture = texturePool_->acquire(
-        width,
-        height
-    );
-    auto &node = frameBufferPool_.at(key);
-    frameBuffer->update(std::move(texture));
+    if (frameBuffer->texture() == nullptr) {
+        auto texture = texturePool_->acquire(
+            width,
+            height
+        );
+        frameBuffer->update(std::move(texture));
+    }
+
+    auto& node = frameBufferPool_.at(key);
     if (frameBuffer->isValid()) {
-        node.useList
-            .push_back(frameBuffer);
+        node.useList.push_back(frameBuffer);
     } else {
         LogE("Failed to create framebuffer");
-    }
-    if (!frameBuffer->isValid()) {
         frameBuffer.reset();
     }
 
     while (node.isFull()) {
-        if (node.freeList
-            .empty()) {
+        if (node.freeList.empty()) {
             break;
         }
-        node.freeList
-            .pop_back();
+        node.freeList.pop_back();
     }
     return frameBuffer;
 }

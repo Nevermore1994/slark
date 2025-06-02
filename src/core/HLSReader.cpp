@@ -6,6 +6,8 @@
 //
 
 #include "HLSReader.h"
+
+#include <utility>
 #include "Log.hpp"
 #include "Util.hpp"
 
@@ -15,7 +17,7 @@ static constexpr std::string_view kM3u8Tag = "HLSRequestM3u8";
 static constexpr std::string_view kTsTag = "HLSRequestTs";
 
 bool parseTsTag(const std::string& tag, uint32_t& tsIndex) noexcept {
-    auto pos = tag.find("_");
+    auto pos = tag.find('_');
     if (pos == std::string::npos) {
         return false;
     }
@@ -99,7 +101,7 @@ void HLSReader::sendM3u8Request(const std::string& m3u8Url) noexcept {
     LogI("send m3u8 request:{}", m3u8Url);
 }
 
-void HLSReader::setupDataProvoider() noexcept {
+void HLSReader::setupDataProvider() noexcept {
     std::lock_guard<std::mutex> lock(requestMutex_);
     if (requestSession_) {
         requestSession_->close();
@@ -155,7 +157,7 @@ bool HLSReader::open(ReaderTaskPtr task) noexcept {
     if (isClosed_ || !task) {
         return false;
     }
-    setupDataProvoider();
+    setupDataProvider();
     auto m3u8Url = task->path;
     DemuxerConfig config;
     config.filePath = m3u8Url;
@@ -207,13 +209,12 @@ IOState HLSReader::state() noexcept {
 
 void HLSReader::setDemuxer(std::shared_ptr<HLSDemuxer> demuxer) noexcept {
     std::lock_guard<std::mutex> lock(taskMutex_);
-    demuxer_ = demuxer;
+    demuxer_ = std::move(demuxer);
 }
 
 void HLSReader::fetchTSData(uint32_t tsIndex) noexcept {
     const auto& tsInfos = demuxer_->getTSInfos();
-    if (tsIndex < 0 ||
-        tsIndex >= tsInfos.size()) {
+    if (tsIndex >= tsInfos.size()) {
         isCompleted_ = true;
         return;
     }
@@ -269,14 +270,14 @@ uint64_t HLSReader::size() noexcept {
 }
 
 void HLSReader::seek(uint64_t pos) noexcept {
-    setupDataProvoider();
+    setupDataProvider();
     requestTasks_.withLock([](auto& tasks) {
         tasks.clear();
     });
     auto tsIndex = static_cast<size_t>(pos);
     const auto& infos = demuxer_->getTSInfos();
     if (0 <= tsIndex && tsIndex < infos.size()) {
-        fetchTSData(tsIndex);
+        fetchTSData(static_cast<uint32_t>(tsIndex));
         worker_.start();
     } else {
         LogE("seek error:{}, info size:{}", tsIndex, infos.size());

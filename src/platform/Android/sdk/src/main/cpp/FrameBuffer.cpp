@@ -87,7 +87,7 @@ void FrameBuffer::release() noexcept {
     texture_.reset();
 }
 
-void FrameBuffer::bind(bool isRebinding) noexcept {
+bool FrameBuffer::bind(bool isRebinding) noexcept {
     if (isRebinding) {
         glGetIntegerv(
             GL_FRAMEBUFFER_BINDING,
@@ -96,7 +96,7 @@ void FrameBuffer::bind(bool isRebinding) noexcept {
     }
     if (frameBufferId_ && texture_) {
         if (activeThreads_.contains(std::this_thread::get_id())) {
-            return;
+            return true; // Already bound in this thread
         }
         glFramebufferTexture2D(
             GL_FRAMEBUFFER,
@@ -114,12 +114,13 @@ void FrameBuffer::bind(bool isRebinding) noexcept {
             LogE("Framebuffer is not complete: {}",
                  status);
             unbind(isRebinding);
-            return;
+            return false;
         }
         activeThreads_.insert(std::this_thread::get_id());
     } else {
         LogE("Framebuffer is not valid");
     }
+    return true;
 }
 
 void FrameBuffer::unbind(bool isRollback) noexcept {

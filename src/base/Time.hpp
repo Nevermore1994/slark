@@ -48,9 +48,21 @@ struct Time {
         : count(static_cast<uint64_t>(ms.count() * 1000)) {
 
         }
+
+        static TimePoint fromMilliSeconds(std::chrono::milliseconds ms) noexcept {
+            return {static_cast<uint64_t>(ms.count() * 1000)};
+        }
+
+
+        template <typename T> requires std::is_floating_point_v<T>
+        static TimePoint fromSeconds(T seconds) noexcept {
+            return {static_cast<uint64_t>(seconds * kMicroSecondScale)};
+        }
+
+
 #pragma clang diagnostic pop
         [[nodiscard]] std::chrono::milliseconds toMilliSeconds() const noexcept;
-        [[nodiscard]] long double second() const noexcept;
+        [[nodiscard]] double second() const noexcept;
         TimePoint operator+(std::chrono::milliseconds delta) const noexcept;
         TimePoint& operator+=(std::chrono::milliseconds delta) noexcept;
         TimePoint operator-(std::chrono::milliseconds delta) const noexcept;
@@ -70,7 +82,7 @@ struct Time {
 
 struct CTime {
 private:
-    constexpr static long double kTimePrecision = std::numeric_limits<double>::epsilon();
+    constexpr static double kTimePrecision = std::numeric_limits<double>::epsilon();
     constexpr static uint64_t kDefaultScale = 1000U;
 public:
     int64_t value;
@@ -87,12 +99,12 @@ public:
     }
 
     /// init with seconds
-    explicit CTime(long double t)
+    explicit CTime(double t)
         : value(static_cast<int64_t>(kDefaultScale * t))
         , scale(kDefaultScale) {
     }
 
-    [[nodiscard]] inline long double second() const noexcept {
+    [[nodiscard]] inline double second() const noexcept {
         bool isValid = this->isValid();
         SAssert(isValid, "time is invalid");
         if (isValid) {
@@ -123,12 +135,12 @@ public:
 
     inline CTime operator-(const CTime& rhs) const noexcept {
         auto t = second() - rhs.second();
-        return CTime(static_cast<int64_t>(t * static_cast<long double>(scale)), scale);
+        return CTime(static_cast<int64_t>(t * static_cast<double>(scale)), scale);
     }
 
     inline CTime operator+(const CTime& rhs) const noexcept {
         auto t = second() + rhs.second();
-        return CTime(static_cast<int64_t>(t * static_cast<long double>(scale)), scale);
+        return CTime(static_cast<int64_t>(t * static_cast<double>(scale)), scale);
     }
 
     [[nodiscard]] inline bool isValid() const noexcept {

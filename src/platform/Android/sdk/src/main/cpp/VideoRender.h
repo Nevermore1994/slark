@@ -11,6 +11,17 @@
 
 namespace slark {
 
+struct RenderInfo {
+    double ptsTime = 0;
+    TexturePtr texture;
+
+    RenderInfo() = default;
+    RenderInfo(double ptsTime, TexturePtr texture)
+        : ptsTime(ptsTime), texture(std::move(texture)) {
+
+    }
+};
+
 class VideoRender
     : public IVideoRender,
       public std::enable_shared_from_this<VideoRender> {
@@ -39,7 +50,7 @@ private:
 public:
     std::unique_ptr<Thread> renderThread_;
     std::mutex mutex_;
-    std::unordered_map<uint32_t, TexturePtr> renderFrames_;
+    std::unordered_map<uint32_t, RenderInfo> renderInfos_;
 };
 
 using VideoRenderManager = Manager<VideoRender>;

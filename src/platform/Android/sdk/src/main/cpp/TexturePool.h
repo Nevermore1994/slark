@@ -20,33 +20,34 @@ public:
         TextureConfig config = {}
     );
 
-    void release(TexturePtr texture);
+    void restore(TexturePtr texture);
 
-    [[nodiscard]] size_t size() const {
+    [[nodiscard]] size_t size() const noexcept {
+        std::lock_guard<std::mutex> lock(mutex_);
         return pool_.size();
     }
 
-    [[nodiscard]] size_t maxSize() const {
+    [[nodiscard]] size_t maxSize() const noexcept {
         return maxSize_;
     }
 
-    [[nodiscard]] bool isFull() const {
+    [[nodiscard]] bool isFull() const noexcept {
+        std::lock_guard<std::mutex> lock(mutex_);
         return pool_.size() >= maxSize_;
     }
 
-    [[nodiscard]] bool isEmpty() const {
+    [[nodiscard]] bool empty() const noexcept {
+        std::lock_guard<std::mutex> lock(mutex_);
         return pool_.empty();
     }
 
-    [[nodiscard]] bool empty() const {
-        return pool_.empty();
-    }
-
-    void clear() {
+    void clear() noexcept {
+        std::lock_guard<std::mutex> lock(mutex_);
         pool_.clear();
     }
 
 private:
+    mutable std::mutex mutex_;
     size_t maxSize_;
     std::deque<TexturePtr> pool_;
 };

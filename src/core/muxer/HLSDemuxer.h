@@ -226,7 +226,7 @@ public:
     DemuxerResult parseData(DataPacket& packet) noexcept override;
     
     ///In HLS, this function obtains the ts index, not the offset of the file
-    uint64_t getSeekToPos(long double) noexcept override;
+    uint64_t getSeekToPos(double) noexcept override;
     
     const std::vector<TSInfo>& getTSInfos() const noexcept;
     

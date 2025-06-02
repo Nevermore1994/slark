@@ -19,12 +19,12 @@ struct FrameBufferNode {
     FrameBufferRefPtrList useList;
     FrameBufferRefPtrList freeList;
 
-    FrameBufferNode(uint8_t count)
+    explicit FrameBufferNode(uint8_t count)
         : capacity(count) {
 
     }
 
-    bool isFull() const noexcept {
+    [[nodiscard]] bool isFull() const noexcept {
         return (useList.size() + freeList.size()) >= capacity;
     }
 

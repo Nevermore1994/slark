@@ -58,7 +58,7 @@ public:
     
     void seek(uint64_t pos) noexcept;
     
-    uint64_t getSeekPos(long double time) const noexcept;
+    uint64_t getSeekPos(double time) const noexcept;
     
     void parseData(Buffer& buffer,
                    std::shared_ptr<FrameInfo> frameInfo,
@@ -88,7 +88,7 @@ public:
 
     DemuxerResult parseData(DataPacket& packet) noexcept override;
     
-    [[nodiscard]] uint64_t getSeekToPos(long double time) noexcept override;
+    [[nodiscard]] uint64_t getSeekToPos(double time) noexcept override;
 
     inline static const DemuxerInfo& info() noexcept {
         static DemuxerInfo info = {

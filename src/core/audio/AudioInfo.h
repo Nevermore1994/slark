@@ -43,12 +43,12 @@ struct AudioInfo {
     }
 
     [[nodiscard]] Time::TimePoint dataLen2TimePoint(uint64_t dataLen) const {
-        auto t = static_cast<uint64_t>(static_cast<long double>(dataLen) / static_cast<long double>(bytePerSample() * sampleRate) * 1000000);
+        auto t = static_cast<uint64_t>(static_cast<double>(dataLen) / static_cast<double>(bytePerSample() * sampleRate) * 1000000);
         return t;
     }
 
     [[nodiscard]]  uint64_t timePoint2DataLen(Time::TimePoint point) const {
-        return static_cast<uint64_t>(point.second() * static_cast<long double>(bytePerSecond()));
+        return static_cast<uint64_t>(point.second() * static_cast<double>(bytePerSecond()));
     }
 };
 
@@ -106,7 +106,7 @@ public:
         dataFunc_.reset(std::make_shared<RequestAudioDataFunc>(func));
     }
 
-    void seek(long double time) noexcept {
+    void seek(double time) noexcept {
         flush();
         renderedDataLength_ = 0;
         clock_.setTime(Time::TimePoint(time));
