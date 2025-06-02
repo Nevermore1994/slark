@@ -3,17 +3,19 @@
 //
 
 #pragma once
+
 #include "IDecoder.h"
 #include "Manager.hpp"
 
-namespace slark  {
+namespace slark {
 
-class NativeDecoder: public IDecoder {
+class NativeDecoder : public IDecoder {
 public:
     explicit NativeDecoder(DecoderType type)
         : IDecoder(type) {
 
     }
+
     ~NativeDecoder() override = default;
 
     void flush() noexcept override;
@@ -23,6 +25,7 @@ public:
     void close() noexcept override;
 
     AVFramePtr getDecodingFrame(uint64_t pts) noexcept;
+
 protected:
     std::string decoderId_;
     std::mutex mutex_;

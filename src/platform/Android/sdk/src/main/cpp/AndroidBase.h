@@ -3,12 +3,13 @@
 //
 
 #pragma once
+
 #include <string>
 #include <string_view>
 
 namespace slark {
 
-void printLog(const std::string& logStr);
+void printLog(const std::string &logStr);
 
 } // slark
 

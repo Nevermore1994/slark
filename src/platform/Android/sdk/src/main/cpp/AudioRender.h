@@ -3,6 +3,7 @@
 //
 
 #pragma once
+
 #include <utility>
 #include "AudioInfo.h"
 #include "Manager.hpp"
@@ -14,6 +15,7 @@ public:
     explicit AudioRender(std::shared_ptr<AudioInfo> audioInfo);
 
     ~AudioRender() override;
+
 public:
     void play() noexcept override;
 
@@ -28,10 +30,12 @@ public:
     void reset() noexcept override;
 
     Time::TimePoint playedTime() noexcept override;
+
 private:
     void init() noexcept;
 
     void release() noexcept;
+
 private:
     std::string playerId_;
     TimerId timerId_;

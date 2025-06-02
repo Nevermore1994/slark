@@ -6,16 +6,25 @@
 
 namespace slark {
 
-TexturePtr TexturePool::acquire(uint32_t width, uint32_t height, TextureConfig config) {
+TexturePtr TexturePool::acquire(
+    uint32_t width,
+    uint32_t height,
+    TextureConfig config
+) {
     for (auto it = pool_.begin(); it != pool_.end(); ++it) {
         if ((*it)->width() == width && (*it)->height() == height &&
-            (*it)->config().internalFormat == config.internalFormat) {
+            (*it)->config()
+                .internalFormat == config.internalFormat) {
             TexturePtr tex = std::move(*it);
             pool_.erase(it);
             return tex;
         }
     }
-    auto ptr = std::make_unique<Texture>(width, height, config);
+    auto ptr = std::make_unique<Texture>(
+        width,
+        height,
+        config
+    );
     if (!ptr->isValid()) {
         return nullptr;
     }

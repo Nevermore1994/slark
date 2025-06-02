@@ -3,6 +3,7 @@
 //
 
 #pragma once
+
 #include "Texture.h"
 #include <unordered_set>
 #include <thread>
@@ -37,7 +38,7 @@ public:
         return frameBufferId_;
     }
 
-    [[nodiscard]] const TexturePtr& texture() const noexcept {
+    [[nodiscard]] const TexturePtr &texture() const noexcept {
         return texture_;
     }
 
@@ -51,6 +52,7 @@ private:
     bool init() noexcept;
 
     void release() noexcept;
+
 private:
     GLint prevFrameBufferId_ = 0;
     GLuint frameBufferId_ = 0;

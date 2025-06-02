@@ -25,16 +25,20 @@ inline std::string makeArray(std::string_view type) {
 }
 
 inline std::string makeObject(std::string_view type) {
-    return std::string("L").append(type).append(";");
+    return std::string("L").append(type)
+        .append(";");
 }
 
-template <typename ... Args>
-std::string makeJNISignature(std::string_view ret, Args&& ... args) {
+template<typename ... Args>
+std::string makeJNISignature(
+    std::string_view ret,
+    Args &&... args
+) {
     std::string res = "(";
     auto appendFunc = [&](std::string_view arg) {
         res += arg;
     };
-    (appendFunc(args),...);
+    (appendFunc(args), ...);
     res += ")";
     res += ret;
     return res;

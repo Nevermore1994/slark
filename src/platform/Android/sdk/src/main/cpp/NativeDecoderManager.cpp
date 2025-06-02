@@ -24,7 +24,8 @@ void NativeDecoder::close() noexcept {
     }
     NativeHardwareDecoder::release(decoderId_);
     NativeDecoderManager::shareInstance().remove(decoderId_);
-    LogI("release video decoder:{}", decoderId_);
+    LogI("release video decoder:{}",
+         decoderId_);
     decoderId_.clear();
     {
         std::lock_guard lock(mutex_);

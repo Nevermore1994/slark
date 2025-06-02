@@ -9,12 +9,12 @@
 #include "AndroidBase.h"
 #include "FileUtil.h"
 
-JavaVM* gJavaVM = nullptr;
+JavaVM *gJavaVM = nullptr;
 jobject gApplicationContext = nullptr;
 
 using namespace slark;
 
-void loadClassCache(JNIEnv* env) {
+void loadClassCache(JNIEnv *env) {
     using namespace slark::JNI;
     std::vector<std::string> classes = {
         "com/slark/sdk/SlarkNativeBridge",
@@ -26,27 +26,45 @@ void loadClassCache(JNIEnv* env) {
         "com/slark/sdk/AudioPlayer",
         "com/slark/sdk/AudioPlayer$Action",
     };
-    std::for_each(classes.begin(), classes.end(), [&](const std::string& className) {
-        auto classRef = JNICache::shareInstance().getClass(env, className);
-        if (!classRef) {
-            LogE("Failed to find class: {}", className);
+    std::for_each(
+        classes.begin(),
+        classes.end(),
+        [&](const std::string &className) {
+            auto classRef = JNICache::shareInstance().getClass(
+                env,
+                className
+            );
+            if (!classRef) {
+                LogE("Failed to find class: {}",
+                     className);
+            }
         }
-    });
+    );
 }
 
-JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* /* reserved */) {
+JNIEXPORT jint JNICALL JNI_OnLoad(
+    JavaVM *vm,
+    void * /* reserved */) {
     gJavaVM = vm;
-    JNIEnv* env;
-    if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) {
+    JNIEnv *env;
+    if (vm->GetEnv(
+        reinterpret_cast<void **>(&env),
+        JNI_VERSION_1_6
+    ) != JNI_OK) {
         return -1;
     }
     loadClassCache(env);
     return JNI_VERSION_1_6;
 }
 
-JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* /* reserved */) {
-    JNIEnv* env;
-    vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+JNIEXPORT void JNICALL JNI_OnUnload(
+    JavaVM *vm,
+    void * /* reserved */) {
+    JNIEnv *env;
+    vm->GetEnv(
+        reinterpret_cast<void **>(&env),
+        JNI_VERSION_1_6
+    );
     if (gApplicationContext) {
         env->DeleteGlobalRef(gApplicationContext);
         gApplicationContext = nullptr;
@@ -56,47 +74,79 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* /* reserved */) {
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_com_slark_sdk_SlarkNativeBridge_logout(JNIEnv *env, jobject /* this*/, const std::string& log) {
+Java_com_slark_sdk_SlarkNativeBridge_logout(
+    JNIEnv *env,
+    jobject /* this*/,
+    const std::string &log
+) {
     using namespace slark::JNI;
-    auto bridgeClass = JNICache::shareInstance().getClass(env, "com/slark/sdk/SlarkNativeBridge");
+    auto bridgeClass = JNICache::shareInstance().getClass(
+        env,
+        "com/slark/sdk/SlarkNativeBridge"
+    );
     if (!bridgeClass) {
         LogE("Failed to find SlarkNativeBridge class");
         return;
     }
-    auto methodId = JNICache::shareInstance().getStaticMethodId(bridgeClass, "logout", "(Ljava/lang/String;)V");
+    auto methodId = JNICache::shareInstance().getStaticMethodId(
+        bridgeClass,
+        "logout",
+        "(Ljava/lang/String;)V"
+    );
     if (!methodId) {
         LogE("Failed to find logout method in SlarkNativeBridge class");
         return;
     }
-    auto message = ToJVM::toString(env, log);
+    auto message = ToJVM::toString(
+        env,
+        log
+    );
     if (!message) {
         LogE("Failed to convert log message to jstring");
         return;
     }
-    env->CallStaticVoidMethod(bridgeClass.get(), methodId.get(), message.get());
+    env->CallStaticVoidMethod(
+        bridgeClass.get(),
+        methodId.get(),
+        message.get());
 }
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_com_slark_sdk_SlarkNativeBridge_00024Companion_setContext(JNIEnv *env, jobject thiz,
-                                                               jobject context) {
+Java_com_slark_sdk_SlarkNativeBridge_00024Companion_setContext(
+    JNIEnv *env,
+    jobject thiz,
+    jobject context
+) {
     if (gApplicationContext) {
         env->DeleteGlobalRef(gApplicationContext);
     }
     gApplicationContext = env->NewGlobalRef(context);
 }
 
-bool getAppPath(JNIEnv* env, jobject context, const std::string& methodName, std::string& path) {
+bool getAppPath(
+    JNIEnv *env,
+    jobject context,
+    const std::string &methodName,
+    std::string &path
+) {
     jclass contextClass = env->GetObjectClass(context);
     if (contextClass == nullptr) {
         return false;
     }
 
-    jmethodID getFilesDirMethod = env->GetMethodID(contextClass, methodName.c_str(), "()Ljava/io/File;");
+    jmethodID getFilesDirMethod = env->GetMethodID(
+        contextClass,
+        methodName.c_str(),
+        "()Ljava/io/File;"
+    );
     if (getFilesDirMethod == nullptr) {
         return false;
     }
-    jobject fileObject = env->CallObjectMethod(context, getFilesDirMethod);
+    jobject fileObject = env->CallObjectMethod(
+        context,
+        getFilesDirMethod
+    );
     if (fileObject == nullptr) {
         return false;
     }
@@ -105,15 +155,28 @@ bool getAppPath(JNIEnv* env, jobject context, const std::string& methodName, std
     if (fileClass == nullptr) {
         return false;
     }
-    jmethodID getPathMethod = env->GetMethodID(fileClass, "getPath", "()Ljava/lang/String;");
+    jmethodID getPathMethod = env->GetMethodID(
+        fileClass,
+        "getPath",
+        "()Ljava/lang/String;"
+    );
     if (getPathMethod == nullptr) {
         return false;
     }
 
-    auto pathString = reinterpret_cast<jstring>(env->CallObjectMethod(fileObject, getPathMethod));
-    const char* pathCStr = env->GetStringUTFChars(pathString, nullptr);
+    auto pathString = reinterpret_cast<jstring>(env->CallObjectMethod(
+        fileObject,
+        getPathMethod
+    ));
+    const char *pathCStr = env->GetStringUTFChars(
+        pathString,
+        nullptr
+    );
     path = std::string(pathCStr);
-    env->ReleaseStringUTFChars(pathString, pathCStr);
+    env->ReleaseStringUTFChars(
+        pathString,
+        pathCStr
+    );
 
     return true;
 }
@@ -122,25 +185,34 @@ namespace slark {
 
 namespace JNI {
 
-JavaVM* getJavaVM() {
+JavaVM *getJavaVM() {
     return gJavaVM;
 }
 
 }
 using namespace JNI;
 
-void printLog(const std::string& logStr) {
+void printLog(const std::string &logStr) {
     JNIEnvGuard guard(gJavaVM);
-    Java_com_slark_sdk_SlarkNativeBridge_logout(guard.get(), nullptr, logStr);
+    Java_com_slark_sdk_SlarkNativeBridge_logout(
+        guard.get(),
+        nullptr,
+        logStr
+    );
 }
 
 namespace FileUtil {
 
 std::string rootPath() noexcept {
-    static auto rootPath = [](){
+    static auto rootPath = []() {
         std::string rootPath;
         JNIEnvGuard guard(gJavaVM);
-        getAppPath(guard.get(), gApplicationContext, "getFilesDir", rootPath);
+        getAppPath(
+            guard.get(),
+            gApplicationContext,
+            "getFilesDir",
+            rootPath
+        );
         return rootPath;
     }();
     return rootPath;
@@ -150,7 +222,12 @@ std::string cachePath() noexcept {
     static auto cachePath = []() {
         std::string path;
         JNIEnvGuard guard(gJavaVM);
-        getAppPath(guard.get(), gApplicationContext, "getCacheDir", path);
+        getAppPath(
+            guard.get(),
+            gApplicationContext,
+            "getCacheDir",
+            path
+        );
         return path;
     }();
     return cachePath;

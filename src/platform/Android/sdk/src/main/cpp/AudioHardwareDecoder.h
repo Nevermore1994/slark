@@ -6,24 +6,24 @@
 
 namespace slark {
 
-class AudioHardwareDecoder: public NativeDecoder,
-        public std::enable_shared_from_this<AudioHardwareDecoder> {
+class AudioHardwareDecoder : public NativeDecoder,
+                             public std::enable_shared_from_this<AudioHardwareDecoder> {
 public:
     AudioHardwareDecoder()
-        :NativeDecoder(DecoderType::AACHardwareDecoder) {
+        : NativeDecoder(DecoderType::AACHardwareDecoder) {
 
     }
 
     ~AudioHardwareDecoder() override = default;
 
-    DecoderErrorCode decode(AVFrameRefPtr& frame) noexcept override;
+    DecoderErrorCode decode(AVFrameRefPtr &frame) noexcept override;
 
     bool open(std::shared_ptr<DecoderConfig> config) noexcept override;
 
-    inline static const DecoderTypeInfo& info() noexcept {
+    inline static const DecoderTypeInfo &info() noexcept {
         static DecoderTypeInfo info = {
-                DecoderType::RAW,
-                BaseClass::registerClass<AudioHardwareDecoder>(GetClassName(AudioHardwareDecoder))
+            DecoderType::RAW,
+            BaseClass::registerClass<AudioHardwareDecoder>(GetClassName(AudioHardwareDecoder))
         };
         return info;
     }

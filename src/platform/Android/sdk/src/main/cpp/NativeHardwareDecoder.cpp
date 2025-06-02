@@ -385,7 +385,7 @@ NativeHardwareDecoder::createAudioDecoder(const std::shared_ptr<AudioDecoderConf
 DecoderErrorCode NativeHardwareDecoder::sendPacket(
     std::string_view decoderId,
     DataPtr &data,
-    uint64_t pts,
+    int64_t pts,
     NativeDecodeFlag flag
 ) {
     if (decoderId.empty()) {
