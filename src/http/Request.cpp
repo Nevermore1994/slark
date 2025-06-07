@@ -375,7 +375,7 @@ void Request::receive() noexcept {
             onCompleted();
             return;
         }
-        auto [recvResult, dataPtr] = std::move(socket_->receive());
+        auto [recvResult, dataPtr] = socket_->receive();
         bool isCompleted = (recvResult.resultCode == ResultCode::Completed ||
                             recvResult.resultCode == ResultCode::Disconnected);
         if (!recvResult.isSuccess()) {

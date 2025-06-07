@@ -27,18 +27,11 @@ bool isHlsLink(const std::string& url) noexcept {
 }
 
 AudioProfile getAudioProfile(uint8_t profile) {
-    switch (profile) {
-        case 0:
-            return AudioProfile::AAC_MAIN;
-        case 1:
-            return AudioProfile::AAC_LC;
-        case 2:
-            return AudioProfile::AAC_SSR;
-        case 3:
-            return AudioProfile::AAC_LTP;
-        default:
-            return AudioProfile::AAC_LC;
+    if (profile == 3 || profile >= 7) {
+        return AudioProfile::AAC_LC;
     }
+    auto aacProfile = static_cast<AudioProfile>(profile);
+    return aacProfile;
 }
 
 int32_t getAACSamplingRate(int32_t index) {

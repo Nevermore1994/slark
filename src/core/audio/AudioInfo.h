@@ -16,10 +16,12 @@
 namespace slark {
 
 enum class AudioProfile : uint8_t {
-    AAC_MAIN,
-    AAC_LC,
-    AAC_SSR,
-    AAC_LTP,
+    AAC_MAIN = 1,
+    AAC_LC = 2,
+    AAC_SSR = 3,
+    AAC_LTP = 4,
+    AAC_HE = 5,
+    AAC_HE_SP = 29,
 };
 
 struct AudioInfo {
@@ -27,8 +29,11 @@ struct AudioInfo {
     uint16_t bitsPerSample = 0;
     uint64_t sampleRate = 0;
     uint32_t timeScale = 0;
+    uint32_t samplingFrequencyIndex = 4;
+    uint32_t samplingFreqIndexExt{};
+    uint8_t audioObjectTypeExt{};
     AudioProfile profile = AudioProfile::AAC_LC;
-    std::string_view mediaInfo;
+    std::string mediaInfo;
 
     [[nodiscard]] uint64_t bitrate() const {
         return sampleRate * channels * bitsPerSample;
@@ -47,8 +52,14 @@ struct AudioInfo {
         return t;
     }
 
-    [[nodiscard]]  uint64_t timePoint2DataLen(Time::TimePoint point) const {
+    [[nodiscard]] uint64_t timePoint2DataLen(Time::TimePoint point) const {
         return static_cast<uint64_t>(point.second() * static_cast<double>(bytePerSecond()));
+    }
+
+    [[nodiscard]] std::shared_ptr<AudioInfo> copy() const {
+        auto ptr = std::make_shared<AudioInfo>();
+        *ptr = *this;
+        return ptr;
     }
 };
 
@@ -84,7 +95,7 @@ public:
     virtual void reset() noexcept = 0;
 
     virtual Time::TimePoint playedTime() noexcept = 0;
-    
+
     [[nodiscard]] inline RenderStatus status() const noexcept {
         return status_;
     }
@@ -118,8 +129,11 @@ public:
 
     uint32_t requestAudioData(uint8_t* data, uint32_t size, AudioDataFlag& flag) noexcept {
         if (auto func = dataFunc_.load()) {
-            auto getSize = (*func)(data, size, flag);
-            renderedDataLength_ += getSize;
+            auto getSize = std::invoke(*func, data, size, flag);
+            if (getSize != 0) {
+                renderedDataLength_ += getSize;
+                clock_.setTime(audioInfo_->dataLen2TimePoint(renderedDataLength_));
+            }
             return getSize;
         } else {
             flag = AudioDataFlag::Error;
@@ -137,9 +151,9 @@ protected:
 };
 
 #if (SLARK_IOS || SLARK_ANDROID)
-std::unique_ptr<IAudioRender> createAudioRender(std::shared_ptr<AudioInfo> audioInfo);
+std::shared_ptr<IAudioRender> createAudioRender(const std::shared_ptr<AudioInfo>& audioInfo);
 #else
-inline std::unique_ptr<IAudioRender> createAudioRender(const std::shared_ptr<AudioInfo>& /*audioInfo*/) {
+inline std::shared_ptr<IAudioRender> createAudioRender(const std::shared_ptr<AudioInfo>& /*audioInfo*/) {
     return nullptr;
 }
 #endif

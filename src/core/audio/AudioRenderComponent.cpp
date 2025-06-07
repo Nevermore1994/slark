@@ -1,7 +1,7 @@
 //
-// Created by Nevermore on 2023/8/11.
+// Created by Nevermore on 2024/8/11.
 // slark AudioRenderComponentImpl
-// Copyright (c) 2023 Nevermore All rights reserved.
+// Copyright (c) 2024 Nevermore All rights reserved.
 //
 
 #include <memory>
@@ -11,6 +11,18 @@
 #include "MediaBase.h"
 
 namespace slark {
+
+uint32_t calcAudioBufferSize(const std::shared_ptr<AudioInfo>& audioInfo) {
+    if (!audioInfo) {
+        LogE("audio info is nullptr");
+        return 0;
+    }
+    // Calculate buffer size based on sample rate, channels, and bits per sample
+    return static_cast<uint32_t>(
+        kDefaultAudioBufferCacheTime *
+            static_cast<double>(audioInfo->sampleRate * audioInfo->channels * 2)
+    ); // default 16bit, 2 bytes per sample
+}
 
 AudioRenderComponent::AudioRenderComponent(std::shared_ptr<AudioInfo> info)
     : audioInfo_(std::move(info)) {
@@ -28,9 +40,16 @@ AudioRenderComponent::~AudioRenderComponent() {
 
 void AudioRenderComponent::init() noexcept {
     reset();
+    if (!audioInfo_) {
+        LogE("audio info is nullptr");
+        return;
+    }
+    auto bufferSize = calcAudioBufferSize(audioInfo_);
+    LogI("audio buffer size:{}", bufferSize);
+    audioBuffer_ = std::make_unique<SyncRingBuffer<uint8_t>>(bufferSize);
     auto pimpl = createAudioRender(audioInfo_);
     pimpl->setProvider([this](uint8_t* data, uint32_t size, AudioDataFlag& flag) {
-        if (audioBuffer_.readExact(data, size)) {
+        if (audioBuffer_->read(data, size)) {
             if (!isFirstFrameRendered) {
                 isFirstFrameRendered = true;
                 if (firstFrameRenderCallBack) {
@@ -40,7 +59,6 @@ void AudioRenderComponent::init() noexcept {
             LogI("request audio size:{}", size);
             return size;
         } else {
-            flag = AudioDataFlag::Silence;
             LogE("request audio failed:{}", size);
         }
         return 0u;
@@ -54,11 +72,14 @@ bool AudioRenderComponent::send(AVFrameRefPtr frame) noexcept {
 }
 
 bool AudioRenderComponent::process(AVFrameRefPtr frame) noexcept {
-    if (!frame || !frame->data->empty()) {
+    if (!frame || frame->data->empty()) {
         LogE("frame data is nullptr");
         return false;
     }
-    return audioBuffer_.writeExact(frame->data->rawData, static_cast<uint32_t>(frame->data->length));
+    return audioBuffer_->writeExact(
+        frame->data->rawData,
+        static_cast<uint32_t>(frame->data->length)
+    );
 }
 
 void AudioRenderComponent::reset() noexcept {

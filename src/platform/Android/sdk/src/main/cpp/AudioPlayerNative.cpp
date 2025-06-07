@@ -205,7 +205,7 @@ uint64_t Native_AudioPlayer_getPlayedTime(
 }
 
 extern "C"
-JNIEXPORT jobject JNICALL
+JNIEXPORT jint JNICALL
 Java_com_slark_sdk_AudioPlayer_requestAudioData(
     JNIEnv *env,
     jobject /*thiz*/,
@@ -215,7 +215,8 @@ Java_com_slark_sdk_AudioPlayer_requestAudioData(
     constexpr std::string_view kDataFlagClass = "com/slark/sdk/DataFlag";
     void *nativePtr = env->GetDirectBufferAddress(buffer);
     auto requestSize = static_cast<uint32_t>(env->GetDirectBufferCapacity(buffer));
-    AudioDataFlag flag = AudioDataFlag::Error;
+    uint32_t requestedSize = 0;
+    AudioDataFlag flag = AudioDataFlag::Normal;
     do {
         if (nativePtr == nullptr || requestSize <= 0) {
             break;
@@ -227,15 +228,16 @@ Java_com_slark_sdk_AudioPlayer_requestAudioData(
         );
         if (auto player = AudioRenderManager::shareInstance().find(playerId);
             player) {
-            auto size = player->requestAudioData(
+            requestedSize = player->requestAudioData(
                 reinterpret_cast<uint8_t *>(nativePtr),
                 requestSize,
                 flag
             );
             LogI("request audio data: {}, already applied: {}",
                  requestSize,
-                 size);
-            if (size != requestSize) {
+                 requestedSize
+            );
+            if (requestedSize != requestSize) {
                 if (flag == AudioDataFlag::EndOfStream) {
                     LogI("render audio data end of stream");
                 } else {
@@ -244,34 +246,13 @@ Java_com_slark_sdk_AudioPlayer_requestAudioData(
             }
         } else {
             LogE("not found player");
+            flag = AudioDataFlag::Error;
             break;
         }
     } while (false);
-    std::string_view fieldView;
-    switch (flag) {
-        case AudioDataFlag::Error : {
-            fieldView = "Error";
-            break;
-        }
-        case AudioDataFlag::Normal : {
-            fieldView = "Normal";
-            break;
-        }
-        case AudioDataFlag::EndOfStream : {
-            fieldView = "EndOfStream";
-            break;
-        }
-        case AudioDataFlag::Silence : {
-            fieldView = "Silence";
-            break;
-        }
-    }
-    auto field = JNICache::shareInstance().getEnumField(
-        env,
-        kDataFlagClass,
-        fieldView
-    );
-    return field.get();
+    auto res = static_cast<uint32_t>(flag) << 24; // Use the upper 8 bits for the flag
+    res = res | requestedSize; // Use the lower 24 bits for the size
+    return static_cast<jint>(res);
 }
 
 namespace slark {

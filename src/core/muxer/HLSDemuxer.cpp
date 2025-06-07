@@ -577,10 +577,11 @@ bool TSDemuxer::packAudioPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexc
         
         if (audioInfo_ && !parseInfo_.audioInfo.isValid) {
             audioInfo_->channels = header.channel;
-            audioInfo_->profile = getAudioProfile(header.profile);
+            audioInfo_->profile = getAudioProfile(header.profile + 1); //the adts profile starts at 0
             audioInfo_->sampleRate = info->sampleRate;
             audioInfo_->timeScale = 90000;
             audioInfo_->bitsPerSample = 16; //default uint16
+            audioInfo_->samplingFrequencyIndex = header.samplingIndex;
             parseInfo_.audioInfo.firstPts = frame->pts;
             parseInfo_.audioInfo.firstDts = frame->dts;
             parseInfo_.audioInfo.isValid = true;

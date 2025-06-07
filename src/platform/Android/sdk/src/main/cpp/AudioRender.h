@@ -31,6 +31,9 @@ public:
 
     Time::TimePoint playedTime() noexcept override;
 
+    const std::string& playerId() const noexcept {
+        return playerId_;
+    }
 private:
     void init() noexcept;
 
@@ -38,7 +41,7 @@ private:
 
 private:
     std::string playerId_;
-    TimerId timerId_;
+    TimerId timerId_{};
     Time::TimePoint latency_;
 };
 

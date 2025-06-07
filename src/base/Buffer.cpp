@@ -144,14 +144,25 @@ bool Buffer::readBE(uint32_t size, uint32_t& value) noexcept {
         return false;
     }
     auto view = data_->view().substr(static_cast<size_t>(readPos_));
-    size_t mx = size - 1;
-    auto func = [&](size_t pos) {
-        return static_cast<uint32_t>(static_cast<uint8_t>(view[pos]) << ((mx - pos) * 8));
-    };
-    for(size_t i = 0; i < mx; i++) {
-        value |= func(i);
+    if (view.length() < size) {
+        return false;
     }
-    return true;
+    view = view.substr(0, static_cast<size_t>(size));
+    readPos_ += size;
+    return Util::readBE(view, size, value);
+}
+
+bool Buffer::readLE(uint32_t size, uint32_t& value) noexcept {
+    if (!require(size) || size == 0) {
+        return false;
+    }
+    auto view = data_->view().substr(static_cast<size_t>(readPos_));
+    if (view.length() < size) {
+        return false;
+    }
+    view = view.substr(0, static_cast<size_t>(size));
+    readPos_ += size;
+    return Util::readLE(view, size, value);
 }
 
 bool Buffer::readByte(uint8_t& value) noexcept {

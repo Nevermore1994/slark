@@ -17,9 +17,10 @@ constexpr std::string_view kMediaCodecDecoderClass = "com/slark/sdk/MediaCodecDe
 DecoderErrorCode Native_HardwareDecoder_sendPacket(
     JNIEnv *env,
     std::string_view decoderId,
-    DataPtr &data,
+    DataPtr& data,
     int64_t pts,
-    NativeDecodeFlag flag
+    NativeDecodeFlag flag,
+    bool isVideo
 ) {
     if (data == nullptr || data->empty()) {
         LogE("data error");
@@ -49,9 +50,25 @@ DecoderErrorCode Native_HardwareDecoder_sendPacket(
         LogE("create decoder failed, not found send data method");
         return DecoderErrorCode::Unknown;
     }
-    auto byteArray = ToJVM::toNaluByteArray(
+    JNIReference<jbyteArray> byteArray(
         env,
-        data->view());
+        nullptr
+    );
+    if (isVideo) {
+        // For video, need to prepend NALU header, Annex b format
+        Data naluHeader(4);
+        naluHeader.rawData[0] = 0x00;
+        naluHeader.rawData[1] = 0x00;
+        naluHeader.rawData[2] = 0x00;
+        naluHeader.rawData[3] = 0x01;
+        naluHeader.length = 4;
+        byteArray = ToJVM::toNaluByteArray(env, data->view());
+    } else {
+        // For audio, use the raw data directly
+        auto view = data->view();
+        byteArray = ToJVM::toByteArray(env, data->view());
+    }
+
     auto jDecodeId = ToJVM::toString(
         env,
         decoderId
@@ -62,13 +79,14 @@ DecoderErrorCode Native_HardwareDecoder_sendPacket(
         jDecodeId.detach(),
         byteArray.detach(),
         static_cast<jlong>(pts),
-        static_cast<jint>(flag));
+        static_cast<jint>(flag)
+    );
     return static_cast<DecoderErrorCode>(res);
 }
 
 std::string Native_HardwareDecoder_createVideoDecoder(
     JNIEnv *env,
-    const std::shared_ptr<VideoDecoderConfig> &decoderConfig,
+    const std::shared_ptr<VideoDecoderConfig>& decoderConfig,
     DecodeMode mode
 ) {
     if (!decoderConfig) {
@@ -146,14 +164,15 @@ std::string Native_HardwareDecoder_createVideoDecoder(
         decoderId,
         decoderInfo,
         0,
-        NativeDecodeFlag::CodecConfig
+        NativeDecodeFlag::CodecConfig,
+        true
     );
     return decoderId;
 }
 
 std::string Native_HardwareDecoder_createAudioDecoder(
     JNIEnv *env,
-    const std::shared_ptr<AudioDecoderConfig> &decoderConfig
+    const std::shared_ptr<AudioDecoderConfig>& decoderConfig
 ) {
     auto decoderClass = JNICache::shareInstance().getClass(
         env,
@@ -166,9 +185,7 @@ std::string Native_HardwareDecoder_createAudioDecoder(
     auto methodSignature = JNI::makeJNISignature(
         JNI::String,
         JNI::String,
-        JNI::Int,
-        JNI::Int,
-        JNI::Int
+        JNI::makeArray(JNI::Int)
     );
     auto createDecoderMethod = JNICache::shareInstance().getStaticMethodId(
         decoderClass,
@@ -183,13 +200,22 @@ std::string Native_HardwareDecoder_createAudioDecoder(
         env,
         decoderConfig->mediaInfo
     );
+    auto extraInfo = ToJVM::toIntArray(
+        env,
+        {
+            static_cast<int>(decoderConfig->sampleRate),
+            static_cast<int>(decoderConfig->channels),
+            static_cast<int>(decoderConfig->profile),
+            static_cast<int>(decoderConfig->samplingFrequencyIndex),
+            static_cast<int>(decoderConfig->audioObjectTypeExt),
+            static_cast<int>(decoderConfig->samplingFreqIndexExt)
+        }
+    );
     auto jDecoderId = reinterpret_cast<jstring>(env->CallStaticObjectMethod(
         decoderClass.get(),
         createDecoderMethod.get(),
         jMediaInfo.detach(),
-        decoderConfig->sampleRate,
-        decoderConfig->channels,
-        decoderConfig->profile
+        extraInfo.detach()
     ));
     auto decoderId = FromJVM::toString(
         env,
@@ -278,7 +304,8 @@ Java_com_slark_sdk_MediaCodecDecoder_processRawData(
     jlong pts
 ) {
     using namespace slark;
-    LogI("native decode success:{}", pts);
+    LogI("native decode success:{}",
+         pts);
     auto decoderId = FromJVM::toString(
         env,
         jDecoderId
@@ -286,14 +313,18 @@ Java_com_slark_sdk_MediaCodecDecoder_processRawData(
     //send to manager
     auto decoder = NativeDecoderManager::shareInstance().find(decoderId);
     if (!decoder) {
-        LogE("not found decoder, decoderId:{}", decoderId);
+        LogE("not found decoder, decoderId:{}",
+             decoderId);
         return;
     }
     auto dataPtr = FromJVM::toData(
         env,
         byteBuffer
     );
-    decoder->decodeComplete(std::move(dataPtr), pts);
+    decoder->decodeComplete(
+        std::move(dataPtr),
+        pts
+    );
 }
 
 /// \brief Request a video frame from the hardware decoder
@@ -346,7 +377,7 @@ namespace slark {
 
 std::string
 NativeHardwareDecoder::createVideoDecoder(
-    const std::shared_ptr<VideoDecoderConfig> &decoderConfig,
+    const std::shared_ptr<VideoDecoderConfig>& decoderConfig,
     DecodeMode mode
 ) {
     if (!decoderConfig) {
@@ -365,7 +396,9 @@ NativeHardwareDecoder::createVideoDecoder(
 }
 
 std::string
-NativeHardwareDecoder::createAudioDecoder(const std::shared_ptr<AudioDecoderConfig> &decoderConfig) {
+NativeHardwareDecoder::createAudioDecoder(
+    const std::shared_ptr<AudioDecoderConfig>& decoderConfig
+) {
     JNIEnvGuard envGuard(getJavaVM());
     return Native_HardwareDecoder_createAudioDecoder(
         envGuard.get(),
@@ -375,9 +408,10 @@ NativeHardwareDecoder::createAudioDecoder(const std::shared_ptr<AudioDecoderConf
 
 DecoderErrorCode NativeHardwareDecoder::sendPacket(
     std::string_view decoderId,
-    DataPtr &data,
+    DataPtr& data,
     int64_t pts,
-    NativeDecodeFlag flag
+    NativeDecodeFlag flag,
+    bool isVideo
 ) {
     if (decoderId.empty()) {
         LogE("decoderId is empty");
@@ -389,7 +423,8 @@ DecoderErrorCode NativeHardwareDecoder::sendPacket(
         decoderId,
         data,
         pts,
-        flag
+        flag,
+        isVideo
     );
 }
 

@@ -12,17 +12,16 @@ namespace slark::JNI {
 
 JavaVM *getJavaVM();
 
-using JNIEnvPtr = JNIEnv *;
+using JNIEnvPtr = JNIEnv*;
 
 template<typename T>
 class JNIReference {
 public:
-    JNIReference(
-        JNIEnv *env,
-        T ref
-    ) noexcept
+    JNIReference(JNIEnv *env, T ref) noexcept
         : env_(env),
-          ref_(ref) {}
+          ref_(ref) {
+
+    }
 
     JNIReference(
         JNIEnv *env,
@@ -56,9 +55,9 @@ public:
         return *this;
     }
 
-    JNIReference(const JNIReference &) = delete;
+    JNIReference(const JNIReference& ) = delete;
 
-    JNIReference &operator=(const JNIReference &) = delete;
+    JNIReference &operator=(const JNIReference& ) = delete;
 
     ~JNIReference() {
         release();
@@ -66,7 +65,7 @@ public:
 
     T get() const noexcept { return ref_; }
 
-    JNIEnvPtr env() const noexcept { return env_; }
+    [[nodiscard]] JNIEnvPtr env() const noexcept { return env_; }
 
     explicit operator bool() const noexcept { return ref_ != nullptr; }
 
@@ -86,7 +85,7 @@ public:
         return temp;
     }
 
-    std::string_view tag() const noexcept {
+    [[nodiscard]] std::string_view tag() const noexcept {
         return tag_;
     }
 
@@ -123,7 +122,7 @@ public:
 
     }
 
-    jmethodID get() const noexcept { return methodId_; }
+    [[nodiscard]] jmethodID get() const noexcept { return methodId_; }
 
     explicit operator bool() const noexcept { return methodId_ != nullptr; }
 

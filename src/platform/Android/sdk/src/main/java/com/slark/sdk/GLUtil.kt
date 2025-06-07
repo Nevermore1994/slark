@@ -22,6 +22,13 @@ fun checkGLStatus(tag: String): Boolean {
     return count == 0
 }
 
+fun clearGLStatus() {
+    var error: Int
+    do {
+        error = GLES20.glGetError()
+    } while (error != GLES20.GL_NO_ERROR)
+}
+
 fun checkEGLContext(): Boolean {
     val egl = EGL14.eglGetCurrentContext()
     val isValid = egl != EGL14.EGL_NO_CONTEXT
