@@ -280,12 +280,11 @@ public:
 };
 
 struct AudioSpecificConfig {
-    uint8_t extensionFlag : 1;
-    uint8_t dependsOnCoreCoder : 1;
-    uint8_t frameLengthFlag : 1;
-    uint8_t channelConfiguration : 4;
-    uint8_t samplingFrequencyIndex : 4;
-    uint8_t audioObjectType : 5;
+    uint8_t channelConfiguration{};
+    uint32_t samplingFrequencyIndex{};
+    uint8_t audioObjectType{};
+    uint32_t samplingFreqIndexExt{};
+    uint8_t audioObjectTypeExt{};
 };
 
 class BoxEsds : public Box

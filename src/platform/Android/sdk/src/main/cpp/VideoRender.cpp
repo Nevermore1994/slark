@@ -107,7 +107,6 @@ void VideoRender::requestRender() noexcept {
 
 void VideoRender::renderFrame(const AVFrameRefPtr &frame) noexcept {
     if (!frame) {
-        LogE("frame is nullptr");
         return;
     }
     auto videoFrameInfo = std::dynamic_pointer_cast<VideoFrameInfo>(frame->info);

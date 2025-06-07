@@ -54,6 +54,8 @@ public:
     bool readByte(uint8_t& value) noexcept;
     
     bool readBE(uint32_t size, uint32_t& value) noexcept;
+
+    bool readLE(uint32_t size, uint32_t& value) noexcept;
     
     DataPtr readData(uint64_t) noexcept;
     
@@ -103,6 +105,45 @@ private:
     uint64_t readPos_ = 0;
     uint64_t offset_ = 0;
     uint64_t totalSize_ = 0;
+};
+
+
+class BitReadView{
+public:
+    explicit BitReadView(Buffer& buffer)
+        : buffer_(buffer){
+
+    }
+
+    uint8_t readBit() {
+        uint8_t value = 0;
+        if (bitPos == 0) {
+            if (!buffer_.readByte(bitBuffer)) {
+                return false;
+            }
+            bitPos = 8;
+        }
+        value = (bitBuffer >> (bitPos - 1)) & 0x01;
+        bitPos--;
+        return value;
+    }
+
+    ///Please note that before reading, you should ensure that the readable range is not exceeded,
+    ///otherwise the problem of discarding intermediate data will occur!
+    uint32_t readBits(uint32_t n) {
+        uint32_t val = 0;
+        if (!buffer_.require(n / 8)) {
+            return false;
+        }
+        for (uint32_t i = 0; i < n; ++i) {
+            val = (val << 1) | readBit();
+        }
+        return val;
+    }
+private:
+    Buffer& buffer_;
+    uint8_t bitBuffer = 0;
+    int8_t bitPos = 0;
 };
 
 }

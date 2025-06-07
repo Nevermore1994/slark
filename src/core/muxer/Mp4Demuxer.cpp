@@ -529,6 +529,10 @@ void Mp4Demuxer::initData() noexcept {
                 auto esdsBox = std::dynamic_pointer_cast<BoxEsds>(stsdBox->getChild("mp4a")->getChild("esds"));
                 if (esdsBox) {
                     audioInfo_->channels = esdsBox->audioSpecConfig.channelConfiguration;
+                    audioInfo_->profile = getAudioProfile(esdsBox->audioSpecConfig.audioObjectType);
+                    audioInfo_->samplingFrequencyIndex = esdsBox->audioSpecConfig.samplingFrequencyIndex;
+                    audioInfo_->audioObjectTypeExt = esdsBox->audioSpecConfig.audioObjectTypeExt;
+                    audioInfo_->samplingFreqIndexExt = esdsBox->audioSpecConfig.samplingFreqIndexExt;
                 }
             }
             //TODO: support more format
@@ -592,6 +596,9 @@ Mp4Demuxer::~Mp4Demuxer() {
 }
 
 void recursiveDescription(const BoxRefPtr& ptr, const std::string& prefix, std::ostringstream& ss) {
+    if (ptr == nullptr) {
+        return;
+    }
     ss << ptr->description(prefix);
     for (auto& child : ptr->childs) {
         recursiveDescription(child, prefix + "    ", ss);

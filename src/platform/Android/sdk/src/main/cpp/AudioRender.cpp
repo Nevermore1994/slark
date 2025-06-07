@@ -32,9 +32,11 @@ AudioRender::~AudioRender() {
 void AudioRender::init() noexcept {
     playerId_ = NativeAudioPlayer::create(
         audioInfo_->sampleRate,
-        static_cast<uint8_t>(audioInfo_->channels));
+        static_cast<uint8_t>(audioInfo_->channels)
+    );
     if (playerId_.empty()) {
         LogE("create audio player failed.");
+        status_ = RenderStatus::Error;
         return;
     }
     using namespace std::chrono_literals;
@@ -46,7 +48,14 @@ void AudioRender::init() noexcept {
                 return;
             }
             auto renderedTime = Time::TimePoint(NativeAudioPlayer::getPlayedTime(playerId_));
-            latency_ = clock_.time() - renderedTime;
+            if (renderedTime == Time::TimePoint()) {
+                LogE("get played time failed, playerId:{}", playerId_);
+                latency_ = 0;
+            } else {
+                latency_ = clock_.time() - renderedTime;
+                LogI("audio render latency: {}", latency_.toMilliSeconds().count());
+            }
+
         }
     );
     status_ = RenderStatus::Ready;
@@ -89,6 +98,7 @@ void AudioRender::release() noexcept {
         AudioPlayerAction::Release
     );
     clock_.pause();
+    AudioRenderManager::shareInstance().remove(playerId_);
     playerId_.clear();
     status_ = RenderStatus::Stop;
 }
@@ -123,8 +133,10 @@ Time::TimePoint AudioRender::playedTime() noexcept {
     return clock_.time() - latency_;
 }
 
-std::unique_ptr<IAudioRender> createAudioRender(std::shared_ptr<AudioInfo> audioInfo) {
-    return std::make_unique<AudioRender>(audioInfo);
+std::shared_ptr<IAudioRender> createAudioRender(const std::shared_ptr<AudioInfo>& audioInfo) {
+    auto audioRender = std::make_shared<AudioRender>(audioInfo);
+    AudioRenderManager::shareInstance().add(audioRender->playerId(), audioRender);
+    return audioRender;
 }
 
 } // slark

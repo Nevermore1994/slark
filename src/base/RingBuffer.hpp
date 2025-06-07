@@ -11,22 +11,26 @@
 #include <memory>
 #include <cassert>
 #include <atomic>
+#include <mutex>
 #include "NonCopyable.h"
 
 namespace slark {
 
-constexpr uint32_t RingBufferLength = 1024 * 4;
+constexpr uint32_t kDefaultRingBufferLength = 1024 * 4;
 
-template<typename T, uint32_t Capacity = RingBufferLength>
+template<typename T>
 class RingBufferImpl: public NonCopyable {
 public:
-    [[nodiscard]] constexpr uint32_t capacity() const noexcept {
-        return Capacity;
+    [[nodiscard]] uint32_t capacity() const noexcept {
+        return capacity;
     }
 
 protected:
-    explicit RingBufferImpl()
-            : data_(std::make_unique<std::array<T, Capacity>>()) {}
+    explicit RingBufferImpl(uint32_t capacity)
+            : capacity_(capacity)
+            , data_(std::make_unique<std::vector<T>>(capacity)) {
+
+    }
 
     ~RingBufferImpl() override = default;
 
@@ -38,11 +42,11 @@ protected:
         size = std::min(size, tailInternal());
         const uint32_t endPos = writePos_ + size;
 
-        if (endPos <= Capacity) {
+        if (endPos <= capacity_) {
             std::copy_n(data, size, data_->data() + writePos_);
-            writePos_ = (endPos == Capacity) ? 0 : endPos;
+            writePos_ = (endPos == capacity_) ? 0 : endPos;
         } else {
-            const uint32_t firstPart = Capacity - writePos_;
+            const uint32_t firstPart = capacity_ - writePos_;
             std::copy_n(data, firstPart, data_->data() + writePos_);
             std::copy_n(data + firstPart, size - firstPart, data_->data());
             writePos_ = size - firstPart;
@@ -60,11 +64,11 @@ protected:
         size = std::min(size, size_);
         const uint32_t endPos = readPos_ + size;
 
-        if (endPos <= Capacity) {
+        if (endPos <= capacity_) {
             std::copy_n(data_->data() + readPos_, size, data);
-            readPos_ = (endPos == Capacity) ? 0 : endPos;
+            readPos_ = (endPos == capacity_) ? 0 : endPos;
         } else {
-            const uint32_t firstPart = Capacity - readPos_;
+            const uint32_t firstPart = capacity_ - readPos_;
             std::copy_n(data_->data() + readPos_, firstPart, data);
             std::copy_n(data_->data(), size - firstPart, data + firstPart);
             readPos_ = size - firstPart;
@@ -75,8 +79,8 @@ protected:
     }
 
     [[nodiscard]] bool isEmptyInternal() const noexcept { return size_ == 0; }
-    [[nodiscard]] bool isFullInternal() const noexcept { return size_ == Capacity; }
-    [[nodiscard]] uint32_t tailInternal() const noexcept { return Capacity - size_; }
+    [[nodiscard]] bool isFullInternal() const noexcept { return size_ == capacity_; }
+    [[nodiscard]] uint32_t tailInternal() const noexcept { return capacity_ - size_; }
     [[nodiscard]] uint32_t lengthInternal() const noexcept { return size_; }
 
     uint32_t resetInternal() noexcept {
@@ -87,16 +91,22 @@ protected:
         return discard;
     }
 protected:
-    std::unique_ptr<std::array<T, Capacity>> data_;
+    uint32_t capacity_ = kDefaultRingBufferLength;
+    std::unique_ptr<std::vector<T>> data_;
     uint32_t readPos_ = 0;
     uint32_t writePos_ = 0;
     uint32_t size_ = 0;
 };
 
-template<typename T, uint32_t Capacity = RingBufferLength>
-class RingBuffer : public RingBufferImpl<T, Capacity> {
+template<typename T>
+class RingBuffer : public RingBufferImpl<T> {
 public:
-    using RingBufferImpl<T, Capacity>::RingBufferImpl;
+    using RingBufferImpl<T>::RingBufferImpl;
+
+    explicit RingBuffer(uint32_t capacity = kDefaultRingBufferLength)
+        : RingBufferImpl<T>(capacity) {
+
+    }
 
     ~RingBuffer() override = default;
 
@@ -136,12 +146,17 @@ public:
     uint32_t reset() noexcept {
         return this->resetInternal();
     }
+private:
 };
 
-template<typename T, uint32_t Capacity = RingBufferLength>
-class SyncRingBuffer : public RingBufferImpl<T, Capacity> {
+template<typename T>
+class SyncRingBuffer : public RingBufferImpl<T> {
 public:
-    using RingBufferImpl<T, Capacity>::RingBufferImpl;
+    using RingBufferImpl<T>::RingBufferImpl;
+    explicit SyncRingBuffer(uint32_t capacity = kDefaultRingBufferLength)
+        : RingBufferImpl<T>(capacity) {
+
+    }
 
     ~SyncRingBuffer() override = default;
 

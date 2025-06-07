@@ -34,8 +34,9 @@ struct PlayerStats {
     Time::TimePoint audioRenderDelta{0};
     double audioDemuxedTime = 0;
     double videoDemuxedTime = 0;
+    double lastNotifyPlayedTime = 0;
+    double lastNotifyCacheTime = 0;
 
-    
     void reset() {
         isFirstAudioRendered = false;
         isForceVideoRendered = false;
@@ -43,6 +44,8 @@ struct PlayerStats {
         audioRenderDelta = 0;
         audioDemuxedTime = 0;
         videoDemuxedTime = 0;
+        lastNotifyPlayedTime = 0;
+        lastNotifyCacheTime = 0;
     }
 
     void setSeekTime(double seekTime) {
@@ -106,7 +109,9 @@ private:
     void handleVideoPacket(AVFramePtrArray& videoPackets) noexcept;
     
     void pushAVFrameToRender() noexcept;
-    
+
+    void pushAudioFrameToRender() noexcept;
+
     void pushVideoFrameToRender() noexcept;
 
     void process() noexcept;

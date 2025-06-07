@@ -59,7 +59,6 @@ struct Time {
             return {static_cast<uint64_t>(seconds * kMicroSecondScale)};
         }
 
-
 #pragma clang diagnostic pop
         [[nodiscard]] std::chrono::milliseconds toMilliSeconds() const noexcept;
         [[nodiscard]] double second() const noexcept;
@@ -71,7 +70,6 @@ struct Time {
         TimePoint& operator+=(TimePoint delta) noexcept;
         TimePoint operator-(TimePoint delta) const noexcept;
         TimePoint& operator-=(TimePoint delta) noexcept;
-
     };
     static TimePoint nowTimeStamp() noexcept;
     [[maybe_unused]] static std::chrono::milliseconds nowUTCTime() noexcept;

@@ -520,13 +520,17 @@ bool BoxEsds::decode(Buffer& buffer) noexcept {
     if (!buffer.require(256)) {
         return false;
     }
+    auto size = info.size - info.headerSize;
     buffer.skip(1 + 3); //version + flags
+    size -= 4;
     
     uint8_t esDescTag = 0;
     buffer.readByte(esDescTag);
+    size -= 1;
     
     [[maybe_unused]]auto descLen = getDescrLen(buffer);
-    
+    size -= descLen;
+
     if (esDescTag == 0x03) {
         buffer.skip(2);
         
@@ -564,11 +568,22 @@ bool BoxEsds::decode(Buffer& buffer) noexcept {
         if (objectTypeId == 0x40) {
             codecId = CodecId::AAC;
             if (esDescTag == 0x05) {
-                uint16_t value = 0;
-                buffer.read2ByteBE(value);
-                audioSpecConfig.audioObjectType = (value >> 11) & 0x1f;
-                audioSpecConfig.samplingFrequencyIndex = (value >> 7) & 0xf;
-                audioSpecConfig.channelConfiguration = (value >> 3) & 0xf;
+                BitReadView view(buffer);
+                audioSpecConfig.audioObjectType = uint8_t(view.readBits(5));
+                audioSpecConfig.samplingFrequencyIndex = view.readBits(4);
+                if (audioSpecConfig.samplingFrequencyIndex == 0x0f) {
+                    audioSpecConfig.samplingFrequencyIndex = view.readBits(24);
+                }
+                audioSpecConfig.channelConfiguration = uint8_t(view.readBits(4));
+                if (audioSpecConfig.audioObjectType == 5 ||
+                    audioSpecConfig.audioObjectType == 29) {
+                    audioSpecConfig.samplingFreqIndexExt = view.readBits(4);
+                    if (audioSpecConfig.samplingFreqIndexExt == 0x0f) {
+                        audioSpecConfig.samplingFreqIndexExt = view.readBits(24);
+                    }
+                    audioSpecConfig.audioObjectTypeExt = uint8_t(view.readBits(5));
+                }
+
             }
         } else if (objectTypeId == 0x6b) {
             codecId = CodecId::MP3;

@@ -10,28 +10,23 @@ namespace slark {
 
 DecoderErrorCode AudioHardwareDecoder::decode(AVFrameRefPtr &frame) noexcept {
     assert(frame && frame->isAudio());
-    auto pts = frame->pts;
-    if (decodeFrames_.contains(pts)) {
-        LogE("decode same pts frame, {}",
-             pts);
-        return DecoderErrorCode::InputDataError;
-    }
-
     NativeDecodeFlag flag = NativeDecodeFlag::None;
-    if (frame->info
-        ->isEndOfStream) {
+    if (frame->info->isEndOfStream) {
         flag = NativeDecodeFlag::EndOfStream;
     }
     auto res = NativeHardwareDecoder::sendPacket(
         decoderId_,
         frame->data,
-        pts,
-        flag
+        int64_t(frame->ptsTime() * 1000000), // convert to microseconds
+        flag,
+        false // false for audio
     );
     if (res == DecoderErrorCode::Success) {
-        LogE("send audio packet success, pts:{}, dts:{}",
+        LogI("send audio packet success, pts:{}, dts:{}, pts time{}, dts time:{}",
              frame->pts,
-             frame->dts
+             frame->dts,
+             frame->ptsTime(),
+             frame->dtsTime()
         );
     } else {
         LogE("decode frame error:{}", static_cast<int>(res));
@@ -40,7 +35,8 @@ DecoderErrorCode AudioHardwareDecoder::decode(AVFrameRefPtr &frame) noexcept {
 }
 
 bool AudioHardwareDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept {
-    auto audioConfig = std::dynamic_pointer_cast<AudioDecoderConfig>(config);
+    config_ = std::move(config);
+    auto audioConfig = std::dynamic_pointer_cast<AudioDecoderConfig>(config_);
     if (!audioConfig) {
         LogE("audio decoder config is invalid");
         return false;
@@ -65,6 +61,10 @@ void AudioHardwareDecoder::decodeComplete(DataPtr data, int64_t pts) noexcept {
         return;
     }
     auto audioConfig = std::dynamic_pointer_cast<AudioDecoderConfig>(config_);
+    if (!audioConfig) {
+        LogE("audio decoder config is invalid");
+        return;
+    }
     auto frame = std::make_unique<AVFrame>(AVFrameType::Audio);
     frame->pts = pts;
     frame->timeScale = 1000000; //us

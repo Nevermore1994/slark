@@ -21,7 +21,7 @@
 
 namespace slark {
 
-constexpr uint64_t kDefaultAudioBufferSize = 16 * 1024;
+constexpr double kDefaultAudioBufferCacheTime = 0.1; // 100ms
 
 class AudioRenderComponent: public slark::NonCopyable,
         public InputNode,
@@ -53,10 +53,14 @@ public:
 
     Time::TimePoint playedTime() noexcept;
     
-    bool requireAvailableSpace(uint32_t size) noexcept {
-        return audioBuffer_.tail() >= size;
+    bool isFull() noexcept {
+        if (!audioBuffer_) {
+            LogE("audio buffer is nullptr");
+            return true;
+        }
+        return audioBuffer_->isFull();
     }
-    
+
     RenderStatus status() const {
         if (auto pimpl = pimpl_.load()) {
             return pimpl->status();
@@ -72,7 +76,7 @@ public:
 private:
     bool isFirstFrameRendered = false;
     std::shared_ptr<AudioInfo> audioInfo_;
-    SyncRingBuffer<uint8_t, kDefaultAudioBufferSize> audioBuffer_;
+    std::unique_ptr<SyncRingBuffer<uint8_t>> audioBuffer_;
     AtomicSharedPtr<IAudioRender> pimpl_;
 };
 

@@ -21,6 +21,9 @@ struct AudioDecoderConfig: public DecoderConfig {
     uint16_t bitsPerSample{};
     uint64_t sampleRate{};
     uint32_t timeScale{};
+    uint32_t samplingFrequencyIndex{};
+    uint32_t samplingFreqIndexExt{};
+    uint8_t audioObjectTypeExt{};
 
     void initWithAudioInfo(const std::shared_ptr<AudioInfo>& audioInfo) noexcept {
         if (!audioInfo) {
@@ -31,6 +34,9 @@ struct AudioDecoderConfig: public DecoderConfig {
         bitsPerSample = audioInfo->bitsPerSample;
         sampleRate = audioInfo->sampleRate;
         timeScale = audioInfo->timeScale;
+        samplingFrequencyIndex = audioInfo->samplingFrequencyIndex;
+        samplingFreqIndexExt = audioInfo->samplingFreqIndexExt;
+        audioObjectTypeExt = audioInfo->audioObjectTypeExt;
         profile = static_cast<uint8_t>(audioInfo->profile);
     }
 };
