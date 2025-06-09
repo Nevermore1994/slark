@@ -17,24 +17,20 @@ void Clock::setTime(Time::TimePoint count) noexcept {
     isInited_ = true;
 }
 
-Time::TimePoint Clock::adjustSpeedTime(Time::TimePoint elapse) const noexcept {
-    return static_cast<uint64_t>(static_cast<double>(elapse.count) * (1.0 - speed));
-}
-
 Time::TimePoint Clock::time() noexcept {
     std::shared_lock<std::shared_mutex> lock(mutex_);
     if (isPause_) {
         return pts_;
     }
     auto elapseTime = Time::nowTimeStamp() - lastUpdated_;
-    return elapseTime + pts_ - adjustSpeedTime(elapseTime);
+    return pts_ + Time::TimePoint(uint64_t(double(elapseTime.point()) * speed_));
 }
 
 void Clock::start() noexcept {
     std::lock_guard<std::shared_mutex> lock(mutex_);
     if (!isInited_) {
         pts_ = 0;
-        speed = 1.0;
+        speed_ = 1.0;
     }
 
     isPause_ = false;
@@ -49,13 +45,13 @@ void Clock::pause() noexcept {
     }
     isPause_ = true;
     auto elapseTime = Time::nowTimeStamp() - lastUpdated_;
-    pts_ += elapseTime - adjustSpeedTime(elapseTime);
+    pts_ += Time::TimePoint(uint64_t(double(elapseTime.point()) * speed_));
 }
 
 void Clock::reset() noexcept {
     std::lock_guard<std::shared_mutex> lock(mutex_);
     pts_ = 0;
-    speed = 1.0;
+    speed_ = 1.0;
     isPause_ = true;
     isInited_ = false;
 }

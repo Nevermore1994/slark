@@ -17,11 +17,11 @@ TimerInfo::TimerInfo(Time::TimePoint time)
 }
 
 bool TimerInfo::operator<(const TimerInfo& rhs) const noexcept {
-    return expireTime < rhs.expireTime;
+    return expireTime.point() < rhs.expireTime.point();
 }
 
 bool TimerInfo::operator>(const TimerInfo& rhs) const noexcept {
-    return expireTime > rhs.expireTime;
+    return expireTime.point() > rhs.expireTime.point();
 }
 
 Timer::Timer()

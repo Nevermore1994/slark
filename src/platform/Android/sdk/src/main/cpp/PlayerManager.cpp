@@ -95,6 +95,7 @@ public:
         static std::vector<std::string_view> stateNames = {
             "Unknown",
             "Initializing",
+            "Prepared",
             "Buffering",
             "Ready",
             "Playing",

@@ -62,24 +62,18 @@ void Native_AudioPlayer_audioPlayerAction(
     AudioPlayerAction action
 ) {
     constexpr std::string_view kActionClass = "com/slark/sdk/AudioPlayer$Action";
-    std::string_view fieldView;
-    switch (action) {
-        case AudioPlayerAction::Play:
-            fieldView = "Play";
-            break;
-        case AudioPlayerAction::Pause:
-            fieldView = "Pause";
-            break;
-        case AudioPlayerAction::Flush:
-            fieldView = "Flush";
-            break;
-        case AudioPlayerAction::Release:
-            fieldView = "Release";
-            break;
-        default:
-            std::unreachable();
-            return;
+    static std::vector<std::string_view> kAudioPlayerAction = {
+        "Play",
+        "Pause",
+        "Flush",
+        "Release",
+    };
+    auto tAction = static_cast<size_t>(action);
+    if (tAction >= kAudioPlayerAction.size()) {
+        LogE("action is invalid.");
+        return;
     }
+    std::string_view fieldView = kAudioPlayerAction[static_cast<size_t>(action)];
 
     auto enumValue = JNICache::shareInstance().getEnumField(
         env,
@@ -95,14 +89,12 @@ void Native_AudioPlayer_audioPlayerAction(
         return;
     }
 
-    auto jPlayerId = ToJVM::toString(
-        env,
-        playerId
-    );
+    auto jPlayerId = ToJVM::toString(env, playerId);
     auto signature = JNI::makeJNISignature(
         JNI::Void,
         JNI::String,
-        JNI::makeObject(kActionClass));
+        JNI::makeObject(kActionClass)
+    );
     auto actionMethodId = JNICache::shareInstance().getStaticMethodId(
         audioPlayerClass,
         "audioPlayerAction",
@@ -111,8 +103,9 @@ void Native_AudioPlayer_audioPlayerAction(
     env->CallStaticVoidMethod(
         audioPlayerClass.get(),
         actionMethodId.get(),
-        jPlayerId.get(),
-        enumValue.get());
+        jPlayerId.detach(),
+        enumValue.detach()
+    );
 }
 
 void Native_AudioPlayer_setAudioConfig(
@@ -163,9 +156,10 @@ void Native_AudioPlayer_setAudioConfig(
     env->CallStaticVoidMethod(
         audioPlayerClass.get(),
         methodId.get(),
-        jPlayerId.get(),
-        enumValue.get(),
-        static_cast<jfloat>(value));
+        jPlayerId.detach(),
+        enumValue.detach(),
+        static_cast<jfloat>(value)
+    );
 }
 
 uint64_t Native_AudioPlayer_getPlayedTime(
@@ -200,7 +194,8 @@ uint64_t Native_AudioPlayer_getPlayedTime(
     auto playedTime = env->CallStaticLongMethod(
         audioPlayerClass.get(),
         method.get(),
-        jPlayerId.get());
+        jPlayerId.detach()
+    );
     return static_cast<uint64_t>(playedTime);
 }
 

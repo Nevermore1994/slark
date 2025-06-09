@@ -96,6 +96,8 @@ public:
 
     virtual Time::TimePoint playedTime() noexcept = 0;
 
+    virtual void renderEnd() noexcept = 0;
+
     [[nodiscard]] inline RenderStatus status() const noexcept {
         return status_;
     }
@@ -120,11 +122,8 @@ public:
     void seek(double time) noexcept {
         flush();
         renderedDataLength_ = 0;
-        clock_.setTime(Time::TimePoint(time));
-    }
-
-    void setRenderedLength(uint64_t length) noexcept {
-        renderedDataLength_.store(length);
+        offsetTime = Time::TimePoint::fromSeconds(time);
+        clock_.setTime(offsetTime);
     }
 
     uint32_t requestAudioData(uint8_t* data, uint32_t size, AudioDataFlag& flag) noexcept {
@@ -143,6 +142,7 @@ public:
     }
 protected:
     float volume_ = 100.f; // 0 ~ 100
+    Time::TimePoint offsetTime{};
     std::shared_ptr<AudioInfo> audioInfo_ = nullptr;
     std::atomic<uint64_t> renderedDataLength_ = 0;
     Clock clock_;

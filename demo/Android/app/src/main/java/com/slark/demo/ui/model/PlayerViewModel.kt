@@ -54,7 +54,7 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
                 SlarkPlayerState.Completed -> {
                     isPlaying = false
                 }
-                SlarkPlayerState.Ready -> {
+                SlarkPlayerState.Prepared -> {
                     totalTime = player?.totalDuration() ?: 0.0
                 }
                 SlarkPlayerState.Error -> {

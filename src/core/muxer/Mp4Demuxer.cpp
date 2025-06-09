@@ -40,75 +40,73 @@ void TrackContext::init() noexcept {
 }
 
 uint64_t TrackContext::getSeekPos(double targetTime) const noexcept {
-    if (type != TrackType::Video) {
+    if (type != TrackType::Video || !stts || !stss || !stsc || !stco || !stsz) {
         return 0;
     }
+    //found sample index
     uint32_t sampleIndex = 0;
     auto timeScale = static_cast<double>(mdhd->timeScale);
-    double currentDTS = 0;
-    for (auto & entry : stts->entrys) {
-        double entryDuration = entry.sampleCount * entry.sampleDelta;
-        if (currentDTS + entryDuration >= targetTime) {
-            sampleIndex += static_cast<uint32_t>((targetTime - currentDTS) / (static_cast<double>(entry.sampleDelta) / timeScale));
+    double currentTime = 0.0;
+    for (const auto& entry : stts->entrys) {
+        auto entryDuration = double(entry.sampleCount * entry.sampleDelta) / timeScale;
+        if (currentTime + entryDuration > targetTime) {
+            auto offset = static_cast<uint32_t>((targetTime - currentTime) * timeScale / entry.sampleDelta);
+            sampleIndex += std::min(offset, entry.sampleCount - 1);
             break;
         }
-        currentDTS += entryDuration;
+        currentTime += entryDuration;
         sampleIndex += entry.sampleCount;
     }
     if (sampleIndex == 0) {
+        //not found, default 1
         sampleIndex = 1;
     }
-    const auto& indexs = stss->keyIndexs;
-    auto nowKeyIndex = static_cast<uint32_t>(std::distance(indexs.begin(), std::lower_bound(indexs.begin(), indexs.end(), sampleIndex)));
-    if (nowKeyIndex == indexs.size()) {
-        //last key frame
-        nowKeyIndex = static_cast<uint32_t>(indexs.size() - 1);
-    }
-    while (nowKeyIndex < indexs.size() && indexs[nowKeyIndex] > sampleIndex) {
-        nowKeyIndex--;
-    }
-    if (nowKeyIndex >= indexs.size()) {
-        LogE("key index error!");
+    
+    //found key frame index
+    const auto& keyIndexes = stss->keyIndexs;
+    auto it = std::upper_bound(keyIndexes.begin(), keyIndexes.end(), sampleIndex);
+    if (it == keyIndexes.begin()) {
+        //not found key frame
         return 0;
     }
-    uint32_t keyFrameIndex = indexs[nowKeyIndex];
-    
+    --it;
+    uint32_t keySampleIndex = *it;
+
+    //found chunkIndex & sampleCount
     uint32_t chunkIndex = 0;
-    uint32_t stscIndex = 0;
-    uint32_t chunkSampleOffset = 0;
     uint32_t sampleCount = 0;
-    while(chunkIndex < keyFrameIndex) {
-        auto chunkSampleCount = stsc->entrys[stscIndex].samplesPerChunk;
-        if (stscIndex + 1 < stsc->entrys.size()) {
-            auto chunkCount = stsc->entrys[stscIndex + 1].firstChunk - stsc->entrys[stscIndex].firstChunk;
-            if (keyFrameIndex < sampleCount + (chunkCount * chunkSampleCount)) {
-                while (keyFrameIndex < sampleCount + chunkSampleCount) {
-                    sampleCount += chunkSampleCount;
-                    chunkSampleOffset += chunkSampleCount;
-                    chunkIndex++;
-                }
-                chunkSampleOffset += keyFrameIndex - sampleCount;
+    bool found = false;
+    for (size_t i = 0; i < stsc->entrys.size() && !found; ++i) {
+        const auto& entry = stsc->entrys[i];
+        uint32_t nextFirstChunk = (i + 1 < stsc->entrys.size()) ? stsc->entrys[i + 1].firstChunk : stco->chunkOffsets.size() + 1;
+        for (uint32_t chunk = entry.firstChunk; chunk < nextFirstChunk; ++chunk) {
+            uint32_t chunkSampleCount = entry.samplesPerChunk;
+            if (keySampleIndex <= sampleCount + chunkSampleCount) {
+                chunkIndex = chunk - 1; // chunkOffsets start 0
+                found = true;
                 break;
-            } else {
-                sampleCount += chunkCount * chunkSampleCount;
-                chunkIndex += chunkCount;
-                chunkSampleOffset = 0;
             }
-        } else {
-            chunkIndex += keyFrameIndex / chunkSampleCount;
-            sampleCount += keyFrameIndex / chunkSampleCount;
-            chunkSampleOffset = keyFrameIndex - (keyFrameIndex / chunkSampleCount);
-            break;
+            sampleCount += chunkSampleCount;
         }
     }
-    
-    uint64_t chunkOffset = stco->chunkOffsets[chunkIndex - 1];
-    uint64_t sampleOffsetInChunk = 0;
-    for (uint32_t i = 0; i < chunkSampleOffset; ++i) {
-        sampleOffsetInChunk += stsz->sampleSizes[keyFrameIndex - chunkSampleOffset + i];
+    if (!found) {
+        LogE("not found chunkIndex");
+        return 0;
     }
-    LogI("[seek info] keyindex:{}, dts:{}, time:{}, pos:{}, chunk:{}", keyFrameIndex, currentDTS, targetTime, chunkOffset + sampleOffsetInChunk, chunkIndex);
-    return chunkOffset + sampleOffsetInChunk;
+    if (chunkIndex >= stco->chunkOffsets.size()) {
+        LogE("chunkIndex out of range");
+        return 0;
+    }
+    uint64_t chunkOffset = stco->chunkOffsets[chunkIndex];
+
+    uint32_t firstSampleInChunk = sampleCount + 1;
+    uint64_t sampleOffsetInChunk = 0;
+    for (uint32_t i = 0; i < keySampleIndex - firstSampleInChunk; ++i) {
+        sampleOffsetInChunk += stsz->sampleSizes[firstSampleInChunk - 1 + i];
+    }
+    auto pos = chunkOffset + sampleOffsetInChunk;
+    LogI("[seek info] keySampleIndex:{}, time:{}, pos:{}", keySampleIndex, targetTime, pos);
+    return pos;
 }
 
 void TrackContext::seek(uint64_t pos) noexcept {

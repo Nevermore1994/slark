@@ -115,7 +115,7 @@ extern "C"
 JNIEXPORT void JNICALL
 Java_com_slark_sdk_SlarkNativeBridge_00024Companion_setContext(
     JNIEnv *env,
-    jobject thiz,
+    jobject /*thiz*/,
     jobject context
 ) {
     if (gApplicationContext) {

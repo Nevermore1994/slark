@@ -57,6 +57,7 @@ void AudioRenderComponent::init() noexcept {
                 }
             }
             LogI("request audio size:{}", size);
+            isFull_ = false;
             return size;
         } else {
             LogE("request audio failed:{}", size);
@@ -76,14 +77,20 @@ bool AudioRenderComponent::process(AVFrameRefPtr frame) noexcept {
         LogE("frame data is nullptr");
         return false;
     }
-    return audioBuffer_->writeExact(
+    auto res = audioBuffer_->writeExact(
         frame->data->rawData,
         static_cast<uint32_t>(frame->data->length)
     );
+    if (!res) {
+        isFull_ = true;
+    }
+    return res;
 }
 
 void AudioRenderComponent::reset() noexcept {
-    audioBuffer_.reset();
+    if (audioBuffer_) {
+        audioBuffer_->reset();
+    }
     isFirstFrameRendered = false;
     if (auto impl = pimpl_.load()) {
         impl->reset();
@@ -136,7 +143,9 @@ void AudioRenderComponent::flush() noexcept {
 }
 
 void AudioRenderComponent::seek(double time) noexcept {
-    audioBuffer_.reset();
+    if (audioBuffer_) {
+        audioBuffer_->reset();
+    }
     if (auto pimpl = pimpl_.load()) {
         pimpl->seek(time);
     } else {
@@ -149,6 +158,12 @@ Time::TimePoint AudioRenderComponent::playedTime() noexcept {
         return pimpl->playedTime();
     } else {
         return 0;
+    }
+}
+
+void AudioRenderComponent::renderEnd() noexcept {
+    if (auto pimpl = pimpl_.load()) {
+        pimpl->renderEnd();
     }
 }
 

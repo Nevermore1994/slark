@@ -246,7 +246,7 @@ DemuxerResult WAVDemuxer::parseData(DataPacket& packet) noexcept {
         frame->data = buffer_->readData(frameLength);
         frame->duration = static_cast<uint32_t>(static_cast<double>(sampleCount) /
                                                 static_cast<double>(audioInfo_->sampleRate) * 1000);
-        frame->pts = static_cast<uint64_t>(static_cast<double>(prasedLength) / scale * audioInfo_->timeScale);
+        frame->pts = static_cast<int64_t>(static_cast<double>(prasedLength) / scale * audioInfo_->timeScale);
         frame->dts = frame->pts;
         frame->index = ++parsedFrameCount_;
         frame->timeScale = audioInfo_->timeScale;
