@@ -22,19 +22,13 @@ MethodReference JNICache::findMethodCache(
     if (it == methodCache_.end()) {
         return {env, nullptr};
     }
-    auto oldClass = ClassReference(
-        env,
-        (jclass) (env->NewLocalRef(
-            it->second
-                .classRef
-        )));
+    auto oldClass = ClassReference(env,jclass(env->NewLocalRef(it->second.classRef)));
     if (oldClass) {
         if (env->IsSameObject(
             oldClass.get(),
             clazz.get())) {
             return {
-                env, it->second
-                    .methodId
+                env, it->second.methodId
             };
         }
     }
@@ -52,10 +46,7 @@ MethodReference JNICache::updateMethodCache(
     if (it != methodCache_.end()) {
         auto oldClass = ClassReference(
             env,
-            (jclass) (env->NewLocalRef(
-                it->second
-                    .classRef
-            )));
+            jclass(env->NewLocalRef(it->second.classRef)));
         if (oldClass) {
             if (env->IsSameObject(
                 oldClass.get(),
@@ -90,10 +81,14 @@ MethodReference JNICache::getStaticMethodId(
     std::string key = std::string(clazz.tag()).append(methodName)
         .append(signature);
     auto env = clazz.env();
-    if (auto cached = findMethodCache(
-        clazz,
-        key
-    )) {
+    if (!env) {
+        return {};
+    }
+    if (env->ExceptionCheck()) {
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+    }
+    if (auto cached = findMethodCache(clazz, key)) {
         return {cached};
     }
     auto methodId = env->GetStaticMethodID(
@@ -119,10 +114,14 @@ MethodReference JNICache::getMethodId(
     std::string key = std::string(clazz.tag()).append(methodName)
         .append(signature);
     auto env = clazz.env();
-    if (auto cached = findMethodCache(
-        clazz,
-        key
-    )) {
+    if (!env) {
+        return {};
+    }
+    if (env->ExceptionCheck()) {
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+    }
+    if (auto cached = findMethodCache(clazz, key)) {
         return {cached};
     }
     auto methodId = env->GetMethodID(
@@ -144,6 +143,13 @@ ClassReference JNICache::getClass(
     JNIEnv *env,
     std::string_view className
 ) noexcept {
+    if (!env) {
+        return {env, nullptr};
+    }
+    if (env->ExceptionCheck()) {
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+    }
     std::string key(className);
     {
         std::shared_lock<std::shared_mutex> readLock(classCacheMutex_);
@@ -197,10 +203,14 @@ ObjectReference JNICache::getEnumField(
     std::string_view className,
     std::string_view fieldName
 ) noexcept {
-    auto enumClass = getClass(
-        env,
-        className
-    );
+    if (!env) {
+        return {env, nullptr};
+    }
+    if (env->ExceptionCheck()) {
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+    }
+    auto enumClass = getClass(env, className);
     if (!enumClass) {
         return {env, nullptr, fieldName};
     }

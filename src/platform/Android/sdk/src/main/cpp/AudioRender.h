@@ -29,6 +29,8 @@ public:
 
     void reset() noexcept override;
 
+    void renderEnd() noexcept override;
+
     Time::TimePoint playedTime() noexcept override;
 
     const std::string& playerId() const noexcept {
@@ -42,7 +44,7 @@ private:
 private:
     std::string playerId_;
     TimerId timerId_{};
-    Time::TimePoint latency_;
+    Time::TimeDelta latency_;
 };
 
 using AudioRenderManager = Manager<AudioRender>;

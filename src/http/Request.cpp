@@ -107,7 +107,7 @@ std::string htmlEncode(RequestInfo& info, const Url& url) noexcept {
 using namespace std::chrono_literals;
 
 Request::Request(const RequestInfo& info, const ResponseHandler& responseHandler)
-    : startStamp_(Time::nowTimeStamp())
+    : startStamp_(Time::nowTimeStamp().point())
     , info_(info)
     , handler_(responseHandler)
     , socket_(nullptr, freeSocket)
@@ -116,7 +116,7 @@ Request::Request(const RequestInfo& info, const ResponseHandler& responseHandler
 }
 
 Request::Request(RequestInfo&& info, ResponseHandler&& responseHandler)
-    : startStamp_(Time::nowTimeStamp())
+    : startStamp_(Time::nowTimeStamp().point())
     , info_(std::move(info))
     , handler_(std::move(responseHandler))
     , socket_(nullptr,freeSocket)
@@ -622,7 +622,7 @@ std::string RequestSession::request(RequestInfoPtr requestInfo) noexcept {
     taskPtr->host = std::move(host);
     auto reqId = Random::randomString(12);
     taskPtr->requestInfo ->reqId = reqId;
-    taskPtr->startStamp = Time::nowTimeStamp();
+    taskPtr->startStamp = Time::nowTimeStamp().point();
     {
         std::lock_guard<std::mutex> lock(taskMutex_);
         requestTaskQueue_.push_back(std::move(taskPtr));

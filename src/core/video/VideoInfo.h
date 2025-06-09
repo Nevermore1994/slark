@@ -50,10 +50,16 @@ struct IVideoRender {
 
     virtual void pushVideoFrameRender(AVFrameRefPtr frame) noexcept = 0;
 
+    virtual void renderEnd() noexcept = 0;
+
     virtual ~IVideoRender() = default;
 
-    Clock& clock() noexcept {
-        return videoClock_;
+    Time::TimePoint playedTime() noexcept {
+        return videoClock_.time();
+    }
+
+    void setTime(Time::TimePoint time) noexcept {
+        videoClock_.setTime(time);
     }
 
     void setRequestRenderFunc(RequestRenderFunc func) noexcept {

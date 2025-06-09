@@ -22,7 +22,7 @@ DecoderErrorCode AudioHardwareDecoder::decode(AVFrameRefPtr &frame) noexcept {
         false // false for audio
     );
     if (res == DecoderErrorCode::Success) {
-        LogI("send audio packet success, pts:{}, dts:{}, pts time{}, dts time:{}",
+        LogI("send audio packet success, pts:{}, dts:{}, pts time:{}, dts time:{}",
              frame->pts,
              frame->dts,
              frame->ptsTime(),

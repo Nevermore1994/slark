@@ -117,7 +117,7 @@ void ISocket::checkConnectResult(SocketResult& result, int64_t timeout) const no
     auto expiredTime = Time::nowTimeStamp() + std::chrono::milliseconds(timeout);
     bool isTimeout = false;
     do {
-        auto remainTime = static_cast<int64_t>(expiredTime - Time::nowTimeStamp());
+        auto remainTime = static_cast<int64_t>((expiredTime - Time::nowTimeStamp()).point());
         if (remainTime < 0) {
             isTimeout = true;
             break;

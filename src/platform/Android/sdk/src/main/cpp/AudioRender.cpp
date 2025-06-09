@@ -43,16 +43,15 @@ void AudioRender::init() noexcept {
     timerId_ = TimerManager::shareInstance().runLoop(
         3000ms,
         [this]() {
-            if (status_ == RenderStatus::Stop || status_ == RenderStatus::Unknown) {
-                LogI("audio render stop, no need to check played time.");
+            if (status_ != RenderStatus::Playing) {
                 return;
             }
-            auto renderedTime = Time::TimePoint(NativeAudioPlayer::getPlayedTime(playerId_));
-            if (renderedTime == Time::TimePoint()) {
+            auto realTime = offsetTime + Time::TimePoint(NativeAudioPlayer::getPlayedTime(playerId_));
+            if (realTime == Time::TimePoint()) {
                 LogE("get played time failed, playerId:{}", playerId_);
-                latency_ = 0;
+                latency_ = Time::TimeDelta();
             } else {
-                latency_ = clock_.time() - renderedTime;
+                latency_ = clock_.time() - realTime;
                 LogI("audio render latency: {}", latency_.toMilliSeconds().count());
             }
 
@@ -62,7 +61,7 @@ void AudioRender::init() noexcept {
 }
 
 void AudioRender::play() noexcept {
-    if (status_ == RenderStatus::Play) {
+    if (status_ == RenderStatus::Playing) {
         return;
     }
     CheckAudioPlayer();
@@ -71,7 +70,7 @@ void AudioRender::play() noexcept {
         AudioPlayerAction::Play
     );
     clock_.start();
-    status_ = RenderStatus::Play;
+    status_ = RenderStatus::Playing;
 }
 
 void AudioRender::pause() noexcept {
@@ -110,6 +109,18 @@ void AudioRender::stop() noexcept {
 void AudioRender::reset() noexcept {
     clock_.reset();
     renderedDataLength_ = 0;
+}
+
+void AudioRender::renderEnd() noexcept {
+    if (status_ == RenderStatus::Pause) {
+        return;
+    }
+    CheckAudioPlayer();
+    NativeAudioPlayer::doAction(
+        playerId_,
+        AudioPlayerAction::Pause
+    );
+    status_ = RenderStatus::Pause;
 }
 
 void AudioRender::flush() noexcept {

@@ -19,40 +19,95 @@ struct Time {
     static constexpr uint64_t kTimeInvalid = 0;
     static constexpr uint64_t kMicroSecondScale = 1000000;
     static constexpr uint64_t kMillSecondScale = 1000;
-    ///microseconds
-    struct TimePoint {
-        uint64_t count{};
 
-#pragma clang diagnostic push
-#pragma ide diagnostic ignored "google-explicit-constructor"
-        operator uint64_t() const {
-            return count;
+    struct TimeDelta {
+    private:
+        int64_t microseconds{};
+    public:
+        TimeDelta(int64_t us = 0) : microseconds(us) {}
+
+        int64_t point() const noexcept {
+            return microseconds;
         }
 
-        constexpr TimePoint(uint64_t t = 0)
-            : count(t) {
+        [[nodiscard]] std::chrono::milliseconds toMilliSeconds() const noexcept {
+            return std::chrono::milliseconds(microseconds / 1000);
+        }
+
+        [[nodiscard]] double second() const noexcept {
+            return static_cast<double>(microseconds) / kMicroSecondScale;
+        }
+
+        static TimeDelta fromMilliSeconds(std::chrono::milliseconds ms) noexcept {
+            return {ms.count() * 1000};
+        }
+
+        static TimeDelta fromMicroSeconds(std::chrono::microseconds us) noexcept {
+            return {us.count()};
         }
 
         template <typename T> requires std::is_floating_point_v<T>
-        constexpr TimePoint(T time)
-            : count(static_cast<uint64_t>(time * kMicroSecondScale)) {
-
+        static TimeDelta fromSeconds(T seconds) noexcept {
+            return TimeDelta(static_cast<int64_t>(seconds * kMicroSecondScale));
         }
 
-        constexpr TimePoint(std::chrono::microseconds micros)
-            : count(static_cast<uint64_t>(micros.count())) {
-
+        TimeDelta operator+(const TimeDelta& rhs) const noexcept {
+            return {microseconds + rhs.microseconds};
+        }
+        TimeDelta& operator+=(const TimeDelta& rhs) noexcept {
+            microseconds += rhs.microseconds;
+            return *this;
+        }
+        TimeDelta operator-(const TimeDelta& rhs) const noexcept {
+            return {microseconds - rhs.microseconds};
+        }
+        TimeDelta& operator-=(const TimeDelta& rhs) noexcept {
+            microseconds -= rhs.microseconds;
+            return *this;
         }
 
-        constexpr TimePoint(std::chrono::milliseconds ms)
-        : count(static_cast<uint64_t>(ms.count() * 1000)) {
+        bool operator==(const TimeDelta& rhs) const noexcept {
+            return microseconds == rhs.microseconds;
+        }
+        bool operator!=(const TimeDelta& rhs) const noexcept {
+            return microseconds != rhs.microseconds;
+        }
+        bool operator<(const TimeDelta& rhs) const noexcept {
+            return microseconds < rhs.microseconds;
+        }
+        bool operator>(const TimeDelta& rhs) const noexcept {
+            return microseconds > rhs.microseconds;
+        }
+        bool operator<=(const TimeDelta& rhs) const noexcept {
+            return microseconds <= rhs.microseconds;
+        }
+        bool operator>=(const TimeDelta& rhs) const noexcept {
+            return microseconds >= rhs.microseconds;
+        }
+    };
 
+    ///microseconds
+    struct TimePoint {
+    private:
+        uint64_t microseconds{};
+    public:
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "google-explicit-constructor"
+        constexpr TimePoint(uint64_t t = 0)
+            : microseconds(t) {
+        }
+
+        uint64_t point() const noexcept{
+            return microseconds;
         }
 
         static TimePoint fromMilliSeconds(std::chrono::milliseconds ms) noexcept {
             return {static_cast<uint64_t>(ms.count() * 1000)};
         }
 
+        static TimePoint fromMicroSeconds(std::chrono::microseconds micros) noexcept {
+            return {static_cast<uint64_t>(micros.count())};
+        }
 
         template <typename T> requires std::is_floating_point_v<T>
         static TimePoint fromSeconds(T seconds) noexcept {
@@ -60,16 +115,37 @@ struct Time {
         }
 
 #pragma clang diagnostic pop
+        bool operator==(const TimePoint& rhs) const noexcept {
+            return microseconds == rhs.microseconds;
+        }
+        bool operator!=(const TimePoint& rhs) const noexcept {
+            return microseconds != rhs.microseconds;
+        }
+        bool operator<(const TimePoint& rhs) const noexcept {
+            return microseconds < rhs.microseconds;
+        }
+        bool operator>(const TimePoint& rhs) const noexcept {
+            return microseconds > rhs.microseconds;
+        }
+        bool operator<=(const TimePoint& rhs) const noexcept {
+            return microseconds <= rhs.microseconds;
+        }
+        bool operator>=(const TimePoint& rhs) const noexcept {
+            return microseconds >= rhs.microseconds;
+        }
+
         [[nodiscard]] std::chrono::milliseconds toMilliSeconds() const noexcept;
         [[nodiscard]] double second() const noexcept;
-        TimePoint operator+(std::chrono::milliseconds delta) const noexcept;
-        TimePoint& operator+=(std::chrono::milliseconds delta) noexcept;
-        TimePoint operator-(std::chrono::milliseconds delta) const noexcept;
-        TimePoint& operator-=(std::chrono::milliseconds delta) noexcept;
-        TimePoint operator+(TimePoint delta) const noexcept;
-        TimePoint& operator+=(TimePoint delta) noexcept;
-        TimePoint operator-(TimePoint delta) const noexcept;
-        TimePoint& operator-=(TimePoint delta) noexcept;
+        TimePoint operator+(std::chrono::milliseconds t) const noexcept;
+        TimePoint& operator+=(std::chrono::milliseconds t) noexcept;
+        TimePoint operator+(TimePoint t) const noexcept;
+        TimePoint& operator+=(TimePoint t) noexcept;
+        TimeDelta operator-(const TimePoint& other) const noexcept;
+        TimeDelta operator-(std::chrono::milliseconds other) const noexcept;
+        TimePoint operator+(const Time::TimeDelta& delta) const noexcept;
+        TimePoint& operator+=(const Time::TimeDelta& delta) noexcept;
+        TimePoint operator-(const Time::TimeDelta& delta) const noexcept;
+        TimePoint& operator-=(const TimeDelta& delta) noexcept;
     };
     static TimePoint nowTimeStamp() noexcept;
     [[maybe_unused]] static std::chrono::milliseconds nowUTCTime() noexcept;

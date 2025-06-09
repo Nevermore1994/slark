@@ -58,7 +58,7 @@ VideoRender::VideoRender()
     : renderThread_(
     std::make_unique<Thread>(
         "renderThread",
-        &VideoRender::requestRender,
+        &VideoRender::requestRenderFrame,
         this
     )
 ) {
@@ -75,10 +75,12 @@ VideoRender::~VideoRender() noexcept {
 
 void VideoRender::start() noexcept {
     renderThread_->start();
+    videoClock_.start();
 }
 
 void VideoRender::pause() noexcept {
     renderThread_->pause();
+    videoClock_.pause();
 }
 
 void VideoRender::notifyVideoInfo(std::shared_ptr<VideoInfo> videoInfo) noexcept {
@@ -96,7 +98,7 @@ void VideoRender::pushVideoFrameRender(AVFrameRefPtr frame) noexcept {
     renderFrame(frame);
 }
 
-void VideoRender::requestRender() noexcept {
+void VideoRender::requestRenderFrame() noexcept {
     auto func = requestRenderFunc_.load();
     if (!func) {
         return;
@@ -145,9 +147,13 @@ void VideoRender::renderComplete(int32_t id) noexcept {
         if (manager) {
             manager->restore(std::move(info.texture));
         }
-        videoClock_.setTime(info.ptsTime);
+        videoClock_.setTime(Time::TimePoint::fromSeconds(info.ptsTime));
         LogI("render complete, ptsTime:{}", info.ptsTime);
     }
+}
+
+void VideoRender::renderEnd() noexcept {
+    renderThread_->pause();
 }
 
 } // slark

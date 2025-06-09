@@ -17,46 +17,54 @@ using std::chrono::milliseconds;
 using std::chrono::microseconds;
 
 [[nodiscard]] std::chrono::milliseconds Time::TimePoint::toMilliSeconds() const noexcept {
-    return std::chrono::milliseconds(static_cast<uint64_t>( std::round(static_cast<double>(count) / 1000.0)));
+    return std::chrono::milliseconds(static_cast<uint64_t>( std::round(static_cast<double>(microseconds) / 1000.0)));
 }
 
 double Time::TimePoint::second() const noexcept {
-    return std::round(static_cast<double>(count) / 1000.0) / 1000;
+    return std::round(static_cast<double>(microseconds) / 1000.0) / 1000;
 }
 
 Time::TimePoint Time::TimePoint::operator+(std::chrono::milliseconds delta) const noexcept {
-    return count + static_cast<uint64_t>(delta.count() * 1000);
+    return microseconds + static_cast<uint64_t>(delta.count() * 1000);
 }
 
 Time::TimePoint& Time::TimePoint::operator+=(std::chrono::milliseconds delta) noexcept {
-    count += static_cast<uint64_t>(delta.count() * 1000);
+    microseconds += static_cast<uint64_t>(delta.count() * 1000);
     return *this;
 }
 
-Time::TimePoint Time::TimePoint::operator-(std::chrono::milliseconds delta) const noexcept {
-    return count - static_cast<uint64_t>(delta.count() * 1000);
+Time::TimeDelta Time::TimePoint::operator-(const TimePoint& other) const noexcept {
+    return {static_cast<int64_t>(microseconds) - static_cast<int64_t>(other.microseconds)};
 }
 
-Time::TimePoint& Time::TimePoint::operator-=(std::chrono::milliseconds delta) noexcept {
-    count -= static_cast<uint64_t>(delta.count() * 1000);
-    return *this;
+Time::TimeDelta Time::TimePoint::operator-(std::chrono::milliseconds other) const noexcept {
+    return {static_cast<int64_t>(microseconds) - static_cast<int64_t>(other.count() * 1000)};
 }
 
 Time::TimePoint Time::TimePoint::operator+(Time::TimePoint delta) const noexcept {
-    return count + delta;
+    return microseconds + delta.microseconds;
 }
 
 Time::TimePoint& Time::TimePoint::operator+=(Time::TimePoint delta) noexcept {
-    count += delta;
+    microseconds += delta.microseconds;
     return *this;
 }
 
-Time::TimePoint Time::TimePoint::operator-(Time::TimePoint delta) const noexcept {
-    return count - delta;
+Time::TimePoint Time::TimePoint::operator+(const Time::TimeDelta& delta) const noexcept {
+    return {microseconds + uint64_t(delta.point())};
 }
 
-Time::TimePoint& Time::TimePoint::operator-=(Time::TimePoint delta) noexcept {
-    count -= delta;
+Time::TimePoint& Time::TimePoint::operator+=(const Time::TimeDelta& delta) noexcept {
+    microseconds += uint64_t(delta.point());
+    return *this;
+}
+
+Time::TimePoint Time::TimePoint::operator-(const Time::TimeDelta& delta) const noexcept {
+    return {microseconds - uint64_t(delta.point())};
+}
+
+Time::TimePoint& Time::TimePoint::operator-=(const TimeDelta& delta) noexcept {
+    microseconds -= uint64_t(delta.point());
     return *this;
 }
 

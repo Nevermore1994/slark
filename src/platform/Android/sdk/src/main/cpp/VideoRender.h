@@ -34,6 +34,8 @@ public:
 
     void pause() noexcept override;
 
+    void renderEnd() noexcept override;
+
     void notifyVideoInfo(std::shared_ptr<VideoInfo> videoInfo) noexcept override;
 
     void notifyRenderInfo() noexcept override;
@@ -43,7 +45,7 @@ public:
     void renderComplete(int32_t textureId) noexcept;
 
 private:
-    void requestRender() noexcept;
+    void requestRenderFrame() noexcept;
 
     void renderFrame(const AVFrameRefPtr &frame) noexcept;
 

@@ -58,7 +58,7 @@ public:
             LogE("audio buffer is nullptr");
             return true;
         }
-        return audioBuffer_->isFull();
+        return isFull_ || audioBuffer_->isFull();
     }
 
     RenderStatus status() const {
@@ -67,7 +67,8 @@ public:
         }
         return RenderStatus::Unknown;
     }
-    
+
+    void renderEnd() noexcept;
 private:
     void init() noexcept;
 public:
@@ -75,6 +76,7 @@ public:
     std::function<void(Time::TimePoint)> firstFrameRenderCallBack;
 private:
     bool isFirstFrameRendered = false;
+    bool isFull_ = false;
     std::shared_ptr<AudioInfo> audioInfo_;
     std::unique_ptr<SyncRingBuffer<uint8_t>> audioBuffer_;
     AtomicSharedPtr<IAudioRender> pimpl_;

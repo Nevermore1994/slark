@@ -30,8 +30,6 @@ struct PlayerSeekRequest {
 struct PlayerStats {
     bool isFirstAudioRendered = false;
     bool isForceVideoRendered = false;
-    Time::TimePoint audioDecodeDelta{0};
-    Time::TimePoint audioRenderDelta{0};
     double audioDemuxedTime = 0;
     double videoDemuxedTime = 0;
     double lastNotifyPlayedTime = 0;
@@ -40,8 +38,6 @@ struct PlayerStats {
     void reset() {
         isFirstAudioRendered = false;
         isForceVideoRendered = false;
-        audioDecodeDelta = 0;
-        audioRenderDelta = 0;
         audioDemuxedTime = 0;
         videoDemuxedTime = 0;
         lastNotifyPlayedTime = 0;
