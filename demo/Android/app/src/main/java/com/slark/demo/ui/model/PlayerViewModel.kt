@@ -31,6 +31,10 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
 
     var volume by mutableStateOf(100.0f)
 
+    var isLoop by mutableStateOf(false)
+
+    var isMute by mutableStateOf(false)
+
     private val observer = object: SlarkPlayerObserver {
         override fun notifyTime(playerId: String, time: Double) {
             currentTime = time
@@ -94,6 +98,16 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
 
     fun skipNext() {
         // Implement skip next logic
+    }
+
+    fun loop(isLoop: Boolean) {
+        player?.isLoop = isLoop
+        this.isLoop = isLoop
+    }
+
+    fun mute(isMute: Boolean) {
+        player?.isMute = isMute
+        this.isMute = isMute
     }
 
     fun prepare() {

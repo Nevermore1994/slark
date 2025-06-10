@@ -111,11 +111,17 @@ void AudioRender::reset() noexcept {
     renderedDataLength_ = 0;
 }
 
+void AudioRender::seek(double time) noexcept {
+    IAudioRender::seek(time);
+    latency_ = 0.0;
+}
+
 void AudioRender::renderEnd() noexcept {
     if (status_ == RenderStatus::Pause) {
         return;
     }
     CheckAudioPlayer();
+    flush();
     NativeAudioPlayer::doAction(
         playerId_,
         AudioPlayerAction::Pause

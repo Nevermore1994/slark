@@ -39,7 +39,7 @@ public:
 
     void reset() noexcept;
     
-    void play() noexcept;
+    void start() noexcept;
 
     void pause() noexcept;
 

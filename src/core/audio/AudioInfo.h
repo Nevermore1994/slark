@@ -119,7 +119,7 @@ public:
         dataFunc_.reset(std::make_shared<RequestAudioDataFunc>(func));
     }
 
-    void seek(double time) noexcept {
+    virtual void seek(double time) noexcept {
         flush();
         renderedDataLength_ = 0;
         offsetTime = Time::TimePoint::fromSeconds(time);
