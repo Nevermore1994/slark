@@ -25,6 +25,7 @@ void loadClassCache(JNIEnv *env) {
         "com/slark/sdk/MediaCodecDecoder",
         "com/slark/sdk/AudioPlayer",
         "com/slark/sdk/AudioPlayer$Action",
+        "com/slark/sdk/AudioPlayer$Config",
     };
     std::for_each(
         classes.begin(),

@@ -271,7 +271,7 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
 
         @JvmStatic
         fun audioPlayerConfig(playerId: String, config: Config, value: Float) {
-            if (!players.contains(playerId)) {
+            if (!players.containsKey(playerId)) {
                 return
             }
             when (config) {

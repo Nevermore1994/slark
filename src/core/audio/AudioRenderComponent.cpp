@@ -102,7 +102,7 @@ std::shared_ptr<AudioInfo> AudioRenderComponent::audioInfo() const noexcept {
     return audioInfo_;
 }
 
-void AudioRenderComponent::play() noexcept {
+void AudioRenderComponent::start() noexcept {
     if (auto pimpl = pimpl_.load()) {
         pimpl->play();
     } else {

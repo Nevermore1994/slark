@@ -127,6 +127,10 @@ void Native_AudioPlayer_setAudioConfig(
         kConfigClass,
         fieldView
     );
+    if (!enumValue) {
+        LogE("not found enum class:{}", fieldView);
+        return;
+    }
     auto audioPlayerClass = JNICache::shareInstance().getClass(
         env,
         kAudioPlayerClass
@@ -136,14 +140,13 @@ void Native_AudioPlayer_setAudioConfig(
         return;
     }
 
-    auto jPlayerId = ToJVM::toString(
-        env,
-        playerId
-    );
+    auto jPlayerId = ToJVM::toString(env, playerId);
     auto signature = JNI::makeJNISignature(
         JNI::Void,
         JNI::String,
-        JNI::makeObject(kConfigClass));
+        JNI::makeObject(kConfigClass),
+        JNI::Float
+    );
     auto methodId = JNICache::shareInstance().getStaticMethodId(
         audioPlayerClass,
         "audioPlayerConfig",

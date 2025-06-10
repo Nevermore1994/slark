@@ -42,7 +42,7 @@ public:
 
     void pushVideoFrameRender(AVFrameRefPtr frame) noexcept override;
 
-    void renderComplete(int32_t textureId) noexcept;
+    void renderFrameComplete(int32_t id) noexcept;
 
 private:
     void requestRenderFrame() noexcept;

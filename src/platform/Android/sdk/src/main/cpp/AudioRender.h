@@ -31,6 +31,8 @@ public:
 
     void renderEnd() noexcept override;
 
+    void seek(double time) noexcept override;
+
     Time::TimePoint playedTime() noexcept override;
 
     const std::string& playerId() const noexcept {

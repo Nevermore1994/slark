@@ -137,7 +137,7 @@ void VideoRender::renderFrame(const AVFrameRefPtr &frame) noexcept {
     }
 }
 
-void VideoRender::renderComplete(int32_t id) noexcept {
+void VideoRender::renderFrameComplete(int32_t id) noexcept {
     std::lock_guard lock(mutex_);
     auto textureId = static_cast<uint32_t>(id);
     if (renderInfos_.contains(textureId)) {

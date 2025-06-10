@@ -391,6 +391,9 @@ void Player::Impl::pushVideoPacketDecode(bool ) noexcept {
     if (!videoDecodeComponent_ || videoPackets_.empty()) {
         return;
     }
+    if (videoPackets_.empty() && demuxer_->isCompleted()) {
+        videoDecodeComponent_->pause();
+    }
     auto& frame = videoPackets_.front();
     if (stats_.isForceVideoRendered || isVideoNeedDecode()) {
         LogI("push video frame pushFrameDecode:{}, dts:{}, pts:{}",
@@ -515,7 +518,7 @@ void Player::Impl::doPlay() noexcept {
     LogI("do play");
     ownerThread_->start();
     if (audioRender_) {
-        audioRender_->play();
+        audioRender_->start();
     }
     if (audioDecodeComponent_) {
         audioDecodeComponent_->start();
@@ -643,14 +646,24 @@ void Player::Impl::doLoop() noexcept {
     if (!demuxer_) {
         return;
     }
+    audioDecodeComponent_->flush();
+    videoDecodeComponent_->flush();
+    audioPackets_.clear();
+    videoPackets_.clear();
     auto seekPos = demuxer_->getSeekToPos(0);
     dataProvider_->seek(seekPos);
     dataProvider_->pause();
     demuxer_->seekPos(seekPos);
+    audioDecodeComponent_->start();
+    videoDecodeComponent_->start();
     if (audioRender_) {
-        audioRender_->seek(0);
+        audioRender_->seek(0.0);
+        audioRender_->start();
     }
-    setVideoRenderTime(0);
+    if (auto render = videoRender_.load()) {
+        render->setTime(Time::TimePoint::fromSeconds(0.0));
+        render->start();
+    }
     seekRequest_.reset();
     isSeekingWhilePlaying_ = false;
     stats_.reset();

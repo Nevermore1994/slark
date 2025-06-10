@@ -153,7 +153,7 @@ Java_com_slark_sdk_EGLRenderThread_swapGLBuffers(
     if (textureId != 0) {
         auto render = VideoRenderManager::shareInstance().find(playerId);
         if (render) {
-            render->renderComplete(textureId);
+            render->renderFrameComplete(textureId);
         } else {
             LogE("failed to find player for playerId: {}",
                  playerId);

@@ -62,10 +62,10 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
             .fillMaxWidth()
             .padding(horizontal = 8.dp)
     ) {
-        val (volumeIcon, volumeSlider, prevBtn, playBtn, nextBtn) = createRefs()
+        val (volumeIcon, volumeSlider, prevBtn, playBtn, nextBtn, loopBtn, muteBtn) = createRefs()
 
         IconButton(
-            onClick = {  },
+            onClick = { viewModel.mute(!viewModel.isMute) },
             modifier = Modifier
                 .size(24.dp)
                 .constrainAs(volumeIcon) {
@@ -74,11 +74,14 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
                     bottom.linkTo(parent.bottom)
                 }
         ) {
-            Icon(
-                painterResource(id = R.drawable.volume),
-                contentDescription = "Volume",
-                tint = Color(0xFFA9A9A9)
-            )
+            Crossfade(targetState = viewModel.isMute, label = "") {
+                Icon(
+                    painterResource(id = if (it) R.drawable.mute else R.drawable.volume),
+                    contentDescription = "Volume",
+                    tint = Color(0xFFA9A9A9)
+                )
+            }
+
         }
 
         CustomSlider(
@@ -146,6 +149,27 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
                 tint = Color(0xFFA9A9A9)
             )
         }
+
+        IconButton(
+            onClick = { viewModel.loop(!viewModel.isLoop) },
+            modifier = Modifier
+                .size(24.dp)
+                .constrainAs(loopBtn) {
+                    start.linkTo(nextBtn.end, margin = 48.dp)
+                    centerVerticallyTo(parent)
+                }
+        ) {
+            Crossfade(targetState = viewModel.isLoop, label = "") {
+                Icon(
+                    painter = painterResource(
+                        id = if (it) R.drawable.loop else R.drawable.stop_loop
+                    ),
+                    contentDescription = "Loop",
+                    tint = Color(0xFFA9A9A9)
+                )
+            }
+        }
+
     }
 }
 
