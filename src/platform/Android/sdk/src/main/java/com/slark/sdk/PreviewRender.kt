@@ -3,21 +3,41 @@ package com.slark.sdk
 
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
+import android.util.Size
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
+import kotlin.math.PI
 
+data class RenderTexture(
+    val textureId: Int,
+    val size: Size
+) {
+    fun isValid(): Boolean {
+        return textureId != 0;
+    }
+
+    companion object {
+        fun default(): RenderTexture {
+            return RenderTexture(0, Size(0, 0))
+        }
+    }
+}
 
 class PreviewRender(): GLSurfaceView.Renderer {
     private var program: Int = 0
     private var positionHandle: Int = 0
     private var textureHandle: Int = 0
     private var texCoordHandle: Int = 0
-    private lateinit var vertexBuffer: FloatBuffer
+    private var rotationHandle: Int = 0
+    private lateinit var texturePos: FloatBuffer
+    private var size: Size = Size(0, 0)
     @Volatile
-    var sharedTextureId: Int = 0
+    var sharedTexture: RenderTexture = RenderTexture.default()
+    @Volatile
+    var rotation: Double = 0.0 //radian
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         do {
@@ -25,15 +45,16 @@ class PreviewRender(): GLSurfaceView.Renderer {
                 positionHandle = GLES20.glGetAttribLocation(program, "aPosition")
                 textureHandle = GLES20.glGetUniformLocation(program, "uTexture")
                 texCoordHandle = GLES20.glGetAttribLocation(program, "aTexCoord")
+                rotationHandle = GLES20.glGetUniformLocation(program, "uRotation")
             }
             if (program == 0) {
                 SlarkLog.e(LOG_TAG, "create program failed")
                 break
             }
-            vertexBuffer = ByteBuffer.allocateDirect(vertexData.size * 4)
+            texturePos = ByteBuffer.allocateDirect(textureData.size * Float.SIZE_BYTES)
                 .order(ByteOrder.nativeOrder())
                 .asFloatBuffer().apply {
-                    put(vertexData)
+                    put(textureData)
                     position(0)
                 }
         } while(false)
@@ -43,41 +64,73 @@ class PreviewRender(): GLSurfaceView.Renderer {
         GLES20.glViewport(0, 0, width, height)
         GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+        size = Size(width, height)
+    }
+
+    fun drawFrame(texture: RenderTexture): Boolean {
+        if (program == 0) {
+            SlarkLog.e(LOG_TAG, "program is invalid")
+            return false
+        }
+        sharedTexture = texture
+        if (!sharedTexture.isValid()) {
+            SlarkLog.e(LOG_TAG, "textureId is invalid")
+            return false
+        }
+        SlarkLog.i(LOG_TAG, "draw video frame:${texture.textureId}")
+        onDrawFrame(null)
+        sharedTexture = RenderTexture.default()
+        return true
     }
 
     override fun onDrawFrame(gl: GL10?) {
-        if (program == 0) {
-            SlarkLog.e(LOG_TAG, "program is invalid")
-            return
-        }
-        if (sharedTextureId == 0) {
-            SlarkLog.e(LOG_TAG, "textureId is invalid")
-            return
-        }
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
         GLES20.glUseProgram(program)
 
-        vertexBuffer.position(0)
-        GLES20.glVertexAttribPointer(positionHandle, 2, GLES20.GL_FLOAT, false, 4 * 4, vertexBuffer)
+        //val bitmap = readTextureToBitmap(sharedTexture) //for debug
+        val contentSize = makeAspectRatioSize(sharedTexture.size, size)
+        var normalizedSize = Pair(0.0f, 0.0f)
+        val corpScale = Pair(contentSize.width.toFloat() / size.width, contentSize.height.toFloat() / size.height)
+        normalizedSize = if (corpScale.first > corpScale.second) {
+            Pair(1.0f, corpScale.second / corpScale.first)
+        } else {
+            Pair(corpScale.first / corpScale.second, 1.0f)
+        }
+
+        val vertexPos = floatArrayOf(
+            -normalizedSize.first, -normalizedSize.second,
+            normalizedSize.first, -normalizedSize.second,
+            -normalizedSize.first, normalizedSize.second,
+            normalizedSize.first, normalizedSize.second
+        )
+        val vertexPosBuffer = ByteBuffer.allocateDirect(vertexPos.size * Float.SIZE_BYTES)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer().apply {
+                put(vertexPos)
+                position(0)
+            }
+        GLES20.glVertexAttribPointer(positionHandle, 2, GLES20.GL_FLOAT, false, 0, vertexPosBuffer)
         GLES20.glEnableVertexAttribArray(positionHandle)
 
-        vertexBuffer.position(2)
-        GLES20.glVertexAttribPointer(texCoordHandle, 2, GLES20.GL_FLOAT, false, 4 * 4, vertexBuffer)
+        texturePos.position(0)
+        GLES20.glVertexAttribPointer(texCoordHandle, 2, GLES20.GL_FLOAT, false, 0, texturePos)
         GLES20.glEnableVertexAttribArray(texCoordHandle)
 
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, sharedTextureId)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, sharedTexture.textureId)
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
         GLES20.glUniform1i(textureHandle, 0)
+        GLES20.glUniform1f(rotationHandle, rotation.toFloat())
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
 
         checkGLStatus("render frame")
         GLES20.glDisableVertexAttribArray(positionHandle)
         GLES20.glDisableVertexAttribArray(texCoordHandle)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
+        SlarkLog.i(LOG_TAG, "draw frame success")
     }
 
     fun release() {
@@ -93,9 +146,14 @@ class PreviewRender(): GLSurfaceView.Renderer {
         const val VERTEX_SHADER_CODE = """
             attribute vec4 aPosition;
             attribute vec2 aTexCoord;
+            uniform float uRotation;
             varying vec2 vTexCoord;
             void main() {
-                gl_Position = aPosition;
+                mat4 rotationMatrix = mat4(cos(uRotation), -sin(uRotation), 0.0, 0.0,
+                                          sin(uRotation),  cos(uRotation), 0.0, 0.0,
+                                          0.0, 0.0, 1.0, 0.0,
+                                          0.0, 0.0, 0.0, 1.0);
+                gl_Position = aPosition * rotationMatrix;
                 vTexCoord = aTexCoord;
             }
         """
@@ -109,12 +167,12 @@ class PreviewRender(): GLSurfaceView.Renderer {
             }
         """
 
-        val vertexData = floatArrayOf(
-            // X, Y,      U, V
-            -1f, -1f,     0f, 0f,
-            1f, -1f,     1f, 0f,
-            -1f,  1f,     0f, 1f,
-            1f,  1f,     1f, 1f,
+        //fbo
+        val textureData = floatArrayOf(
+            0f, 0f,
+            1f, 0f,
+            0f, 1f,
+            1f, 1f,
         )
     }
 

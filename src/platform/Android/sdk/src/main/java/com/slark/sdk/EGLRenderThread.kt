@@ -1,6 +1,7 @@
 package com.slark.sdk
 
 import android.view.Surface
+import android.util.Size
 
 class EGLRenderThread(
     private val surface: Surface,
@@ -14,7 +15,7 @@ class EGLRenderThread(
 
     private val lock = Object()
     @Volatile
-    private var pendingTextureId: Int = 0
+    private var pendingTexture: RenderTexture = RenderTexture.default()
     @Volatile
     private var hasRenderRequest = false
 
@@ -41,9 +42,11 @@ class EGLRenderThread(
             }
             if (!running) break
 
-            renderer.sharedTextureId = pendingTextureId
-            renderer.onDrawFrame(null)
-            swapGLBuffers(playerId, pendingTextureId)
+            if(renderer.drawFrame(pendingTexture)) {
+                swapGLBuffers(playerId, pendingTexture.textureId)
+            } else {
+                SlarkLog.e(LOG_TAG, "render error:{}", pendingTexture.textureId)
+            }
         }
 
         renderer.release()
@@ -51,11 +54,10 @@ class EGLRenderThread(
         surface.release()
     }
 
-
-    fun render(textureId: Int) {
-        SlarkLog.e(LOG_TAG, "render textureId: $textureId")
+    fun render(textureId: Int, width: Int, height: Int) {
+        SlarkLog.i(LOG_TAG, "render textureId: $textureId")
         synchronized(lock) {
-            pendingTextureId = textureId
+            pendingTexture = RenderTexture(textureId, Size(width, height))
             hasRenderRequest = true
             lock.notify()
         }

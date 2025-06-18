@@ -94,6 +94,8 @@ public:
         return manager_;
     }
 
+    static void releaseResource(std::unique_ptr<Texture> texture) noexcept;
+
 private:
     uint32_t width_;
     uint32_t height_;

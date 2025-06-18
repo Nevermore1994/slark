@@ -24,7 +24,6 @@ void RawDecoder::close() noexcept {
 }
 
 DecoderErrorCode RawDecoder::decode(AVFrameRefPtr& frame) noexcept {
-    frame->stats.decodedStamp = Time::nowTimeStamp().point();
     invokeReceiveFunc(std::move(frame));
     return DecoderErrorCode::Success;
 }

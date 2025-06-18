@@ -13,6 +13,7 @@ import com.slark.api.SlarkPlayerConfig
 import com.slark.api.SlarkPlayerObserver
 import com.slark.api.SlarkPlayerState
 import com.slark.api.SlarkRenderTarget
+import kotlin.math.ceil
 
 
 class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: String): SlarkPlayer {
@@ -63,8 +64,9 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
         SlarkPlayerManager.removePlayer(playerId)
     }
 
-    override fun seekTo(time: Double) {
-        SlarkPlayerManager.seek(playerId, time)
+    override fun seekTo(time: Double, isAccurate: Boolean) {
+        val t = ceil(time * 1000) / 1000.0
+        SlarkPlayerManager.seek(playerId, t, isAccurate)
     }
 
     override fun setObserver(observer: SlarkPlayerObserver?) {
@@ -110,8 +112,8 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
         return playerObserver
     }
 
-    fun requestRender(textureRenderId: Int) {
-        renderThread?.render(textureRenderId)
+    fun requestRender(textureRenderId: Int, width: Int, height: Int) {
+        renderThread?.render(textureRenderId, width, height)
     }
 
     private fun onSurfaceAvailable(surface: Surface, width: Int, height: Int) {

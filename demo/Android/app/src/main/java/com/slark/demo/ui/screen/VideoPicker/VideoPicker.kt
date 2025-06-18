@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
 import java.util.Locale
+import kotlin.math.round
 
 data class VideoItem(
     val uri: Uri,
@@ -42,7 +43,7 @@ fun queryAllVideos(context: Context): List<VideoItem> {
 }
 
 fun formatDuration(ms: Long): String {
-    val totalSec = ms / 1000
+    val totalSec = round(ms / 1000.0).toInt()
     val min = totalSec / 60
     val sec = totalSec % 60
     return String.format(Locale.ENGLISH, "Video length:%02d:%02d", min, sec)

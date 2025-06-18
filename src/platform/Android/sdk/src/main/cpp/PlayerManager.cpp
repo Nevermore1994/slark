@@ -369,14 +369,15 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_seek(
     JNIEnv *env,
     jobject /*thiz*/,
     jstring jPlayerId,
-    jdouble time
+    jdouble time,
+    jboolean isAccurate
 ) {
     auto playerId = JNI::FromJVM::toString(
         env,
         jPlayerId
     );
     if (auto player = PlayerManager::shareInstance().find(playerId)) {
-        player->seek(time);
+        player->seek(time, static_cast<bool>(isAccurate));
     } else {
         LogE("not found player, {}",
              playerId);

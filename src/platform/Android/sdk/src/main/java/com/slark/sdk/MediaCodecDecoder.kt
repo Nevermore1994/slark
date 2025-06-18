@@ -39,6 +39,7 @@ class MediaCodecDecoder(
     private var decoder: MediaCodec? = null
     private var isRunning: Boolean = false
     private var surface: RenderSurface? = null
+    private var isCompleted: Boolean = false
 
     enum class Action {
         Flush,
@@ -87,6 +88,11 @@ class MediaCodecDecoder(
             errorCode = ErrorCode.NotStart
             return errorCode.ordinal
         }
+        if (isCompleted) {
+            errorCode = ErrorCode.InputDataError
+            SlarkLog.e(LOG_TAG, "$mediaInfo coder is completed")
+            return errorCode.ordinal
+        }
 
         execute {
             val inputBufferIndex =
@@ -122,6 +128,7 @@ class MediaCodecDecoder(
             val info = MediaCodec.BufferInfo()
             val outputBufferIndex =
                 decoder?.dequeueOutputBuffer(info, 10_000) ?: return@execute //10 ms
+            isCompleted = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
             @Suppress("DEPRECATION")
             when (outputBufferIndex) {
                 MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
@@ -131,6 +138,7 @@ class MediaCodecDecoder(
                 }
                 MediaCodec.INFO_TRY_AGAIN_LATER -> {
                     SlarkLog.i(LOG_TAG, mediaInfo + "no output buffer available")
+                    //TODO: return to native
                     return@execute
                 }
                 MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED -> {
@@ -140,6 +148,7 @@ class MediaCodecDecoder(
                 }
                 else -> {
                     if (format.isVideoFormat() && decodeMode == DecodeMode.Texture) {
+                        SlarkLog.i(LOG_TAG, "decoded video pts: ${info.presentationTimeUs}")
                         decoder?.releaseOutputBuffer(outputBufferIndex, true)
                     } else {
                         val outputBuffer =
@@ -148,7 +157,10 @@ class MediaCodecDecoder(
                         outputBuffer.limit(info.size + info.offset)
                         val decodeData = extractBytes(outputBuffer)
                         outputBuffer.clear()
-                        processRawData(decoderId, decodeData, info.presentationTimeUs)
+                        if (isCompleted) {
+                            SlarkLog.i(LOG_TAG, "$mediaInfo decode completed")
+                        }
+                        processRawData(decoderId, decodeData, info.presentationTimeUs, isCompleted)
                         decoder?.releaseOutputBuffer(outputBufferIndex, false)
                     }
                     return@execute
@@ -167,6 +179,9 @@ class MediaCodecDecoder(
 
     fun flush() {
         decoder?.flush()
+        isCompleted = false
+        val mediaInfo =  if (format.isVideoFormat()) "video " else "audio "
+        SlarkLog.i(LOG_TAG, "$mediaInfo flush decoder")
     }
 
     fun isValid(): Boolean {
@@ -194,13 +209,14 @@ class MediaCodecDecoder(
             if (res.first) {
                 it.drawFrame(format, Size(width, height))
                 // set high bit to indicate frame available
-                return 1L shl 63 or (res.second and 0x7FFFFFFFFFFFFFFF)
+                val flag = (1L shl 63) or ((if (isCompleted) 1L else 0L) shl 62)
+                return flag or (res.second and 0x3FFFFFFFFFFFFFFF)
             }
         }
-        return 0L
+        return (0L shl 63) or ((if (isCompleted) 1L else 0L) shl 62)
     }
 
-    private external fun processRawData(decoderId: String, byteBuffer: ByteArray, presentationTimeUs: Long)
+    private external fun processRawData(decoderId: String, byteBuffer: ByteArray, presentationTimeUs: Long, isCompleted: Boolean)
 
     companion object {
         const val LOG_TAG = "MediaCodec"

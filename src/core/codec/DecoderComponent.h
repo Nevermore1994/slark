@@ -34,13 +34,32 @@ public:
         return pendingDecodeQueue_.empty();
     }
 
+    bool isInputCompleted() noexcept {
+        return isInputCompleted_;
+    }
+
+    void setInputCompleted() noexcept {
+        isInputCompleted_ = true;
+        decodeWorker_.start();
+    }
+
+    bool isRunning() noexcept {
+        return decodeWorker_.isRunning();
+    }
+
+    bool isDecodeCompleted() noexcept;
+
     AVFrameRefPtr requestDecodeFrame(bool isBlocking) noexcept override;
+
 private:
     void pushFrameDecode();
 
     AVFrameRefPtr peekDecodeFrame() noexcept;
+
+    static AVFrameRefPtr buildEOSFrame(bool isVideo) noexcept;
 private:
     std::atomic_bool isOpened_ = false;
+    std::atomic_bool isInputCompleted_ = false;
     DecoderReceiveFunc callback_;
     Synchronized<std::shared_ptr<IDecoder>> decoder_;
     Thread decodeWorker_;

@@ -24,7 +24,9 @@ public:
 
     void close() noexcept override;
 
-    virtual void decodeComplete(DataPtr data, int64_t pts) noexcept = 0;
+    virtual void receiveDecodedData(DataPtr data,
+                                    int64_t pts,
+                                    bool isCompleted) noexcept = 0;
 
 protected:
     std::string decoderId_;

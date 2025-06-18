@@ -36,20 +36,25 @@ DecoderErrorCode VideoHardwareDecoder::sendPacket(
     } else if (frameInfo->isEndOfStream) {
         flag = NativeDecodeFlag::EndOfStream;
     }
+    auto inputPts = int64_t(frame->ptsTime() * 1000000); // convert to microseconds
     auto res = NativeHardwareDecoder::sendPacket(
         decoderId_,
         frame->data,
-        int64_t(frame->ptsTime() * 1000000), // convert to microseconds
+        inputPts,
         flag
     );
     if (res != DecoderErrorCode::Success) {
         LogE("send video packet failed, {}",
              static_cast<int>(res));
     } else {
-        LogI("send video packet success, pts:{}, dts:{}",
-             frame->pts,
-             frame->dts
+        LogI("send video packet success, pts:{}, dts:{}, isDiscard:{}",
+             frame->ptsTime(),
+             frame->dtsTime(),
+             frame->isDiscard
         );
+        if (frame->isDiscard) {
+            discardPackets_.insert(inputPts);
+        }
     }
     return res;
 }
@@ -70,9 +75,10 @@ DecoderErrorCode VideoHardwareDecoder::decodeByteBufferMode(
     return res;
 }
 
-void VideoHardwareDecoder::decodeComplete(
+void VideoHardwareDecoder::receiveDecodedData(
     DataPtr data,
-    int64_t pts
+    int64_t pts,
+    bool isCompleted
 ) noexcept {
     if (!data || data->empty()) {
         LogE("data is empty");
@@ -89,6 +95,7 @@ void VideoHardwareDecoder::decodeComplete(
     videoFrameInfo->height = videoConfig->height;
     frame->info = std::move(videoFrameInfo);
     invokeReceiveFunc(std::move(frame));
+    isCompleted_ = isCompleted;
 }
 
 DecoderErrorCode VideoHardwareDecoder::decodeTextureMode(
@@ -100,13 +107,19 @@ DecoderErrorCode VideoHardwareDecoder::decodeTextureMode(
     }
     context_->attachContext(surface_);
     auto res = sendPacket(frame);
-    requestVideoFrame();
+    requestDecodeVideoFrame();
     context_->detachContext();
     return res;
 }
 
-void VideoHardwareDecoder::requestVideoFrame() noexcept {
-    constexpr int64_t kWaitTime = 10; // 10ms
+void VideoHardwareDecoder::flush() noexcept {
+    NativeDecoder::flush();
+    discardPackets_.clear();
+    isCompleted_ = false;
+}
+
+void VideoHardwareDecoder::requestDecodeVideoFrame() noexcept {
+    constexpr int64_t kWaitTime = 3; // 10ms
     constexpr int32_t kMaxRetryCount = 3;
     auto videoConfig = std::dynamic_pointer_cast<VideoDecoderConfig>(config_);
     auto frameBuffer = frameBufferPool_->acquire(
@@ -133,6 +146,7 @@ void VideoHardwareDecoder::requestVideoFrame() noexcept {
     }
     int32_t retryCount = 0;
     bool isSuccess = false;
+    bool isCompleted = false;
     int64_t pts = 0;
     do {
         retryCount++;
@@ -143,27 +157,48 @@ void VideoHardwareDecoder::requestVideoFrame() noexcept {
             videoConfig->height
         );
         isSuccess = (packed & (1ULL << 63)) != 0;
-        pts = static_cast<int64_t>(packed) & 0x7FFFFFFFFFFFFFFF;
+        isCompleted = (packed & (1ULL << 62)) != 0;
+        pts = static_cast<int64_t>(packed) & 0x3FFFFFFFFFFFFFFF;
         if (!isSuccess) {
-            LogE("request video frame failed:{}",
+            LogE("decode video frame failed:{}",
                  retryCount);
         } else {
-            LogI("request video frame success:{}",
-                 pts);
+            LogI("decode video frame success:{}, {}",
+                 pts,
+                 frameBuffer->texture()->textureId());
             break;
         }
-    } while (!isSuccess && retryCount < kMaxRetryCount);
+    } while (retryCount < kMaxRetryCount);
+    frameBuffer->unbind(true);
+    isCompleted_ = isCompleted;
     if (!isSuccess) {
-        LogE("request video frame failed after {} retries",
+        LogE("request decode video frame failed after {} retries",
              retryCount);
         return;
     }
-    auto frame = std::make_unique<AVFrame>(AVFrameType::Video);
+    if (discardPackets_.contains(pts)) {
+        auto texture = frameBuffer->detachTexture(); //discard
+        auto manager = texture->manager().lock();
+        if (manager) {
+            manager->restore(std::move(texture));
+        }
+        discardPackets_.erase(pts);
+        LogI("decode success, discard:{}", pts);
+        return;
+    }
+    auto* framePtr = new AVFrame(AVFrameType::Video);
+    auto frame = std::shared_ptr<AVFrame>(framePtr, [](AVFrame* frame) {
+        if (auto videoFrameInfo = std::dynamic_pointer_cast<VideoFrameInfo>(frame->info);
+            videoFrameInfo && videoFrameInfo->format == FrameFormat::MediaCodecSurface && frame->opaque) {
+            Texture::releaseResource(TexturePtr(static_cast<Texture*>(frame->opaque)));
+            frame->opaque = nullptr;
+        }
+        delete frame;
+    });
     frame->pts = pts;
-    frame->timeScale = 1000; //ms
+    frame->timeScale = 1000000; //us
     auto texture = frameBuffer->detachTexture();
     frame->opaque = texture.release();
-    frameBuffer->unbind(true);
     auto videoFrameInfo = std::make_shared<VideoFrameInfo>();
     videoFrameInfo->width = videoConfig->width;
     videoFrameInfo->height = videoConfig->height;

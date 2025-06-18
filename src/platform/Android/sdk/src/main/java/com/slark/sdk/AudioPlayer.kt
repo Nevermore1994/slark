@@ -4,11 +4,12 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.newSingleThreadContext
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.ConcurrentHashMap
@@ -43,6 +44,10 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
     private var wrapCount: Long = 0
     private var isCompleted = false
     private var audioJob: Job? = null
+    private var writeSize: Long = 0
+    private val bytesPerFrame = channelCount * 2 //16 bit pcm
+    @OptIn(DelicateCoroutinesApi::class)
+    private val pullDataDispatcher = newSingleThreadContext("AudioDataThread")
     init {
         lock.withLock {
             try {
@@ -93,7 +98,6 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
             .build()
     }
 
-    //100ms pull data period
     private fun requestDataSize(): Int {
         return (PULL_DATA_PERIOD / 1000.0 * sampleRate).toInt()
     }
@@ -111,52 +115,71 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
     }
 
     fun write(data: ByteArray): Int {
-        return audioTrack?.let { track ->
-            try {
-                track.write(data, 0, data.size, AudioTrack.WRITE_NON_BLOCKING)
-            } catch (e: IllegalStateException) {
-                SlarkLog.e(LOG_TAG,"AudioTrack write failed: ${e.message}")
-                AudioTrack.ERROR
-            }
-        } ?: AudioTrack.ERROR
+        lock.withLock {
+            return audioTrack?.let { track ->
+                try {
+                    track.write(data, 0, data.size, AudioTrack.WRITE_BLOCKING)
+                } catch (e: IllegalStateException) {
+                    SlarkLog.e(LOG_TAG,"AudioTrack write failed: ${e.message}")
+                    AudioTrack.ERROR
+                }
+            } ?: AudioTrack.ERROR
+        }
     }
 
     fun pause() {
-        if (audioTrack?.playState == AudioTrack.PLAYSTATE_PAUSED ||
-            audioTrack?.playState == AudioTrack.PLAYSTATE_STOPPED ) {
-            return
-        }
         audioJob?.cancel()
         audioJob = null
-        audioTrack?.pause()
+        lock.withLock {
+            audioTrack?.let { track ->
+                if (track.playState == AudioTrack.PLAYSTATE_PAUSED ||
+                    track.playState == AudioTrack.PLAYSTATE_STOPPED ) {
+                    return
+                }
+                track.pause()
+            }
+        }
     }
 
     fun play() {
-        if (audioTrack?.playState == AudioTrack.PLAYSTATE_PLAYING) {
-            return
+        lock.withLock {
+            audioTrack?.let { track->
+                if (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
+                    return
+                }
+                track.play()
+            }
+
         }
-        audioTrack?.play()
-        audioJob = CoroutineScope(Dispatchers.Default).launch {
+        audioJob = CoroutineScope(pullDataDispatcher).launch {
             while (!isCompleted && isActive) {
                 val available = getAvailableSpace()
-                val requestSize = requestDataSize()
                 if (available < requestDataSize()) {
-                    delay(50)
+                    SlarkLog.i(LOG_TAG, "audio track pos: ${audioTrack?.playbackHeadPosition}," +
+                        " state: ${audioTrack?.playState}")
+                    delay(25)
                     continue // Not enough space to write data
                 }
-                val buffer = ByteBuffer.allocateDirect(requestSize)
+                val buffer = ByteBuffer.allocateDirect(available)
                 buffer.order(ByteOrder.nativeOrder())
                 val result = requestAudioData(playerId, buffer)
                 val flag = DataFlag.fromInt(result shr 24)
-                var writeSize = result and 0x00FFFFFF
+                var getSize = result and 0x00FFFFFF
                 buffer.position(0)
-                buffer.limit(writeSize)
+                buffer.limit(getSize)
                 when (flag) {
                     DataFlag.Normal -> {
-                        write(extractBytes(buffer))
+                        val res = write(extractBytes(buffer))
+                        if (res > 0) {
+                            writeSize += res
+                            SlarkLog.i(LOG_TAG, "write audio data:$res")
+                        } else {
+                            SlarkLog.i(LOG_TAG, "write audio error:$res")
+                        }
                     }
                     DataFlag.EndOfStream -> {
                         isCompleted = true
+                        SlarkLog.e(LOG_TAG, "render audio completed")
                     }
                     DataFlag.Silence -> {
                         write(ByteArray(available){0})
@@ -166,8 +189,7 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
                         isCompleted = true
                     }
                 }
-
-                delay(20)
+                delay(10)
             }
         }
     }
@@ -189,28 +211,43 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
     }
 
     fun flush() {
-        audioTrack?.flush()
+        lock.withLock {
+            audioTrack?.let { track ->
+                track.flush()
+                track.release()
+            }
+            initAudioTrack()
+        }
         lastRawPosition = 0
         wrapCount = 0
+        writeSize = 0
     }
 
     fun setVolume(vol: Float) {
-        audioTrack?.setVolume(vol)
+        lock.withLock {
+            audioTrack?.setVolume(vol)
+        }
     }
 
     fun setPlayRate(rate: Float) {
-        val params = audioTrack?.playbackParams
-        if (params != null) {
-            params.setSpeed(rate).setPitch(1.0f)
-            audioTrack?.playbackParams = params
+        lock.withLock {
+            val params = audioTrack?.playbackParams
+            if (params != null) {
+                params.setSpeed(rate).setPitch(1.0f)
+                audioTrack?.playbackParams = params
+            }
         }
     }
 
     fun getAvailableSpace(): Int {
-        return audioTrack?.let { track ->
-            val written = track.playbackHeadPosition
-            bufferSize - (written % bufferSize)
-        } ?: 0
+        var playedFrames = 0
+        lock.withLock {
+            playedFrames = audioTrack?.playbackHeadPosition ?: return@withLock 0
+        }
+        val playedBytes = playedFrames * bytesPerFrame
+        val bufferedBytes = writeSize - playedBytes
+        val available = bufferSize - bufferedBytes
+        return available.coerceAtLeast(0).toInt()
     }
 
     private fun getAbsolutePosition(currentRawPosition: Int): Long {
@@ -222,16 +259,18 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
     }
 
     fun getPlaybackPositionInUs(): Long {
-        return audioTrack?.let { track ->
-            val frames = getAbsolutePosition(track.playbackHeadPosition)
-            (frames * 1000000L) / sampleRate
-        } ?: 0L
+        lock.withLock {
+            return audioTrack?.let { track ->
+                val frames = getAbsolutePosition(track.playbackHeadPosition)
+                (frames * 1000000L) / sampleRate
+            } ?: 0L
+        }
     }
 
     external fun requestAudioData(playerId: String, requestBuffer: ByteBuffer): Int
 
     companion object {
-        const val PULL_DATA_PERIOD = 100 //ms
+        const val PULL_DATA_PERIOD = 50 //ms
         const val BUFFER_TIME_SIZE = 200 //ms
         const val LOG_TAG = "AudioPlayer"
         private val players = ConcurrentHashMap<String, AudioPlayer>()

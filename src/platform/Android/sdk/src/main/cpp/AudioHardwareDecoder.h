@@ -20,6 +20,8 @@ public:
 
     bool open(std::shared_ptr<DecoderConfig> config) noexcept override;
 
+    void flush() noexcept override;
+
     inline static const DecoderTypeInfo &info() noexcept {
         static DecoderTypeInfo info = {
             DecoderType::RAW,
@@ -28,7 +30,11 @@ public:
         return info;
     }
 
-    void decodeComplete(DataPtr data, int64_t pts) noexcept override;
+    void receiveDecodedData(
+        DataPtr data,
+        int64_t pts,
+        bool isCompleted
+    ) noexcept override;
 };
 
 } // slark

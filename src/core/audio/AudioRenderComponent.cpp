@@ -8,7 +8,7 @@
 #include <utility>
 #include "AudioRenderComponent.h"
 #include "Log.hpp"
-#include "MediaBase.h"
+#include "MediaUtil.h"
 
 namespace slark {
 
@@ -61,6 +61,7 @@ void AudioRenderComponent::init() noexcept {
             return size;
         } else {
             LogE("request audio failed:{}", size);
+            isFull_ = false;
         }
         return 0u;
     });
@@ -135,6 +136,10 @@ void AudioRenderComponent::setVolume(float volume) noexcept {
 }
 
 void AudioRenderComponent::flush() noexcept {
+    if (audioBuffer_) {
+        audioBuffer_->reset();
+    }
+    isFull_ = false;
     if (auto pimpl = pimpl_.load()) {
         pimpl->flush();
     } else {
@@ -146,6 +151,7 @@ void AudioRenderComponent::seek(double time) noexcept {
     if (audioBuffer_) {
         audioBuffer_->reset();
     }
+    isFull_ = false;
     if (auto pimpl = pimpl_.load()) {
         pimpl->seek(time);
     } else {

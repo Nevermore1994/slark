@@ -22,7 +22,7 @@ DecoderErrorCode Native_HardwareDecoder_sendPacket(
     NativeDecodeFlag flag,
     bool isVideo
 ) {
-    if (data == nullptr || data->empty()) {
+    if ((data == nullptr || data->empty()) && flag != NativeDecodeFlag::EndOfStream) {
         LogE("data error");
         return DecoderErrorCode::InputDataError;
     }
@@ -54,19 +54,23 @@ DecoderErrorCode Native_HardwareDecoder_sendPacket(
         env,
         nullptr
     );
-    if (isVideo) {
-        // For video, need to prepend NALU header, Annex b format
-        Data naluHeader(4);
-        naluHeader.rawData[0] = 0x00;
-        naluHeader.rawData[1] = 0x00;
-        naluHeader.rawData[2] = 0x00;
-        naluHeader.rawData[3] = 0x01;
-        naluHeader.length = 4;
-        byteArray = ToJVM::toNaluByteArray(env, data->view());
+    if (flag != NativeDecodeFlag::EndOfStream) {
+        if (isVideo) {
+            // For video, need to prepend NALU header, Annex b format
+            Data naluHeader(4);
+            naluHeader.rawData[0] = 0x00;
+            naluHeader.rawData[1] = 0x00;
+            naluHeader.rawData[2] = 0x00;
+            naluHeader.rawData[3] = 0x01;
+            naluHeader.length = 4;
+            byteArray = ToJVM::toNaluByteArray(env, data->view());
+        } else {
+            // For audio, use the raw data directly
+            auto view = data->view();
+            byteArray = ToJVM::toByteArray(env, data->view());
+        }
     } else {
-        // For audio, use the raw data directly
-        auto view = data->view();
-        byteArray = ToJVM::toByteArray(env, data->view());
+        byteArray = ToJVM::toByteArray(env, DataView());
     }
 
     auto jDecodeId = ToJVM::toString(
@@ -301,7 +305,8 @@ Java_com_slark_sdk_MediaCodecDecoder_processRawData(
     jobject /* thiz */,
     jstring jDecoderId,
     jbyteArray byteBuffer,
-    jlong pts
+    jlong pts,
+    jboolean isCompleted
 ) {
     using namespace slark;
     LogI("native decode success:{}",
@@ -321,9 +326,10 @@ Java_com_slark_sdk_MediaCodecDecoder_processRawData(
         env,
         byteBuffer
     );
-    decoder->decodeComplete(
+    decoder->receiveDecodedData(
         std::move(dataPtr),
-        pts
+        pts,
+        (JNI_TRUE == isCompleted)
     );
 }
 

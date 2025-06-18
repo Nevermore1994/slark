@@ -100,6 +100,8 @@ public:
     }
     
     bool probeMoovBox(Buffer& buffer, int64_t& start, uint32_t& size) noexcept;
+
+    ///debug info
     [[nodiscard]] std::string description() const noexcept;
 private:
     bool parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept;

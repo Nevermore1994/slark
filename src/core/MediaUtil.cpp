@@ -5,7 +5,7 @@
 //
 
 #include <regex>
-#include "MediaBase.h"
+#include "MediaUtil.h"
 #include "Log.hpp"
 #include "VideoInfo.h"
 
@@ -15,26 +15,34 @@ namespace slark {
 
 constexpr uint32_t kInvalidPos = static_cast<uint32_t>(std::string_view::npos);
 
-bool isNetworkLink(const std::string& path) noexcept {
+bool isNetworkLink(
+    const std::string& path
+) noexcept {
     constexpr std::string_view kHttpRegex = "^(http|https):\\/\\/.*";
     std::regex regex(kHttpRegex.data());
     return std::regex_match(path, regex);
 }
 
-bool isHlsLink(const std::string& url) noexcept {
+bool isHlsLink(
+    const std::string& url
+) noexcept {
     const std::regex hlsRegex(R"(^(http|https)://.*\.m3u8(\?.*)?$)", std::regex::icase);
     return std::regex_match(url, hlsRegex);
 }
 
-AudioProfile getAudioProfile(uint8_t profile) {
-    if (profile == 3 || profile >= 7) {
+AudioProfile getAudioProfile(
+    uint8_t profile
+) noexcept {
+    if ((profile < 1 || profile >= 6) && profile != 29) {
         return AudioProfile::AAC_LC;
     }
     auto aacProfile = static_cast<AudioProfile>(profile);
     return aacProfile;
 }
 
-int32_t getAACSamplingRate(int32_t index) {
+int32_t getAACSamplingRate(
+    int32_t index
+) noexcept {
     static const std::unordered_map<int32_t, int32_t> samplingRateTable = {
             {0, 96000}, {1, 88200}, {2, 64000}, {3, 48000},
             {4, 44100}, {5, 32000}, {6, 24000}, {7, 22050},
@@ -50,7 +58,9 @@ int32_t getAACSamplingRate(int32_t index) {
     }
 }
 
-uint32_t findNaluStartCode(DataView dataView) noexcept {
+uint32_t findNaluStartCode(
+    DataView dataView
+) noexcept {
     static const auto func = [](DataView view) {
         uint32_t p = 0;
         while(p + 2 < view.length()) {
@@ -70,7 +80,10 @@ uint32_t findNaluStartCode(DataView dataView) noexcept {
     return pos;
 }
 
-bool findNaluUnit(DataView dataView, Range& range) noexcept {
+bool findNaluUnit(
+    DataView dataView,
+    Range& range
+) noexcept {
     auto start = findNaluStartCode(dataView);
     if (start == kInvalidPos) {
         return false;
@@ -86,7 +99,9 @@ bool findNaluUnit(DataView dataView, Range& range) noexcept {
     return true;
 }
 
-std::tuple<uint32_t, uint32_t> parseSliceType(DataView naluView) noexcept {
+std::tuple<uint32_t, uint32_t> parseSliceType(
+    DataView naluView
+) noexcept {
     using namespace Util;
     int32_t offset = 0;
     auto sliceView = naluView.substr(1);//skip nalu header
@@ -95,7 +110,10 @@ std::tuple<uint32_t, uint32_t> parseSliceType(DataView naluView) noexcept {
     return {firstMBInSlice, sliceType};
 }
 
-void parseHrd(DataView bitstream, int32_t& offset) {
+void parseHrd(
+    DataView bitstream,
+    int32_t& offset
+) {
     using namespace Util;
     auto cpbCntMinus1 = Golomb::readUe(bitstream, offset);
     offset += 4; // bit_rate_scale
@@ -112,7 +130,10 @@ void parseHrd(DataView bitstream, int32_t& offset) {
     offset += 5;
 }
 
-double parseH264Vui(DataView bitstream, int32_t& offset) {
+double parseH264Vui(
+    DataView bitstream,
+    int32_t& offset
+) {
     using namespace Util;
     double fps = 0.0;
     do {
@@ -186,7 +207,10 @@ double parseH264Vui(DataView bitstream, int32_t& offset) {
 }
 
 // Modify parseSps to call parseVui
-void parseH264Sps(DataView bitstream, const std::shared_ptr<VideoInfo>& videoInfo) noexcept {
+void parseH264Sps(
+    DataView bitstream,
+    const std::shared_ptr<VideoInfo>& videoInfo
+) noexcept {
     using namespace Util;
     bitstream = bitstream.substr(1); //skip header
     int32_t offset = 0;
@@ -309,7 +333,12 @@ double parseH265Vui(DataView bitstream, int32_t& offset) noexcept {
     return 0;
 }
 
-void profileTierLevel(DataView bitstream, int32_t& offset, uint8_t profilePresentFlag, uint32_t maxNumSubLayersMinus) {
+void profileTierLevel(
+    DataView bitstream,
+    int32_t& offset,
+    uint8_t profilePresentFlag,
+    uint32_t maxNumSubLayersMinus
+) {
     using namespace Util;
     if (profilePresentFlag) {
         offset += 2; // general_profile_space
@@ -362,7 +391,10 @@ void profileTierLevel(DataView bitstream, int32_t& offset, uint8_t profilePresen
     }
 }
 
-void parseH265Sps(DataView bitstream, const std::shared_ptr<VideoInfo>& videoInfo) noexcept {
+void parseH265Sps(
+    DataView bitstream,
+    const std::shared_ptr<VideoInfo>& videoInfo
+) noexcept {
     using namespace Util;
     int32_t offset = 0;
     offset += 8;//skip header

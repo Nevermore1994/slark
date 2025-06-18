@@ -10,13 +10,14 @@
 #include "Mp4Demuxer.h"
 #include "HLSDemuxer.h"
 #include "HLSReader.h"
-#include "MediaBase.h"
+#include "MediaUtil.h"
 #include <regex>
+#include <utility>
 
 namespace slark {
 
 PlayerImplHelper::PlayerImplHelper(std::weak_ptr<Player::Impl> player)
-    : player_(player) {
+    : player_(std::move(player)) {
     
 }
 
@@ -127,6 +128,51 @@ void PlayerImplHelper::resetProbeData() noexcept {
 
 DataView PlayerImplHelper::probeView() const noexcept {
     return probeBuffer_->view();
+}
+
+bool PlayerImplHelper::isLongStanceSeek(
+    double playedTime,
+    double demuxedTime,
+    double targetTime
+) noexcept {
+    if (playedTime >= targetTime) {
+        return true;
+    }
+    //获取key time
+}
+
+bool PlayerImplHelper::seekToLastAvailableKeyframe(
+    double targetTime
+) noexcept {
+    auto player = player_.lock();
+    if (!player) {
+        return false;
+    }
+    auto& packets = player->videoPackets_;
+    constexpr int64_t kInvalid = -1;
+    int64_t lastKeyFramePts = kInvalid;
+    double lastKeyFrameTime = 0.0;
+    for (auto& packet: packets | std::views::reverse) {
+        auto ptsTime = packet->ptsTime();
+        if (ptsTime < targetTime) {
+            packet->isDiscard = true;
+        }
+        if (auto videoFrameInfo = std::dynamic_pointer_cast<VideoFrameInfo>(packet->info)) {
+            if (videoFrameInfo->isIDRFrame && ptsTime <= targetTime) {
+                lastKeyFramePts = packet->pts;
+                lastKeyFrameTime = ptsTime;
+                break;
+            }
+        }
+    }
+
+    if (lastKeyFramePts != kInvalid) {
+        std::erase_if(packets, [&lastKeyFramePts](auto& frame) {
+            return frame->pts < lastKeyFramePts;
+        });
+    }
+    LogI("key frame pts time:{}", lastKeyFrameTime);
+    return lastKeyFramePts != kInvalid;
 }
 
 }

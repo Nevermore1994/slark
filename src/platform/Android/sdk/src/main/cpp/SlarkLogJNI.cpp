@@ -10,18 +10,11 @@ Java_com_slark_sdk_SlarkLog_00024Companion_nativeLog(
     jstring message
 ) {
     using namespace slark;
-    const char *nativeMessage = env->GetStringUTFChars(
-        message,
-        nullptr
-    );
+    auto logStr = JNI::FromJVM::toString(env, message);
     outputLog(
         LogType::Record,
-        "{}",
-        nativeMessage
-    );
-    env->ReleaseStringUTFChars(
-        message,
-        nativeMessage
+        "{}\n",
+        logStr
     );
 }
 

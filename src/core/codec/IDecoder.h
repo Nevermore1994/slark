@@ -110,6 +110,10 @@ public:
         provider_ = std::move(provider);
     }
 
+    bool isCompleted() const noexcept {
+        return isCompleted_ ;
+    }
+
 protected:
     void invokeReceiveFunc(AVFrameRefPtr frame) noexcept {
         if (auto func = receiveFunc_.load()) {
@@ -118,6 +122,7 @@ protected:
     }
 protected:
     std::atomic_bool isOpen_ = false;
+    std::atomic_bool isCompleted_ = false;
     std::shared_ptr<DecoderDataProvider> provider_;
     AtomicSharedPtr<DecoderReceiveFunc> receiveFunc_;
     DecoderType decoderType_ = DecoderType::Unknown;

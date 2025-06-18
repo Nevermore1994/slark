@@ -122,8 +122,8 @@ public:
     virtual void seek(double time) noexcept {
         flush();
         renderedDataLength_ = 0;
-        offsetTime = Time::TimePoint::fromSeconds(time);
-        clock_.setTime(offsetTime);
+        offsetTime_ = Time::TimePoint::fromSeconds(time);
+        clock_.setTime(offsetTime_);
     }
 
     uint32_t requestAudioData(uint8_t* data, uint32_t size, AudioDataFlag& flag) noexcept {
@@ -131,7 +131,7 @@ public:
             auto getSize = std::invoke(*func, data, size, flag);
             if (getSize != 0) {
                 renderedDataLength_ += getSize;
-                clock_.setTime(audioInfo_->dataLen2TimePoint(renderedDataLength_));
+                clock_.setTime( offsetTime_ + audioInfo_->dataLen2TimePoint(renderedDataLength_));
             }
             return getSize;
         } else {
@@ -142,7 +142,7 @@ public:
     }
 protected:
     float volume_ = 100.f; // 0 ~ 100
-    Time::TimePoint offsetTime{};
+    Time::TimePoint offsetTime_{};
     std::shared_ptr<AudioInfo> audioInfo_ = nullptr;
     std::atomic<uint64_t> renderedDataLength_ = 0;
     Clock clock_;

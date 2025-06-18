@@ -59,8 +59,8 @@ void Player::pause() noexcept {
 }
 
 
-void Player::seek(double time) noexcept {
-    pimpl_->seek(time);
+void Player::seek(double time, bool isAccurate) noexcept {
+    pimpl_->seek(time, isAccurate);
 }
 
 std::string_view Player::playerId() const noexcept {

@@ -9,7 +9,7 @@
 #include <ranges>
 #include "IDemuxer.h"
 #include "Mp4Demuxer.h"
-#include "MediaBase.h"
+#include "MediaUtil.h"
 
 namespace slark {
 
@@ -35,7 +35,7 @@ void TrackContext::init() noexcept {
     if (type == TrackType::Video && ctts) {
         //Set pts to 0 and calculate the initial value of dts, which may be a negative number.
         dts = pts - ctts->entrys[0].sampleOffset;
-        cttsEntrySampleIndex = 1;
+        cttsEntrySampleIndex = 0;
     }
 }
 
@@ -66,7 +66,7 @@ uint64_t TrackContext::getSeekPos(double targetTime) const noexcept {
     const auto& keyIndexes = stss->keyIndexs;
     auto it = std::upper_bound(keyIndexes.begin(), keyIndexes.end(), sampleIndex);
     if (it == keyIndexes.begin()) {
-        //not found key frame
+        LogE("not found key frame");
         return 0;
     }
     --it;
@@ -123,16 +123,17 @@ void TrackContext::seek(uint64_t pos) noexcept {
     reset();
     auto chunkIndex = std::distance(chunks.begin(), it);
     uint32_t sampleIndex = 0;
-    const auto& stscEntrys = stsc->entrys;
-    uint32_t entryIndex = 0;
-    while (entryIndex < stscEntrys.size() && stscEntrys[entryIndex].firstChunk < chunkIndex + 1) {
-        if (entryIndex + 1 < stscEntrys.size()) {
-            auto count = stscEntrys[entryIndex+1].firstChunk - stscEntrys[entryIndex].firstChunk;
-            sampleIndex += count * stscEntrys[entryIndex].samplesPerChunk;
+    const auto& entries = stsc->entrys;
+    for (size_t i = 0; i < entries.size(); ++i) {
+        const auto& entry = entries[i];
+        uint32_t firstChunk = entry.firstChunk - 1;
+        uint32_t nextFirstChunk = (i + 1 < entries.size()) ? entries[i + 1].firstChunk - 1 : static_cast<uint32_t>(chunks.size());
+        if (chunkIndex < nextFirstChunk) {
+            sampleIndex += (chunkIndex - firstChunk) * entry.samplesPerChunk;
+            break;
         } else {
-            sampleIndex += (chunkIndex + 1 - stscEntrys[entryIndex].firstChunk) * stscEntrys[entryIndex].samplesPerChunk;
+            sampleIndex += (nextFirstChunk - firstChunk) * entry.samplesPerChunk;
         }
-        entryIndex++;
     }
     if (sampleIndex == 0) {
         sampleIndex = 1;
