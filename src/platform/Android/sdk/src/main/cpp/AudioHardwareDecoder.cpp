@@ -8,6 +8,11 @@
 
 namespace slark {
 
+void AudioHardwareDecoder::flush() noexcept {
+    NativeDecoder::flush();
+    isCompleted_ = false;
+}
+
 DecoderErrorCode AudioHardwareDecoder::decode(AVFrameRefPtr &frame) noexcept {
     assert(frame && frame->isAudio());
     NativeDecodeFlag flag = NativeDecodeFlag::None;
@@ -55,7 +60,15 @@ bool AudioHardwareDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept 
     return true;
 }
 
-void AudioHardwareDecoder::decodeComplete(DataPtr data, int64_t pts) noexcept {
+void AudioHardwareDecoder::receiveDecodedData(
+    DataPtr data,
+    int64_t pts,
+    bool isCompleted
+) noexcept {
+    isCompleted_ = isCompleted;
+    if (isCompleted) {
+        LogI("audio decode completed");
+    }
     if (!data || data->empty()) {
         LogE("data is empty");
         return;
@@ -67,6 +80,7 @@ void AudioHardwareDecoder::decodeComplete(DataPtr data, int64_t pts) noexcept {
     }
     auto frame = std::make_unique<AVFrame>(AVFrameType::Audio);
     frame->pts = pts;
+    frame->dts = pts;
     frame->timeScale = 1000000; //us
     frame->data = std::move(data);
     auto audioFrameInfo = std::make_shared<AudioFrameInfo>();

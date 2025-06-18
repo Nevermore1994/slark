@@ -36,8 +36,13 @@ public:
         return info;
     }
 
-    void decodeComplete(DataPtr data, int64_t pts) noexcept override;
+    void receiveDecodedData(
+        DataPtr data,
+        int64_t pts,
+        bool isCompleted
+    ) noexcept override;
 
+    void flush() noexcept override;
 private:
     DecoderErrorCode sendPacket(AVFrameRefPtr &frame) noexcept;
 
@@ -45,13 +50,14 @@ private:
 
     DecoderErrorCode decodeTextureMode(AVFrameRefPtr &frame) noexcept;
 
-    void requestVideoFrame() noexcept;
+    void requestDecodeVideoFrame() noexcept;
 
 private:
     DecodeMode mode_;
     std::shared_ptr<AndroidEGLContext> context_;
     EGLSurface surface_ = nullptr;
     std::unique_ptr<FrameBufferPool> frameBufferPool_;
+    std::unordered_set<int64_t> discardPackets_;
 };
 
 } // slark

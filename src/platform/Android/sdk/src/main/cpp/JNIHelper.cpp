@@ -104,7 +104,7 @@ JNIReference<jbyteArray> ToJVM::toNaluByteArray(
 ) noexcept {
     auto size = static_cast<int32_t>(data.length());
     jbyteArray dataArray = nullptr;
-    if (!isRawData) {
+    if (!isRawData && !data.empty()) {
         data = data.substr(4); //remove nalu header
     }
     if (!data.empty()) {

@@ -51,6 +51,22 @@ AVFrameRefPtr DecoderComponent::peekDecodeFrame() noexcept {
     return pendingDecodeQueue_.front();
 }
 
+AVFrameRefPtr DecoderComponent::buildEOSFrame(bool isVideo) noexcept {
+    AVFrameRefPtr frame = nullptr;
+    if (isVideo) {
+        frame = std::make_shared<AVFrame>(AVFrameType::Video);
+        auto frameInfo = std::make_shared<VideoFrameInfo>();
+        frameInfo->isEndOfStream = true;
+        frame->info = std::move(frameInfo);
+    } else {
+        frame = std::make_shared<AVFrame>(AVFrameType::Audio);
+        auto frameInfo = std::make_shared<AudioFrameInfo>();
+        frameInfo->isEndOfStream = true;
+        frame->info = std::move(frameInfo);
+    }
+    return frame;
+}
+
 bool DecoderComponent::open(DecoderType type, const std::shared_ptr<DecoderConfig>& config) noexcept {
     close();
     auto decoder = std::shared_ptr<IDecoder>(DecoderManager::shareInstance().create(type));
@@ -78,25 +94,40 @@ bool DecoderComponent::open(DecoderType type, const std::shared_ptr<DecoderConfi
 
 void DecoderComponent::pushFrameDecode() {
     auto frame = peekDecodeFrame();
-    if (!frame) {
+    if (!frame && !isInputCompleted_) {
         LogE("got frame is nullptr");
         pause();
         return;
     }
     bool isPushed = false;
-    decoder_.withLock([&frame, &isPushed](auto& decoder){
-        if (!decoder || !decoder->isOpen()) {
+    bool isCompleted = false;
+    decoder_.withLock([frame = std::move(frame), &isPushed, &isCompleted, this]
+        (auto& decoder) mutable {
+        if (!decoder || !decoder->isOpen() || decoder->isCompleted()) {
+            if (decoder) {
+                isCompleted = decoder->isCompleted();
+            }
             return;
         }
-        if (auto code = decoder->decode(frame); code == DecoderErrorCode::Success) {
-            isPushed = true;
-        } else {
-            LogE("push frame error:{}", static_cast<int>(code));
+        if (frame) {
+            if (auto code = decoder->decode(frame); code == DecoderErrorCode::Success) {
+                isPushed = true;
+            } else {
+                LogE("push frame error:{}", static_cast<int>(code));
+            }
+        } else if (isInputCompleted_ && !decoder->isCompleted()){
+            auto eosFrame = buildEOSFrame(decoder->isVideo());
+            decoder->decode(eosFrame);
         }
     });
     if (isPushed) {
         std::lock_guard lock(mutex_);
-        pendingDecodeQueue_.pop_front();
+        if (!pendingDecodeQueue_.empty()) {
+            pendingDecodeQueue_.pop_front();
+        }
+    }
+    if (isCompleted) {
+        pause();
     }
 }
 
@@ -118,13 +149,7 @@ void DecoderComponent::start() noexcept {
 }
 
 void DecoderComponent::close() noexcept {
-    decoder_.withLock([](auto& coder){
-        coder.reset();
-    });
-    {
-        std::lock_guard lock(mutex_);
-        pendingDecodeQueue_.clear();
-    }
+    flush();
     isOpened_ = false;
     cond_.notify_all();
 }
@@ -139,7 +164,18 @@ void DecoderComponent::flush() noexcept {
         std::lock_guard lock(mutex_);
         pendingDecodeQueue_.clear();
     }
+    LogI("flushed");
+    isInputCompleted_ = false;
 }
 
+bool DecoderComponent::isDecodeCompleted() noexcept {
+    bool isCompleted_ = false;
+    decoder_.withLock([&isCompleted_](auto& coder){
+        if (coder) {
+            isCompleted_ = coder->isCompleted();
+        }
+    });
+    return isCompleted_;
+}
 
 }

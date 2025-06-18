@@ -42,8 +42,8 @@ class SlarkPlayerManager {
         }
 
         @JvmStatic
-        fun requestRender(playerId: String, textureId: Int) {
-            players[playerId]?.requestRender(textureId)
+        fun requestRender(playerId: String, textureId: Int, width: Int, height: Int) {
+            players[playerId]?.requestRender(textureId, width, height)
         }
 
         external fun createPlayer(path: String, start: Double, duration: Double): String
@@ -58,7 +58,7 @@ class SlarkPlayerManager {
 
         external fun setRenderSize(playerId: String, width: Int, height: Int)
 
-        external fun seek(playerId: String, time: Double)
+        external fun seek(playerId: String, time: Double, isAccurate: Boolean)
 
         external fun totalDuration(playerId: String):Double
 

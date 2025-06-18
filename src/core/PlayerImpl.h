@@ -11,7 +11,6 @@
 #include <map>
 #include "DecoderComponent.h"
 #include "DemuxerManager.h"
-#include "AVFrame.hpp"
 #include "IReader.h"
 #include "Channel.hpp"
 #include "Event.h"
@@ -28,25 +27,31 @@ struct PlayerSeekRequest {
 };
 
 struct PlayerStats {
-    bool isFirstAudioRendered = false;
     bool isForceVideoRendered = false;
+    bool isAudioRenderEnd = false;
+    bool isVideoRenderEnd = false;
     double audioDemuxedTime = 0;
     double videoDemuxedTime = 0;
     double lastNotifyPlayedTime = 0;
     double lastNotifyCacheTime = 0;
 
-    void reset() {
-        isFirstAudioRendered = false;
+    void reset() noexcept {
         isForceVideoRendered = false;
+        isVideoRenderEnd = false;
+        isAudioRenderEnd = false;
         audioDemuxedTime = 0;
         videoDemuxedTime = 0;
         lastNotifyPlayedTime = 0;
         lastNotifyCacheTime = 0;
     }
 
-    void setSeekTime(double seekTime) {
+    void setSeekTime(double seekTime) noexcept {
         audioDemuxedTime = seekTime;
         videoDemuxedTime = seekTime;
+    }
+
+    bool isRenderEnd() const noexcept {
+        return isVideoRenderEnd && isAudioRenderEnd;
     }
 };
 
@@ -70,7 +75,7 @@ public:
      
     void setRenderSize(uint32_t width, uint32_t height) noexcept;
 
-    void seek(double time, bool isAccurate = false) noexcept;
+    void seek(double time, bool isAccurate) noexcept;
     
     void addObserver(IPlayerObserverPtr observer) noexcept;
     
@@ -149,6 +154,8 @@ private:
     void doSeek(PlayerSeekRequest seekRequest) noexcept;
     
     void doLoop() noexcept;
+
+    void clearData() noexcept;
     
     double demuxedDuration() const noexcept;
     
@@ -162,11 +169,11 @@ private:
 
     void setVideoRenderTime(double time) noexcept;
 
-    bool isVideoNeedDecode() noexcept;
+    bool isVideoNeedDecode(double renderedTime) noexcept;
 
-    bool isAudioNeedDecode() noexcept;
+    bool isAudioNeedDecode(double renderedTime) noexcept;
 private:
-    bool isSeekingWhilePlaying_ = false;
+    bool resumeAfterSeek_ = false;
     std::atomic_bool isStopped_ = false;
     std::atomic_bool isReleased_ = false;
     std::unique_ptr<PlayerImplHelper> helper_ = nullptr;

@@ -43,10 +43,10 @@ void AudioRender::init() noexcept {
     timerId_ = TimerManager::shareInstance().runLoop(
         3000ms,
         [this]() {
-            if (status_ != RenderStatus::Playing) {
+            if (status_ != RenderStatus::Playing || playerId_.empty()) {
                 return;
             }
-            auto realTime = offsetTime + Time::TimePoint(NativeAudioPlayer::getPlayedTime(playerId_));
+            auto realTime = offsetTime_ + Time::TimePoint(NativeAudioPlayer::getPlayedTime(playerId_));
             if (realTime == Time::TimePoint()) {
                 LogE("get played time failed, playerId:{}", playerId_);
                 latency_ = Time::TimeDelta();
@@ -113,7 +113,7 @@ void AudioRender::reset() noexcept {
 
 void AudioRender::seek(double time) noexcept {
     IAudioRender::seek(time);
-    latency_ = 0.0;
+    latency_ = 0;
 }
 
 void AudioRender::renderEnd() noexcept {
@@ -147,7 +147,8 @@ void AudioRender::setVolume(float volume) noexcept {
 }
 
 Time::TimePoint AudioRender::playedTime() noexcept {
-    return clock_.time() - latency_;
+    auto time = clock_.time();
+    return time - latency_;
 }
 
 std::shared_ptr<IAudioRender> createAudioRender(const std::shared_ptr<AudioInfo>& audioInfo) {

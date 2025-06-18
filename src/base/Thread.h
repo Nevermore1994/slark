@@ -58,12 +58,12 @@ public:
 
     TimerId runLoop(std::chrono::milliseconds timeInterval, TimerTask func) noexcept;
 public:
-    [[nodiscard]] inline bool isRunning() noexcept {
+    [[nodiscard]] inline bool isRunning() const  noexcept {
         std::shared_lock<std::shared_mutex> lock(mutex_);
         return isRunning_;
     }
 
-    [[nodiscard]] inline bool isExit() noexcept {
+    [[nodiscard]] inline bool isExit() const noexcept {
         std::shared_lock<std::shared_mutex> lock(mutex_);
         return isExit_;
     }
@@ -89,7 +89,7 @@ public:
         interval_ = ms;
     }
 
-    std::chrono::milliseconds interval() noexcept {
+    std::chrono::milliseconds interval() const noexcept {
         std::shared_lock<std::shared_mutex> lock(mutex_);
         return interval_;
     }
@@ -105,7 +105,7 @@ private:
     std::atomic<bool> isInit_ = false;
     std::chrono::milliseconds interval_{0};
     std::string name_;
-    std::shared_mutex mutex_;
+    mutable std::shared_mutex mutex_;
     std::condition_variable_any cond_;
     std::atomic<uint64_t> lastRunTimeStamp_;
     std::function<void()> func_;

@@ -118,7 +118,7 @@ struct TSParseInfo {
         bool isValid = false;
         int64_t firstDts = 0;
         int64_t firstPts = 0;
-        int64_t frameIndex = 0;
+        uint64_t frameIndex = 0;
         
         void reset() noexcept {
             isValid = false;

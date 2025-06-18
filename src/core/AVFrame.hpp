@@ -32,15 +32,6 @@ enum class FrameFormat {
     MediaCodecByteBuffer = 3,
 };
 
-struct Statistics {
-    uint64_t demuxStamp = 0;
-    uint64_t pendingStamp = 0;
-    uint64_t prepareDecodeStamp = 0;
-    uint64_t decodedStamp = 0;
-    uint64_t prepareRenderStamp = 0;
-    uint64_t renderedStamp = 0;
-};
-
 struct FrameInfo {
     bool isEndOfStream = false;
     uint32_t refIndex = 0;
@@ -48,7 +39,7 @@ struct FrameInfo {
 };
 
 struct AudioFrameInfo : public FrameInfo {
-    void copy(std::shared_ptr<AudioFrameInfo> info) const noexcept {
+    void copy(const std::shared_ptr<AudioFrameInfo>& info) const noexcept {
         if (!info) {
             return;
         }
@@ -79,7 +70,7 @@ enum class VideoFrameType {
 struct VideoFrameInfo : public FrameInfo {
 public:
     void copy(std::shared_ptr<VideoFrameInfo>& info) const noexcept {
-        if (!info) {
+        if (!info || info.get() == this) {
             return;
         }
         *info = *this;
@@ -112,9 +103,8 @@ struct AVFrame {
     int64_t pts = 0;
     int64_t dts = 0;
     uint64_t offset = 0;
-    std::unique_ptr<Data> data; //Undecided
+    std::unique_ptr<Data> data; //Undecoded
     void* opaque = nullptr;
-    Statistics stats;
     std::shared_ptr<FrameInfo> info;
 
     AVFrame() = default;
@@ -127,9 +117,12 @@ struct AVFrame {
     inline void reset() noexcept {
         frameType = AVFrameType::Unknown;
         index = 0;
+        timeScale = 1;
+        duration = 0;
         info.reset();
         pts = 0;
         dts = 0;
+        offset = 0;
         data->reset();
     }
 

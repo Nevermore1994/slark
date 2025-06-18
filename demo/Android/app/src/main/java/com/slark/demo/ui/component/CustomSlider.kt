@@ -21,7 +21,7 @@ import androidx.compose.ui.util.lerp
 @Composable
 fun CustomSlider(
     value: Float,
-    onValueChange: (Float) -> Unit,
+    onValueChange: (Float, Boolean) -> Unit,
     modifier: Modifier = Modifier,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     bufferedValue: Float = value,
@@ -42,17 +42,27 @@ fun CustomSlider(
                     val width = size.width - thumbRadiusPx * 2
                     val fraction = ((offset.x - thumbRadiusPx) / width).coerceIn(0f, 1f)
                     val newValue = lerp(valueRange.start, valueRange.endInclusive, fraction)
-                    onValueChange(newValue)
+                    onValueChange(newValue, true)
                 }
             }
             .pointerInput(Unit) {
-                detectDragGestures { change, _ ->
-                    val width = size.width - thumbRadiusPx * 2
-                    val fraction = ((change.position.x - thumbRadiusPx) / width).coerceIn(0f, 1f)
-                    val newValue = lerp(valueRange.start, valueRange.endInclusive, fraction)
-                    onValueChange(newValue)
-                }
+                detectDragGestures(
+                    onDragStart = { offset ->
+                        println("Drag started at $offset")
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        val width = size.width - thumbRadiusPx * 2
+                        val fraction = ((change.position.x - thumbRadiusPx) / width).coerceIn(0f, 1f)
+                        val newValue = lerp(valueRange.start, valueRange.endInclusive, fraction)
+                        onValueChange(newValue, false)
+                    },
+                    onDragEnd = {
+                        onValueChange(value, true)
+                    }
+                )
             }
+
     ) {
         val height = maxHeight
         val trackY = constraints.maxHeight / 2f

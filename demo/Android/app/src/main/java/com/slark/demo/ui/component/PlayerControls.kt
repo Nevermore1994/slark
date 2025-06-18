@@ -23,6 +23,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.LaunchedEffect
 import com.slark.demo.R
 import com.slark.demo.ui.model.PlayerViewModel
+import kotlin.math.ceil
+import kotlin.math.round
 
 @Composable
 fun PlayerControls(viewModel: PlayerViewModel) {
@@ -49,7 +51,7 @@ fun PlayerControls(viewModel: PlayerViewModel) {
 }
 
 private fun formatTime(ms: Int): String {
-    val totalSeconds = ms / 1000
+    val totalSeconds = round(ms / 1000.0).toInt()
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return "%02d:%02d".format(minutes, seconds)
@@ -86,7 +88,7 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
 
         CustomSlider(
             value = viewModel.volume,
-            onValueChange = { viewModel.volume = it },
+            onValueChange = {  t, _ -> viewModel.volume = t },
             valueRange = 0f..1f,
             trackColor = Color.LightGray,
             activeColor = Color(0xFFA9A9A9),
@@ -190,7 +192,12 @@ fun PlayerProgressBar(viewModel: PlayerViewModel) {
             value = if (totalTime > 0) {
                 (currentTime / totalTime).toFloat()
             } else 0f,
-            onValueChange = { viewModel.seekTo(it * totalTime) },
+            onValueChange = { t, b ->
+                if (!b) {
+                    viewModel.currentTime = (t * totalTime) / 1000.0
+                }
+                viewModel.seekTo(viewModel.currentTime, b)
+            },
             valueRange = 0f..1f,
             bufferedColor = Color.Gray,
             bufferedValue =  if (totalTime > 0) {

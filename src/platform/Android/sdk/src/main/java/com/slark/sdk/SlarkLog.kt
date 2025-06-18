@@ -3,6 +3,8 @@ package com.slark.sdk
 import java.text.MessageFormat
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
+import java.time.LocalDateTime
+import com.slark.sdk.toMicrosecondString
 
 class SlarkLog {
     companion object {
@@ -66,16 +68,15 @@ class SlarkLog {
 
         private fun formatMessage(format: String, vararg args: Any?): String {
             try {
-                return MessageFormat.format(format, *(args ?: emptyArray()))
+                return " " + MessageFormat.format(format, *args)
             } catch (e: Exception) {
                 // If formatting fails, return the original format string
-                return format + " [formatting error: ${e.message}]" + ", $format"
+                return " [formatting error: ${e.message}]" + ", $format"
             }
-
         }
 
         private fun processLog(message: LogMessage) {
-            val logStr = "${message.level} [${message.tag}] ${formatMessage(message.format, *message.args)}"
+            val logStr = LocalDateTime.now().toMicrosecondString() + " ${message.level} [${message.tag}] ${formatMessage(message.format, *message.args)}"
             if (message.level != LOG_PRINT) {
                 nativeLog(logStr)
             }

@@ -136,6 +136,7 @@ Java_com_slark_sdk_EGLRenderThread_swapGLBuffers(
              playerId);
         return false;
     }
+    glFlush();
     auto result = eglSwapBuffers(
         display,
         contextInfo->surface
@@ -150,6 +151,7 @@ Java_com_slark_sdk_EGLRenderThread_swapGLBuffers(
         LogE("EGL error after swapBuffers: {}",
              error);
     }
+
     if (textureId != 0) {
         auto render = VideoRenderManager::shareInstance().find(playerId);
         if (render) {

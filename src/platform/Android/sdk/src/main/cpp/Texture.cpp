@@ -4,18 +4,17 @@
 
 #include "Texture.h"
 #include "Log.hpp"
+#include "TexturePool.h"
 
 namespace slark {
 
-Texture::Texture(
-    uint32_t width,
-    uint32_t height,
-    TextureConfig config,
-    DataPtr data
-)
-    : width_(width),
-      height_(height),
-      config_(config) {
+Texture::Texture(uint32_t width,
+                 uint32_t height,
+                 TextureConfig config,
+                 DataPtr data
+ ): width_(width)
+ , height_(height)
+ , config_(config) {
     glGenTextures(
         1,
         &textureId_
@@ -87,5 +86,11 @@ void Texture::updateData(DataPtr data) const noexcept {
     );
 }
 
+void Texture::releaseResource(std::unique_ptr<Texture> texture) noexcept {
+    auto manager = texture->manager().lock();
+    if (manager) {
+        manager->restore(std::move(texture));
+    }
+}
 
 }

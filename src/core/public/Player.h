@@ -114,7 +114,7 @@ public:
 
     void pause() noexcept;
 
-    void seek(double time) noexcept;
+    void seek(double time, bool isAccurate = false) noexcept;
 
     void setLoop(bool isLoop);
     

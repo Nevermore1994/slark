@@ -13,7 +13,6 @@ class RenderSurface : SurfaceTexture.OnFrameAvailableListener {
     private var surface: Surface? = null
     private val mutex = Object()
     private var isFrameAvailable = false
-
     private var handlerThread: HandlerThread? = null
     private var handler: Handler? = null
 
@@ -84,7 +83,7 @@ class RenderSurface : SurfaceTexture.OnFrameAvailableListener {
         try {
             surfaceTexture?.let {
                 it.updateTexImage()
-                timestamp = it.timestamp / 1000000L //to ms
+                timestamp = it.timestamp / 1000L //to us
             }
         } catch (e: Exception) {
             SlarkLog.e(LOG_TAG, "updateTexImage failed: ${e.message}")

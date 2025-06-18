@@ -1,9 +1,11 @@
 package com.slark.sdk
 
+import android.graphics.Bitmap
 import android.opengl.EGLContext
 import android.opengl.GLES20
 import android.opengl.EGL14
 import com.slark.sdk.TextureRender.Companion.LOG_TAG
+import java.nio.IntBuffer
 
 fun Long.toPointer(): EGLContext = this.toRawPtr()
 @Suppress("UNCHECKED_CAST")
@@ -82,4 +84,40 @@ fun createGLProgram(vertexStr: String, fragmentStr: String): Int {
     GLES20.glDeleteShader(vertexShader)
     GLES20.glDeleteShader(fragmentShader)
     return program
+}
+
+//debug
+fun readTextureToBitmap(texture: RenderTexture): Bitmap? {
+    val frameBuffer = IntArray(1)
+    GLES20.glGenFramebuffers(1, frameBuffer, 0)
+    GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, frameBuffer[0])
+    GLES20.glFramebufferTexture2D(
+        GLES20.GL_FRAMEBUFFER,
+        GLES20.GL_COLOR_ATTACHMENT0,
+        GLES20.GL_TEXTURE_2D,
+        texture.textureId,
+        0
+    )
+
+    val width = texture.size.width
+    val height = texture.size.height
+    val pixelBuffer = IntArray(width * height)
+    val intBuffer = IntBuffer.wrap(pixelBuffer)
+    GLES20.glReadPixels(0, 0, width, height, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, intBuffer)
+
+    GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+    GLES20.glDeleteFramebuffers(1, frameBuffer, 0)
+
+    val flipped = IntArray(width * height)
+    for (y in 0 until height) {
+        System.arraycopy(
+            pixelBuffer,
+            (height - y - 1) * width,
+            flipped,
+            y * width,
+            width
+        )
+    }
+
+    return Bitmap.createBitmap(flipped, width, height, Bitmap.Config.ARGB_8888)
 }

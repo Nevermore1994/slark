@@ -20,7 +20,7 @@ std::string LogFileName() {
     return logDir + "/" + Time::localShortTimeStr() + ".log";
 }
 
-constexpr uint32_t kMaxWriteLogCount = 8 * 1024;
+constexpr uint32_t kMaxWriteLogCount = 80 * 1024;
 
 LogOutput& LogOutput::shareInstance(){
    static std::unique_ptr<LogOutput> instance_;

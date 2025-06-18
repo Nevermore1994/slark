@@ -13,7 +13,9 @@ namespace slark {
 
 void Native_RequestRender(
     const std::string &playerId,
-    GLuint textureId
+    GLuint textureId,
+    uint32_t width,
+    uint32_t height
 ) {
     using namespace slark::JNI;
     constexpr std::string_view kPlayerManagerClass = "com/slark/sdk/SlarkPlayerManager";
@@ -22,7 +24,6 @@ void Native_RequestRender(
         env.get(),
         playerId
     );
-    auto jTextureId = static_cast<jint>(textureId);
     auto playerClass = JNICache::shareInstance().getClass(
         env.get(),
         kPlayerManagerClass
@@ -34,6 +35,8 @@ void Native_RequestRender(
     auto methodSignature = JNI::makeJNISignature(
         JNI::Void,
         JNI::String,
+        JNI::Int,
+        JNI::Int,
         JNI::Int
     );
     auto methodId = JNICache::shareInstance().getStaticMethodId(
@@ -49,7 +52,9 @@ void Native_RequestRender(
         playerClass.get(),
         methodId.get(),
         jPlayer.get(),
-        jTextureId
+        static_cast<jint>(textureId),
+        static_cast<jint>(width),
+        static_cast<jint>(height)
     );
 
 }
@@ -120,10 +125,9 @@ void VideoRender::renderFrame(const AVFrameRefPtr &frame) noexcept {
         }
         frame->opaque = nullptr;
         auto textureId = texture->textureId();
-        Native_RequestRender(
-            playerId_,
-            textureId
-        );
+        auto width = texture->width();
+        auto height = texture->height();
+        LogI("render video frame ptsTime:{}", frame->ptsTime());
         {
             std::lock_guard lock(mutex_);
             renderInfos_.try_emplace(
@@ -131,6 +135,12 @@ void VideoRender::renderFrame(const AVFrameRefPtr &frame) noexcept {
                 RenderInfo(frame->ptsTime(), std::move(texture))
             );
         }
+        Native_RequestRender(
+            playerId_,
+            textureId,
+            width,
+            height
+        );
     } else {
         LogE("not support frame format:{}",
              static_cast<int>(videoFrameInfo->format));
@@ -143,12 +153,11 @@ void VideoRender::renderFrameComplete(int32_t id) noexcept {
     if (renderInfos_.contains(textureId)) {
         auto info = std::move(renderInfos_[textureId]);
         renderInfos_.erase(textureId);
-        auto manager = info.texture->manager().lock();
-        if (manager) {
-            manager->restore(std::move(info.texture));
-        }
+        Texture::releaseResource(std::move(info.texture));
         videoClock_.setTime(Time::TimePoint::fromSeconds(info.ptsTime));
-        LogI("render complete, ptsTime:{}", info.ptsTime);
+        LogI("render complete, ptsTime:{}, texture id:{}", info.ptsTime, id);
+    } else {
+        LogE("not found texture id:{}", id);
     }
 }
 

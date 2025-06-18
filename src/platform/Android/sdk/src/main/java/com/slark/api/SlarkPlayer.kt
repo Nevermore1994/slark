@@ -24,7 +24,11 @@ interface SlarkPlayer {
 
     fun stop()
 
-    fun seekTo(time: Double)
+    /**
+     * @param time: seconds
+     * @param isAccurate:  Accurate seek is only performed when the user releases the progress slider.
+     */
+    fun seekTo(time: Double, isAccurate: Boolean)
 
     fun release()
 

@@ -88,8 +88,8 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
         player?.setObserver(observer)
     }
 
-    fun seekTo(time: Double) {
-        player?.seekTo(time)
+    fun seekTo(time: Double, isAccurate: Boolean) {
+        player?.seekTo(time, isAccurate)
     }
 
     fun skipPrev() {
