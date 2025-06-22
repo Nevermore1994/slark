@@ -61,6 +61,13 @@ Texture::Texture(uint32_t width,
     );
 }
 
+Texture::~Texture() {
+    if (textureId_ != 0) {
+        glDeleteTextures(1,&textureId_);
+        textureId_ = 0;
+    }
+}
+
 void Texture::updateData(DataPtr data) const noexcept {
     if (!data) {
         return;

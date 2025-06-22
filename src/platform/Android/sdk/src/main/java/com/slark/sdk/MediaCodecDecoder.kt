@@ -243,7 +243,6 @@ class MediaCodecDecoder(
             } else {
                 format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 1048576 * 2) //2MB
             }
-
             val decoder = MediaCodecDecoder(mediaInfo, format, DecodeMode.fromInt(if (videoInfos.size >=5) videoInfos[4] else 0 ))
             val decoderId = decoder.decoderId
             decoders[decoderId] = decoder

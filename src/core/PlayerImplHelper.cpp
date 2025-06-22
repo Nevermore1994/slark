@@ -136,6 +136,7 @@ bool PlayerImplHelper::isRenderEnd() noexcept {
         return true;
     }
     if (player->stats_.isRenderEnd()) {
+        LogI("isRenderEnd");
         return true;
     }
     constexpr double kMaxDriftTime = 0.5; //second

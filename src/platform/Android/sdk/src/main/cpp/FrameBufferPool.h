@@ -39,7 +39,7 @@ public:
 
     }
 
-    ~FrameBufferPool() override = default;
+    ~FrameBufferPool() noexcept override;
 
     FrameBufferRefPtr acquire(
         uint32_t width,

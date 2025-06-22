@@ -118,6 +118,7 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
     }
 
     fun pause() {
+        SlarkLog.i(LOG_TAG, "pause")
         audioJob?.cancel()
         audioJob = null
         lock.withLock {
@@ -132,6 +133,7 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
     }
 
     fun play() {
+        SlarkLog.i(LOG_TAG, "play")
         lock.withLock {
             audioTrack?.let { track->
                 if (track.playState == AudioTrack.PLAYSTATE_PLAYING) {

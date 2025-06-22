@@ -105,16 +105,16 @@ void VideoHardwareDecoder::receiveDecodedData(
 DecoderErrorCode VideoHardwareDecoder::decodeTextureMode(
     AVFrameRefPtr &frame
 ) noexcept {
-    if (!context_ || !frameBufferPool_) {
-        LogE("context is null");
+    if (!resource_->isValid()) {
+        LogE("resource is invalid");
         return DecoderErrorCode::NotProcessed;
     }
-    context_->attachContext(surface_);
+    resource_->attachContext(surface_);
     auto res = sendPacket(frame);
     if (res == DecoderErrorCode::Success) {
         requestDecodeVideoFrame();
     }
-    context_->detachContext();
+    resource_->detachContext();
     return res;
 }
 
@@ -128,7 +128,7 @@ void VideoHardwareDecoder::requestDecodeVideoFrame() noexcept {
     constexpr int64_t kWaitTime = 3; // 10ms
     constexpr int32_t kMaxRetryCount = 3;
     auto videoConfig = std::dynamic_pointer_cast<VideoDecoderConfig>(config_);
-    auto frameBuffer = frameBufferPool_->acquire(
+    auto frameBuffer = resource_->acquire(
         videoConfig->width,
         videoConfig->height
     );
@@ -216,38 +216,34 @@ void VideoHardwareDecoder::requestDecodeVideoFrame() noexcept {
     invokeReceiveFunc(std::move(frame));
 }
 
-void VideoHardwareDecoder::initContext() noexcept {
-    if (context_) {
+void VideoHardwareDecoder::initResource() noexcept {
+    if (resource_) {
         return;
     }
-    LogI("create context start");
-    auto context = GLContextManager::shareInstance().createShareContextWithId(config_->playerId);
-    context_ = std::dynamic_pointer_cast<AndroidEGLContext>(context);
-    if (!context_) {
-        LogE("create context, not AndroidEGLContext");
-        return;
+    resource_ = VideoDecodeResourceManager::shareInstance().find(config_->playerId);
+    if (!resource_) {
+        LogI("not found VideoDecodeResource");
+        resource_ = std::make_shared<VideoDecodeResource>(config_->playerId);
+        resource_->init();
+    } else {
+        VideoDecodeResourceManager::shareInstance().remove(config_->playerId);
     }
-    LogI("create context success");
     auto videoConfig = std::dynamic_pointer_cast<VideoDecoderConfig>(config_);
-    surface_ = context_->createOffscreenSurface(
+    surface_ = resource_->createOffscreenSurface(
         videoConfig->width,
         videoConfig->height
     );
-    frameBufferPool_ = std::make_unique<FrameBufferPool>();
-    LogI("create surface & frameBuffer success");
 }
 
 VideoHardwareDecoder::~VideoHardwareDecoder() noexcept {
-    if (context_) {
+    if (resource_) {
         if (surface_) {
-            context_->releaseSurface(surface_);
+            resource_->releaseSurface(surface_);
         }
-        context_->release();
-        context_.reset();
+        resource_.reset();
     }
     NativeDecoderManager::shareInstance().remove(decoderId_);
     decoderId_.clear();
-    frameBufferPool_.reset();
 }
 
 bool VideoHardwareDecoder::open(
@@ -259,20 +255,14 @@ bool VideoHardwareDecoder::open(
         return false;
     }
     config_ = config;
-    auto startTime = Time::nowTimeStamp();
     if (mode_ == DecodeMode::Texture) {
-        initContext();
-        if (!context_) {
-            LogE("init context failed");
+        initResource();
+        if (!resource_->isValid()) {
+            LogE("init resource failed");
             return false;
         }
-        if (!frameBufferPool_) {
-            LogE("create frame buffer pool failed");
-            return false;
-        }
-        context_->attachContext(surface_);
+        resource_->attachContext(surface_);
     }
-    LogI("create video decoder start");
     decoderId_ = NativeHardwareDecoder::createVideoDecoder(
         videoConfig,
         mode_
@@ -285,9 +275,8 @@ bool VideoHardwareDecoder::open(
         decoderId_,
         shared_from_this()
     );
-    LogI("create video decoder end:{}, cost time:{}", decoderId_, (Time::nowTimeStamp() - startTime).toMilliSeconds());
     if (mode_ == DecodeMode::Texture) {
-        context_->detachContext();
+        resource_->detachContext();
     }
     isOpen_ = true;
     return true;

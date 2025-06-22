@@ -40,15 +40,7 @@ public:
         DataPtr data = nullptr
     );
 
-    ~Texture() {
-        if (textureId_) {
-            glDeleteTextures(
-                1,
-                &textureId_
-            );
-            textureId_ = 0;
-        }
-    }
+    ~Texture();
 
     void updateData(DataPtr data) const noexcept;
 

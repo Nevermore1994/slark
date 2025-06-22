@@ -47,57 +47,57 @@ struct PlayerDebugInfo {
 
         if (createdTime != 0 && receiveTime != 0) {
             auto delta = createdTime - receiveTime;
-            debugInfo.append(std::format("Player creation time: {:.3f} ms\n", delta.second() * 1000.0));
+            debugInfo.append(std::format("Player creation time: {}\n", delta.toMilliSeconds()));
         }
 
-        if (createdDemuxerTime != 0 && createdTime != 0) {
-            auto delta = createdDemuxerTime - createdTime;
-            debugInfo.append(std::format("Demuxer creation time: {:.3f} ms\n", delta.second() * 1000.0));
+        if (createdDemuxerTime != 0 && receiveTime != 0) {
+            auto delta = createdDemuxerTime - receiveTime;
+            debugInfo.append(std::format("Demuxer creation time: {}\n", delta.toMilliSeconds()));
         }
 
-        if (openedDemuxerTime != 0 && createdDemuxerTime != 0) {
-            auto delta = openedDemuxerTime - createdDemuxerTime;
-            debugInfo.append(std::format("Demuxer opening time: {:.3f} ms\n", delta.second() * 1000.0));
+        if (openedDemuxerTime != 0 && receiveTime != 0) {
+            auto delta = openedDemuxerTime - receiveTime;
+            debugInfo.append(std::format("Demuxer opening time: {}\n", delta.toMilliSeconds()));
         }
 
-        if (createAudioDecoderTime != 0 && openedDemuxerTime != 0) {
-            auto delta = createAudioDecoderTime - openedDemuxerTime;
-            debugInfo.append(std::format("Audio decoder creation time: {:.3f} ms\n", delta.second() * 1000.0));
+        if (createAudioDecoderTime != 0 && receiveTime != 0) {
+            auto delta = createAudioDecoderTime - receiveTime;
+            debugInfo.append(std::format("Audio decoder creation time: {}\n", delta.toMilliSeconds()));
         }
 
-        if (openedAudioDecoderTime != 0 && createAudioDecoderTime != 0) {
-            auto delta = openedAudioDecoderTime - createAudioDecoderTime;
-            debugInfo.append(std::format("Audio decoder opening time: {:.3f} ms\n", delta.second() * 1000.0));
+        if (openedAudioDecoderTime != 0 && receiveTime != 0) {
+            auto delta = openedAudioDecoderTime - receiveTime;
+            debugInfo.append(std::format("Audio decoder opening time: {}\n", delta.toMilliSeconds()));
         }
 
-        if (openedAudioDecoderTime != 0 && createAudioRenderTime != 0) {
-            auto delta = createAudioRenderTime - openedAudioDecoderTime;
-            debugInfo.append(std::format("Audio render creation time: {:.3f} ms\n", delta.second() * 1000.0));
+        if (createAudioRenderTime != 0 && receiveTime != 0) {
+            auto delta = createAudioRenderTime - receiveTime;
+            debugInfo.append(std::format("Audio render creation time: {}\n", delta.toMilliSeconds()));
         }
 
-        if (createVideoDecoderTime != 0 && createAudioRenderTime != 0) {
-            auto delta = createVideoDecoderTime - createAudioRenderTime;
-            debugInfo.append(std::format("Video decoder creation time: {:.3f} ms\n", delta.second() * 1000.0));
+        if (createVideoDecoderTime != 0 && receiveTime != 0) {
+            auto delta = createVideoDecoderTime - receiveTime;
+            debugInfo.append(std::format("Video decoder creation time: {}\n", delta.toMilliSeconds()));
         }
 
-        if (openedVideoDecoderTime != 0 && createVideoDecoderTime != 0) {
-            auto delta = openedVideoDecoderTime - createVideoDecoderTime;
-            debugInfo.append(std::format("Video decoder opening time: {:.3f} ms\n", delta.second() * 1000.0));
+        if (openedVideoDecoderTime != 0 && receiveTime != 0) {
+            auto delta = openedVideoDecoderTime - receiveTime;
+            debugInfo.append(std::format("Video decoder opening time: {}\n", delta.toMilliSeconds()));
         }
 
-        if (pushVideoDecodeTime != 0 && openedVideoDecoderTime != 0) {
-            auto delta = pushVideoDecodeTime - openedVideoDecoderTime;
-            debugInfo.append(std::format("Video decode push time: {:.3f} ms\n", delta.second() * 1000.0));
-        }
-
-        if (pushVideoRenderTime != 0 && pushVideoDecodeTime != 0) {
-            auto delta = pushVideoRenderTime - pushVideoDecodeTime;
-            debugInfo.append(std::format("Video render push time: {:.3f} ms\n", delta.second() * 1000.0));
+        if (pushVideoDecodeTime != 0 && receiveTime != 0) {
+            auto delta = pushVideoDecodeTime - receiveTime;
+            debugInfo.append(std::format("Video decode push time: {}\n", delta.toMilliSeconds()));
         }
 
         if (pushVideoRenderTime != 0 && receiveTime != 0) {
             auto delta = pushVideoRenderTime - receiveTime;
-            debugInfo.append(std::format("Total time: {:.3f} ms\n", delta.second() * 1000.0));
+            debugInfo.append(std::format("Video render push time: {} \n", delta.toMilliSeconds()));
+        }
+
+        if (pushVideoRenderTime != 0 && receiveTime != 0) {
+            auto delta = pushVideoRenderTime - receiveTime;
+            debugInfo.append(std::format("Total time: {} ms\n", delta.toMilliSeconds()));
         }
 
         debugInfo.append("===============================\n");
