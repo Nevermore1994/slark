@@ -13,7 +13,7 @@ Java_com_slark_sdk_SlarkLog_00024Companion_nativeLog(
     auto logStr = JNI::FromJVM::toString(env, message);
     outputLog(
         LogType::Record,
-        "{}\n",
+         "{}\n",
         logStr
     );
 }

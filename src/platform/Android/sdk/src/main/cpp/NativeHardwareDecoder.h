@@ -17,7 +17,7 @@ enum NativeDecodeFlag {
     EndOfStream = 4,
 };
 
-enum class DecoderErrorCode;
+enum class DecoderErrorCode: int8_t;
 
 struct NativeHardwareDecoder {
     static std::string createVideoDecoder(

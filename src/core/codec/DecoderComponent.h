@@ -34,6 +34,11 @@ public:
         return pendingDecodeQueue_.empty();
     }
 
+    uint32_t pendingSize() noexcept {
+        std::lock_guard lock(mutex_);
+        return uint32_t(pendingDecodeQueue_.size());
+    }
+
     bool isInputCompleted() noexcept {
         return isInputCompleted_;
     }
@@ -58,6 +63,7 @@ private:
 
     static AVFrameRefPtr buildEOSFrame(bool isVideo) noexcept;
 private:
+    bool isVideo_ = false;
     std::atomic_bool isOpened_ = false;
     std::atomic_bool isInputCompleted_ = false;
     DecoderReceiveFunc callback_;

@@ -17,6 +17,7 @@ namespace slark {
 class Reader: public IReader {
 public:
     Reader();
+
     ~Reader() override;
 public:
     bool open(ReaderTaskPtr) noexcept override;

@@ -66,6 +66,7 @@ void AudioRenderComponent::init() noexcept {
         return 0u;
     });
     pimpl_.reset(std::move(pimpl));
+    LogI("init success");
     isFirstFrameRendered = false;
 }
 

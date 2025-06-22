@@ -68,10 +68,12 @@ class RenderSurface : SurfaceTexture.OnFrameAvailableListener {
 
     fun awaitFrame(waitTime: Long): Pair<Boolean, Long> {
         synchronized(mutex) {
-            mutex.wait(waitTime) // wait some time for frame available
             if (!isFrameAvailable) {
-                SlarkLog.e(LOG_TAG, "wait frame timeout")
-                return false to 0
+                mutex.wait(waitTime) // wait some time for frame available
+                if (!isFrameAvailable) {
+                    SlarkLog.e(LOG_TAG, "wait frame timeout")
+                    return false to 0
+                }
             }
             isFrameAvailable = false
         }

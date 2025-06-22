@@ -136,8 +136,9 @@ std::string Native_HardwareDecoder_createVideoDecoder(
     auto jDecoderId = reinterpret_cast<jstring>(env->CallStaticObjectMethod(
         decoderClass.get(),
         createDecoderMethod.get(),
-        jMediaInfo.get(),
-        videoInfo.detach()));
+        jMediaInfo.detach(),
+        videoInfo.detach())
+    );
 
     auto decoderId = FromJVM::toString(
         env,
@@ -146,6 +147,8 @@ std::string Native_HardwareDecoder_createVideoDecoder(
     if (decoderId.empty()) {
         LogE("create video decoder failed, decoderId is empty");
         return {};
+    } else {
+        LogI("create video decoder:{}", decoderId);
     }
 
     auto decoderInfo = std::make_unique<Data>();

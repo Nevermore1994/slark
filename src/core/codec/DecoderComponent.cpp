@@ -1,7 +1,7 @@
 //
-// Created by Nevermore on 2023/7/19.
+// Created by Nevermore on 2024/7/19.
 // slark DecoderComponent
-// Copyright (c) 2023 Nevermore All rights reserved.
+// Copyright (c) 2024 Nevermore All rights reserved.
 //
 #include "DecoderComponent.h"
 #include "Log.hpp"
@@ -12,7 +12,9 @@ namespace slark {
 
 DecoderComponent::DecoderComponent(DecoderReceiveFunc&& callback)
     : callback_(callback)
-    , decodeWorker_("decoder", &DecoderComponent::pushFrameDecode, this){
+    , decodeWorker_("decoder", &DecoderComponent::pushFrameDecode, this) {
+    using namespace std::chrono_literals;
+    decodeWorker_.setInterval(5ms);
 }
 
 DecoderComponent::~DecoderComponent() {
@@ -67,35 +69,48 @@ AVFrameRefPtr DecoderComponent::buildEOSFrame(bool isVideo) noexcept {
     return frame;
 }
 
-bool DecoderComponent::open(DecoderType type, const std::shared_ptr<DecoderConfig>& config) noexcept {
-    close();
-    auto decoder = std::shared_ptr<IDecoder>(DecoderManager::shareInstance().create(type));
-    if (!decoder) {
-        return false;
+bool DecoderComponent::open(
+    DecoderType type,
+    const std::shared_ptr<DecoderConfig>& config
+) noexcept {
+    if (isOpened_) {
+        close();
     }
-    decoder->setReceiveFunc([this](auto frame){
-        callback_(std::move(frame));
-    });
-    decoder->setDataProvider(shared_from_this());
-    if (!decoder->open(config)) {
-        return false;
-    }
-    auto isVideo = decoder->isVideo();
-    using namespace std::chrono_literals;
-    auto workerName = Util::genRandomName(isVideo ?
+    isVideo_ = IDecoder::isVideoDecoder(type);
+    std::thread([type, config, this](){
+        LogI("create {} decoder start ", isVideo_ ? "video" : "audio");
+        auto decoder = std::shared_ptr<IDecoder>(DecoderManager::shareInstance().create(type));
+        if (!decoder) {
+            return;
+        }
+        decoder->setReceiveFunc([this](auto frame){
+            callback_(std::move(frame));
+        });
+        decoder->setDataProvider(shared_from_this());
+        LogI("create {} decoder success", isVideo_ ? "video" : "audio");
+        if (!decoder->open(config)) {
+            return;
+        }
+        decoder_.withLock([&decoder](auto& coder){
+            coder = std::move(decoder);
+        });
+        isOpened_ = true;
+        auto workerName = Util::genRandomName(isVideo_ ?
             std::string("videoDecode_") : std::string("audioDecode_"));
-    decodeWorker_.setInterval(5ms);
-    decodeWorker_.setThreadName(workerName);
-    decoder_.withLock([&decoder](auto& coder){
-        coder = std::move(decoder);
-    });
+        decodeWorker_.setThreadName(workerName);
+        LogI("open {} decoder", isVideo_ ? "video" : "audio");
+    }).detach();
     return true;
 }
 
 void DecoderComponent::pushFrameDecode() {
+    if (!isOpened_) {
+        LogE("{} decoder is not opened", isVideo_ ? "video" : "audio");
+        return;
+    }
     auto frame = peekDecodeFrame();
     if (!frame && !isInputCompleted_) {
-        LogE("got frame is nullptr");
+        LogE("got {} frame is nullptr", isVideo_ ? "video" : "audio");
         pause();
         return;
     }
@@ -110,14 +125,15 @@ void DecoderComponent::pushFrameDecode() {
             return;
         }
         if (frame) {
-            if (auto code = decoder->decode(frame); code == DecoderErrorCode::Success) {
+            if (auto decodeRes = static_cast<int>(decoder->decode(frame)); decodeRes > 0) {
                 isPushed = true;
             } else {
-                LogE("push frame error:{}", static_cast<int>(code));
+                LogE("push frame error:{}", decodeRes);
             }
         } else if (isInputCompleted_ && !decoder->isCompleted()){
             auto eosFrame = buildEOSFrame(decoder->isVideo());
             decoder->decode(eosFrame);
+            LogI("push eos frame, {}", isVideo_ ? "video" : "audio");
         }
     });
     if (isPushed) {
@@ -128,6 +144,7 @@ void DecoderComponent::pushFrameDecode() {
     }
     if (isCompleted) {
         pause();
+        LogI("{} decode pause, completed", isVideo_ ? "video" : "audio");
     }
 }
 
@@ -149,7 +166,12 @@ void DecoderComponent::start() noexcept {
 }
 
 void DecoderComponent::close() noexcept {
-    flush();
+    decoder_.withLock([](auto& coder){
+        if (coder) {
+            coder->close();
+        }
+        coder.reset();
+    });
     isOpened_ = false;
     cond_.notify_all();
 }

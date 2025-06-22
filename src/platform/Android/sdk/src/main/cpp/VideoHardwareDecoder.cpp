@@ -43,11 +43,12 @@ DecoderErrorCode VideoHardwareDecoder::sendPacket(
         inputPts,
         flag
     );
-    if (res != DecoderErrorCode::Success) {
+    if (res < DecoderErrorCode::Unknown) {
         LogE("send video packet failed, {}",
              static_cast<int>(res));
     } else {
-        LogI("send video packet success, pts:{}, dts:{}, isDiscard:{}",
+        LogI("send video packet success:{}, pts:{}, dts:{}, isDiscard:{}",
+             static_cast<int>(res),
              frame->ptsTime(),
              frame->dtsTime(),
              frame->isDiscard
@@ -64,7 +65,7 @@ DecoderErrorCode VideoHardwareDecoder::decodeByteBufferMode(
 ) noexcept {
     auto pts = frame->pts;
     auto res = sendPacket(frame);
-    if (res != DecoderErrorCode::Success) {
+    if (res < DecoderErrorCode::Unknown) {
         LogE("send packet failed, {}", static_cast<int>(res));
     } else {
         LogI("send video packet success, pts:{}, dts:{}",
@@ -80,6 +81,10 @@ void VideoHardwareDecoder::receiveDecodedData(
     int64_t pts,
     bool isCompleted
 ) noexcept {
+    isCompleted_ = isCompleted;
+    if (isCompleted) {
+        LogI("decode video completed");
+    }
     if (!data || data->empty()) {
         LogE("data is empty");
         return;
@@ -95,7 +100,6 @@ void VideoHardwareDecoder::receiveDecodedData(
     videoFrameInfo->height = videoConfig->height;
     frame->info = std::move(videoFrameInfo);
     invokeReceiveFunc(std::move(frame));
-    isCompleted_ = isCompleted;
 }
 
 DecoderErrorCode VideoHardwareDecoder::decodeTextureMode(
@@ -107,7 +111,9 @@ DecoderErrorCode VideoHardwareDecoder::decodeTextureMode(
     }
     context_->attachContext(surface_);
     auto res = sendPacket(frame);
-    requestDecodeVideoFrame();
+    if (res == DecoderErrorCode::Success) {
+        requestDecodeVideoFrame();
+    }
     context_->detachContext();
     return res;
 }
@@ -171,6 +177,9 @@ void VideoHardwareDecoder::requestDecodeVideoFrame() noexcept {
     } while (retryCount < kMaxRetryCount);
     frameBuffer->unbind(true);
     isCompleted_ = isCompleted;
+    if (isCompleted) {
+        LogI("decode video completed");
+    }
     if (!isSuccess) {
         LogE("request decode video frame failed after {} retries",
              retryCount);
@@ -211,18 +220,21 @@ void VideoHardwareDecoder::initContext() noexcept {
     if (context_) {
         return;
     }
+    LogI("create context start");
     auto context = GLContextManager::shareInstance().createShareContextWithId(config_->playerId);
     context_ = std::dynamic_pointer_cast<AndroidEGLContext>(context);
     if (!context_) {
         LogE("create context, not AndroidEGLContext");
         return;
     }
+    LogI("create context success");
     auto videoConfig = std::dynamic_pointer_cast<VideoDecoderConfig>(config_);
     surface_ = context_->createOffscreenSurface(
         videoConfig->width,
         videoConfig->height
     );
     frameBufferPool_ = std::make_unique<FrameBufferPool>();
+    LogI("create surface & frameBuffer success");
 }
 
 VideoHardwareDecoder::~VideoHardwareDecoder() noexcept {
@@ -247,6 +259,7 @@ bool VideoHardwareDecoder::open(
         return false;
     }
     config_ = config;
+    auto startTime = Time::nowTimeStamp();
     if (mode_ == DecodeMode::Texture) {
         initContext();
         if (!context_) {
@@ -259,6 +272,7 @@ bool VideoHardwareDecoder::open(
         }
         context_->attachContext(surface_);
     }
+    LogI("create video decoder start");
     decoderId_ = NativeHardwareDecoder::createVideoDecoder(
         videoConfig,
         mode_
@@ -271,8 +285,7 @@ bool VideoHardwareDecoder::open(
         decoderId_,
         shared_from_this()
     );
-    LogI("create video decoder:{}",
-         decoderId_);
+    LogI("create video decoder end:{}, cost time:{}", decoderId_, (Time::nowTimeStamp() - startTime).toMilliSeconds());
     if (mode_ == DecodeMode::Texture) {
         context_->detachContext();
     }

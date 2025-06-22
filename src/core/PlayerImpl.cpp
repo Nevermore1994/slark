@@ -73,6 +73,8 @@ void Player::Impl::removeObserver() noexcept {
 }
 
 void Player::Impl::init() noexcept {
+    helper_ = std::make_unique<PlayerImplHelper>(weak_from_this());
+    helper_->debugInfo.receiveTime = Time::nowTimeStamp();
     using namespace std::chrono_literals;
     setState(PlayerState::Initializing);
     auto [sp, rp] = Channel<EventPtr>::create();
@@ -99,7 +101,8 @@ void Player::Impl::init() noexcept {
     
     dataProvider_->start();
     ownerThread_->start();
-    LogI("player buffering start.");
+    LogI("player Initializing start.");
+    helper_->debugInfo.createdTime = Time::nowTimeStamp();
 }
 
 bool Player::Impl::setupDataProvider() noexcept {
@@ -133,7 +136,6 @@ bool Player::Impl::setupDataProvider() noexcept {
         notifyPlayerEvent(PlayerEvent::OnError, std::to_string(static_cast<uint8_t>(PlayerErrorCode::OpenFileError)));
         return false;
     }
-    helper_ = std::make_unique<PlayerImplHelper>(weak_from_this());
     return true;
 }
 
@@ -158,6 +160,7 @@ bool Player::Impl::createDemuxer(DataPacket& data) noexcept {
             config.filePath = params->item.path;
         });
         demuxer_->init(std::move(config));
+        helper_->debugInfo.createdDemuxerTime = Time::nowTimeStamp();
     }
     return true;
 }
@@ -172,6 +175,7 @@ bool Player::Impl::openDemuxer(DataPacket& data) noexcept {
     auto res = helper_->openDemuxer();
     if (res) {
         LogI("open demuxer success.");
+        helper_->debugInfo.openedDemuxerTime = Time::nowTimeStamp();
         preparePlayerInfo();
     }
     return res;
@@ -197,10 +201,12 @@ void Player::Impl::createAudioComponent(const PlayerSetting& setting) noexcept {
             frames.emplace_back(std::move(frame));
         });
     });
+    helper_->debugInfo.createAudioDecoderTime = Time::nowTimeStamp();
     if (!audioDecodeComponent_) {
         LogI("create audio pushFrameDecode Component error:{}", audioInfo->mediaInfo);
         return;
     }
+    LogI("open create audio decoder");
     auto config = std::make_shared<AudioDecoderConfig>();
     config->playerId = playerId_;
     config->initWithAudioInfo(audioInfo);
@@ -208,6 +214,7 @@ void Player::Impl::createAudioComponent(const PlayerSetting& setting) noexcept {
         LogI("create audio pushFrameDecode component success");
         return ;
     }
+    helper_->debugInfo.openedAudioDecoderTime = Time::nowTimeStamp();
     auto renderAudioInfo = audioInfo->copy();
     renderAudioInfo->bitsPerSample = 16; //default 16bit pcm
     audioRender_ = std::make_unique<AudioRenderComponent>(renderAudioInfo);
@@ -216,6 +223,7 @@ void Player::Impl::createAudioComponent(const PlayerSetting& setting) noexcept {
             return;
         }
     };
+    helper_->debugInfo.createAudioRenderTime = Time::nowTimeStamp();
     LogI("create audio render success");
 }
 
@@ -238,6 +246,7 @@ void Player::Impl::createVideoComponent(const PlayerSetting& setting) noexcept  
             frames.emplace(frame->pts, std::move(frame));
         });
     });
+    helper_->debugInfo.createVideoDecoderTime = Time::nowTimeStamp();
     if (!videoDecodeComponent_) {
         LogI("create video decoder error:{}", demuxer_->videoInfo()->mediaInfo);
         return;
@@ -245,12 +254,12 @@ void Player::Impl::createVideoComponent(const PlayerSetting& setting) noexcept  
     auto config = std::make_shared<VideoDecoderConfig>();
     config->playerId = playerId_;
     config->initWithVideoInfo(demuxer_->videoInfo());
-
     if (videoDecodeComponent_->open(decodeType, config)) {
-        LogI("create video pushFrameDecode component success");
+        LogI("create video decode component success");
     } else {
         return;
     }
+    helper_->debugInfo.openedVideoDecoderTime = Time::nowTimeStamp();
     if (auto render = videoRender_.load()) {
         render->notifyVideoInfo(demuxer_->videoInfo());
     }
@@ -272,17 +281,19 @@ void Player::Impl::preparePlayerInfo() noexcept {
     if (info_.hasAudio) {
         LogI("has audio, audio info:{}", demuxer_->audioInfo()->mediaInfo);
         createAudioComponent(setting);
+        LogI("init player success 0.");
     } else {
         LogI("no audio");
     }
     
     if (info_.hasVideo) {
-        LogI("has audio, video info:{}", demuxer_->videoInfo()->mediaInfo);
+        LogI("has video, video info:{}", demuxer_->videoInfo()->mediaInfo);
         createVideoComponent(setting);
+        LogI("init player success 1.");
     } else {
         LogI("no video");
     }
-    
+    LogI("init player success 2.");
     doPause();
     if (info_.hasVideo) {
         dataProvider_->start(); //render first frame
@@ -323,7 +334,8 @@ void Player::Impl::handleVideoPacket(AVFramePtrArray& videoPackets) noexcept {
                 LogI("[seek info]discard video frame:{}, time:{}", pts, seekRequest_.value().seekTime);
             }
         }
-        LogI("demux video frame:{}, pts:{}, dts:{}, seek:{}", packet->index, pts, packet->dtsTime(), seekRequest_.has_value() ? seekRequest_.value().seekTime : 0);
+        LogI("demux video frame:{}, pts:{}, dts:{}, seek:{}", packet->index, pts, packet->dtsTime(),
+             seekRequest_.has_value() ? seekRequest_.value().seekTime : 0);
         videoPackets_.push_back(std::move(packet));
     }
 }
@@ -333,8 +345,16 @@ void Player::Impl::demuxData() noexcept {
         return;
     }
     std::vector<DataPacket> dataList;
+    constexpr uint32_t kMaxHandleDataSize = 5;//5 * 64kb
+    constexpr uint32_t kMaxCacheDataSize = 20;//20 * 64kb
+    uint32_t cacheSize = 0;
     dataList_.withLock([&](auto& list) {
-        list.swap(dataList);
+        auto size = std::min(kMaxHandleDataSize, uint32_t(list.size()));
+        dataList.insert(dataList.end(),
+                        std::make_move_iterator(list.begin()),
+                        std::make_move_iterator(list.begin() + size));
+        list.erase(list.begin(), list.begin() + size);
+        cacheSize = static_cast<uint32_t>(list.size());
     });
     if (dataList.empty()) {
         return;
@@ -398,6 +418,7 @@ void Player::Impl::pushVideoPacketDecode(bool ) noexcept {
     if (!videoDecodeComponent_) {
         return;
     }
+    LogI("videoPackets size:{}", videoPackets_.size());
     if (videoPackets_.empty()) {
         if (demuxer_->isCompleted() && !videoDecodeComponent_->isInputCompleted()) {
             videoDecodeComponent_->setInputCompleted();
@@ -408,7 +429,7 @@ void Player::Impl::pushVideoPacketDecode(bool ) noexcept {
     auto videoTime = videoRenderTime();
     auto& frame = videoPackets_.front();
     if (stats_.isForceVideoRendered || isVideoNeedDecode(videoTime)) {
-        LogI("[decode] push video frame, dts:{}, pts:{}, video time:{}",
+        LogI("[decode] push video packet, dts:{}, pts:{}, video time:{}",
              frame->dtsTime(),
              frame->ptsTime(),
              videoTime
@@ -483,6 +504,10 @@ void Player::Impl::pushVideoFrameToRender() noexcept {
         setState(PlayerState::Ready);
     }
     stats_.isForceVideoRendered = false;
+    if (helper_->debugInfo.pushVideoRenderTime.point() == 0) {
+        helper_->debugInfo.pushVideoRenderTime = Time::nowTimeStamp();
+        helper_->debugInfo.printTimeDeltas();
+    }
 }
 
 void Player::Impl::pushAudioFrameToRender() noexcept {
@@ -609,7 +634,7 @@ void Player::Impl::doStop() noexcept {
 }
 
 void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
-    if (!demuxer_) {
+    if (!demuxer_ || isStopped_ || isReleased_) {
         return;
     }
     
@@ -665,8 +690,12 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
         LogI("seek to time:{}", seekTime);
     } else {
         auto seekPos = demuxer_->getSeekToPos(seekTime);
-        audioDecodeComponent_->flush();
-        videoDecodeComponent_->flush();
+        if (audioDecodeComponent_) {
+            audioDecodeComponent_->flush();
+        }
+        if (videoDecodeComponent_) {
+            videoDecodeComponent_->flush();
+        }
         audioPackets_.clear();
         videoPackets_.clear();
         audioFrames_.withLock([](auto& frames) {
@@ -836,7 +865,7 @@ void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
         }
     }
     auto currentState = state();
-    if (currentState == PlayerState::Playing && stats_.isRenderEnd()) {
+    if (currentState == PlayerState::Playing && helper_->isRenderEnd()) {
         notifyPlayedTime(); //notify time to end
         LogI("play end.");
         clearData();

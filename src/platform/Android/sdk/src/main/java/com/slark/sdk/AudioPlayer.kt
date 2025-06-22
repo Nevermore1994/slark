@@ -38,7 +38,11 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
     var playerId: String = hashCode().toString()
         private set
     private var audioTrack: AudioTrack? = null
-    private var bufferSize = 0
+    private var bufferSize = AudioTrack.getMinBufferSize(
+        sampleRate,
+        getChannelConfig(channelCount),
+        AudioFormat.ENCODING_PCM_16BIT
+    )
     private val lock = ReentrantLock()
     private var lastRawPosition: Int = 0
     private var wrapCount: Long = 0
@@ -47,55 +51,41 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
     private var writeSize: Long = 0
     private val bytesPerFrame = channelCount * 2 //16 bit pcm
     @OptIn(DelicateCoroutinesApi::class)
-    private val pullDataDispatcher = newSingleThreadContext("AudioDataThread")
+    private val audioDispatcher = newSingleThreadContext("AudioDataThread")
+    private val audioAttribute = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_MEDIA)
+        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+        .build()
+    private val audioFormat = AudioFormat.Builder()
+        .setSampleRate(sampleRate)
+        .setChannelMask(getChannelConfig(channelCount))
+        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+        .build()
+
     init {
-        lock.withLock {
-            try {
-                initAudioTrack()
-            } catch (e: Exception) {
-                SlarkLog.e(LOG_TAG, "Failed to initialize AudioTrack: ${e.message}")
-                throw RuntimeException("Audio initialization failed", e)
-            }
+        try {
+            initAudioTrack()
+        } catch (e: Exception) {
+            SlarkLog.e(LOG_TAG, "Failed to initialize AudioTrack: ${e.message}")
+            throw RuntimeException("Audio initialization failed", e)
         }
     }
 
     private fun initAudioTrack() {
-        val channelConfig = when (channelCount) {
-            1 -> AudioFormat.CHANNEL_OUT_MONO
-            2 -> AudioFormat.CHANNEL_OUT_STEREO
-            4 -> AudioFormat.CHANNEL_OUT_QUAD
-            6 -> AudioFormat.CHANNEL_OUT_5POINT1
-            else -> AudioFormat.CHANNEL_OUT_DEFAULT
-        }
-
-        bufferSize = AudioTrack.getMinBufferSize(
-            sampleRate,
-            channelConfig,
-            AudioFormat.ENCODING_PCM_16BIT
-        )
-
         val minBufferSize = ((BUFFER_TIME_SIZE / 1000.0) * sampleRate * 2 * channelCount).toInt()
         if (bufferSize < minBufferSize) {
             bufferSize = minBufferSize
         }
-
-        audioTrack = AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+        CoroutineScope(audioDispatcher).launch{
+            lock.withLock {
+                audioTrack = AudioTrack.Builder()
+                    .setAudioAttributes(audioAttribute)
+                    .setAudioFormat(audioFormat)
+                    .setTransferMode(AudioTrack.MODE_STREAM)
+                    .setBufferSizeInBytes(bufferSize)
                     .build()
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setSampleRate(sampleRate)
-                    .setChannelMask(channelConfig)
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .build()
-            )
-            .setTransferMode(AudioTrack.MODE_STREAM)
-            .setBufferSizeInBytes(bufferSize)
-            .build()
+            }
+        }
     }
 
     private fun requestDataSize(): Int {
@@ -151,7 +141,7 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
             }
 
         }
-        audioJob = CoroutineScope(pullDataDispatcher).launch {
+        audioJob = CoroutineScope(audioDispatcher).launch {
             while (!isCompleted && isActive) {
                 val available = getAvailableSpace()
                 if (available < requestDataSize()) {
@@ -211,13 +201,8 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
     }
 
     fun flush() {
-        lock.withLock {
-            audioTrack?.let { track ->
-                track.flush()
-                track.release()
-            }
-            initAudioTrack()
-        }
+        release()
+        initAudioTrack()
         lastRawPosition = 0
         wrapCount = 0
         writeSize = 0

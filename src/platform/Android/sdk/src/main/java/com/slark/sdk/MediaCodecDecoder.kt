@@ -8,16 +8,6 @@ import android.util.Size
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
-fun Int.hasFlag(flag: Int) = (this and flag) == flag
-
-fun MediaFormat.isAudioFormat(): Boolean {
-    return this.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
-}
-
-fun MediaFormat.isVideoFormat(): Boolean {
-    return this.getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
-}
-
 enum class DecodeMode(val value: Int) {
     Texture(0),
     ByteBuffer(1);
@@ -30,7 +20,7 @@ enum class DecodeMode(val value: Int) {
 }
 
 class MediaCodecDecoder(
-    mediaInfo: String,
+    private val mediaInfo: String,
     private val format: MediaFormat,
     private val decodeMode: DecodeMode
 ) {
@@ -45,35 +35,41 @@ class MediaCodecDecoder(
         Flush,
     }
 
-    enum class ErrorCode {
-        Success,
-        Unknown,
-        NotProcessed,
-        NotStart,
-        InputDataError,
-        InputDataTooLarge,
-        NotFoundDecoder,
-        ErrorDecoder,
+    enum class ErrorCode(i: Int) {
+        Unknown(0),
+        Again(1),
+        Success(2),
+        NotProcessed(-1),
+        NotStart(-2),
+        InputDataError(-3),
+        InputDataTooLarge(-4),
+        NotFoundDecoder(-5),
+        ErrorDecoder(-6),
     }
 
     init {
-        decoder = MediaCodec.createDecoderByType(mediaInfo)
-        if (format.isVideoFormat()) {
-            if (decodeMode == DecodeMode.Texture) {
-                surface = RenderSurface()
-                surface?.init()
-                decoder?.configure(format, surface?.surface(), null, 0)
+        decoder = MediaCodecDecoderPool.acquireDecoder(mediaInfo)
+        decoder?.let { decoder ->
+            decoder.reset()
+            if (format.isVideoFormat()) {
+                if (decodeMode == DecodeMode.Texture) {
+                    surface = RenderSurface()
+                    surface?.init()
+                    decoder.configure(format, surface?.surface(), null, 0)
+                } else {
+                    // Use flexible color format for YUV420
+                    format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
+                    decoder.configure(format, null, null, 0)
+                }
             } else {
-                // Use flexible color format for YUV420
-                format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
-                decoder?.configure(format, null, null, 0)
+                decoder.configure(format, null, null, 0)
             }
-        } else {
-            decoder = MediaCodec.createDecoderByType(mediaInfo)
-            decoder?.configure(format, null, null, 0)
+            decoder.start()
+            isRunning = true
+        } ?: run {
+            SlarkLog.e(LOG_TAG, "create $mediaInfo decoder error")
+            isRunning = false
         }
-        decoder?.start()
-        isRunning = true
     }
 
     /// BUFFER_FLAG_CODEC_CONFIG: 2
@@ -121,7 +117,6 @@ class MediaCodecDecoder(
                 decoder?.queueInputBuffer(inputBufferIndex, 0, byteBuffer.size, presentationTimeUs, 0)
                 SlarkLog.i(LOG_TAG, mediaInfo + "queued input buffer: $inputBufferIndex, size: $size, time: $presentationTimeUs")
             }
-            errorCode = ErrorCode.Success
         }
 
         execute {
@@ -132,24 +127,28 @@ class MediaCodecDecoder(
             @Suppress("DEPRECATION")
             when (outputBufferIndex) {
                 MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                    SlarkLog.i(LOG_TAG, mediaInfo + "output format changed: ${decoder?.outputFormat}")
+                    val info = decoder?.outputFormat.toString()
+                    SlarkLog.i(LOG_TAG, mediaInfo + "output format changed: $info")
                     val newFormat = decoder?.outputFormat
+                    errorCode = ErrorCode.Again
                     return@execute
                 }
                 MediaCodec.INFO_TRY_AGAIN_LATER -> {
                     SlarkLog.i(LOG_TAG, mediaInfo + "no output buffer available")
-                    //TODO: return to native
+                    errorCode = ErrorCode.Again
                     return@execute
                 }
                 MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED -> {
                     SlarkLog.i(LOG_TAG, mediaInfo + "output buffers changed")
                     @Suppress("DEPRECATION")
+                    errorCode = ErrorCode.Again
                     return@execute
                 }
                 else -> {
                     if (format.isVideoFormat() && decodeMode == DecodeMode.Texture) {
                         SlarkLog.i(LOG_TAG, "decoded video pts: ${info.presentationTimeUs}")
                         decoder?.releaseOutputBuffer(outputBufferIndex, true)
+                        errorCode = ErrorCode.Success
                     } else {
                         val outputBuffer =
                             decoder?.getOutputBuffer(outputBufferIndex) ?: return@execute
@@ -162,6 +161,7 @@ class MediaCodecDecoder(
                         }
                         processRawData(decoderId, decodeData, info.presentationTimeUs, isCompleted)
                         decoder?.releaseOutputBuffer(outputBufferIndex, false)
+                        errorCode = ErrorCode.Success
                     }
                     return@execute
                 }
@@ -173,7 +173,9 @@ class MediaCodecDecoder(
     fun release() {
         isRunning = false
         flush()
-        decoder?.release()
+        decoder?.let { tDecoder ->
+            MediaCodecDecoderPool.releaseDecoder(mediaInfo, tDecoder)
+        }
         decoder = null
     }
 
