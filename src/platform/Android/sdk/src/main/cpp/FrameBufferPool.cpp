@@ -21,6 +21,11 @@ std::string generateKey(
     );
 }
 
+FrameBufferPool::~FrameBufferPool() noexcept {
+    frameBufferPool_.clear();
+    texturePool_.reset();
+}
+
 FrameBufferRefPtr FrameBufferPool::acquire(
     uint32_t width,
     uint32_t height

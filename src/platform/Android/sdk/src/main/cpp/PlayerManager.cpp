@@ -11,6 +11,7 @@
 #include "GLContextManager.h"
 #include "Manager.hpp"
 #include "VideoRender.h"
+#include "VideoDecodeResource.h"
 
 namespace slark {
 
@@ -205,6 +206,14 @@ enum class Action {
 using namespace slark;
 using namespace slark::JNI;
 
+void asyncCreateDecoderResource(const std::string& playerId) noexcept{
+    std::thread([playerId](){
+        auto resource = std::make_shared<VideoDecodeResource>(playerId);
+        resource->init();
+        VideoDecodeResourceManager::shareInstance().add(playerId, resource);
+    }).detach();
+}
+
 extern "C"
 JNIEXPORT jstring JNICALL
 Java_com_slark_sdk_SlarkPlayerManager_00024Companion_createPlayer(
@@ -228,6 +237,7 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_createPlayer(
     auto mainContext = playerParams->mainGLContext;
     auto player = std::make_shared<Player>(std::move(playerParams));
     auto playerId = std::string(player->playerId());
+    asyncCreateDecoderResource(playerId);
 
     //set observer
     auto observer = std::make_shared<PlayerObserver>();

@@ -114,7 +114,9 @@ void AudioRenderComponent::start() noexcept {
 
 void AudioRenderComponent::pause() noexcept {
     if (auto pimpl = pimpl_.load()) {
-        pimpl->pause();
+        if (pimpl->status() == RenderStatus::Playing) {
+            pimpl->pause();
+        }
     } else {
         LogE("audio render is nullptr.");
     }

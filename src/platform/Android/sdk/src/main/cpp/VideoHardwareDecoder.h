@@ -5,8 +5,7 @@
 #pragma once
 
 #include "NativeDecoderManager.h"
-#include "AndroidEGLContext.h"
-#include "FrameBufferPool.h"
+#include "VideoDecodeResource.h"
 #include "DecoderConfig.h"
 
 namespace slark {
@@ -25,8 +24,6 @@ public:
     bool open(std::shared_ptr<DecoderConfig> config) noexcept override;
 
     DecoderErrorCode decode(AVFrameRefPtr &frame) noexcept override;
-
-    void initContext() noexcept;
 
     inline static const DecoderTypeInfo &info() noexcept {
         static DecoderTypeInfo info = {
@@ -52,11 +49,11 @@ private:
 
     void requestDecodeVideoFrame() noexcept;
 
+    void initResource() noexcept;
 private:
     DecodeMode mode_;
-    std::shared_ptr<AndroidEGLContext> context_;
     EGLSurface surface_ = nullptr;
-    std::unique_ptr<FrameBufferPool> frameBufferPool_;
+    std::shared_ptr<VideoDecodeResource> resource_ = nullptr;
     std::unordered_set<int64_t> discardPackets_;
 };
 

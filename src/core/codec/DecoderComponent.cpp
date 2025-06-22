@@ -78,7 +78,6 @@ bool DecoderComponent::open(
     }
     isVideo_ = IDecoder::isVideoDecoder(type);
     std::thread([type, config, this](){
-        LogI("create {} decoder start ", isVideo_ ? "video" : "audio");
         auto decoder = std::shared_ptr<IDecoder>(DecoderManager::shareInstance().create(type));
         if (!decoder) {
             return;
@@ -91,7 +90,7 @@ bool DecoderComponent::open(
         if (!decoder->open(config)) {
             return;
         }
-        decoder_.withLock([&decoder](auto& coder){
+        decoder_.withLock([decoder = std::move(decoder)](auto& coder) mutable {
             coder = std::move(decoder);
         });
         isOpened_ = true;
@@ -166,6 +165,9 @@ void DecoderComponent::start() noexcept {
 }
 
 void DecoderComponent::close() noexcept {
+    if (!isOpened_) {
+        return;
+    }
     decoder_.withLock([](auto& coder){
         if (coder) {
             coder->close();

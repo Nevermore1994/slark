@@ -611,12 +611,14 @@ void Player::Impl::doStop() noexcept {
     }
     if (info_.hasAudio) {
         audioDecodeComponent_->pause();
+        audioDecodeComponent_->close();
         audioDecodeComponent_.reset();
         audioRender_->stop();
         audioRender_.reset();
     }
     if (info_.hasVideo) {
         videoDecodeComponent_->pause();
+        videoDecodeComponent_->close();
         videoDecodeComponent_.reset();
         if (auto render = videoRender_.load()) {
             render->pause();

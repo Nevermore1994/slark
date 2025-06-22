@@ -7,6 +7,7 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.LinkedBlockingQueue
@@ -62,13 +63,15 @@ object MediaCodecDecoderPool {
                 for (i in pool.size until max) {
                     val decoder = MediaCodec.createDecoderByType(type)
                     if (isVideoMime(type)) {
-                        val dummyFormat = MediaFormat.createVideoFormat(type, 640, 360)
+                        val dummyFormat = MediaFormat.createVideoFormat(type, 1920, 1080)
                         decoder.configure(dummyFormat, null, null, 0)
                     } else if (isAudioMime(type)) {
                         val dummyFormat = MediaFormat.createAudioFormat(type, 44100, 2)
                         decoder.configure(dummyFormat, null, null, 0)
                     }
-
+                    decoder.start()
+                    delay(5)
+                    decoder.stop()
                     pool.offer(decoder)
                 }
             }
