@@ -90,7 +90,7 @@ void VideoRender::pause() noexcept {
 
 void VideoRender::notifyVideoInfo(std::shared_ptr<VideoInfo> videoInfo) noexcept {
     auto duration = videoInfo->frameDurationMs();
-    LogE("frame duration: {}ms, fps:{}",
+    LogE("frame duration: {}, fps:{}",
          duration,
          videoInfo->fps);
 }
@@ -155,7 +155,7 @@ void VideoRender::renderFrameComplete(int32_t id) noexcept {
         renderInfos_.erase(textureId);
         Texture::releaseResource(std::move(info.texture));
         videoClock_.setTime(Time::TimePoint::fromSeconds(info.ptsTime));
-        LogI("render complete, ptsTime:{}, texture id:{}", info.ptsTime, id);
+        LogI("rendered video, ptsTime:{}, texture id:{}", info.ptsTime, id);
     } else {
         LogE("not found texture id:{}", id);
     }

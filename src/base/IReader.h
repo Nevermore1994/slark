@@ -20,7 +20,7 @@ enum class ReaderType {
     NetWork
 };
 
-constexpr uint64_t kReadDefaultSize = 1024 * 4;
+constexpr uint64_t kReadDefaultSize = 1024 * 64; //64kb
 
 struct ReaderTask {
     std::string path;

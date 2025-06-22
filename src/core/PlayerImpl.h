@@ -50,17 +50,21 @@ struct PlayerStats {
         videoDemuxedTime = seekTime;
     }
 
-    bool isRenderEnd() const noexcept {
+    [[nodiscard]] bool isRenderEnd() const noexcept {
         return isVideoRenderEnd && isAudioRenderEnd;
     }
 };
 
-class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
+class Player::Impl: public std::enable_shared_from_this<Player::Impl> {
 public:
     friend class PlayerImplHelper;
+
     explicit Impl(std::unique_ptr<PlayerParams> params);
+
     ~Impl();
+
     Impl(const Impl&) = delete;
+
     Impl& operator=(const Impl&) = delete;
 public:
     void init() noexcept;
@@ -191,7 +195,7 @@ private:
     
     //IO
     std::unique_ptr<IReader> dataProvider_ = nullptr;
-    Synchronized<std::vector<DataPacket>> dataList_;
+    Synchronized<std::deque<DataPacket>> dataList_;
     
     //demux
     std::shared_ptr<IDemuxer> demuxer_ = nullptr;

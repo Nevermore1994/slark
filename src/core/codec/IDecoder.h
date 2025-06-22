@@ -23,15 +23,16 @@ enum class DecoderType {
     VideoHardWareDecoder = 2001,
 };
 
-enum class DecoderErrorCode {
-    Success,
-    Unknown,
-    NotProcessed,
-    NotStart,
-    InputDataError,
-    InputDataTooLarge,
-    NotFoundDecoder,
-    ErrorDecoder,
+enum class DecoderErrorCode: int8_t {
+    Unknown = 0,
+    Again = 1,
+    Success = 2,
+    NotProcessed = -1,
+    NotStart = -2,
+    InputDataError = -3,
+    InputDataTooLarge = -4,
+    NotFoundDecoder = -5,
+    ErrorDecoder = -6,
 };
 
 struct DecoderTypeInfo {
@@ -72,11 +73,19 @@ public:
     }
 
     [[nodiscard]] bool isAudio() const noexcept {
-        return DecoderType::Unknown < decoderType_ && decoderType_ < DecoderType::AudioDecoderEnd;
+        return isAudioDecoder(decoderType_);
     }
 
     [[nodiscard]] bool isVideo() const noexcept {
-        return DecoderType::AudioDecoderEnd < decoderType_;
+        return isVideoDecoder(decoderType_);
+    }
+
+    static bool isAudioDecoder(DecoderType type) noexcept {
+        return DecoderType::Unknown < type && type < DecoderType::AudioDecoderEnd;
+    }
+
+    static bool isVideoDecoder(DecoderType type) noexcept {
+        return DecoderType::AudioDecoderEnd < type;
     }
 
     [[nodiscard]] bool isOpen() const noexcept {

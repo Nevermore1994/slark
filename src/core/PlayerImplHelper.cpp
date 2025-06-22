@@ -130,15 +130,24 @@ DataView PlayerImplHelper::probeView() const noexcept {
     return probeBuffer_->view();
 }
 
-bool PlayerImplHelper::isLongStanceSeek(
-    double playedTime,
-    double demuxedTime,
-    double targetTime
-) noexcept {
-    if (playedTime >= targetTime) {
+bool PlayerImplHelper::isRenderEnd() noexcept {
+    auto player = player_.lock();
+    if (!player) {
         return true;
     }
-    //获取key time
+    if (player->stats_.isRenderEnd()) {
+        return true;
+    }
+    constexpr double kMaxDriftTime = 0.5; //second
+    auto videoRenderTime = player->videoRenderTime();
+    auto audioRenderTime = player->audioRenderTime();
+    if (isEqualOrGreater(std::min(audioRenderTime, videoRenderTime),
+                         player->info_.duration + kMaxDriftTime)) {
+        LogI("render end, video time:{}, audio time:{}, duration:{}",
+                videoRenderTime, audioRenderTime, player->info_.duration);
+        return true;
+    }
+    return false;
 }
 
 bool PlayerImplHelper::seekToLastAvailableKeyframe(
