@@ -9,7 +9,7 @@
 #include "Base.h"
 #include <mutex>
 DISABLE_WARNINGS
-#include <openssl/err.h>
+#include "openssl/err.h"
 ENABLE_WARNINGS
 
 #include "PlainSocket.h"

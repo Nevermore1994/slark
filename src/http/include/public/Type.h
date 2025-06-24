@@ -6,6 +6,10 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
+#include <functional>
+#include <unordered_map>
+#include "Data.hpp"
 
 namespace slark::http {
 
@@ -152,4 +156,83 @@ enum class ResultCode {
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
+
+
+struct RequestInfo {
+    ///default true
+    bool isAllowRedirect = true;
+    ///default V4
+    IPVersion ipVersion = IPVersion::Auto;
+    std::string url;
+    HttpMethodType methodType = HttpMethodType::Unknown;
+    std::unordered_map<std::string, std::string> headers = {
+        {"User-Agent",   "(KHTML, like Gecko)"},
+        {"Accept",       "*/*"}};
+    DataRefPtr body = nullptr;
+    ///default 60s
+    std::chrono::milliseconds timeout{std::chrono::seconds(60)};
+    ///request id, Automatically generate
+    std::string reqId;
+    ///info tag
+    std::string tag;
+
+    [[nodiscard]] inline uint64_t bodySize() const noexcept {
+        return body ? body->length : 0;
+    }
+
+    [[nodiscard]] inline bool bodyEmpty() const noexcept {
+        return !body || body->empty();
+    }
+};
+
+using RequestInfoPtr = std::unique_ptr<RequestInfo>;
+
+struct ErrorInfo {
+    ResultCode retCode = ResultCode::Success;
+    int32_t errorCode{};
+
+    ErrorInfo() = default;
+    ErrorInfo(ResultCode resultCode, int32_t error)
+        : retCode(resultCode)
+        , errorCode(error) {
+
+    }
+};
+
+struct ResponseHeader {
+    std::unordered_map<std::string, std::string> headers;
+    HttpStatusCode httpStatusCode = HttpStatusCode::Unknown;
+    std::string reasonPhrase;
+
+    [[nodiscard]] bool isNeedRedirect() const noexcept {
+        return httpStatusCode == HttpStatusCode::MovedPermanently ||
+               httpStatusCode == HttpStatusCode::Found;
+    }
+
+    ResponseHeader() = default;
+};
+
+struct ResponseHandler {
+    ///reqId
+    ///Will not be called in the RequestSession
+    using OnConnectedFunc = std::function<void(const RequestInfo&)>;
+    OnConnectedFunc onConnected = nullptr;
+
+    ///reqId, ResponseHeader
+    using ParseHeaderDoneFunc = std::function<void(const RequestInfo&, ResponseHeader&&)>;
+    ParseHeaderDoneFunc onParseHeaderDone = nullptr;
+
+    ///reqId, data
+    using ResponseDataFunc = std::function<void(const RequestInfo&, DataPtr data)>;
+    ResponseDataFunc onData = nullptr;
+
+    ///reqId
+    using OnCompletedFunc = std::function<void(const RequestInfo&)>;
+    OnCompletedFunc onCompleted = nullptr;
+
+    ///reqId, ErrorInfo
+    using OnErrorFunc = std::function<void(const RequestInfo&, ErrorInfo)>;
+    OnErrorFunc onError = nullptr;
+};
+
 } //end of namespace http

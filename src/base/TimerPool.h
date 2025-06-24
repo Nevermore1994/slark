@@ -50,7 +50,7 @@ private:
 private:
     bool isExited_ = false;
     std::priority_queue<TimerInfo, std::vector<TimerInfo>, decltype(TimerInfoCompare())> timerInfos_;
-    std::unordered_map<TimerId, Timer> timers_;
+    std::unordered_map<TimerId, Timer, TimerIdHasher, TimerIdEqual> timers_;
     std::mutex mutex_;
 };
 

@@ -8,13 +8,40 @@
 
 #include <atomic>
 #include <functional>
+#include <unordered_map>
 #include "Time.hpp"
 
 namespace slark {
 
 using TimerTask = std::function<void()>;
 
-using TimerId = uint32_t;
+struct TimerId {
+    static constexpr uint32_t kInvalidTimerId = 0;
+    uint32_t id_ = kInvalidTimerId;
+
+    TimerId() = default;
+
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "google-explicit-constructor"
+    TimerId(uint32_t t) : id_(t) {}
+
+    operator uint32_t() const { return id_; }
+#pragma clang diagnostic pop
+
+    [[nodiscard]]  bool isValid() const noexcept { return id_ != kInvalidTimerId; }
+};
+
+struct TimerIdHasher {
+    size_t operator()(const slark::TimerId& t) const noexcept {
+        return std::hash<uint32_t>{}(static_cast<uint32_t>(t));
+    }
+};
+
+struct TimerIdEqual {
+    bool operator()(const slark::TimerId& a, const slark::TimerId& b) const noexcept {
+        return a.id_ == b.id_;
+    }
+};
 
 enum class ExecuteMode {
     Serial,

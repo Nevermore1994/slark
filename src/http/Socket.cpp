@@ -23,7 +23,9 @@ SocketResult select(SelectType type, Socket socket, int64_t timeout) {
         static_cast<int32_t>((timeout % 1000) * 1000)
     };
     SocketResult result;
-    int ret = ::select(maxFd, GetSelectReadFDSet(type, &fdSet), GetSelectWriteFDSet(type, &fdSet), nullptr, timeout >= 0 ? &selectTimeout : nullptr);
+    int ret = ::select(maxFd, GetSelectReadFDSet(type, &fdSet),
+                       GetSelectWriteFDSet(type, &fdSet),
+                       nullptr, timeout >= 0 ? &selectTimeout : nullptr);
     if (ret == SocketError) {
         result.errorCode = GetLastError();
         result.resultCode = result.errorCode == RetryCode ? ResultCode::Retry : ResultCode::Failed;
