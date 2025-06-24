@@ -30,7 +30,7 @@ extern "C" {
 # ifndef OPENSSL_SYS_iOS
 #  define OPENSSL_SYS_iOS 1
 # endif
-# define OPENSSL_CONFIGURED_API 30100
+# define OPENSSL_CONFIGURED_API 30000
 # ifndef OPENSSL_RAND_SEED_OS
 #  define OPENSSL_RAND_SEED_OS
 # endif
@@ -52,14 +52,14 @@ extern "C" {
 # ifndef OPENSSL_NO_CAPIENG
 #  define OPENSSL_NO_CAPIENG
 # endif
+# ifndef OPENSSL_NO_COMP
+#  define OPENSSL_NO_COMP
+# endif
 # ifndef OPENSSL_NO_CRYPTO_MDEBUG
 #  define OPENSSL_NO_CRYPTO_MDEBUG
 # endif
 # ifndef OPENSSL_NO_CRYPTO_MDEBUG_BACKTRACE
 #  define OPENSSL_NO_CRYPTO_MDEBUG_BACKTRACE
-# endif
-# ifndef OPENSSL_NO_DEPRECATED
-#  define OPENSSL_NO_DEPRECATED
 # endif
 # ifndef OPENSSL_NO_DEVCRYPTOENG
 #  define OPENSSL_NO_DEVCRYPTOENG
@@ -108,9 +108,6 @@ extern "C" {
 # endif
 # ifndef OPENSSL_NO_SCTP
 #  define OPENSSL_NO_SCTP
-# endif
-# ifndef OPENSSL_NO_SRP
-#  define OPENSSL_NO_SRP
 # endif
 # ifndef OPENSSL_NO_SSL3
 #  define OPENSSL_NO_SSL3

@@ -7,10 +7,10 @@
 #pragma once
 
 #include "IReader.h"
-#include "Request.h"
 #include "Buffer.hpp"
 #include "HLSDemuxer.h"
 #include "Thread.h"
+#include "RequestSession.h"
 
 namespace slark {
 
