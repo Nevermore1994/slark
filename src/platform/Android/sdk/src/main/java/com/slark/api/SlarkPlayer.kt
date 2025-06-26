@@ -40,7 +40,11 @@ interface SlarkPlayer {
 
     fun currentTime(): Double
 
-    fun setRenderSize(size: Size)
+    fun setRenderSize(width: Int, height: Int)
+
+    fun setRotation(rotation: Int) // 0, 90, 180, 270 degrees
+
+    fun onBackground(isBackground: Boolean)
 }
 
 object SlarkPlayerFactory {

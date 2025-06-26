@@ -20,6 +20,7 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
     private var playerObserver: SlarkPlayerObserver? = null
     private var renderThread: EGLRenderThread? = null
     private var renderView: View? = null
+    private var isPlayingBeforeBackground = false
 
     override var isLoop: Boolean = false
         set(value) {
@@ -88,8 +89,27 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
         }
     }
 
-    override fun setRenderSize(size: Size) {
-        SlarkPlayerManager.setRenderSize(playerId, size.width, size.height)
+    override fun setRenderSize(width: Int, height: Int) {
+        renderThread?.setRenderSize(width, height)
+    }
+
+    override fun setRotation(rotation: Int) {
+        renderThread?.setRotation(rotation)
+    }
+
+    override fun onBackground(isBackground: Boolean) {
+        if (isBackground) {
+            if (state() == SlarkPlayerState.Playing) {
+                isPlayingBeforeBackground = true
+                pause()
+            } else {
+                isPlayingBeforeBackground = false
+            }
+        } else {
+            if (isPlayingBeforeBackground) {
+                play()
+            }
+        }
     }
 
     override fun totalDuration(): Double {
@@ -131,7 +151,9 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
                 onSurfaceAvailable(Surface(surface), width, height)
             }
 
-            override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {}
+            override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
+                renderThread?.setRenderSize(width, height)
+            }
 
             override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
                 renderThread?.shutdown()

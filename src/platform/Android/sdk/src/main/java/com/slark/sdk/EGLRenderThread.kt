@@ -5,8 +5,8 @@ import android.util.Size
 
 class EGLRenderThread(
     private val surface: Surface,
-    private val width: Int,
-    private val height: Int
+    private var width: Int,
+    private var height: Int
 ) : Thread() {
     var playerId: String = ""
     private val renderer = PreviewRender()
@@ -68,6 +68,24 @@ class EGLRenderThread(
         synchronized(lock) {
             lock.notify()
         }
+    }
+
+    fun setRotation(rotation: Int) {
+        if (rotation < 0 || rotation > 360 || rotation % 90 != 0) {
+            SlarkLog.e(LOG_TAG, "Invalid rotation value: $rotation")
+            return
+        }
+        renderer.rotation = rotation.toDouble()
+    }
+
+    fun setRenderSize(width: Int, height: Int) {
+        if (width <= 0 || height <= 0) {
+            SlarkLog.e(LOG_TAG, "Invalid render size: $width x $height")
+            return
+        }
+        this.width = width
+        this.height = height
+        renderer.onSurfaceChanged(null, width, height)
     }
 
     private external fun createEGLContext(playerId: String, surface: Surface): Boolean

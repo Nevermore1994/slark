@@ -1,7 +1,5 @@
 package com.slark.demo.ui.navigation
 
-import android.util.Log
-import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -13,6 +11,7 @@ import androidx.navigation.NavController
 import androidx.navigation.navigation
 import com.slark.demo.HomeScreenRoute
 import com.slark.demo.ui.screen.LocalPlayer.*
+import com.slark.demo.ui.screen.NetworkPlayer.*
 import com.slark.demo.ui.screen.VideoPicker.*
 
 @Composable
@@ -35,10 +34,10 @@ fun AppNavHost(navController: NavHostController) {
 
         navigation(
             startDestination = Screen.VideoPickerScreen.route,
-            route = "video_flow"
+            route = "local_flow"
         ) {
             composable(Screen.VideoPickerScreen.route) { entry ->
-                val flowViewModel: SharedViewModel = viewModel(entry.rememberParentEntry(navController, "video_flow"))
+                val flowViewModel: SharedViewModel = viewModel(entry.rememberParentEntry(navController, "local_flow"))
 
                 VideoPickerWithPermission(
                     onResult = { selectedUris ->
@@ -50,8 +49,33 @@ fun AppNavHost(navController: NavHostController) {
             }
 
             composable(Screen.LocalPlayerScreen.route) { entry ->
-                val flowViewModel: SharedViewModel = viewModel(entry.rememberParentEntry(navController, "video_flow"))
+                val flowViewModel: SharedViewModel = viewModel(entry.rememberParentEntry(navController, "local_flow"))
                 LocalPlayerScreenRoute(
+                    navController = navController,
+                    sharedViewModel = flowViewModel
+                )
+            }
+        }
+
+        navigation(
+            startDestination = Screen.SelectUrlScreen.route,
+            route = "network_flow"
+        ) {
+            composable(Screen.SelectUrlScreen.route) { entry ->
+                val flowViewModel: SharedViewModel = viewModel(entry.rememberParentEntry(navController, "network_flow"))
+
+                SelectUrlScreen(
+                    onItemClick = { selectedUris ->
+                        flowViewModel.selectedVideoUris.clear()
+                        flowViewModel.selectedVideoUris.add(selectedUris)
+                        navController.navigate(Screen.NetworkPlayerScreen.route)
+                    }
+                )
+            }
+
+            composable(Screen.NetworkPlayerScreen.route) { entry ->
+                val flowViewModel: SharedViewModel = viewModel(entry.rememberParentEntry(navController, "network_flow"))
+                NetworkPlayerScreenRoute(
                     navController = navController,
                     sharedViewModel = flowViewModel
                 )

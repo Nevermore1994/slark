@@ -100,6 +100,18 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
         // Implement skip next logic
     }
 
+    fun onBackground(isBackground: Boolean) {
+        player?.onBackground(isBackground)
+    }
+
+    fun setRenderSize(width: Int, height: Int) {
+        player?.setRenderSize(width, height)
+    }
+
+    fun setRotation(rotation: Int) {
+        player?.setRotation(rotation)
+    }
+
     fun loop(isLoop: Boolean) {
         player?.isLoop = isLoop
         this.isLoop = isLoop
