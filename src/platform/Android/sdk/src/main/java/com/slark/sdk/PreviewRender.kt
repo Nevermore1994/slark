@@ -9,7 +9,6 @@ import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
-import kotlin.math.PI
 
 data class RenderTexture(
     val textureId: Int,
@@ -37,7 +36,7 @@ class PreviewRender(): GLSurfaceView.Renderer {
     @Volatile
     var sharedTexture: RenderTexture = RenderTexture.default()
     @Volatile
-    var rotation: Double = 0.0 //radian
+    var rotation: Double = 0.0
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         do {
@@ -61,7 +60,6 @@ class PreviewRender(): GLSurfaceView.Renderer {
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
-        GLES20.glViewport(0, 0, width, height)
         GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
         size = Size(width, height)
@@ -86,6 +84,7 @@ class PreviewRender(): GLSurfaceView.Renderer {
     override fun onDrawFrame(gl: GL10?) {
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
         GLES20.glUseProgram(program)
+        GLES20.glViewport(0, 0, size.width, size.height)
 
         //val bitmap = readTextureToBitmap(sharedTexture) //for debug
         val contentSize = makeAspectRatioSize(sharedTexture.size, size)
@@ -123,7 +122,7 @@ class PreviewRender(): GLSurfaceView.Renderer {
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
         GLES20.glUniform1i(textureHandle, 0)
-        GLES20.glUniform1f(rotationHandle, rotation.toFloat())
+        GLES20.glUniform1f(rotationHandle, Math.toRadians(0.0).toFloat())
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
 
         checkGLStatus("render frame")
@@ -153,7 +152,7 @@ class PreviewRender(): GLSurfaceView.Renderer {
                                           sin(uRotation),  cos(uRotation), 0.0, 0.0,
                                           0.0, 0.0, 1.0, 0.0,
                                           0.0, 0.0, 0.0, 1.0);
-                gl_Position = aPosition * rotationMatrix;
+                gl_Position = rotationMatrix * aPosition;
                 vTexCoord = aTexCoord;
             }
         """

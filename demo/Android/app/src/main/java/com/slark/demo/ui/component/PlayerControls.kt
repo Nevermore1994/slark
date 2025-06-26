@@ -4,14 +4,13 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.Slider
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.Text
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
@@ -21,13 +20,17 @@ import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.constraintlayout.compose.Dimension
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
 import com.slark.demo.R
 import com.slark.demo.ui.model.PlayerViewModel
 import kotlin.math.ceil
 import kotlin.math.round
 
 @Composable
-fun PlayerControls(viewModel: PlayerViewModel) {
+fun PlayerControls(
+    viewModel: PlayerViewModel,
+    modifier: Modifier = Modifier
+) {
     val isPlaying = viewModel.isPlaying
     val progress by remember {
         derivedStateOf {
@@ -38,8 +41,9 @@ fun PlayerControls(viewModel: PlayerViewModel) {
     }
 
     Column(
-        modifier = Modifier.fillMaxWidth().padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        modifier = modifier.fillMaxWidth().padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Bottom
     ) {
         PlayerProgressBar(viewModel)
         Spacer(modifier = Modifier.height(2.dp))
@@ -80,7 +84,7 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
                 Icon(
                     painterResource(id = if (it) R.drawable.mute else R.drawable.volume),
                     contentDescription = "Volume",
-                    tint = Color(0xFFA9A9A9)
+                    tint = Color(0xFFE6E6E6)
                 )
             }
 
@@ -91,7 +95,7 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
             onValueChange = {  t, _ -> viewModel.volume = t },
             valueRange = 0f..1f,
             trackColor = Color.LightGray,
-            activeColor = Color(0xFFA9A9A9),
+            activeColor = Color(0xFFE6E6E6),
             modifier = Modifier
                 .constrainAs(volumeSlider) {
                     start.linkTo(volumeIcon.end)
@@ -112,7 +116,7 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
             Icon(
                 painterResource(id = R.drawable.prev),
                 contentDescription = "Prev",
-                tint = Color(0xFFA9A9A9)
+                tint = Color(0xFFE6E6E6)
             )
         }
 
@@ -130,7 +134,7 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
                         id = if (it) R.drawable.pause_icon else R.drawable.play_icon
                     ),
                     contentDescription = if (it) "Pause" else "Play",
-                    tint = Color(0xFFA9A9A9),
+                    tint = Color(0xFFE6E6E6),
                     modifier = Modifier.size(48.dp)
                 )
             }
@@ -148,7 +152,7 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
             Icon(
                 painterResource(id = R.drawable.next),
                 contentDescription = "Next",
-                tint = Color(0xFFA9A9A9)
+                tint = Color(0xFFE6E6E6)
             )
         }
 
@@ -167,7 +171,7 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
                         id = if (it) R.drawable.loop else R.drawable.stop_loop
                     ),
                     contentDescription = "Loop",
-                    tint = Color(0xFFA9A9A9)
+                    tint = Color(0xFFE6E6E6)
                 )
             }
         }

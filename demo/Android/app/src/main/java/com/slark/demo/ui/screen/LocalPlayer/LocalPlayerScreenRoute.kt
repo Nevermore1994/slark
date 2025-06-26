@@ -1,6 +1,5 @@
 package com.slark.demo.ui.screen.LocalPlayer
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -14,18 +13,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavHostController
 import com.slark.api.SlarkPlayer
 import com.slark.api.SlarkPlayerConfig
 import com.slark.api.SlarkPlayerFactory
+import com.slark.demo.ui.component.PlayerScreen
 import com.slark.demo.ui.model.PlayerViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import com.slark.demo.ui.navigation.Screen
 
 class SharedViewModel : ViewModel() {
     val selectedVideoUris = mutableStateListOf<Uri>()
@@ -36,6 +37,21 @@ fun LocalPlayerScreenRoute(navController: NavHostController, sharedViewModel: Sh
     var playerViewModel by remember { mutableStateOf<PlayerViewModel?>(null) }
     var context = LocalContext.current
     val activity = context as ComponentActivity
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> playerViewModel?.onBackground(false)
+                Lifecycle.Event.ON_PAUSE -> playerViewModel?.onBackground(true)
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     LaunchedEffect(sharedViewModel.selectedVideoUris) {
         val copiedPaths = copyMultipleVideosToCache(context, sharedViewModel.selectedVideoUris)
@@ -57,7 +73,7 @@ fun LocalPlayerScreenRoute(navController: NavHostController, sharedViewModel: Sh
     }
 
     playerViewModel?.let { playerViewModel ->
-        LocalPlayerScreen(
+        PlayerScreen(
             playerViewModel,
             onBackClick = { navController.popBackStack() },
             onPickClick = { navController.navigate("pick_video") }
