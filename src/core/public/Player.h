@@ -74,8 +74,6 @@ struct PlayerSetting {
     bool isMute = false;
     bool enableAudioSoftDecode = false;
     bool enableVideoSoftDecode = false;
-    uint32_t width = 0;
-    uint32_t height = 0;
     float volume = 100.0f;
     double maxCacheTime = 30.0; //seconds
     double minCacheTime = 5.0; //seconds
@@ -121,8 +119,6 @@ public:
     void setVolume(float volume);
     
     void setMute(bool isMute);
-     
-    void setRenderSize(uint32_t width, uint32_t height);
 
     void addObserver(IPlayerObserverPtr observer) noexcept;
     

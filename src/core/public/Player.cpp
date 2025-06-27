@@ -94,10 +94,6 @@ void Player::setVolume(float volume) {
 void Player::setMute(bool isMute) {
     pimpl_->setMute(isMute);
 }
- 
-void Player::setRenderSize(uint32_t width, uint32_t height) {
-    pimpl_->setRenderSize(width, height);
-}
 
 void Player::addObserver(IPlayerObserverPtr observer) noexcept {
     pimpl_->addObserver(std::move(observer));

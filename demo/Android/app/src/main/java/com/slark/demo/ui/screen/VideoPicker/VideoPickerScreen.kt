@@ -1,7 +1,6 @@
 package com.slark.demo.ui.screen.VideoPicker
 
 import android.content.Context
-import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border

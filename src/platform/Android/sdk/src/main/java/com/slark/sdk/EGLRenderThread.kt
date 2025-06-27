@@ -1,7 +1,6 @@
 package com.slark.sdk
 
 import android.view.Surface
-import android.util.Size
 
 class EGLRenderThread(
     private val surface: Surface,
@@ -43,7 +42,7 @@ class EGLRenderThread(
             if (!running) break
 
             if(renderer.drawFrame(pendingTexture)) {
-                swapGLBuffers(playerId, pendingTexture.textureId)
+                swapGLBuffers(playerId, if (pendingTexture.isBackup) 0 else pendingTexture.textureId)
             } else {
                 SlarkLog.e(LOG_TAG, "render error:{}", pendingTexture.textureId)
             }
@@ -57,7 +56,20 @@ class EGLRenderThread(
     fun render(textureId: Int, width: Int, height: Int) {
         SlarkLog.i(LOG_TAG, "render textureId: $textureId")
         synchronized(lock) {
-            pendingTexture = RenderTexture(textureId, Size(width, height))
+            pendingTexture = RenderTexture(textureId, width, height)
+            hasRenderRequest = true
+            lock.notify()
+        }
+    }
+
+    fun render(texture: RenderTexture) {
+        if (!texture.isValid()) {
+            SlarkLog.e(LOG_TAG, "Invalid texture for rendering: $texture")
+            return
+        }
+        SlarkLog.i(LOG_TAG, "render textureId: ${texture.textureId}")
+        synchronized(lock) {
+            pendingTexture = texture
             hasRenderRequest = true
             lock.notify()
         }
@@ -88,11 +100,24 @@ class EGLRenderThread(
         renderer.onSurfaceChanged(null, width, height)
     }
 
+    fun refresh() {
+        val backupTexture = getBackupTextureId(playerId)
+        if (backupTexture != null && backupTexture.isValid()) {
+            backupTexture.isBackup = true
+            SlarkLog.i(LOG_TAG, "Using backup texture: ${backupTexture.textureId}")
+            render(backupTexture)
+        } else {
+            SlarkLog.w(LOG_TAG, "No valid backup texture available")
+        }
+    }
+
     private external fun createEGLContext(playerId: String, surface: Surface): Boolean
 
     private external fun destroyEGLContext(playerId: String)
 
     private external fun swapGLBuffers(playerId: String, textureId: Int): Boolean
+
+    private external fun getBackupTextureId(playerId: String): RenderTexture?
 
     companion object {
         const val LOG_TAG = "EGLRenderThread"

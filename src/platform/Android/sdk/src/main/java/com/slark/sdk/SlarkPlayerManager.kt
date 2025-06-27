@@ -56,8 +56,6 @@ class SlarkPlayerManager {
 
         external fun setMute(playerId: String, isMute: Boolean)
 
-        external fun setRenderSize(playerId: String, width: Int, height: Int)
-
         external fun seek(playerId: String, time: Double, isAccurate: Boolean)
 
         external fun totalDuration(playerId: String):Double

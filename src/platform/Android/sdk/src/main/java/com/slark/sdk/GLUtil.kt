@@ -99,8 +99,8 @@ fun readTextureToBitmap(texture: RenderTexture): Bitmap? {
         0
     )
 
-    val width = texture.size.width
-    val height = texture.size.height
+    val width = texture.width
+    val height = texture.height
     val pixelBuffer = IntArray(width * height)
     val intBuffer = IntBuffer.wrap(pixelBuffer)
     GLES20.glReadPixels(0, 0, width, height, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, intBuffer)

@@ -13,12 +13,16 @@ namespace slark {
 
 struct RenderInfo {
     double ptsTime = 0;
-    TexturePtr texture;
+    TexturePtr texture = nullptr;
 
     RenderInfo() = default;
     RenderInfo(double ptsTime, TexturePtr texture)
         : ptsTime(ptsTime), texture(std::move(texture)) {
 
+    }
+
+    [[nodiscard]] bool isValid() const noexcept {
+        return texture && texture->isValid();
     }
 };
 
@@ -44,6 +48,10 @@ public:
 
     void renderFrameComplete(int32_t id) noexcept;
 
+    TexturePtr& getBackupTexture() noexcept {
+        std::lock_guard lock(mutex_);
+        return backupRenderInfo_.texture;
+    }
 private:
     void requestRenderFrame() noexcept;
 
@@ -53,6 +61,7 @@ public:
     std::unique_ptr<Thread> renderThread_;
     std::mutex mutex_;
     std::unordered_map<uint32_t, RenderInfo> renderInfos_;
+    RenderInfo backupRenderInfo_; //Used to rotate the screen when paused
 };
 
 using VideoRenderManager = Manager<VideoRender>;
