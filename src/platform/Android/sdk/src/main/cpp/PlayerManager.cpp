@@ -352,29 +352,6 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_setMute(
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_com_slark_sdk_SlarkPlayerManager_00024Companion_setRenderSize(
-    JNIEnv *env,
-    jobject /*thiz*/,
-    jstring jPlayerId,
-    jint width,
-    jint height
-) {
-    auto playerId = JNI::FromJVM::toString(
-        env,
-        jPlayerId
-    );
-    if (auto player = PlayerManager::shareInstance().find(playerId)) {
-        player->setRenderSize(
-            static_cast<uint32_t>(width),
-            static_cast<uint32_t>(height));
-    } else {
-        LogE("not found player, {}",
-             playerId);
-    }
-}
-
-extern "C"
-JNIEXPORT void JNICALL
 Java_com_slark_sdk_SlarkPlayerManager_00024Companion_seek(
     JNIEnv *env,
     jobject /*thiz*/,

@@ -76,8 +76,6 @@ public:
     void setVolume(float volume);
     
     void setMute(bool isMute);
-     
-    void setRenderSize(uint32_t width, uint32_t height) noexcept;
 
     void seek(double time, bool isAccurate) noexcept;
     

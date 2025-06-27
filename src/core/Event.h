@@ -25,7 +25,6 @@ enum class EventType: uint8_t {
     UpdateSetting,
     UpdateSettingVolume,
     UpdateSettingMute,
-    UpdateSettingRenderSize,
     UpdateSettingEnd,
 };
 

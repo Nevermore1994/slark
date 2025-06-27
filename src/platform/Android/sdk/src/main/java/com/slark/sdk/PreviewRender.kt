@@ -10,21 +10,6 @@ import java.nio.FloatBuffer
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
-data class RenderTexture(
-    val textureId: Int,
-    val size: Size
-) {
-    fun isValid(): Boolean {
-        return textureId != 0;
-    }
-
-    companion object {
-        fun default(): RenderTexture {
-            return RenderTexture(0, Size(0, 0))
-        }
-    }
-}
-
 class PreviewRender(): GLSurfaceView.Renderer {
     private var program: Int = 0
     private var positionHandle: Int = 0
@@ -85,9 +70,11 @@ class PreviewRender(): GLSurfaceView.Renderer {
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
         GLES20.glUseProgram(program)
         GLES20.glViewport(0, 0, size.width, size.height)
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
 
         //val bitmap = readTextureToBitmap(sharedTexture) //for debug
-        val contentSize = makeAspectRatioSize(sharedTexture.size, size)
+        val pictureSize = Size(sharedTexture.width, sharedTexture.height)
+        val contentSize = makeAspectRatioSize(pictureSize, size)
         var normalizedSize = Pair(0.0f, 0.0f)
         val corpScale = Pair(contentSize.width.toFloat() / size.width, contentSize.height.toFloat() / size.height)
         normalizedSize = if (corpScale.first > corpScale.second) {
@@ -102,6 +89,7 @@ class PreviewRender(): GLSurfaceView.Renderer {
             -normalizedSize.first, normalizedSize.second,
             normalizedSize.first, normalizedSize.second
         )
+        SlarkLog.i(LOG_TAG, "normalizedSize: $normalizedSize, size: $size, pictureSize: $pictureSize")
         val vertexPosBuffer = ByteBuffer.allocateDirect(vertexPos.size * Float.SIZE_BYTES)
             .order(ByteOrder.nativeOrder())
             .asFloatBuffer().apply {

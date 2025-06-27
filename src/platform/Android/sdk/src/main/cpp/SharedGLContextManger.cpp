@@ -2,14 +2,15 @@
 // Created by Nevermore- on 2025/5/12.
 //
 
+#include <android/native_window_jni.h>
 #include "JNIEnvGuard.hpp"
 #include "JNIHelper.h"
 #include "JNISignature.h"
+#include "JNICache.h"
 #include "AndroidEGLContext.h"
 #include "Manager.hpp"
 #include "Log.hpp"
 #include "GLContextManager.h"
-#include <android/native_window_jni.h>
 #include "VideoRender.h"
 
 namespace slark {
@@ -162,6 +163,52 @@ Java_com_slark_sdk_EGLRenderThread_swapGLBuffers(
         }
     }
     return result == EGL_TRUE;
+}
+
+extern "C"
+JNIEXPORT jobject JNICALL
+Java_com_slark_sdk_EGLRenderThread_getBackupTextureId(
+    JNIEnv *env,
+    jobject /*thiz*/,
+    jstring player_id
+) {
+    auto playerId = JNI::FromJVM::toString(
+        env,
+        player_id
+    );
+    static std::string_view kTextureClass = "com/slark/sdk/RenderTexture";
+    auto render = VideoRenderManager::shareInstance().find(playerId);
+    if (!render) {
+        LogE("failed to find player for playerId: {}", playerId);
+        return nullptr;
+    }
+    auto& texture = render->getBackupTexture();
+    if (!texture->isValid()) {
+        LogE("backup texture is null for playerId: {}",
+             playerId);
+        return nullptr;
+    }
+    auto jTextureClass = JNI::JNICache::shareInstance().getClass(env,kTextureClass);
+    if (!jTextureClass) {
+        LogE("failed to get RenderTexture class");
+        return nullptr;
+    }
+    auto jMethodId = JNI::JNICache::shareInstance().getMethodId(
+        jTextureClass,
+        "<init>",
+        "(III)V"
+    );
+    if (!jMethodId) {
+        LogE("failed to get RenderTexture constructor method ID");
+        return nullptr;
+    }
+    return env->NewObject(
+        jTextureClass.get(),
+        jMethodId.get(),
+        static_cast<jint>(texture->textureId()),
+        static_cast<jint>(texture->width()),
+        static_cast<jint>(texture->height())
+    );
 }
 
 } // slark

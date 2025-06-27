@@ -153,8 +153,11 @@ void VideoRender::renderFrameComplete(int32_t id) noexcept {
     if (renderInfos_.contains(textureId)) {
         auto info = std::move(renderInfos_[textureId]);
         renderInfos_.erase(textureId);
-        Texture::releaseResource(std::move(info.texture));
         videoClock_.setTime(Time::TimePoint::fromSeconds(info.ptsTime));
+        if (backupRenderInfo_.isValid()) {
+            Texture::releaseResource(std::move(backupRenderInfo_.texture));
+        }
+        backupRenderInfo_ = std::move(info);
         LogI("rendered video, ptsTime:{}, texture id:{}", info.ptsTime, id);
     } else {
         LogE("not found texture id:{}", id);

@@ -418,7 +418,6 @@ void Player::Impl::pushVideoPacketDecode(bool ) noexcept {
     if (!videoDecodeComponent_) {
         return;
     }
-    LogI("videoPackets size:{}", videoPackets_.size());
     if (videoPackets_.empty()) {
         if (demuxer_->isCompleted() && !videoDecodeComponent_->isInputCompleted()) {
             videoDecodeComponent_->setInputCompleted();
@@ -836,13 +835,6 @@ void Player::Impl::handleSettingUpdate(Event& t) noexcept {
             }
         }
         LogI("set mute:{}", isMute);
-    } else if (t.type == EventType::UpdateSettingRenderSize) {
-        auto size = std::any_cast<std::pair<uint32_t, uint32_t>>(t.data);
-        params_.withWriteLock([size](auto& p){
-            p->setting.width = size.first;
-            p->setting.height = size.second;
-        });
-        LogI("set size, width:{}, height:{}", size.first, size.second);
     }
 }
 
@@ -962,12 +954,6 @@ void Player::Impl::setVolume(float volume) {
 void Player::Impl::setMute(bool isMute) {
     auto ptr = buildEvent(EventType::UpdateSettingMute);
     ptr->data = std::make_any<bool>(isMute);
-    sender_->send(std::move(ptr));
-}
- 
-void Player::Impl::setRenderSize(uint32_t width, uint32_t height) noexcept {
-    auto ptr = buildEvent(EventType::UpdateSettingRenderSize);
-    ptr->data = std::make_any<std::pair<uint32_t, uint32_t>>(width, height);
     sender_->send(std::move(ptr));
 }
 

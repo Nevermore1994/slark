@@ -13,6 +13,10 @@ import com.slark.api.SlarkPlayerConfig
 import com.slark.api.SlarkPlayerObserver
 import com.slark.api.SlarkPlayerState
 import com.slark.api.SlarkRenderTarget
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.ceil
 
 
@@ -21,6 +25,7 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
     private var renderThread: EGLRenderThread? = null
     private var renderView: View? = null
     private var isPlayingBeforeBackground = false
+    private var needRefreshAfterUpdate = false
 
     override var isLoop: Boolean = false
         set(value) {
@@ -153,6 +158,16 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
 
             override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
                 renderThread?.setRenderSize(width, height)
+                val state = state()
+                val isRefresh = state == SlarkPlayerState.Pause ||
+                    state == SlarkPlayerState.Ready ||
+                    state == SlarkPlayerState.Completed
+                if (isRefresh) {
+                    //It seems that the first refresh does not fully adapt to the surface,
+                    //and it always takes the second refresh to display normally.
+                    renderThread?.refresh()
+                    needRefreshAfterUpdate = true
+                }
             }
 
             override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
@@ -161,7 +176,12 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
                 return true
             }
 
-            override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
+            override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
+                if (needRefreshAfterUpdate) {
+                    needRefreshAfterUpdate = false
+                    renderThread?.refresh()
+                }
+            }
         }
     }
 
@@ -172,7 +192,17 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
                 onSurfaceAvailable(holder.surface, holder.surfaceFrame.width(), holder.surfaceFrame.height())
             }
 
-            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                renderThread?.setRenderSize(width, height)
+                SlarkLog.i(LOG_TAG, "Surface changed: width=$width, height=$height")
+                val state = state()
+                val isRefresh = state == SlarkPlayerState.Pause ||
+                    state == SlarkPlayerState.Ready ||
+                    state == SlarkPlayerState.Completed
+                if (isRefresh) {
+                    renderThread?.refresh()
+                }
+            }
 
             override fun surfaceDestroyed(holder: SurfaceHolder) {
                 renderThread?.shutdown()
