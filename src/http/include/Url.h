@@ -55,10 +55,15 @@ struct Url {
         return scheme == kHttps;
     }
 
+    [[nodiscard]] std::string_view url() const noexcept {
+        return rawUrl_;
+    }
+
 private:
     void parse(std::string_view url) noexcept;
 private:
     bool isValid_ = true;
+    std::string rawUrl_; //original url, used for debug
 };
 
 inline void freeUrl(Url* url) noexcept {

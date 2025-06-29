@@ -71,9 +71,11 @@ void RequestSession::setupSocket() noexcept {
     addrinfo* addressInfo = nullptr;
     ResponseHeader responseData;
     LogI("host:{}, port:{}", host_->host, host_->port);
-    if (getaddrinfo(host_->host.data(), host_->port.data(), &hints, &addressInfo) != 0 ||
-        addressInfo == nullptr) {
-        LogE("get addr info failed.");
+    auto addrCode = getaddrinfo(host_->host.c_str(), host_->port.c_str(), &hints, &addressInfo);
+    if (addrCode != 0 || addressInfo == nullptr) {
+        int lastError = GetLastError();
+        auto errorMessage = std::string(gai_strerror(addrCode));
+        LogE("get addr info failed: {}, last error: {}", errorMessage, lastError);
         return;
     }
     auto ipVersion = addressInfo->ai_family == AF_INET ? IPVersion::V4 : IPVersion::V6;
@@ -134,6 +136,11 @@ void RequestSession::process() noexcept {
         }
         if (socket_ == nullptr || !socket_->isLive()) {
             setupSocket();
+        }
+        if (!socket_ || !socket_->isLive()) {
+            LogE("socket is not valid");
+            onError(ResultCode::ConnectAddressError, 0);
+            continue;
         }
         if (!send()) {
             continue;

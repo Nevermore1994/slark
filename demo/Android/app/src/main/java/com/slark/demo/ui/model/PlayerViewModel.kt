@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Size
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import com.slark.api.PlayerErrorCode
 import com.slark.api.SlarkPlayer
 import com.slark.api.SlarkPlayerEvent
 import com.slark.api.SlarkPlayerObserver
@@ -34,6 +35,8 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
     var isLoop by mutableStateOf(false)
 
     var isMute by mutableStateOf(false)
+
+    var errorMessage by mutableStateOf<String?>(null)
 
     private val observer = object: SlarkPlayerObserver {
         override fun notifyTime(playerId: String, time: Double) {
@@ -79,7 +82,18 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
                 SlarkPlayerEvent.UpdateCacheTime -> {
                     cacheTime = value.toDouble()
                 }
-                else -> {}
+                SlarkPlayerEvent.OnError -> {
+                    SlarkLog.e("PlayerViewModel", "Player error: $value")
+                    errorMessage = when (PlayerErrorCode.fromString(value)) {
+                        PlayerErrorCode.OpenFileError -> "Failed to open file"
+                        PlayerErrorCode.NetWorkError -> "Network error"
+                        PlayerErrorCode.NotSupport -> "Format not supported"
+                        PlayerErrorCode.DemuxError -> "Demuxing error"
+                        PlayerErrorCode.DecodeError -> "Decoding error"
+                        PlayerErrorCode.RenderError -> "Rendering error"
+                        else -> "Unknown error"
+                    }
+                } else -> {}
             }
         }
     }

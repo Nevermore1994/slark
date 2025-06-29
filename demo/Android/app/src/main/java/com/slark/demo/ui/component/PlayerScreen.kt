@@ -35,6 +35,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import android.widget.Toast
 
 
 @Composable
@@ -47,6 +48,16 @@ fun PlayerScreen(
     var hideJob by remember { mutableStateOf<Job?>(null) }
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    val context = LocalContext.current
+    val errorMessage = viewModel.errorMessage
+
+    LaunchedEffect(errorMessage) {
+        errorMessage?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            viewModel.errorMessage = null 
+        }
+    }
 
     fun showControls() {
         controlsVisible = true

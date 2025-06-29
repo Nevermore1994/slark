@@ -9,11 +9,12 @@
 #include "Util.hpp"
 #include "MediaUtil.h"
 #include <format>
+#include <utility>
 
 namespace slark {
 
-M3U8Parser::M3U8Parser(const std::string& baseUrl)
-    : baseUrl_(baseUrl) {
+M3U8Parser::M3U8Parser(std::string  baseUrl)
+    : baseUrl_(std::move(baseUrl)) {
     
 }
 
@@ -393,14 +394,14 @@ bool TSDemuxer::packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) n
             break;
         }
         view = view.substr(range.end());
-        range.pos += pos;
+        range.shift(static_cast<int64_t>(pos));
         pos = range.end();
         naluRanges.push_back(range);
     }
     
     view = videoESFrame_.mediaData.view();
     for (const auto& range : naluRanges) {
-        auto dataView = view.substr(range.pos, static_cast<size_t>(range.size));
+        auto dataView = view.substr(range);
         auto naluType = static_cast<uint8_t>(dataView[0]) & 0x1f;
         auto info = std::make_shared<VideoFrameInfo>();
         if (naluType == 7) {
@@ -563,7 +564,7 @@ bool TSDemuxer::packAudioPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexc
         dataView = dataView.substr(static_cast<uint64_t>(headerLength));
         auto info = std::make_shared<AudioFrameInfo>();
         info->channels = header.channel;
-        info->sampleRate = getAACSamplingRate(header.samplingIndex);
+        info->sampleRate = static_cast<uint64_t>(getAACSamplingRate(header.samplingIndex));
         info->refIndex = tsIndex;
         auto frame = std::make_unique<AVFrame>(AVFrameType::Audio);
         frame->data = std::make_unique<Data>(dataView);
@@ -712,8 +713,7 @@ void HLSDemuxer::seekPos(uint64_t index) noexcept {
     auto& infos = getTSInfos();
     auto tsIndex = static_cast<size_t>(index);
     if (tsIndex < infos.size()) {
-        auto range = infos[tsIndex].range;
-        auto pos = range.isValid() ? range.pos : 0;
+        auto pos = infos[tsIndex].range.start();
         IDemuxer::seekPos(pos);
     }
     if (tsDemuxer_) {

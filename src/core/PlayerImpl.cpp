@@ -118,7 +118,7 @@ bool Player::Impl::setupDataProvider() noexcept {
         return false;
     }
     
-    auto readDataCallback = [this](DataPacket data, IOState state) {
+    auto readDataCallback = [this](IReader* DataProvider,DataPacket data, IOState state) {
         LogI("receive data offset:{} size: {}", data.offset, data.length());
         if (data.data) {
             dataList_.withLock([&](auto& dataList) {
@@ -128,12 +128,19 @@ bool Player::Impl::setupDataProvider() noexcept {
         
         if (state == IOState::Error) {
             sender_->send(buildEvent(EventType::ReadError));
+            auto errorCode = dataProvider_->isNetwork() ?
+                std::to_string(static_cast<uint8_t>(PlayerErrorCode::NetWorkError)) :
+                std::to_string(static_cast<uint8_t>(PlayerErrorCode::OpenFileError));
+            notifyPlayerEvent(PlayerEvent::OnError, errorCode);
         }
     };
 
     if (!PlayerImplHelper::createDataProvider(path, this, std::move(readDataCallback))) {
         setState(PlayerState::Error);
-        notifyPlayerEvent(PlayerEvent::OnError, std::to_string(static_cast<uint8_t>(PlayerErrorCode::OpenFileError)));
+        auto errorCode = isNetworkLink(path) ?
+                         std::to_string(static_cast<uint8_t>(PlayerErrorCode::NetWorkError)) :
+                         std::to_string(static_cast<uint8_t>(PlayerErrorCode::OpenFileError));
+        notifyPlayerEvent(PlayerEvent::OnError, errorCode);
         return false;
     }
     return true;
@@ -289,11 +296,9 @@ void Player::Impl::preparePlayerInfo() noexcept {
     if (info_.hasVideo) {
         LogI("has video, video info:{}", demuxer_->videoInfo()->mediaInfo);
         createVideoComponent(setting);
-        LogI("init player success 1.");
     } else {
         LogI("no video");
     }
-    LogI("init player success 2.");
     doPause();
     if (info_.hasVideo) {
         dataProvider_->start(); //render first frame
@@ -785,7 +790,7 @@ void Player::Impl::setState(PlayerState state) noexcept {
         doPlay();
     } else if (state == PlayerState::Pause || state == PlayerState::Completed) {
         doPause();
-    } else if (state == PlayerState::Stop) {
+    } else if (state == PlayerState::Stop || state == PlayerState::Error) {
         doStop();
     }
     notifyPlayerState(state);
@@ -803,7 +808,7 @@ std::expected<PlayerState, bool> getStateFromEvent(EventType event) {
         case EventType::DecodeError:
         case EventType::DemuxError:
         case EventType::RenderError:
-            return PlayerState::Pause;
+            return PlayerState::Error;
         case EventType::Unknown:
             return PlayerState::Unknown;
         default:
@@ -840,6 +845,7 @@ void Player::Impl::handleSettingUpdate(Event& t) noexcept {
 
 void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
     PlayerState changeState = PlayerState::Unknown;
+    auto currentState = state();
     for (auto& event : events) {
         if (!event) {
             continue;
@@ -851,14 +857,14 @@ void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
             handleSettingUpdate(*event);
         } else if (auto state = getStateFromEvent(event->type); state.has_value()) {
             LogI("eventType:{}", EventTypeToString(event->type));
-            if (changeState != PlayerState::Stop) {
-                changeState = state.value();
-            } else {
-                LogI("player stopped.");
+            if (currentState == PlayerState::Stop  || currentState == PlayerState::Error) {
+                LogI("ignore event:{}", EventTypeToString(event->type));
+                continue;
             }
+            changeState = state.value();
         }
     }
-    auto currentState = state();
+
     if (currentState == PlayerState::Playing && helper_->isRenderEnd()) {
         notifyPlayedTime(); //notify time to end
         LogI("play end.");
@@ -1033,7 +1039,7 @@ void Player::Impl::checkCacheState() noexcept {
         startRead(false);
     } else if (dataProvider_->isCompleted()) {
         startRead(false);
-        if (demuxer_->isCompleted()) {
+        if (demuxer_ && demuxer_->isCompleted()) {
             pauseOwnerThread(nowState);
         }
     } else if (!dataProvider_->isRunning()) {

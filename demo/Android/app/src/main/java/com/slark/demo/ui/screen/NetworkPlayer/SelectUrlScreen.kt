@@ -2,7 +2,6 @@ package com.slark.demo.ui.screen.NetworkPlayer
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,10 +17,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
+import com.slark.demo.ui.PlayUrl
 
 @Composable
 fun SelectUrlScreen(onItemClick: (Uri) -> Unit) {
-    val items = listOf("", "")
+    val items = PlayUrl.urls
     Scaffold(
         modifier = Modifier.fillMaxSize()
     ) { innerPadding ->
@@ -32,10 +32,10 @@ fun SelectUrlScreen(onItemClick: (Uri) -> Unit) {
             itemsIndexed(items) { index, item ->
                 Column {
                     Text(
-                        text = item,
+                        text = item.name,
                         textAlign = TextAlign.Center,
                         modifier = Modifier
-                            .clickable { onItemClick(item.toUri()) }
+                            .clickable { onItemClick(item.url.toUri()) }
                             .fillMaxWidth()
                             .padding(top = 16.dp))
                     HorizontalDivider(thickness = 1.dp, color = Color.Gray)

@@ -200,7 +200,7 @@ void Reader::process() noexcept {
     }
     
     if (task_->callBack) {
-        task_->callBack(std::move(data), nowState);
+        task_->callBack(this, std::move(data), nowState);
     }
 }
 
@@ -209,10 +209,10 @@ void Reader::updateReadRange(Range range) noexcept {
         LogE("Reader is exit.");
         return;
     }
-    task_->range = range;
     if (!range.isValid()) {
         return;
     }
+    task_->range = range;
     seekPos_ = range.pos;
     worker_.start();
 }

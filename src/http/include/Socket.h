@@ -37,7 +37,7 @@ static constexpr int kNoSignal = 0;
 #endif // defined(__unix__) && !defined(__APPLE__)
 
 
-constexpr int32_t kDefaultReadSize = 4 * 1024; //4kb
+constexpr int32_t kDefaultReadSize = 16 * 1024; //16kb
 
 enum class SelectType{
     Read,

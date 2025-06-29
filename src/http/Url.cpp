@@ -25,6 +25,7 @@ bool checkScheme(const std::string_view& scheme) {
 }
 
 void Url::parse(std::string_view url) noexcept {
+    rawUrl_ = url;
     auto urlView = url;
     auto kUrlFlag = "://"sv;
     auto flagPos = urlView.find(kUrlFlag);

@@ -68,6 +68,8 @@ fun HomeScreenRoute(navController: NavHostController) {
             onItemClick = { index ->
                 when (index) {
                     0 -> navController.navigate(Screen.VideoPickerScreen.route)
+                    1 -> navController.navigate(Screen.SelectUrlScreen.route)
+                    else -> {}
                 }
             }
         )

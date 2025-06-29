@@ -21,8 +21,6 @@ import com.slark.demo.ui.screen.LocalPlayer.SharedViewModel
 @Composable
 fun NetworkPlayerScreenRoute(navController: NavHostController, sharedViewModel: SharedViewModel) {
     var playerViewModel by remember { mutableStateOf<PlayerViewModel?>(null) }
-    var context = LocalContext.current
-    val activity = context as ComponentActivity
 
     LaunchedEffect(sharedViewModel.selectedVideoUris) {
         if (sharedViewModel.selectedVideoUris.isEmpty()) {
