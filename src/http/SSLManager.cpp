@@ -4,10 +4,11 @@
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
 #if ENABLE_HTTPS
+#include <thread>
 #include "SSLManager.h"
 #include "Socket.h"
 #include "Type.h"
-#include <thread>
+#include "Log.hpp"
 
 namespace slark::http {
 
@@ -63,20 +64,52 @@ SSLPtr SSLManager::create(Socket socket) noexcept {
         return res;
     }
     SSL_set_fd(ssl, socket);
+    SSL_set_tlsext_host_name(ssl, "media.w3.org");
     res.reset(ssl);
     return res;
 }
 
+std::string getOpenSSLErrorMessage() {
+    std::string result;
+    unsigned long err;
+    char buf[256];
+    while ((err = ERR_get_error()) != 0) {
+        ERR_error_string_n(err, buf, sizeof(buf));
+        result += buf;
+        result += "\n";
+    }
+    return result;
+}
+
 SocketResult SSLManager::connect(SSLPtr& sslPtr) noexcept {
     SocketResult res;
-    auto result = SSL_connect(sslPtr.get());
-    if (result == 0) {
-        res.resultCode = ResultCode::Disconnected;
-    } else if (result < 0) {
-        res.resultCode = ResultCode::Failed;
-        res.errorCode = SSL_get_error(sslPtr.get(), 0);
-        ERR_print_errors_fp(stdout);
-    }
+    int32_t retryCount = 0;
+    int32_t kMaxConnectRetryCount = 100;
+    do {
+        auto result = SSL_connect(sslPtr.get());
+        if (result > 0) {
+            res.resultCode = ResultCode::Success;
+            res.errorCode = 0; //No error
+            break;
+        } else if (result == 0) {
+            res.resultCode = ResultCode::Disconnected;
+            break;
+        }
+        //SSL_connect failed, check error
+        int err = SSL_get_error(sslPtr.get(), result);
+        if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
+            res.resultCode = ResultCode::Retry;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10)); //Wait before retrying
+        } else if (err == SSL_ERROR_SYSCALL) {
+            res.resultCode = ResultCode::Failed;
+            res.errorCode = errno; //System call error
+            LogE("SSL connect error: {}, {}", err, getOpenSSLErrorMessage());
+        } else {
+            res.resultCode = ResultCode::Failed;
+            res.errorCode = err; //OpenSSL error
+            LogE("SSL connect error: {}, {}", err, getOpenSSLErrorMessage());
+        }
+    } while (res.resultCode == ResultCode::Retry && retryCount++ < kMaxConnectRetryCount);
     return res;
 }
 
@@ -127,7 +160,7 @@ std::tuple<SocketResult, DataPtr> SSLManager::read(const SSLPtr& sslPtr) noexcep
     int32_t retryCount = 0;
     do {
         retryCount++;
-        auto recvLength = static_cast<uint64_t>(SSL_read(sslPtr.get(), data->rawData, kDefaultReadSize));
+        auto recvLength = static_cast<int64_t>(SSL_read(sslPtr.get(), data->rawData, kDefaultReadSize));
         if (recvLength == 0) {
             res.resultCode = ResultCode::Disconnected;
             break;
@@ -144,7 +177,7 @@ std::tuple<SocketResult, DataPtr> SSLManager::read(const SSLPtr& sslPtr) noexcep
             std::this_thread::sleep_for(1ms);
         } else {
             res.reset();
-            data->length = recvLength;
+            data->length = static_cast<uint64_t>(recvLength);
             break;
         }
     } while (isNeedRetry);

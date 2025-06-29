@@ -66,8 +66,12 @@ void Request::sendRequest() noexcept {
     hints.ai_socktype = SOCK_STREAM; //tcp
     addrinfo* addressInfo = nullptr;
     ResponseHeader responseData;
-    if (getaddrinfo(url_->host.data(), url_->port.data(), &hints, &addressInfo) != 0 || addressInfo == nullptr) {
-        errorHandler(ResultCode::GetAddressFailed, GetLastError());
+    auto addrCode = getaddrinfo(url_->host.data(), url_->port.data(), &hints, &addressInfo);
+    if (addrCode != 0 || addressInfo == nullptr) {
+        int lastError = GetLastError();
+        auto errorMessage = std::string(gai_strerror(addrCode));
+        LogE("get addr info failed: {}, last error: {}", errorMessage, lastError);
+        errorHandler(ResultCode::GetAddressFailed, lastError);
         return;
     }
     auto ipVersion = info_.ipVersion;
@@ -93,6 +97,8 @@ void Request::sendRequest() noexcept {
     }
     auto result = socket_->connect(addressInfoPtr, timeout);
     if (!result.isSuccess()) {
+        LogE("connect {} failed, error code: {}, result code: {}",
+             url_->url(), result.errorCode, static_cast<int>(result.resultCode));
         errorHandler(result.resultCode, GetLastError());
         return;
     } else if (isValid_ && handler_.onConnected) {
@@ -125,9 +131,9 @@ void Request::redirect(const std::string& url) noexcept {
 }
 
 void Request::process() noexcept {
-    TimerManager::shareInstance().runAfter(info_.timeout, [this]{
-        onError(ResultCode::Timeout, 0);
-    });
+//    timerId_ = TimerManager::shareInstance().runAfter(info_.timeout, [this]{
+//        onError(ResultCode::Timeout, 0);
+//    });
     auto handler = [&](ResultCode code) {
         this->onError(code, 0);
     };
@@ -302,11 +308,11 @@ void Request::onResponseData(DataPtr dataPtr) noexcept {
 }
 
 void Request::onCompleted() noexcept {
+    if (timerId_.isValid()) {
+        TimerManager::shareInstance().cancel(timerId_);
+        timerId_ = TimerId::kInvalidTimerId;
+    }
     if (isValid_) {
-        if (timerId_.isValid()) {
-            TimerManager::shareInstance().cancel(timerId_);
-            timerId_ = TimerId::kInvalidTimerId;
-        }
         if (handler_.onCompleted) {
             handler_.onCompleted(info_);
         }

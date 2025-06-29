@@ -35,7 +35,7 @@ void HLSReader::handleError(const http::ErrorInfo&) noexcept {
     isErrorOccurred_ = true;
     {
         std::lock_guard<std::mutex> lock(taskMutex_);
-        task_->callBack(DataPacket(), state());
+        task_->callBack(this, DataPacket(), state());
     }
 }
 
@@ -47,7 +47,7 @@ void HLSReader::handleTSData(uint32_t index, DataPtr dataPtr) noexcept {
     receiveLength_ += data.data->length;
     {
         std::lock_guard<std::mutex> lock(taskMutex_);
-        task_->callBack(std::move(data), state());
+        task_->callBack(this, std::move(data), state());
     }
 }
 
@@ -175,13 +175,13 @@ void HLSReader::sendTSRequest(uint32_t index, const std::string& url, Range rang
     info->url = url;
     info->methodType = http::HttpMethodType::Get;
     if (range.isValid()) {
-        info->headers["Range"] = std::format("bytes={}-{}", range.pos, range.end());
+        info->headers["Range"] = range.toHeaderString();
     }
     
     info->tag = std::format("{}_{}", kTsTag, std::to_string(index));
-    receiveLength_ = range.isValid() ? range.pos : 0;
+    receiveLength_ = range.start();
     addRequest(std::move(info));
-    LogI("send ts request:{}, url:{}, range:[{}, {}]", index, url, range.pos, range.size);
+    LogI("send ts request:{}, url:{}, range:{}", index, url, range.toString());
 }
 
 void HLSReader::updateReadRange(Range) noexcept {

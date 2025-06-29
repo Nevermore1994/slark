@@ -46,8 +46,9 @@ bool RemoteReader::open(ReaderTaskPtr task) noexcept {
     http::RequestInfo info;
     info.url = task->path;
     info.methodType = http::HttpMethodType::Get;
-    if (task->range.isValid()) {
-        info.headers["Range"] = std::format("bytes={}-{}", task_->range.pos, task_->range.end());
+    auto range = task->range;
+    if (range.isValid()) {
+        info.headers["Range"] = range.toHeaderString();
     }
     
     http::ResponseHandler handler;
@@ -82,16 +83,17 @@ bool RemoteReader::open(ReaderTaskPtr task) noexcept {
 void RemoteReader::handleData(DataPtr dataPtr) noexcept {
     DataPacket data;
     data.data = std::move(dataPtr);
-    data.offset = static_cast<int64_t>(receiveLength_ + task_->range.pos);
+    data.offset = static_cast<int64_t>(receiveLength_ + task_->range.start());
     receiveLength_ += data.data->length;
-    task_->callBack(std::move(data), state());
+    task_->callBack(this, std::move(data), state());
 }
 
 void RemoteReader::handleHeader(http::ResponseHeader&& header) noexcept {
-    if (header.httpStatusCode == http::HttpStatusCode::OK) {
-        static const std::string kContentLenth = "Content-Length";
-        if (header.headers.contains(kContentLenth)) {
-            contentLength_ = std::stoull(header.headers.at(kContentLenth));
+    if (http::HttpStatusCode::OK <= header.httpStatusCode &&
+        header.httpStatusCode < http::HttpStatusCode::IMUsed) {
+        static const std::string kContentLength = "Content-Length";
+        if (header.headers.contains(kContentLength)) {
+            contentLength_ = std::stoull(header.headers.at(kContentLength));
         }
         return;
     }
@@ -104,7 +106,7 @@ void RemoteReader::handleHeader(http::ResponseHeader&& header) noexcept {
 void RemoteReader::handleError(const http::ErrorInfo& info) noexcept {
     LogE("http code:{} error code:{}", info.errorCode, static_cast<int>(info.retCode));
     isErrorOccurred_ = true;
-    task_->callBack(DataPacket(), state());
+    task_->callBack(this, DataPacket(), state());
 }
 
 void RemoteReader::handleDisconnect() noexcept {
@@ -112,10 +114,13 @@ void RemoteReader::handleDisconnect() noexcept {
 }
 
 void RemoteReader::updateReadRange(Range range) noexcept {
-    if (!link_ || !task_) {
+    if (!task_) {
         return;
     }
-    link_->cancel();
+    if (link_) {
+        link_->cancel();
+        link_.reset();
+    }
     ReaderTaskPtr ptr = nullptr;
     {
         std::lock_guard<std::mutex> lock(taskMutex_);
@@ -139,10 +144,8 @@ uint64_t RemoteReader::size() noexcept {
 
 void RemoteReader::seek(uint64_t pos) noexcept {
     Range range;
-    {
-        std::lock_guard<std::mutex> lock(taskMutex_);
-        range = task_->range;
-    }
+    LogI("seek pos:{}", pos);
+    range = Range(pos);
     updateReadRange(range);
 }
 

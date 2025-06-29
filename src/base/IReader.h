@@ -13,7 +13,8 @@
 
 namespace slark {
 
-using ReaderDataCallBack = std::function<void(DataPacket, IOState)>;
+struct IReader;
+using ReaderDataCallBack = std::function<void(IReader*, DataPacket, IOState)>;
 
 enum class ReaderType {
     Local,

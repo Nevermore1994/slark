@@ -35,7 +35,7 @@ struct PlayListInfo {
 };
 
 struct M3U8Parser : public NonCopyable {
-    M3U8Parser(const std::string& baseUrl);
+    M3U8Parser(std::string  baseUrl);
     ~M3U8Parser() = default;
     void reset() noexcept;
     bool parse(Buffer& buffer) noexcept;
@@ -144,8 +144,8 @@ struct TSParseInfo {
 
 struct TSPtsFixInfo {
     static constexpr uint64_t kMaxPTS = (1ULL << 33);
-    uint64_t preDtsTime = 0;
-    uint64_t offset = 0;
+    int64_t preDtsTime = 0;
+    int64_t offset = 0;
     
     void reset() noexcept {
         preDtsTime = 0;

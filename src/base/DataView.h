@@ -10,6 +10,7 @@
 #include <ranges>
 #include "Assert.hpp"
 #include "StringUtil.h"
+#include "Range.h"
 
 namespace slark {
 
@@ -61,6 +62,23 @@ public:
             return {};
         }
         return DataView(view_.substr(pos, size));
+    }
+
+    DataView substr(Range range) const noexcept {
+        if (!range.isValid()) {
+            return {};
+        }
+        uint64_t pos = range.pos.value_or(0);
+        if (pos >= length()) {
+            return {};
+        }
+        if (!range.size.has_value() || range.size.value_or(0) == INT64_MAX) {
+            return DataView(view_.substr(pos));
+        }
+        if (range.end() > length()) {
+            return DataView(view_.substr(pos));
+        }
+        return DataView(view_.substr(pos, static_cast<size_t>(range.size.value_or(0))));
     }
     
     bool operator==(const DataView& view) const noexcept {
