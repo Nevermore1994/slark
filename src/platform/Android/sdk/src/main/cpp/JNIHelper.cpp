@@ -102,11 +102,11 @@ JNIReference<jbyteArray> ToJVM::toNaluByteArray(
     DataView data,
     bool isRawData
 ) noexcept {
-    auto size = static_cast<int32_t>(data.length());
     jbyteArray dataArray = nullptr;
     if (!isRawData && !data.empty()) {
         data = data.substr(4); //remove nalu header
     }
+    auto size = static_cast<int32_t>(data.length());
     if (!data.empty()) {
         dataArray = env->NewByteArray(size + 4);
         if (dataArray == nullptr) {
@@ -128,8 +128,7 @@ JNIReference<jbyteArray> ToJVM::toNaluByteArray(
                 dataArray,
                 4,
                 size,
-                reinterpret_cast<const jbyte *>(data.view()
-                    .data()));
+                reinterpret_cast<const jbyte *>(data.view().data()));
         }
     } else {
         dataArray = env->NewByteArray(0);

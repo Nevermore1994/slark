@@ -15,6 +15,10 @@ TSLSocket::TSLSocket(IPVersion ipVersion) : ISocket(ipVersion), sslPtr(SSLManage
 
 }
 
+TSLSocket::~TSLSocket() {
+    TSLSocket::close();
+}
+
 SocketResult TSLSocket::connect(const AddressInfoPtr& address, int64_t timeout) noexcept {
     SocketResult result = ISocket::connect(address, timeout);
     if (!result.isSuccess()) {

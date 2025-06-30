@@ -138,6 +138,8 @@ std::tuple<SocketResult, int64_t> SSLManager::write(const SSLPtr& sslPtr, const 
             }
             if (SSL_ERROR_WANT_WRITE == res.errorCode || SSL_ERROR_WANT_READ == res.errorCode) {
                 isNeedRetry = true;
+            } else {
+                res.errorCode = errno;
             }
             std::this_thread::sleep_for(1ms);
         } else {
