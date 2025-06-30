@@ -16,6 +16,8 @@ class TSLSocket final : public ISocket {
 public:
     explicit TSLSocket(IPVersion ipVersion = IPVersion::V4);
 
+    ~TSLSocket() override;
+
     SocketResult connect(const AddressInfoPtr& address, int64_t timeout) noexcept override;
 
     [[nodiscard]] std::tuple<SocketResult, int64_t> send(const std::string_view& data) const noexcept override;

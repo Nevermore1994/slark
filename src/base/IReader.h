@@ -51,9 +51,9 @@ struct IReader: public NonCopyable {
     
     virtual void close() noexcept = 0;
     
-    virtual void start() noexcept {};
+    virtual void start() noexcept = 0;
     
-    virtual void pause() noexcept {};
+    virtual void pause() noexcept = 0;
     
     virtual bool isCompleted() noexcept = 0;
     

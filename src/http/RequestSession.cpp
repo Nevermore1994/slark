@@ -44,20 +44,21 @@ void RequestSession::clear() noexcept {
         std::lock_guard<std::mutex> lock(taskMutex_);
         requestTaskQueue_.clear();
     }
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        handler_.reset();
-    }
     if (currentTask_) {
         currentTask_->isValid_ = false;
     }
     cond_.notify_all();
+    isBusy_ = false;
     LogI("RequestSession clear");
 }
 
 void RequestSession::close() noexcept {
     isExited_ = true;
     clear();
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        handler_.reset();
+    }
     LogI("RequestSession close");
 }
 
@@ -265,10 +266,13 @@ void RequestSession::receive() noexcept {
     int64_t chunkSize = kInvalid;
     while (true) {
         if (!isReceivable()) {
+            isBusy_ = false;
             return;
         }
         std::this_thread::sleep_for(1ms);
         if (!currentTask_->isValid_ || isExited_) {
+            LogI("session close");
+            isBusy_ = false;
             return;
         }
 
@@ -322,7 +326,7 @@ void RequestSession::receive() noexcept {
         if (isCompleted) {
             currentTask_->isCompleted_ = true;
             onCompleted();
-            return; //disconnect
+            return;
         }
     }
 }

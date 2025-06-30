@@ -43,7 +43,6 @@ void outputLog(LogType level, std::string_view format, Args&& ...args) {
     outputLog(logStr);
 #elif SLARK_ANDROID
     printLog(logStr);
-    std::print("{}", logStr);
 #else
     std::print("{}", logStr);
     fflush(stdout);

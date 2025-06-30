@@ -18,8 +18,7 @@ PlainSocket::~PlainSocket() {
     if (socket_ == kInvalidSocket) {
         return;
     }
-    ::close(socket_);
-    socket_ = kInvalidSocket;
+    PlainSocket::close();
 }
 
 SocketResult PlainSocket::connect(const AddressInfoPtr& address, int64_t timeout) noexcept {

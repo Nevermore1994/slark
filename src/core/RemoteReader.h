@@ -9,8 +9,8 @@
 #include "Request.h"
 #include "IReader.h"
 #include "Synchronized.hpp"
-#include "Thread.h"
 #include <deque>
+#include <optional>
 
 namespace slark {
 
@@ -37,7 +37,10 @@ public:
     void seek(uint64_t pos) noexcept override;
     
     uint64_t size() noexcept override;
-    
+
+    void start() noexcept override;
+
+    void pause() noexcept override;
 private:
     void handleHeader(http::ResponseHeader&& header) noexcept;
     void handleData(DataPtr) noexcept;
@@ -46,9 +49,9 @@ private:
 private:
     std::atomic_bool isClosed_ = false;
     std::atomic_bool isCompleted_ = false;
-    std::mutex mutex_;
+    std::mutex linkMutex_;
     bool isErrorOccurred_ = false;
-    uint64_t contentLength_ = 0;
+    std::optional<uint64_t> contentLength_;
     uint64_t receiveLength_ = 0;
     std::unique_ptr<http::Request> link_;
 };

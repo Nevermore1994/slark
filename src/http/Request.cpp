@@ -101,8 +101,11 @@ void Request::sendRequest() noexcept {
              url_->url(), result.errorCode, static_cast<int>(result.resultCode));
         errorHandler(result.resultCode, GetLastError());
         return;
-    } else if (isValid_ && handler_.onConnected) {
-        handler_.onConnected(info_);
+    } else {
+        LogI("connect {} success", url_->url());
+        if (isValid_ && handler_.onConnected) {
+            handler_.onConnected(info_);
+        }
     }
     if (!send()) {
         return;
@@ -131,9 +134,9 @@ void Request::redirect(const std::string& url) noexcept {
 }
 
 void Request::process() noexcept {
-//    timerId_ = TimerManager::shareInstance().runAfter(info_.timeout, [this]{
-//        onError(ResultCode::Timeout, 0);
-//    });
+    timerId_ = TimerManager::shareInstance().runAfter(info_.timeout, [this]{
+        onError(ResultCode::Timeout, 0);
+    });
     auto handler = [&](ResultCode code) {
         this->onError(code, 0);
     };
