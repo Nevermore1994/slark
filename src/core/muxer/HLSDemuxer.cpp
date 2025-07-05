@@ -365,11 +365,18 @@ bool TSDemuxer::parseTSPes(DataView data, uint8_t payloadIndicator, TSPESFrame& 
 
 void TSDemuxer::writeVideoData(AVFramePtr& frame, DataView view) noexcept {
     Data header(4);
+#if SLARK_ANDROID
+    header.rawData[0] = 0x0;
+    header.rawData[1] = 0x0;
+    header.rawData[2] = 0x0;
+    header.rawData[3] = 0x1;
+#elif SLARK_IOS
     auto length = static_cast<uint32_t>(view.length());
     header.rawData[0] = static_cast<uint8_t>(length >> 24);
     header.rawData[1] = static_cast<uint8_t>(length >> 16);
     header.rawData[2] = static_cast<uint8_t>(length >> 8);
     header.rawData[3] = static_cast<uint8_t>(length);
+#endif
     header.length = 4;
     frame->data->append(header); //write header
     frame->data->append(view);

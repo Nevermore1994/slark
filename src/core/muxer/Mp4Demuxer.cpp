@@ -265,6 +265,8 @@ AVFramePtrArray TrackContext::parseH264FrameData(AVFramePtr frame,
         auto avccBox = std::dynamic_pointer_cast<BoxAvcc>(stsd->getChild("avc1")->getChild("avcC"));
         if (avccBox) {
             naluByteSize = avccBox->naluByteSize;
+        } else {
+            naluByteSize = 3; //default nalu size
         }
     }
     AVFramePtrArray frames;

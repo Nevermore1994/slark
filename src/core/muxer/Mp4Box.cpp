@@ -348,11 +348,13 @@ bool BoxStsd::decode(Buffer& buffer) noexcept {
             buffer.skip(32 + 2 + 2);
             isVideo = true;
         }
-        auto subBox = Box::createBox(buffer);
-        if (subBox) {
+        BoxRefPtr subBox;
+        do {
+            subBox = Box::createBox(buffer);
             box->append(subBox);
             subBox->decode(buffer);
-        }
+            buffer.skipTo(static_cast<int64_t>(subBox->info.end()));
+        } while(subBox->info.end() < endPos);
         buffer.skip(static_cast<int64_t>(endPos - buffer.pos()));
     }
     return true;

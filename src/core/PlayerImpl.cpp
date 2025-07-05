@@ -23,6 +23,7 @@ namespace slark {
 
 const double kAVSyncMinThreshold = 0.1; //100ms
 const double kAVSyncMaxThreshold = 10; //10s
+const double kMinCanPlayTime = 0.5; //500ms
 const uint32_t kMaxCacheDecodedVideoFrame = 10;
 const uint32_t kMaxCacheDecodedAudioFrame = 10;
 constexpr double kMinPushDecodeTime = 0.2; //second
@@ -351,7 +352,6 @@ void Player::Impl::demuxData() noexcept {
     }
     std::vector<DataPacket> dataList;
     constexpr uint32_t kMaxHandleDataSize = 5;//5 * 64kb
-    constexpr uint32_t kMaxCacheDataSize = 20;//20 * 64kb
     uint32_t cacheSize = 0;
     dataList_.withLock([&](auto& list) {
         auto size = std::min(kMaxHandleDataSize, uint32_t(list.size()));
@@ -453,6 +453,9 @@ void Player::Impl::pushAVFrameDecode() noexcept {
 }
 
 void Player::Impl::pushVideoFrameToRender() noexcept {
+    if (!videoDecodeComponent_) {
+        return;
+    }
     if (!stats_.isForceVideoRendered) {
         double diff = 0.0;
         if (info_.hasAudio && info_.hasVideo) {
@@ -553,8 +556,7 @@ void Player::Impl::process() noexcept {
     }
     demuxData();
     pushAVFrameDecode();
-    if (seekRequest_.has_value() ||
-        nowState == PlayerState::Buffering ||
+    if (stats_.isForceVideoRendered ||
         nowState == PlayerState::Playing) {
         pushAVFrameToRender();
     }
@@ -1011,6 +1013,14 @@ void Player::Impl::checkCacheState() noexcept {
     auto playedTime = currentPlayedTime();
     auto cacheTime = cachedDuration - playedTime;
     cacheTime = std::max(0.0, cacheTime);
+    if (nowState == PlayerState::Playing && !dataProvider_->isCompleted()) {
+        if (isEqualOrGreater(kMinCanPlayTime, cacheTime, 0.1)) {
+            setState(PlayerState::Buffering);
+        } else if (isEqualOrGreater(cacheTime, setting.minCacheTime, 0.1)) {
+            setState(PlayerState::Playing);
+        }
+    }
+
     LogI("demux cache time:{}, demuxedDuration:{} played time:{}", cacheTime, cachedDuration, playedTime);
     auto startRead = [this](bool isStart){
         auto isRunning = dataProvider_->isRunning();

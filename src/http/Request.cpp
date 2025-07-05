@@ -61,6 +61,9 @@ void Request::sendRequest() noexcept {
     auto errorHandler = [&](ResultCode code, int32_t errorCode) {
         this->onError(code, errorCode);
     };
+    timerId_ = TimerManager::shareInstance().runAfter(info_.timeout, [this]{
+        onError(ResultCode::Timeout, 0);
+    });
     addrinfo hints{};
     hints.ai_family = GetAddressFamily(info_.ipVersion);
     hints.ai_socktype = SOCK_STREAM; //tcp
@@ -90,6 +93,11 @@ void Request::sendRequest() noexcept {
     }
     socket_ = std::unique_ptr<ISocket, decltype(&freeSocket)>(socketPtr, &freeSocket);
     auto addressInfoPtr = MakeAddressInfoPtr(addressInfo);
+    if (socket_->setKeepLive()) {
+        LogI("set keep live success");
+    } else {
+        LogE("set keep live failed");
+    }
     auto timeout = getRemainTime();
     if (timeout <= 0) {
         errorHandler(ResultCode::Timeout, GetLastError());
@@ -109,6 +117,10 @@ void Request::sendRequest() noexcept {
     }
     if (!send()) {
         return;
+    }
+    if (timerId_.isValid()) {
+        TimerManager::shareInstance().cancel(timerId_);
+        timerId_ = TimerId::kInvalidTimerId;
     }
     receive();
 }
@@ -134,9 +146,6 @@ void Request::redirect(const std::string& url) noexcept {
 }
 
 void Request::process() noexcept {
-    timerId_ = TimerManager::shareInstance().runAfter(info_.timeout, [this]{
-        onError(ResultCode::Timeout, 0);
-    });
     auto handler = [&](ResultCode code) {
         this->onError(code, 0);
     };
@@ -186,13 +195,15 @@ bool Request::isReceivable() noexcept {
             onCompleted();
             return false;
         }
-        auto timeout = getRemainTime();
-        auto canReceive = socket_->canReceive(timeout);
+        auto canReceive = socket_->canReceive(100);//wait 1000ms
         if (canReceive.isSuccess()) {
             return true;
         }
-        timeout = getRemainTime();
-        if (timeout > 0 && canReceive.resultCode == ResultCode::Retry) {
+        if (canReceive.resultCode == ResultCode::Retry) {
+            continue;
+        }
+        if (canReceive.resultCode == ResultCode::Timeout) {
+            std::this_thread::sleep_for(10ms);
             continue;
         }
         onError(canReceive.resultCode, canReceive.errorCode);
