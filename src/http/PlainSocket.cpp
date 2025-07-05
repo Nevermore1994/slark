@@ -72,6 +72,12 @@ std::tuple<SocketResult, DataPtr> PlainSocket::receive() const noexcept {
             result.resultCode = ResultCode::Retry;
         } else {
             result.resultCode = ResultCode::Failed;
+            auto isLive = ISocket::isLive();
+            if (isLive) {
+                result.errorCode = 0; // No error, just no data
+            } else {
+                result.errorCode = GetLastError(); // Socket is closed or error occurred
+            }
         }
     } else if (data->empty()) {
         result.resultCode = ResultCode::Disconnected;

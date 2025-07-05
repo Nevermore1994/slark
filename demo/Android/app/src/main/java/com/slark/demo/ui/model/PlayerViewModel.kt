@@ -30,6 +30,8 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
     var cacheTime by mutableStateOf(0.0)
         //private set
 
+    var isLoading by mutableStateOf(false)
+
     var volume by mutableStateOf(100.0f)
 
     var isLoop by mutableStateOf(false)
@@ -37,6 +39,11 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
     var isMute by mutableStateOf(false)
 
     var errorMessage by mutableStateOf<String?>(null)
+
+    private fun setPlayState(isPlaying: Boolean, isLoading: Boolean) {
+        this.isPlaying = isPlaying
+        this.isLoading = isLoading
+    }
 
     private val observer = object: SlarkPlayerObserver {
         override fun notifyTime(playerId: String, time: Double) {
@@ -47,19 +54,15 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
             SlarkLog.d("PlayerViewModel", "Player state changed: $state")
             when (state) {
                 SlarkPlayerState.Playing -> {
-                    isPlaying = true
-                }
-                SlarkPlayerState.Pause -> {
-                    isPlaying = false
-                }
-                SlarkPlayerState.Stop -> {
-                    isPlaying = false
+                    setPlayState(isPlaying = true, isLoading = false)
                 }
                 SlarkPlayerState.Buffering -> {
-                    isPlaying = false
+                    setPlayState(isPlaying = false, isLoading = true)
                 }
+                SlarkPlayerState.Pause,
+                SlarkPlayerState.Stop,
                 SlarkPlayerState.Completed -> {
-                    isPlaying = false
+                    setPlayState(isPlaying = false, isLoading = false)
                 }
                 SlarkPlayerState.Prepared -> {
                     totalTime = player?.totalDuration() ?: 0.0

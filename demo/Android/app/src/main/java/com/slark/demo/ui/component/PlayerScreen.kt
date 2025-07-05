@@ -2,18 +2,13 @@ package com.slark.demo.ui.component
 
 import android.app.Activity
 import android.content.res.Configuration
-import android.graphics.SurfaceTexture
-import android.os.Build
-import android.view.Surface
 import android.view.TextureView
 import android.view.ViewGroup
-import androidx.annotation.RequiresApi
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,9 +21,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.slark.demo.ui.model.PlayerViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +28,20 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import android.widget.Toast
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
+import com.slark.demo.R
 
 
 @Composable
@@ -48,9 +54,9 @@ fun PlayerScreen(
     var hideJob by remember { mutableStateOf<Job?>(null) }
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-
     val context = LocalContext.current
     val errorMessage = viewModel.errorMessage
+    val isLoading = viewModel.isLoading
 
     LaunchedEffect(errorMessage) {
         errorMessage?.let {
@@ -68,11 +74,20 @@ fun PlayerScreen(
         }
     }
 
+    if (isLoading) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            RotatingImage()
+        }
+    }
+
     LaunchedEffect(controlsVisible) {
         if (controlsVisible) {
             hideJob?.cancel()
             hideJob = CoroutineScope(Dispatchers.Main).launch {
-                delay(5000)
+                delay(3000)
                 controlsVisible = false
             }
         }
@@ -114,4 +129,28 @@ fun PlayerScreen(
             )
         }
     }
+}
+
+@Composable
+fun RotatingImage() {
+    val infiniteTransition = rememberInfiniteTransition()
+    val angle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        )
+    )
+
+    Image(
+        painter = painterResource(id = R.drawable.loading),
+        contentDescription = null,
+        colorFilter = ColorFilter.tint(Color.LightGray),
+        modifier = Modifier
+            .size(75.dp)
+            .graphicsLayer {
+                rotationZ = angle
+            }
+    )
 }

@@ -1,6 +1,13 @@
 package com.slark.demo.ui.component
 
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.layout.*
@@ -21,6 +28,9 @@ import androidx.constraintlayout.compose.Dimension
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import com.slark.demo.R
 import com.slark.demo.ui.model.PlayerViewModel
 import kotlin.math.ceil
@@ -219,20 +229,34 @@ fun PlayerProgressBar(viewModel: PlayerViewModel) {
 
         Text(
             text = formatTime(currentTime.toInt()),
+            color = Color.LightGray,
+            style = MaterialTheme.typography.labelMedium.copy(
+                shadow = Shadow(
+                    color = Color.Black,
+                    offset = Offset(1f, 1f),
+                    blurRadius = 2f
+                )
+            ),
             modifier = Modifier.constrainAs(startTime) {
                 start.linkTo(parent.start)
                 top.linkTo(slider.bottom, margin = 2.dp)
             },
-            style = MaterialTheme.typography.labelMedium
         )
 
         Text(
             text = formatTime(totalTime.toInt()),
+            color = Color.LightGray,
+            style = MaterialTheme.typography.labelMedium.copy(
+                shadow = Shadow(
+                    color = Color.Black,
+                    offset = Offset(1f, 1f),
+                    blurRadius = 2f
+                )
+            ),
             modifier = Modifier.constrainAs(endTime) {
                 end.linkTo(parent.end)
                 top.linkTo(slider.bottom, margin = 2.dp)
             },
-            style = MaterialTheme.typography.labelMedium
         )
     }
 }

@@ -29,6 +29,10 @@ struct BoxInfo {
     uint64_t size = 0;
     uint32_t headerSize = 8;
     std::string symbol;
+
+    [[nodiscard]] uint64_t end() const noexcept {
+        return start + size;
+    }
 };
 
 class Box
