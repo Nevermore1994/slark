@@ -33,12 +33,23 @@ enum class FrameFormat {
 };
 
 struct FrameInfo {
+    AVFrameType type = AVFrameType::Unknown;
     bool isEndOfStream = false;
     uint32_t refIndex = 0;
     virtual ~FrameInfo() = default;
+
+    virtual bool isKeyFrame() const noexcept = 0;
 };
 
 struct AudioFrameInfo : public FrameInfo {
+    AudioFrameInfo() {
+        type = AVFrameType::Audio;
+    }
+
+    [[nodiscard]] bool isKeyFrame() const noexcept override {
+        return false;
+    }
+
     void copy(const std::shared_ptr<AudioFrameInfo>& info) const noexcept {
         if (!info) {
             return;
@@ -68,19 +79,19 @@ enum class VideoFrameType {
 };
 
 struct VideoFrameInfo : public FrameInfo {
-public:
+    VideoFrameInfo() {
+        type = AVFrameType::Video;
+    }
+
+    [[nodiscard]] bool isKeyFrame() const noexcept override {
+        return isIDRFrame || frameType == VideoFrameType::IFrame;
+    }
+
     void copy(std::shared_ptr<VideoFrameInfo>& info) const noexcept {
         if (!info || info.get() == this) {
             return;
         }
         *info = *this;
-    }
-
-    bool isHasContent() const {
-        static const std::vector<VideoFrameType> kHasContentFrames = { VideoFrameType::IFrame, VideoFrameType::PFrame, VideoFrameType::BFrame };
-        return std::ranges::any_of(kHasContentFrames, [this](auto type){
-            return type == frameType;
-        });
     }
     
     ~VideoFrameInfo() override = default;

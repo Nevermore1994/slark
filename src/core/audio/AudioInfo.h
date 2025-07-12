@@ -129,10 +129,10 @@ public:
     uint32_t requestAudioData(uint8_t* data, uint32_t size, AudioDataFlag& flag) noexcept {
         if (auto func = dataFunc_.load()) {
             auto getSize = std::invoke(*func, data, size, flag);
-            if (getSize != 0) {
-                renderedDataLength_ += getSize;
-                clock_.setTime( offsetTime_ + audioInfo_->dataLen2TimePoint(renderedDataLength_));
-            }
+            renderedDataLength_ += getSize;
+            //Even if it is 0, it must be updated,
+            //otherwise the latency will cause the update to be incorrect.
+            clock_.setTime( offsetTime_ + audioInfo_->dataLen2TimePoint(renderedDataLength_));
             return getSize;
         } else {
             flag = AudioDataFlag::Error;

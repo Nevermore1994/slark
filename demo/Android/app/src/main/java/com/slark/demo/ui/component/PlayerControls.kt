@@ -1,14 +1,6 @@
 package com.slark.demo.ui.component
 
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
@@ -105,7 +97,7 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
             onValueChange = {  t, _ -> viewModel.volume = t },
             valueRange = 0f..1f,
             trackColor = Color.LightGray,
-            activeColor = Color(0xFFE6E6E6),
+            activeColor = Color(0xFFA9A9A9),
             modifier = Modifier
                 .constrainAs(volumeSlider) {
                     start.linkTo(volumeIcon.end)
@@ -119,7 +111,7 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
             modifier = Modifier
                 .size(36.dp)
                 .constrainAs(prevBtn) {
-                    end.linkTo(playBtn.start, margin = 24.dp)
+                    end.linkTo(playBtn.start, margin = 20.dp)
                     centerVerticallyTo(parent)
                 }
         ) {
@@ -155,7 +147,7 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
             modifier = Modifier
                 .size(36.dp)
                 .constrainAs(nextBtn) {
-                    start.linkTo(playBtn.end, margin = 24.dp)
+                    start.linkTo(playBtn.end, margin = 20.dp)
                     centerVerticallyTo(parent)
                 }
         ) {

@@ -67,9 +67,6 @@ bool RemoteReader::open(ReaderTaskPtr task) noexcept {
                              http::ErrorInfo errorInfo) {
         handleError(errorInfo);
     };
-    handler.onCompleted = [this](const http::RequestInfo&) {
-        isCompleted_ = true;
-    };
     
     {
         std::lock_guard<std::mutex> lock(taskMutex_);
@@ -96,6 +93,10 @@ void RemoteReader::handleData(DataPtr dataPtr) noexcept {
     data.offset = static_cast<int64_t>(receiveLength_ + range.start());
     receiveLength_ += data.data->length;
     task_->callBack(this, std::move(data), state());
+    if (receiveLength_ >= contentLength_) {
+        isCompleted_ = true;
+        LogI("RemoteReader read completed, total length:{}", receiveLength_);
+    }
 }
 
 void RemoteReader::handleHeader(http::ResponseHeader&& header) noexcept {
@@ -134,6 +135,7 @@ void RemoteReader::updateReadRange(Range range) noexcept {
             link_.reset();
         }
     }
+    isCompleted_ = false;
     ReaderTaskPtr ptr = nullptr;
     {
         std::lock_guard<std::mutex> lock(taskMutex_);
@@ -163,6 +165,7 @@ void RemoteReader::seek(uint64_t pos) noexcept {
     Range range;
     LogI("seek pos:{}", pos);
     range = Range(pos);
+    isCompleted_ = false;
     updateReadRange(range);
 }
 
@@ -171,6 +174,10 @@ void RemoteReader::start() noexcept {
         std::lock_guard<std::mutex> lock(linkMutex_);
         if (link_ && link_->isValid()) {
             return; //already started
+        }
+        if (isCompleted_) {
+            LogI("RemoteReader is completed, no need to start again.");
+            return;
         }
     }
     Range range;

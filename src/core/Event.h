@@ -26,6 +26,7 @@ enum class EventType: uint8_t {
     UpdateSettingVolume,
     UpdateSettingMute,
     UpdateSettingEnd,
+    Prepared,
 };
 
 enum class PlayerState : uint8_t;

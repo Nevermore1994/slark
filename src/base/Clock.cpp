@@ -17,6 +17,12 @@ void Clock::setTime(Time::TimePoint count) noexcept {
     isInited_ = true;
 }
 
+void Clock::keep() noexcept {
+    std::lock_guard<std::shared_mutex> lock(mutex_);
+    lastUpdated_ = Time::nowTimeStamp();
+    isInited_ = true;
+}
+
 Time::TimePoint Clock::time() noexcept {
     std::shared_lock<std::shared_mutex> lock(mutex_);
     if (isPause_) {

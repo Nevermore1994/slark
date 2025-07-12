@@ -29,6 +29,7 @@ bool parseTsTag(const std::string& tag, uint32_t& tsIndex) noexcept {
 HLSReader::HLSReader()
     : m3u8Buffer_(std::make_unique<Buffer>())
     , worker_(Util::genRandomName("HLSRead_"), &HLSReader::sendRequest, this) {
+    type_ = ReaderType::HLS;
 }
 
 void HLSReader::handleError(const http::ErrorInfo&) noexcept {

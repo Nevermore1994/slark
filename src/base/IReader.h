@@ -18,7 +18,8 @@ using ReaderDataCallBack = std::function<void(IReader*, DataPacket, IOState)>;
 
 enum class ReaderType {
     Local,
-    NetWork
+    NetWork,
+    HLS,
 };
 
 constexpr uint64_t kReadDefaultSize = 1024 * 64; //64kb
@@ -63,15 +64,15 @@ struct IReader: public NonCopyable {
     
     virtual uint64_t size() noexcept = 0;
     
-    ReaderType type() const noexcept {
+    [[nodiscard]] ReaderType type() const noexcept {
         return type_;
     }
-    
-    bool isLocal() const noexcept {
+
+    [[nodiscard]] bool isLocal() const noexcept {
         return type_ == ReaderType::Local;
     }
-    
-    bool isNetwork() const noexcept {
+
+    [[nodiscard]] bool isNetwork() const noexcept {
         return type_ == ReaderType::NetWork;
     }
     

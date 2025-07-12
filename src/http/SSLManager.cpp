@@ -71,12 +71,13 @@ SSLPtr SSLManager::create(Socket socket) noexcept {
 
 std::string getOpenSSLErrorMessage() {
     std::string result;
-    unsigned long err;
-    char buf[256];
-    while ((err = ERR_get_error()) != 0) {
+    unsigned long err = ERR_get_error();
+    char buf[256] = {};
+    while (err != 0) {
         ERR_error_string_n(err, buf, sizeof(buf));
         result += buf;
         result += "\n";
+        err = ERR_get_error();
     }
     return result;
 }
@@ -85,6 +86,7 @@ SocketResult SSLManager::connect(SSLPtr& sslPtr) noexcept {
     SocketResult res;
     int32_t retryCount = 0;
     int32_t kMaxConnectRetryCount = 100;
+    Socket socket = SSL_get_fd(sslPtr.get());
     do {
         auto result = SSL_connect(sslPtr.get());
         if (result > 0) {
@@ -99,11 +101,25 @@ SocketResult SSLManager::connect(SSLPtr& sslPtr) noexcept {
         int err = SSL_get_error(sslPtr.get(), result);
         if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
             res.resultCode = ResultCode::Retry;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10)); //Wait before retrying
+            auto type = (err == SSL_ERROR_WANT_READ) ? SelectType::Read : SelectType::Write;
+            SocketResult selectRes;
+            do {
+                selectRes = http::select(type, socket, 100); // 100ms timeout
+                if (selectRes.resultCode == ResultCode::Timeout ||
+                    selectRes.resultCode == ResultCode::Retry) {
+                    selectRes.resultCode = ResultCode::Retry;
+                } else {
+                    if (!selectRes.isSuccess()) {
+                        LogE("SSL connect error: {}, {}", err, getOpenSSLErrorMessage());
+                    }
+                    break;
+                }
+            } while (selectRes.resultCode == ResultCode::Retry);
         } else if (err == SSL_ERROR_SYSCALL) {
             res.resultCode = ResultCode::Failed;
             res.errorCode = errno; //System call error
-            LogE("SSL connect error: {}, {}", err, getOpenSSLErrorMessage());
+            auto errMsg = getOpenSSLErrorMessage();
+            LogE("SSL connect error: {}, {}", err, errMsg);
         } else {
             res.resultCode = ResultCode::Failed;
             res.errorCode = err; //OpenSSL error

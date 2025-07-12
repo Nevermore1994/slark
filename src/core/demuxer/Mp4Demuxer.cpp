@@ -620,7 +620,7 @@ DemuxerResult Mp4Demuxer::parseData(DataPacket& packet) noexcept {
         return {DemuxerResultCode::Failed, AVFramePtrArray(), AVFramePtrArray()};
     }
     if (!buffer_->append(static_cast<uint64_t>(packet.offset), std::move(packet.data))) {
-        return {DemuxerResultCode::Normal, AVFramePtrArray(), AVFramePtrArray()};
+        return {DemuxerResultCode::InvalidData, AVFramePtrArray(), AVFramePtrArray()};
     }
     DemuxerResult result;
     while(!buffer_->empty()) {

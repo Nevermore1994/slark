@@ -24,11 +24,7 @@ SocketResult TSLSocket::connect(const AddressInfoPtr& address, int64_t timeout) 
     if (!result.isSuccess()) {
         return result;
     }
-    result = SSLManager::connect(sslPtr);
-    if (!result.isSuccess() && (result.errorCode == SSL_ERROR_WANT_WRITE || result.errorCode == SSL_ERROR_WANT_READ)) {
-        result = http::select(result.errorCode == SSL_ERROR_WANT_WRITE ? SelectType::Write : SelectType::Read, socket_, timeout);
-    }
-    return result;
+    return SSLManager::connect(sslPtr);
 }
 
 std::tuple<SocketResult, int64_t> TSLSocket::send(const std::string_view& data) const noexcept {

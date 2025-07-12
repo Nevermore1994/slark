@@ -68,7 +68,7 @@ endmacro()
 macro(add_core_file TARGET_NAME)
     set(CORE_FILE_LISTS src/core/*.cpp src/core/*.hpp src/core/*.h
             src/core/audio/*.cpp src/core/audio/*.hpp src/core/audio/*.h
-            src/core/muxer/*.cpp src/core/muxer/*.hpp src/core/muxer/*.h
+            src/core/demuxer/*.cpp src/core/demuxer/*.hpp src/core/demuxer/*.h
             src/core/codec/*.cpp src/core/codec/*.hpp src/core/codec/*.h
             src/core/video/*.h src/core/public/*.cpp public/*.h
             )
@@ -77,7 +77,7 @@ macro(add_core_file TARGET_NAME)
 
     target_include_directories(${TARGET_NAME} PUBLIC src/core/public)
     target_include_directories(${TARGET_NAME} PUBLIC src/core
-        src/core/muxer
+        src/core/demuxer
         src/core/audio
         src/core/codec
         src/core/video

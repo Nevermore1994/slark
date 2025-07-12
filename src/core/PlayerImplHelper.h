@@ -107,30 +107,14 @@ struct PlayerDebugInfo {
 
 class PlayerImplHelper {
 public:
-    static bool createDataProvider(
+    bool createDataProvider(
         const std::string& path,
-        void *impl,
         ReaderDataCallBack callback
     ) noexcept;
 
     explicit PlayerImplHelper(std::weak_ptr<Player::Impl> player);
 
 public:
-    bool openDemuxer() noexcept;
-
-    bool appendProbeData(
-        uint64_t offset,
-        DataPtr ptr
-    ) noexcept;
-
-    void resetProbeData() noexcept;
-
-    [[nodiscard]] DataView probeView() const noexcept;
-
-    std::unique_ptr<Buffer>& probeBuffer() noexcept {
-        return probeBuffer_;
-    }
-
     bool isRenderEnd() noexcept;
 
     bool seekToLastAvailableKeyframe(
@@ -139,10 +123,6 @@ public:
 public:
     PlayerDebugInfo debugInfo;
 private:
-    void handleOpenMp4DemuxerResult(bool isSuccess) noexcept;
-
-private:
-    std::unique_ptr<Buffer> probeBuffer_;
     std::weak_ptr<Player::Impl> player_;
 };
 

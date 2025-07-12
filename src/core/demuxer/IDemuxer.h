@@ -49,6 +49,7 @@ enum class DemuxerResultCode {
     ParsedHeader,
     VideoInfoChange,
     ParsedFPS,
+    InvalidData,
 };
 
 struct DemuxerResult {
@@ -105,15 +106,15 @@ public:
         return audioInfo_ != nullptr;
     }
 
-    [[nodiscard]] std::shared_ptr<VideoInfo>& videoInfo() noexcept {
+    [[nodiscard]] std::shared_ptr<VideoInfo> videoInfo() noexcept {
         return videoInfo_;
     }
 
-    [[nodiscard]] std::shared_ptr<AudioInfo>& audioInfo() noexcept {
+    [[nodiscard]] std::shared_ptr<AudioInfo> audioInfo() noexcept {
         return audioInfo_;
     }
 
-    [[nodiscard]] std::shared_ptr<DemuxerHeaderInfo>& headerInfo() noexcept {
+    [[nodiscard]] std::shared_ptr<DemuxerHeaderInfo> headerInfo() noexcept {
         return headerInfo_;
     }
     
@@ -127,7 +128,14 @@ public:
     [[nodiscard]] DemuxerType type() const noexcept {
         return type_;
     }
-    
+
+    [[nodiscard]] uint64_t offset() const noexcept {
+        if (buffer_) {
+            return buffer_->offset();
+        }
+        return 0;
+    }
+
     virtual void init(DemuxerConfig config) noexcept{
         config_ = std::move(config);
     }
