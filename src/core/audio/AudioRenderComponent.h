@@ -21,7 +21,9 @@
 
 namespace slark {
 
-constexpr double kDefaultAudioBufferCacheTime = 0.1; // 100ms
+constexpr double kDefaultAudioBufferCacheTime = 0.2; // 200ms,
+
+using PullDataFunc = std::function<AVFrameRefPtr(uint32_t)>;
 
 class AudioRenderComponent: public slark::NonCopyable,
         public InputNode,
@@ -69,10 +71,15 @@ public:
     }
 
     void renderEnd() noexcept;
+
+    void setPullDataFunc(
+        PullDataFunc&& pullAudioDataFunc
+    ) noexcept {
+        pullDataFunc_.reset(std::make_shared<PullDataFunc>(std::move(pullAudioDataFunc)));
+    }
 private:
     void init() noexcept;
 public:
-    std::function<uint32_t(uint8_t*, uint32_t)> pullAudioData;
     std::function<void(Time::TimePoint)> firstFrameRenderCallBack;
 private:
     bool isFirstFrameRendered = false;
@@ -80,6 +87,7 @@ private:
     std::shared_ptr<AudioInfo> audioInfo_;
     std::unique_ptr<SyncRingBuffer<uint8_t>> audioBuffer_;
     AtomicSharedPtr<IAudioRender> pimpl_;
+    AtomicSharedPtr<PullDataFunc> pullDataFunc_;
 };
 
 }

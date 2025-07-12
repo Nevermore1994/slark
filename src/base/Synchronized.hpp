@@ -220,6 +220,10 @@ public:
         return std::atomic_load(&ptr_);
     }
 
+    bool isValid() const {
+        return std::atomic_load(&ptr_) != nullptr;
+    }
+
 private:
     std::shared_ptr<T> ptr_;
     mutable std::mutex mutex_;

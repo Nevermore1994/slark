@@ -258,7 +258,7 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
 
     companion object {
         const val PULL_DATA_PERIOD = 50 //ms
-        const val BUFFER_TIME_SIZE = 200 //ms
+        const val BUFFER_TIME_SIZE = 100 //ms
         const val LOG_TAG = "AudioPlayer"
         private val players = ConcurrentHashMap<String, AudioPlayer>()
 

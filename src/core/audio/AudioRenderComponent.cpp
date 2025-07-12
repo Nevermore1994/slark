@@ -49,21 +49,29 @@ void AudioRenderComponent::init() noexcept {
     audioBuffer_ = std::make_unique<SyncRingBuffer<uint8_t>>(bufferSize);
     auto pimpl = createAudioRender(audioInfo_);
     pimpl->setProvider([this](uint8_t* data, uint32_t size, AudioDataFlag& flag) {
-        if (audioBuffer_->read(data, size)) {
-            if (!isFirstFrameRendered) {
-                isFirstFrameRendered = true;
-                if (firstFrameRenderCallBack) {
-                    firstFrameRenderCallBack(Time::nowTimeStamp());
+        if (auto pullDataFunc = pullDataFunc_.load(); pullDataFunc && !isFull_) {
+            while (audioBuffer_->length() < size) {
+                auto frame = std::invoke(*pullDataFunc, audioBuffer_->tail());
+                if (frame == nullptr) {
+                    break;
                 }
+                audioBuffer_->writeExact(
+                    frame->data->rawData,
+                    static_cast<uint32_t>(frame->data->length)
+                );
             }
-            LogI("request audio size:{}", size);
-            isFull_ = false;
-            return size;
-        } else {
-            LogE("request audio failed:{}", size);
-            isFull_ = false;
         }
-        return 0u;
+        auto isSuccess = audioBuffer_->readExact(data, size);
+        if (isSuccess && !isFirstFrameRendered) {
+            isFirstFrameRendered = true;
+            if (firstFrameRenderCallBack) {
+                firstFrameRenderCallBack(Time::nowTimeStamp());
+            }
+        }
+        auto readSize = isSuccess ? size : 0u;
+        LogI("request audio size:{}", readSize);
+        isFull_ = false;
+        return readSize;
     });
     pimpl_.reset(std::move(pimpl));
     LogI("init success");

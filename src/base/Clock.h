@@ -17,6 +17,9 @@ public:
 
     void setTime(Time::TimePoint count) noexcept;
 
+    ///Discard the time change since the last time
+    void keep() noexcept;
+
     Time::TimePoint time() noexcept;
 
     void start() noexcept;

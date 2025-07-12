@@ -16,8 +16,8 @@
 #include "Event.h"
 #include "AudioRenderComponent.h"
 #include "Synchronized.hpp"
-#include "Clock.h"
 #include "PlayerImplHelper.h"
+#include "DemuxerComponent.h"
 
 namespace slark {
 
@@ -30,8 +30,9 @@ struct PlayerStats {
     bool isForceVideoRendered = false;
     bool isAudioRenderEnd = false;
     bool isVideoRenderEnd = false;
-    double audioDemuxedTime = 0;
-    double videoDemuxedTime = 0;
+    bool resumeAfterBuffering = false;
+    std::atomic<double> audioDemuxedTime = 0;
+    std::atomic<double> videoDemuxedTime = 0;
     double lastNotifyPlayedTime = 0;
     double lastNotifyCacheTime = 0;
 
@@ -43,6 +44,7 @@ struct PlayerStats {
         videoDemuxedTime = 0;
         lastNotifyPlayedTime = 0;
         lastNotifyCacheTime = 0;
+        resumeAfterBuffering = false;
     }
 
     void setSeekTime(double seekTime) noexcept {
@@ -71,11 +73,11 @@ public:
     
     void updateState(PlayerState state) noexcept;
 
-    void setLoop(bool isLoop);
+    void setLoop(bool isLoop) noexcept;
     
-    void setVolume(float volume);
+    void setVolume(float volume) noexcept;
     
-    void setMute(bool isMute);
+    void setMute(bool isMute) noexcept;
 
     void seek(double time, bool isAccurate) noexcept;
     
@@ -127,15 +129,13 @@ private:
     
     void notifyPlayerEvent(PlayerEvent event, std::string value = "") noexcept;
     
-    void notifyPlayedTime() noexcept;
+    void notifyPlayedTime(bool isEndTime = false) noexcept;
     
     void notifyCacheTime() noexcept;
     
     void setState(PlayerState state) noexcept;
 
-    bool createDemuxer(DataPacket& data) noexcept;
-    
-    bool openDemuxer(DataPacket& data) noexcept;
+    bool createDemuxerComponent() noexcept;
     
     void createAudioComponent(const PlayerSetting& setting) noexcept;
     
@@ -145,7 +145,7 @@ private:
     
     void pushAudioPacketDecode() noexcept;
 
-    void pushVideoPacketDecode(bool isForce = false) noexcept;
+    void pushVideoPacketDecode() noexcept;
     
     void doPlay() noexcept;
     
@@ -180,7 +180,7 @@ private:
     std::atomic_bool isReleased_ = false;
     std::unique_ptr<PlayerImplHelper> helper_ = nullptr;
     Synchronized<PlayerState, std::shared_mutex> state_;
-    std::optional<PlayerSeekRequest> seekRequest_;
+    AtomicSharedPtr<PlayerSeekRequest> seekRequest_;
     PlayerInfo info_;
     std::string playerId_;
     Synchronized<std::unique_ptr<PlayerParams>, std::shared_mutex> params_;
@@ -193,12 +193,12 @@ private:
     
     //IO
     std::unique_ptr<IReader> dataProvider_ = nullptr;
-    Synchronized<std::deque<DataPacket>> dataList_;
+    Synchronized<std::list<DataPacket>> dataList_;
     
     //demux
-    std::shared_ptr<IDemuxer> demuxer_ = nullptr;
-    std::deque<AVFramePtr> audioPackets_;
-    std::deque<AVFramePtr> videoPackets_;
+    std::shared_ptr<DemuxerComponent> demuxerComponent_ = nullptr;
+    Synchronized<std::deque<AVFramePtr>> audioPackets_;
+    Synchronized<std::deque<AVFramePtr>> videoPackets_;
     
     //decoded frames
     Synchronized<std::deque<AVFrameRefPtr>> audioFrames_;

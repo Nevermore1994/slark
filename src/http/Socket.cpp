@@ -28,6 +28,11 @@ SocketResult select(SelectType type, Socket socket, int64_t timeout) {
                        nullptr, timeout >= 0 ? &selectTimeout : nullptr);
     if (ret == SocketError) {
         result.errorCode = GetLastError();
+        if (result.errorCode == RetryCode ||
+            result.errorCode == AgainCode ||
+            result.errorCode == EWOULDBLOCK) {
+            result.resultCode = ResultCode::Retry;
+        }
         result.resultCode = result.errorCode == RetryCode ? ResultCode::Retry : ResultCode::Failed;
     } else if (ret == 0) {
         result.resultCode = ResultCode::Timeout;

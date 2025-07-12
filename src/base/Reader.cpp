@@ -185,8 +185,8 @@ void Reader::process() noexcept {
 
         auto tell = file->tell();
         auto readSize = data.data->capacity;
-        if (readRange.isValid() && readSize >= (readRange.end() - tell)) {
-            readSize = readRange.end() - tell;
+        if (readRange.isValid() && readSize > (readRange.end() - tell + 1)) {
+            readSize = readRange.end() - tell + 1;
         }
         data.offset = static_cast<int64_t>(tell);
         file->read(*data.data, readSize);
@@ -214,6 +214,7 @@ void Reader::updateReadRange(Range range) noexcept {
     }
     task_->range = range;
     seekPos_ = range.pos;
+    isReadCompleted_ = false;
     worker_.start();
 }
 

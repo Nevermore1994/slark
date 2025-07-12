@@ -233,8 +233,7 @@ bool TSDemuxer::parseTSPAT(DataView data) noexcept {
         LogE("syntax indicator != 1, {}", syntaxIndicator);
         return false;
     }
-    pat_.sectionLength = ( static_cast<uint8_t>(data[1]) & 0x0f << 8) |
-                            static_cast<uint8_t>(data[2] );
+    pat_.sectionLength = (static_cast<uint8_t>(data[1]) & 0x0f << 8) | static_cast<uint8_t>(data[2]);
     pat_.currentNextIndicator = static_cast<uint8_t>(data[5]) & 0x01;
     data = data.substr(8);
     if (pat_.currentNextIndicator == 1) {
@@ -655,6 +654,7 @@ DemuxerResult HLSDemuxer::parseData(DataPacket& packet) noexcept {
     if (!buffer_->append(static_cast<uint64_t>(packet.offset), std::move(packet.data))) {
         LogE("discard data, ts index:{}, data offset:{}, parse offset:{}",
              tsIndex, packet.offset, buffer_->offset());
+        result.resultCode = DemuxerResultCode::InvalidData;
         return result;
     }
     
@@ -691,7 +691,7 @@ bool HLSDemuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
             totalDuration_ = CTime(mainParser_->totalDuration());
             isOpened_ = true;
         }
-    } else {
+    } else if (mainParser_->isPlayList()) {
         if (!slinkParser_->parse(*buffer)) {
             LogI("need more data.");
             return false;
