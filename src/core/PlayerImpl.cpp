@@ -589,14 +589,14 @@ void Player::Impl::pushVideoFrameToRender() noexcept {
         return;
     }
     if (auto seekRequest = seekRequest_.load()) {
+        seekRequest_.reset();
+        LogI("seek done, cost time:{}", (Time::nowTimeStamp() - seekRequest->startTime).toMilliSeconds());
         if (seekRequest->isAccurate && stats_.resumeAfterSeek) {
             setState(PlayerState::Playing);
             stats_.resumeAfterSeek = false;
         } else {
             setState(PlayerState::Ready);
         }
-        LogI("seek done, cost time:{}", (Time::nowTimeStamp() - seekRequest->startTime).toMilliSeconds());
-        seekRequest_.reset();
     } else {
         setState(PlayerState::Ready);
     }
