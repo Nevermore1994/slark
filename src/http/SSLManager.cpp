@@ -185,6 +185,11 @@ std::tuple<SocketResult, DataPtr> SSLManager::read(const SSLPtr& sslPtr) noexcep
         } else if (recvLength < 0) {
             res.resultCode = ResultCode::Failed;
             res.errorCode = SSL_get_error(sslPtr.get(), 0);
+            if (res.errorCode == SSL_ERROR_SYSCALL) {
+                res.errorCode = errno; //System call error
+                LogE("SSL read error: {}, {}", res.errorCode, getOpenSSLErrorMessage());
+                break;
+            }
             if (retryCount >= kMaxRetryCount) {
                 res.resultCode = ResultCode::RetryReachMaxCount;
                 break;

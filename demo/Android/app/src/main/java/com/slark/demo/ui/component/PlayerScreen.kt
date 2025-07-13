@@ -112,6 +112,7 @@ fun PlayerScreen(
                     viewModel.setRenderTarget(this)
                     setOnClickListener {
                         controlsVisible = !controlsVisible
+                        hideJob?.cancel()
                     }
                 }
             },

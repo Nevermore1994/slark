@@ -53,6 +53,7 @@ AVFrameRefPtr DecoderComponent::peekDecodeFrame() noexcept {
     return pendingDecodeQueue_.front();
 }
 
+
 AVFrameRefPtr DecoderComponent::buildEOSFrame(bool isVideo) noexcept {
     AVFrameRefPtr frame = nullptr;
     if (isVideo) {
@@ -107,15 +108,13 @@ void DecoderComponent::pushFrameDecode() {
         LogE("{} decoder is not opened", isVideo_ ? "video" : "audio");
         return;
     }
-    auto frame = peekDecodeFrame();
-    if (!frame && !isInputCompleted_) {
+    if (empty() && !isInputCompleted_) {
         LogE("got {} frame is nullptr", isVideo_ ? "video" : "audio");
         pause();
         return;
     }
-    bool isPushed = false;
     bool isCompleted = false;
-    decoder_.withLock([frame = std::move(frame), &isPushed, &isCompleted, this]
+    decoder_.withLock([&isCompleted, this]
         (auto& decoder) mutable {
         if (!decoder || !decoder->isOpen() || decoder->isCompleted()) {
             if (decoder) {
@@ -123,24 +122,30 @@ void DecoderComponent::pushFrameDecode() {
             }
             return;
         }
-        if (frame) {
-            if (auto decodeRes = static_cast<int>(decoder->decode(frame)); decodeRes > 0) {
-                isPushed = true;
-            } else {
-                LogE("push frame error:{}", decodeRes);
-            }
-        } else if (isInputCompleted_ && !decoder->isCompleted()){
+        if (isInputCompleted_ && !decoder->isCompleted()){
             auto eosFrame = buildEOSFrame(decoder->isVideo());
             decoder->decode(eosFrame);
             LogI("push eos frame, {}", isVideo_ ? "video" : "audio");
+            return;
         }
+        AVFrameRefPtr frame;
+        do {
+            frame = peekDecodeFrame();
+            if (!frame) {
+                break;
+            }
+            auto decodeRes = static_cast<int>(decoder->decode(frame));
+            if (decodeRes < 0) {
+                LogE("decode error:{}", decodeRes);
+                break;
+            }
+            {
+                std::lock_guard lock(mutex_);
+                pendingDecodeQueue_.pop_front();
+            }
+
+        } while (frame->isFastPushFrame()); //fast push
     });
-    if (isPushed) {
-        std::lock_guard lock(mutex_);
-        if (!pendingDecodeQueue_.empty()) {
-            pendingDecodeQueue_.pop_front();
-        }
-    }
     if (isCompleted) {
         pause();
         LogI("{} decode pause, completed", isVideo_ ? "video" : "audio");
