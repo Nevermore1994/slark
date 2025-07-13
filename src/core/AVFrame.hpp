@@ -107,6 +107,7 @@ public:
 
 struct AVFrame {
     bool isDiscard = false;
+    bool isFastPush = false; //Fast push frame
     AVFrameType frameType = AVFrameType::Unknown;
     uint32_t duration = 0; //ms
     uint64_t timeScale = 1;
@@ -203,7 +204,10 @@ struct AVFrame {
         }
         return {};
     }
-    
+
+    [[nodiscard]] bool isFastPushFrame() const noexcept {
+        return isDiscard || isFastPush;
+    }
 };
 
 using AVFramePtr = std::unique_ptr<AVFrame>;

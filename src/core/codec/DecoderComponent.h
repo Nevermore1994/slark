@@ -34,9 +34,10 @@ public:
         return pendingDecodeQueue_.empty();
     }
 
-    uint32_t pendingSize() noexcept {
+    bool isFull() noexcept {
+        constexpr uint32_t kMaxPendingDecodeFrameCount = 10;
         std::lock_guard lock(mutex_);
-        return uint32_t(pendingDecodeQueue_.size());
+        return pendingDecodeQueue_.size() >= kMaxPendingDecodeFrameCount;
     }
 
     bool isInputCompleted() noexcept {

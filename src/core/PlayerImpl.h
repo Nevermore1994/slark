@@ -24,9 +24,11 @@ namespace slark {
 struct PlayerSeekRequest {
     bool isAccurate = false;
     double seekTime{0};
+    Time::TimePoint startTime{Time::TimePoint::fromSeconds(0.0)};
 };
 
 struct PlayerStats {
+    bool resumeAfterSeek = false;
     bool isForceVideoRendered = false;
     bool isAudioRenderEnd = false;
     bool isVideoRenderEnd = false;
@@ -35,9 +37,11 @@ struct PlayerStats {
     std::atomic<double> videoDemuxedTime = 0;
     double lastNotifyPlayedTime = 0;
     double lastNotifyCacheTime = 0;
+    uint32_t fastPushDecodeCount = 0;
 
     void reset() noexcept {
         isForceVideoRendered = false;
+        fastPushDecodeCount = 0;
         isVideoRenderEnd = false;
         isAudioRenderEnd = false;
         audioDemuxedTime = 0;
@@ -50,6 +54,11 @@ struct PlayerStats {
     void setSeekTime(double seekTime) noexcept {
         audioDemuxedTime = seekTime;
         videoDemuxedTime = seekTime;
+    }
+
+    void setFastPush() noexcept {
+        isForceVideoRendered = true;
+        fastPushDecodeCount = 10;
     }
 
     [[nodiscard]] bool isRenderEnd() const noexcept {
@@ -175,7 +184,6 @@ private:
 
     bool isAudioNeedDecode(double renderedTime) noexcept;
 private:
-    bool resumeAfterSeek_ = false;
     std::atomic_bool isStopped_ = false;
     std::atomic_bool isReleased_ = false;
     std::unique_ptr<PlayerImplHelper> helper_ = nullptr;
