@@ -87,7 +87,7 @@ fun PlayerScreen(
         if (controlsVisible) {
             hideJob?.cancel()
             hideJob = CoroutineScope(Dispatchers.Main).launch {
-                delay(3000)
+                delay(5000)
                 controlsVisible = false
             }
         }

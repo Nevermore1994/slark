@@ -19,20 +19,23 @@ import com.slark.sdk.SlarkLog
 
 class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
     var isPlaying by mutableStateOf(false)
-        //private set
+
 
     var currentTime by mutableStateOf(0.0)
-       // private set
 
     var totalTime by mutableStateOf(0.0)
-        //private set
 
     var cacheTime by mutableStateOf(0.0)
-        //private set
 
     var isLoading by mutableStateOf(false)
 
-    var volume by mutableStateOf(100.0f)
+    private var _volume = mutableStateOf(100.0f)
+    var volume: Float
+        get() = _volume.value
+        set(value) {
+            player?.volume = value
+            _volume.value = value
+        }
 
     var isLoop by mutableStateOf(false)
 
@@ -125,10 +128,6 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
         player?.setRenderSize(width, height)
     }
 
-    fun setRotation(rotation: Int) {
-        player?.setRotation(rotation)
-    }
-
     fun loop(isLoop: Boolean) {
         player?.isLoop = isLoop
         this.isLoop = isLoop
@@ -163,12 +162,7 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
         player?.setRenderTarget(SlarkRenderTarget.FromSurface(surface, size.width.toInt(), size.height.toInt()))
     }
 
-    fun stop() {
-        player?.stop()
-    }
-
     fun release() {
-        player?.stop()
         player?.release()
     }
 

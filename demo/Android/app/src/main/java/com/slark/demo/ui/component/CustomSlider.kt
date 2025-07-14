@@ -9,6 +9,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.Canvas
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -33,6 +37,7 @@ fun CustomSlider(
 ) {
     val thumbRadiusPx = with(LocalDensity.current) { thumbRadius.toPx() }
     val trackHeightPx = with(LocalDensity.current) { trackHeight.toPx() }
+    var newValue by remember { mutableStateOf(value) }
 
     BoxWithConstraints(
         modifier = modifier
@@ -41,7 +46,7 @@ fun CustomSlider(
                 detectTapGestures { offset ->
                     val width = size.width - thumbRadiusPx * 2
                     val fraction = ((offset.x - thumbRadiusPx) / width).coerceIn(0f, 1f)
-                    val newValue = lerp(valueRange.start, valueRange.endInclusive, fraction)
+                    newValue = lerp(valueRange.start, valueRange.endInclusive, fraction)
                     onValueChange(newValue, true)
                 }
             }
@@ -54,11 +59,11 @@ fun CustomSlider(
                         change.consume()
                         val width = size.width - thumbRadiusPx * 2
                         val fraction = ((change.position.x - thumbRadiusPx) / width).coerceIn(0f, 1f)
-                        val newValue = lerp(valueRange.start, valueRange.endInclusive, fraction)
+                        newValue = lerp(valueRange.start, valueRange.endInclusive, fraction)
                         onValueChange(newValue, false)
                     },
                     onDragEnd = {
-                        onValueChange(value, true)
+                        onValueChange(newValue, true)
                     }
                 )
             }
