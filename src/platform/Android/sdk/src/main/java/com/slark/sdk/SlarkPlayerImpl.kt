@@ -9,6 +9,7 @@ import android.view.TextureView
 import android.view.View
 import com.slark.api.KtTimeRange
 import com.slark.api.SlarkPlayer
+import com.slark.api.SlarkPlayer.Rotation
 import com.slark.api.SlarkPlayerConfig
 import com.slark.api.SlarkPlayerObserver
 import com.slark.api.SlarkPlayerState
@@ -18,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.ceil
+import kotlin.math.min
 
 
 class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: String): SlarkPlayer {
@@ -41,11 +43,11 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
 
     override var volume: Float = 100.0f
         set(value) {
-            field = value
-            SlarkPlayerManager.setVolume(playerId, value)
+            field = min(100.0f, maxOf(0.0f, value))
+            SlarkPlayerManager.setVolume(playerId, field)
         }
 
-    override fun getPlayerId(): String {
+    override fun playerId(): String {
         return playerId
     }
 
@@ -59,10 +61,6 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
 
     override fun pause() {
         SlarkPlayerManager.doAction(playerId, SlarkPlayerManager.Action.PAUSE.ordinal)
-    }
-
-    override fun stop() {
-        SlarkPlayerManager.doAction(playerId, SlarkPlayerManager.Action.STOP.ordinal)
     }
 
     override fun release() {
@@ -98,8 +96,13 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
         renderThread?.setRenderSize(width, height)
     }
 
-    override fun setRotation(rotation: Int) {
-        renderThread?.setRotation(rotation)
+    override fun setRotation(rotation: Rotation) {
+        when (rotation) {
+            Rotation.ROTATION_0 -> renderThread?.setRotation(0)
+            Rotation.ROTATION_90 -> renderThread?.setRotation(90)
+            Rotation.ROTATION_180 -> renderThread?.setRotation(180)
+            Rotation.ROTATION_270 -> renderThread?.setRotation(270)
+        }
     }
 
     override fun onBackground(isBackground: Boolean) {
@@ -125,11 +128,7 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
         return SlarkPlayerManager.currentPlayedTime(playerId)
     }
 
-    fun playerId(): String {
-        return playerId
-    }
-
-    fun state(): SlarkPlayerState {
+    override fun state(): SlarkPlayerState {
         return SlarkPlayerManager.state(playerId)
     }
 

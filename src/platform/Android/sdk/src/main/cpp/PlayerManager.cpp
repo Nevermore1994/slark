@@ -199,7 +199,6 @@ enum class Action {
     Prepare = 0,
     Play,
     Pause,
-    Stop,
     Release
 };
 
@@ -290,10 +289,6 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_doAction(
                 break;
             case Action::Pause: {
                 player->pause();
-            }
-                break;
-            case Action::Stop: {
-                player->stop();
             }
                 break;
             case Action::Release: {

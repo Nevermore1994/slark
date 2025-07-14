@@ -1097,6 +1097,7 @@ void Player::Impl::setLoop(
     params_.withWriteLock([isLoop](auto& p){
         p->setting.isLoop = isLoop;
     });
+    ownerThread_->start();
 }
 
 void Player::Impl::setVolume(
@@ -1105,6 +1106,7 @@ void Player::Impl::setVolume(
     auto ptr = buildEvent(EventType::UpdateSettingVolume);
     ptr->data = std::make_any<float>(volume);
     sender_->send(std::move(ptr));
+    ownerThread_->start();
 }
 
 void Player::Impl::setMute(
@@ -1113,6 +1115,7 @@ void Player::Impl::setMute(
     auto ptr = buildEvent(EventType::UpdateSettingMute);
     ptr->data = std::make_any<bool>(isMute);
     sender_->send(std::move(ptr));
+    ownerThread_->start();
 }
 
 PlayerState Player::Impl::state() noexcept {

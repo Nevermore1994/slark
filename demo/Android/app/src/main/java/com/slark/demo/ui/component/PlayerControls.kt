@@ -33,15 +33,6 @@ fun PlayerControls(
     viewModel: PlayerViewModel,
     modifier: Modifier = Modifier
 ) {
-    val isPlaying = viewModel.isPlaying
-    val progress by remember {
-        derivedStateOf {
-            val current = viewModel.currentTime
-            val total = viewModel.totalTime
-            if (total > 0)  current.toFloat() / total.toFloat() else 0f
-        }
-    }
-
     Column(
         modifier = modifier.fillMaxWidth().padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -94,10 +85,12 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
 
         CustomSlider(
             value = viewModel.volume,
-            onValueChange = {  t, _ -> viewModel.volume = t },
-            valueRange = 0f..1f,
+            onValueChange = {  t, _ ->
+                viewModel.volume = t
+            },
+            valueRange = 0f..100f,
             trackColor = Color.LightGray,
-            activeColor = Color(0xFFA9A9A9),
+            activeColor = Color(0xFFE6E6E6),
             modifier = Modifier
                 .constrainAs(volumeSlider) {
                     start.linkTo(volumeIcon.end)

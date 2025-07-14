@@ -9,7 +9,6 @@ class SlarkPlayerManager {
         PREPARE,
         PLAY,
         PAUSE,
-        STOP,
         RELEASE
     }
 
