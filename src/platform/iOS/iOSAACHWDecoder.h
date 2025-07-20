@@ -1,12 +1,12 @@
 //
-//  iOSAACHWDecoder.hpp
+//  iOSAACHWDecoder.h
 //  slark
 //
 //  Created by Nevermore on 2024/10/25.
 //
 
-#ifndef iOSAACHWDecoder_hpp
-#define iOSAACHWDecoder_hpp
+#ifndef iOSAACHWDecoder_h
+#define iOSAACHWDecoder_h
 
 #include <AudioToolbox/AudioToolbox.h>
 #include <condition_variable>
@@ -25,7 +25,7 @@ public:
     
     void reset() noexcept override;
     
-    bool send(AVFramePtr frame) noexcept override ;
+    DecoderErrorCode decode(AVFrameRefPtr& frame) noexcept override;
 
     void flush() noexcept override;
     
@@ -36,23 +36,20 @@ public:
     inline static const DecoderTypeInfo& info() noexcept {
         static DecoderTypeInfo info = {
             DecoderType::AACHardwareDecoder,
-            BaseClass<iOSAACHWDecoder>::registerClass(GetClassName(iOSAACHWDecoder))
+            RegisterClass(iOSAACHWDecoder)
         };
         return info;
     }
     
-    AVFramePtr getDecodeFrame() noexcept;
+    AVFrameRefPtr getDecodingFrame() noexcept;
     
-    void setDecodeFrame(AVFramePtr ptr) noexcept {
-        decodeFrame = std::move(ptr);
-    }
 private:
     AudioConverterRef decodeSession_ = nullptr;
-    AVFramePtr decodeFrame = nullptr;
+    AVFrameRefPtr decodingFrame_ = nullptr;
     std::unique_ptr<AudioBufferList> outputData_;
 };
 
 
 }
 
-#endif /* iOSAACHWDecoder_hpp */
+#endif /* iOSAACHWDecoder_h */

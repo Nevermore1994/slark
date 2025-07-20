@@ -132,7 +132,7 @@ public:
             renderedDataLength_ += getSize;
             //Even if it is 0, it must be updated,
             //otherwise the latency will cause the update to be incorrect.
-            clock_.setTime( offsetTime_ + audioInfo_->dataLen2TimePoint(renderedDataLength_));
+            clock_.setTime(offsetTime_ + audioInfo_->dataLen2TimePoint(renderedDataLength_));
             return getSize;
         } else {
             flag = AudioDataFlag::Error;

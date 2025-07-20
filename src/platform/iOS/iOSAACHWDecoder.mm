@@ -5,14 +5,14 @@
 //  Created by Nevermore on 2024/10/25.
 //
 
-#include "iOSAACHWDecoder.hpp"
+#include "iOSAACHWDecoder.h"
 #include "AudioDescription.h"
 #include "Log.hpp"
 #include "Util.hpp"
 
 namespace slark {
 
-#define endOfStream -1
+#define Invalid -1
 
 OSStatus AACDecodeInputDataProc(AudioConverterRef,
                                 UInt32 *ioNumberDataPackets,
@@ -20,13 +20,16 @@ OSStatus AACDecodeInputDataProc(AudioConverterRef,
                                 AudioStreamPacketDescription** outDataPacketDescription,
                                 void *inUserData) {
     if (inUserData == nullptr) {
-        return endOfStream;
+        return Invalid;
     }
     auto decoder = reinterpret_cast<iOSAACHWDecoder*>(inUserData);
-    auto framePtr = decoder->getDecodeFrame();
+    if (decoder == nullptr) {
+        return Invalid;
+    }
+    auto framePtr = decoder->getDecodingFrame();
     if (!framePtr) {
         LogI("exit aac decode");
-        return endOfStream;
+        return Invalid;
     }
     
     auto dataPtr = framePtr->detachData();
@@ -44,12 +47,11 @@ OSStatus AACDecodeInputDataProc(AudioConverterRef,
         (*outDataPacketDescription)[0].mVariableFramesInPacket = 1024;
         (*outDataPacketDescription)[0].mDataByteSize = static_cast<UInt32>(dataPtr->length);
     }
-    decoder->setDecodeFrame(std::move(framePtr));
     return noErr;
 }
 
-iOSAACHWDecoder::iOSAACHWDecoder() {
-    decoderType_ = DecoderType::AACHardwareDecoder;
+iOSAACHWDecoder::iOSAACHWDecoder()
+    :IDecoder(DecoderType::AACHardwareDecoder) {
 }
 
 iOSAACHWDecoder::~iOSAACHWDecoder() {
@@ -70,8 +72,10 @@ void iOSAACHWDecoder::reset() noexcept {
     }
 }
 
-bool iOSAACHWDecoder::send(AVFramePtr frame) noexcept {
-    decodeFrame = std::move(frame);
+DecoderErrorCode iOSAACHWDecoder::decode(
+    AVFrameRefPtr& frame
+) noexcept {
+    decodingFrame_ = frame;
     UInt32 outputDataPacketSize = 1024;
     OSStatus status = AudioConverterFillComplexBuffer(decodeSession_,
                                                       AACDecodeInputDataProc,
@@ -86,21 +90,18 @@ bool iOSAACHWDecoder::send(AVFramePtr frame) noexcept {
         auto decodeData = std::make_unique<Data>(outputData_->mBuffers[0].mDataByteSize);
         decodeData->length = outputData_->mBuffers[0].mDataByteSize;
         std::copy(data, data + outputData_->mBuffers[0].mDataByteSize, decodeData->rawData);
-        if (!decodeFrame) {
+        if (!decodingFrame_) {
             LogE("decode error, current decode frame is nullptr");
-            return false;
+            return DecoderErrorCode::Unknown;
         }
-        decodeFrame->data = std::move(decodeData);
-        decodeFrame->stats.decodedStamp = Time::nowTimeStamp();
-        if (receiveFunc) {
-            receiveFunc(std::move(decodeFrame));
-        }
+        decodingFrame_->data = std::move(decodeData);
+        invokeReceiveFunc(std::move(decodingFrame_));
     }
-    return true;
+    return DecoderErrorCode::Success;
 }
 
 void iOSAACHWDecoder::flush() noexcept {
-    isFlushed_ = true;
+  
 }
 
 MPEG4ObjectID getAACProfile(uint8_t profile) {
@@ -170,15 +171,9 @@ void iOSAACHWDecoder::close() noexcept {
     reset();
 }
 
-AVFramePtr iOSAACHWDecoder::getDecodeFrame() noexcept {
-    if (decodeFrame) {
-        auto frame = std::move(decodeFrame);
-        decodeFrame = nullptr;
-        return frame;
-    }
-    if (!provider_.expired()) {
-        auto provider = provider_.lock();
-        return provider->getDecodeFrame();
+AVFrameRefPtr iOSAACHWDecoder::getDecodingFrame() noexcept {
+    if (decodingFrame_) {
+        return decodingFrame_;
     }
     return nullptr;
 }

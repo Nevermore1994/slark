@@ -7,16 +7,20 @@
 #import <Foundation/NSObjCRuntime.h>
 #import <Foundation/NSString.h>
 #import <Foundation/NSPathUtilities.h>
-#include "iOSBase.h"
+#include "Log.hpp"
 #include "Base.h"
 #include "FileUtil.h"
 
-void outputLog(const std::string& log){
+namespace slark {
+
+void printLog(const std::string& log){
     @autoreleasepool {
         NSString* str = [NSString stringWithUTF8String:log.data()];
         NSLog(@"%@", str);
         str = nil;
     }
+}
+
 }
 
 namespace slark::FileUtil {

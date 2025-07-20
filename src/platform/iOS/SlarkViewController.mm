@@ -18,18 +18,9 @@
 @interface SlarkPlayer(Render)
 - (void)setRenderImpl:(std::weak_ptr<slark::IVideoRender>) ptr;
 
-- (CVPixelBufferRef)requestRender;
 @end
 
 @implementation SlarkPlayer(Render)
-
-- (CVPixelBufferRef)requestRender {
-    auto& player = [self player];
-    if (player) {
-        return static_cast<CVPixelBufferRef>(player->requestRender());
-    }
-    return nil;
-}
 
 - (void)setRenderImpl:(std::weak_ptr<slark::IVideoRender>) ptr {
     auto& player = [self player];
@@ -103,9 +94,5 @@
 - (void)viewWillDisappear:(BOOL)animated {
     [super viewWillDisappear:animated];
     [self.renderView stop];
-}
-
-- (CVPixelBufferRef)requestRender {
-    return [self.player requestRender];
 }
 @end

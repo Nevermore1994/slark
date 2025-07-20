@@ -8,7 +8,7 @@
 #pragma once
 
 #include <AudioToolbox/AudioToolbox.h>
-#include "AudioDefine.h"
+#include "AudioInfo.h"
 #include "DecoderConfig.h"
 
 namespace slark {

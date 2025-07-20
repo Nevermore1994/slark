@@ -10,7 +10,6 @@
 #import "AudioViewController.h"
 #import "PlayerControllerView.h"
 #include "SlarkPlayer.h"
-#include "Log.hpp"
 
 using namespace slark;
 
@@ -29,7 +28,7 @@ using namespace slark;
     [super viewDidLoad];
     [self initSubviews];
     [self initData];
-    LogI("audio viewDidLoad");
+    NSLog(@"audio viewDidLoad");
 }
 
 - (void)dealloc {
@@ -42,17 +41,17 @@ using namespace slark;
     AVAuthorizationStatus AVstatus = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
     switch (AVstatus) {
         case AVAuthorizationStatusAuthorized: {
-            LogI("Authorized");
+            NSLog(@"Authorized");
             self.hasAuthorization = YES;
         }
           break;
         case AVAuthorizationStatusDenied: {
-            LogI("Denied");
+            NSLog(@"Denied");
             self.hasAuthorization = NO;
         }
           break;
         case AVAuthorizationStatusNotDetermined: {
-            LogI("not Determined");
+            NSLog(@"not Determined");
             @weakify(self);
             [self requestAccess:^(BOOL grant) {
                 @strongify(self);
@@ -61,7 +60,7 @@ using namespace slark;
         }
           break;
         case AVAuthorizationStatusRestricted: {
-            LogI("Restricted");
+            NSLog(@"Restricted");
             self.hasAuthorization = YES;
         }
           break;
@@ -69,7 +68,7 @@ using namespace slark;
           break;
     }
     [self setupAudioSession];
-    LogI("audio viewDidAppear");
+    NSLog(@"audio viewDidAppear");
 }
 
 - (void)requestAccess:(void(^)(BOOL)) block {
@@ -153,12 +152,12 @@ using namespace slark;
         _controllerView.onSeekClick = ^(double time) {
             @strongify(self);
             [self.player seek:time];
-            LogI("seek to:{}", time);
+            NSLog(@"seek to:%f", time);
         };
         _controllerView.onSeekDone = ^(double time){
             @strongify(self);
             [self.player seek:time isAccurate:YES];
-            LogI("seek done");
+            NSLog(@"seek done");
         };
         _controllerView.onSetLoopClick = ^(BOOL loop) {
             @strongify(self);

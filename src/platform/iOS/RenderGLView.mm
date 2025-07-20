@@ -16,43 +16,59 @@
 
 using namespace slark;
 struct VideoRender : public IVideoRender {
-    virtual void notifyVideoInfo(std::shared_ptr<VideoInfo> videoInfo) noexcept override {
+    void notifyVideoInfo(std::shared_ptr<VideoInfo> videoInfo) noexcept override {
         if (notifyVideoInfoFunc) {
             notifyVideoInfoFunc(videoInfo);
         }
     }
     
-    virtual void notifyRenderInfo() noexcept override {
+    void notifyRenderInfo() noexcept override {
         if (notifyRenderInfoFunc) {
             notifyRenderInfoFunc();
         }
     }
     
-    virtual void start() noexcept override {
+    void start() noexcept override {
         videoClock_.start();
         if (startFunc) {
             startFunc();
         }
     }
     
-    virtual void pause() noexcept override {
+    void pause() noexcept override {
         videoClock_.pause();
         if (pauseFunc) {
             pauseFunc();
         }
     }
     
-    virtual void pushVideoFrameRender(void* frame) noexcept override {
+    void pushVideoFrameRender(AVFrameRefPtr frame) noexcept override {
         if (pushVideoFrameRenderFunc) {
             pushVideoFrameRenderFunc(frame);
         }
+    }
+    
+    void renderEnd() noexcept override {
+        VideoRender::pause();
+    }
+    
+    ~VideoRender() override = default;
+    
+    CVPixelBufferRef requestRender() noexcept {
+        if (auto requestRenderFunc = requestRenderFunc_.load()) {
+            auto frame = std::invoke(*requestRenderFunc);
+            if (frame) {
+                return static_cast<CVPixelBufferRef>(frame->opaque);
+            }
+        }
+        return nil;
     }
     
     std::function<void(std::shared_ptr<VideoInfo> videoInfo)> notifyVideoInfoFunc;
     std::function<void(void)> startFunc;
     std::function<void(void)> pauseFunc;
     std::function<void(void)> notifyRenderInfoFunc;
-    std::function<void(void*)> pushVideoFrameRenderFunc;
+    std::function<void(AVFrameRefPtr)> pushVideoFrameRenderFunc;
 };
 // Uniform index.
 enum
@@ -262,17 +278,19 @@ static const GLfloat kColorConversion709FullRange[] = {
         }
         strongSelf.isActive = NO;
     };
-    _videoRenderImpl->pushVideoFrameRenderFunc = [weakSelf](void* frame) {
+    _videoRenderImpl->pushVideoFrameRenderFunc = [weakSelf](AVFrameRefPtr frame) {
         __strong __typeof(weakSelf) strongSelf = weakSelf;
         if (!strongSelf) {
             return;
         }
-        [strongSelf pushRenderPixelBuffer:frame];
+        if (frame) {
+            [strongSelf pushRenderPixelBuffer:frame->opaque];
+        }
     };
 }
 
 - (void)setupGL {
-    _context->acttachContext();
+    _context->attachContext();
     _program = std::make_unique<GLProgram>(GLShader::vertexShader, GLShader::fragmentShader);
     if (!_program->isValid()) {
         LogE("setupGL error");
@@ -313,7 +331,7 @@ static const GLfloat kColorConversion709FullRange[] = {
 
 - (void)renderGLFinsh {
     if (_context) {
-        _context->acttachContext();
+        _context->attachContext();
         glFinish();
         _context->detachContext();
     }
@@ -353,7 +371,7 @@ static const GLfloat kColorConversion709FullRange[] = {
         CVPixelBufferRelease(pixelBuffer);
         return;
     }
-    _context->acttachContext();
+    _context->attachContext();
     auto nativeContext = (__bridge EAGLContext*)_context->nativeContext();
     if (!nativeContext) {
         CVPixelBufferRelease(pixelBuffer);
@@ -623,7 +641,7 @@ static const GLfloat kColorConversion709FullRange[] = {
     if (!_context) {
         return;
     }
-    _context->acttachContext();
+    _context->attachContext();
     if (_frameBuffer) {
         glDeleteFramebuffers(1, &_frameBuffer);
         _frameBuffer = 0;

@@ -87,6 +87,17 @@ struct VideoFrameInfo : public FrameInfo {
         return isIDRFrame || frameType == VideoFrameType::IFrame;
     }
 
+    [[nodiscard]] bool hasContent() const noexcept {
+        static const std::vector<VideoFrameType> kNormalFrameTypes = {
+            VideoFrameType::IFrame,
+            VideoFrameType::PFrame,
+            VideoFrameType::BFrame
+        };
+        return std::ranges::any_of(kNormalFrameTypes, [frameType = frameType](const auto type) {
+            return frameType == type;
+        });
+    }
+    
     void copy(std::shared_ptr<VideoFrameInfo>& info) const noexcept {
         if (!info || info.get() == this) {
             return;

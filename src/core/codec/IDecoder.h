@@ -122,8 +122,7 @@ public:
     bool isCompleted() const noexcept {
         return isCompleted_ ;
     }
-
-protected:
+    
     void invokeReceiveFunc(AVFrameRefPtr frame) noexcept {
         if (auto func = receiveFunc_.load()) {
             (*func)(std::move(frame));

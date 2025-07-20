@@ -16,15 +16,15 @@ namespace slark {
 
 class iOSVideoHWDecoder : public IDecoder {
 public:
-    iOSVideoHWDecoder() {
-        decoderType_ = DecoderType::VideoHardWareDecoder;
+    iOSVideoHWDecoder()
+        :IDecoder(DecoderType::VideoHardWareDecoder) {
     }
     
     ~iOSVideoHWDecoder() override;
     
     void reset() noexcept override;
     
-    bool send(AVFramePtr frame)  override;
+    DecoderErrorCode decode(AVFrameRefPtr& frame) noexcept override;
 
     void flush() noexcept override;
     
@@ -35,7 +35,7 @@ public:
     inline static const DecoderTypeInfo& info() noexcept {
         static DecoderTypeInfo info = {
             DecoderType::RAW,
-            BaseClass<iOSVideoHWDecoder>::registerClass(GetClassName(iOSVideoHWDecoder))
+            RegisterClass(iOSVideoHWDecoder)
         };
         return info;
     }

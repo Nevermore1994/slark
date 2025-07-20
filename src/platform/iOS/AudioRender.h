@@ -9,7 +9,7 @@
 
 #include <AudioToolbox/AudioToolbox.h>
 #include "Data.hpp"
-#include "AudioDefine.h"
+#include "AudioInfo.h"
 #include "AudioDescription.h"
 
 namespace slark {
@@ -17,22 +17,39 @@ namespace slark {
 class AudioRender : public IAudioRender {
 public:
     explicit AudioRender(std::shared_ptr<AudioInfo> audioInfo);
+    
     ~AudioRender() override;
     
     void play() noexcept override;
-    void pause() noexcept override;
-    void stop() noexcept override;
-    void setVolume(float volume) noexcept override;
-    void flush() noexcept override;
-    Time::TimePoint latency() noexcept override;
     
-    bool isNeedRequestData() const noexcept override;
+    void pause() noexcept override;
+    
+    void stop() noexcept override;
+    
+    void reset() noexcept override;
+    
+    void setVolume(float volume) noexcept override;
+    
+    void flush() noexcept override;
+    
+    Time::TimePoint playedTime() noexcept override;
+    
+    void renderEnd() noexcept override;
+    
+public:
+    bool isNeedRequestData() const noexcept;
+    
 private:
+    Time::TimeDelta getLatency() noexcept;
+    
     bool checkFormat() const noexcept;
+    
     bool setupAudioComponent() noexcept;
 private:
     AudioUnit volumeUnit_ = nullptr;
     AudioUnit renderUnit_ = nullptr;
+    Time::TimeDelta latency_;
+    TimerId timerId_ = TimerId::kInvalidTimerId;
 };
 
 }

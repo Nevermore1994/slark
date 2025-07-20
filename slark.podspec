@@ -7,7 +7,7 @@ Pod::Spec.new do |s|
 
     s.summary      = "iOS and Android Video Player"
 
-    s.ios.deployment_target = '16.3'
+    s.ios.deployment_target = '16.5'
 
     s.description  = <<-DESC
         slark is a cross platform player that supports iOS and Android
@@ -36,11 +36,13 @@ Pod::Spec.new do |s|
                       'src/http/**/*.hpp',
                       'src/http/**/*.cpp',
                     
-                      'src/interface/iOS/*.h',
-                      'src/interface/iOS/*.cpp',
-                      'src/interface/iOS/*.mm'
+                      'src/platform/iOS/*.h',
+                      'src/platform/iOS/*.cpp',
+                      'src/platform/iOS/*.mm',
+                      'src/platform/iOS/interface/*.h',
+                      'src/platform/iOS/interface/*.mm'
 
-    s.public_header_files = 'src/interface/*.h'  
+    s.public_header_files = 'src/platform/iOS/interface/*.h'  
 
     s.requires_arc = true
     
@@ -56,19 +58,28 @@ Pod::Spec.new do |s|
 
     s.pod_target_xcconfig = { 
         'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'arm64',
-        'HEADER_SEARCH_PATHS' => ' "$(inherited)" "$(PODS_TARGET_SRCROOT)/include" "/opt/homebrew/opt/openssl/include/" ',
-        'LIBRARY_SEARCH_PATHS' => '/opt/homebrew/opt/openssl/lib',
-        'USER_HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)"'\
-            '"$(PODS_TARGET_SRCROOT)/base"' \
-            '"$(PODS_TARGET_SRCROOT)/base/platform/iOS"' \
-            '"$(PODS_TARGET_SRCROOT)/core"' \
-            '"$(PODS_TARGET_SRCROOT)/core/audio"' \
-            '"$(PODS_TARGET_SRCROOT)/core/codec"' \
-            '"$(PODS_TARGET_SRCROOT)/core/muxer"' \
-            '"$(PODS_TARGET_SRCROOT)/core/platform/iOS"' \
-            '"$(PODS_TARGET_SRCROOT)/http/include"' \
-            '"$(PODS_TARGET_SRCROOT)/http/include/public"' \
-            '"$(PODS_TARGET_SRCROOT)/interface/platform/iOS"'
+        'HEADER_SEARCH_PATHS' => %(
+            $(inherited)
+            $(PODS_TARGET_SRCROOT)/include
+            $(PODS_TARGET_SRCROOT)/libs/openssl/ios/include
+        ).gsub("\n", " "),
+        'USER_HEADER_SEARCH_PATHS' => %(
+            $(PODS_TARGET_SRCROOT)
+            $(PODS_TARGET_SRCROOT)/src/base
+            $(PODS_TARGET_SRCROOT)/src/core
+            $(PODS_TARGET_SRCROOT)/src/core/audio
+            $(PODS_TARGET_SRCROOT)/src/core/codec
+            $(PODS_TARGET_SRCROOT)/src/core/demuxer
+            $(PODS_TARGET_SRCROOT)/src/http/include
+            $(PODS_TARGET_SRCROOT)/src/http/include/public
+            $(PODS_TARGET_SRCROOT)/src/platform/iOS
+            $(PODS_TARGET_SRCROOT)/src/platform/iOS/interface
+        ).gsub("\n", " "),
+        'OTHER_LDFLAGS' => %(
+            $(inherited)
+            $(PODS_TARGET_SRCROOT)/libs/openssl/ios/libssl.a
+            $(PODS_TARGET_SRCROOT)/libs/openssl/ios/libcrypto.a
+        ).gsub("\n", " ")
     }
 
     enable_https_flag = is_enable_https ? 1 : 0
@@ -76,7 +87,7 @@ Pod::Spec.new do |s|
     s.xcconfig = { 
         'CLANG_C_LANGUAGE_STANDARD' => 'c17',
         'CLANG_CXX_LANGUAGE_STANDARD' => 'c++23',
-        "GCC_PREPROCESSOR_DEFINITIONS" => "ENABLE_HTTPS=#{enable_https_flag}",
+        "GCC_PREPROCESSOR_DEFINITIONS" => "ENABLE_HTTPS=#{enable_https_flag} SLARK_IOS=1",
         'OTHER_CPLUSPLUSFLAGS' => '-Wall -Wextra -Wpedantic -Wcast-align -Wcast-qual -Wconversion -Wdisabled-optimization -Wendif-labels -Wfloat-equal -Winit-self -Winline -Wmissing-include-dirs -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual -Wpacked -Wpointer-arith -Wredundant-decls -Wshadow -Wsign-promo -Wvariadic-macros -Wwrite-strings -Wno-variadic-macros -Wno-unknown-pragmas'
     }
     s.frameworks = 'Foundation', 'AVFoundation', 'VideoToolBox', 'AudioToolBox', 'CoreMedia'

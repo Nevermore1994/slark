@@ -93,7 +93,7 @@ bool iOSEGLContext::init(void* context) {
     }
 }
 
-void iOSEGLContext::acttachContext() {
+void iOSEGLContext::attachContext() {
     @autoreleasepool {
         [(__bridge EGLContext*)context_ activeContext];
     }
@@ -117,8 +117,8 @@ void iOSEGLContext::release() {
     }
 }
 
-std::unique_ptr<IEGLContext> createEGLContext() {
-    return std::make_unique<iOSEGLContext>();
+IEGLContextRefPtr createGLContext() noexcept {
+    return std::make_shared<iOSEGLContext>();
 }
 
 }

@@ -11,6 +11,16 @@
 
 namespace slark {
 
+struct DecodeInfo {
+    int64_t pts = 0;
+    uint64_t timeScale = 1;
+    bool isDiscard = false;
+    
+    double ptsTime() {
+        return static_cast<double>(pts) / static_cast<double>(timeScale);
+    }
+};
+
 void decompressionOutputCallback(void* decompressionOutputRefCon,
                    void* sourceFrameRefCon,
                    OSStatus status,
@@ -19,24 +29,25 @@ void decompressionOutputCallback(void* decompressionOutputRefCon,
                    CMTime,
                    CMTime) {
     @autoreleasepool {
-        auto framePtr = std::unique_ptr<AVFrame>(reinterpret_cast<AVFrame*>(sourceFrameRefCon));
-        auto videoInfo = std::dynamic_pointer_cast<VideoFrameInfo>(framePtr->info);
-        if (framePtr->isDiscard) {
-            LogE("video decode discard frame:{}", framePtr->ptsTime());
+        auto* decodeInfo = reinterpret_cast<DecodeInfo*>(sourceFrameRefCon);;
+        if (decodeInfo->isDiscard) {
+            LogE("video decode discard frame:{}", decodeInfo->ptsTime());
             return;
         }
-        if (videoInfo && !videoInfo->isHasContent()) {
-            LogE("decode no content:{}", framePtr->index);
+        auto decoder = reinterpret_cast<iOSVideoHWDecoder*>(decompressionOutputRefCon);
+        if (!decoder) {
+            LogE("decoder is nullptr");
             return;
         }
-        bool isSuccess = false;
+        CVPixelBufferRef opaque = nullptr;
         do {
             if (status != noErr) {
                 LogE("OSStatus:{}", status);
                 break;
             }
             
-            if (framePtr->isDiscard) {
+            if (decodeInfo->isDiscard) {
+                LogE("discard video frame:{}", decodeInfo->ptsTime());
                 break;
             }
             
@@ -49,17 +60,19 @@ void decompressionOutputCallback(void* decompressionOutputRefCon,
                 LogI("droped");
                 break;
             }
-            framePtr->stats.decodedStamp = Time::nowTimeStamp();
-            videoInfo->format = FrameFormat::VideoToolBox;
-            framePtr->opaque = CVPixelBufferRetain(pixelBuffer);
-            isSuccess = true;
+            opaque = CVPixelBufferRetain(pixelBuffer);
         } while (false);
-        if (isSuccess) {
-            auto decoder = reinterpret_cast<iOSVideoHWDecoder*>(decompressionOutputRefCon);
-            if (decoder->receiveFunc) {
-                decoder->receiveFunc(std::move(framePtr));
-            }
+        if (opaque == nullptr) {
+            return;
         }
+        
+        auto frame = std::make_shared<AVFrame>(AVFrameType::Video);
+        frame->opaque = opaque;
+        frame->pts = decodeInfo->pts;
+        frame->timeScale = decodeInfo->timeScale;
+        auto videoInfo = std::make_shared<VideoFrameInfo>();
+        videoInfo->format = FrameFormat::VideoToolBox;
+        decoder->invokeReceiveFunc(std::move(frame));
     }
 }
 
@@ -85,7 +98,6 @@ iOSVideoHWDecoder::~iOSVideoHWDecoder() {
 
 void iOSVideoHWDecoder::reset() noexcept {
     isOpen_ = false;
-    isFlushed_ = false;
     @autoreleasepool {
         if (decodeSession_) {
             VTDecompressionSessionWaitForAsynchronousFrames(decodeSession_);
@@ -101,22 +113,31 @@ void iOSVideoHWDecoder::reset() noexcept {
 
 }
 
-bool iOSVideoHWDecoder::send(AVFramePtr frame)  {
-    frame->stats.prepareDecodeStamp = Time::nowTimeStamp();
-    auto data = frame->detachData();
+DecoderErrorCode iOSVideoHWDecoder::decode(AVFrameRefPtr& frame) noexcept {
+    auto& data = frame->data;
     auto videoInfo = std::dynamic_pointer_cast<VideoFrameInfo>(frame->info);
-    auto sampleBuffer = createSampleBuffer(videoFormatDescription_, static_cast<void*>(data->rawData), static_cast<size_t>(data->length));
-    auto framePtr = frame.release();
-    uint32_t decoderFlags = 0;
-    auto status = VTDecompressionSessionDecodeFrame(decodeSession_, sampleBuffer, decoderFlags, reinterpret_cast<void*>(framePtr), 0);
-    if (status == noErr) {
-        status = VTDecompressionSessionWaitForAsynchronousFrames(decodeSession_);
+    if (videoInfo->isEndOfStream) {
+        flush(); //Output remain frames
+        return DecoderErrorCode::Success;
     }
+    auto sampleBuffer = createSampleBuffer(videoFormatDescription_, static_cast<void*>(data->rawData), static_cast<size_t>(data->length));
+    auto decodeInfo = new (std::nothrow) DecodeInfo();
+    if (decodeInfo == nullptr) {
+        return DecoderErrorCode::Unknown;
+    }
+    decodeInfo->pts = frame->pts;
+    decodeInfo->timeScale = frame->timeScale;
+    decodeInfo->isDiscard = frame->isDiscard;
+    
+    auto status = VTDecompressionSessionDecodeFrame(decodeSession_, sampleBuffer, kVTDecodeFrame_EnableAsynchronousDecompression, reinterpret_cast<void*>(decodeInfo), nullptr);
     if (sampleBuffer) {
         CFRelease(sampleBuffer);
         sampleBuffer = nullptr;
     }
-    return status == noErr;
+    if (status == noErr) {
+        return DecoderErrorCode::Success;
+    }
+    return DecoderErrorCode::Unknown;
 }
 
 void iOSVideoHWDecoder::flush() noexcept {
@@ -124,7 +145,7 @@ void iOSVideoHWDecoder::flush() noexcept {
         return;
     }
     VTDecompressionSessionFinishDelayedFrames(decodeSession_);
-    isFlushed_ = true;
+    VTDecompressionSessionWaitForAsynchronousFrames(decodeSession_);
 }
 
 bool iOSVideoHWDecoder::createDecodeSession() noexcept {
@@ -134,7 +155,7 @@ bool iOSVideoHWDecoder::createDecodeSession() noexcept {
         LogI("config error");
         return false;
     }
-    if (config->codec == CodecType::H264) {
+    if (config->mediaInfo == MEDIA_MIMETYPE_VIDEO_AVC) {
         const uint8_t* const parameterSetPointers[2] = {config->sps->rawData, config->pps->rawData};
         const size_t parameterSetSizes[2] = { config->sps->length, config->pps->length };
         status = CMVideoFormatDescriptionCreateFromH264ParameterSets(kCFAllocatorDefault,
@@ -143,7 +164,7 @@ bool iOSVideoHWDecoder::createDecodeSession() noexcept {
                                                                      parameterSetSizes,
                                                                      static_cast<int>(config->naluHeaderLength),
                                                                      &videoFormatDescription_);
-    } else {
+    } else if (config->mediaInfo == MEDIA_MIMETYPE_VIDEO_HEVC) {
         if (!VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC)) {
             LogI("not support hevc");
             return false;
@@ -157,6 +178,9 @@ bool iOSVideoHWDecoder::createDecodeSession() noexcept {
                                                                      config->naluHeaderLength,
                                                                      NULL,
                                                                      &videoFormatDescription_);
+    } else {
+        LogE("not support media type:{}", config->mediaInfo);
+        return false;
     }
 
     if (status != noErr) {

@@ -67,8 +67,6 @@ struct IVideoRender;
 
 - (void)setMute:(BOOL) isMute;
 
-- (void)setRenderSize:(int) width height:(int) height;
-
 - (CMTime)totalDuration;
 
 - (CMTime)currentTime;
