@@ -45,7 +45,7 @@ def gen(platform, need_build_demo):
                   "-DCMAKE_TOOLCHAIN_FILE=../../ios.toolchain.cmake " \
                   "-DPLATFORM=OS64 " \
                   "-DENABLE_BITCODE=FALSE " \
-                  "-DDEPLOYMENT_TARGET=16.3 ".format(build_path)
+                  "-DDEPLOYMENT_TARGET=16.5 ".format(build_path)
         print(command)
         os.system(command)
         if need_build_demo:

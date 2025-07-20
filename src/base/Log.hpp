@@ -8,14 +8,18 @@
 #include <cstdio>
 #include <string_view>
 #include <cinttypes>
-#include <format>
 #include <print>
+#include <format>
 #include "LogOutput.h"
 
-#ifdef SLARK_IOS
+#if SLARK_IOS
 #include "iOSBase.h"
-#elif  SLARK_ANDROID
+#else
+
+#if SLARK_ANDROID
 #include "AndroidBase.h"
+#endif
+
 #endif
 
 namespace slark {
@@ -39,8 +43,8 @@ void outputLog(LogType level, std::string_view format, Args&& ...args) {
     if (level == LogType::Record) {
         return;
     }
-#ifdef SLARK_IOS
-    outputLog(logStr);
+#if SLAKR_IOS
+    printLog(logStr);
 #elif SLARK_ANDROID
     printLog(logStr);
 #else

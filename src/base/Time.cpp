@@ -6,6 +6,7 @@
 
 #include <chrono>
 #include <ctime>
+#include <iomanip>
 #include <format>
 #include "Time.hpp"
 
@@ -89,7 +90,7 @@ std::chrono::seconds Time::offsetFromUTC() noexcept {
 }
 
 std::string Time::localTimeStr() noexcept {
-    using std::chrono::system_clock;
+    using namespace std::chrono;
     auto tp = system_clock::now();
     tp += Time::offsetFromUTC();
     return std::format("{}", tp);

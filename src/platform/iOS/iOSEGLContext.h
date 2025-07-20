@@ -22,7 +22,7 @@ public:
     
     virtual void release() override;
     
-    virtual void acttachContext() override;
+    virtual void attachContext() override;
     
     virtual void detachContext() override;
     

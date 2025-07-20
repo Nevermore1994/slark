@@ -70,7 +70,7 @@ struct IVideoRender {
     void setPlayerId(std::string_view playerId) noexcept {
         playerId_ = playerId;
     }
-
+    
 protected:
     Clock videoClock_;
     AtomicSharedPtr<RequestRenderFunc> requestRenderFunc_;

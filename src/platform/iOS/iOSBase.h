@@ -10,6 +10,8 @@
 
 #include <string>
 
-void outputLog(const std::string& log);
+void printLog(const std::string& log);
+
+
 
 #endif /* slark_iOS_Base_h */

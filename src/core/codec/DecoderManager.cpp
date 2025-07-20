@@ -10,7 +10,7 @@
 #include "RawDecoder.h"
 #if SLARK_IOS
 #include "iOSVideoHWDecoder.h"
-#include "iOSAACHWDecoder.hpp"
+#include "iOSAACHWDecoder.h"
 #elif SLARK_ANDROID
 #include "VideoHardwareDecoder.h"
 #include "AudioHardwareDecoder.h"

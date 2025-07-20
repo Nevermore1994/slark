@@ -45,7 +45,7 @@ SlarkPlayerEvent convertEvent(slark::PlayerEvent event) {
 
 struct PlayerObserver final : public slark::IPlayerObserver
 {
-    void notifyPlayedTime(std::string_view playerId, long double time) override {
+    void notifyPlayedTime(std::string_view playerId, double time) override {
         if (notifyTimeFunc) {
             notifyTimeFunc(stringViewToNSString(playerId), time);
         }
@@ -89,8 +89,8 @@ struct PlayerObserver final : public slark::IPlayerObserver
     if (self = [super init]) {
         auto params = std::make_unique<slark::PlayerParams>();
         params->item.path = [path UTF8String];
-        auto context = slark::createEGLContext();
-        context->init();
+        auto context = slark::createGLContext();
+        context->init(nullptr);
         if (CMTIMERANGE_IS_VALID(range)) {
             params->item.displayStart = CMTimeGetSeconds(range.start);
             params->item.displayDuration = CMTimeGetSeconds(range.duration);
@@ -162,10 +162,6 @@ struct PlayerObserver final : public slark::IPlayerObserver
 
 - (void)setMute:(BOOL) isMute {
     _player->setMute(static_cast<bool>(isMute));
-}
-
-- (void)setRenderSize:(int) width height:(int) height {
-    _player->setRenderSize(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 }
 
 - (CMTime)totalDuration {

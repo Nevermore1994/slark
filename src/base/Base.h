@@ -7,7 +7,6 @@
 #pragma once
 
 #include <limits>
-#include <type_traits>
 #include <cmath>
 
 #define DISABLE_WARNINGS \

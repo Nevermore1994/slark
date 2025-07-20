@@ -47,15 +47,15 @@ macro(add_ios_sources TARGET_NAME)
             src/platform/iOS/*.h
             src/platform/iOS/*.m
             src/platform/iOS/*.mm
-            interface/iOS/*.h
-            interface/iOS/*.m
-            interface/iOS/*.mm
+            src/interface/iOS/*.h
+            src/interface/iOS/*.m
+            src/interface/iOS/*.mm
             )
 
     file(GLOB iOS_FILES ${iOS_SOURCE_PATTERNS})
     target_sources(${TARGET_NAME} PUBLIC ${iOS_FILES})
 
     # Add iOS-specific include directories
-    target_include_directories(${TARGET_NAME} PUBLIC src/interface/iOS)
-    target_include_directories(${TARGET_NAME} PUBLIC src/platform/iOS)
+    target_include_directories(${TARGET_NAME} PUBLIC src/interface/iOS/)
+    target_include_directories(${TARGET_NAME} PUBLIC src/platform/iOS/)
 endmacro()

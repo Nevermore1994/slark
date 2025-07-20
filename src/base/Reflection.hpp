@@ -46,7 +46,10 @@ private:
 };
 
 template<typename T>
-std::string RegisterClass(const std::string& name, std::function<std::shared_ptr<T>()>&& func) noexcept {
+std::string registerClassImpl(
+    const std::string& name,
+    std::function<std::shared_ptr<T>()>&& func
+) noexcept {
     Reflection::shareInstance().enrolment(name, [func = std::move(func)]() {
         return func();
     });
@@ -65,13 +68,10 @@ inline std::shared_ptr<T> GenerateInstance(const std::string& name) {
     return nullptr;
 }
 
-#define GetClassName(name) #name
-
-
 struct BaseClass {
     template<typename T>
     static std::string registerClass(std::string name) noexcept{
-        return RegisterClass<T>(name, []() {
+        return registerClassImpl<T>(name, []() {
             return std::make_shared<T>();
         });
     }
@@ -81,5 +81,8 @@ struct BaseClass {
         return GenerateInstance<T>(name);
     }
 };
+
+#define GetClassName(name) #name
+#define RegisterClass(name) BaseClass::registerClass<name>(GetClassName(name))
 
 }

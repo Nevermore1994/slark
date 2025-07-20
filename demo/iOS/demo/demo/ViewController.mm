@@ -10,9 +10,7 @@
 #import "ViewController/AudioViewController.h"
 #import "ViewController/VideoViewController.h"
 #import "iOSUtil.h"
-#include "Log.hpp"
 
-using namespace slark;
 @interface ViewController ()<UITableViewDelegate, UITableViewDataSource>
 
 @property (nonatomic, strong) UITableView* tabView;
@@ -28,7 +26,7 @@ using namespace slark;
     [super viewDidLoad];
     [self initViews];
     [self initConfig];
-    LogI("viewDidLoad");
+    NSLog(@"viewDidLoad");
 }
 
 - (void)viewWillAppear:(BOOL)animated {
