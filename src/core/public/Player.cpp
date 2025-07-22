@@ -23,7 +23,7 @@ void Player::prepare() noexcept {
         LogE("Player is not initialized.");
         return;
     }
-    if (pimpl_->state() != PlayerState::Unknown) {
+    if (pimpl_->state() != PlayerState::NotInited) {
         LogI("Player is already prepared, state:{}", static_cast<int>(pimpl_->state()));
         return;
     }
@@ -31,6 +31,10 @@ void Player::prepare() noexcept {
 }
 
 void Player::play() noexcept {
+    if (pimpl_->state() == PlayerState::NotInited) {
+        LogI("Not inited.");
+        return;
+    }
     if (pimpl_->state() == PlayerState::Playing) {
         LogI("already playing.");
         return;
@@ -40,7 +44,11 @@ void Player::play() noexcept {
 }
 
 void Player::stop() noexcept {
-    if (pimpl_->state() == PlayerState::Stop || pimpl_->state() == PlayerState::Unknown) {
+    if (pimpl_->state() == PlayerState::NotInited) {
+        LogI("Not inited.");
+        return;
+    }
+    if (pimpl_->state() == PlayerState::Stop) {
         LogI("already stopped.");
         return;
     }
@@ -49,6 +57,10 @@ void Player::stop() noexcept {
 }
 
 void Player::pause() noexcept {
+    if (pimpl_->state() == PlayerState::NotInited) {
+        LogI("Not inited.");
+        return;
+    }
     auto nowState = state();
     if (nowState != PlayerState::Playing) {
         LogI("not playing, state:{}", static_cast<int>(nowState));
@@ -80,18 +92,34 @@ PlayerState Player::state() noexcept {
 }
 
 PlayerInfo Player::info() noexcept {
+    if (pimpl_->state() == PlayerState::NotInited) {
+        LogI("Not inited.");
+        return {};
+    }
     return pimpl_->info();
 }
 
 void Player::setLoop(bool isLoop) {
+    if (pimpl_->state() == PlayerState::NotInited) {
+        LogI("Not inited.");
+        return;
+    }
     pimpl_->setLoop(isLoop);
 }
 
 void Player::setVolume(float volume) {
+    if (pimpl_->state() == PlayerState::NotInited) {
+        LogI("Not inited.");
+        return;
+    }
     pimpl_->setVolume(volume);
 }
 
 void Player::setMute(bool isMute) {
+    if (pimpl_->state() == PlayerState::NotInited) {
+        LogI("Not inited.");
+        return;
+    }
     pimpl_->setMute(isMute);
 }
 
@@ -107,11 +135,19 @@ double Player::currentPlayedTime() noexcept {
     if (!pimpl_) {
         return 0;
     }
+    if (pimpl_->state() == PlayerState::NotInited) {
+        LogI("Not inited.");
+        return 0.0;
+    }
     return pimpl_->currentPlayedTime();
 }
 
 void Player::setRenderImpl(std::weak_ptr<IVideoRender> render) noexcept {
     if (!pimpl_) {
+        return;
+    }
+    if (pimpl_->state() == PlayerState::NotInited) {
+        LogI("Not inited.");
         return;
     }
     pimpl_->setRenderImpl(render);

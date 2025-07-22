@@ -67,7 +67,7 @@ public:
         } else {
             LogE("demuxer is nullptr.");
         }
-        return true;
+        return false;
     }
 
     [[nodiscard]] bool hasVideo() const noexcept {
@@ -148,6 +148,8 @@ private:
     void demuxData() noexcept;
 
     void handleOpenMp4DemuxerResult(bool isSuccess) noexcept;
+    
+    void handleOpenWavDemuxerResult(bool isSuccess) noexcept;
 
     void invokeHandleResultFunc(DemuxerResult&& result) noexcept {
         auto func = handleResultFunc_.load();

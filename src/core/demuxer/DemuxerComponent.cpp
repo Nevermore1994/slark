@@ -77,14 +77,6 @@ void DemuxerComponent::demuxData() noexcept {
             LogE("demuxer is not created.");
             return;
         }
-        if (demuxer &&
-            demuxer->isOpened() &&
-            demuxer->type() == DemuxerType::MP4) {
-            DemuxerResult result;
-            result.resultCode = DemuxerResultCode::ParsedHeader;
-            invokeHandleResultFunc(std::move(result));
-            clearData();
-        }
     } else if (demuxer) {
         auto result = demuxer->parseData(demuxData);
         invokeHandleResultFunc(std::move(result));
@@ -105,9 +97,11 @@ bool DemuxerComponent::open() noexcept {
     auto demuxerType = demuxer->type();
     if (demuxerType == DemuxerType::MP4) {
         handleOpenMp4DemuxerResult(res);
+    } else if (demuxerType == DemuxerType::WAV) {
+        handleOpenWavDemuxerResult(res);
     }
     if (res) {
-        probeBuffer_->reset();
+        probeBuffer_.reset();
     }
     return res;
 }
@@ -149,6 +143,23 @@ bool DemuxerComponent::createDemuxer() noexcept {
     return true;
 }
 
+void DemuxerComponent::handleOpenWavDemuxerResult(bool isSuccess) noexcept {
+    if (!isSuccess) {
+        return;
+    }
+    probeBuffer_->shrink();
+    DataPacket packet;
+    packet.offset = probeBuffer_->offset();
+    packet.data = probeBuffer_->detachData();
+    dataList_.withLock([packet = std::move(packet)](auto& list) mutable {
+        list.push_front(std::move(packet));
+    });
+    probeBuffer_.reset();
+    DemuxerResult result;
+    result.resultCode = DemuxerResultCode::ParsedHeader;
+    invokeHandleResultFunc(std::move(result));
+}
+
 void DemuxerComponent::handleOpenMp4DemuxerResult(bool isSuccess) noexcept {
     auto demuxer = demuxer_.load();
     if (!demuxer) {
@@ -164,6 +175,11 @@ void DemuxerComponent::handleOpenMp4DemuxerResult(bool isSuccess) noexcept {
         mp4Demuxer->seekPos(dataStart);
         invokeSeekFunc(range);
         LogI("mp4 seek to:{}", dataStart);
+        
+        DemuxerResult result;
+        result.resultCode = DemuxerResultCode::ParsedHeader;
+        invokeHandleResultFunc(std::move(result));
+        clearData();
 #if DEBUG
         auto ss = mp4Demuxer->description();
         LogI("mp4 info:{}", ss);

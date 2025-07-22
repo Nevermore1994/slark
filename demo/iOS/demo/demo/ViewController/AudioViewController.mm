@@ -111,6 +111,7 @@ using namespace slark;
     self.player = [[SlarkPlayer alloc] init:path];
     self.player.delegate = self;
     self.hasAuthorization = NO;
+    [self.player prepare];
 }
 
 - (UIView*)iconView {
@@ -172,7 +173,7 @@ using namespace slark;
 }
 
 - (void)notifyState:(NSString *)playerId state:(SlarkPlayerState)state {
-    if (state == SlarkPlayerState::PlayerStateReady) {
+    if (state == SlarkPlayerState::PlayerStatePrepared) {
         [self.controllerView updateTotalTime:CMTimeGetSeconds(self.player.totalDuration)];
     } else if (state == SlarkPlayerState::PlayerStateCompleted || state == SlarkPlayerState::PlayerStatePause) {
         [self.controllerView setIsPause:YES];

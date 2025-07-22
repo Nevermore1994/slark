@@ -12,15 +12,17 @@
 #import <memory>
 
 typedef enum : NSUInteger {
-    PlayerStateUnknown,
+    PlayerStateNotInited,
     PlayerStateInitializing,
-    PlayerStateReady,
+    PlayerStatePrepared,
     PlayerStateBuffering,
+    PlayerStateReady,
     PlayerStatePlaying,
     PlayerStatePause,
     PlayerStateStop,
     PlayerStateError,
     PlayerStateCompleted,
+    PlayerStateUnknown
 } SlarkPlayerState;
 
 
@@ -50,6 +52,8 @@ struct IVideoRender;
 - (instancetype)init:(NSString*) path;
 
 - (instancetype)initWithTimeRange:(NSString*) path range:(CMTimeRange)range;
+
+- (void)prepare;
 
 - (void)play;
 

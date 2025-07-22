@@ -98,6 +98,7 @@ iOSVideoHWDecoder::~iOSVideoHWDecoder() {
 
 void iOSVideoHWDecoder::reset() noexcept {
     isOpen_ = false;
+    isCompleted_ = false;
     @autoreleasepool {
         if (decodeSession_) {
             VTDecompressionSessionWaitForAsynchronousFrames(decodeSession_);
@@ -110,7 +111,6 @@ void iOSVideoHWDecoder::reset() noexcept {
             videoFormatDescription_ = nullptr;
         }
     }
-
 }
 
 DecoderErrorCode iOSVideoHWDecoder::decode(AVFrameRefPtr& frame) noexcept {
@@ -146,6 +146,7 @@ void iOSVideoHWDecoder::flush() noexcept {
     }
     VTDecompressionSessionFinishDelayedFrames(decodeSession_);
     VTDecompressionSessionWaitForAsynchronousFrames(decodeSession_);
+    isCompleted_ = false;
 }
 
 bool iOSVideoHWDecoder::createDecodeSession() noexcept {

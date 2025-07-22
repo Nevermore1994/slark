@@ -103,7 +103,7 @@ public:
     }
     
     [[nodiscard]] bool isNormal() const noexcept {
-        return status_ == RenderStatus::Error;
+        return status_ != RenderStatus::Error;
     }
 
     [[nodiscard]] const std::shared_ptr<AudioInfo>& info() const noexcept {

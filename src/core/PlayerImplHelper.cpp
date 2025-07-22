@@ -56,17 +56,18 @@ bool PlayerImplHelper::isRenderEnd() noexcept {
     if (!player) {
         return true;
     }
-    if (player->stats_.isRenderEnd()) {
+    auto isAudioEnd = !player->info_.hasAudio ||
+        (player->info_.hasAudio && player->stats_.isAudioRenderEnd);
+    auto isVideoEnd = !player->info_.hasVideo ||
+        (player->info_.hasVideo && player->stats_.isVideoRenderEnd);
+    if (isAudioEnd && isVideoEnd) {
         LogI("isRenderEnd");
         return true;
     }
     constexpr double kMaxDriftTime = 0.5; //second
-    auto videoRenderTime = player->videoRenderTime();
-    auto audioRenderTime = player->audioRenderTime();
-    if (isEqualOrGreater(std::min(audioRenderTime, videoRenderTime),
-                         player->info_.duration + kMaxDriftTime)) {
-        LogI("render end, video time:{}, audio time:{}, duration:{}",
-                videoRenderTime, audioRenderTime, player->info_.duration);
+    auto time = player->currentPlayedTime();
+    if (isEqualOrGreater(time, player->info_.duration + kMaxDriftTime)) {
+        LogI("render end, played time:{}, duration:{}", time, player->info_.duration);
         return true;
     }
     return false;

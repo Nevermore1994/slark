@@ -51,6 +51,10 @@ void Player::Impl::seek(
     double time,
     bool isAccurate
 ) noexcept {
+    if (!sender_) {
+        LogE("error!! not init");
+        return;
+    }
     auto ptr = buildEvent(EventType::Seek);
     PlayerSeekRequest req;
     req.seekTime = time;
@@ -64,6 +68,10 @@ void Player::Impl::seek(
 void Player::Impl::updateState(
     PlayerState state
 ) noexcept {
+    if (!sender_) {
+        LogE("error!! not init");
+        return;
+    }
     sender_->send(buildEvent(state));
     ownerThread_->start();
 }
@@ -290,7 +298,6 @@ void Player::Impl::preparePlayerInfo() noexcept {
     if (info_.hasAudio) {
         LogI("has audio, audio info:{}", demuxerComponent_->audioInfo()->mediaInfo);
         createAudioComponent(setting);
-        LogI("init player success 0.");
     } else {
         LogI("no audio");
     }
@@ -470,6 +477,9 @@ void Player::Impl::pushAudioPacketDecode() noexcept {
     }
     auto audioTime = audioRenderTime();
     if (!isAudioNeedDecode(audioTime)) {
+        if (!audioDecodeComponent_->isRunning()) {
+            audioDecodeComponent_->start();
+        }
         return;
     }
     audioPackets_.withLock([&audioTime, this](auto& audioPackets) {
@@ -495,6 +505,9 @@ void Player::Impl::pushVideoPacketDecode() noexcept {
     }
     auto videoTime = videoRenderTime();
     if (!isVideoNeedDecode(videoTime)) {
+        if (!videoDecodeComponent_->isRunning()) {
+            videoDecodeComponent_->start();
+        }
         return;
     }
     videoPackets_.withLock([&videoTime, this](auto& videoPackets){
@@ -837,9 +850,20 @@ void Player::Impl::doSeek(
         stats_.reset();
         stats_.setSeekTime(seekTime);
     }
-    audioRender_->seek(seekTime);
-    setVideoRenderTime(seekTime);
-    stats_.setFastPush();
+    if (info_.hasAudio) {
+        audioRender_->seek(seekTime);
+    }
+
+    if (info_.hasVideo) {
+        setVideoRenderTime(seekTime);
+        stats_.setFastPush();
+    } else {
+        seekRequest_.reset(); //If there is only audio, seek is complete
+        if (seekRequest.isAccurate) {
+            setState(stats_.resumeAfterSeek ? PlayerState::Playing : PlayerState::Ready);
+            stats_.resumeAfterSeek = false;
+        }
+    }
 }
 
 void Player::Impl::clearData() noexcept {
@@ -992,7 +1016,7 @@ void Player::Impl::handleEvent(
             handleSettingUpdate(*event);
         } else if (auto state = getStateFromEvent(event->type); state.has_value()) {
             LogI("eventType:{}", EventTypeToString(event->type));
-            if (currentState == PlayerState::Stop  || currentState == PlayerState::Error) {
+            if (currentState == PlayerState::Stop || currentState == PlayerState::Error) {
                 LogI("ignore event:{}", EventTypeToString(event->type));
                 continue;
             }
@@ -1044,6 +1068,8 @@ void Player::Impl::notifyPlayerState(
 void Player::Impl::notifyPlayedTime(bool isEndTime) noexcept {
     double time = 0.0;
     if (!isEndTime) {
+        //Here, we specifically do not use the function currentPlayTime,
+        //but use render time to print the audio and video synchronization time difference
         if (info_.hasAudio && info_.hasVideo) {
             auto videoTime = videoRenderTime();
             auto audioTime = audioRenderTime();
@@ -1059,7 +1085,8 @@ void Player::Impl::notifyPlayedTime(bool isEndTime) noexcept {
             time = std::min(time, info_.duration);
             LogI("notifyTime:{} (video)", time);
         }
-        if (isEqual(stats_.lastNotifyPlayedTime, time, 0.1)) {
+        if (stats_.lastNotifyPlayedTime > 0 &&
+            isEqual(stats_.lastNotifyPlayedTime, time, 0.1)) {
             return;
         }
     } else {
@@ -1103,6 +1130,10 @@ void Player::Impl::setLoop(
 void Player::Impl::setVolume(
     float volume
 ) noexcept {
+    if (!sender_) {
+        LogE("error!! not init");
+        return;
+    }
     auto ptr = buildEvent(EventType::UpdateSettingVolume);
     ptr->data = std::make_any<float>(volume);
     sender_->send(std::move(ptr));
@@ -1112,6 +1143,10 @@ void Player::Impl::setVolume(
 void Player::Impl::setMute(
     bool isMute
 ) noexcept {
+    if (!sender_) {
+        LogE("error!! not init");
+        return;
+    }
     auto ptr = buildEvent(EventType::UpdateSettingMute);
     ptr->data = std::make_any<bool>(isMute);
     sender_->send(std::move(ptr));
@@ -1119,7 +1154,7 @@ void Player::Impl::setMute(
 }
 
 PlayerState Player::Impl::state() noexcept {
-    PlayerState state = PlayerState::Unknown;
+    PlayerState state = PlayerState::NotInited;
     state_.withReadLock([&state](auto& nowState){
         state = nowState;
     });
@@ -1149,7 +1184,7 @@ double Player::Impl::demuxedDuration() const noexcept {
 }
 
 void Player::Impl::checkCacheState() noexcept {
-    if (!dataProvider_ || !ownerThread_ || isStopped_) {
+    if (!dataProvider_ || !ownerThread_ || isStopped_ || !demuxerComponent_) {
         return;
     }
     auto nowState = state();
@@ -1184,28 +1219,27 @@ void Player::Impl::checkCacheState() noexcept {
             ownerThread_->start();
         }
         LogI("unable to continue playing:{}", cacheTime);
-    } else if (nowState == PlayerState::Buffering &&
-        isEqualOrGreater(cacheTime, setting.minCacheTime, 0.1) &&
-        stats_.resumeAfterBuffering) {
-        setState(PlayerState::Playing);
-        stats_.resumeAfterBuffering = false;
-        LogI("buffering end, cache time is enough:{}", cacheTime);
+    } else if (nowState == PlayerState::Buffering) {
+        if (isEqualOrGreater(cacheTime, kMinCanPlayTime, 0.1) ||
+            isEqualOrGreater(cacheTime, info_.duration, 0.1)) {
+            setState(stats_.resumeAfterBuffering ? PlayerState::Playing : PlayerState::Ready);
+            LogI("buffering end, cache time is enough:{}, playing:{}", cacheTime, stats_.resumeAfterBuffering);
+            stats_.resumeAfterBuffering = false;
+        }
     }
 
     LogI("demux cache time:{}, demuxedDuration:{} played time:{}", cacheTime, cachedDuration, playedTime);
-    if (cacheTime < setting.minCacheTime) {
-        if (dataProvider_) {
+    if (isEqualOrGreater(setting.minCacheTime, cacheTime, 0.1) &&
+        isGreater(info_.duration, cacheTime)) {
+        if (!dataProvider_->isCompleted()) {
             dataProvider_->start();
         }
-        if (demuxerComponent_) {
-            demuxerComponent_->start();
-        }
+        demuxerComponent_->start();
         if (!ownerThread_->isRunning()) {
             ownerThread_->start();
         }
-        LogI("read start, cache time is too small:{}", cacheTime);
-    } else if (cacheTime >= setting.maxCacheTime ||
-            (dataProvider_->isCompleted() && demuxerComponent_->isCompleted())) {
+        LogI("cache time is too small:{}", cacheTime);
+    } else if (isEqualOrGreater(cacheTime, setting.minCacheTime)) {
         if (dataProvider_) {
             dataProvider_->pause();
         }
@@ -1214,7 +1248,11 @@ void Player::Impl::checkCacheState() noexcept {
         }
         LogI("read pause, cache time is too large:{}", cacheTime);
     }
-    bool isNeedPauseOwnerThread = false;
+    if (!demuxerComponent_->isRunning() &&
+        !demuxerComponent_->isCompleted()) {
+        demuxerComponent_->start();
+    }
+    
     if (!dataProvider_->isRunning() && !demuxerComponent_->isRunning()) {
         static const std::vector<PlayerState> pauseStates = {
             PlayerState::Ready,
@@ -1226,12 +1264,9 @@ void Player::Impl::checkCacheState() noexcept {
             return state == nowState;
         });
         if (isPauseState && receiver_->empty()) {
-            isNeedPauseOwnerThread = true;
+            ownerThread_->pause();
+            LogI("owner pause");
         }
-    }
-    if (isNeedPauseOwnerThread) {
-        ownerThread_->pause();
-        LogI("owner pause");
     }
 }
 
