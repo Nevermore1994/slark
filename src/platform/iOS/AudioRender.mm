@@ -136,7 +136,7 @@ void AudioRender::play() noexcept {
 }
 
 void AudioRender::pause() noexcept {
-    if (isNormal()) {
+    if (!isNormal()) {
         LogI("in error status.");
         return;
     }
@@ -151,7 +151,7 @@ void AudioRender::pause() noexcept {
 }
 
 void AudioRender::flush() noexcept {
-    if (isNormal()) {
+    if (!isNormal()) {
         LogE("[audio render] in error status.");
         return;
     }
@@ -224,6 +224,9 @@ bool AudioRender::checkFormat() const noexcept {
 
 Time::TimePoint AudioRender::playedTime() noexcept {
     auto time = clock_.time();
+    if (time.point() < latency_.point()) {
+        return 0.0;
+    }
     return time - latency_;
 }
 

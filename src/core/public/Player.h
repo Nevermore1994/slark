@@ -18,7 +18,7 @@
 namespace slark {
 
 enum class PlayerState : uint8_t {
-    Unknown = 0,
+    NotInited = 0,
     Initializing,
     Prepared,
     Buffering,
@@ -28,6 +28,7 @@ enum class PlayerState : uint8_t {
     Stop,
     Error,
     Completed,
+    Unknown,
 };
 
 enum class PlayerEvent : uint8_t {

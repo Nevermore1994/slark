@@ -13,7 +13,7 @@
 namespace slark {
 
 Buffer::Buffer(uint64_t size)
-    :totalSize_(size) {
+    : totalSize_(size) {
     
 }
 
@@ -251,6 +251,12 @@ void Buffer::shrink() noexcept {
     data_ = std::move(p);
     offset_ += readPos_;
     readPos_ = 0;
+}
+
+DataPtr Buffer::detachData() noexcept {
+    auto data = std::move(data_);
+    reset();
+    return data;
 }
 
 void Buffer::reset() noexcept {

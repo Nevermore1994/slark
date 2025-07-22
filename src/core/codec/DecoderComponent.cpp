@@ -144,7 +144,7 @@ void DecoderComponent::pushFrameDecode() {
                 pendingDecodeQueue_.pop_front();
             }
 
-        } while (frame->isFastPushFrame()); //fast push
+        } while (frame && frame->isFastPushFrame()); //fast push
     });
     if (isCompleted) {
         pause();

@@ -100,7 +100,7 @@ public:
     
     virtual void reset() noexcept {
         flush();
-        isOpen_ = false;
+        isCompleted_ = false;
     }
     
     virtual bool open(std::shared_ptr<DecoderConfig> config) noexcept = 0;

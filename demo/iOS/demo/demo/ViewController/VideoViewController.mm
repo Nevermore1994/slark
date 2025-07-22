@@ -185,7 +185,7 @@ using namespace slark;
 }
 
 - (void)notifyState:(NSString *)playerId state:(SlarkPlayerState)state {
-    if (state == SlarkPlayerState::PlayerStateReady) {
+    if (state == SlarkPlayerState::PlayerStatePrepared) {
         [self.controllerView updateTotalTime:CMTimeGetSeconds(self.playerController.player.totalDuration)];
         self.loadingView.hidden = YES;
     } else if (state == SlarkPlayerState::PlayerStateCompleted || state == SlarkPlayerState::PlayerStatePause) {

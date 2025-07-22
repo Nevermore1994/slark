@@ -60,10 +60,6 @@ struct PlayerStats {
         isForceVideoRendered = true;
         fastPushDecodeCount = 10;
     }
-
-    [[nodiscard]] bool isRenderEnd() const noexcept {
-        return isVideoRenderEnd && isAudioRenderEnd;
-    }
 };
 
 class Player::Impl: public std::enable_shared_from_this<Player::Impl> {

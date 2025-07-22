@@ -71,6 +71,8 @@ public:
     
     void reset() noexcept;
     
+    DataPtr detachData() noexcept;
+    
     [[nodiscard]] uint64_t pos() const noexcept {
         return readPos_ + offset_;
     }
@@ -99,6 +101,7 @@ public:
     uint64_t end() const noexcept {
         return offset() + totalLength();
     }
+    
 private:
     bool isUpdatedOffset = false;
     DataPtr data_ = nullptr;

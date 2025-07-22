@@ -20,9 +20,11 @@
 
 SlarkPlayerState convertState(slark::PlayerState state) {
     switch (state) {
+            STATE_ENUM_TO_CASE(NotInited);
             STATE_ENUM_TO_CASE(Initializing);
-            STATE_ENUM_TO_CASE(Ready);
+            STATE_ENUM_TO_CASE(Prepared);
             STATE_ENUM_TO_CASE(Buffering);
+            STATE_ENUM_TO_CASE(Ready);
             STATE_ENUM_TO_CASE(Playing);
             STATE_ENUM_TO_CASE(Pause);
             STATE_ENUM_TO_CASE(Stop);
@@ -130,6 +132,10 @@ struct PlayerObserver final : public slark::IPlayerObserver
 
 - (std::unique_ptr<slark::Player>&) player {
     return _player;
+}
+
+- (void)prepare {
+    _player->prepare();
 }
 
 - (void)play {

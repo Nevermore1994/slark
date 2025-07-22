@@ -101,7 +101,7 @@ DecoderErrorCode iOSAACHWDecoder::decode(
 }
 
 void iOSAACHWDecoder::flush() noexcept {
-  
+    isCompleted_ = false;
 }
 
 MPEG4ObjectID getAACProfile(uint8_t profile) {

@@ -36,10 +36,10 @@ bool WAVDemuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
     if (probeData.compare(0, 4, "RIFF") || probeData.compare(8, 4, "WAVE")) {
         return res;
     }
-    uint32_t totalSize = 0;
-    Util::read4ByteLE(probeData.substr(4), totalSize);
+    uint32_t chunkSize = 0;
+    Util::read4ByteLE(probeData.substr(4), chunkSize);
     auto offset = 12ull;
-    auto remainSize = totalSize;
+    auto remainSize = chunkSize;
     WaveFormat format = WaveFormat::PCM;
     uint16_t channels = 0;
     uint64_t sampleRate = 0;
@@ -57,11 +57,11 @@ bool WAVDemuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
         audioInfo_->mediaInfo = MEDIA_MIMETYPE_AUDIO_RAW;
         audioInfo_->timeScale = 1000000;
         headerInfo_ = std::make_unique<DemuxerHeaderInfo>();
-        headerInfo_->dataSize = totalSize;
+        headerInfo_->dataSize = chunkSize + 8 - offset; //file total size - chunksize
         headerInfo_->headerLength = offset;
         isOpened_ = true;
         buffer->skip(static_cast<int64_t>(offset));
-        buffer_ = std::move(buffer);
+        buffer_ = std::make_unique<Buffer>(headerInfo_->dataSize);
     };
     while (remainSize >= 8) {
         auto chunkHeader = probeData.substr(offset, 8);
@@ -220,7 +220,12 @@ uint64_t WAVDemuxer::getSeekToPos(double time) noexcept {
 }
 
 DemuxerResult WAVDemuxer::parseData(DataPacket& packet) noexcept {
+    if (!buffer_) {
+        LogE("not init buffer");
+        return {DemuxerResultCode::Failed, AVFramePtrArray(), AVFramePtrArray()};
+    }
     if (packet.empty() || !isOpened_) {
+        LogE("packet is empty!");
         return {DemuxerResultCode::Failed, AVFramePtrArray(), AVFramePtrArray()};
     }
     

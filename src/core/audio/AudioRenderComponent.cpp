@@ -83,7 +83,7 @@ bool AudioRenderComponent::send(AVFrameRefPtr frame) noexcept {
 }
 
 bool AudioRenderComponent::process(AVFrameRefPtr frame) noexcept {
-    if (!frame || frame->data->empty()) {
+    if (!frame || !frame->data || frame->data->empty()) {
         LogE("frame data is nullptr");
         return false;
     }
