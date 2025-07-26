@@ -31,8 +31,13 @@ bool findNaluUnit(
 ) noexcept;
 
 //first first_mb_in_slice, second slice type
-std::tuple<uint32_t, uint32_t> parseSliceType(
+std::tuple<uint32_t, uint32_t> parseAvcSliceType(
     DataView naluView
+) noexcept;
+
+std::tuple<uint32_t, uint32_t> parseHevcSliceType(
+    DataView naluView,
+    uint8_t naluType
 ) noexcept;
 
 void parseH264Sps(

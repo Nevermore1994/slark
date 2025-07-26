@@ -29,7 +29,7 @@ void decompressionOutputCallback(void* decompressionOutputRefCon,
                    CMTime,
                    CMTime) {
     @autoreleasepool {
-        auto* decodeInfo = reinterpret_cast<DecodeInfo*>(sourceFrameRefCon);;
+        auto* decodeInfo = reinterpret_cast<DecodeInfo*>(sourceFrameRefCon);
         if (decodeInfo->isDiscard) {
             LogE("video decode discard frame:{}", decodeInfo->ptsTime());
             return;
@@ -171,7 +171,7 @@ bool iOSVideoHWDecoder::createDecodeSession() noexcept {
             return false;
         }
         const uint8_t* const parameterSetPointers[3] = {config->sps->rawData, config->pps->rawData, config->vps->rawData};
-        const size_t parameterSetSizes[3] = { config->sps->length, config->pps->length };
+        const size_t parameterSetSizes[3] = { config->sps->length, config->pps->length, config->vps->length };
         status = CMVideoFormatDescriptionCreateFromHEVCParameterSets(kCFAllocatorDefault,
                                                                      3,
                                                                      parameterSetPointers,

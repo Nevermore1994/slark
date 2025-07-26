@@ -426,7 +426,7 @@ bool TSDemuxer::packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) n
             }
             continue;
         } else if (naluType == 5 || naluType == 1) {
-            auto [firstMBInSlice, sliceType] = parseSliceType(dataView);
+            auto [firstMBInSlice, sliceType] = parseAvcSliceType(dataView);
             if (firstMBInSlice != 0) {
                 //multi slice
                 if (frames.empty()) {

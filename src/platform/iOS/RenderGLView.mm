@@ -568,8 +568,8 @@ static const GLfloat kColorConversion709FullRange[] = {
     if (isPush) {
         buffer = _pixelbuffer;
         _pixelbuffer = NULL;
-    } else if ([self.delegate respondsToSelector:@selector(requestRender)]) {
-        buffer = [self.delegate requestRender];
+    } else if (_videoRenderImpl) {
+        buffer = _videoRenderImpl->requestRender();
     }
     if (buffer) {
         [self displayPixelBuffer:buffer];

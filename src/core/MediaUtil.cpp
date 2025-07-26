@@ -99,7 +99,7 @@ bool findNaluUnit(
     return true;
 }
 
-std::tuple<uint32_t, uint32_t> parseSliceType(
+std::tuple<uint32_t, uint32_t> parseAvcSliceType(
     DataView naluView
 ) noexcept {
     using namespace Util;
@@ -108,6 +108,26 @@ std::tuple<uint32_t, uint32_t> parseSliceType(
     uint32_t firstMBInSlice = Golomb::readUe(sliceView, offset);
     uint32_t sliceType = Golomb::readUe(sliceView, offset);
     return {firstMBInSlice, sliceType};
+}
+
+std::tuple<uint32_t, uint32_t> parseHevcSliceType(
+    DataView naluView,
+    uint8_t naluType
+) noexcept {
+    using namespace Util;
+    int32_t offset = 0;
+    auto sliceView = naluView.substr(2); // skip NALU header (2 bytes)
+    // first_slice_segment_in_pic_flag (1 bit)
+    Golomb::readBits(sliceView, offset, 1);
+    // no_output_of_prior_pics_flag (1 bit, only for IDR)
+    if (naluType == 19 || naluType == 20) {
+        Golomb::readBits(sliceView, offset, 1);
+    }
+    // slice_segment_address (UE)
+    uint32_t sliceSegmentAddr = Golomb::readUe(sliceView, offset);
+    // slice_type (UE)
+    uint32_t sliceType = Golomb::readUe(sliceView, offset);
+    return {sliceSegmentAddr, sliceType};
 }
 
 void parseHrd(

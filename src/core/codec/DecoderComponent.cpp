@@ -166,6 +166,10 @@ void DecoderComponent::pause() noexcept {
 }
 
 void DecoderComponent::start() noexcept {
+    if (empty()) {
+        return; //If it is empty, avoid starting the thread
+        //and push the frame later to continue starting the thread
+    }
     decodeWorker_.start();
 }
 

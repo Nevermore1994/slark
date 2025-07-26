@@ -22,6 +22,7 @@ public:
     bool isCompleted = false;
     TrackType type = TrackType::Unknown;
     CodecId codecId = CodecId::Unknown;
+    std::string mediaBoxName;
     std::shared_ptr<BoxMdhd> mdhd;
     std::shared_ptr<Box> stbl;
     std::shared_ptr<BoxStco> stco;
@@ -64,9 +65,17 @@ public:
                    std::shared_ptr<FrameInfo> frameInfo,
                    AVFramePtrArray& packets);
     
-    AVFramePtrArray parseH264FrameData(AVFramePtr frame,
-                                       DataPtr data,
-                                       std::shared_ptr<VideoFrameInfo>frameInfo);
+    AVFramePtrArray parseH264FrameData(
+        AVFramePtr frame,
+        DataPtr data,
+        std::shared_ptr<VideoFrameInfo>frameInfo
+    );
+    
+    AVFramePtrArray parseH265FrameData(
+        AVFramePtr frame,
+        DataPtr data,
+        std::shared_ptr<VideoFrameInfo> frameInfo
+    );
     void calcIndex() noexcept;
 
     void init() noexcept;
@@ -107,6 +116,8 @@ private:
     bool parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept;
 
     void initData() noexcept;
+    
+    bool isCompleted() const noexcept;
 private:
     BoxRefPtr rootBox_;
     std::unordered_map<CodecId, std::shared_ptr<TrackContext>> tracks_;
