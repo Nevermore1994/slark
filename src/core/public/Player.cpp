@@ -146,10 +146,6 @@ void Player::setRenderImpl(std::weak_ptr<IVideoRender> render) noexcept {
     if (!pimpl_) {
         return;
     }
-    if (pimpl_->state() == PlayerState::NotInited) {
-        LogI("Not inited.");
-        return;
-    }
     pimpl_->setRenderImpl(render);
 }
 

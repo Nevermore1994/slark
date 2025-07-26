@@ -10,8 +10,7 @@
 #import <UIKit/UIKit.h>
 
 @interface VideoViewController : UIViewController
-
-
+@property (nonatomic, copy) NSString* path;
 @end
 
 #endif /* VideoViewController_h */

@@ -258,9 +258,11 @@ bool TrackContext::isInRange(Buffer& buffer, uint64_t& offset) const noexcept {
     return false;
 }
 
-AVFramePtrArray TrackContext::parseH264FrameData(AVFramePtr frame,
-                                                 DataPtr data,
-                                                 std::shared_ptr<VideoFrameInfo> frameInfo) {
+AVFramePtrArray TrackContext::parseH264FrameData(
+    AVFramePtr frame,
+    DataPtr data,
+    std::shared_ptr<VideoFrameInfo> frameInfo
+ ) {
     if (naluByteSize == 0) {
         auto avccBox = std::dynamic_pointer_cast<BoxAvcc>(stsd->getChild("avc1")->getChild("avcC"));
         if (avccBox) {
@@ -301,13 +303,88 @@ AVFramePtrArray TrackContext::parseH264FrameData(AVFramePtr frame,
                 frameData = std::make_unique<Data>(view.substr(0, totalSize));
                 view = view.substr(totalSize);
             }
-            // parseSliceType need skip header
-            auto [firstMBInSlice, sliceType] = parseSliceType(frameData->view().substr(4));
+            // parseAvcSliceType need skip header
+            auto [firstMBInSlice, sliceType] = parseAvcSliceType(frameData->view().substr(4));
             if (sliceType == 0 || sliceType == 5) {
                 info->frameType = VideoFrameType::PFrame;
             } else if (sliceType == 1 || sliceType == 6) {
                 info->frameType = VideoFrameType::BFrame;
             } else if (sliceType == 2 || sliceType == 7) {
+                info->frameType = VideoFrameType::IFrame;
+            }
+            info->keyIndex = keyIndex;
+            if (view.empty()) {
+                frame->info = info;
+                frame->data = std::move(frameData);
+                frames.push_back(std::move(frame));
+                frame.reset();
+            } else {
+                auto newFrame = frame->copy();
+                newFrame->info = info;
+                newFrame->data = std::move(frameData);
+                frames.push_back(std::move(newFrame));
+            }
+        } else {
+            //don't care
+            view = view.substr(totalSize);
+        }
+    }
+    return frames;
+}
+
+AVFramePtrArray TrackContext::parseH265FrameData(
+    AVFramePtr frame,
+    DataPtr data,
+    std::shared_ptr<VideoFrameInfo> frameInfo
+) {
+    if (naluByteSize == 0) {
+        auto hvccBox = std::dynamic_pointer_cast<BoxHvcc>(stsd->getChild("hvc1")->getChild("hvcC"));
+        if (hvccBox) {
+            naluByteSize = hvccBox->naluByteSize;
+        } else {
+            naluByteSize = 3; //default nalu size
+        }
+    }
+    AVFramePtrArray frames;
+    auto view = data->view();
+    auto& sttsEntry = stts->entrys[sttsEntryIndex];
+    frame->duration = static_cast<uint32_t>(static_cast<double>(sttsEntry.sampleDelta) / static_cast<double>(frame->timeScale) * 1000.0); //ms
+    while (!view.empty()) {
+        uint32_t naluSize = 0;
+        auto sizeView = view.substr(0, 4);
+        Util::readBE(sizeView, naluByteSize + 1, naluSize);
+        uint8_t naluHeader = 0;
+        auto naluHeaderView = view.substr(4, 1);
+        Util::readByte(naluHeaderView, naluHeader);
+        uint8_t naluType = (naluHeader >> 1) & 0x3f; // HEVC NALU type: bits 1-6
+        uint32_t totalSize = naluSize + naluByteSize + 1; //naluSize + header size
+        auto info = std::make_shared<VideoFrameInfo>();
+        frameInfo->copy(info);
+        // HEVC: IDR_W_RADL(19), IDR_N_LP(20), TRAIL_R(1), TRAIL_N(0)
+        if (naluType >= 0 && naluType <= 21) {
+            if (naluType >= 16 && naluType <= 21) {
+                info->isIDRFrame = true;
+                keyIndex = frame->index;
+            } else {
+                info->isIDRFrame = false;
+                info->keyIndex = keyIndex;
+            }
+            DataPtr frameData;
+            if (totalSize == data->length) {
+                frameData = std::move(data);
+                view = {};
+                data.reset();
+            } else {
+                frameData = std::make_unique<Data>(view.substr(0, totalSize));
+                view = view.substr(totalSize);
+            }
+            // parseSliceType for HEVC, need skip header
+            auto [firstSliceSegmentInPic, sliceType] = parseHevcSliceType(frameData->view().substr(4), naluType);
+            if (sliceType == 0) {
+                info->frameType = VideoFrameType::PFrame;
+            } else if (sliceType == 1) {
+                info->frameType = VideoFrameType::BFrame;
+            } else if (sliceType == 2) {
                 info->frameType = VideoFrameType::IFrame;
             }
             info->keyIndex = keyIndex;
@@ -361,9 +438,16 @@ void TrackContext::parseData(Buffer& buffer, std::shared_ptr<FrameInfo> frameInf
             auto frames = parseH264FrameData(std::move(frame),
                                              std::move(data),
                                              std::dynamic_pointer_cast<VideoFrameInfo>(frameInfo));
-            std::for_each(frames.begin(), frames.end(), [&packets](auto& frame){
-                packets.push_back(std::move(frame));
-            });
+            packets.insert(packets.end(),
+                           std::make_move_iterator(frames.begin()),
+                           std::make_move_iterator(frames.end()));
+        } else if (codecId == CodecId::HEVC) {
+            auto frames = parseH265FrameData(std::move(frame),
+                                             std::move(data),
+                                             std::dynamic_pointer_cast<VideoFrameInfo>(frameInfo));
+            packets.insert(packets.end(),
+                           std::make_move_iterator(frames.begin()),
+                           std::make_move_iterator(frames.end()));
         }
     }
     calcIndex();
@@ -405,7 +489,7 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
         if (box->info.symbol == "stsd") {
             auto stsdBox = std::dynamic_pointer_cast<BoxStsd>(box);
             SAssert(stsdBox != nullptr, "parse error");
-            auto codecId = stsdBox->getCodecId();
+            auto [codecId, mediaBoxName] = stsdBox->getCodecId();
             if (codecId == CodecId::Unknown) {
                 LogI("Unknown codec!");
             } else {
@@ -414,6 +498,7 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
                 tracks_[codecId]->mdhd = mdhdBox;
                 tracks_[codecId]->type = stsdBox->isAudio ? TrackType::Audio : TrackType::Video;
                 tracks_[codecId]->codecId = codecId;
+                tracks_[codecId]->mediaBoxName = mediaBoxName;
             }
         } else if (box->info.symbol == "mdhd") {
             mdhdBox = std::dynamic_pointer_cast<BoxMdhd>(box);
@@ -527,7 +612,7 @@ void Mp4Demuxer::initData() noexcept {
             audioInfo_->sampleRate = stsdBox->sampleRate;
             audioInfo_->bitsPerSample = stsdBox->sampleSize;
             if (stsdBox && track->codecId == CodecId::AAC) {
-                auto esdsBox = std::dynamic_pointer_cast<BoxEsds>(stsdBox->getChild("mp4a")->getChild("esds"));
+                auto esdsBox = std::dynamic_pointer_cast<BoxEsds>(stsdBox->getChild(track->mediaBoxName)->getChild("esds"));
                 if (esdsBox) {
                     audioInfo_->channels = esdsBox->audioSpecConfig.channelConfiguration;
                     audioInfo_->profile = getAudioProfile(esdsBox->audioSpecConfig.audioObjectType);
@@ -554,7 +639,7 @@ void Mp4Demuxer::initData() noexcept {
             }
             if (codecId == CodecId::AVC) {
                 videoInfo_->mediaInfo = MEDIA_MIMETYPE_VIDEO_AVC;
-                auto avccBox = std::dynamic_pointer_cast<BoxAvcc>(stsdBox->getChild("avc1")->getChild("avcC"));
+                auto avccBox = std::dynamic_pointer_cast<BoxAvcc>(stsdBox->getChild(track->mediaBoxName)->getChild("avcC"));
                 if (avccBox) {
                     videoInfo_->sps = avccBox->sps.front();
                     videoInfo_->pps = avccBox->pps.front();
@@ -564,7 +649,7 @@ void Mp4Demuxer::initData() noexcept {
                 }
             } else if (codecId == CodecId::HEVC) {
                 videoInfo_->mediaInfo = MEDIA_MIMETYPE_VIDEO_HEVC;
-                auto hvccBox = std::dynamic_pointer_cast<BoxHvcc>(stsdBox->getChild("avc1")->getChild("hvcC"));
+                auto hvccBox = std::dynamic_pointer_cast<BoxHvcc>(stsdBox->getChild(track->mediaBoxName)->getChild("hvcC"));
                 if (hvccBox) {
                     videoInfo_->sps = hvccBox->sps.front();
                     videoInfo_->pps = hvccBox->pps.front();
@@ -655,11 +740,28 @@ DemuxerResult Mp4Demuxer::parseData(DataPacket& packet) noexcept {
     if (!result.audioFrames.empty() || !result.videoFrames.empty()) {
         buffer_->shrink();
     }
-    auto mediaDataBox = rootBox_->getChild("mdat");
-    if (mediaDataBox && buffer_->pos() >= (mediaDataBox->info.size + mediaDataBox->info.start)) {
-        isCompleted_ = true;
+    
+    isCompleted_ = isCompleted();
+    if (isCompleted_) {
+        LogI("demux completed");
     }
     return result;
+}
+
+bool Mp4Demuxer::isCompleted() const noexcept {
+    bool isCompleted = true;
+    for (const auto& track : std::views::values(tracks_)) {
+        if (!track->isCompleted) {
+            isCompleted = false;
+        }
+    }
+    if (!isCompleted) {
+        auto mediaDataBox = rootBox_->getChild("mdat");
+        if (mediaDataBox && buffer_->pos() >= (mediaDataBox->info.size + mediaDataBox->info.start)) {
+            isCompleted = true;
+        }
+    }
+    return isCompleted;
 }
 
 uint64_t Mp4Demuxer::getSeekToPos(double time) noexcept {

@@ -40,11 +40,13 @@ Player::Impl::Impl(std::unique_ptr<PlayerParams> params)
 
 Player::Impl::~Impl() {
     isStopped_ = true;
-    updateState(PlayerState::Stop);
-    std::unique_lock<std::mutex> lock(releaseMutex_);
-    cond_.wait(lock, [this]{
-        return isReleased_.load();
-    });
+    if (ownerThread_) {
+        updateState(PlayerState::Stop);
+        std::unique_lock<std::mutex> lock(releaseMutex_);
+        cond_.wait(lock, [this]{
+            return isReleased_.load();
+        });
+    }
 }
 
 void Player::Impl::seek(
@@ -378,7 +380,7 @@ void Player::Impl::handleVideoPacket(
             packet->isDiscard = true;
             LogI("[seek info]discard video frame:{}, seek time:{}", pts, discardTime.value());
         }
-        LogI("demux video frame:{}, pts:{}, dts:{}, isKey:{}", packet->index, pts, packet->dtsTime(), packet->info->isKeyFrame());
+        LogI("demux video frame:{}, pts:{}, dts:{}, isKey:{}, offset:{}, size:{}", packet->index, pts, packet->dtsTime(), packet->info->isKeyFrame(), packet->offset, packet->data->length);
         videoPackets_.withLock([&packet](auto& videoPackets) {
             videoPackets.emplace_back(std::move(packet));
         });
@@ -604,14 +606,6 @@ void Player::Impl::pushVideoFrameToRender() noexcept {
     if (auto seekRequest = seekRequest_.load()) {
         seekRequest_.reset();
         LogI("seek done, cost time:{}", (Time::nowTimeStamp() - seekRequest->startTime).toMilliSeconds());
-        if (seekRequest->isAccurate && stats_.resumeAfterSeek) {
-            setState(PlayerState::Playing);
-            stats_.resumeAfterSeek = false;
-        } else {
-            setState(PlayerState::Ready);
-        }
-    } else {
-        setState(PlayerState::Ready);
     }
     stats_.isForceVideoRendered = false;
     if (helper_->debugInfo.pushVideoRenderTime.point() == 0) {
@@ -672,7 +666,7 @@ void Player::Impl::doPlay() noexcept {
     }
     if (seekRequest_.isValid()) {
         LogI("player is seeking.");
-        stats_.resumeAfterSeek = true;
+        stats_.resumeAfterBuffering = true;
         return;
     }
     ownerThread_->start();
@@ -770,11 +764,11 @@ void Player::Impl::doSeek(
     auto nowState = state();
     setState(PlayerState::Pause);
     if (nowState == PlayerState::Playing) {
-        stats_.resumeAfterSeek = true;
+        stats_.resumeAfterBuffering = true;
     }
     seekRequest.startTime = Time::nowTimeStamp();
     seekRequest_.reset(std::make_shared<PlayerSeekRequest>(seekRequest));
-    LogI("resumeAfterSeek:{}", stats_.resumeAfterSeek);
+    LogI("resumeAfterSeek:{}", stats_.resumeAfterBuffering);
     setState(PlayerState::Buffering);
     auto demuxedTime = demuxedDuration();
     auto videoInfo = demuxerComponent_->videoInfo();
@@ -859,10 +853,6 @@ void Player::Impl::doSeek(
         stats_.setFastPush();
     } else {
         seekRequest_.reset(); //If there is only audio, seek is complete
-        if (seekRequest.isAccurate) {
-            setState(stats_.resumeAfterSeek ? PlayerState::Playing : PlayerState::Ready);
-            stats_.resumeAfterSeek = false;
-        }
     }
 }
 
@@ -1229,28 +1219,28 @@ void Player::Impl::checkCacheState() noexcept {
     }
 
     LogI("demux cache time:{}, demuxedDuration:{} played time:{}", cacheTime, cachedDuration, playedTime);
-    if (isEqualOrGreater(setting.minCacheTime, cacheTime, 0.1) &&
-        isGreater(info_.duration, cacheTime)) {
+    if (isEqualOrGreater(setting.minCacheTime, cacheTime, 0.1)) {
         if (!dataProvider_->isCompleted()) {
             dataProvider_->start();
+            LogI("cache time is too small:{:.2f}", cacheTime);
         }
-        demuxerComponent_->start();
+        
+        if (!demuxerComponent_->isRunning() && !demuxerComponent_->isCompleted()) {
+            demuxerComponent_->start();
+        }
+        
         if (!ownerThread_->isRunning()) {
             ownerThread_->start();
         }
-        LogI("cache time is too small:{}", cacheTime);
-    } else if (isEqualOrGreater(cacheTime, setting.minCacheTime)) {
+        
+    } else if (isEqualOrGreater(cacheTime, setting.maxCacheTime)) {
         if (dataProvider_) {
             dataProvider_->pause();
         }
         if (demuxerComponent_) {
             demuxerComponent_->pause();
         }
-        LogI("read pause, cache time is too large:{}", cacheTime);
-    }
-    if (!demuxerComponent_->isRunning() &&
-        !demuxerComponent_->isCompleted()) {
-        demuxerComponent_->start();
+        LogI("read pause, cache time is too large:{:.2f}", cacheTime);
     }
     
     if (!dataProvider_->isRunning() && !demuxerComponent_->isRunning()) {
@@ -1385,7 +1375,7 @@ AVFrameRefPtr Player::Impl::requestRender() noexcept {
         setVideoRenderTime(pts);
         stats_.isForceVideoRendered = false;
         count = 0;
-    } else {
+    } else if (videoDecodeComponent_) {
         if (videoDecodeComponent_->isInputCompleted() &&
             videoDecodeComponent_->isDecodeCompleted() &&
             !stats_.isVideoRenderEnd) {

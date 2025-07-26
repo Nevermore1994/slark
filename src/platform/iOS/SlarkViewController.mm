@@ -95,4 +95,10 @@
     [super viewWillDisappear:animated];
     [self.renderView stop];
 }
+
+- (void)dealloc {
+    [self.player stop];
+    [self.renderView stop];
+}
+
 @end

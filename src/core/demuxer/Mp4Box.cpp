@@ -261,23 +261,21 @@ bool BoxMdhd::decode(Buffer& buffer) noexcept {
     return true;
 }
 
-CodecId BoxStsd::getCodecId() {
+std::tuple<CodecId, std::string> BoxStsd::getCodecId() {
     using namespace std::string_view_literals;
     for (auto& ptr : childs) {
         if (auto box = ptr->getChild("esds"sv); box) {
             auto esds = std::dynamic_pointer_cast<BoxEsds>(box);
-            return esds->codecId;
-        } else if (ptr->info.symbol == "hev1") {
-            return CodecId::HEVC;
-        } else if (ptr->info.symbol == "avc1") {
-            return CodecId::AVC;
-        } else if (ptr->info.symbol == "Opus") {
-            return CodecId::OPUS;
-        } else if (ptr->info.symbol == "vp09") {
-            return CodecId::VP9;
+            return {esds->codecId, "mp4a"};
+        } else if (ptr->info.symbol == "hev1" ||
+                   ptr->info.symbol == "hvc1") {
+            return {CodecId::HEVC, ptr->info.symbol};
+        } else if (ptr->info.symbol == "avc1" ||
+                   ptr->info.symbol == "avc3") {
+            return {CodecId::AVC, ptr->info.symbol};
         }
     }
-    return CodecId::Unknown;
+    return {CodecId::Unknown, ""};
 }
 
 //stsd
@@ -337,7 +335,10 @@ bool BoxStsd::decode(Buffer& buffer) noexcept {
             buffer.read4ByteBE(tSampleRate);
             sampleRate = static_cast<uint16_t>(tSampleRate >> 16);
             isAudio = true;
-        } else if (box->info.symbol == "avc1" || box->info.symbol == "hev1" || box->info.symbol == "vp09") {
+        } else if (box->info.symbol == "avc1" ||
+                   box->info.symbol == "avc3" ||
+                   box->info.symbol == "hvc1" ||
+                   box->info.symbol == "hev1" ) {
             buffer.skip(6);
             buffer.read2ByteBE(dataReferenceIndex);
             buffer.skip(2 + 2 + 3 * 4);
@@ -702,26 +703,36 @@ std::string BoxHvcc::description(const std::string&prefix) const noexcept {
 bool BoxHvcc::decode(Buffer& buffer) noexcept {
     auto endPos = info.size + info.start;
     buffer.readByte(version);
-    buffer.readByte(profileSpace);
+
+    uint8_t tmp = 0;
+    buffer.readByte(tmp);
+    profileSpace = (tmp >> 6) & 0x03;
+    tierFlag = (tmp >> 5) & 0x01;
+    profileIdc = tmp & 0x1f;
+
     buffer.read4ByteBE(profileCompatibility);
     buffer.skip(6);
     buffer.readByte(levelIdc);
     buffer.skip(2 + 1 + 1 + 1 + 1);
     buffer.read2ByteBE(avgFrameRate);
+
     uint8_t value = 0;
     buffer.readByte(value);
-    naluByteSize = value & 0x1f;
+    naluByteSize = value & 0x03;
+
     uint8_t naluArraySize = 0;
     buffer.readByte(naluArraySize);
+
     for (uint8_t i = 0; i < naluArraySize; i++) {
         uint8_t naluType = 0;
         buffer.readByte(naluType);
-        std::vector<DataRefPtr> vec;
+        naluType = naluType & 0x3f;
         uint16_t naluCount = 0;
         buffer.read2ByteBE(naluCount);
-        uint16_t naluSize = 0;
-        buffer.read2ByteBE(naluSize);
+        std::vector<DataRefPtr> vec;
         for (uint16_t j = 0; j < naluCount; j++) {
+            uint16_t naluSize = 0;
+            buffer.read2ByteBE(naluSize);
             auto data = buffer.readData(naluSize);
             vec.push_back(std::move(data));
         }
@@ -734,7 +745,7 @@ bool BoxHvcc::decode(Buffer& buffer) noexcept {
         }
     }
     auto skip = static_cast<int64_t>(endPos - buffer.readPos());
-    buffer.skip(skip);
+    if (skip > 0) buffer.skip(skip);
     return true;
 }
 

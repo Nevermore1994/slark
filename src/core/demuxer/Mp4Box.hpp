@@ -165,7 +165,7 @@ public:
     }
     ~BoxStsd() override = default;
 
-    virtual CodecId getCodecId();
+    std::tuple<CodecId, std::string> getCodecId();
 
 public:
     bool decode(Buffer&) noexcept override;

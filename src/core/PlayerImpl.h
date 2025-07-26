@@ -28,7 +28,6 @@ struct PlayerSeekRequest {
 };
 
 struct PlayerStats {
-    bool resumeAfterSeek = false;
     bool isForceVideoRendered = false;
     bool isAudioRenderEnd = false;
     bool isVideoRenderEnd = false;
@@ -48,7 +47,6 @@ struct PlayerStats {
         videoDemuxedTime = 0;
         lastNotifyPlayedTime = 0;
         lastNotifyCacheTime = 0;
-        resumeAfterBuffering = false;
     }
 
     void setSeekTime(double seekTime) noexcept {

@@ -21,6 +21,7 @@ using namespace slark;
 @property (nonatomic, assign) BOOL hasAuthorization;
 @property (nonatomic, strong) SlarkViewController* playerController;
 @property (nonatomic, strong) UIImageView* loadingView;
+@property (nonatomic, strong) NSTimer* hideControllerTimer;
 @end
 
 @implementation VideoViewController
@@ -29,47 +30,29 @@ using namespace slark;
     [super viewDidLoad];
     [self initData];
     [self initSubviews];
+    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTap:)];
+    [self.view addGestureRecognizer:tap];
+    [self resetHideControllerTimer];
     NSLog(@"video viewDidLoad");
+}
+
+- (void)handleTap:(UITapGestureRecognizer *)gesture {
+    self.controllerView.hidden = !self.controllerView.hidden;
+    if (!self.controllerView.hidden) {
+        [self resetHideControllerTimer];
+    }
+}
+
+- (void)resetHideControllerTimer {
+    [self.hideControllerTimer invalidate];
+    self.hideControllerTimer = [NSTimer scheduledTimerWithTimeInterval:5.0 target:self selector:@selector(dismissControllView) userInfo:nil repeats:NO];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     self.navigationController.interactivePopGestureRecognizer.delegate = self;
-    AVAuthorizationStatus AVstatus = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
-    switch (AVstatus) {
-        case AVAuthorizationStatusAuthorized: {
-            NSLog(@"Authorized");
-            self.hasAuthorization = YES;
-        }
-          break;
-        case AVAuthorizationStatusDenied: {
-            NSLog(@"Denied");
-            self.hasAuthorization = NO;
-        }
-          break;
-        case AVAuthorizationStatusNotDetermined: {
-            NSLog(@"not Determined");
-            @weakify(self);
-            [self requestAccess:^(BOOL grant) {
-                @strongify(self);
-                self.hasAuthorization = grant;
-            }];
-        }
-          break;
-        case AVAuthorizationStatusRestricted: {
-            NSLog(@"Restricted");
-            self.hasAuthorization = YES;
-        }
-          break;
-      default:
-          break;
-    }
     [self setupAudioSession];
     NSLog(@"video viewDidAppear");
-}
-
-- (void)requestAccess:(void(^)(BOOL)) block {
-    [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:block];
 }
 
 - (void)setupAudioSession {
@@ -81,6 +64,12 @@ using namespace slark;
 
 - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer {
     return NO;
+}
+
+- (void)dealloc {
+    [self.hideControllerTimer invalidate];
+    [self.playerController removeFromParentViewController];
+    [self.navigationController popViewControllerAnimated:YES];
 }
 
 - (void)initSubviews {
@@ -119,16 +108,14 @@ using namespace slark;
 }
 
 - (void)initData {
-    NSString *bundlePath = [[NSBundle mainBundle] pathForResource:@"resource" ofType:@"bundle"];
-    NSBundle *resouceBundle = [NSBundle bundleWithPath:bundlePath];
-    auto path = [resouceBundle pathForResource:@"Sample.mp4" ofType:@""];
-    //auto path = @"http://devimages.apple.com/iphone/samples/bipbop/gear1/prog_index.m3u8";
+    NSString* path = [NSTemporaryDirectory() stringByAppendingPathComponent:self.path];
     SlarkPlayer* player = [[SlarkPlayer alloc] init:path];
     player.delegate = self;
     self.playerController = [[SlarkViewController alloc] initWithPlayer:self.view.bounds player:player];
     [self addChildViewController:self.playerController];
     [self.view addSubview:self.playerController.view];
     self.hasAuthorization = NO;
+    [self.playerController.player prepare];
 }
 
 - (void)handlePlayClick:(BOOL) isPlay {
@@ -136,18 +123,7 @@ using namespace slark;
         [self.playerController.player pause];
         return;
     }
-    if (!self.hasAuthorization) {
-        @weakify(self);
-        [self requestAccess:^(BOOL grant) {
-            @strongify(self);
-            self.hasAuthorization = grant;
-            if (grant) {
-                [self.playerController.player play];
-            }
-        }];
-    } else {
-        [self.playerController.player play];
-    }
+    [self.playerController.player play];
 }
 
 - (PlayerControllerView*)controllerView{
@@ -184,12 +160,17 @@ using namespace slark;
     [self.controllerView updateCurrentTime:time];
 }
 
+- (void)dismissControllView {
+    self.controllerView.hidden = YES;
+}
+
 - (void)notifyState:(NSString *)playerId state:(SlarkPlayerState)state {
     if (state == SlarkPlayerState::PlayerStatePrepared) {
         [self.controllerView updateTotalTime:CMTimeGetSeconds(self.playerController.player.totalDuration)];
-        self.loadingView.hidden = YES;
     } else if (state == SlarkPlayerState::PlayerStateCompleted || state == SlarkPlayerState::PlayerStatePause) {
         [self.controllerView setIsPause:YES];
+        self.loadingView.hidden = YES;
+    } else if (state == SlarkPlayerState::PlayerStateReady) {
         self.loadingView.hidden = YES;
     } else if (state == SlarkPlayerState::PlayerStatePlaying) {
         [self.controllerView setIsPause:NO];
