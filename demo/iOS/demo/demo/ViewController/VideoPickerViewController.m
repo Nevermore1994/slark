@@ -83,6 +83,11 @@
     [self requestPermissionAndLoadVideos];
 }
 
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    [self.selectedAssets removeAllObjects];
+}
+
 - (UIButton*)doneBtn {
     if (_doneBtn == nil) {
         UIButton* doneBtn = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -164,10 +169,6 @@
 
 - (void)doneAction {
     if (self.onResult && self.selectedAssets.count > 0) {
-        NSMutableArray *urls = [NSMutableArray array];
-        PHVideoRequestOptions *options = [[PHVideoRequestOptions alloc] init];
-        options.version = PHVideoRequestOptionsVersionCurrent;
-        dispatch_group_t group = dispatch_group_create();
         self.onResult(self.selectedAssets);
     }
 }

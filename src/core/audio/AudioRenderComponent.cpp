@@ -67,7 +67,8 @@ void AudioRenderComponent::init() noexcept {
             if (firstFrameRenderCallBack) {
                 firstFrameRenderCallBack(Time::nowTimeStamp());
             }
-        }
+        } 
+        isHungry_ = !isSuccess;
         auto readSize = isSuccess ? size : 0u;
         LogI("request audio size:{}", readSize);
         isFull_ = false;

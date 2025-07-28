@@ -62,6 +62,10 @@ public:
         }
         return isFull_ || audioBuffer_->isFull();
     }
+            
+    bool isHungry() noexcept {
+        return isHungry_;
+    }
 
     RenderStatus status() const {
         if (auto pimpl = pimpl_.load()) {
@@ -84,6 +88,7 @@ public:
 private:
     bool isFirstFrameRendered = false;
     bool isFull_ = false;
+    std::atomic<bool> isHungry_ = false;
     std::shared_ptr<AudioInfo> audioInfo_;
     std::unique_ptr<SyncRingBuffer<uint8_t>> audioBuffer_;
     AtomicSharedPtr<IAudioRender> pimpl_;

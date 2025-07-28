@@ -66,12 +66,23 @@ void decompressionOutputCallback(void* decompressionOutputRefCon,
             return;
         }
         
-        auto frame = std::make_shared<AVFrame>(AVFrameType::Video);
+        auto frame = std::shared_ptr<AVFrame>(new AVFrame(AVFrameType::Video), [](AVFrame* frame){
+            auto videoInfo = std::dynamic_pointer_cast<VideoFrameInfo>(frame->info);
+            if (videoInfo &&
+                videoInfo->format == FrameFormat::VideoToolBox &&
+                frame->opaque) {
+                auto* opaque = reinterpret_cast<CVPixelBufferRef>(frame->opaque);
+                frame->opaque = nullptr;
+                CVPixelBufferRelease(opaque);
+            }
+            delete frame;
+        });
         frame->opaque = opaque;
         frame->pts = decodeInfo->pts;
         frame->timeScale = decodeInfo->timeScale;
         auto videoInfo = std::make_shared<VideoFrameInfo>();
         videoInfo->format = FrameFormat::VideoToolBox;
+        frame->info = std::move(videoInfo);
         decoder->invokeReceiveFunc(std::move(frame));
     }
 }
@@ -118,6 +129,7 @@ DecoderErrorCode iOSVideoHWDecoder::decode(AVFrameRefPtr& frame) noexcept {
     auto videoInfo = std::dynamic_pointer_cast<VideoFrameInfo>(frame->info);
     if (videoInfo->isEndOfStream) {
         flush(); //Output remain frames
+        isCompleted_ = true;
         return DecoderErrorCode::Success;
     }
     auto sampleBuffer = createSampleBuffer(videoFormatDescription_, static_cast<void*>(data->rawData), static_cast<size_t>(data->length));

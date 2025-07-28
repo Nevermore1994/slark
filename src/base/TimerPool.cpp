@@ -31,11 +31,21 @@ bool TimerPool::empty() noexcept {
     return timerInfos_.empty();
 }
 
+std::chrono::milliseconds TimerPool::peekActiveTime() const noexcept {
+    auto now = Time::nowTimeStamp();
+    std::unique_lock<std::mutex> lock(mutex_);
+    if (timerInfos_.empty()) {
+        return std::chrono::milliseconds(1000); //1s
+    }
+    auto activeTime = timerInfos_.top().expireTime;
+    return (activeTime - now).toMilliSeconds();
+}
+
 void TimerPool::loop(std::function<void(ExecuteMode, TimerTask&&)>&& doTask) noexcept {
     std::vector<TimerInfo> expiredTimers;
     {
-        std::unique_lock<std::mutex> lock(mutex_);
         auto now = Time::nowTimeStamp();
+        std::unique_lock<std::mutex> lock(mutex_);
         while (!timerInfos_.empty() && now >= timerInfos_.top().expireTime) {
             expiredTimers.push_back(timerInfos_.top());
             timerInfos_.pop();

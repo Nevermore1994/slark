@@ -33,13 +33,15 @@ TimerManager::~TimerManager() {
 
 void TimerManager::loop() {
     {
+        auto waitTime = timerPool_.peekActiveTime();
         std::unique_lock lock(mutex_);
-        cond_.wait(lock, [this](){
-            return !timerPool_.empty() || isExited_;
+        cond_.wait_for(lock, waitTime, [this](){
+            return isAdded_ || isExited_;
         });
-        if (isExited_) {
+        if (isExited_ || timerPool_.empty()) {
             return;
         }
+        isAdded_ = false;
     }
 
     timerPool_.loop([&](ExecuteMode mode, TimerTask&& task) {
@@ -65,18 +67,21 @@ void TimerManager::loop() {
 
 TimerId TimerManager::runAt(Time::TimePoint timeStamp, TimerTask func, ExecuteMode mode) noexcept {
     auto timerId = timerPool_.runAt(timeStamp, std::move(func), mode);
+    isAdded_ = true;
     cond_.notify_one();
     return timerId;
 }
 
 TimerId TimerManager::runAfter(std::chrono::milliseconds delayTime, TimerTask func, ExecuteMode mode) noexcept {
     auto timerId = timerPool_.runAfter(delayTime, std::move(func), mode);
+    isAdded_ = true;
     cond_.notify_one();
     return timerId;
 }
 
 TimerId TimerManager::runLoop(std::chrono::milliseconds timeInterval, TimerTask func, ExecuteMode mode) noexcept {
     auto timerId = timerPool_.runLoop(timeInterval, std::move(func), mode);
+    isAdded_ = true;
     cond_.notify_one();
     return timerId;
 }

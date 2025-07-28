@@ -40,6 +40,8 @@ public:
     void clear() noexcept;
 
     bool empty() noexcept;
+    
+    std::chrono::milliseconds peekActiveTime() const noexcept;
 private:
     TimerId addTimer(Time::TimePoint timePoint,
                      TimerTask func,
@@ -51,7 +53,7 @@ private:
     bool isExited_ = false;
     std::priority_queue<TimerInfo, std::vector<TimerInfo>, decltype(TimerInfoCompare())> timerInfos_;
     std::unordered_map<TimerId, Timer, TimerIdHasher, TimerIdEqual> timers_;
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
 };
 
 }
