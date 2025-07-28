@@ -43,6 +43,7 @@ private:
 
 private:
     bool isExited_ = false;
+    bool isAdded_ = false;
     std::mutex mutex_;
     std::condition_variable cond_;
     std::unique_ptr<Thread> timerThread_;

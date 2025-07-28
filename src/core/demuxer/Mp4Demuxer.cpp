@@ -40,7 +40,7 @@ void TrackContext::init() noexcept {
 }
 
 uint64_t TrackContext::getSeekPos(double targetTime) const noexcept {
-    if (type != TrackType::Video || !stts || !stss || !stsc || !stco || !stsz) {
+    if (!stts || !stsc || !stco || !stsz) {
         return 0;
     }
     //found sample index
@@ -62,16 +62,15 @@ uint64_t TrackContext::getSeekPos(double targetTime) const noexcept {
         sampleIndex = 1;
     }
     
-    //found key frame index
-    const auto& keyIndexes = stss->keyIndexs;
-    auto it = std::upper_bound(keyIndexes.begin(), keyIndexes.end(), sampleIndex);
-    if (it == keyIndexes.begin()) {
-        LogE("not found key frame");
-        return 0;
+    uint32_t seekSampleIndex = sampleIndex;
+    if (type == TrackType::Video && stss) {
+        //found key frame index
+        const auto& keyIndexes = stss->keyIndexs;
+        auto it = std::lower_bound(keyIndexes.begin(), keyIndexes.end(), sampleIndex);
+        uint32_t keySampleIndex = it != keyIndexes.end() ? *it : keyIndexes.back();
+        seekSampleIndex = seekSampleIndex;
     }
-    --it;
-    uint32_t keySampleIndex = *it;
-
+    
     //found chunkIndex & sampleCount
     uint32_t chunkIndex = 0;
     uint32_t sampleCount = 0;
@@ -81,7 +80,7 @@ uint64_t TrackContext::getSeekPos(double targetTime) const noexcept {
         uint32_t nextFirstChunk = (i + 1 < stsc->entrys.size()) ? stsc->entrys[i + 1].firstChunk : stco->chunkOffsets.size() + 1;
         for (uint32_t chunk = entry.firstChunk; chunk < nextFirstChunk; ++chunk) {
             uint32_t chunkSampleCount = entry.samplesPerChunk;
-            if (keySampleIndex <= sampleCount + chunkSampleCount) {
+            if (seekSampleIndex <= sampleCount + chunkSampleCount) {
                 chunkIndex = chunk - 1; // chunkOffsets start 0
                 found = true;
                 break;
@@ -101,11 +100,13 @@ uint64_t TrackContext::getSeekPos(double targetTime) const noexcept {
 
     uint32_t firstSampleInChunk = sampleCount + 1;
     uint64_t sampleOffsetInChunk = 0;
-    for (uint32_t i = 0; i < keySampleIndex - firstSampleInChunk; ++i) {
+    for (uint32_t i = 0; i < seekSampleIndex - firstSampleInChunk; ++i) {
         sampleOffsetInChunk += stsz->sampleSizes[firstSampleInChunk - 1 + i];
     }
     auto pos = chunkOffset + sampleOffsetInChunk;
-    LogI("[seek info] keySampleIndex:{}, time:{}, pos:{}", keySampleIndex, targetTime, pos);
+    LogI("[seek info] {} keySampleIndex:{}, time:{}, pos:{}",
+         type == TrackType::Video ? "video" : "audio",
+         seekSampleIndex, targetTime, pos);
     return pos;
 }
 
@@ -140,8 +141,8 @@ void TrackContext::seek(uint64_t pos) noexcept {
     }
     if (stss) {
         const auto& indexs = stss->keyIndexs;
-        auto nowKeyIndex = static_cast<uint32_t>(std::distance(indexs.begin(), std::lower_bound(indexs.begin(), indexs.end(), sampleIndex)));
-        sampleIndex = indexs[nowKeyIndex];
+        auto it = std::lower_bound(indexs.begin(), indexs.end(), sampleIndex);
+        sampleIndex = it != indexs.end() ? *it : indexs.back();
     }
     index = sampleIndex - 1;
     for(uint64_t i = 0; i < index; i++) {
@@ -766,12 +767,17 @@ bool Mp4Demuxer::isCompleted() const noexcept {
 
 uint64_t Mp4Demuxer::getSeekToPos(double time) noexcept {
     auto offset = headerInfo_->headerLength + 8;//skip size and type
+    uint64_t videoOffset = offset;
+    uint64_t audioOffset = offset;
     for (const auto& track:std::views::values(tracks_)) {
         if (track->type == TrackType::Video) {
-            offset = track->getSeekPos(time);
+            videoOffset = track->getSeekPos(time);
+        } else if (track->type == TrackType::Audio) {
+            audioOffset = track->getSeekPos(time);
         }
     }
-    return offset;
+    LogI("seek to time, audio offset:{}, video offset:{}", audioOffset, videoOffset);
+    return std::min(audioOffset, videoOffset);
 }
 
 void Mp4Demuxer::seekPos(uint64_t pos) noexcept  {

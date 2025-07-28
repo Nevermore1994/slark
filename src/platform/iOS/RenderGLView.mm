@@ -58,7 +58,9 @@ struct VideoRender : public IVideoRender {
         if (auto requestRenderFunc = requestRenderFunc_.load()) {
             auto frame = std::invoke(*requestRenderFunc);
             if (frame) {
-                return static_cast<CVPixelBufferRef>(frame->opaque);
+                auto* opaque = frame->opaque;
+                frame->opaque = nullptr;
+                return static_cast<CVPixelBufferRef>(opaque);
             }
         }
         return nil;
@@ -284,7 +286,9 @@ static const GLfloat kColorConversion709FullRange[] = {
             return;
         }
         if (frame) {
-            [strongSelf pushRenderPixelBuffer:frame->opaque];
+            auto* opaque = frame->opaque;
+            frame->opaque = nullptr;
+            [strongSelf pushRenderPixelBuffer:opaque];
         }
     };
 }

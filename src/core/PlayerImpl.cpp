@@ -487,7 +487,7 @@ void Player::Impl::pushAudioPacketDecode() noexcept {
     audioPackets_.withLock([&audioTime, this](auto& audioPackets) {
         if (audioPackets.empty()) {
             if (demuxerComponent_->isCompleted() &&
-                !audioDecodeComponent_->isInputCompleted()) {
+                !audioDecodeComponent_->isDecodeCompleted()) {
                 audioDecodeComponent_->setInputCompleted();
                 LogI("input audio completed");
             }
@@ -583,9 +583,8 @@ void Player::Impl::pushVideoFrameToRender() noexcept {
         }
     });
     if (!framePtr) {
-        if (videoDecodeComponent_->isInputCompleted() &&
-            !stats_.isVideoRenderEnd &&
-            videoDecodeComponent_->isDecodeCompleted()) {
+        if (videoDecodeComponent_->isDecodeCompleted() &&
+            !stats_.isVideoRenderEnd) {
             //render end
             if (auto videoRender = videoRender_.load()) {
                 videoRender->renderEnd();
@@ -615,25 +614,28 @@ void Player::Impl::pushVideoFrameToRender() noexcept {
 }
 
 void Player::Impl::pushAudioFrameToRender() noexcept {
-    if (!audioRender_) {
+    if (!audioRender_ || !audioDecodeComponent_) {
         return;
     }
-    audioFrames_.withLock([this](auto& audioFrames){
+    bool isPushFrame = false;
+    audioFrames_.withLock([&isPushFrame, this](auto& audioFrames) {
         if (audioFrames.empty()) {
-            if (audioDecodeComponent_->isInputCompleted() &&
-                !stats_.isAudioRenderEnd &&
-                audioDecodeComponent_->isDecodeCompleted()) {
-                //render end
-                audioRender_->renderEnd();
-                stats_.isAudioRenderEnd = true;
-            }
             return;
         }
         if (audioRender_->send(audioFrames.front())) {
             LogI("push audio:{}", audioFrames.front()->ptsTime());
             audioFrames.pop_front();
+            isPushFrame = true;
         }
     });
+    if (!isPushFrame &&
+        audioDecodeComponent_->isDecodeCompleted() &&
+        audioRender_->isHungry() &&
+        !stats_.isAudioRenderEnd) {
+        //render end
+        audioRender_->renderEnd();
+        stats_.isAudioRenderEnd = true;
+    }
 }
 
 void Player::Impl::pushAVFrameToRender() noexcept {
@@ -1211,7 +1213,8 @@ void Player::Impl::checkCacheState() noexcept {
         LogI("unable to continue playing:{}", cacheTime);
     } else if (nowState == PlayerState::Buffering) {
         if (isEqualOrGreater(cacheTime, kMinCanPlayTime, 0.1) ||
-            isEqualOrGreater(cacheTime, info_.duration, 0.1)) {
+            isEqualOrGreater(cachedDuration, info_.duration, 0.1) ||
+            demuxerComponent_->isCompleted()) {
             setState(stats_.resumeAfterBuffering ? PlayerState::Playing : PlayerState::Ready);
             LogI("buffering end, cache time is enough:{}, playing:{}", cacheTime, stats_.resumeAfterBuffering);
             stats_.resumeAfterBuffering = false;

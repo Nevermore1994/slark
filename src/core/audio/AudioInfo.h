@@ -124,6 +124,7 @@ public:
         renderedDataLength_ = 0;
         offsetTime_ = Time::TimePoint::fromSeconds(time);
         clock_.setTime(offsetTime_);
+        LogI("set seek time:{}", time);
     }
 
     uint32_t requestAudioData(uint8_t* data, uint32_t size, AudioDataFlag& flag) noexcept {
@@ -133,6 +134,7 @@ public:
             //Even if it is 0, it must be updated,
             //otherwise the latency will cause the update to be incorrect.
             clock_.setTime(offsetTime_ + audioInfo_->dataLen2TimePoint(renderedDataLength_));
+            LogI("render length:{}", renderedDataLength_.load());
             return getSize;
         } else {
             flag = AudioDataFlag::Error;

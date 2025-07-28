@@ -75,6 +75,10 @@ void iOSAACHWDecoder::reset() noexcept {
 DecoderErrorCode iOSAACHWDecoder::decode(
     AVFrameRefPtr& frame
 ) noexcept {
+    if (frame->info->isEndOfStream) {
+        isCompleted_ = true;
+        return DecoderErrorCode::Success;
+    }
     decodingFrame_ = frame;
     UInt32 outputDataPacketSize = 1024;
     OSStatus status = AudioConverterFillComplexBuffer(decodeSession_,
