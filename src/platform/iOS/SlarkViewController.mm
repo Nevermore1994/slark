@@ -69,6 +69,7 @@
 
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
+    [self.renderView resizeViewport];
 }
 
 - (void)deviceOrientationDidChange:(NSNotification *)notification {
