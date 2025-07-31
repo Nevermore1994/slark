@@ -13,6 +13,7 @@
 #import "GLProgram.h"
 #import "GLShader.h"
 #import "VideoInfo.h"
+#import "iOSUtil.h"
 
 using namespace slark;
 struct VideoRender : public IVideoRender {
@@ -130,7 +131,6 @@ static const GLfloat kColorConversion709FullRange[] = {
     CVOpenGLESTextureRef _chromaTexture;
     //RGBA
     CVOpenGLESTextureRef _renderTexture;
-    CVPixelBufferRef _pixelbuffer;
 }
 @property(nonatomic, assign) BOOL isDeallocing;
 @property(nonatomic, assign) BOOL isRendering;
@@ -141,7 +141,8 @@ static const GLfloat kColorConversion709FullRange[] = {
 @property(nonatomic, assign) GLint height;
 @property(nonatomic, assign) GLuint frameBuffer;
 @property(nonatomic, assign) GLuint renderBuffer;
-
+@property(nonatomic, assign) CVPixelBufferRef pushPixelBuffer;
+@property(nonatomic, assign) CVPixelBufferRef preRenderBuffer;
 @end
 
 @implementation RenderGLView
@@ -168,9 +169,11 @@ static const GLfloat kColorConversion709FullRange[] = {
         [_worker cancel];
         _worker = nil;
     }
-    if (_pixelbuffer) {
-        CVPixelBufferRelease(_pixelbuffer);
-        _pixelbuffer = NULL;
+    @synchronized (self) {
+        if (_pushPixelBuffer) {
+            CVPixelBufferRelease(_pushPixelBuffer);
+            _pushPixelBuffer = NULL;
+        }
     }
     [self deleteFrameBuffer];
     [self cleanUpTextures];
@@ -237,6 +240,37 @@ static const GLfloat kColorConversion709FullRange[] = {
     return std::weak_ptr<IVideoRender>(_videoRenderImpl);
 }
 
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    [self resizeViewport];
+}
+
+- (void)resizeViewport {
+    CGSize layerSize = self.bounds.size;
+    CGFloat scale = [self scale];
+    CGFloat width = layerSize.width * scale;
+    CGFloat height = layerSize.height * scale;
+    if (width == self.width && height == self.height) {
+        return;
+    }
+    self.width = width;
+    self.height = height;
+    NSLog(@"size: %d %d", self.width, self.height);
+    //[self deleteFrameBuffer];
+    //[self genFrameBuffer];
+    CVPixelBufferRef buffer = NULL;
+    @synchronized(self) {
+        buffer = _preRenderBuffer;
+    }
+    if (buffer == NULL) {
+        return;
+    }
+    [self pushRenderPixelBuffer:buffer];
+    @synchronized(self) {
+        _preRenderBuffer = NULL;
+    }
+}
+
 #pragma mark - setter
 - (void)setRenderInterval:(NSInteger)renderInterval {
     if (renderInterval != 0 && _renderInterval != renderInterval) {
@@ -251,7 +285,14 @@ static const GLfloat kColorConversion709FullRange[] = {
     _isRendering = NO;
     _isActive = YES;
     _preferredConversion = kColorConversion709VideoRange;
-    _pixelbuffer = NULL;
+    CGSize layerSize = self.layer.bounds.size;
+    CGFloat scale = [self scale];
+    self.width = layerSize.width * scale;
+    self.height = layerSize.height * scale;
+    @synchronized(self) {
+        _pushPixelBuffer = NULL;
+        _preRenderBuffer = NULL;
+    }
     [self setupRenderDelegate];
     [self setupLayer];
 }
@@ -355,7 +396,9 @@ static const GLfloat kColorConversion709FullRange[] = {
 
 - (void)pushRenderPixelBuffer:(void*) buffer{
     self.isRendering = YES;
-    _pixelbuffer = (CVPixelBufferRef)buffer;
+    @synchronized(self) {
+        self.pushPixelBuffer = (CVPixelBufferRef)buffer;
+    }
     __weak __typeof(self) weakSelf = self;
     [self.workQueue addOperationWithBlock:^{
         __strong __typeof(weakSelf) strongSelf = weakSelf;
@@ -372,13 +415,11 @@ static const GLfloat kColorConversion709FullRange[] = {
     }
     
     if (!_context) {
-        CVPixelBufferRelease(pixelBuffer);
         return;
     }
     _context->attachContext();
     auto nativeContext = (__bridge EAGLContext*)_context->nativeContext();
     if (!nativeContext) {
-        CVPixelBufferRelease(pixelBuffer);
         return;
     }
     auto frameWidth = static_cast<GLint>(CVPixelBufferGetWidth(pixelBuffer));
@@ -392,12 +433,10 @@ static const GLfloat kColorConversion709FullRange[] = {
         [self uploadRGBATexture:pixelBuffer];
     } else {
         LogE("Not support current format.");
-        CVPixelBufferRelease(pixelBuffer);
         return;
     }
     
     [self renderWithTextures:frameWidth height:frameHeight];
-    CVPixelBufferRelease(pixelBuffer);
     [self cleanUpTextures];
 }
 
@@ -502,7 +541,7 @@ static const GLfloat kColorConversion709FullRange[] = {
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     
-    CGRect viewBounds = self.bounds;
+    CGRect viewBounds = CGRectMake(0, 0, self.width, self.height);
     CGSize contentSize = CGSizeMake(frameWidth, frameHeight);
     
     CGRect vertexSamplingRect = AVMakeRectWithAspectRatioInsideRect(contentSize, viewBounds);
@@ -527,6 +566,12 @@ static const GLfloat kColorConversion709FullRange[] = {
         (GLfloat)(normalizedSamplingSize.width), (GLfloat)(normalizedSamplingSize.height),
     };
     
+    NSLog(@"quadVertexData: [%f, %f] [%f, %f] [%f, %f] [%f, %f]",
+          quadVertexData[0], quadVertexData[1],
+          quadVertexData[2], quadVertexData[3],
+          quadVertexData[4], quadVertexData[5],
+          quadVertexData[6], quadVertexData[7]);
+    
     glVertexAttribPointer(attributes[ATTRIB_VERTEX], 2, GL_FLOAT, 0, 0, quadVertexData);
     glEnableVertexAttribArray(attributes[ATTRIB_VERTEX]);
     
@@ -542,7 +587,6 @@ static const GLfloat kColorConversion709FullRange[] = {
     
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     
-    glBindRenderbuffer(GL_RENDERBUFFER, _renderBuffer);
     [nativeContext presentRenderbuffer:GL_RENDERBUFFER];
 }
 
@@ -563,20 +607,38 @@ static const GLfloat kColorConversion709FullRange[] = {
 
 - (void)setFrame:(CGRect)frame {
     [super setFrame:frame];
-    //update render rect
+    [self resizeViewport];
+}
+
+- (void)setPreRenderBuffer:(CVPixelBufferRef)preRenderBuffer {
+    @synchronized(self) {
+        if (_preRenderBuffer == preRenderBuffer) {
+            return;
+        }
+        if (_preRenderBuffer) {
+            CVPixelBufferRelease(_preRenderBuffer);
+            _preRenderBuffer = NULL;
+        }
+        _preRenderBuffer = preRenderBuffer;
+    }
 }
 
 - (void)doRender:(id) isPushRender{
     BOOL isPush = [isPushRender boolValue];
     CVPixelBufferRef buffer = NULL;
     if (isPush) {
-        buffer = _pixelbuffer;
-        _pixelbuffer = NULL;
+        buffer = self.pushPixelBuffer;
+        @synchronized(self) {
+            self.pushPixelBuffer = NULL;
+        }
     } else if (_videoRenderImpl) {
         buffer = _videoRenderImpl->requestRender();
     }
     if (buffer) {
         [self displayPixelBuffer:buffer];
+        @synchronized(self) {
+            self.preRenderBuffer = buffer;
+        }
     }
     self.isRendering = NO;
 }
@@ -601,6 +663,9 @@ static const GLfloat kColorConversion709FullRange[] = {
 }
 
 - (void)createFrameBuffer {
+    if (_context == nullptr) {
+        return;
+    }
     auto nativeContext = (__bridge EAGLContext*)_context->nativeContext();
     if (!nativeContext) {
         return;
