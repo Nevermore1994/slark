@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		4BD8428D2E32933D0082F6F3 /* VideoPickerViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 4BD8428C2E32933D0082F6F3 /* VideoPickerViewController.m */; };
+		4BD842902E3925F30082F6F3 /* SelectUrlViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 4BD8428F2E3925F30082F6F3 /* SelectUrlViewController.m */; };
 		7E95BE021A3805A7EE0186FA /* Pods_demo.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 17C352FC5441DA44DC8441B5 /* Pods_demo.framework */; };
 		C11838192ADFCC6800DB0127 /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = C11838182ADFCC6800DB0127 /* AppDelegate.m */; };
 		C118381F2ADFCC6800DB0127 /* ViewController.mm in Sources */ = {isa = PBXBuildFile; fileRef = C118381E2ADFCC6800DB0127 /* ViewController.mm */; };
@@ -36,6 +37,8 @@
 		17C352FC5441DA44DC8441B5 /* Pods_demo.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_demo.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		4BD8428B2E3292A10082F6F3 /* VideoPickerViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = VideoPickerViewController.h; sourceTree = "<group>"; };
 		4BD8428C2E32933D0082F6F3 /* VideoPickerViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = VideoPickerViewController.m; sourceTree = "<group>"; };
+		4BD8428E2E3925D90082F6F3 /* SelectUrlViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SelectUrlViewController.h; sourceTree = "<group>"; };
+		4BD8428F2E3925F30082F6F3 /* SelectUrlViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SelectUrlViewController.m; sourceTree = "<group>"; };
 		C11838142ADFCC6800DB0127 /* demo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = demo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C11838172ADFCC6800DB0127 /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
 		C11838182ADFCC6800DB0127 /* AppDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AppDelegate.m; sourceTree = "<group>"; };
@@ -179,6 +182,8 @@
 				C1E0D0B62CBAC6F1002FE528 /* VideoViewController.h */,
 				4BD8428B2E3292A10082F6F3 /* VideoPickerViewController.h */,
 				4BD8428C2E32933D0082F6F3 /* VideoPickerViewController.m */,
+				4BD8428E2E3925D90082F6F3 /* SelectUrlViewController.h */,
+				4BD8428F2E3925F30082F6F3 /* SelectUrlViewController.m */,
 			);
 			path = ViewController;
 			sourceTree = "<group>";
@@ -351,12 +356,8 @@
 			);
 			inputFileListPaths = (
 			);
-			inputPaths = (
-			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -379,6 +380,7 @@
 				C1DA2DD42C9897DC00DF03CB /* PlayerControllerView.m in Sources */,
 				C1DA2E5F2C9C364D00DF03CB /* View+MASAdditions.m in Sources */,
 				C1DA2E572C9C364D00DF03CB /* MASCompositeConstraint.m in Sources */,
+				4BD842902E3925F30082F6F3 /* SelectUrlViewController.m in Sources */,
 				C1DA2E5B2C9C364D00DF03CB /* MASViewAttribute.m in Sources */,
 				C1DA2E592C9C364D00DF03CB /* MASConstraintMaker.m in Sources */,
 				C1DA2E5D2C9C364D00DF03CB /* NSArray+MASAdditions.m in Sources */,

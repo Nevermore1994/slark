@@ -76,8 +76,15 @@ using namespace slark;
     self.navigationItem.title = @"video";
     [self.navigationController.navigationBar setTitleTextAttributes:@{NSForegroundColorAttributeName:[UIColor blackColor]}];
     self.view.backgroundColor = [UIColor blackColor];
+    [self.view addSubview:self.playerController.view];
     [self.view addSubview:self.controllerView];
     [self.view addSubview:self.loadingView];
+    [self.playerController.view mas_makeConstraints:^(MASConstraintMaker *make) {
+        make.width.mas_equalTo(self.view);
+        make.height.mas_equalTo(self.view);
+        make.centerX.equalTo(self.view);
+        make.centerY.equalTo(self.view);
+    }];
     [self.controllerView mas_makeConstraints:^(MASConstraintMaker *make) {
         make.width.mas_equalTo(self.view.mas_width);
         make.height.mas_equalTo(120);
@@ -108,12 +115,10 @@ using namespace slark;
 }
 
 - (void)initData {
-    NSString* path = [NSTemporaryDirectory() stringByAppendingPathComponent:self.path];
-    SlarkPlayer* player = [[SlarkPlayer alloc] init:path];
+    SlarkPlayer* player = [[SlarkPlayer alloc] init:self.path];
     player.delegate = self;
     self.playerController = [[SlarkViewController alloc] initWithPlayer:self.view.bounds player:player];
     [self addChildViewController:self.playerController];
-    [self.view addSubview:self.playerController.view];
     self.hasAuthorization = NO;
     [self.playerController.player prepare];
 }

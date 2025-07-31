@@ -12,6 +12,7 @@
 #import "ViewController/AudioViewController.h"
 #import "ViewController/VideoViewController.h"
 #import "ViewController/VideoPickerViewController.h"
+#import "ViewController/SelectUrlViewController.h"
 #import "iOSUtil.h"
 #import "EXTScope.h"
 
@@ -58,6 +59,7 @@
     self.tabDatas = [NSArray arrayWithObjects:
                      @"audio player",
                      @"video player",
+                     @"network player",
                      nil];
     [self.tabView reloadData];
 }
@@ -96,7 +98,7 @@
 
                 PHVideoRequestOptions *options = [[PHVideoRequestOptions alloc] init];
                 options.version = PHVideoRequestOptionsVersionCurrent;
-                [[PHImageManager defaultManager] requestAVAssetForVideo:phAsset options:options resultHandler:^(AVAsset *avAsset, AVAudioMix *audioMix, NSDictionary *info) {
+                [[PHImageManager defaultManager] requestAVAssetForVideo:phAsset options:options resultHandler:^(AVAsset *avAsset, AVAudioMix* /*audioMix*/, NSDictionary* /*info*/) {
                     AVAssetExportSession *exportSession = [[AVAssetExportSession alloc] initWithAsset:avAsset presetName:AVAssetExportPresetPassthrough];
                     exportSession.outputURL = destURL;
                     exportSession.outputFileType = AVFileTypeMPEG4;
@@ -106,7 +108,7 @@
                         dispatch_async(dispatch_get_main_queue(), ^{
                             if (exportSession.status == AVAssetExportSessionStatusCompleted) {
                                 VideoViewController* videoVC = [VideoViewController new];
-                                videoVC.path = destURL.lastPathComponent;
+                                videoVC.path = [NSTemporaryDirectory() stringByAppendingPathComponent:destURL.lastPathComponent];
                                 [self.navigationController pushViewController:videoVC animated:YES];
                             } else {
                                 NSLog(@"error: %@", exportSession.error);
@@ -116,6 +118,16 @@
                 }];
             };
             [self.navigationController pushViewController:vc animated:YES];
+        }
+            break;
+        case 3: {
+            SelectUrlViewController* selectVC = [SelectUrlViewController new];
+            selectVC.onItemClick = ^(NSString* url) {
+                VideoViewController* videoVC = [VideoViewController new];
+                videoVC.path = url;
+                [self.navigationController pushViewController:videoVC animated:YES];
+            };
+            [self.navigationController pushViewController:selectVC animated:YES];
         }
             break;
         default:

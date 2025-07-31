@@ -1,4 +1,4 @@
-is_enable_https = false
+is_enable_https = true
 
 Pod::Spec.new do |s|
     s.name         = "slark"
