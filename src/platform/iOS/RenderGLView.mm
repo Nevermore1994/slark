@@ -14,8 +14,10 @@
 #import <atomic>
 #import <mutex>
 #import "RenderGLView.h"
+#include "video/VideoInfo.h"
+#include "opengles/GLShader.h"
+#include "opengles/GLProgram.h"
 
-// Forward declarations to avoid circular dependencies
 namespace slark {
     class IVideoRender;
     struct VideoInfo;
@@ -28,7 +30,7 @@ namespace slark {
 using namespace slark;
 
 // Thread-safe VideoRender implementation with improved error handling
-struct ThreadSafeVideoRender : public IVideoRender {
+struct VideoRender : public IVideoRender {
 private:
     std::atomic<bool> active_{false};
     std::mutex callbackMutex_;
@@ -77,7 +79,7 @@ public:
         pause();
     }
     
-    ~ThreadSafeVideoRender() override {
+    ~VideoRender() override {
         active_.store(false);
         std::lock_guard<std::mutex> lock(callbackMutex_);
         notifyVideoInfoFunc = nullptr;
@@ -101,14 +103,12 @@ public:
                     return static_cast<CVPixelBufferRef>(opaque);
                 }
             } catch (...) {
-                // Log error but don't crash
-                NSLog(@"Error in requestRender");
+                LogE("Error in requestRender");
             }
         }
         return nil;
     }
     
-    // Thread-safe callback functions
     std::function<void(std::shared_ptr<VideoInfo>)> notifyVideoInfoFunc;
     std::function<void(void)> startFunc;
     std::function<void(void)> pauseFunc;
@@ -165,7 +165,7 @@ static const GLfloat kColorConversion709FullRange[] = {
 {
     IEGLContextRefPtr _context;
     std::unique_ptr<GLProgram> _program;
-    std::shared_ptr<ThreadSafeVideoRender> _videoRenderImpl;
+    std::shared_ptr<VideoRender> _videoRenderImpl;
     const GLfloat* _preferredConversion;
     CVOpenGLESTextureCacheRef _videoTextureCache;
     
@@ -191,7 +191,7 @@ static const GLfloat kColorConversion709FullRange[] = {
 @property(nonatomic, assign) GLint height;
 @property(nonatomic, assign) GLuint frameBuffer;
 @property(nonatomic, assign) GLuint renderBuffer;
-@property(nonatomic, assign) CVPixelBufferRef pushPixelBuffer;
+@property(nonatomic, assign) CVPixelBufferRef pushRenderBuffer;
 @property(nonatomic, assign) CVPixelBufferRef preRenderBuffer;
 
 @end
@@ -229,9 +229,9 @@ static const GLfloat kColorConversion709FullRange[] = {
     // Thread-safe pixel buffer cleanup
     {
         std::lock_guard<std::mutex> lock(_pixelBufferMutex);
-        if (_pushPixelBuffer) {
-            CVPixelBufferRelease(_pushPixelBuffer);
-            _pushPixelBuffer = NULL;
+        if (_pushRenderBuffer) {
+            CVPixelBufferRelease(_pushRenderBuffer);
+            _pushRenderBuffer = NULL;
         }
         if (_preRenderBuffer) {
             CVPixelBufferRelease(_preRenderBuffer);
@@ -408,7 +408,7 @@ static const GLfloat kColorConversion709FullRange[] = {
     // Thread-safe pixel buffer initialization
     {
         std::lock_guard<std::mutex> lock(_pixelBufferMutex);
-        _pushPixelBuffer = NULL;
+        _pushRenderBuffer = NULL;
         _preRenderBuffer = NULL;
     }
     
@@ -417,7 +417,7 @@ static const GLfloat kColorConversion709FullRange[] = {
 }
 
 - (void)setupRenderDelegate {
-    _videoRenderImpl = std::make_shared<ThreadSafeVideoRender>();
+    _videoRenderImpl = std::make_shared<VideoRender>();
     __weak __typeof(self) weakSelf = self;
     
     _videoRenderImpl->notifyVideoInfoFunc = [weakSelf](std::shared_ptr<VideoInfo> info) {
@@ -460,8 +460,6 @@ static const GLfloat kColorConversion709FullRange[] = {
     };
 }
 
-// Include rest of the methods with similar thread safety improvements...
-// (setupGL, render, displayPixelBuffer, etc.)
 
 #pragma mark - OpenGL Setup and Management
 
@@ -471,50 +469,13 @@ static const GLfloat kColorConversion709FullRange[] = {
     }
     
     _context->attachContext();
-    
-    // Create shader program (assumes GLProgram and GLShader are available)
-    const char* vertexShader = R"(
-        attribute vec4 position;
-        attribute vec2 texCoord;
-        varying vec2 texCoordVarying;
-        
-        void main() {
-            gl_Position = position;
-            texCoordVarying = texCoord;
-        }
-    )";
-    
-    const char* fragmentShader = R"(
-        precision mediump float;
-        varying vec2 texCoordVarying;
-        uniform sampler2D SamplerY;
-        uniform sampler2D SamplerUV;
-        uniform mat3 colorConversionMatrix;
-        
-        void main() {
-            vec3 yuv;
-            vec3 rgb;
-            yuv.x = texture2D(SamplerY, texCoordVarying).r;
-            yuv.yz = texture2D(SamplerUV, texCoordVarying).rg - vec2(0.5);
-            rgb = colorConversionMatrix * yuv;
-            gl_FragColor = vec4(rgb, 1);
-        }
-    )";
-    
-    GLuint vertexShaderObj = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShaderObj, 1, &vertexShader, NULL);
-    glCompileShader(vertexShaderObj);
-    
-    GLuint fragmentShaderObj = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShaderObj, 1, &fragmentShader, NULL);
-    glCompileShader(fragmentShaderObj);
-    
-    GLuint program = glCreateProgram();
-    glAttachShader(program, vertexShaderObj);
-    glAttachShader(program, fragmentShaderObj);
-    glLinkProgram(program);
-    
+    _program = std::make_unique<GLProgram>(GLShader::vertexShader, GLShader::fragmentShader);
+    if (!_program->isValid()) {
+        LogE("program is invalid!");
+        return;
+    }
     // Get attribute and uniform locations
+    auto program = _program->program();
     attributes[ATTRIB_VERTEX] = static_cast<GLuint>(glGetAttribLocation(program, "position"));
     attributes[ATTRIB_TEXCOORD] = static_cast<GLuint>(glGetAttribLocation(program, "texCoord"));
     
@@ -535,7 +496,7 @@ static const GLfloat kColorConversion709FullRange[] = {
     _context->detachContext();
     _glContextInitialized.store(true);
     
-    NSLog(@"OpenGL setup completed successfully");
+    LogI("OpenGL setup completed successfully");
 }
 
 - (void)setupLayer {
@@ -574,14 +535,9 @@ static const GLfloat kColorConversion709FullRange[] = {
     }
     
     self.isRendering = YES;
-    {
-        std::lock_guard<std::mutex> lock(_pixelBufferMutex);
-        if (_pushPixelBuffer) {
-            CVPixelBufferRelease(_pushPixelBuffer);
-        }
-        _pushPixelBuffer = (CVPixelBufferRef)buffer;
-        CVPixelBufferRetain(_pushPixelBuffer);
-    }
+    CVPixelBufferRef pixelBuffer = (CVPixelBufferRef)buffer;
+    self.pushRenderBuffer = pixelBuffer;
+    CVPixelBufferRelease(pixelBuffer);
     
     [self executeOnRenderThread:^{
         [self doRender:@(YES)];
@@ -598,29 +554,16 @@ static const GLfloat kColorConversion709FullRange[] = {
     CVPixelBufferRef buffer = NULL;
     
     if (isPush) {
-        std::lock_guard<std::mutex> lock(_pixelBufferMutex);
-        buffer = _pushPixelBuffer;
-        _pushPixelBuffer = NULL;
+        buffer = CVPixelBufferRetain(self.pushRenderBuffer);
+        self.pushRenderBuffer = NULL;
     } else if (_videoRenderImpl) {
-        buffer = _videoRenderImpl->requestRender();
+        buffer = _videoRenderImpl->requestRender(); //Retained in videotoolbox
     }
     
     if (buffer) {
         [self displayPixelBuffer:buffer];
-        
-        // Update pre-render buffer for rotation handling
-        {
-            std::lock_guard<std::mutex> lock(_pixelBufferMutex);
-            if (_preRenderBuffer) {
-                CVPixelBufferRelease(_preRenderBuffer);
-            }
-            _preRenderBuffer = buffer;
-            CVPixelBufferRetain(_preRenderBuffer);
-        }
-        
-        if (isPush) {
-            CVPixelBufferRelease(buffer);
-        }
+        self.preRenderBuffer = CVPixelBufferRetain(buffer); //Retained the previous frame
+        CVPixelBufferRelease(buffer);
     }
     
     self.isRendering = NO;
@@ -974,6 +917,20 @@ static const GLfloat kColorConversion709FullRange[] = {
     [self resizeViewport];
 }
 
+- (void)setPushRenderBuffer:(CVPixelBufferRef)pushRenderBuffer {
+    std::lock_guard<std::mutex> lock(_pixelBufferMutex);
+    if (_pushRenderBuffer == pushRenderBuffer) {
+        return;
+    }
+    if (_pushRenderBuffer) {
+        CVPixelBufferRelease(_pushRenderBuffer);
+        _pushRenderBuffer = NULL;
+    }
+    if (pushRenderBuffer) {
+        pushRenderBuffer = CVPixelBufferRetain(pushRenderBuffer);
+    }
+}
+
 - (void)setPreRenderBuffer:(CVPixelBufferRef)preRenderBuffer {
     std::lock_guard<std::mutex> lock(_pixelBufferMutex);
     if (_preRenderBuffer == preRenderBuffer) {
@@ -984,8 +941,7 @@ static const GLfloat kColorConversion709FullRange[] = {
         _preRenderBuffer = NULL;
     }
     if (preRenderBuffer) {
-        _preRenderBuffer = preRenderBuffer;
-        CVPixelBufferRetain(_preRenderBuffer);
+        _preRenderBuffer = CVPixelBufferRetain(preRenderBuffer);
     }
 }
 
