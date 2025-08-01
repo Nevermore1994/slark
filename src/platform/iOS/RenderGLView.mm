@@ -198,7 +198,11 @@ static const GLfloat kColorConversion709FullRange[] = {
 #pragma mark - public
 - (void)setContext:(slark::IEGLContextRefPtr) sharecontext {
     _context = sharecontext;
-    [self setupGL];
+    __weak __typeof(self) weakSelf = self;
+    [self.workQueue addOperationWithBlock:^{
+        __strong __typeof(weakSelf) strongSelf = weakSelf;
+        [strongSelf performSelector:@selector(setupGL) onThread:strongSelf->_worker withObject:nil waitUntilDone:YES];
+    }];
 }
 
 - (void)start {
@@ -256,8 +260,11 @@ static const GLfloat kColorConversion709FullRange[] = {
     self.width = width;
     self.height = height;
     NSLog(@"size: %d %d", self.width, self.height);
-    //[self deleteFrameBuffer];
-    //[self genFrameBuffer];
+    __weak __typeof(self) weakSelf = self;
+    [self.workQueue addOperationWithBlock:^{
+        __strong __typeof(weakSelf) strongSelf = weakSelf;
+        [strongSelf performSelector:@selector(rebuildFrameBuffer) onThread:strongSelf->_worker withObject:nil waitUntilDone:YES];
+    }];
     CVPixelBufferRef buffer = NULL;
     @synchronized(self) {
         buffer = _preRenderBuffer;
@@ -348,7 +355,7 @@ static const GLfloat kColorConversion709FullRange[] = {
     uniforms[UNIFORM_Y] = glGetUniformLocation(program, "SamplerY");
     //UV色量纹理
     uniforms[UNIFORM_UV] = glGetUniformLocation(program, "SamplerUV");
-    //旋转角度preferredRotation
+    //preferredRotation
     uniforms[UNIFORM_ROTATION_ANGLE] = glGetUniformLocation(program, "preferredRotation");
     //YUV->RGB
     uniforms[UNIFORM_COLOR_CONVERSION_MATRIX] = glGetUniformLocation(program, "colorConversionMatrix");
@@ -689,9 +696,6 @@ static const GLfloat kColorConversion709FullRange[] = {
         return;
     }
     
-    glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_WIDTH, &_width);
-    glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_HEIGHT, &_height);
-    
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, _renderBuffer);
 
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
@@ -704,6 +708,42 @@ static const GLfloat kColorConversion709FullRange[] = {
             LogE("Error at CVOpenGLESTextureCacheCreate {}", err);
         }
     }
+}
+
+- (void)rebuildFrameBuffer {
+    if (!_context) {
+        return;
+    }
+    auto nativeContext = (__bridge EAGLContext*)_context->nativeContext();
+    if (!nativeContext) {
+        return;
+    }
+    _context->attachContext();
+    if (_frameBuffer) {
+        glDeleteFramebuffers(1, &_frameBuffer);
+        _frameBuffer = 0;
+    }
+    if (_renderBuffer) {
+        glDeleteRenderbuffers(1, &_renderBuffer);
+        _renderBuffer = 0;
+    }
+    glGenFramebuffers(1, &_frameBuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, _frameBuffer);
+    
+    glGenRenderbuffers(1, &_renderBuffer);
+    glBindRenderbuffer(GL_RENDERBUFFER, _renderBuffer);
+    
+    if (![nativeContext renderbufferStorage:GL_RENDERBUFFER fromDrawable:static_cast<CAEAGLLayer*>(self.layer)]) {
+        LogE("renderbufferStorage error!");
+        return;
+    }
+    
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, _renderBuffer);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        LogE("create frame error:{}", glCheckFramebufferStatus(GL_FRAMEBUFFER));
+    }
+    _context->detachContext();
 }
 
 - (void)deleteFrameBuffer {
