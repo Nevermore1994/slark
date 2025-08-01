@@ -966,8 +966,11 @@ void Player::Impl::handleSettingUpdate(
 ) noexcept {
     if (t.type == EventType::UpdateSettingVolume) {
         auto volume = std::any_cast<float>(t.data);
+        volume = std::max(0.0f, std::min(volume, 100.0f));
+        volume = volume / 100.0f;
+        LogI("set volume:{}", volume);
         if (audioRender_) {
-            audioRender_->setVolume(volume / 100.0f);
+            audioRender_->setVolume(volume);
         }
         params_.withWriteLock([volume](auto& p){
             p->setting.volume = volume;

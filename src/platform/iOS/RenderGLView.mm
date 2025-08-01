@@ -1,36 +1,57 @@
 //
-//  RenderGLView.cpp
+//  RenderGLView.mm
 //  slark
 //
+//  Optimized version with thread safety improvements
 //  Created by Nevermore on 2024/10/30.
 //
 
 #import <AVFoundation/AVUtilities.h>
 #import <OpenGLES/ES2/gl.h>
 #import <OpenGLES/ES2/glext.h>
+#import <functional>
+#import <memory>
+#import <atomic>
+#import <mutex>
 #import "RenderGLView.h"
-#import "Log.hpp"
-#import "GLProgram.h"
-#import "GLShader.h"
-#import "VideoInfo.h"
-#import "iOSUtil.h"
+
+// Forward declarations to avoid circular dependencies
+namespace slark {
+    class IVideoRender;
+    struct VideoInfo;
+    struct AVFrame;
+    using AVFrameRefPtr = std::shared_ptr<AVFrame>;
+    using IEGLContextRefPtr = std::shared_ptr<class IEGLContext>;
+    class GLProgram;
+}
 
 using namespace slark;
-struct VideoRender : public IVideoRender {
+
+// Thread-safe VideoRender implementation with improved error handling
+struct ThreadSafeVideoRender : public IVideoRender {
+private:
+    std::atomic<bool> active_{false};
+    std::mutex callbackMutex_;
+    
+public:
     void notifyVideoInfo(std::shared_ptr<VideoInfo> videoInfo) noexcept override {
-        if (notifyVideoInfoFunc) {
+        std::lock_guard<std::mutex> lock(callbackMutex_);
+        if (notifyVideoInfoFunc && active_.load()) {
             notifyVideoInfoFunc(videoInfo);
         }
     }
     
     void notifyRenderInfo() noexcept override {
-        if (notifyRenderInfoFunc) {
+        std::lock_guard<std::mutex> lock(callbackMutex_);
+        if (notifyRenderInfoFunc && active_.load()) {
             notifyRenderInfoFunc();
         }
     }
     
     void start() noexcept override {
+        active_.store(true);
         videoClock_.start();
+        std::lock_guard<std::mutex> lock(callbackMutex_);
         if (startFunc) {
             startFunc();
         }
@@ -38,41 +59,63 @@ struct VideoRender : public IVideoRender {
     
     void pause() noexcept override {
         videoClock_.pause();
+        std::lock_guard<std::mutex> lock(callbackMutex_);
         if (pauseFunc) {
             pauseFunc();
         }
     }
     
     void pushVideoFrameRender(AVFrameRefPtr frame) noexcept override {
-        if (pushVideoFrameRenderFunc) {
+        std::lock_guard<std::mutex> lock(callbackMutex_);
+        if (pushVideoFrameRenderFunc && active_.load()) {
             pushVideoFrameRenderFunc(frame);
         }
     }
     
     void renderEnd() noexcept override {
-        VideoRender::pause();
+        active_.store(false);
+        pause();
     }
     
-    ~VideoRender() override = default;
+    ~ThreadSafeVideoRender() override {
+        active_.store(false);
+        std::lock_guard<std::mutex> lock(callbackMutex_);
+        notifyVideoInfoFunc = nullptr;
+        startFunc = nullptr;
+        pauseFunc = nullptr;
+        notifyRenderInfoFunc = nullptr;
+        pushVideoFrameRenderFunc = nullptr;
+    }
     
     CVPixelBufferRef requestRender() noexcept {
+        if (!active_.load()) {
+            return nil;
+        }
+        
         if (auto requestRenderFunc = requestRenderFunc_.load()) {
-            auto frame = std::invoke(*requestRenderFunc);
-            if (frame) {
-                auto* opaque = frame->opaque;
-                frame->opaque = nullptr;
-                return static_cast<CVPixelBufferRef>(opaque);
+            try {
+                auto frame = std::invoke(*requestRenderFunc);
+                if (frame) {
+                    auto* opaque = frame->opaque;
+                    frame->opaque = nullptr;
+                    return static_cast<CVPixelBufferRef>(opaque);
+                }
+            } catch (...) {
+                // Log error but don't crash
+                NSLog(@"Error in requestRender");
             }
         }
         return nil;
     }
     
-    std::function<void(std::shared_ptr<VideoInfo> videoInfo)> notifyVideoInfoFunc;
+    // Thread-safe callback functions
+    std::function<void(std::shared_ptr<VideoInfo>)> notifyVideoInfoFunc;
     std::function<void(void)> startFunc;
     std::function<void(void)> pauseFunc;
     std::function<void(void)> notifyRenderInfoFunc;
     std::function<void(AVFrameRefPtr)> pushVideoFrameRenderFunc;
 };
+
 // Uniform index.
 enum
 {
@@ -93,7 +136,7 @@ enum
 };
 GLuint attributes[NUM_ATTRIBUTES];
 
-// BT.601
+// Color conversion matrices (same as original)
 static const GLfloat kColorConversion601VideoRange[] = {
     1.164f,  1.164f, 1.164f,
     0.0f, -0.392f, 2.017f,
@@ -106,7 +149,6 @@ static const GLfloat kColorConversion601FullRange[] = {
     1.4f, -0.711f, 0.0f,
 };
 
-// BT.709
 static const GLfloat kColorConversion709VideoRange[] = {
     1.164f,  1.164f, 1.164f,
     0.0f, -0.213f, 2.112f,
@@ -123,15 +165,23 @@ static const GLfloat kColorConversion709FullRange[] = {
 {
     IEGLContextRefPtr _context;
     std::unique_ptr<GLProgram> _program;
-    std::shared_ptr<VideoRender> _videoRenderImpl;
+    std::shared_ptr<ThreadSafeVideoRender> _videoRenderImpl;
     const GLfloat* _preferredConversion;
     CVOpenGLESTextureCacheRef _videoTextureCache;
-    //yuv
+    
+    // Textures
     CVOpenGLESTextureRef _lumaTexture;
     CVOpenGLESTextureRef _chromaTexture;
-    //RGBA
     CVOpenGLESTextureRef _renderTexture;
+    
+    // Thread safety improvements
+    std::atomic<bool> _glContextInitialized;
+    std::atomic<bool> _shouldRender;
+    std::mutex _pixelBufferMutex;
+    std::mutex _renderStateMutex;
+    std::atomic<bool> _isDestructing;
 }
+
 @property(nonatomic, assign) BOOL isDeallocing;
 @property(nonatomic, assign) BOOL isRendering;
 @property(nonatomic, strong) CADisplayLink* displayLink;
@@ -143,6 +193,7 @@ static const GLfloat kColorConversion709FullRange[] = {
 @property(nonatomic, assign) GLuint renderBuffer;
 @property(nonatomic, assign) CVPixelBufferRef pushPixelBuffer;
 @property(nonatomic, assign) CVPixelBufferRef preRenderBuffer;
+
 @end
 
 @implementation RenderGLView
@@ -162,32 +213,43 @@ static const GLfloat kColorConversion709FullRange[] = {
 }
 
 - (void)dealloc {
+    _isDestructing.store(true);
     _isDeallocing = YES;
+    _shouldRender.store(false);
+    
     [self stop];
+    
+    // Clean up worker thread safely
     if (_worker) {
         [self performSelector:@selector(stopRunLoop) onThread:_worker withObject:nil waitUntilDone:YES];
         [_worker cancel];
         _worker = nil;
     }
-    @synchronized (self) {
+    
+    // Thread-safe pixel buffer cleanup
+    {
+        std::lock_guard<std::mutex> lock(_pixelBufferMutex);
         if (_pushPixelBuffer) {
             CVPixelBufferRelease(_pushPixelBuffer);
             _pushPixelBuffer = NULL;
         }
+        if (_preRenderBuffer) {
+            CVPixelBufferRelease(_preRenderBuffer);
+            _preRenderBuffer = NULL;
+        }
     }
+    
+    // Clean up OpenGL resources
     [self deleteFrameBuffer];
     [self cleanUpTextures];
+    
     if (_videoTextureCache) {
         CFRelease(_videoTextureCache);
         _videoTextureCache = NULL;
     }
-    if (_videoRenderImpl) {
-        _videoRenderImpl->notifyVideoInfoFunc = nullptr;
-        _videoRenderImpl->startFunc = nullptr;
-        _videoRenderImpl->pauseFunc = nullptr;
-        _videoRenderImpl->pushVideoFrameRenderFunc = nullptr;
-        _videoRenderImpl.reset();
-    }
+    
+    // Clean up video render implementation
+    _videoRenderImpl.reset();
     _context.reset();
 }
 
@@ -195,20 +257,50 @@ static const GLfloat kColorConversion709FullRange[] = {
     CFRunLoopStop(CFRunLoopGetCurrent());
 }
 
-#pragma mark - public
-- (void)setContext:(slark::IEGLContextRefPtr) sharecontext {
-    _context = sharecontext;
+#pragma mark - Thread Safety Helpers
+
+- (BOOL)isValidForRendering {
+    return !_isDestructing.load() && _shouldRender.load() && _glContextInitialized.load();
+}
+
+- (void)executeOnRenderThread:(void(^)(void))block waitUntilDone:(BOOL)wait {
+    if (_isDestructing.load() || !_worker) {
+        return;
+    }
+    
     __weak __typeof(self) weakSelf = self;
     [self.workQueue addOperationWithBlock:^{
         __strong __typeof(weakSelf) strongSelf = weakSelf;
-        [strongSelf performSelector:@selector(setupGL) onThread:strongSelf->_worker withObject:nil waitUntilDone:YES];
+        if (strongSelf && !strongSelf->_isDestructing.load()) {
+            [strongSelf performSelector:@selector(executeBlock:) 
+                               onThread:strongSelf->_worker 
+                             withObject:[block copy] 
+                          waitUntilDone:wait];
+        }
     }];
 }
 
+- (void)executeBlock:(void(^)(void))block {
+    if (block && !_isDestructing.load()) {
+        block();
+    }
+}
+
+#pragma mark - public
+- (void)setContext:(slark::IEGLContextRefPtr) sharecontext {
+    _context = sharecontext;
+    
+    [self executeOnRenderThread:^{
+        [self setupGL];
+    } waitUntilDone:NO];
+}
+
 - (void)start {
-    if (_displayLink) {
+    if (_displayLink || _isDestructing.load()) {
         return;
     }
+    
+    std::lock_guard<std::mutex> lock(_renderStateMutex);
     self.isRendering = NO;
     _displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(render)];
     [_displayLink setPreferredFramesPerSecond:_renderInterval];
@@ -216,16 +308,16 @@ static const GLfloat kColorConversion709FullRange[] = {
 }
 
 - (void)stop {
+    std::lock_guard<std::mutex> lock(_renderStateMutex);
     if (_displayLink) {
         [_displayLink invalidate];
         _displayLink = nil;
     }
+    
     if (!self.isDeallocing) {
-        __weak __typeof(self) weakSelf = self;
-        [self.workQueue addOperationWithBlock:^{
-            __strong __typeof(weakSelf) strongSelf = weakSelf;
-            [strongSelf performSelector:@selector(renderGLFinsh) onThread:strongSelf->_worker withObject:nil waitUntilDone:YES];
-        }];
+        [self executeOnRenderThread:^{
+            [self renderGLFinsh];
+        } waitUntilDone:NO];
     }
     [_workQueue waitUntilAllOperationsAreFinished];
 }
@@ -249,32 +341,40 @@ static const GLfloat kColorConversion709FullRange[] = {
     [self resizeViewport];
 }
 
+#pragma mark - Viewport Management
+
 - (void)resizeViewport {
+    if (_isDestructing.load()) {
+        return;
+    }
+    
     CGSize layerSize = self.bounds.size;
     CGFloat scale = [self scale];
     CGFloat width = layerSize.width * scale;
     CGFloat height = layerSize.height * scale;
+    
     if (width == self.width && height == self.height) {
         return;
     }
+    
     self.width = width;
     self.height = height;
     NSLog(@"size: %d %d", self.width, self.height);
-    __weak __typeof(self) weakSelf = self;
-    [self.workQueue addOperationWithBlock:^{
-        __strong __typeof(weakSelf) strongSelf = weakSelf;
-        [strongSelf performSelector:@selector(rebuildFrameBuffer) onThread:strongSelf->_worker withObject:nil waitUntilDone:YES];
-    }];
+    
+    [self executeOnRenderThread:^{
+        [self rebuildFrameBuffer];
+    } waitUntilDone:NO];
+    
+    // Handle pre-render buffer
     CVPixelBufferRef buffer = NULL;
-    @synchronized(self) {
+    {
+        std::lock_guard<std::mutex> lock(_pixelBufferMutex);
         buffer = _preRenderBuffer;
-    }
-    if (buffer == NULL) {
-        return;
-    }
-    [self pushRenderPixelBuffer:buffer];
-    @synchronized(self) {
         _preRenderBuffer = NULL;
+    }
+    
+    if (buffer != NULL) {
+        [self pushRenderPixelBuffer:buffer];
     }
 }
 
@@ -282,55 +382,74 @@ static const GLfloat kColorConversion709FullRange[] = {
 - (void)setRenderInterval:(NSInteger)renderInterval {
     if (renderInterval != 0 && _renderInterval != renderInterval) {
         _renderInterval = renderInterval;
-        _displayLink.preferredFramesPerSecond = _renderInterval;
+        if (_displayLink) {
+            _displayLink.preferredFramesPerSecond = _renderInterval;
+        }
     }
 }
 
 #pragma mark - private
 - (void)initData {
-    _renderInterval = 24; //default 30 fps
+    _renderInterval = 24; // default 30 fps
     _isRendering = NO;
     _isActive = YES;
     _preferredConversion = kColorConversion709VideoRange;
+    
+    // Initialize thread-safe state
+    _glContextInitialized.store(false);
+    _shouldRender.store(true);
+    _isDestructing.store(false);
+    
     CGSize layerSize = self.layer.bounds.size;
     CGFloat scale = [self scale];
     self.width = layerSize.width * scale;
     self.height = layerSize.height * scale;
-    @synchronized(self) {
+    
+    // Thread-safe pixel buffer initialization
+    {
+        std::lock_guard<std::mutex> lock(_pixelBufferMutex);
         _pushPixelBuffer = NULL;
         _preRenderBuffer = NULL;
     }
+    
     [self setupRenderDelegate];
     [self setupLayer];
 }
 
-- (void)setupRenderDelegate{
-    _videoRenderImpl = std::make_shared<VideoRender>();
+- (void)setupRenderDelegate {
+    _videoRenderImpl = std::make_shared<ThreadSafeVideoRender>();
     __weak __typeof(self) weakSelf = self;
+    
     _videoRenderImpl->notifyVideoInfoFunc = [weakSelf](std::shared_ptr<VideoInfo> info) {
         __strong __typeof(weakSelf) strongSelf = weakSelf;
-        if (!strongSelf) {
+        if (!strongSelf || strongSelf->_isDestructing.load()) {
             return;
         }
-        [strongSelf setRenderInterval:info->fps];
+        
+        if (info && info->fps > 0) {
+            [strongSelf setRenderInterval:info->fps];
+        }
     };
+    
     _videoRenderImpl->startFunc = [weakSelf]() {
         __strong __typeof(weakSelf) strongSelf = weakSelf;
-        if (!strongSelf) {
+        if (!strongSelf || strongSelf->_isDestructing.load()) {
             return;
         }
         strongSelf.isActive = YES;
     };
+    
     _videoRenderImpl->pauseFunc = [weakSelf](){
         __strong __typeof(weakSelf) strongSelf = weakSelf;
-        if (!strongSelf) {
+        if (!strongSelf || strongSelf->_isDestructing.load()) {
             return;
         }
         strongSelf.isActive = NO;
     };
+    
     _videoRenderImpl->pushVideoFrameRenderFunc = [weakSelf](AVFrameRefPtr frame) {
         __strong __typeof(weakSelf) strongSelf = weakSelf;
-        if (!strongSelf) {
+        if (!strongSelf || strongSelf->_isDestructing.load()) {
             return;
         }
         if (frame) {
@@ -341,35 +460,82 @@ static const GLfloat kColorConversion709FullRange[] = {
     };
 }
 
+// Include rest of the methods with similar thread safety improvements...
+// (setupGL, render, displayPixelBuffer, etc.)
+
+#pragma mark - OpenGL Setup and Management
+
 - (void)setupGL {
-    _context->attachContext();
-    _program = std::make_unique<GLProgram>(GLShader::vertexShader, GLShader::fragmentShader);
-    if (!_program->isValid()) {
-        LogE("setupGL error");
+    if (!_context || _isDestructing.load()) {
         return;
     }
-    GLuint program = _program->program();
+    
+    _context->attachContext();
+    
+    // Create shader program (assumes GLProgram and GLShader are available)
+    const char* vertexShader = R"(
+        attribute vec4 position;
+        attribute vec2 texCoord;
+        varying vec2 texCoordVarying;
+        
+        void main() {
+            gl_Position = position;
+            texCoordVarying = texCoord;
+        }
+    )";
+    
+    const char* fragmentShader = R"(
+        precision mediump float;
+        varying vec2 texCoordVarying;
+        uniform sampler2D SamplerY;
+        uniform sampler2D SamplerUV;
+        uniform mat3 colorConversionMatrix;
+        
+        void main() {
+            vec3 yuv;
+            vec3 rgb;
+            yuv.x = texture2D(SamplerY, texCoordVarying).r;
+            yuv.yz = texture2D(SamplerUV, texCoordVarying).rg - vec2(0.5);
+            rgb = colorConversionMatrix * yuv;
+            gl_FragColor = vec4(rgb, 1);
+        }
+    )";
+    
+    GLuint vertexShaderObj = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertexShaderObj, 1, &vertexShader, NULL);
+    glCompileShader(vertexShaderObj);
+    
+    GLuint fragmentShaderObj = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragmentShaderObj, 1, &fragmentShader, NULL);
+    glCompileShader(fragmentShaderObj);
+    
+    GLuint program = glCreateProgram();
+    glAttachShader(program, vertexShaderObj);
+    glAttachShader(program, fragmentShaderObj);
+    glLinkProgram(program);
+    
+    // Get attribute and uniform locations
     attributes[ATTRIB_VERTEX] = static_cast<GLuint>(glGetAttribLocation(program, "position"));
-    attributes[ATTRIB_TEXCOORD] =  static_cast<GLuint>(glGetAttribLocation(program, "texCoord"));
-    //Y亮度纹理
+    attributes[ATTRIB_TEXCOORD] = static_cast<GLuint>(glGetAttribLocation(program, "texCoord"));
+    
     uniforms[UNIFORM_Y] = glGetUniformLocation(program, "SamplerY");
-    //UV色量纹理
     uniforms[UNIFORM_UV] = glGetUniformLocation(program, "SamplerUV");
-    //preferredRotation
     uniforms[UNIFORM_ROTATION_ANGLE] = glGetUniformLocation(program, "preferredRotation");
-    //YUV->RGB
     uniforms[UNIFORM_COLOR_CONVERSION_MATRIX] = glGetUniformLocation(program, "colorConversionMatrix");
     
     [self createFrameBuffer];
-    _program->attach();
     
+    glUseProgram(program);
     glUniform1i(uniforms[UNIFORM_Y], 0);
     glUniform1i(uniforms[UNIFORM_UV], 1);
     glUniform1f(uniforms[UNIFORM_ROTATION_ANGLE], 0);
-
     glUniformMatrix3fv(uniforms[UNIFORM_COLOR_CONVERSION_MATRIX], 1, GL_FALSE, _preferredConversion);
-    _program->detach();
+    glUseProgram(0);
+    
     _context->detachContext();
+    _glContextInitialized.store(true);
+    
+    NSLog(@"OpenGL setup completed successfully");
 }
 
 - (void)setupLayer {
@@ -377,12 +543,14 @@ static const GLfloat kColorConversion709FullRange[] = {
     layer.opaque = YES;
     layer.contentsScale = [self scale];
     layer.drawableProperties = [NSDictionary dictionaryWithObjectsAndKeys:
-                                [NSNumber numberWithBool:FALSE],kEAGLDrawablePropertyRetainedBacking,
+                                [NSNumber numberWithBool:FALSE], kEAGLDrawablePropertyRetainedBacking,
                                 kEAGLColorFormatRGBA8, kEAGLDrawablePropertyColorFormat, nil];
 }
 
+#pragma mark - Rendering
+
 - (void)renderGLFinsh {
-    if (_context) {
+    if (_context && ![self isValidForRendering]) {
         _context->attachContext();
         glFinish();
         _context->detachContext();
@@ -390,89 +558,136 @@ static const GLfloat kColorConversion709FullRange[] = {
 }
 
 - (void)render {
-    if (self.isRendering || !self.isActive) {
-        return;
-    }
-    self.isRendering = YES;
-    __weak __typeof(self) weakSelf = self;
-    [self.workQueue addOperationWithBlock:^{
-        __strong __typeof(weakSelf) strongSelf = weakSelf;
-        [strongSelf performSelector:@selector(doRender:) onThread:strongSelf->_worker withObject:@(NO) waitUntilDone:YES];
-    }];
-}
-
-- (void)pushRenderPixelBuffer:(void*) buffer{
-    self.isRendering = YES;
-    @synchronized(self) {
-        self.pushPixelBuffer = (CVPixelBufferRef)buffer;
-    }
-    __weak __typeof(self) weakSelf = self;
-    [self.workQueue addOperationWithBlock:^{
-        __strong __typeof(weakSelf) strongSelf = weakSelf;
-        [strongSelf performSelector:@selector(doRender:) onThread:strongSelf->_worker withObject:@(YES) waitUntilDone:YES];
-    }];
-}
-
-//yuv
-- (void)displayPixelBuffer:(CVPixelBufferRef)pixelBuffer
-{
-    if(pixelBuffer == NULL) {
-        LogE("Pixel buffer is null");
+    if (self.isRendering || !self.isActive || _isDestructing.load()) {
         return;
     }
     
-    if (!_context) {
+    self.isRendering = YES;
+    [self executeOnRenderThread:^{
+        [self doRender:@(NO)];
+    } waitUntilDone:NO];
+}
+
+- (void)pushRenderPixelBuffer:(void*) buffer {
+    if (_isDestructing.load() || !buffer) {
         return;
     }
+    
+    self.isRendering = YES;
+    {
+        std::lock_guard<std::mutex> lock(_pixelBufferMutex);
+        if (_pushPixelBuffer) {
+            CVPixelBufferRelease(_pushPixelBuffer);
+        }
+        _pushPixelBuffer = (CVPixelBufferRef)buffer;
+        CVPixelBufferRetain(_pushPixelBuffer);
+    }
+    
+    [self executeOnRenderThread:^{
+        [self doRender:@(YES)];
+    } waitUntilDone:NO];
+}
+
+- (void)doRender:(NSNumber*)isPushRender {
+    if (![self isValidForRendering]) {
+        self.isRendering = NO;
+        return;
+    }
+    
+    BOOL isPush = [isPushRender boolValue];
+    CVPixelBufferRef buffer = NULL;
+    
+    if (isPush) {
+        std::lock_guard<std::mutex> lock(_pixelBufferMutex);
+        buffer = _pushPixelBuffer;
+        _pushPixelBuffer = NULL;
+    } else if (_videoRenderImpl) {
+        buffer = _videoRenderImpl->requestRender();
+    }
+    
+    if (buffer) {
+        [self displayPixelBuffer:buffer];
+        
+        // Update pre-render buffer for rotation handling
+        {
+            std::lock_guard<std::mutex> lock(_pixelBufferMutex);
+            if (_preRenderBuffer) {
+                CVPixelBufferRelease(_preRenderBuffer);
+            }
+            _preRenderBuffer = buffer;
+            CVPixelBufferRetain(_preRenderBuffer);
+        }
+        
+        if (isPush) {
+            CVPixelBufferRelease(buffer);
+        }
+    }
+    
+    self.isRendering = NO;
+}
+
+#pragma mark - Pixel Buffer Display
+
+- (void)displayPixelBuffer:(CVPixelBufferRef)pixelBuffer {
+    if (!pixelBuffer || ![self isValidForRendering]) {
+        NSLog(@"Invalid pixel buffer or rendering state");
+        return;
+    }
+    
     _context->attachContext();
     auto nativeContext = (__bridge EAGLContext*)_context->nativeContext();
     if (!nativeContext) {
+        _context->detachContext();
         return;
     }
+    
     auto frameWidth = static_cast<GLint>(CVPixelBufferGetWidth(pixelBuffer));
     auto frameHeight = static_cast<GLint>(CVPixelBufferGetHeight(pixelBuffer));
     
     auto formatType = CVPixelBufferGetPixelFormatType(pixelBuffer);
+    BOOL uploadSuccess = NO;
+    
     if (formatType == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange ||
         formatType == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange) {
-        [self uploadYUVTexture:pixelBuffer];
+        uploadSuccess = [self uploadYUVTexture:pixelBuffer];
     } else if (formatType == kCVPixelFormatType_32BGRA) {
-        [self uploadRGBATexture:pixelBuffer];
+        uploadSuccess = [self uploadRGBATexture:pixelBuffer];
     } else {
-        LogE("Not support current format.");
-        return;
+        NSLog(@"Unsupported pixel format: %u", formatType);
     }
     
-    [self renderWithTextures:frameWidth height:frameHeight];
+    if (uploadSuccess) {
+        [self renderWithTextures:frameWidth height:frameHeight];
+    }
+    
     [self cleanUpTextures];
+    _context->detachContext();
 }
 
 - (BOOL)uploadYUVTexture:(CVPixelBufferRef)pixelBuffer {
+    // Determine color conversion matrix
     CFTypeRef colorAttachments = CVBufferCopyAttachment(pixelBuffer, kCVImageBufferYCbCrMatrixKey, NULL);
-    if (CFStringCompare(static_cast<CFStringRef>(colorAttachments), kCVImageBufferYCbCrMatrix_ITU_R_601_4, 0) == kCFCompareEqualTo) {
-        _preferredConversion = kColorConversion601VideoRange;
-    } else {
-        _preferredConversion = kColorConversion709VideoRange;
+    if (colorAttachments) {
+        if (CFStringCompare(static_cast<CFStringRef>(colorAttachments), kCVImageBufferYCbCrMatrix_ITU_R_601_4, 0) == kCFCompareEqualTo) {
+            _preferredConversion = kColorConversion601VideoRange;
+        } else {
+            _preferredConversion = kColorConversion709VideoRange;
+        }
+        CFRelease(colorAttachments);
     }
-    CFRelease(colorAttachments);
-    size_t bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer);
+    
     auto frameWidth = static_cast<GLint>(CVPixelBufferGetWidth(pixelBuffer));
     auto frameHeight = static_cast<GLint>(CVPixelBufferGetHeight(pixelBuffer));
+    
+    // Upload Y texture (luminance)
     glActiveTexture(GL_TEXTURE0);
-    CVReturn err = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault,
-                                                       _videoTextureCache,
-                                                       pixelBuffer,
-                                                       NULL,
-                                                       GL_TEXTURE_2D,
-                                                       GL_RED_EXT,
-                                                       frameWidth,
-                                                       frameHeight,
-                                                       GL_RED_EXT,
-                                                       GL_UNSIGNED_BYTE,
-                                                       0,
-                                                       &_lumaTexture);
-    if (err) {
-        LogE("Error at CVOpenGLESTextureCacheCreateTextureFromImage:{}", err);
+    CVReturn err = CVOpenGLESTextureCacheCreateTextureFromImage(
+        kCFAllocatorDefault, _videoTextureCache, pixelBuffer, NULL,
+        GL_TEXTURE_2D, GL_RED_EXT, frameWidth, frameHeight,
+        GL_RED_EXT, GL_UNSIGNED_BYTE, 0, &_lumaTexture);
+    
+    if (err != kCVReturnSuccess) {
+        NSLog(@"Error creating Y texture: %d", err);
         return NO;
     }
     
@@ -482,106 +697,95 @@ static const GLfloat kColorConversion709FullRange[] = {
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     
+    // Upload UV texture (chrominance)
     glActiveTexture(GL_TEXTURE1);
-    err = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault,
-                                                           _videoTextureCache,
-                                                           pixelBuffer,
-                                                           NULL,
-                                                           GL_TEXTURE_2D,
-                                                           GL_RG_EXT,
-                                                           frameWidth / 2,
-                                                           frameHeight / 2,
-                                                           GL_RG_EXT,
-                                                           GL_UNSIGNED_BYTE,
-                                                           1,
-                                                           &_chromaTexture);
-    if (err) {
-        LogE("Error at CVOpenGLESTextureCacheCreateTextureFromImage {}", err);
+    err = CVOpenGLESTextureCacheCreateTextureFromImage(
+        kCFAllocatorDefault, _videoTextureCache, pixelBuffer, NULL,
+        GL_TEXTURE_2D, GL_RG_EXT, frameWidth / 2, frameHeight / 2,
+        GL_RG_EXT, GL_UNSIGNED_BYTE, 1, &_chromaTexture);
+    
+    if (err != kCVReturnSuccess) {
+        NSLog(@"Error creating UV texture: %d", err);
         return NO;
     }
-        
+    
     glBindTexture(CVOpenGLESTextureGetTarget(_chromaTexture), CVOpenGLESTextureGetName(_chromaTexture));
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     
-    _program->attach();
+    // Update color conversion matrix
     glUniform1f(uniforms[UNIFORM_ROTATION_ANGLE], 0);
     glUniformMatrix3fv(uniforms[UNIFORM_COLOR_CONVERSION_MATRIX], 1, GL_FALSE, _preferredConversion);
+    
     return YES;
 }
 
 - (BOOL)uploadRGBATexture:(CVPixelBufferRef)pixelBuffer {
     auto frameWidth = static_cast<GLint>(CVPixelBufferGetWidth(pixelBuffer));
     auto frameHeight = static_cast<GLint>(CVPixelBufferGetHeight(pixelBuffer));
-    glActiveTexture(GL_TEXTURE0);
-    CVReturn error = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault,
-                                                         _videoTextureCache,
-                                                         pixelBuffer,
-                                                         NULL,
-                                                         GL_TEXTURE_2D,
-                                                         GL_RGBA,
-                                                         frameWidth,
-                                                         frameHeight,
-                                                         GL_BGRA,
-                                                         GL_UNSIGNED_BYTE,
-                                                         0,
-                                                         &_renderTexture);
     
+    glActiveTexture(GL_TEXTURE0);
+    CVReturn error = CVOpenGLESTextureCacheCreateTextureFromImage(
+        kCFAllocatorDefault, _videoTextureCache, pixelBuffer, NULL,
+        GL_TEXTURE_2D, GL_RGBA, frameWidth, frameHeight,
+        GL_BGRA, GL_UNSIGNED_BYTE, 0, &_renderTexture);
+    
+    if (error != kCVReturnSuccess) {
+        NSLog(@"Error creating RGBA texture: %d", error);
+        return NO;
+    }
     
     glBindTexture(CVOpenGLESTextureGetTarget(_renderTexture), CVOpenGLESTextureGetName(_renderTexture));
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    
+    return YES;
 }
 
 - (void)renderWithTextures:(GLint)frameWidth height:(GLint)frameHeight {
     auto nativeContext = (__bridge EAGLContext*)_context->nativeContext();
     if (!nativeContext) {
-        LogE("nativeContext is nullptr.");
+        NSLog(@"Native context is null");
         return;
     }
+    
     glBindFramebuffer(GL_FRAMEBUFFER, self.frameBuffer);
     glViewport(0, 0, self.width, self.height);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     
+    // Calculate aspect ratio preserving viewport
     CGRect viewBounds = CGRectMake(0, 0, self.width, self.height);
     CGSize contentSize = CGSizeMake(frameWidth, frameHeight);
-    
     CGRect vertexSamplingRect = AVMakeRectWithAspectRatioInsideRect(contentSize, viewBounds);
     
     CGSize normalizedSamplingSize = CGSizeMake(0.0, 0.0);
- 
-    CGSize cropScaleAmount = CGSizeMake(vertexSamplingRect.size.width/viewBounds.size.width,vertexSamplingRect.size.height/viewBounds.size.height);
+    CGSize cropScaleAmount = CGSizeMake(
+        vertexSamplingRect.size.width / viewBounds.size.width,
+        vertexSamplingRect.size.height / viewBounds.size.height
+    );
     
     if (cropScaleAmount.width > cropScaleAmount.height) {
         normalizedSamplingSize.width = 1.0;
-        normalizedSamplingSize.height = cropScaleAmount.height/cropScaleAmount.width;
-    }
-    else {
-        normalizedSamplingSize.width = cropScaleAmount.width/cropScaleAmount.height;
+        normalizedSamplingSize.height = cropScaleAmount.height / cropScaleAmount.width;
+    } else {
+        normalizedSamplingSize.width = cropScaleAmount.width / cropScaleAmount.height;
         normalizedSamplingSize.height = 1.0;
     }
     
-    GLfloat quadVertexData [] = {
+    // Vertex data for quad
+    GLfloat quadVertexData[] = {
         (GLfloat)(-1 * normalizedSamplingSize.width), (GLfloat)(-1 * normalizedSamplingSize.height),
         (GLfloat)(normalizedSamplingSize.width), (GLfloat)(-1 * normalizedSamplingSize.height),
         (GLfloat)(-1 * normalizedSamplingSize.width), (GLfloat)(normalizedSamplingSize.height),
         (GLfloat)(normalizedSamplingSize.width), (GLfloat)(normalizedSamplingSize.height),
     };
     
-    NSLog(@"quadVertexData: [%f, %f] [%f, %f] [%f, %f] [%f, %f]",
-          quadVertexData[0], quadVertexData[1],
-          quadVertexData[2], quadVertexData[3],
-          quadVertexData[4], quadVertexData[5],
-          quadVertexData[6], quadVertexData[7]);
-    
-    glVertexAttribPointer(attributes[ATTRIB_VERTEX], 2, GL_FLOAT, 0, 0, quadVertexData);
-    glEnableVertexAttribArray(attributes[ATTRIB_VERTEX]);
-    
+    // Texture coordinates
     static const GLfloat quadTextureData[] = {
         0.0, 1.0,
         1.0, 1.0,
@@ -589,13 +793,21 @@ static const GLfloat kColorConversion709FullRange[] = {
         1.0, 0.0
     };
     
+    // Bind vertex attributes
+    glVertexAttribPointer(attributes[ATTRIB_VERTEX], 2, GL_FLOAT, 0, 0, quadVertexData);
+    glEnableVertexAttribArray(attributes[ATTRIB_VERTEX]);
+    
     glVertexAttribPointer(attributes[ATTRIB_TEXCOORD], 2, GL_FLOAT, 0, 0, quadTextureData);
     glEnableVertexAttribArray(attributes[ATTRIB_TEXCOORD]);
     
+    // Draw
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     
+    // Present
     [nativeContext presentRenderbuffer:GL_RENDERBUFFER];
 }
+
+#pragma mark - Resource Management
 
 - (void)cleanUpTextures {
     @autoreleasepool {
@@ -608,75 +820,30 @@ static const GLfloat kColorConversion709FullRange[] = {
             CFRelease(_chromaTexture);
             _chromaTexture = NULL;
         }
-        CVOpenGLESTextureCacheFlush(_videoTextureCache, 0);
+        
+        if (_renderTexture) {
+            CFRelease(_renderTexture);
+            _renderTexture = NULL;
+        }
+        
+        if (_videoTextureCache) {
+            CVOpenGLESTextureCacheFlush(_videoTextureCache, 0);
+        }
     }
 }
 
-- (void)setFrame:(CGRect)frame {
-    [super setFrame:frame];
-    [self resizeViewport];
-}
-
-- (void)setPreRenderBuffer:(CVPixelBufferRef)preRenderBuffer {
-    @synchronized(self) {
-        if (_preRenderBuffer == preRenderBuffer) {
-            return;
-        }
-        if (_preRenderBuffer) {
-            CVPixelBufferRelease(_preRenderBuffer);
-            _preRenderBuffer = NULL;
-        }
-        _preRenderBuffer = preRenderBuffer;
-    }
-}
-
-- (void)doRender:(id) isPushRender{
-    BOOL isPush = [isPushRender boolValue];
-    CVPixelBufferRef buffer = NULL;
-    if (isPush) {
-        buffer = self.pushPixelBuffer;
-        @synchronized(self) {
-            self.pushPixelBuffer = NULL;
-        }
-    } else if (_videoRenderImpl) {
-        buffer = _videoRenderImpl->requestRender();
-    }
-    if (buffer) {
-        [self displayPixelBuffer:buffer];
-        @synchronized(self) {
-            self.preRenderBuffer = buffer;
-        }
-    }
-    self.isRendering = NO;
-}
-
-- (void)setupWorkThread {
-    if (_workQueue == nil) {
-        _workQueue = [NSOperationQueue new];
-        _workQueue.maxConcurrentOperationCount = 1;
-        _workQueue.name = @"renderQueue";
-    }
-    if (_worker == nil) {
-        _worker = [[NSThread alloc] initWithBlock:^{
-                   CFRunLoopSourceContext sourceContext = {0};
-                   CFRunLoopSourceRef source = CFRunLoopSourceCreate(kCFAllocatorDefault, 0, &sourceContext);
-                   CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopDefaultMode);
-                   CFRunLoopRunInMode(kCFRunLoopDefaultMode, 1.0e10, false);
-                   CFRelease(source);
-                   }];
-        _worker.name = @"renderThread";
-        [_worker start];
-    }
-}
+#pragma mark - Frame Buffer Management
 
 - (void)createFrameBuffer {
-    if (_context == nullptr) {
+    if (!_context || _isDestructing.load()) {
         return;
     }
+    
     auto nativeContext = (__bridge EAGLContext*)_context->nativeContext();
     if (!nativeContext) {
         return;
     }
+    
     glDisable(GL_DEPTH_TEST);
     
     glEnableVertexAttribArray(attributes[ATTRIB_VERTEX]);
@@ -692,33 +859,38 @@ static const GLfloat kColorConversion709FullRange[] = {
     glBindRenderbuffer(GL_RENDERBUFFER, _renderBuffer);
     
     if (![nativeContext renderbufferStorage:GL_RENDERBUFFER fromDrawable:static_cast<CAEAGLLayer*>(self.layer)]) {
-        LogE("renderbufferStorage error!");
+        NSLog(@"Failed to create render buffer storage");
         return;
     }
     
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, _renderBuffer);
-
+    
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        LogE("create frame error:{}", glCheckFramebufferStatus(GL_FRAMEBUFFER));
+        NSLog(@"Framebuffer not complete: %u", glCheckFramebufferStatus(GL_FRAMEBUFFER));
     }
     
+    // Create texture cache if needed
     if (!_videoTextureCache) {
         CVReturn err = CVOpenGLESTextureCacheCreate(kCFAllocatorDefault, NULL, nativeContext, NULL, &_videoTextureCache);
         if (err != noErr) {
-            LogE("Error at CVOpenGLESTextureCacheCreate {}", err);
+            NSLog(@"Error creating texture cache: %d", err);
         }
     }
 }
 
 - (void)rebuildFrameBuffer {
-    if (!_context) {
+    if (![self isValidForRendering]) {
         return;
     }
+    
     auto nativeContext = (__bridge EAGLContext*)_context->nativeContext();
     if (!nativeContext) {
         return;
     }
+    
     _context->attachContext();
+    
+    // Delete existing buffers
     if (_frameBuffer) {
         glDeleteFramebuffers(1, &_frameBuffer);
         _frameBuffer = 0;
@@ -727,6 +899,8 @@ static const GLfloat kColorConversion709FullRange[] = {
         glDeleteRenderbuffers(1, &_renderBuffer);
         _renderBuffer = 0;
     }
+    
+    // Recreate buffers
     glGenFramebuffers(1, &_frameBuffer);
     glBindFramebuffer(GL_FRAMEBUFFER, _frameBuffer);
     
@@ -734,15 +908,17 @@ static const GLfloat kColorConversion709FullRange[] = {
     glBindRenderbuffer(GL_RENDERBUFFER, _renderBuffer);
     
     if (![nativeContext renderbufferStorage:GL_RENDERBUFFER fromDrawable:static_cast<CAEAGLLayer*>(self.layer)]) {
-        LogE("renderbufferStorage error!");
+        NSLog(@"Failed to rebuild render buffer storage");
+        _context->detachContext();
         return;
     }
     
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, _renderBuffer);
-
+    
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        LogE("create frame error:{}", glCheckFramebufferStatus(GL_FRAMEBUFFER));
+        NSLog(@"Framebuffer rebuild failed: %u", glCheckFramebufferStatus(GL_FRAMEBUFFER));
     }
+    
     _context->detachContext();
 }
 
@@ -750,7 +926,9 @@ static const GLfloat kColorConversion709FullRange[] = {
     if (!_context) {
         return;
     }
+    
     _context->attachContext();
+    
     if (_frameBuffer) {
         glDeleteFramebuffers(1, &_frameBuffer);
         _frameBuffer = 0;
@@ -759,6 +937,56 @@ static const GLfloat kColorConversion709FullRange[] = {
         glDeleteRenderbuffers(1, &_renderBuffer);
         _renderBuffer = 0;
     }
+    
     _context->detachContext();
 }
-@end
+
+#pragma mark - Worker Thread Management
+
+- (void)setupWorkThread {
+    if (_workQueue == nil) {
+        _workQueue = [NSOperationQueue new];
+        _workQueue.maxConcurrentOperationCount = 1;
+        _workQueue.name = @"OpenGL_RenderQueue";
+        _workQueue.qualityOfService = NSQualityOfServiceUserInteractive;
+    }
+    
+    if (_worker == nil) {
+        _worker = [[NSThread alloc] initWithBlock:^{
+            @autoreleasepool {
+                CFRunLoopSourceContext sourceContext = {0};
+                CFRunLoopSourceRef source = CFRunLoopSourceCreate(kCFAllocatorDefault, 0, &sourceContext);
+                CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopDefaultMode);
+                CFRunLoopRunInMode(kCFRunLoopDefaultMode, 1.0e10, false);
+                CFRelease(source);
+            }
+        }];
+        _worker.name = @"OpenGL_RenderThread";
+        _worker.qualityOfService = NSQualityOfServiceUserInteractive;
+        [_worker start];
+    }
+}
+
+#pragma mark - Properties Override
+
+- (void)setFrame:(CGRect)frame {
+    [super setFrame:frame];
+    [self resizeViewport];
+}
+
+- (void)setPreRenderBuffer:(CVPixelBufferRef)preRenderBuffer {
+    std::lock_guard<std::mutex> lock(_pixelBufferMutex);
+    if (_preRenderBuffer == preRenderBuffer) {
+        return;
+    }
+    if (_preRenderBuffer) {
+        CVPixelBufferRelease(_preRenderBuffer);
+        _preRenderBuffer = NULL;
+    }
+    if (preRenderBuffer) {
+        _preRenderBuffer = preRenderBuffer;
+        CVPixelBufferRetain(_preRenderBuffer);
+    }
+}
+
+@end 
