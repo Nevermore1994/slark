@@ -1019,7 +1019,7 @@ void Player::Impl::handleEvent(
         }
     }
 
-    if (currentState == PlayerState::Playing && helper_->isRenderEnd()) {
+    if (currentState == PlayerState::Playing && !isStopped_ && helper_->isRenderEnd()) {
         notifyPlayedTime(true); //notify time to end
         LogI("play end.");
         clearData();

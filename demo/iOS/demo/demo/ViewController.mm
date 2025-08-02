@@ -120,7 +120,7 @@
             [self.navigationController pushViewController:vc animated:YES];
         }
             break;
-        case 3: {
+        case 2: {
             SelectUrlViewController* selectVC = [SelectUrlViewController new];
             selectVC.onItemClick = ^(NSString* url) {
                 VideoViewController* videoVC = [VideoViewController new];
