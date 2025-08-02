@@ -29,45 +29,35 @@ using namespace slark;
 
 // Simplified VideoRender implementation
 struct VideoRender : public IVideoRender {
-    std::atomic<bool> active_{false};
     
     void notifyVideoInfo(std::shared_ptr<VideoInfo> videoInfo) noexcept override {
-        if (notifyVideoInfoFunc && active_.load()) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                notifyVideoInfoFunc(videoInfo);
-            });
+        if (notifyVideoInfoFunc) {
+            notifyVideoInfoFunc(videoInfo);
         }
     }
     
     void notifyRenderInfo() noexcept override {
-        if (notifyRenderInfoFunc && active_.load()) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                notifyRenderInfoFunc();
-            });
+        if (notifyRenderInfoFunc) {
+            notifyRenderInfoFunc();
         }
     }
     
     void start() noexcept override {
-        active_.store(true);
         videoClock_.start();
         if (startFunc) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                startFunc();
-            });
+            startFunc();
         }
     }
     
     void pause() noexcept override {
         videoClock_.pause();
         if (pauseFunc) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                pauseFunc();
-            });
+            pauseFunc();
         }
     }
     
     void pushVideoFrameRender(AVFrameRefPtr frame) noexcept override {
-        if (pushVideoFrameRenderFunc && active_.load() && frame) {
+        if (pushVideoFrameRenderFunc && frame) {
             auto* opaque = frame->opaque;
             frame->opaque = nullptr;
             pushVideoFrameRenderFunc(opaque);
@@ -75,13 +65,10 @@ struct VideoRender : public IVideoRender {
     }
     
     void renderEnd() noexcept override {
-        active_.store(false);
         pause();
     }
     
     CVPixelBufferRef requestRender() noexcept {
-        if (!active_.load()) return nil;
-        
         if (auto requestRenderFunc = requestRenderFunc_.load()) {
             try {
                 auto frame = std::invoke(*requestRenderFunc);
@@ -214,10 +201,12 @@ static const GLfloat kColorConversion709VideoRange[] = {
     __weak __typeof(self) weakSelf = self;
     
     _videoRenderImpl->notifyVideoInfoFunc = [weakSelf](std::shared_ptr<VideoInfo> info) {
-        __strong __typeof(weakSelf) strongSelf = weakSelf;
-        if (strongSelf && info && info->fps > 0) {
-            strongSelf.renderInterval = info->fps;
-        }
+        dispatch_sync(dispatch_get_main_queue(),^{
+            __strong __typeof(weakSelf) strongSelf = weakSelf;
+            if (strongSelf && info && info->fps > 0) {
+                strongSelf.renderInterval = info->fps;
+            }
+        });
     };
     
     _videoRenderImpl->startFunc = [weakSelf]() {
@@ -392,16 +381,31 @@ static const GLfloat kColorConversion709VideoRange[] = {
     uniforms[UNIFORM_ROTATION_ANGLE] = glGetUniformLocation(program, "preferredRotation");
     uniforms[UNIFORM_COLOR_CONVERSION_MATRIX] = glGetUniformLocation(program, "colorConversionMatrix");
     
-    // Setup uniforms
-    glUseProgram(program);
+    if (_context == nullptr) {
+        return;
+    }
+    auto nativeContext = (__bridge EAGLContext*)_context->nativeContext();
+    if (!nativeContext) {
+        return;
+    }
+    glDisable(GL_DEPTH_TEST);
+    
+    [self createFramebuffer];
+    if (!_videoTextureCache) {
+        CVReturn err = CVOpenGLESTextureCacheCreate(kCFAllocatorDefault, NULL, nativeContext, NULL, &_videoTextureCache);
+        if (err != noErr) {
+            LogE("Error at CVOpenGLESTextureCacheCreate {}", err);
+        }
+    }
+    
+    _program->attach();
+    
     glUniform1i(uniforms[UNIFORM_Y], 0);
     glUniform1i(uniforms[UNIFORM_UV], 1);
     glUniform1f(uniforms[UNIFORM_ROTATION_ANGLE], 0);
+
     glUniformMatrix3fv(uniforms[UNIFORM_COLOR_CONVERSION_MATRIX], 1, GL_FALSE, _preferredConversion);
-    glUseProgram(0);
-    
-    [self createFramebuffer];
-    
+    _program->detach();
     _context->detachContext();
     _setupComplete.store(true);
 }
@@ -482,8 +486,10 @@ static const GLfloat kColorConversion709VideoRange[] = {
     _context->attachContext();
     
     auto formatType = CVPixelBufferGetPixelFormatType(pixelBuffer);
-    BOOL success = NO;
+    auto frameWidth = static_cast<GLint>(CVPixelBufferGetWidth(pixelBuffer));
+    auto frameHeight = static_cast<GLint>(CVPixelBufferGetHeight(pixelBuffer));
     
+    BOOL success = NO;
     if (formatType == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange ||
         formatType == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange) {
         success = [self uploadYUVTexture:pixelBuffer];
@@ -492,7 +498,7 @@ static const GLfloat kColorConversion709VideoRange[] = {
     }
     
     if (success) {
-        [self renderTextures];
+        [self renderTextures:frameWidth height:frameHeight];
     }
     
     [self cleanupTextures];
@@ -521,7 +527,10 @@ static const GLfloat kColorConversion709VideoRange[] = {
         GL_TEXTURE_2D, GL_RED_EXT, frameWidth, frameHeight,
         GL_RED_EXT, GL_UNSIGNED_BYTE, 0, &_lumaTexture);
     
-    if (err != kCVReturnSuccess) return NO;
+    if (err != kCVReturnSuccess) {
+        LogE("upload error");
+        return NO;
+    }
     
     glBindTexture(CVOpenGLESTextureGetTarget(_lumaTexture), CVOpenGLESTextureGetName(_lumaTexture));
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -539,6 +548,7 @@ static const GLfloat kColorConversion709VideoRange[] = {
     if (err != kCVReturnSuccess) {
         CFRelease(_lumaTexture);
         _lumaTexture = NULL;
+        LogE("upload error");
         return NO;
     }
     
@@ -549,8 +559,10 @@ static const GLfloat kColorConversion709VideoRange[] = {
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     
     // Update color conversion matrix
+    _program->attach();
     glUniform1f(uniforms[UNIFORM_ROTATION_ANGLE], 0);
     glUniformMatrix3fv(uniforms[UNIFORM_COLOR_CONVERSION_MATRIX], 1, GL_FALSE, _preferredConversion);
+    _program->detach();
     
     return YES;
 }
@@ -558,7 +570,8 @@ static const GLfloat kColorConversion709VideoRange[] = {
 - (BOOL)uploadRGBATexture:(CVPixelBufferRef)pixelBuffer {
     auto frameWidth = CVPixelBufferGetWidth(pixelBuffer);
     auto frameHeight = CVPixelBufferGetHeight(pixelBuffer);
-    
+
+    _program->attach();
     glActiveTexture(GL_TEXTURE0);
     CVReturn err = CVOpenGLESTextureCacheCreateTextureFromImage(
         kCFAllocatorDefault, _videoTextureCache, pixelBuffer, NULL,
@@ -572,22 +585,24 @@ static const GLfloat kColorConversion709VideoRange[] = {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    
+
+    _program->detach();
     return YES;
 }
 
-- (void)renderTextures {
+- (void)renderTextures:(GLint)frameWidth height:(GLint)frameHeight {
     auto nativeContext = (__bridge EAGLContext*)_context->nativeContext();
-    
+
     glBindFramebuffer(GL_FRAMEBUFFER, _frameBuffer);
     glViewport(0, 0, _width, _height);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
+
+    _program->attach();
     
     // Calculate aspect ratio preserving viewport
     CGRect viewBounds = CGRectMake(0, 0, _width, _height);
-    CGSize contentSize = CGSizeMake(CVPixelBufferGetWidth(_preRenderBuffer ?: _pendingBuffer), 
-                                   CVPixelBufferGetHeight(_preRenderBuffer ?: _pendingBuffer));
+    CGSize contentSize = CGSizeMake(frameWidth, frameHeight);
     CGRect vertexSamplingRect = AVMakeRectWithAspectRatioInsideRect(contentSize, viewBounds);
     
     CGSize normalizedSamplingSize;
@@ -612,6 +627,12 @@ static const GLfloat kColorConversion709VideoRange[] = {
         (GLfloat)(normalizedSamplingSize.width), (GLfloat)(normalizedSamplingSize.height)
     };
     
+    NSLog(@"vertices: [%f, %f] [%f, %f] [%f, %f] [%f, %f]",
+          vertices[0], vertices[1],
+          vertices[2], vertices[3],
+          vertices[4], vertices[5],
+          vertices[6], vertices[7]);
+    
     static const GLfloat texCoords[] = {
         0.0f, 1.0f,  1.0f, 1.0f,  0.0f, 0.0f,  1.0f, 0.0f
     };
@@ -625,6 +646,7 @@ static const GLfloat kColorConversion709VideoRange[] = {
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     
     [nativeContext presentRenderbuffer:GL_RENDERBUFFER];
+    _program->detach();
 }
 
 - (void)cleanupTextures {
