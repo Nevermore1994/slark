@@ -31,6 +31,5 @@ class IVideoRender;
 - (CGFloat)scale;
 - (void)setContext:(slark::IEGLContextRefPtr) context;
 - (std::weak_ptr<slark::IVideoRender>)renderImpl;
-- (void)resizeViewport;
 @end
 #endif /* RenderGLView_h */
