@@ -156,8 +156,8 @@ bool Player::Impl::setupDataProvider() noexcept {
         if (state == IOState::Error) {
             self->sender_->send(buildEvent(EventType::ReadError));
             auto errorCode = dataProvider->isNetwork() ?
-                std::to_string(static_cast<uint8_t>(PlayerErrorCode::NetWorkError)) :
-                std::to_string(static_cast<uint8_t>(PlayerErrorCode::OpenFileError));
+                std::to_string(static_cast<uint32_t>(PlayerErrorCode::NetWorkError)) :
+                std::to_string(static_cast<uint32_t>(PlayerErrorCode::FileError));
             self->notifyPlayerEvent(PlayerEvent::OnError, errorCode);
         }
     };
@@ -165,8 +165,8 @@ bool Player::Impl::setupDataProvider() noexcept {
     if (!helper_->createDataProvider(path, std::move(readDataCallback))) {
         setState(PlayerState::Error);
         auto errorCode = isNetworkLink(path) ?
-                         std::to_string(static_cast<uint8_t>(PlayerErrorCode::NetWorkError)) :
-                         std::to_string(static_cast<uint8_t>(PlayerErrorCode::OpenFileError));
+                         std::to_string(static_cast<uint32_t>(PlayerErrorCode::NetWorkError)) :
+                         std::to_string(static_cast<uint32_t>(PlayerErrorCode::FileError));
         notifyPlayerEvent(PlayerEvent::OnError, errorCode);
         return false;
     }
@@ -967,10 +967,9 @@ void Player::Impl::handleSettingUpdate(
     if (t.type == EventType::UpdateSettingVolume) {
         auto volume = std::any_cast<float>(t.data);
         volume = std::max(0.0f, std::min(volume, 100.0f));
-        volume = volume / 100.0f;
         LogI("set volume:{}", volume);
         if (audioRender_) {
-            audioRender_->setVolume(volume);
+            audioRender_->setVolume(volume / 100.0f);
         }
         params_.withWriteLock([volume](auto& p){
             p->setting.volume = volume;

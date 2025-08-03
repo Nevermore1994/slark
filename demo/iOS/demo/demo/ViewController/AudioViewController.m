@@ -11,8 +11,6 @@
 #import "PlayerControllerView.h"
 #include "SlarkPlayer.h"
 
-using namespace slark;
-
 @interface AudioViewController()<UIGestureRecognizerDelegate, ISlarkPlayerObserver>
 @property (nonatomic, strong) UIImageView* iconView;
 @property (nonatomic, strong) PlayerControllerView* controllerView;
@@ -105,9 +103,9 @@ using namespace slark;
 }
 
 - (void)initData {
-    NSString *bundlePath = [[NSBundle mainBundle] pathForResource:@"resource" ofType:@"bundle"];
-    NSBundle *resouceBundle = [NSBundle bundleWithPath:bundlePath];
-    auto path = [resouceBundle pathForResource:@"sample-3s.wav" ofType:@""];
+    NSString* bundlePath = [[NSBundle mainBundle] pathForResource:@"resource" ofType:@"bundle"];
+    NSBundle* resouceBundle = [NSBundle bundleWithPath:bundlePath];
+    NSString* path = [resouceBundle pathForResource:@"sample-3s.wav" ofType:@""];
     self.player = [[SlarkPlayer alloc] init:path];
     self.player.delegate = self;
     self.hasAuthorization = NO;
@@ -173,17 +171,18 @@ using namespace slark;
 }
 
 - (void)notifyState:(NSString *)playerId state:(SlarkPlayerState)state {
-    if (state == SlarkPlayerState::PlayerStatePrepared) {
+    if (state == SlarkPlayerStatePrepared) {
         [self.controllerView updateTotalTime:CMTimeGetSeconds(self.player.totalDuration)];
-    } else if (state == SlarkPlayerState::PlayerStateCompleted || state == SlarkPlayerState::PlayerStatePause) {
+    } else if (state == SlarkPlayerStateCompleted ||
+               state == SlarkPlayerStatePause) {
         [self.controllerView setIsPause:YES];
-    } else if (state == SlarkPlayerState::PlayerStatePlaying) {
+    } else if (state == SlarkPlayerStatePlaying) {
         [self.controllerView setIsPause:NO];
     }
 }
 
 - (void)notifyEvent:(NSString *)playerId event:(SlarkPlayerEvent)event value:(NSString *)value {
-    if (event == SlarkPlayerEvent::PlayerEventUpdateCacheTime) {
+    if (event == SlarkPlayerEventUpdateCacheTime) {
         [self.controllerView updateCacheTime:[value doubleValue]];
     }
 }

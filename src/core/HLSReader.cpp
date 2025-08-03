@@ -54,6 +54,7 @@ void HLSReader::handleTSData(uint32_t index, DataPtr dataPtr) noexcept {
 
 void HLSReader::handleTSCompleted(uint32_t tsIndex) noexcept {
     fetchTSData(tsIndex + 1);
+    LogI("fetch ts index: {}", tsIndex + 1);
 }
 
 void HLSReader::handleM3u8Data(DataPtr data) noexcept {
@@ -217,8 +218,10 @@ void HLSReader::fetchTSData(uint32_t tsIndex) noexcept {
     const auto& tsInfos = demuxer_->getTSInfos();
     if (tsIndex >= tsInfos.size()) {
         isCompleted_ = true;
+        LogI("hls read completed");
         return;
     }
+    LogI("fetchTSData:{}", tsIndex);
     const auto& info = tsInfos[tsIndex];
     sendTSRequest(tsIndex, info.url, info.range);
 }

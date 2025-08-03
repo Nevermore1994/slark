@@ -12,16 +12,6 @@
 #include <format>
 #include "LogOutput.h"
 
-#if SLARK_IOS
-#include "iOSBase.h"
-#else
-
-#if SLARK_ANDROID
-#include "AndroidBase.h"
-#endif
-
-#endif
-
 namespace slark {
 
 enum class LogType {
@@ -35,6 +25,8 @@ enum class LogType {
 };
 
 constexpr const std::string_view kLogTags[] = {" [print] ", " [debug] ", " [info] ", " [warning] ", " [error] ", " [assert] ", " [record] "};
+
+void printLog(const std::string& log);
 
 template <typename ...Args>
 void outputLog(LogType level, std::string_view format, Args&& ...args) {

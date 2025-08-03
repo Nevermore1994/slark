@@ -461,6 +461,7 @@ bool TSDemuxer::packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) n
         info->width = videoInfo_->width;
         info->height = videoInfo_->height;
         recalculatePtsDts(frame->pts, frame->dts, false);
+        LogI("video, ts index: {} parse data:{}", tsIndex, frame->pts);
         frame->pts -= parseInfo_.videoInfo.firstPts;
         frame->dts -= parseInfo_.videoInfo.firstDts;
     
@@ -491,7 +492,6 @@ void TSDemuxer::recalculatePtsDts(int64_t& pts, int64_t& dts, bool isAudio) noex
     fixInfo.preDtsTime = dts;
     dts += fixInfo.offset;
     pts += fixInfo.offset;
-    LogI("[seek info] {} parse data:{},", isAudio ? "audio" : "video" , fixInfo.preDtsTime);
 }
 
 bool findAdtsHeader(DataView view, uint32_t& pos) noexcept {
@@ -660,6 +660,9 @@ DemuxerResult HLSDemuxer::parseData(DataPacket& packet) noexcept {
     if (!tsDemuxer_->parseData(*buffer_, static_cast<uint32_t>(tsIndex), result)) {
         LogE("parse ts data error! offset:{}, ts index:{}", packet.offset, tsIndex);
         result.resultCode = DemuxerResultCode::Failed;
+    }
+    if (tsIndex == getTSInfos().size() - 1 && buffer_->empty()) {
+        isCompleted_ = true;
     }
     return result;
 }

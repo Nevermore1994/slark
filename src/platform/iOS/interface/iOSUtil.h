@@ -7,9 +7,6 @@
 #ifndef slark_iOS_Util_h
 #define slark_iOS_Util_h
 
-#import <Foundation/Foundation.h>
-#include <string_view>
-
 #define Screen_Width CGRectGetWidth([UIScreen mainScreen].bounds)
 #define Screen_Height CGRectGetHeight([UIScreen mainScreen].bounds)
 
@@ -27,7 +24,14 @@
 
 #define SafeBottomHeight (isIphoneXSeries() ? iPhoneXStatusHomeIndicatorHeight : 0)
 
-bool isIphoneXSeries();
-NSString* stringViewToNSString(std::string_view view);
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+BOOL isIphoneXSeries(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* slark_iOS_Util_h */

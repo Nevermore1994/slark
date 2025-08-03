@@ -73,7 +73,7 @@ struct IReader: public NonCopyable {
     }
 
     [[nodiscard]] bool isNetwork() const noexcept {
-        return type_ == ReaderType::NetWork;
+        return type_ != ReaderType::Local;
     }
     
 protected:

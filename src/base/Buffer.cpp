@@ -62,7 +62,7 @@ bool Buffer::append(uint64_t offset, DataPtr ptr) noexcept {
         return false; //discard expired data
     }
     if (offset_ > offset) {
-        LogI("reset buffer:offset {}, now offset:{}", offset, offset_);
+        LogI("reset buffer:offset {}, now offset:{}, discard:{}", offset, offset_, length());
         data_.reset();
         offset_ = offset;
     }
