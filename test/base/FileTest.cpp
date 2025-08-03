@@ -8,7 +8,6 @@
 #include <utility>
 #include "IReader.h"
 #include "Writer.hpp"
-#include "FileUtil.h"
 #include "Reader.h"
 
 using namespace slark;
@@ -32,7 +31,7 @@ TEST(Writer, getPath) {
 
 TEST(Reader, getPath) {
     Reader reader;
-    auto task = std::make_unique<ReaderTask>([](DataPacket, IOState) {
+    auto task = std::make_unique<ReaderTask>([](IReader*, DataPacket, IOState) {
 
     });
     task->path = "test1.txt";
@@ -57,7 +56,7 @@ TEST(Reader, open) {
     writer.reset();
 
     Reader reader;
-    auto task = std::make_unique<ReaderTask>([&str](DataPacket data, IOState state) {
+    auto task = std::make_unique<ReaderTask>([&str](IReader*, DataPacket data, IOState state) {
         std::cout << data.data->view().view() << std::endl;
         ASSERT_EQ(data.offset, 0);
         ASSERT_EQ(state, IOState::EndOfFile);

@@ -4,7 +4,6 @@
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
 
-#include <algorithm>
 #include <gtest/gtest.h>
 #include <string_view>
 #include "Buffer.hpp"

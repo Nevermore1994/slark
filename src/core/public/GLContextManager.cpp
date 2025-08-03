@@ -46,7 +46,7 @@ IEGLContextRefPtr GLContextManager::createShareContextWithId(const std::string& 
 }
 
 #if !SLARK_IOS && !SLARK_ANDROID
-IEGLContextPtr createGLContext() {
+IEGLContextRefPtr createGLContext() noexcept {
     return nullptr;
 }
 #endif

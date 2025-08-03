@@ -18,7 +18,7 @@ TEST(ClockTest, InitialState) {
 
 TEST(ClockTest, SetTime) {
     Clock clock;
-    clock.setTime(milliseconds(5000));
+    clock.setTime(Time::TimePoint::fromMilliSeconds(5000ms));
     clock.start();
     std::this_thread::sleep_for(milliseconds(2000));
     EXPECT_GE(clock.time().toMilliSeconds(), milliseconds(7000));
@@ -27,7 +27,7 @@ TEST(ClockTest, SetTime) {
 
 TEST(ClockTest, StartPauseReset) {
     Clock clock;
-    clock.setTime(milliseconds(5000));
+    clock.setTime(Time::TimePoint::fromMilliSeconds(5000ms));
     clock.start();
     std::this_thread::sleep_for(milliseconds(2000));//7000
     EXPECT_GE(clock.time().toMilliSeconds(), milliseconds(6500));

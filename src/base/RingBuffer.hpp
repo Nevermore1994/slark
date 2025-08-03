@@ -22,7 +22,7 @@ template<typename T>
 class RingBufferImpl: public NonCopyable {
 public:
     [[nodiscard]] uint32_t capacity() const noexcept {
-        return capacity;
+        return capacity_;
     }
 
 protected:
