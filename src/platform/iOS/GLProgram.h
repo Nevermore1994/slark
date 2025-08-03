@@ -7,14 +7,8 @@
 
 #pragma once
 
-#if SLARK_IOS
 #include <OpenGLES/ES2/gl.h>
 #include <OpenGLES/ES2/glext.h>
-#elif SLARK_ANDROID
-#include <GLES2/gl2.h>
-#include <GLES2/gl2ext.h>
-#endif
-
 #include <string>
 #include <string_view>
 #include <memory>

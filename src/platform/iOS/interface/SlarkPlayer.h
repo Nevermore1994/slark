@@ -11,35 +11,44 @@
 
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CMTime.h>
-#import <memory>
 
 /**
  * Player state definitions
  */
-typedef enum : NSUInteger {
-    PlayerStateNotInited,      // Not initialized
-    PlayerStateInitializing,   // Initializing
-    PlayerStatePrepared,       // Ready for playback
-    PlayerStateBuffering,      // Loading content
-    PlayerStateReady,          // Ready to play
-    PlayerStatePlaying,        // Currently playing
-    PlayerStatePause,          // Paused
-    PlayerStateStop,           // Stopped
-    PlayerStateError,          // Error occurred
-    PlayerStateCompleted,      // Playback finished
-    PlayerStateUnknown         // Unknown state
-} SlarkPlayerState;
+typedef NS_ENUM(NSUInteger, SlarkPlayerState) {
+    SlarkPlayerStateNotInited,      // Not initialized
+    SlarkPlayerStateInitializing,   // Initializing
+    SlarkPlayerStatePrepared,       // Ready for playback
+    SlarkPlayerStateBuffering,      // Loading content
+    SlarkPlayerStateReady,          // Ready to play
+    SlarkPlayerStatePlaying,        // Currently playing
+    SlarkPlayerStatePause,          // Paused
+    SlarkPlayerStateStop,           // Stopped
+    SlarkPlayerStateError,          // Error occurred
+    SlarkPlayerStateCompleted,      // Playback finished
+    SlarkPlayerStateUnknown         // Unknown state
+};
 
 /**
  * Player event types
  */
-typedef enum : NSUInteger {
-    PlayerEventFirstFrameRendered,  // First frame displayed
-    PlayerEventSeekDone,           // Seek completed
-    PlayerEventPlayEnd,            // Playback ended
-    PlayerEventUpdateCacheTime,    // Cache updated
-    PlayerEventOnError,            // Error occurred
-} SlarkPlayerEvent;
+typedef NS_ENUM(NSUInteger, SlarkPlayerEvent) {
+    SlarkPlayerEventFirstFrameRendered,  // First frame displayed
+    SlarkPlayerEventSeekDone,           // Seek completed
+    SlarkPlayerEventPlayEnd,            // Playback ended
+    SlarkPlayerEventUpdateCacheTime,    // Cache updated
+    SlarkPlayerEventOnError,            // Error occurred
+};
+
+
+typedef NS_ENUM(NSUInteger, SlarkPlayerErrorCode) {
+    SlarkPlayerErrorFileError = 1000,
+    SlarkPlayerErrorNetWorkError,
+    SlarkPlayerErrorNotSupportFormat = 2000,
+    SlarkPlayerErrorDemuxError,
+    SlarkPlayerErrorDecodeError,
+    SlarkPlayerErrorRenderError,
+};
 
 /**
  * Observer protocol for player notifications
@@ -52,10 +61,6 @@ typedef enum : NSUInteger {
 // Event callback
 - (void)notifyEvent:(NSString*) playerId event:(SlarkPlayerEvent) event value:(NSString*) value;
 @end
-
-namespace slark {
-struct IVideoRender;
-}
 
 /**
  * Main media player class

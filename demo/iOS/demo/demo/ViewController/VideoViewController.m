@@ -13,8 +13,6 @@
 #import "iOSUtil.h"
 #import "SlarkViewController.h"
 
-using namespace slark;
-
 @interface VideoViewController()<UIGestureRecognizerDelegate, ISlarkPlayerObserver>
 @property (nonatomic, strong) PlayerControllerView* controllerView;
 @property (nonatomic, strong) UILabel* nameLabel;
@@ -46,6 +44,7 @@ using namespace slark;
 - (void)resetHideControllerTimer {
     [self.hideControllerTimer invalidate];
     self.hideControllerTimer = [NSTimer scheduledTimerWithTimeInterval:5.0 target:self selector:@selector(dismissControllView) userInfo:nil repeats:NO];
+    self.navigationController.navigationBar.hidden = NO;
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -167,28 +166,106 @@ using namespace slark;
 
 - (void)dismissControllView {
     self.controllerView.hidden = YES;
+    self.navigationController.navigationBar.hidden = YES;
 }
 
 - (void)notifyState:(NSString *)playerId state:(SlarkPlayerState)state {
-    if (state == SlarkPlayerState::PlayerStatePrepared) {
+    if (state == SlarkPlayerStatePrepared) {
         [self.controllerView updateTotalTime:CMTimeGetSeconds(self.playerController.player.totalDuration)];
-    } else if (state == SlarkPlayerState::PlayerStateCompleted || state == SlarkPlayerState::PlayerStatePause) {
+    } else if (state == SlarkPlayerStateCompleted ||
+               state == SlarkPlayerStatePause) {
         [self.controllerView setIsPause:YES];
         self.loadingView.hidden = YES;
-    } else if (state == SlarkPlayerState::PlayerStateReady) {
+    } else if (state == SlarkPlayerStateReady) {
         self.loadingView.hidden = YES;
-    } else if (state == SlarkPlayerState::PlayerStatePlaying) {
+    } else if (state == SlarkPlayerStatePlaying) {
         [self.controllerView setIsPause:NO];
         self.loadingView.hidden = YES;
-    } else if (state == SlarkPlayerState::PlayerStateBuffering) {
+    } else if (state == SlarkPlayerStateBuffering) {
         self.loadingView.hidden = NO;
     }
 }
 
 - (void)notifyEvent:(NSString *)playerId event:(SlarkPlayerEvent)event value:(NSString *)value {
-    if (event == SlarkPlayerEvent::PlayerEventUpdateCacheTime) {
+    if (event == SlarkPlayerEventUpdateCacheTime) {
         [self.controllerView updateCacheTime:[value doubleValue]];
+    } else if (event == SlarkPlayerEventOnError) {
+        self.loadingView.hidden = YES;
+        SlarkPlayerErrorCode errorCode = (SlarkPlayerErrorCode)[value intValue];
+        if (errorCode == SlarkPlayerErrorFileError) {
+            [self ShowToast:@"file error" duration:2.0];
+        } else if (errorCode == SlarkPlayerErrorNetWorkError) {
+            [self ShowToast:@"network error" duration:2.0];
+        } else {
+            [self ShowToast:@"error" duration:2.0];
+        }
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self.playerController.player stop];
+            [self.navigationController popViewControllerAnimated:YES];
+        });
     }
+}
+
+- (UIWindow *)currentWindow {
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if ([scene isKindOfClass:[UIWindowScene class]] &&
+            scene.activationState == UISceneActivationStateForegroundActive) {
+            UIWindowScene *windowScene = (UIWindowScene *)scene;
+            for (UIWindow *window in windowScene.windows) {
+                if (window.isKeyWindow) {
+                    return window;
+                }
+            }
+        }
+    }
+    return nil;
+}
+
+- (void)ShowToast:(NSString*) message duration:(NSTimeInterval) duration {
+    UIWindow *window = [self currentWindow];
+    if (!window) return;
+
+    UILabel *toastLabel = [[UILabel alloc] init];
+    toastLabel.text = message;
+    toastLabel.textColor = [UIColor whiteColor];
+    toastLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.6];
+    toastLabel.textAlignment = NSTextAlignmentCenter;
+    toastLabel.font = [UIFont systemFontOfSize:14];
+    toastLabel.numberOfLines = 0;
+    toastLabel.layer.cornerRadius = 10;
+    toastLabel.clipsToBounds = YES;
+
+    CGFloat maxWidth = window.bounds.size.width - 40;
+    CGSize maxSize = CGSizeMake(maxWidth, CGFLOAT_MAX);
+    CGRect expectedRect = [toastLabel.text boundingRectWithSize:maxSize
+                                                         options:NSStringDrawingUsesLineFragmentOrigin
+                                                      attributes:@{NSFontAttributeName: toastLabel.font}
+                                                         context:nil];
+    
+    CGFloat padding = 16;
+    CGFloat labelWidth = MIN(expectedRect.size.width + padding, maxWidth);
+    CGFloat labelHeight = expectedRect.size.height + padding;
+
+    toastLabel.frame = CGRectMake((window.bounds.size.width - labelWidth) / 2,
+                                  window.bounds.size.height - labelHeight - 100,
+                                  labelWidth,
+                                  labelHeight);
+    
+    toastLabel.alpha = 0.0;
+    [window addSubview:toastLabel];
+
+    [UIView animateWithDuration:0.3 animations:^{
+        toastLabel.alpha = 1.0;
+    } completion:^(BOOL) {
+        [UIView animateWithDuration:0.5
+                              delay:duration
+                            options:UIViewAnimationOptionCurveEaseOut
+                         animations:^{
+            toastLabel.alpha = 0.0;
+        } completion:^(BOOL) {
+            [toastLabel removeFromSuperview];
+        }];
+    }];
 }
 @end
 

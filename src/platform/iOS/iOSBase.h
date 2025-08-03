@@ -8,10 +8,10 @@
 #ifndef slark_iOS_Base_h
 #define slark_iOS_Base_h
 
+#import <Foundation/NSString.h>
 #include <string>
+#include <string_view>
 
-void printLog(const std::string& log);
-
-
+NSString* stringViewToNSString(std::string_view view);
 
 #endif /* slark_iOS_Base_h */

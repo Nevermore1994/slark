@@ -39,10 +39,10 @@ enum class PlayerEvent : uint8_t {
     OnError,
 };
 
-enum class PlayerErrorCode : uint8_t {
-    OpenFileError,
+enum class PlayerErrorCode : uint32_t {
+    FileError = 1000,
     NetWorkError,
-    NotSupport,
+    NotSupportFormat = 2000,
     DemuxError,
     DecodeError,
     RenderError,

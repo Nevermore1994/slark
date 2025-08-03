@@ -13,8 +13,8 @@
 #import <atomic>
 #import "RenderGLView.h"
 #include "video/VideoInfo.h"
-#include "opengles/GLShader.h"
-#include "opengles/GLProgram.h"
+#include "GLShader.h"
+#include "GLProgram.h"
 
 namespace slark {
     class IVideoRender;

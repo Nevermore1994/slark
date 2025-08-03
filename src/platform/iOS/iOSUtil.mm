@@ -2,14 +2,13 @@
 //  iOSUtil.m
 //  slark
 //
-//  Created by Nevermore on 
+//  Created by Nevermore
 //
 #import "iOSUtil.h"
 #import <UIKit/UIKit.h>
 
-bool isIphoneXSeries()
-{
-    bool isIphoneXSeries = false;
+BOOL isIphoneXSeries() {
+    BOOL isIphoneXSeries = NO;
     if (@available(iOS 11.0, *)) {
         if ([[UIApplication sharedApplication] delegate].window.safeAreaInsets.bottom > 0.0) {
             isIphoneXSeries = YES;
@@ -17,10 +16,3 @@ bool isIphoneXSeries()
     }
     return isIphoneXSeries;
 }
-
-NSString* stringViewToNSString(std::string_view view) {
-    return [[NSString alloc] initWithBytes:view.data()
-                                    length:view.size()
-                                  encoding:NSUTF8StringEncoding];
-}
-

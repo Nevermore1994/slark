@@ -8,7 +8,6 @@
 #import <Foundation/NSString.h>
 #import <Foundation/NSPathUtilities.h>
 #include "Log.hpp"
-#include "Base.h"
 #include "FileUtil.h"
 
 namespace slark {
@@ -22,6 +21,13 @@ void printLog(const std::string& log){
 }
 
 }
+
+NSString* stringViewToNSString(std::string_view view) {
+    return [[NSString alloc] initWithBytes:view.data()
+                                    length:view.size()
+                                  encoding:NSUTF8StringEncoding];
+}
+
 
 namespace slark::FileUtil {
 

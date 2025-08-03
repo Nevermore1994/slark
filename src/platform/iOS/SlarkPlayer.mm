@@ -5,18 +5,18 @@
 //  Created by Nevermore
 
 #import "SlarkPlayer.h"
-#import "iOSUtil.h"
+#import "iOSBase.h"
 #import "Player.h"
 #import "GLContextManager.h"
 
 
 #define STATE_ENUM_TO_CASE(value) \
     case slark::PlayerState::value: \
-        return PlayerState##value
+        return SlarkPlayerState##value
 
 #define EVENT_ENUM_TO_CASE(value) \
     case slark::PlayerEvent::value: \
-        return PlayerEvent##value
+        return SlarkPlayerEvent##value
 
 SlarkPlayerState convertState(slark::PlayerState state) {
     switch (state) {
@@ -31,7 +31,7 @@ SlarkPlayerState convertState(slark::PlayerState state) {
             STATE_ENUM_TO_CASE(Error);
             STATE_ENUM_TO_CASE(Completed);
         default:
-            return PlayerStateUnknown;
+            return SlarkPlayerStateUnknown;
     }
 }
 
