@@ -79,7 +79,7 @@ TEST(Data, append) {
     ASSERT_EQ(data.length, str.length());
 
     Data data1("hello");
-    data1 += {" world!"};
+    data1.append(" world!");
     auto data2 = data1 + Data{"xxxxx"};
     ASSERT_EQ(data1.view().view(), std::string_view("hello world!"));
     ASSERT_EQ(data2.view().view(), std::string_view("hello world!xxxxx"));

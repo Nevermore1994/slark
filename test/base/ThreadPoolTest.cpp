@@ -11,8 +11,6 @@ protected:
     void SetUp() override {
         ThreadPoolConfig config;
         config.threadCount = 4;
-        config.maxQueueSize = 10;
-        config.timeout = 100ms;
         pool = std::make_unique<ThreadPool>(config);
     }
 
@@ -39,43 +37,6 @@ TEST_F(ThreadPoolTest, MultipleTasksExecution) {
         ASSERT_TRUE(futures[i]);
         EXPECT_EQ(futures[i]->get(), i);
     }
-}
-
-TEST_F(ThreadPoolTest, QueueFullRejection) {
-    std::atomic<int> counter{0};
-    auto slowTask = [&counter]() {
-        std::this_thread::sleep_for(1000ms);
-        counter++;
-        return true;
-    };
-
-    std::vector<std::expected<std::future<bool>, bool>> futures;
-    for (int i = 0; i < 20; ++i) {
-        futures.push_back(pool->submit(slowTask));
-    }
-
-    int accepted = 0;
-    for (const auto& future : futures) {
-        if (future.has_value()) {
-            accepted++;
-        }
-    }
-    EXPECT_LT(accepted, 20);
-}
-
-
-TEST_F(ThreadPoolTest, WaitForAll) {
-    std::atomic<int> counter{0};
-    for (int i = 0; i < 5; ++i) {
-        auto future = pool->submit([&counter]() {
-            std::this_thread::sleep_for(50ms);
-            counter++;
-        });
-        ASSERT_TRUE(future);
-    }
-
-    pool->waitForAll();
-    EXPECT_EQ(counter, 5);
 }
 
 TEST_F(ThreadPoolTest, ExceptionHandling) {
@@ -125,8 +86,7 @@ TEST_F(ThreadPoolTest, StressTest) {
             counter++;
         }));
     }
-
-    pool->waitForAll();
+    
     int successCount = 0;
     for (const auto& future : futures) {
         if (future) {

@@ -15,8 +15,8 @@ TEST(Timer, delay) {
     using namespace std::chrono_literals;
     auto now = Time::nowTimeStamp();
     TimerManager::shareInstance().runAfter(10ms, [&]{
-        auto t = static_cast<double>(Time::nowTimeStamp() - now) / 1000.0;
-        std::println("delay {} ms", t);
+        auto t = Time::nowTimeStamp() - now;
+        std::println("delay {}", t.toMilliSeconds());
         ASSERT_GE(t, 10.0);
     });
     std::this_thread::sleep_for(0.5s);
@@ -25,13 +25,14 @@ TEST(Timer, delay) {
 TEST(Timer, loop) {
     using namespace std::chrono_literals;
     auto now = Time::nowTimeStamp();
-    TimerManager::shareInstance().runLoop(10ms, [&]{
+    auto timerId = TimerManager::shareInstance().runLoop(10ms, [&]{
         auto n = Time::nowTimeStamp();
-        auto t = ceil(static_cast<double>(n - now) / 1000.0);
-        std::println("delay {} ms", t);
+        auto t = n - now;
+        std::println("delay {}", t.toMilliSeconds());
         ASSERT_GE(t, 10.0);
         now = n;
     });
     std::this_thread::sleep_for(3s);
+    TimerManager::shareInstance().cancel(timerId);
 }
 

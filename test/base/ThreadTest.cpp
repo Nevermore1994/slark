@@ -46,7 +46,7 @@ TEST(Thread, timer) {
     thread.runAfter(10ms, [&t]{
         auto time = Time::nowTimeStamp() - t;
         ASSERT_GT(time, 10 * 1000);
-        std::println("delay us: {}", time.count);
+        std::println("delay us: {}", time.point());
     });
     std::this_thread::sleep_for(20ms);
 }
