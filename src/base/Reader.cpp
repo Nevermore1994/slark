@@ -38,7 +38,7 @@ bool Reader::open(ReaderTaskPtr ptr) noexcept {
     bool isSuccess = false;
     worker_.setInterval(ptr->timeInterval);
     file_.withWriteLock([&](auto& file){
-        file = std::make_unique<FileUtil::ReadFile>(std::string(ptr->path));
+        file = std::make_unique<File::ReadFile>(std::string(ptr->path));
         isSuccess = file->open();
     });
     {
@@ -67,12 +67,12 @@ IOState Reader::state() noexcept {
     file_.withReadLock([&state, &tell, this](auto& file){
         if (!file || worker_.isExit()) {
             state = IOState::Closed;
-        } else if (!worker_.isRunning()) {
-            state = IOState::Pause;
         } else if (file->isFailed()) {
             state = IOState::Error;
         } else if(file->readOver()) {
             state = IOState::EndOfFile;
+        } else if (!worker_.isRunning()) {
+            state = IOState::Pause;
         }
         if (file) {
             tell = file->tell();

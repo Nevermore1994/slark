@@ -6,7 +6,7 @@
 #include "FileUtil.h"
 #include <filesystem>
 
-namespace slark::FileUtil  {
+namespace slark::File {
 
 #if !SLARK_IOS && !SLARK_ANDROID
 std::string rootPath() noexcept {

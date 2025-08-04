@@ -27,7 +27,14 @@ option(DISABLE_TEST "disable test" OFF)
 option(DISABLE_HTTP "disable http" OFF)
 
 macro(read_config)
-    file(READ ${CMAKE_CURRENT_SOURCE_DIR}/config.json CONFIG_JSON_STRING)
+    # Check if config.json exists
+    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/config.json)
+        file(READ ${CMAKE_CURRENT_SOURCE_DIR}/config.json CONFIG_JSON_STRING)
+    else()
+        # Provide default configuration if file doesn't exist
+        set(CONFIG_JSON_STRING "{\"platform\": \"PC\", \"build_type\": \"Debug\", \"disable_http\": false, \"disable_test\": false }")
+        message(WARNING "config.json not found, using default configuration: ${CONFIG_JSON_STRING}")
+    endif()
 
     #parse build platform
     string(JSON BUILD_PLATFORM_VALUE GET ${CONFIG_JSON_STRING} platform)
@@ -81,7 +88,6 @@ macro(add_core_file TARGET_NAME)
         src/core/audio
         src/core/codec
         src/core/video
-        src/core/opengles
     )
 endmacro()
 

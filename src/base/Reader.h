@@ -52,7 +52,7 @@ private:
     std::atomic_bool isReadCompleted_ = false;
     std::mutex seekMutex_;
     std::optional<int64_t> seekPos_;
-    Synchronized<std::unique_ptr<FileUtil::ReadFile>, std::shared_mutex> file_;
+    Synchronized<std::unique_ptr<File::ReadFile>, std::shared_mutex> file_;
     Thread worker_;
 };
 

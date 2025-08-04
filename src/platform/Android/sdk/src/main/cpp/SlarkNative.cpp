@@ -203,7 +203,7 @@ void printLog(const std::string &logStr) {
     );
 }
 
-namespace FileUtil {
+namespace File {
 
 std::string rootPath() noexcept {
     static auto rootPath = []() {

@@ -23,7 +23,7 @@ Writer::~Writer() = default;
 bool Writer::open(std::string_view path, bool isAppend) noexcept {
     bool isSuccess = false;
     file_.withLock([&](auto& file){
-        file = std::make_unique<FileUtil::WriteFile>(std::string(path), isAppend);
+        file = std::make_unique<File::WriteFile>(std::string(path), isAppend);
         if (!file->open()) {
             LogE("open file failed. {}", path);
         }
@@ -41,13 +41,13 @@ void Writer::close() noexcept {
     worker_.start();
 }
 
-void Writer::release() noexcept {
+void Writer::dispose() noexcept {
     isStop_ = true;
     worker_.start();
 }
 
 IOState Writer::state() noexcept {
-    if (!isOpen_ || isStop_) {
+    if (!isOpen_.load() || isStop_.load()) {
         return IOState::Closed;
     }
     IOState state = IOState::Normal;
@@ -71,50 +71,53 @@ std::string Writer::path() noexcept {
     return path;
 }
 
-void Writer::process() noexcept {
-    using namespace std::chrono_literals;
-    std::vector<DataPtr> dataList;
-    dataList_.withLock([&](auto& vec){
-        dataList.swap(vec);
-    });
-    if (dataList.empty()) {
-        if (!isOpen_ || isStop_) {
-            file_.withLock([](auto& file){
-                if (file) {
-                    file->close();
-                }
-                file.reset();
-            });
-            if (!isOpen_) {
-                worker_.pause();
-                LogI("{} closed", worker_.getName());
-            } else {
-                worker_.stop();
-                LogI("{} stoped", worker_.getName());
+bool Writer::checkState() noexcept {
+    if (!isOpen_ || isStop_) {
+        file_.withLock([](auto& file){
+            if (file) {
+                file->close();
             }
+            file.reset();
+        });
+        if (!isOpen_) {
+            worker_.pause();
+            LogI("{} closed", worker_.getName());
         } else {
-            constexpr auto kMaxIdleTime = 3000ms;
-            if ((Time::nowTimeStamp() - idleTime_).toMilliSeconds() > kMaxIdleTime) {
-                worker_.pause();
-            }
+            worker_.stop();
+            LogI("{} stoped", worker_.getName());
         }
+        return false;
+    }
+    if (dataQueue_.empty()) {
+        worker_.pause();
+        return false;
+    }
+    return true;
+}
+
+void Writer::process() noexcept {
+    constexpr static uint32_t kMaxWriteCount = 1024;
+    if (!checkState()) {
         return;
     }
-    
-    bool isSuccess = true;
     file_.withLock([&](auto& file){
-        for (auto& data : dataList) {
+        if (file->isFailed()){
+            return;
+        }
+        uint32_t writeCount = 0;
+        while (!dataQueue_.empty() && writeCount < kMaxWriteCount) {
             if (file->isFailed()){
-                isSuccess = false;
                 break;
             }
-            file->write(*data);
+            DataPtr data;
+            if (dataQueue_.tryPop(data)) {
+                file->write(*data);
+                writeCount++;
+            } else {
+                break;
+            }
         }
     });
-    if (!isSuccess) {
-        LogP("error, {} writer state is error.", worker_.getName());
-    }
-    idleTime_ = Time::nowTimeStamp();
 }
 
 uint32_t Writer::getHashId() noexcept {
@@ -142,9 +145,7 @@ bool Writer::write(DataPtr data) noexcept {
         LogE("unable to write data, file has been closed.");
         return false;
     }
-    dataList_.withLock([&](auto& vec){
-        vec.emplace_back(std::move(data));
-    });
+    dataQueue_.push(std::move(data));
     worker_.start();
     return true;
 }

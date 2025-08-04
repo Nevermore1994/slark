@@ -44,15 +44,19 @@ TEST(Reader, getPath) {
 TEST(Reader, open) {
     using namespace std::chrono_literals;
     using namespace std::string_literals;
-    FileUtil::deleteFile("test_read.txt");
+    File::deleteFile("test_read.txt");
     auto writer = std::make_unique<Writer>();
     writer->open("test_read.txt");
+    ASSERT_EQ(writer->isOpen(), true);
     auto str = "This section provides definitions for the specific terminology and the concepts used when describing the C++ programming language.\n"
                "A C++ program is a sequence of text files (typically header and source files) that contain declarations. They undergo translation to become an executable program, which is executed when the C++ implementation calls its main function.\n"
                "Certain words in a C++ program have special meaning, and these are known as keywords. Others can be used as identifiers. Comments are ignored during translation. C++ programs also contain literals, the values of characters inside them are determined by character sets and encodings. Certain characters in the program have to be represented with escape sequences.\n"
                ""s;
     writer->write(str);
-    writer->close();
+    std::this_thread::sleep_for(100ms);
+    std::cout << "dispose 1" << std::endl;
+    writer->dispose();
+    std::cout << "dispose 2" << std::endl;
     writer.reset();
 
     Reader reader;
@@ -65,7 +69,12 @@ TEST(Reader, open) {
     task->path = "test_read.txt";
     reader.open(std::move(task));
     reader.start();
-    std::this_thread::sleep_for(2s);
+    IOState state;
+    do {
+        std::this_thread::sleep_for(100ms);
+        state = reader.state();
+        std::cout << static_cast<int>(state) << std::endl;
+    } while (state != IOState::EndOfFile);
     reader.close();
     ASSERT_EQ(reader.state(), IOState::Closed);
 }
@@ -77,19 +86,19 @@ TEST(File, isExist) {
     writer2.open("test2.txt");
     writer1.close();
     writer2.close();
-    ASSERT_EQ(FileUtil::isFileExist("test1.txt"), true);
-    ASSERT_EQ(FileUtil::isFileExist("test2.txt"), true);
-    FileUtil::deleteFile("test1.txt");
-    FileUtil::deleteFile("test2.txt");
-    ASSERT_EQ(FileUtil::isFileExist("test1.txt"), false);
-    ASSERT_EQ(FileUtil::isFileExist("test2.txt"), false);
+    ASSERT_EQ(File::isFileExist("test1.txt"), true);
+    ASSERT_EQ(File::isFileExist("test2.txt"), true);
+    File::deleteFile("test1.txt");
+    File::deleteFile("test2.txt");
+    ASSERT_EQ(File::isFileExist("test1.txt"), false);
+    ASSERT_EQ(File::isFileExist("test2.txt"), false);
 }
 
 TEST(FileUtil, create) {
-    auto rootPath = FileUtil::rootPath();
+    auto rootPath = File::rootPath();
     auto testRootPath = rootPath + "/testDir";
     auto testPath = testRootPath + "/test1";
-    ASSERT_EQ(FileUtil::isDirExist(testPath), false);
-    ASSERT_EQ(FileUtil::createDir(testPath), true);
-    ASSERT_EQ(FileUtil::removeDir(testRootPath), true);
+    ASSERT_EQ(File::isDirExist(testPath), false);
+    ASSERT_EQ(File::createDir(testPath), true);
+    ASSERT_EQ(File::removeDir(testRootPath), true);
 }

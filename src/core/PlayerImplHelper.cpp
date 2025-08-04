@@ -64,7 +64,7 @@ bool PlayerImplHelper::isRenderEnd() noexcept {
         LogI("isRenderEnd");
         return true;
     }
-    constexpr double kMaxDriftTime = 0.1; //second
+
     auto time = player->currentPlayedTime();
     if (isEqualOrGreater(time, player->info_.duration)) {
         LogI("render end, played time:{}, duration:{}", time, player->info_.duration);
