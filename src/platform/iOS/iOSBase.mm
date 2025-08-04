@@ -29,7 +29,7 @@ NSString* stringViewToNSString(std::string_view view) {
 }
 
 
-namespace slark::FileUtil {
+namespace slark::File {
 
 std::string rootPath() noexcept {
     static auto res = [] {
