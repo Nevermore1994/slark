@@ -10,6 +10,7 @@
 #include "Thread.h"
 #include "File.h"
 #include "Synchronized.hpp"
+#include "MPSCQueue.hpp"
 
 namespace slark {
 
@@ -26,7 +27,7 @@ public:
     
     [[nodiscard]] IOState state() noexcept;
     
-    void release() noexcept;
+    void dispose() noexcept;
 public:
     bool write(DataPtr data) noexcept;
     bool write(Data&& data) noexcept;
@@ -44,13 +45,15 @@ public:
         return isOpen_;
     }
 private:
+    bool checkState() noexcept;
+    
     void process() noexcept;
 private:
     std::atomic_bool isOpen_ = false;
     std::atomic_bool isStop_ = false;
     Time::TimePoint idleTime_ = 0;
-    Synchronized<std::vector<DataPtr>> dataList_;
-    Synchronized<std::unique_ptr<FileUtil::WriteFile>> file_;
+    MPSCQueue<DataPtr> dataQueue_;
+    Synchronized<std::unique_ptr<File::WriteFile>> file_;
     Thread worker_;
 };
 

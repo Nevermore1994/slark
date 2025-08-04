@@ -13,7 +13,7 @@
 #include "FileUtil.h"
 #include "Data.hpp"
 
-namespace slark::FileUtil {
+namespace slark::File {
 
 using FileHandle = FILE*;
 

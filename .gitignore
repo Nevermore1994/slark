@@ -52,3 +52,4 @@ src/platform/Android/app/src/main/cpp/.idea
 src/platform/Android/sdk/.cxx
 demo/Android/.idea
 src/http/.idea
+config.json

@@ -1,6 +1,0 @@
-{
-    "platform": "PC",
-    "build_type": "Debug",
-    "disable_http": false,
-    "disable_test": false
-}

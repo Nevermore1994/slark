@@ -31,7 +31,9 @@ void printLog(const std::string& log);
 template <typename ...Args>
 void outputLog(LogType level, std::string_view format, Args&& ...args) {
     auto logStr = std::vformat(format, std::make_format_args(args...));
-    LogOutput::shareInstance().write(logStr);
+    if (level != LogType::Print) {
+        LogOutput::shareInstance().write(logStr);
+    }   
     if (level == LogType::Record) {
         return;
     }

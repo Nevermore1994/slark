@@ -79,11 +79,12 @@ TEST_F(ThreadPoolTest, Statistics) {
 
 TEST_F(ThreadPoolTest, StressTest) {
     std::atomic<int> counter{0};
-    std::vector<std::expected<std::future<void>, bool>> futures;
+    std::vector<std::expected<std::future<int>, bool>> futures;
 
     for (int i = 0; i < 1000; ++i) {
         futures.push_back(pool->submit([&counter]() {
             counter++;
+            return counter.load();
         }));
     }
     
@@ -94,7 +95,7 @@ TEST_F(ThreadPoolTest, StressTest) {
         }
     }
 
-    EXPECT_EQ(counter, successCount);
+    EXPECT_EQ(counter.load(), successCount);
 }
 
 TEST_F(ThreadPoolTest, ExecutionOrder) {
