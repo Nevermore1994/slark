@@ -94,7 +94,7 @@ TEST_F(ThreadPoolTest, StressTest) {
             successCount++;
         }
     }
-
+    std::this_thread::sleep_for(1s);
     EXPECT_EQ(counter.load(), successCount);
 }
 

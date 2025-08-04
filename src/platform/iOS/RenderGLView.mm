@@ -131,7 +131,8 @@ static const GLfloat kColorConversion709VideoRange[] = {
 @property(nonatomic, assign) GLuint renderBuffer;
 @property(nonatomic, assign) CVPixelBufferRef pendingBuffer;
 @property(nonatomic, assign) CVPixelBufferRef preRenderBuffer; // For screen rotation
-
+@property(nonatomic, assign) GLuint vertexCoordinateBuffer;
+@property(nonatomic, assign) GLuint textureCoordinateBuffer;
 @end
 
 @implementation RenderGLView
@@ -381,9 +382,26 @@ static const GLfloat kColorConversion709VideoRange[] = {
     uniforms[UNIFORM_ROTATION_ANGLE] = glGetUniformLocation(program, "preferredRotation");
     uniforms[UNIFORM_COLOR_CONVERSION_MATRIX] = glGetUniformLocation(program, "colorConversionMatrix");
     
-    if (_context == nullptr) {
-        return;
-    }
+    glGenBuffers(1, &_vertexCoordinateBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, _vertexCoordinateBuffer);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 8, NULL, GL_DYNAMIC_DRAW);
+    glVertexAttribPointer(attributes[ATTRIB_VERTEX], 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+    glEnableVertexAttribArray(attributes[ATTRIB_VERTEX]);
+    
+    static const GLfloat texCoords[] = {
+        0.0f, 1.0f,
+        1.0f, 1.0f,
+        0.0f, 0.0f,
+        1.0f, 0.0f
+    };
+    glGenBuffers(1, &_textureCoordinateBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, _textureCoordinateBuffer);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(texCoords), texCoords, GL_STATIC_DRAW);
+    glVertexAttribPointer(attributes[ATTRIB_TEXCOORD], 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+    glEnableVertexAttribArray(attributes[ATTRIB_TEXCOORD]);
+    
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    
     auto nativeContext = (__bridge EAGLContext*)_context->nativeContext();
     if (!nativeContext) {
         return;
@@ -633,20 +651,15 @@ static const GLfloat kColorConversion709VideoRange[] = {
           vertices[4], vertices[5],
           vertices[6], vertices[7]);
     
-    static const GLfloat texCoords[] = {
-        0.0f, 1.0f,  1.0f, 1.0f,  0.0f, 0.0f,  1.0f, 0.0f
-    };
-    
-    glVertexAttribPointer(attributes[ATTRIB_VERTEX], 2, GL_FLOAT, 0, 0, vertices);
-    glEnableVertexAttribArray(attributes[ATTRIB_VERTEX]);
-    
-    glVertexAttribPointer(attributes[ATTRIB_TEXCOORD], 2, GL_FLOAT, 0, 0, texCoords);
-    glEnableVertexAttribArray(attributes[ATTRIB_TEXCOORD]);
+    glBindBuffer(GL_ARRAY_BUFFER, _vertexCoordinateBuffer);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float) * 8, vertices);
+         
     
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     
     [nativeContext presentRenderbuffer:GL_RENDERBUFFER];
     _program->detach();
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
 - (void)cleanupTextures {
