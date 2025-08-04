@@ -122,7 +122,8 @@ static const GLfloat kColorConversion709VideoRange[] = {
     CVOpenGLESTextureRef _chromaTexture;
     CVOpenGLESTextureRef _renderTexture;
 }
-
+@property(atomic, assign) BOOL isActive;
+@property(nonatomic, assign) NSInteger renderInterval;
 @property(nonatomic, strong) CADisplayLink* displayLink;
 @property(nonatomic, strong) dispatch_queue_t renderQueue;
 @property(nonatomic, assign) GLint width;
