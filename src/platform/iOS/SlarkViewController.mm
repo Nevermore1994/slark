@@ -33,6 +33,7 @@
 @interface SlarkViewController() <RenderViewDelegate>
 @property(nonatomic, strong) RenderGLView* renderView;
 @property(nonatomic, strong) SlarkPlayer* player;
+@property(nonatomic, assign) BOOL isActive;
 @end
 
 @implementation SlarkViewController
@@ -47,6 +48,7 @@
         [self.renderView setContext:shareContext];
         [self.player setRenderImpl:[self.renderView renderImpl]];
         self.view = self.renderView;
+        [self setupNotifications];
     }
     return self;
 }
@@ -79,11 +81,19 @@
 }
 
 - (void)applicationWillResignActive {
-    self.renderView.isActive = NO;
+    if (self.renderView.isActive) {
+        [self.player pause];
+        _isActive = YES;
+    } else {
+        _isActive = NO;
+    }
 }
 
 - (void)applicationDidBecomeActive {
-    self.renderView.isActive = YES;
+    if (_isActive) {
+        [self.player play];
+    }
+    _isActive = NO;
 }
 
 - (void)viewWillAppear:(BOOL)animated {

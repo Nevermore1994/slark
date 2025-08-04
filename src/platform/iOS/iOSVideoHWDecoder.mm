@@ -141,7 +141,16 @@ DecoderErrorCode iOSVideoHWDecoder::decode(AVFrameRefPtr& frame) noexcept {
     decodeInfo->timeScale = frame->timeScale;
     decodeInfo->isDiscard = frame->isDiscard;
     
-    auto status = VTDecompressionSessionDecodeFrame(decodeSession_, sampleBuffer, kVTDecodeFrame_EnableAsynchronousDecompression, reinterpret_cast<void*>(decodeInfo), nullptr);
+    auto status = VTDecompressionSessionDecodeFrame(decodeSession_,
+        sampleBuffer, kVTDecodeFrame_EnableAsynchronousDecompression,
+        reinterpret_cast<void*>(decodeInfo), nullptr);
+    if (status == kVTInvalidSessionErr ||
+        status == kVTVideoDecoderMalfunctionErr) {
+        createDecodeSession();
+        status = VTDecompressionSessionDecodeFrame(decodeSession_,
+            sampleBuffer, kVTDecodeFrame_EnableAsynchronousDecompression,
+            reinterpret_cast<void*>(decodeInfo), nullptr);
+    }
     if (sampleBuffer) {
         CFRelease(sampleBuffer);
         sampleBuffer = nullptr;
@@ -162,6 +171,7 @@ void iOSVideoHWDecoder::flush() noexcept {
 }
 
 bool iOSVideoHWDecoder::createDecodeSession() noexcept {
+    reset();
     OSStatus status = noErr;
     auto config = std::dynamic_pointer_cast<VideoDecoderConfig>(config_);
     if (!config) {
@@ -226,7 +236,6 @@ bool iOSVideoHWDecoder::createDecodeSession() noexcept {
 }
 
 bool iOSVideoHWDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept {
-    reset();
     config_ = config;
     return createDecodeSession();
 }

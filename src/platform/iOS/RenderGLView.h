@@ -21,8 +21,7 @@ class IVideoRender;
 @end
 
 @interface RenderGLView : UIView
-@property(nonatomic, assign) NSInteger renderInterval;
-@property(nonatomic, assign) BOOL isActive;
+@property(atomic, assign, readonly) BOOL isActive;
 @property(nonatomic, weak) id<RenderViewDelegate> delegate;
 
 - (instancetype)initWithFrame:(CGRect) frame;
