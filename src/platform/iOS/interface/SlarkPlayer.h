@@ -11,7 +11,6 @@
 
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CMTime.h>
-
 /**
  * Player state definitions
  */
@@ -50,6 +49,13 @@ typedef NS_ENUM(NSUInteger, SlarkPlayerErrorCode) {
     SlarkPlayerErrorRenderError,
 };
 
+typedef NS_ENUM(NSUInteger, SlarkPlayerRotation) {
+    SlarkPlayerRotation_0,
+    SlarkPlayerRotation_90,
+    SlarkPlayerRotation_180,
+    SlarkPlayerRotation_270,
+};
+
 /**
  * Observer protocol for player notifications
  */
@@ -66,8 +72,14 @@ typedef NS_ENUM(NSUInteger, SlarkPlayerErrorCode) {
  * Main media player class
  */
 @interface SlarkPlayer : NSObject
-
-// Observer delegate
+@property(nonatomic, assign) BOOL isLoop;
+@property(nonatomic, assign) BOOL isMute;
+@property(nonatomic, assign) CGFloat volume;
+@property(nonatomic, assign) SlarkPlayerRotation rotation;
+@property(nonatomic, assign, readonly) SlarkPlayerState currentState;
+@property(nonatomic, assign, readonly) NSString* playerId;
+@property(nonatomic, assign, readonly) CMTime totalDuration;
+@property(nonatomic, assign, readonly) CMTime currentTime;
 @property (nonatomic, weak) id<ISlarkPlayerObserver> delegate;
 
 // Initialize with file path
@@ -93,26 +105,5 @@ typedef NS_ENUM(NSUInteger, SlarkPlayerErrorCode) {
 
 // Seek with accuracy option
 - (void)seek:(double) seekToTime isAccurate:(BOOL)isAccurate;
-
-// Enable/disable loop playback
-- (void)setLoop:(BOOL) isLoop;
-
-// Set volume (0.0-100.0)
-- (void)setVolume:(float) volume;
-
-// Mute/unmute audio
-- (void)setMute:(BOOL) isMute;
-
-// Get total media duration
-- (CMTime)totalDuration;
-
-// Get current playback time
-- (CMTime)currentTime;
-
-// Get current player state
-- (SlarkPlayerState)state;
-
-// Get unique player ID
-- (NSString*)playerId;
 
 @end

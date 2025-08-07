@@ -11,7 +11,7 @@
 #import <functional>
 #import <memory>
 #import <atomic>
-#import "RenderGLView.h"
+#import "RenderGLView.hpp"
 #include "video/VideoInfo.h"
 #include "GLShader.h"
 #include "GLProgram.h"
@@ -176,6 +176,7 @@ static const GLfloat kColorConversion709VideoRange[] = {
 #pragma mark - Setup
 
 - (void)setupDefaults {
+    _rotation = 0.0;
     _renderInterval = 30;
     _isActive = YES;
     _preferredConversion = kColorConversion709VideoRange;
@@ -265,6 +266,11 @@ static const GLfloat kColorConversion709VideoRange[] = {
 
 - (std::weak_ptr<IVideoRender>)renderImpl {
     return std::weak_ptr<IVideoRender>(_videoRenderImpl);
+}
+
+- (void)setRotation:(double)rotation {
+    static double DEGREES_TO_RADIANS = 0.017453292519943295;
+    _rotation = rotation * DEGREES_TO_RADIANS;
 }
 
 - (void)setRenderInterval:(NSInteger)renderInterval {
@@ -418,10 +424,6 @@ static const GLfloat kColorConversion709VideoRange[] = {
     }
     
     _program->attach();
-    
-    glUniform1i(uniforms[UNIFORM_Y], 0);
-    glUniform1i(uniforms[UNIFORM_UV], 1);
-    glUniform1f(uniforms[UNIFORM_ROTATION_ANGLE], 0);
 
     glUniformMatrix3fv(uniforms[UNIFORM_COLOR_CONVERSION_MATRIX], 1, GL_FALSE, _preferredConversion);
     _program->detach();
@@ -503,6 +505,7 @@ static const GLfloat kColorConversion709VideoRange[] = {
     if (!pixelBuffer || !_setupComplete.load()) return;
     
     _context->attachContext();
+    _program->attach();
     
     auto formatType = CVPixelBufferGetPixelFormatType(pixelBuffer);
     auto frameWidth = static_cast<GLint>(CVPixelBufferGetWidth(pixelBuffer));
@@ -522,6 +525,7 @@ static const GLfloat kColorConversion709VideoRange[] = {
     
     [self cleanupTextures];
     _context->detachContext();
+    _program->detach();
 }
 
 - (BOOL)uploadYUVTexture:(CVPixelBufferRef)pixelBuffer {
@@ -556,6 +560,7 @@ static const GLfloat kColorConversion709VideoRange[] = {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glUniform1i(uniforms[UNIFORM_Y], 0);
     
     // UV texture
     glActiveTexture(GL_TEXTURE1);
@@ -577,20 +582,17 @@ static const GLfloat kColorConversion709VideoRange[] = {
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     
-    // Update color conversion matrix
-    _program->attach();
-    glUniform1f(uniforms[UNIFORM_ROTATION_ANGLE], 0);
+    glUniform1i(uniforms[UNIFORM_UV], 1);
     glUniformMatrix3fv(uniforms[UNIFORM_COLOR_CONVERSION_MATRIX], 1, GL_FALSE, _preferredConversion);
-    _program->detach();
     
     return YES;
 }
 
+//Reserve
 - (BOOL)uploadRGBATexture:(CVPixelBufferRef)pixelBuffer {
     auto frameWidth = CVPixelBufferGetWidth(pixelBuffer);
     auto frameHeight = CVPixelBufferGetHeight(pixelBuffer);
 
-    _program->attach();
     glActiveTexture(GL_TEXTURE0);
     CVReturn err = CVOpenGLESTextureCacheCreateTextureFromImage(
         kCFAllocatorDefault, _videoTextureCache, pixelBuffer, NULL,
@@ -605,7 +607,6 @@ static const GLfloat kColorConversion709VideoRange[] = {
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    _program->detach();
     return YES;
 }
 
@@ -616,8 +617,6 @@ static const GLfloat kColorConversion709VideoRange[] = {
     glViewport(0, 0, _width, _height);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
-
-    _program->attach();
     
     // Calculate aspect ratio preserving viewport
     CGRect viewBounds = CGRectMake(0, 0, _width, _height);
@@ -654,12 +653,11 @@ static const GLfloat kColorConversion709VideoRange[] = {
     
     glBindBuffer(GL_ARRAY_BUFFER, _vertexCoordinateBuffer);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float) * 8, vertices);
-         
+    glUniform1f(uniforms[UNIFORM_ROTATION_ANGLE], _rotation);
     
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     
     [nativeContext presentRenderbuffer:GL_RENDERBUFFER];
-    _program->detach();
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 

@@ -160,7 +160,7 @@
         };
         _controllerView.onSetLoopClick = ^(BOOL loop) {
             @strongify(self);
-            [self.player setLoop:loop];
+            self.player.isLoop = loop;
         };
     }
     return _controllerView;

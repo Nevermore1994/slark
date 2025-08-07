@@ -9,6 +9,7 @@
 #define RenderGLView_h
 #import <UIKit/UIKit.h>
 #import "IEGLContext.h"
+#import "RenderGLViewDelegate.h"
 
 namespace slark {
 
@@ -16,18 +17,13 @@ class IVideoRender;
 
 }
 
-@protocol RenderViewDelegate <NSObject>
-- (CVPixelBufferRef)requestRender;
-@end
-
-@interface RenderGLView : UIView
+@interface RenderGLView : UIView <RenderGLViewDelegate>
 @property(atomic, assign, readonly) BOOL isActive;
-@property(nonatomic, weak) id<RenderViewDelegate> delegate;
+@property(nonatomic, assign) double rotation;
 
 - (instancetype)initWithFrame:(CGRect) frame;
 - (void)start;
 - (void)stop;
-- (CGFloat)scale;
 - (void)setContext:(slark::IEGLContextRefPtr) context;
 - (std::weak_ptr<slark::IVideoRender>)renderImpl;
 @end
