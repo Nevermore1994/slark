@@ -7,30 +7,16 @@
 
 #import <Foundation/Foundation.h>
 #import "SlarkViewController.h"
-#import "RenderGLView.h"
+#import "RenderGLView.hpp"
 #import "GLContextManager.h"
 #import "Player.h"
 
-@interface SlarkPlayer()
-- (std::unique_ptr<slark::Player>&) player;
-@end
-
 @interface SlarkPlayer(Render)
 - (void)setRenderImpl:(std::weak_ptr<slark::IVideoRender>) ptr;
-
+- (void)setRenderDelegate:(id<RenderGLViewDelegate>)renderDelegate;
 @end
 
-@implementation SlarkPlayer(Render)
-
-- (void)setRenderImpl:(std::weak_ptr<slark::IVideoRender>) ptr {
-    auto& player = [self player];
-    if (player) {
-        player->setRenderImpl(ptr);
-    }
-}
-@end
-
-@interface SlarkViewController() <RenderViewDelegate>
+@interface SlarkViewController() 
 @property(nonatomic, strong) RenderGLView* renderView;
 @property(nonatomic, strong) SlarkPlayer* player;
 @property(nonatomic, assign) BOOL isActive;
@@ -42,11 +28,11 @@
     if (self = [self init]) {
         self.player = player;
         self.renderView = [[RenderGLView alloc] initWithFrame:frame];
-        self.renderView.delegate = self;
         NSString* playerId = [self.player playerId];
         auto shareContext = slark::GLContextManager::shareInstance().createShareContextWithId([playerId UTF8String]);
         [self.renderView setContext:shareContext];
         [self.player setRenderImpl:[self.renderView renderImpl]];
+        self.player.renderDelegate = self.renderView;
         self.view = self.renderView;
         [self setupNotifications];
     }

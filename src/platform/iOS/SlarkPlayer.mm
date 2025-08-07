@@ -8,7 +8,7 @@
 #import "iOSBase.h"
 #import "Player.h"
 #import "GLContextManager.h"
-
+#import "RenderGLViewDelegate.h"
 
 #define STATE_ENUM_TO_CASE(value) \
     case slark::PlayerState::value: \
@@ -77,8 +77,7 @@ struct PlayerObserver final : public slark::IPlayerObserver
     std::unique_ptr<slark::Player> _player;
     std::shared_ptr<PlayerObserver> _observer;
 }
-
-- (std::unique_ptr<slark::Player>&) player;
+@property (nonatomic, weak) id<RenderGLViewDelegate> renderDelegate;
 @end
 
 @implementation SlarkPlayer
@@ -130,60 +129,114 @@ struct PlayerObserver final : public slark::IPlayerObserver
     return self;
 }
 
-- (std::unique_ptr<slark::Player>&) player {
-    return _player;
-}
-
 - (void)prepare {
-    _player->prepare();
+    if (_player) {
+        _player->prepare();
+    }
 }
 
 - (void)play {
-    _player->play();
+    if (_player) {
+        _player->play();
+    }
 }
 
 - (void)pause {
-    _player->pause();
+    if (_player) {
+        _player->pause();
+    }
 }
 
 - (void)stop {
-    _player->stop();
+    if (_player) {
+        _player->stop();
+    }
 }
  
 - (void)seek:(double) seekToTime {
-    _player->seek(seekToTime);
+    if (_player) {
+        _player->seek(seekToTime);
+    }
 }
 
 - (void)seek:(double) seekToTime isAccurate:(BOOL)isAccurate {
-    _player->seek(seekToTime, static_cast<bool>(isAccurate));
+    if (_player) {
+        _player->seek(seekToTime, static_cast<bool>(isAccurate));
+    }
 }
 
 - (void)setLoop:(BOOL) isLoop {
-    _player->setLoop(static_cast<bool>(isLoop));
+    if (_player) {
+        _player->setLoop(static_cast<bool>(isLoop));
+    }
 }
 
 - (void)setVolume:(float) volume {
-    _player->setVolume(volume);
+    if (_player) {
+        _player->setVolume(volume);
+    }
 }
 
 - (void)setMute:(BOOL) isMute {
-    _player->setMute(static_cast<bool>(isMute));
+    if (_player) {
+        _player->setMute(static_cast<bool>(isMute));
+    }
 }
 
 - (CMTime)totalDuration {
-    return CMTimeMakeWithSeconds(_player->info().duration, 1000);
+    if (_player) {
+        return CMTimeMakeWithSeconds(_player->info().duration, 1000);
+    }
+    return kCMTimeZero;
 }
 
 - (CMTime)currentTime {
-    return CMTimeMakeWithSeconds(_player->currentPlayedTime(), 1000);
+    if (_player) {
+        return CMTimeMakeWithSeconds(_player->currentPlayedTime(), 1000);
+    }
+    return kCMTimeZero;
 }
 
 - (SlarkPlayerState)state {
-    return convertState(_player->state());
+    if (_player) {
+        return convertState(_player->state());
+    }
+    return SlarkPlayerStateUnknown;
 }
 
 - (NSString*)playerId {
-    return [NSString stringWithUTF8String:_player->playerId().data()];
+    if (_player) {
+        return [NSString stringWithUTF8String:_player->playerId().data()];
+    }
+    return @"";
 }
 
+- (void)setRotation:(SlarkPlayerRotation)rotation {
+    double t = 0;
+    switch (rotation) {
+        case SlarkPlayerRotation_0:
+            t = 0;
+            break;
+        case SlarkPlayerRotation_90:
+            t = 90;
+            break;
+        case SlarkPlayerRotation_180:
+            t = 180;
+            break;
+        case SlarkPlayerRotation_270:
+            t = 270;
+            break;
+        default:
+            return;
+    }
+    if ([self.renderDelegate respondsToSelector:@selector(setRotation:)]) {
+        [self.renderDelegate setRotation:t];
+    }
+}
+
+- (void)setRenderImpl:(std::weak_ptr<slark::IVideoRender>) ptr {
+    if (_player) {
+        _player->setRenderImpl(ptr);
+    }
+}
 @end

@@ -150,11 +150,11 @@
         };
         _controllerView.onSetLoopClick = ^(BOOL loop) {
             @strongify(self);
-            [self.playerController.player setLoop:loop];
+            self.playerController.player.isLoop = loop;
         };
         _controllerView.onSetMute = ^(BOOL isMute) {
             @strongify(self);
-            [self.playerController.player setMute:isMute];
+            self.playerController.player.isMute = isMute;
         };
     }
     return _controllerView;
