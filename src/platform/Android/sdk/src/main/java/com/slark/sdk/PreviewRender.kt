@@ -16,7 +16,8 @@ class PreviewRender(): GLSurfaceView.Renderer {
     private var textureHandle: Int = 0
     private var texCoordHandle: Int = 0
     private var rotationHandle: Int = 0
-    private lateinit var texturePos: FloatBuffer
+    private var vertexVBO: Int = 0
+    private var textureVBO: Int = 0
     private var size: Size = Size(0, 0)
     @Volatile
     var sharedTexture: RenderTexture = RenderTexture.default()
@@ -30,17 +31,33 @@ class PreviewRender(): GLSurfaceView.Renderer {
                 textureHandle = GLES20.glGetUniformLocation(program, "uTexture")
                 texCoordHandle = GLES20.glGetAttribLocation(program, "aTexCoord")
                 rotationHandle = GLES20.glGetUniformLocation(program, "uRotation")
+
+                val buffer = IntArray(2)
+                GLES20.glGenBuffers(2, buffer, 0)
+                vertexVBO = buffer[0]
+                GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, vertexVBO)
+                GLES20.glBufferData(GLES20.GL_ARRAY_BUFFER, 8 * Float.SIZE_BYTES, null, GLES20.GL_DYNAMIC_DRAW)
+                GLES20.glVertexAttribPointer(positionHandle, 2, GLES20.GL_FLOAT, false, 0, 0)
+                GLES20.glEnableVertexAttribArray(positionHandle)
+                GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
+
+                val texturePos = ByteBuffer.allocateDirect(textureData.size * Float.SIZE_BYTES)
+                    .order(ByteOrder.nativeOrder())
+                    .asFloatBuffer().apply {
+                        put(textureData)
+                        position(0)
+                    }
+                textureVBO = buffer[1]
+                GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, textureVBO)
+                GLES20.glBufferData(GLES20.GL_ARRAY_BUFFER, textureData.size * Float.SIZE_BYTES, texturePos, GLES20.GL_STATIC_DRAW)
+                GLES20.glVertexAttribPointer(texCoordHandle, 2, GLES20.GL_FLOAT, false, 0, 0)
+                GLES20.glEnableVertexAttribArray(texCoordHandle)
+                GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
             }
             if (program == 0) {
                 SlarkLog.e(LOG_TAG, "create program failed")
                 break
             }
-            texturePos = ByteBuffer.allocateDirect(textureData.size * Float.SIZE_BYTES)
-                .order(ByteOrder.nativeOrder())
-                .asFloatBuffer().apply {
-                    put(textureData)
-                    position(0)
-                }
         } while(false)
     }
 
@@ -96,12 +113,6 @@ class PreviewRender(): GLSurfaceView.Renderer {
                 put(vertexPos)
                 position(0)
             }
-        GLES20.glVertexAttribPointer(positionHandle, 2, GLES20.GL_FLOAT, false, 0, vertexPosBuffer)
-        GLES20.glEnableVertexAttribArray(positionHandle)
-
-        texturePos.position(0)
-        GLES20.glVertexAttribPointer(texCoordHandle, 2, GLES20.GL_FLOAT, false, 0, texturePos)
-        GLES20.glEnableVertexAttribArray(texCoordHandle)
 
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, sharedTexture.textureId)
@@ -110,13 +121,16 @@ class PreviewRender(): GLSurfaceView.Renderer {
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
         GLES20.glUniform1i(textureHandle, 0)
-        GLES20.glUniform1f(rotationHandle, Math.toRadians(0.0).toFloat())
+        GLES20.glUniform1f(rotationHandle, Math.toRadians(rotation).toFloat())
+
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, vertexVBO)
+        GLES20.glBufferSubData(GLES20.GL_ARRAY_BUFFER, 0, vertexPos.size * Float.SIZE_BYTES, vertexPosBuffer)
+
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
 
-        checkGLStatus("render frame")
-        GLES20.glDisableVertexAttribArray(positionHandle)
-        GLES20.glDisableVertexAttribArray(texCoordHandle)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
+        GLES20.glUseProgram(0)
         SlarkLog.i(LOG_TAG, "draw frame success")
     }
 
@@ -124,6 +138,12 @@ class PreviewRender(): GLSurfaceView.Renderer {
         if (program != 0) {
             GLES20.glDeleteProgram(program)
             program = 0
+        }
+        if (vertexVBO != 0) {
+            val buffers = intArrayOf(vertexVBO, textureVBO)
+            GLES20.glDeleteBuffers(2, buffers, 0)
+            vertexVBO = 0
+            textureVBO = 0
         }
     }
 

@@ -6,7 +6,6 @@
 #include "JNIEnvGuard.hpp"
 #include "JNICache.h"
 #include "JNIHelper.h"
-#include "AndroidBase.h"
 #include "FileUtil.h"
 
 JavaVM *gJavaVM = nullptr;

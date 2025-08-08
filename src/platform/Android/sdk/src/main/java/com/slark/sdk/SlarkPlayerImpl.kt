@@ -27,7 +27,6 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
     private var renderThread: EGLRenderThread? = null
     private var renderView: View? = null
     private var isPlayingBeforeBackground = false
-    private var needRefreshAfterUpdate = false
 
     override var isLoop: Boolean = false
         set(value) {
@@ -164,8 +163,7 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
                 if (isRefresh) {
                     //It seems that the first refresh does not fully adapt to the surface,
                     //and it always takes the second refresh to display normally.
-                    renderThread?.refresh()
-                    needRefreshAfterUpdate = true
+                    renderThread?.rebuildSurface()
                 }
             }
 
@@ -176,10 +174,6 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
             }
 
             override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
-                if (needRefreshAfterUpdate) {
-                    needRefreshAfterUpdate = false
-                    renderThread?.refresh()
-                }
             }
         }
     }
@@ -199,7 +193,7 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
                     state == SlarkPlayerState.Ready ||
                     state == SlarkPlayerState.Completed
                 if (isRefresh) {
-                    renderThread?.refresh()
+                    renderThread?.rebuildSurface()
                 }
             }
 

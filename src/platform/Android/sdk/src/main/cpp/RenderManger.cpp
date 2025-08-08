@@ -24,6 +24,54 @@ struct SharedEGLContextInfo {
 using SharedEGLContextManager = Manager<SharedEGLContextInfo>;
 
 extern "C"
+JNIEXPORT void JNICALL
+Java_com_slark_sdk_EGLRenderThread_rebuildSurface(
+    JNIEnv *env,
+    jobject /*thiz*/,
+    jstring player_id,
+    jobject surface
+) {
+    auto playerId = JNI::FromJVM::toString(
+        env,
+        player_id
+    );
+    auto contextInfo = SharedEGLContextManager::shareInstance().find(playerId);
+    if (contextInfo == nullptr) {
+        LogE("failed to find EGL context for playerId: {}",
+             playerId);
+        return;
+    }
+    auto eglContext = contextInfo->context;
+    if (eglContext == nullptr) {
+        LogE("failed to get EGL context for playerId: {}",
+             playerId);
+        return;
+    }
+    eglContext->releaseSurface(contextInfo->surface);
+    contextInfo->surface = nullptr;
+    eglContext->detachContext();
+
+    auto *window = ANativeWindow_fromSurface(
+        env,
+        surface
+    );
+    if (window == nullptr) {
+        LogE("failed to get ANativeWindow from surface");
+        return;
+    }
+    auto eglSurface = eglContext->createWindowSurface(window);
+    if (eglSurface == nullptr) {
+        LogE("failed to create EGL surface for playerId: {}",
+             playerId);
+        ANativeWindow_release(window);
+        return;
+    }
+    eglContext->attachContext(eglSurface);
+    contextInfo->surface = eglSurface;
+    ANativeWindow_release(window);
+}
+
+extern "C"
 JNIEXPORT jboolean JNICALL
 Java_com_slark_sdk_EGLRenderThread_createEGLContext(
     JNIEnv *env,
