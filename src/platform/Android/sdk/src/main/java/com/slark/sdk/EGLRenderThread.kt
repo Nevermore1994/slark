@@ -17,6 +17,8 @@ class EGLRenderThread(
     private var pendingTexture: RenderTexture = RenderTexture.default()
     @Volatile
     private var hasRenderRequest = false
+    @Volatile
+    private var isRebuildingSurface = false
 
     override fun run() {
         super.run()
@@ -40,6 +42,12 @@ class EGLRenderThread(
                 hasRenderRequest = false
             }
             if (!running) break
+
+            if (isRebuildingSurface) {
+                SlarkLog.i(LOG_TAG, "Rebuilding surface with texture: ${pendingTexture.textureId}")
+                rebuildSurface(playerId, surface)
+                isRebuildingSurface = false
+            }
 
             if(renderer.drawFrame(pendingTexture)) {
                 swapGLBuffers(playerId, if (pendingTexture.isBackup) 0 else pendingTexture.textureId)
@@ -100,11 +108,12 @@ class EGLRenderThread(
         renderer.onSurfaceChanged(null, width, height)
     }
 
-    fun refresh() {
+    fun rebuildSurface() {
         val backupTexture = getBackupTextureId(playerId)
         if (backupTexture != null && backupTexture.isValid()) {
             backupTexture.isBackup = true
             SlarkLog.i(LOG_TAG, "Using backup texture: ${backupTexture.textureId}")
+            isRebuildingSurface = true
             render(backupTexture)
         } else {
             SlarkLog.w(LOG_TAG, "No valid backup texture available")
@@ -118,6 +127,8 @@ class EGLRenderThread(
     private external fun swapGLBuffers(playerId: String, textureId: Int): Boolean
 
     private external fun getBackupTextureId(playerId: String): RenderTexture?
+
+    private external fun rebuildSurface(playerId: String, surface: Surface)
 
     companion object {
         const val LOG_TAG = "EGLRenderThread"

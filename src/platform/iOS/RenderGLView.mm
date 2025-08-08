@@ -171,6 +171,14 @@ static const GLfloat kColorConversion709VideoRange[] = {
         CVPixelBufferRelease(_preRenderBuffer);
         _preRenderBuffer = NULL;
     }
+    if (_vertexCoordinateBuffer) {
+        glDeleteBuffers(1, &_vertexCoordinateBuffer);
+        _vertexCoordinateBuffer = 0;
+    }
+    if (_textureCoordinateBuffer) {
+        glDeleteBuffers(1, &_textureCoordinateBuffer);
+        _textureCoordinateBuffer = 0;
+    }
 }
 
 #pragma mark - Setup
@@ -192,6 +200,8 @@ static const GLfloat kColorConversion709VideoRange[] = {
     _lumaTexture = NULL;
     _chromaTexture = NULL;
     _renderTexture = NULL;
+    _vertexCoordinateBuffer = 0;
+    _textureCoordinateBuffer = 0;
 }
 
 - (void)setupRenderQueue {
