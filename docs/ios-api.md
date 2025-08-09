@@ -12,6 +12,8 @@ Slark iOS SDK provides complete media playback functionality, supporting both lo
 - [Enumerations](#enumerations)
   - [SlarkPlayerState](#slarkplayerstate)
   - [SlarkPlayerEvent](#slarkplayerevent)
+  - [SlarkPlayerErrorCode](#slarkplayererrorcode)
+  - [SlarkPlayerRotation](#slarkplayerrotation)
 - [Usage Examples](#usage-examples)
 
 ## Core Classes
@@ -27,6 +29,59 @@ The main media player class that provides complete audio and video playback cont
 ```
 - **Description**: Player observer delegate for receiving playback event notifications
 - **Type**: `id<ISlarkPlayerObserver>`
+
+```objc
+@property(nonatomic, assign) BOOL isLoop;
+```
+- **Description**: Loop playback mode
+- **Type**: `BOOL`
+
+```objc
+@property(nonatomic, assign) BOOL isMute;
+```
+- **Description**: Mute state
+- **Type**: `BOOL`
+
+```objc
+@property(nonatomic, assign) CGFloat volume;
+```
+- **Description**: Volume control
+- **Type**: `CGFloat`
+- **Range**: 0.0 - 100.0
+
+```objc
+@property(nonatomic, assign) SlarkPlayerRotation rotation;
+```
+- **Description**: Video rotation angle
+- **Type**: `SlarkPlayerRotation`
+
+```objc
+@property(nonatomic, assign, readonly) SlarkPlayerState currentState;
+```
+- **Description**: Current player state
+- **Type**: `SlarkPlayerState`
+- **Access**: Read-only
+
+```objc
+@property(nonatomic, assign, readonly) NSString* playerId;
+```
+- **Description**: Player unique identifier
+- **Type**: `NSString*`
+- **Access**: Read-only
+
+```objc
+@property(nonatomic, assign, readonly) CMTime totalDuration;
+```
+- **Description**: Total media duration
+- **Type**: `CMTime`
+- **Access**: Read-only
+
+```objc
+@property(nonatomic, assign, readonly) CMTime currentTime;
+```
+- **Description**: Current playback time
+- **Type**: `CMTime`
+- **Access**: Read-only
 
 #### Initialization Methods
 
@@ -86,57 +141,6 @@ The main media player class that provides complete audio and video playback cont
 - **Parameters**: 
   - `seekToTime`: Target time position (seconds)
   - `isAccurate`: Whether to use accurate positioning
-
-#### Audio Control
-
-```objc
-- (void)setVolume:(float) volume;
-```
-- **Description**: Set volume
-- **Parameters**: 
-  - `volume`: Volume value (0.0-100.0)
-
-```objc
-- (void)setMute:(BOOL) isMute;
-```
-- **Description**: Set mute state
-- **Parameters**: 
-  - `isMute`: Whether to mute
-
-#### Playback Mode Control
-
-```objc
-- (void)setLoop:(BOOL) isLoop;
-```
-- **Description**: Set loop playback mode
-- **Parameters**: 
-  - `isLoop`: Whether to loop playback
-
-#### Information Retrieval Methods
-
-```objc
-- (CMTime)totalDuration;
-```
-- **Description**: Get total media duration
-- **Return Value**: Total duration (CMTime)
-
-```objc
-- (CMTime)currentTime;
-```
-- **Description**: Get current playback time
-- **Return Value**: Current playback time (CMTime)
-
-```objc
-- (SlarkPlayerState)state;
-```
-- **Description**: Get current player state
-- **Return Value**: Player state enumeration value
-
-```objc
-- (NSString*)playerId;
-```
-- **Description**: Get player unique identifier
-- **Return Value**: Player ID string
 
 ### SlarkViewController
 
@@ -202,19 +206,19 @@ Player observer protocol for receiving playback status and event notifications.
 Player state enumeration.
 
 ```objc
-typedef enum : NSUInteger {
-    PlayerStateNotInited,      // Not initialized
-    PlayerStateInitializing,   // Initializing
-    PlayerStatePrepared,       // Prepared
-    PlayerStateBuffering,      // Buffering
-    PlayerStateReady,          // Ready to play
-    PlayerStatePlaying,        // Playing
-    PlayerStatePause,          // Paused
-    PlayerStateStop,           // Stopped
-    PlayerStateError,          // Error
-    PlayerStateCompleted,      // Playback completed
-    PlayerStateUnknown         // Unknown state
-} SlarkPlayerState;
+typedef NS_ENUM(NSUInteger, SlarkPlayerState) {
+    SlarkPlayerStateNotInited,      // Not initialized
+    SlarkPlayerStateInitializing,   // Initializing
+    SlarkPlayerStatePrepared,       // Ready for playback
+    SlarkPlayerStateBuffering,      // Loading content
+    SlarkPlayerStateReady,          // Ready to play
+    SlarkPlayerStatePlaying,        // Currently playing
+    SlarkPlayerStatePause,          // Paused
+    SlarkPlayerStateStop,           // Stopped
+    SlarkPlayerStateError,          // Error occurred
+    SlarkPlayerStateCompleted,      // Playback finished
+    SlarkPlayerStateUnknown         // Unknown state
+};
 ```
 
 ### SlarkPlayerEvent
@@ -222,13 +226,41 @@ typedef enum : NSUInteger {
 Player event enumeration.
 
 ```objc
-typedef enum : NSUInteger {
-    PlayerEventFirstFrameRendered,  // First frame rendered
-    PlayerEventSeekDone,           // Seek completed
-    PlayerEventPlayEnd,            // Playback ended
-    PlayerEventUpdateCacheTime,    // Cache updated
-    PlayerEventOnError,            // Error occurred
-} SlarkPlayerEvent;
+typedef NS_ENUM(NSUInteger, SlarkPlayerEvent) {
+    SlarkPlayerEventFirstFrameRendered,  // First frame displayed
+    SlarkPlayerEventSeekDone,           // Seek completed
+    SlarkPlayerEventPlayEnd,            // Playback ended
+    SlarkPlayerEventUpdateCacheTime,    // Cache updated
+    SlarkPlayerEventOnError,            // Error occurred
+};
+```
+
+### SlarkPlayerErrorCode
+
+Player error code enumeration.
+
+```objc
+typedef NS_ENUM(NSUInteger, SlarkPlayerErrorCode) {
+    SlarkPlayerErrorFileError = 1000,       // File error
+    SlarkPlayerErrorNetWorkError,           // Network error
+    SlarkPlayerErrorNotSupportFormat = 2000, // Format not supported
+    SlarkPlayerErrorDemuxError,             // Demux error
+    SlarkPlayerErrorDecodeError,            // Decode error
+    SlarkPlayerErrorRenderError,            // Render error
+};
+```
+
+### SlarkPlayerRotation
+
+Video rotation enumeration.
+
+```objc
+typedef NS_ENUM(NSUInteger, SlarkPlayerRotation) {
+    SlarkPlayerRotation_0,      // 0 degrees
+    SlarkPlayerRotation_90,     // 90 degrees
+    SlarkPlayerRotation_180,    // 180 degrees
+    SlarkPlayerRotation_270,    // 270 degrees
+};
 ```
 
 ## Usage Examples
@@ -277,8 +309,20 @@ typedef enum : NSUInteger {
     [self.player seek:time];
 }
 
-- (void)setVolume:(float)volume {
-    [self.player setVolume:volume];
+- (void)setVolume:(CGFloat)volume {
+    self.player.volume = volume;
+}
+
+- (void)setLoop:(BOOL)loop {
+    self.player.isLoop = loop;
+}
+
+- (void)setMute:(BOOL)mute {
+    self.player.isMute = mute;
+}
+
+- (void)setRotation:(SlarkPlayerRotation)rotation {
+    self.player.rotation = rotation;
 }
 
 #pragma mark - ISlarkPlayerObserver
@@ -286,38 +330,79 @@ typedef enum : NSUInteger {
 - (void)notifyTime:(NSString*)playerId time:(double)time {
     // Update playback progress UI
     NSLog(@"Playback time: %.2f", time);
+    // Update progress bar on main thread
+    dispatch_async(dispatch_get_main_queue(), ^{
+        // Update UI components
+    });
 }
 
 - (void)notifyState:(NSString*)playerId state:(SlarkPlayerState)state {
-    switch (state) {
-        case PlayerStatePlaying:
-            NSLog(@"Playback started");
+    dispatch_async(dispatch_get_main_queue(), ^{
+        switch (state) {
+            case SlarkPlayerStatePlaying:
+                NSLog(@"Playback started");
+                break;
+            case SlarkPlayerStatePause:
+                NSLog(@"Playback paused");
+                break;
+            case SlarkPlayerStateCompleted:
+                NSLog(@"Playback completed");
+                break;
+            case SlarkPlayerStateError:
+                NSLog(@"Playback error");
+                break;
+            default:
+                break;
+        }
+    });
+}
+
+- (void)notifyEvent:(NSString*)playerId event:(SlarkPlayerEvent)event value:(NSString*)value {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        switch (event) {
+            case SlarkPlayerEventFirstFrameRendered:
+                NSLog(@"First frame rendered");
+                break;
+            case SlarkPlayerEventSeekDone:
+                NSLog(@"Seek completed");
+                break;
+            case SlarkPlayerEventOnError:
+                NSLog(@"Playback error: %@", value);
+                [self handlePlaybackError:value];
+                break;
+            default:
+                break;
+        }
+    });
+}
+
+- (void)handlePlaybackError:(NSString*)errorValue {
+    NSInteger errorCode = [errorValue integerValue];
+    switch (errorCode) {
+        case SlarkPlayerErrorNetWorkError:
+            [self showErrorAlert:@"Network connection failed, please check network settings"];
             break;
-        case PlayerStatePause:
-            NSLog(@"Playback paused");
+        case SlarkPlayerErrorFileError:
+            [self showErrorAlert:@"File cannot be opened or does not exist"];
             break;
-        case PlayerStateCompleted:
-            NSLog(@"Playback completed");
-            break;
-        case PlayerStateError:
-            NSLog(@"Playback error");
+        case SlarkPlayerErrorDecodeError:
+            [self showErrorAlert:@"Video format not supported"];
             break;
         default:
+            [self showErrorAlert:[NSString stringWithFormat:@"Playback error: %@", errorValue]];
             break;
     }
 }
 
-- (void)notifyEvent:(NSString*)playerId event:(SlarkPlayerEvent)event value:(NSString*)value {
-    switch (event) {
-        case PlayerEventFirstFrameRendered:
-            NSLog(@"First frame rendered");
-            break;
-        case PlayerEventSeekDone:
-            NSLog(@"Seek completed");
-            break;
-        default:
-            break;
-    }
+- (void)showErrorAlert:(NSString*)message {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Playback Error"
+                                                                   message:message
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertAction *okAction = [UIAlertAction actionWithTitle:@"OK"
+                                                       style:UIAlertActionStyleDefault
+                                                     handler:nil];
+    [alert addAction:okAction];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 @end
@@ -331,12 +416,26 @@ SlarkPlayer *audioPlayer = [[SlarkPlayer alloc] init:@"path/to/audio.wav"];
 audioPlayer.delegate = self;
 
 // Set audio properties
-[audioPlayer setVolume:80.0f];
-[audioPlayer setLoop:YES];
+audioPlayer.volume = 80.0f;
+audioPlayer.isLoop = YES;
 
 // Start playback
 [audioPlayer prepare];
 [audioPlayer play];
+```
+
+### Time Range Playback Example
+
+```objc
+// Play specific time range (30 seconds starting from 60 seconds)
+CMTime startTime = CMTimeMakeWithSeconds(60.0, 600);
+CMTime duration = CMTimeMakeWithSeconds(30.0, 600);
+CMTimeRange range = CMTimeRangeMake(startTime, duration);
+
+SlarkPlayer *player = [[SlarkPlayer alloc] initWithTimeRange:@"https://example.com/video.mp4" 
+                                                       range:range];
+player.delegate = self;
+[player prepare];
 ```
 
 ### Network Streaming Media Playback
@@ -350,27 +449,85 @@ hlsPlayer.delegate = self;
 [hlsPlayer play];
 ```
 
+### Lifecycle Management
+
+```objc
+@interface PlayerViewController ()
+@property (nonatomic, strong) SlarkPlayer *player;
+@end
+
+@implementation PlayerViewController
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    // Resume playback if needed
+}
+
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
+    // Pause playback when view disappears
+    [self.player pause];
+}
+
+- (void)dealloc {
+    // Clean up resources
+    [self.player stop];
+    self.player.delegate = nil;
+    self.player = nil;
+}
+
+@end
+```
+
 ## Important Notes
 
-1. **Thread Safety**: All observer callbacks are executed on the main thread
+1. **Thread Safety**: All observer callbacks are executed on background threads, UI operations must be dispatched to the main queue
 2. **Memory Management**: Use weak references when setting delegates to avoid retain cycles
 3. **Prepare Before Play**: Must call `prepare` method before performing playback operations
 4. **View Lifecycle**: Call `stop` method at appropriate times to release resources
 5. **Network Permissions**: Network playback requires configuring network access permissions in Info.plist
+6. **CMTime Usage**: iOS uses CMTime for precise time representation, which provides better accuracy than double values
 
 ## Error Handling
 
 When errors occur during playback, they are notified through the following ways:
 
-1. Player state changes to `PlayerStateError`
-2. Triggers `PlayerEventOnError` event
+1. Player state changes to `SlarkPlayerStateError`
+2. Triggers `SlarkPlayerEventOnError` event
 3. Error information is passed through the observer protocol's `notifyEvent` method
 
 ```objc
 - (void)notifyEvent:(NSString*)playerId event:(SlarkPlayerEvent)event value:(NSString*)value {
-    if (event == PlayerEventOnError) {
-        NSLog(@"Playback error: %@", value);
-        // Handle error logic
+    if (event == SlarkPlayerEventOnError) {
+        NSInteger errorCode = [value integerValue];
+        switch (errorCode) {
+            case SlarkPlayerErrorNetWorkError:
+                NSLog(@"Network error occurred");
+                break;
+            case SlarkPlayerErrorFileError:
+                NSLog(@"File error occurred");
+                break;
+            case SlarkPlayerErrorDecodeError:
+                NSLog(@"Decode error occurred");
+                break;
+            default:
+                NSLog(@"Unknown error: %@", value);
+                break;
+        }
     }
 }
 ```
+
+## Network Configuration
+
+For network playback, add the following to your app's `Info.plist`:
+
+```xml
+<key>NSAppTransportSecurity</key>
+<dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <true/>
+</dict>
+```
+
+Note: For production apps, consider using more specific security configurations instead of allowing arbitrary loads.

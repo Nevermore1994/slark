@@ -1,7 +1,6 @@
 
 ## Android API 文档
 
-```markdown:docs/android-api.md
 # Slark Android API Documentation
 
 Slark Android SDK provides complete media playback functionality, supporting both local file and network streaming media playback.
@@ -20,7 +19,8 @@ Slark Android SDK provides complete media playback functionality, supporting bot
   - [PlayerErrorCode](#playererrorcode)
 - [Render Target](#render-target)
   - [SlarkRenderTarget](#slarkrendertarget)
-- [Time Range](#time-range)
+- [Time Classes](#time-classes)
+  - [KtTime](#kttime)
   - [KtTimeRange](#kttimerange)
 - [Usage Examples](#usage-examples)
 
@@ -276,6 +276,20 @@ enum class PlayerErrorCode {
     DemuxError,     // Demux error
     DecodeError,    // Decode error
     RenderError;    // Render error
+    
+    companion object {
+        fun fromString(value: String): PlayerErrorCode? {
+            return when (value.toInt()) {
+                0 -> OpenFileError
+                1 -> NetWorkError
+                2 -> NotSupport
+                3 -> DemuxError 
+                4 -> DecodeError
+                5 -> RenderError
+                else -> null
+            }
+        }
+    }
 }
 ```
 
@@ -307,7 +321,36 @@ sealed class SlarkRenderTarget {
    - Maximum flexibility
    - Requires manual size management
 
-## Time Range
+## Time Classes
+
+### KtTime
+
+Time representation class with precision control.
+
+```kotlin
+data class KtTime(val value: Long, val timescale: Int = 1000) : Comparable<KtTime> {
+    fun toSeconds(): Double
+    
+    operator fun plus(other: KtTime): KtTime
+    operator fun minus(other: KtTime): KtTime
+    
+    fun isValid(): Boolean
+    
+    companion object {
+        fun fromSeconds(seconds: Double, timescale: Int = 600): KtTime
+        val zero: KtTime
+    }
+}
+```
+
+#### Properties and Methods
+
+- **value**: Time value in the specified timescale units
+- **timescale**: Number of units per second (default: 1000 for milliseconds)
+- **toSeconds()**: Convert to seconds as Double
+- **fromSeconds()**: Create KtTime from seconds
+- **Arithmetic operators**: Support addition and subtraction
+- **Comparison**: Implements Comparable interface
 
 ### KtTimeRange
 
@@ -315,11 +358,32 @@ Time range class for specifying playback time segments.
 
 ```kotlin
 data class KtTimeRange(val start: KtTime, val duration: KtTime) {
+    val end: KtTime
+    
+    fun get(): Pair<Double, Double>
+    fun contains(time: KtTime): Boolean
+    fun isOverlap(other: KtTimeRange): Boolean
+    fun overlap(other: KtTimeRange): KtTimeRange?
+    fun union(other: KtTimeRange): KtTimeRange?
+    fun isValid(): Boolean
+    
     companion object {
-        val zero = KtTimeRange(KtTime.zero, KtTime.zero)
+        val zero: KtTimeRange
     }
 }
 ```
+
+#### Properties and Methods
+
+- **start**: Start time of the range
+- **duration**: Duration of the range
+- **end**: Computed end time (start + duration)
+- **get()**: Returns start and end times as seconds pair
+- **contains()**: Check if a time is within the range
+- **isOverlap()**: Check if two ranges overlap
+- **overlap()**: Get overlapping portion of two ranges
+- **union()**: Combine two ranges into one
+- **isValid()**: Check if range is valid
 
 ## Usage Examples
 
@@ -334,23 +398,20 @@ class PlayerActivity : AppCompatActivity(), SlarkPlayerObserver {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_player)
         
-        // 1. Initialize SDK
-        SlarkSdk.init(application)
-        
-        // 2. Create player configuration
+        // 1. Create player configuration
         val config = SlarkPlayerConfig("https://example.com/video.mp4")
         
-        // 3. Create player
+        // 2. Create player
         player = SlarkPlayerFactory.createPlayer(config)
         
-        // 4. Set observer
+        // 3. Set observer
         player?.setObserver(this)
         
-        // 5. Set render target
+        // 4. Set render target
         textureView = findViewById(R.id.texture_view)
         player?.setRenderTarget(SlarkRenderTarget.FromTextureView(textureView))
         
-        // 6. Prepare for playback
+        // 5. Prepare for playback
         player?.prepare()
     }
     
@@ -377,7 +438,7 @@ class PlayerActivity : AppCompatActivity(), SlarkPlayerObserver {
     }
     
     // SlarkPlayerObserver implementation
-    override fun onTimeUpdate(playerId: String, time: Double) {
+    override fun notifyTime(playerId: String, time: Double) {
         // Update playback progress UI
         runOnUiThread {
             Log.d("Player", "Playback time: $time")
@@ -385,7 +446,7 @@ class PlayerActivity : AppCompatActivity(), SlarkPlayerObserver {
         }
     }
     
-    override fun onStateChanged(playerId: String, state: SlarkPlayerState) {
+    override fun notifyState(playerId: String, state: SlarkPlayerState) {
         runOnUiThread {
             when (state) {
                 SlarkPlayerState.Playing -> {
@@ -406,7 +467,7 @@ class PlayerActivity : AppCompatActivity(), SlarkPlayerObserver {
         }
     }
     
-    override fun onEvent(playerId: String, event: SlarkPlayerEvent, value: String) {
+    override fun notifyEvent(playerId: String, event: SlarkPlayerEvent, value: String) {
         runOnUiThread {
             when (event) {
                 SlarkPlayerEvent.FirstFrameRendered -> {
@@ -449,6 +510,22 @@ class AudioPlayerActivity : AppCompatActivity(), SlarkPlayerObserver {
         audioPlayer?.play()
     }
 }
+```
+
+### Time Range Playback Example
+
+```kotlin
+// Play specific time range
+val startTime = KtTime.fromSeconds(30.0)  // Start at 30 seconds
+val duration = KtTime.fromSeconds(60.0)   // Play for 60 seconds
+val timeRange = KtTimeRange(startTime, duration)
+
+val config = SlarkPlayerConfig(
+    dataSource = "https://example.com/video.mp4",
+    timeRange = timeRange
+)
+
+val player = SlarkPlayerFactory.createPlayer(config)
 ```
 
 ### Different Render Target Examples
@@ -494,7 +571,7 @@ class PlayerActivity : AppCompatActivity() {
 ### Error Handling
 
 ```kotlin
-override fun onEvent(playerId: String, event: SlarkPlayerEvent, value: String) {
+override fun notifyEvent(playerId: String, event: SlarkPlayerEvent, value: String) {
     when (event) {
         SlarkPlayerEvent.OnError -> {
             val errorCode = PlayerErrorCode.fromString(value)
@@ -528,6 +605,7 @@ override fun onEvent(playerId: String, event: SlarkPlayerEvent, value: String) {
 3. **Resource Management**: Call `release()` method in time to release player resources
 4. **Network Permissions**: Network playback requires adding network permissions in AndroidManifest.xml
 5. **Lifecycle**: Properly handle application lifecycle to avoid memory leaks
+6. **Time Precision**: Use KtTime for precise time calculations and KtTimeRange for time segments
 
 ## Permission Configuration
 
