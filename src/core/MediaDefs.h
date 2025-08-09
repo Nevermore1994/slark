@@ -22,7 +22,7 @@ extern const std::string_view MEDIA_MIMETYPE_AUDIO_AAC_ADTS;
 enum class RenderStatus {
     Unknown,
     Ready,
-    Play,
+    Playing,
     Pause,
     Stop,
     Error,

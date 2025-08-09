@@ -15,12 +15,17 @@ class IEGLContext {
 public:
     virtual ~IEGLContext() = default;
     
-    virtual bool init(void* context = nullptr) = 0;
+    virtual bool init(void* context) = 0;
     
     virtual void release() = 0;
-    
-    virtual void acttachContext() = 0;
-    
+
+#if SLARK_IOS
+    virtual void attachContext() = 0;
+#elif SLARK_ANDROID
+    virtual void attachContext(void* surface) = 0;
+
+    virtual void attachContext(void* drawSurface, void* readSurface) = 0;
+#endif
     virtual void detachContext() = 0;
     
     virtual void* nativeContext() = 0;
@@ -29,6 +34,7 @@ public:
 using IEGLContextPtr = std::unique_ptr<IEGLContext>;
 using IEGLContextRefPtr = std::shared_ptr<IEGLContext>;
 
-IEGLContextPtr createEGLContext();
+IEGLContextRefPtr createGLContext() noexcept;
+IEGLContextRefPtr createMainGLContext() noexcept;
 
 }

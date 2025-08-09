@@ -18,8 +18,9 @@
 namespace slark {
 
 enum class PlayerState : uint8_t {
-    Unknown = 0,
+    NotInited = 0,
     Initializing,
+    Prepared,
     Buffering,
     Ready,
     Playing,
@@ -27,25 +28,32 @@ enum class PlayerState : uint8_t {
     Stop,
     Error,
     Completed,
+    Unknown,
 };
 
 enum class PlayerEvent : uint8_t {
     FirstFrameRendered,
     SeekDone,
     PlayEnd,
+    UpdateCacheTime,
     OnError,
 };
 
-enum class PlayerErrorCode : uint8_t {
-    OpenFileError,
+enum class PlayerErrorCode : uint32_t {
+    FileError = 1000,
+    NetWorkError,
+    NotSupportFormat = 2000,
+    DemuxError,
+    DecodeError,
+    RenderError,
 };
 
 struct IPlayerObserver {
-    virtual void notifyTime(std::string_view playerId, long double time) = 0;
+    virtual void notifyPlayedTime(std::string_view playerId, double time) = 0;
 
-    virtual void notifyState(std::string_view playerId, PlayerState state) = 0;
+    virtual void notifyPlayerState(std::string_view playerId, PlayerState state) = 0;
 
-    virtual void notifyEvent(std::string_view playerId, PlayerEvent event, std::string value) = 0;
+    virtual void notifyPlayerEvent(std::string_view playerId, PlayerEvent event, std::string value) = 0;
     
     virtual ~IPlayerObserver() = default;
 };
@@ -64,14 +72,12 @@ struct ResourceItem {
 
 struct PlayerSetting {
     bool isLoop = false;
+    bool isMute = false;
     bool enableAudioSoftDecode = false;
     bool enableVideoSoftDecode = false;
-    bool isMute = false;
-    uint32_t width = 0;
-    uint32_t height = 0;
     float volume = 100.0f;
-    long double maxCacheTime = 30.0; //seconds
-    long double minCacheTime = 5.0; //seconds
+    double maxCacheTime = 30.0; //seconds
+    double minCacheTime = 5.0; //seconds
 };
 
 struct PlayerParams {
@@ -81,12 +87,15 @@ struct PlayerParams {
 };
 
 struct PlayerInfo {
+    bool isValid = false;
     bool hasVideo = false;
     bool hasAudio = false;
-    long double duration = 0;
+    double duration = 0;
 };
 
 struct IVideoRender;
+
+class DemuxerHelper;
 
 class Player {
 
@@ -96,31 +105,28 @@ public:
     ~Player();
 
 public:
+    void prepare() noexcept;
+
     void play() noexcept;
 
     void stop() noexcept;
 
     void pause() noexcept;
 
-    void seek(long double time) noexcept;
-
-    void seek(long double time, bool isAccurate) noexcept;
+    void seek(double time, bool isAccurate = false) noexcept;
 
     void setLoop(bool isLoop);
     
     void setVolume(float volume);
     
     void setMute(bool isMute);
-     
-    void setRenderSize(uint32_t width, uint32_t height);
 
     void addObserver(IPlayerObserverPtr observer) noexcept;
     
     void removeObserver() noexcept;
-
-    void* requestRender() noexcept;
     
-    void setRenderImpl(std::weak_ptr<IVideoRender>& render);
+    void setRenderImpl(std::weak_ptr<IVideoRender> render) noexcept;
+
 public:
     PlayerParams peek() noexcept;
     
@@ -128,17 +134,16 @@ public:
 
     PlayerState state() noexcept;
     
-    const PlayerInfo& info() noexcept;
+    PlayerInfo info() noexcept;
     
     [[nodiscard]] std::string_view playerId() const noexcept;
     
-    [[nodiscard]] long double currentPlayedTime() noexcept;
-private:
-    void setState(PlayerState state) noexcept;
+    [[nodiscard]] double currentPlayedTime() noexcept;
 
 private:
+    friend class PlayerImplHelper;
     class Impl;
-    std::unique_ptr<Impl> pimpl_;
+    std::shared_ptr<Impl> pimpl_;
 };
 
 }//end namespace slark

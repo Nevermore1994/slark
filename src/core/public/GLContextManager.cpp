@@ -40,13 +40,13 @@ IEGLContextRefPtr GLContextManager::getMainContext(const std::string& id) noexce
 
 IEGLContextRefPtr GLContextManager::createShareContextWithId(const std::string& id) noexcept {
     auto ptr = getMainContext(id);
-    auto res = std::shared_ptr<IEGLContext>(createEGLContext());
+    auto res = std::shared_ptr<IEGLContext>(createGLContext());
     res->init(ptr->nativeContext());
     return res;
 }
 
 #if !SLARK_IOS && !SLARK_ANDROID
-IEGLContextPtr createEGLContext() {
+IEGLContextRefPtr createGLContext() noexcept {
     return nullptr;
 }
 #endif

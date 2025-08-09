@@ -14,20 +14,10 @@ namespace slark {
 #pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 #endif
 
-#if DEBUG
+#ifdef DEBUG
 
-template <typename ...Args>
-void AssertMessage(bool result, std::string_view format, Args&& ...args){
-    if (result) {
-        return;
-    }
-    throw std::runtime_error(std::vformat(format, std::make_format_args(args...)));
-}
+#define SAssert(result, format, ...)
 
-#define SAssert(result, format, ...) \
-    do {                               \
-        AssertMessage(result, "[assert] [{}][Line:{}][Function:{}]" format, __FILE_NAME__, __LINE__, __FUNCTION__, ##__VA_ARGS__);  \
-    } while(0)
 #else
 
 #define SAssert(result, format, ...)   /*nothing*/

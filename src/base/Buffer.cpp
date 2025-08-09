@@ -13,7 +13,7 @@
 namespace slark {
 
 Buffer::Buffer(uint64_t size)
-    :totalSize_(size) {
+    : totalSize_(size) {
     
 }
 
@@ -31,8 +31,27 @@ uint64_t Buffer::length() const noexcept {
     return data_->length - readPos_;
 }
 
+uint64_t Buffer::totalLength() const noexcept {
+    if (empty()) {
+        return 0;
+    }
+    return data_->length;
+}
+
 bool Buffer::require(uint64_t size) const noexcept {
     return length() >= size;
+}
+
+bool Buffer::append(DataPtr ptr) noexcept {
+    if (!ptr) {
+        return false;
+    }
+    if (data_) {
+        data_->append(std::move(ptr));
+    } else {
+        data_ = std::move(ptr);
+    }
+    return true;
 }
 
 bool Buffer::append(uint64_t offset, DataPtr ptr) noexcept {
@@ -43,24 +62,27 @@ bool Buffer::append(uint64_t offset, DataPtr ptr) noexcept {
         return false; //discard expired data
     }
     if (offset_ > offset) {
-        LogI("reset buffer:offset {}, now offset:{}", offset, offset_);
+        LogI("reset buffer:offset {}, now offset:{}, discard:{}", offset, offset_, length());
         data_.reset();
         offset_ = offset;
     }
-    if (data_) {
-        data_->append(std::move(ptr));
-    } else {
-        data_ = std::move(ptr);
-    }
+    append(std::move(ptr));
     isUpdatedOffset = false;
     return true;
 }
 
-std::string_view Buffer::view() const noexcept {
+DataView Buffer::view() const noexcept {
     if (data_) {
         return data_->view();
     }
     return {};
+}
+
+DataView Buffer::shotView() const noexcept {
+    if (!data_) {
+        return {};
+    }
+    return data_->view().substr(static_cast<size_t>(readPos_));
 }
 
 bool Buffer::skipTo(int64_t pos) noexcept {
@@ -122,14 +144,25 @@ bool Buffer::readBE(uint32_t size, uint32_t& value) noexcept {
         return false;
     }
     auto view = data_->view().substr(static_cast<size_t>(readPos_));
-    size_t mx = size - 1;
-    auto func = [&](size_t pos) {
-        return static_cast<uint32_t>(static_cast<uint8_t>(view[pos]) << ((mx - pos) * 8));
-    };
-    for(size_t i = 0; i < mx; i++) {
-        value |= func(i);
+    if (view.length() < size) {
+        return false;
     }
-    return true;
+    view = view.substr(0, static_cast<size_t>(size));
+    readPos_ += size;
+    return Util::readBE(view, size, value);
+}
+
+bool Buffer::readLE(uint32_t size, uint32_t& value) noexcept {
+    if (!require(size) || size == 0) {
+        return false;
+    }
+    auto view = data_->view().substr(static_cast<size_t>(readPos_));
+    if (view.length() < size) {
+        return false;
+    }
+    view = view.substr(0, static_cast<size_t>(size));
+    readPos_ += size;
+    return Util::readLE(view, size, value);
 }
 
 bool Buffer::readByte(uint8_t& value) noexcept {
@@ -193,16 +226,37 @@ bool Buffer::readString(uint64_t size, std::string& str) noexcept {
     
     auto view = data_->view().substr(static_cast<size_t>(readPos_), static_cast<size_t>(size));
     readPos_ += size;
-    str = std::string(view);
+    str = view.str();
     return true;
 }
 
+bool Buffer::readLine(DataView& line) noexcept {
+    auto view = data_->view().substr(static_cast<size_t>(readPos_));
+    auto pos = view.find("\n");
+    if (pos == std::string_view::npos) {
+        return false;
+    }
+    line = view.substr(0, pos);
+    readPos_ += pos + 1; //remove '\n'
+    return true;
+}
+
+//If this function is called, the previous view cannot be used anymore
 void Buffer::shrink() noexcept {
+    if (readPos_ == 0) {
+        return;
+    }
     auto p = data_->copy(readPos_);
     data_.reset();
     data_ = std::move(p);
     offset_ += readPos_;
     readPos_ = 0;
+}
+
+DataPtr Buffer::detachData() noexcept {
+    auto data = std::move(data_);
+    reset();
+    return data;
 }
 
 void Buffer::reset() noexcept {

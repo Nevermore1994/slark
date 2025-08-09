@@ -8,13 +8,9 @@
 #include <cstdio>
 #include <string_view>
 #include <cinttypes>
-#include <format>
 #include <print>
+#include <format>
 #include "LogOutput.h"
-
-#ifdef SLARK_IOS
-#include "iOSBase.h"
-#endif
 
 namespace slark {
 
@@ -28,20 +24,23 @@ enum class LogType {
     Record,
 };
 
-constexpr const std::string_view kLogStrs[] = {" [print] ", " [debug] ", " [info] ", " [warning] ", " [error] ", " [assert] ", " [record] "};
+constexpr const std::string_view kLogTags[] = {" [print] ", " [debug] ", " [info] ", " [warning] ", " [error] ", " [assert] ", " [record] "};
+
+void printLog(const std::string& log);
 
 template <typename ...Args>
-void printLog(LogType level, std::string_view format, Args&& ...args) {
+void outputLog(LogType level, std::string_view format, Args&& ...args) {
     auto logStr = std::vformat(format, std::make_format_args(args...));
+    if (level != LogType::Print) {
+        LogOutput::shareInstance().write(logStr);
+    }   
     if (level == LogType::Record) {
-        LogOutput::shareInstance().write(logStr);
         return;
-    } else if (level > LogType::Debug) {
-        LogOutput::shareInstance().write(logStr);
     }
-#ifdef SLARK_IOS
-    outputLog(logStr);
+#if SLAKR_IOS
+    printLog(logStr);
 #elif SLARK_ANDROID
+    printLog(logStr);
 #else
     std::print("{}", logStr);
     fflush(stdout);
@@ -55,7 +54,10 @@ void printLog(LogType level, std::string_view format, Args&& ...args) {
 
 #define logger(level, format, ...) \
 do {                               \
-    printLog(level, "{}{}[{}][Line:{}][Function:{}]" format "\n", Time::localTime(), kLogStrs[static_cast<size_t>(level)], __FILE_NAME__, __LINE__, __FUNCTION__, ##__VA_ARGS__); /* NOLINT(bugprone-lambda-function-name) */ \
+    outputLog(level, "{}{}[{}][Line:{}][Function:{}]" format "\n", \
+        Time::localTimeStr(), kLogTags[static_cast<size_t>(level)],\
+        __FILE_NAME__, __LINE__, \
+        __FUNCTION__, ##__VA_ARGS__);  /* NOLINT(bugprone-lambda-function-name) */ \
 } while(0)
 
 #define  LogD(format, ...)  logger(LogType::Debug, format, ##__VA_ARGS__)

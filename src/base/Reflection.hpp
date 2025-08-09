@@ -12,7 +12,7 @@
 
 namespace slark {
 
-using ReflectionFunction = std::function<void* (void)>;
+using ReflectionFunction = std::function<std::shared_ptr<void>(void)>;
 
 class Reflection {
 public:
@@ -46,32 +46,43 @@ private:
 };
 
 template<typename T>
-std::string RegisterClass(const std::string& name) {
-    Reflection::shareInstance().enrolment(name, []() {
-        return new (std::nothrow) T();
+std::string registerClassImpl(
+    const std::string& name,
+    std::function<std::shared_ptr<T>()>&& func
+) noexcept {
+    Reflection::shareInstance().enrolment(name, [func = std::move(func)]() {
+        return func();
     });
     return name;
 }
 
-inline void* GenerateInstance(const std::string& name) {
+template<typename T>
+inline std::shared_ptr<T> GenerateInstance(const std::string& name) {
     auto f = Reflection::shareInstance().generate(name);
     if (f) {
-        return f();
+        auto instance = f();
+        if (instance) {
+            return std::static_pointer_cast<T>(instance);
+        }
     }
     return nullptr;
 }
 
-#define GetClassName(name) #name
-
-template<typename T>
 struct BaseClass {
-    inline static std::string registerClass(std::string name) {
-        return RegisterClass<T>(name);
+    template<typename T>
+    static std::string registerClass(std::string name) noexcept{
+        return registerClassImpl<T>(name, []() {
+            return std::make_shared<T>();
+        });
     }
 
-    inline static T* create(const std::string& name) noexcept {
-        return reinterpret_cast<T*>(GenerateInstance(name));
+    template<typename T>
+    static std::shared_ptr<T> create(const std::string& name) noexcept {
+        return GenerateInstance<T>(name);
     }
 };
+
+#define GetClassName(name) #name
+#define RegisterClass(name) BaseClass::registerClass<name>(GetClassName(name))
 
 }

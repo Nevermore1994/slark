@@ -394,6 +394,15 @@ private:
             }
             return messages;
         }
+        
+        inline auto size() -> uint32_t {
+            uint32_t result = 0;
+            {
+                std::lock_guard<std::mutex> lock(channel_->mutex_);
+                result = static_cast<uint32_t>(channel_->messages_.size());
+            }
+            return result;
+        }
 
     private:
         std::shared_ptr<Channel<T>> channel_;
@@ -437,7 +446,7 @@ public:
     inline auto end() noexcept -> ReceiverIterator<T> {
         return ReceiverIterator<T>(impl_, ChannelEventType::Closed);
     }
-
+    
     inline auto receive() noexcept -> std::expected<T, ChannelEventType> {
         return impl_->receive();
     }
@@ -449,7 +458,14 @@ public:
     inline auto tryReceiveAll() noexcept -> std::list<T> {
         return impl_->tryReceiveAll();
     }
+    
+    inline auto size() noexcept -> uint32_t {
+        return impl_->size();
+    }
 
+    inline auto empty() noexcept -> bool {
+        return impl_->size() == 0;
+    }
 }; //end of class Receiver
 
 template <typename U>

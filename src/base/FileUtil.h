@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <string>
 
-namespace slark::FileUtil {
+namespace slark::File {
 
 [[maybe_unused]] extern std::string rootPath() noexcept;
 

@@ -5,14 +5,17 @@
 //  Created by Nevermore on 2023/10/18.
 //
 
+#import <AVFoundation/AVFoundation.h>
+#import <Photos/Photos.h>
 #import "Masonry.h"
 #import "ViewController.h"
 #import "ViewController/AudioViewController.h"
 #import "ViewController/VideoViewController.h"
+#import "ViewController/VideoPickerViewController.h"
+#import "ViewController/SelectUrlViewController.h"
 #import "iOSUtil.h"
-#include "Log.hpp"
+#import "EXTScope.h"
 
-using namespace slark;
 @interface ViewController ()<UITableViewDelegate, UITableViewDataSource>
 
 @property (nonatomic, strong) UITableView* tabView;
@@ -28,7 +31,10 @@ using namespace slark;
     [super viewDidLoad];
     [self initViews];
     [self initConfig];
-    LogI("viewDidLoad");
+    NSString *tempDir = NSTemporaryDirectory();
+    NSError* error;
+    [[NSFileManager defaultManager] removeItemAtPath:tempDir error:&error];
+    NSLog(@"viewDidLoad");
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -52,7 +58,8 @@ using namespace slark;
 - (void)initConfig {
     self.tabDatas = [NSArray arrayWithObjects:
                      @"audio player",
-                     @"video palyer",
+                     @"video player",
+                     @"network player",
                      nil];
     [self.tabView reloadData];
 }
@@ -78,8 +85,49 @@ using namespace slark;
         }
             break;
         case 1: {
-            VideoViewController* vc = [VideoViewController new];
+            VideoPickerViewController* vc = [[VideoPickerViewController alloc] initWithMode:PickerModeSingle];
+            @weakify(self);
+            vc.onResult = ^(NSArray<PHAsset*>* selectedAssets) {
+                @strongify(self);
+                PHAsset *phAsset = selectedAssets.firstObject;
+                NSString *tempDir = NSTemporaryDirectory();
+                [[NSFileManager defaultManager] createDirectoryAtPath:tempDir withIntermediateDirectories:YES attributes:nil error:nil];
+                NSString *fileName = [NSString stringWithFormat:@"%@.mp4", [[NSUUID UUID] UUIDString]];
+                NSString *destPath = [tempDir stringByAppendingPathComponent:fileName];
+                NSURL *destURL = [NSURL fileURLWithPath:destPath];
+
+                PHVideoRequestOptions *options = [[PHVideoRequestOptions alloc] init];
+                options.version = PHVideoRequestOptionsVersionCurrent;
+                [[PHImageManager defaultManager] requestAVAssetForVideo:phAsset options:options resultHandler:^(AVAsset *avAsset, AVAudioMix* /*audioMix*/, NSDictionary* /*info*/) {
+                    AVAssetExportSession *exportSession = [[AVAssetExportSession alloc] initWithAsset:avAsset presetName:AVAssetExportPresetPassthrough];
+                    exportSession.outputURL = destURL;
+                    exportSession.outputFileType = AVFileTypeMPEG4;
+                    exportSession.shouldOptimizeForNetworkUse = YES;
+
+                    [exportSession exportAsynchronouslyWithCompletionHandler:^{
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            if (exportSession.status == AVAssetExportSessionStatusCompleted) {
+                                VideoViewController* videoVC = [VideoViewController new];
+                                videoVC.path = [NSTemporaryDirectory() stringByAppendingPathComponent:destURL.lastPathComponent];
+                                [self.navigationController pushViewController:videoVC animated:YES];
+                            } else {
+                                NSLog(@"error: %@", exportSession.error);
+                            }
+                        });
+                    }];
+                }];
+            };
             [self.navigationController pushViewController:vc animated:YES];
+        }
+            break;
+        case 2: {
+            SelectUrlViewController* selectVC = [SelectUrlViewController new];
+            selectVC.onItemClick = ^(NSString* url) {
+                VideoViewController* videoVC = [VideoViewController new];
+                videoVC.path = url;
+                [self.navigationController pushViewController:videoVC animated:YES];
+            };
+            [self.navigationController pushViewController:selectVC animated:YES];
         }
             break;
         default:

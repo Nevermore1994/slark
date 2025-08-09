@@ -13,12 +13,28 @@
 namespace slark {
 
 Player::Player(std::unique_ptr<PlayerParams> params)
-    : pimpl_(std::make_unique<Player::Impl>(std::move(params))) {
+    : pimpl_(std::make_shared<Player::Impl>(std::move(params))) {
 }
 
 Player::~Player() = default;
 
+void Player::prepare() noexcept {
+    if (!pimpl_) {
+        LogE("Player is not initialized.");
+        return;
+    }
+    if (pimpl_->state() != PlayerState::NotInited) {
+        LogI("Player is already prepared, state:{}", static_cast<int>(pimpl_->state()));
+        return;
+    }
+    pimpl_->init();
+}
+
 void Player::play() noexcept {
+    if (pimpl_->state() == PlayerState::NotInited) {
+        LogI("Not inited.");
+        return;
+    }
     if (pimpl_->state() == PlayerState::Playing) {
         LogI("already playing.");
         return;
@@ -28,6 +44,10 @@ void Player::play() noexcept {
 }
 
 void Player::stop() noexcept {
+    if (pimpl_->state() == PlayerState::NotInited) {
+        LogI("Not inited.");
+        return;
+    }
     if (pimpl_->state() == PlayerState::Stop) {
         LogI("already stopped.");
         return;
@@ -37,6 +57,10 @@ void Player::stop() noexcept {
 }
 
 void Player::pause() noexcept {
+    if (pimpl_->state() == PlayerState::NotInited) {
+        LogI("Not inited.");
+        return;
+    }
     auto nowState = state();
     if (nowState != PlayerState::Playing) {
         LogI("not playing, state:{}", static_cast<int>(nowState));
@@ -47,16 +71,12 @@ void Player::pause() noexcept {
 }
 
 
-void Player::seek(long double time) noexcept {
-    pimpl_->seek(time);
+void Player::seek(double time, bool isAccurate) noexcept {
+    pimpl_->seek(time, isAccurate);
 }
 
 std::string_view Player::playerId() const noexcept {
     return pimpl_->playerId();
-}
-
-void Player::seek(long double time, bool isAccurate) noexcept {
-    pimpl_->seek(time, isAccurate);
 }
 
 PlayerParams Player::peek() noexcept {
@@ -71,24 +91,36 @@ PlayerState Player::state() noexcept {
     return pimpl_->state();
 }
 
-const PlayerInfo& Player::info() noexcept {
+PlayerInfo Player::info() noexcept {
+    if (pimpl_->state() == PlayerState::NotInited) {
+        LogI("Not inited.");
+        return {};
+    }
     return pimpl_->info();
 }
 
 void Player::setLoop(bool isLoop) {
+    if (pimpl_->state() == PlayerState::NotInited) {
+        LogI("Not inited.");
+        return;
+    }
     pimpl_->setLoop(isLoop);
 }
 
 void Player::setVolume(float volume) {
+    if (pimpl_->state() == PlayerState::NotInited) {
+        LogI("Not inited.");
+        return;
+    }
     pimpl_->setVolume(volume);
 }
 
 void Player::setMute(bool isMute) {
+    if (pimpl_->state() == PlayerState::NotInited) {
+        LogI("Not inited.");
+        return;
+    }
     pimpl_->setMute(isMute);
-}
- 
-void Player::setRenderSize(uint32_t width, uint32_t height) {
-    pimpl_->setRenderSize(width, height);
 }
 
 void Player::addObserver(IPlayerObserverPtr observer) noexcept {
@@ -99,21 +131,18 @@ void Player::removeObserver() noexcept {
     pimpl_->removeObserver();
 }
 
-long double Player::currentPlayedTime() noexcept {
+double Player::currentPlayedTime() noexcept {
     if (!pimpl_) {
         return 0;
+    }
+    if (pimpl_->state() == PlayerState::NotInited) {
+        LogI("Not inited.");
+        return 0.0;
     }
     return pimpl_->currentPlayedTime();
 }
 
-void* Player::requestRender() noexcept {
-    if (!pimpl_) {
-        return nullptr;
-    }
-    return pimpl_->requestRender();
-}
-
-void Player::setRenderImpl(std::weak_ptr<IVideoRender>& render) {
+void Player::setRenderImpl(std::weak_ptr<IVideoRender> render) noexcept {
     if (!pimpl_) {
         return;
     }

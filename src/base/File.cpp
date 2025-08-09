@@ -7,7 +7,7 @@
 #include "File.h"
 #include "Log.hpp"
 
-namespace slark::FileUtil {
+namespace slark::File {
 
 IFile::IFile(std::string path, FileMode mode)
     : path_(std::move(path))
@@ -40,7 +40,7 @@ bool IFile::open() noexcept {
 void IFile::seek(int64_t offset) noexcept {
     if (file_) {
         fseeko(file_, offset, SEEK_SET);
-        LogI("seek to offset:{}, file size:{}", offset, FileUtil::fileSize(path_));
+        LogI("seek to offset:{}, file size:{}", offset, File::fileSize(path_));
     }
 }
 
@@ -53,7 +53,7 @@ uint64_t IFile::tell() const noexcept {
 }
 
 uint64_t IFile::fileSize() const noexcept {
-    return FileUtil::fileSize(path_);
+    return File::fileSize(path_);
 }
 
 void IFile::close() noexcept {
@@ -149,7 +149,7 @@ std::expected<uint8_t, bool> ReadFile::readByte() noexcept {
     }
     uint8_t byte = 0;
     auto res = fread(&byte, 1, 1, file_);
-    if (feof(file_) || tell() == static_cast<int64_t>(fileSize())) {
+    if (feof(file_) || tell() == fileSize()) {
         readOver_ = true;
     }
     if (res == 0 && !readOver_) {
@@ -181,7 +181,7 @@ bool ReadFile::read(Data& data, uint64_t size) noexcept {
         return false;
     }
     auto res = fread(data.rawData, 1, size, file_);
-    if (feof(file_) || tell() == static_cast<int64_t>(fileSize())) {
+    if (feof(file_) || tell() == fileSize()) {
         readOver_ = true;
     }
     if (res == 0 && !readOver_) {
@@ -221,4 +221,4 @@ void ReadFile::close() noexcept {
     }
 }
 
-}//end namespace slark::FileUtil
+}//end namespace slark::File

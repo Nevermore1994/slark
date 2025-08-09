@@ -3,10 +3,11 @@
 // slark ReadHandler
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
-#include "Reader.hpp"
+#include "Reader.h"
 #include "Log.hpp"
 #include "FileUtil.h"
 #include "Util.hpp"
+#include <string>
 
 namespace slark {
 
@@ -14,39 +15,79 @@ static const std::string kReaderPrefixName = "Reader_";
 
 Reader::Reader()
     : worker_(Util::genRandomName(kReaderPrefixName), &Reader::process, this) {
-    
-}
-
-bool Reader::open(std::string_view path, ReaderSetting&& setting) {
-    bool isSuccess = false;
-    file_.withWriteLock([&](auto& file){
-        file = std::make_unique<FileUtil::ReadFile>(std::string(path));
-        setting_ = std::move(setting);
-        isSuccess = file->open();
-    });
-    worker_.setInterval(setting.timeInterval);
-    return isSuccess;
+    type_ = ReaderType::Local;
 }
 
 Reader::~Reader() {
-    stop();
+    worker_.pause();
+    file_.withWriteLock([](auto& file){
+        if (file) {
+            file->close();
+            LogI("{} reader closed", file->path());
+        }
+        file.reset();
+    });
+    {
+        std::lock_guard<std::mutex> lock(taskMutex_);
+        task_.reset();
+    }
+    worker_.stop();
+}
+
+bool Reader::open(ReaderTaskPtr ptr) noexcept {
+    bool isSuccess = false;
+    worker_.setInterval(ptr->timeInterval);
+    file_.withWriteLock([&](auto& file){
+        file = std::make_unique<File::ReadFile>(std::string(ptr->path));
+        isSuccess = file->open();
+    });
+    {
+        std::lock_guard<std::mutex> lock(taskMutex_);
+        task_ = std::move(ptr);
+    }
+    return isSuccess;
+}
+
+bool Reader::isCompleted() noexcept {
+    bool hasSeek = false;
+    {
+        std::lock_guard<std::mutex> lock(seekMutex_);
+        hasSeek = seekPos_.has_value();
+    }
+    return isReadCompleted_ && !hasSeek;
+}
+
+bool Reader::isRunning() noexcept {
+    return worker_.isRunning();
 }
 
 IOState Reader::state() noexcept {
     IOState state = IOState::Normal;
-    file_.withReadLock([&](auto& file){
+    uint64_t tell = 0;
+    file_.withReadLock([&state, &tell, this](auto& file){
         if (!file || worker_.isExit()) {
             state = IOState::Closed;
-        } else if (!worker_.isRunning()) {
-            state = IOState::Pause;
         } else if (file->isFailed()) {
             state = IOState::Error;
         } else if(file->readOver()) {
             state = IOState::EndOfFile;
-        } else if(readRange_.isValid() && file->tell() >= readRange_.end()) {
-            state = IOState::EndOfFile;
+        } else if (!worker_.isRunning()) {
+            state = IOState::Pause;
+        }
+        if (file) {
+            tell = file->tell();
         }
     });
+    do {
+        std::lock_guard<std::mutex> lock(taskMutex_);
+        if (!task_) {
+            break;
+        }
+        const auto& readRange = task_->range;
+        if(readRange.isValid() && tell >= readRange.end()) {
+            state = IOState::EndOfFile;
+        }
+    } while(false);
     return state;
 }
 
@@ -54,32 +95,32 @@ void Reader::start() noexcept {
     worker_.start();
 }
 
-void Reader::resume() noexcept {
-    worker_.resume();
-}
-
 void Reader::pause() noexcept {
     worker_.pause();
 }
 
-void Reader::close() noexcept {
+void Reader::reset() noexcept {
     worker_.pause();
     file_.withWriteLock([](auto& file){
         if (file) {
             file->close();
-            LogI("{} readr closed", file->path());
+            LogI("{} reader closed", file->path());
         }
         file.reset();
     });
+    {
+        std::lock_guard<std::mutex> lock(taskMutex_);
+        task_.reset();
+    }
 }
 
-void Reader::stop() noexcept {
-    close();
+void Reader::close() noexcept {
+    reset();
     worker_.stop();
 }
 
-std::string_view Reader::path() noexcept {
-    std::string_view path;
+std::string Reader::path() noexcept {
+    std::string path;
     file_.withReadLock([&](auto& file){
         if (file) {
             path = file->path();
@@ -93,10 +134,14 @@ void Reader::seek(uint64_t pos) noexcept {
         LogE("Reader is exit.");
         return;
     }
+    
+    std::lock_guard<std::mutex> lock(seekMutex_);
     seekPos_ = static_cast<int64_t>(pos);
+    isReadCompleted_ = false;
 }
 
-void Reader::process() {
+void Reader::doSeek() noexcept {
+    std::lock_guard<std::mutex> lock(seekMutex_);
     if (seekPos_.has_value()) {
         file_.withReadLock([&](auto& file){
             if (!file) {
@@ -106,6 +151,10 @@ void Reader::process() {
         });
         seekPos_.reset();
     }
+}
+
+void Reader::process() noexcept {
+    doSeek();
     auto nowState = state();
     if (nowState == IOState::Error) {
         worker_.pause();
@@ -113,11 +162,22 @@ void Reader::process() {
         return;
     } else if (nowState == IOState::EndOfFile) {
         worker_.pause();
+        isReadCompleted_ = true;
         LogI("read data completed.");
         return;
     }
 
-    IOData data(setting_.readBlockSize);
+    uint64_t readBlockSize = kReadDefaultSize;
+    Range readRange;
+    {
+        std::lock_guard<std::mutex> lock(taskMutex_);
+        if (!task_) {
+            return;
+        }
+        readBlockSize = task_->readBlockSize;
+        readRange = task_->range;
+    }
+    DataPacket data(readBlockSize);
     file_.withReadLock([&](auto& file){
         if (!file) {
             return;
@@ -125,36 +185,44 @@ void Reader::process() {
 
         auto tell = file->tell();
         auto readSize = data.data->capacity;
-        if (readRange_.isValid() && readSize >= (readRange_.end() - tell)) {
-            readSize = readRange_.end() - tell;
+        if (readRange.isValid() && readSize > (readRange.end() - tell + 1)) {
+            readSize = readRange.end() - tell + 1;
         }
-        data.offset = tell;
+        data.offset = static_cast<int64_t>(tell);
         file->read(*data.data, readSize);
     });
-
-    if (setting_.callBack) {
-        setting_.callBack(std::move(data), state());
+     
+    nowState = state();
+    if (nowState == IOState::EndOfFile) {
+        isReadCompleted_ = true;
+    } else {
+        isReadCompleted_ = false;
+    }
+    
+    if (task_->callBack) {
+        task_->callBack(this, std::move(data), nowState);
     }
 }
 
-void Reader::setReadRange(ReadRange range) noexcept {
+void Reader::updateReadRange(Range range) noexcept {
     if (worker_.isExit()) {
         LogE("Reader is exit.");
         return;
     }
-    readRange_ = range;
     if (!range.isValid()) {
         return;
     }
-    seekPos_ = range.readPos;
-    worker_.resume();
+    task_->range = range;
+    seekPos_ = range.pos;
+    isReadCompleted_ = false;
+    worker_.start();
 }
 
 int64_t Reader::tell() noexcept {
     int64_t pos = 0;
     file_.withReadLock([&](auto& file){
         if (file) {
-            pos = file->tell();
+            pos = static_cast<int64_t>(file->tell());
         }
     });
     return pos;
@@ -169,5 +237,6 @@ uint64_t Reader::size() noexcept {
     });
     return size;
 }
+
 }//end namespace slark
 

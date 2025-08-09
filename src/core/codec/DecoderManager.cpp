@@ -10,7 +10,10 @@
 #include "RawDecoder.h"
 #if SLARK_IOS
 #include "iOSVideoHWDecoder.h"
-#include "iOSAACHWDecoder.hpp"
+#include "iOSAACHWDecoder.h"
+#elif SLARK_ANDROID
+#include "VideoHardwareDecoder.h"
+#include "AudioHardwareDecoder.h"
 #endif
 
 namespace slark {
@@ -41,6 +44,9 @@ void DecoderManager::init() noexcept {
 #if SLARK_IOS
         {DecoderType::VideoHardWareDecoder, iOSVideoHWDecoder::info()},
         {DecoderType::AACHardwareDecoder, iOSAACHWDecoder::info()},
+#elif SLARK_ANDROID
+        {DecoderType::VideoHardWareDecoder, VideoHardwareDecoder::info()},
+        {DecoderType::AACHardwareDecoder, AudioHardwareDecoder::info()},
 #endif
     };
 }
@@ -56,12 +62,12 @@ DecoderType DecoderManager::getDecoderType(std::string_view mediaInfo, bool isSo
     return DecoderType::Unknown;
 }
 
-std::unique_ptr<IDecoder> DecoderManager::create(DecoderType type) const noexcept {
+std::shared_ptr<IDecoder> DecoderManager::create(DecoderType type) const noexcept {
     if (!decoderInfo_.contains(type)) {
         return nullptr;
     }
     auto& decoderInfo = decoderInfo_.at(type);
-    return std::unique_ptr<IDecoder>(BaseClass<IDecoder>::create(decoderInfo.decoderName));
+    return BaseClass::create<IDecoder>(decoderInfo.decoderName);
 }
 
 bool DecoderManager::contains(DecoderType type) const noexcept {

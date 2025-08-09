@@ -7,7 +7,7 @@
 
 #include <functional>
 #include <shared_mutex>
-#include "AudioDefine.h"
+#include "AudioInfo.h"
 #include "NonCopyable.h"
 #include "Node.h"
 #include "Synchronized.hpp"
@@ -15,70 +15,84 @@
 #include "Time.hpp"
 #include "Clock.h"
 
-#ifdef SLARK_IOS
+#if defined(SLARK_IOS) || defined(SLARK_ANDROID)
 #include "AudioRender.h"
-#else
-
 #endif
 
 namespace slark {
 
-constexpr uint64_t kDefaultAudioBufferSize = 16 * 1024;
-class AudioRenderComponent: public slark::NonCopyable, public InputNode {
+constexpr double kDefaultAudioBufferCacheTime = 0.2; // 200ms,
+
+using PullDataFunc = std::function<AVFrameRefPtr(uint32_t)>;
+
+class AudioRenderComponent: public slark::NonCopyable,
+        public InputNode,
+        public std::enable_shared_from_this<AudioRenderComponent> {
 public:
     explicit AudioRenderComponent(std::shared_ptr<AudioInfo> info);
-    ~AudioRenderComponent() override = default;
 
-    void send(AVFrameRefPtr frame) noexcept override;
-    void process(AVFrameRefPtr frame) noexcept override;
+    ~AudioRenderComponent() override;
+
+    bool send(AVFrameRefPtr frame) noexcept override;
+
+    bool process(AVFrameRefPtr frame) noexcept override;
+
     [[nodiscard]] std::shared_ptr<AudioInfo> audioInfo() const noexcept;
-    void clear() noexcept;
+
     void reset() noexcept;
     
-    void play() noexcept;
-    void pause() noexcept;
-    void stop() noexcept;
-    void setVolume(float volume) noexcept;
-    void flush() noexcept;
-    void seek(Time::TimePoint time) noexcept;
+    void start() noexcept;
 
-    Time::TimePoint playedTime() {
-        return clock_.time();
-    }
+    void pause() noexcept;
+
+    void stop() noexcept;
+
+    void setVolume(float volume) noexcept;
+
+    void flush() noexcept;
+
+    void seek(double time) noexcept;
+
+    Time::TimePoint playedTime() noexcept;
     
     bool isFull() noexcept {
-        bool isFull = false;
-        frames_.withReadLock([&](auto&){
-            isFull = audioBuffer_.isFull();
-        });
-        return isFull;
+        if (!audioBuffer_) {
+            LogE("audio buffer is nullptr");
+            return true;
+        }
+        return isFull_ || audioBuffer_->isFull();
     }
-    
+            
+    bool isHungry() noexcept {
+        return isHungry_;
+    }
+
     RenderStatus status() const {
-        if (pimpl_) {
-            return pimpl_->status();
+        if (auto pimpl = pimpl_.load()) {
+            return pimpl->status();
         }
         return RenderStatus::Unknown;
     }
-    
-    Clock& clock() noexcept {
-        return clock_;
+
+    void renderEnd() noexcept;
+
+    void setPullDataFunc(
+        PullDataFunc&& pullAudioDataFunc
+    ) noexcept {
+        pullDataFunc_.reset(std::make_shared<PullDataFunc>(std::move(pullAudioDataFunc)));
     }
-    
 private:
     void init() noexcept;
 public:
-    std::function<uint32_t(uint8_t*, uint32_t)> pullAudioData;
     std::function<void(Time::TimePoint)> firstFrameRenderCallBack;
 private:
     bool isFirstFrameRendered = false;
-    uint64_t renderedDataLength_ = 0;
-    Clock clock_;
-    std::mutex renderMutex_;
+    bool isFull_ = false;
+    std::atomic<bool> isHungry_ = false;
     std::shared_ptr<AudioInfo> audioInfo_;
-    RingBuffer<uint8_t, kDefaultAudioBufferSize> audioBuffer_;
-    Synchronized<std::deque<AVFrameRefPtr>, std::shared_mutex> frames_;
-    std::unique_ptr<IAudioRender> pimpl_;
+    std::unique_ptr<SyncRingBuffer<uint8_t>> audioBuffer_;
+    AtomicSharedPtr<IAudioRender> pimpl_;
+    AtomicSharedPtr<PullDataFunc> pullDataFunc_;
 };
 
 }

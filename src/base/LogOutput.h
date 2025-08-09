@@ -15,7 +15,7 @@ public:
     ~LogOutput();
     void write(const std::string& str) noexcept;
 private:
-    static void updateFile(std::unique_ptr<Writer>& writer) noexcept;
+    static void recreateFile(std::unique_ptr<Writer>& writer) noexcept;
 private:
     Synchronized<std::unique_ptr<Writer>> writer_;
 };

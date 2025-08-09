@@ -10,7 +10,7 @@
 
 namespace slark {
 
-constexpr const Time::TimePoint kMaxThreadBlockTimeInterval = std::chrono::seconds(30).count(); //30s
+static const Time::TimeDelta kMaxThreadBlockTimeInterval = Time::TimeDelta::fromSeconds(30.0); //30s
 
 class ThreadManager final: public NonCopyable {
 public:
