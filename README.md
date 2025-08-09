@@ -6,14 +6,7 @@
 
 - [中文文档](README_zh.md)
 
-Slark is a high-performance cross-platform video player that supports iOS and Android platforms. Built with modern C++23 for core functionality, it delivers native performance and rich multimedia playback features.
-
-## ✨ Key Features
-
-- 🎵 **Multi-format Support**: Supports MP4, HLS, WAV and other audio/video formats
-- 🌐 **Network Streaming**: Supports both local files and network media streaming
-- 📱 **Cross-platform**: Single core codebase supports both iOS and Android
-- 🛠️ **Modern Architecture**: Built with C++23 standard, supporting modern C++ features
+Slark is a cross-platform video player that supports iOS and Android platforms. Built from the ground up with modern C++23, it provides a streamlined media playback solution with minimal dependencies (only OpenSSL for HTTPS support).
 
 ## 🔧 Supported Platforms
 
