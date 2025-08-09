@@ -14,169 +14,127 @@ std::string genRandomName(const std::string& namePrefix) noexcept {
     return namePrefix + Random::randomString(8);
 }
 
-bool readByte(std::string_view view, uint8_t& value) noexcept {
-    if (view.empty()) {
+template<typename T>
+bool readLE(DataView view, uint32_t size, T& value) noexcept {
+    static_assert(std::is_unsigned<T>::value, "T must be unsigned");
+    if (size == 0 || size > sizeof(T) || view.size() < size) {
         return false;
     }
-    auto func = [&](size_t pos) {
-        return static_cast<uint8_t>(view[pos]);
-    };
-    value = static_cast<uint8_t>(func(0));
-    return true;
-}
-
-bool read2ByteBE(std::string_view view, uint16_t& value) noexcept {
-    if (view.size() < 2) {
-        return false;
-    }
-    auto func = [&](size_t pos) {
-        return static_cast<uint8_t>(view[pos]) << ((1 - pos) * 8);
-    };
-    value = static_cast<uint16_t>(func(0) | func(1));
-    return true;
-}
-
-bool read3ByteBE(std::string_view view, uint32_t& value) noexcept {
-    if (view.size() < 3) {
-        return false;
-    }
-    auto func = [&](size_t pos) {
-        return static_cast<uint8_t>(view[pos]) << ((2 - pos) * 8);
-    };
-    value = static_cast<uint32_t>(func(0) | func(1) | func(2));
-    return true;
-}
-
-bool read4ByteBE(std::string_view view, uint32_t& value) noexcept {
-    if (view.size() < 4) {
-        return false;
-    }
-    auto func = [&](size_t pos) {
-        //This must be uint8_t for conversion, char -> uint8_t
-        return static_cast<uint8_t>(view[pos]) << ((3 - pos) * 8);
-    };
-    value = static_cast<uint32_t>(func(0) | func(1) | func(2) | func(3));
-    return true;
-}
-
-bool read8ByteBE(std::string_view view, uint64_t& value) noexcept {
-    if (view.size() < 8) {
-        return false;
-    }
-    auto func = [&](size_t pos) {
-        return static_cast<uint8_t>(view[pos]) << ((7 - pos) * 8);
-    };
-    value = static_cast<uint64_t>(func(0) | func(1) | func(2) | func(3) | func(4) | func(5) | func(6) | func(7));
-    return true;
-}
-
-bool read2ByteLE(std::string_view view, uint16_t& value) noexcept {
-    if (view.size() < 2) {
-        return false;
-    }
-    auto func = [&](size_t pos) {
-        return static_cast<uint8_t>(view[pos]) << (pos * 8);
-    };
-    value = static_cast<uint16_t>(func(1) | func(0));
-    return true;
-}
-
-bool read3ByteLE(std::string_view view, uint32_t& value) noexcept {
-    if (view.size() < 3) {
-        return false;
-    }
-    auto func = [&](size_t pos) {
-        return static_cast<uint8_t>(view[pos]) << (pos * 8);
-    };
-    value = static_cast<uint32_t>(func(2) | func(1) | func(0));
-    return true;
-}
-
-bool read4ByteLE(std::string_view view, uint32_t& value) noexcept {
-    if (view.size() < 4) {
-        return false;
-    }
-    auto func = [&](size_t pos) {
-        //This must be uint8_t for conversion, char -> uint8_t
-        return static_cast<uint8_t>(view[pos]) << (pos * 8);
-    };
-    value = static_cast<uint32_t>(func(3) | func(2) | func(1) | func(0));
-    return true;
-}
-
-bool read8ByteLE(std::string_view view, uint64_t& value) noexcept {
-    if (view.size() < 8) {
-        return false;
-    }
-    static auto func = [&](size_t pos) {
-        return static_cast<uint8_t>(view[pos]) << (pos * 8);
-    };
-    value = static_cast<uint64_t>(func(7) | func(6) | func(5) | func(4) | func(3) | func(2) | func(1) | func(0));
-    return true ;
-}
-
-bool readBE(std::string_view view, uint32_t size, uint32_t& value) noexcept {
-    if (view.size() < size) {
-        return false;
-    }
-    auto mx = static_cast<size_t>(size - 1);
-    auto func = [&](size_t pos) {
-        return static_cast<uint32_t>(static_cast<uint8_t>(view[pos]) << ((mx - pos) * 8));
-    };
-    for(size_t i = 0; i <= mx; i++) {
-        value |= func(i);
+    value = 0;
+    for (uint32_t i = 0; i < size; ++i) {
+        value |= static_cast<T>(view[i]) << (8 * i);
     }
     return true;
 }
 
-std::string uint32ToByteLE(uint32_t value) noexcept {
-    std::string ret(4,'\0');
-    ret[3] = static_cast<char>((value >> (8 * 3)) & 0xFF);
-    ret[2] = static_cast<char>((value >> (8 * 2)) & 0xFF);
-    ret[1] = static_cast<char>((value >> (8 * 1)) & 0xFF);
-    ret[0] = static_cast<char>((value >> (8 * 0)) & 0xFF);
+template<typename T>
+bool readBE(DataView view, uint32_t size, T& value) noexcept {
+    static_assert(std::is_unsigned<T>::value, "T must be unsigned");
+    if (size == 0 || size > sizeof(T) || view.size() < size) {
+        return false;
+    }
+    value = 0;
+    for (uint32_t i = 0; i < size; ++i) {
+        value |= static_cast<T>(view[i]) << (8 * (size - 1 - i));
+    }
+    return true;
+}
+
+bool readByte(DataView view, uint8_t& value) noexcept {
+    return readLE<uint8_t>(view, 1, value);
+}
+
+bool read2ByteBE(DataView view, uint16_t& value) noexcept {
+    return readBE<uint16_t>(view, 2, value);
+}
+
+bool read3ByteBE(DataView view, uint32_t& value) noexcept {
+    return readBE<uint32_t>(view, 3, value);
+}
+
+bool read4ByteBE(DataView view, uint32_t& value) noexcept {
+    return readBE<uint32_t>(view, 4, value);
+}
+
+bool read8ByteBE(DataView view, uint64_t& value) noexcept {
+    return readBE<uint64_t>(view, 8, value);
+}
+
+bool read2ByteLE(DataView view, uint16_t& value) noexcept {
+    return readLE<uint16_t>(view, 2, value);
+}
+
+bool read3ByteLE(DataView view, uint32_t& value) noexcept {
+    return readLE<uint32_t>(view, 3, value);
+}
+
+bool read4ByteLE(DataView view, uint32_t& value) noexcept {
+    return readLE<uint32_t>(view, 4, value);
+}
+
+bool read8ByteLE(DataView view, uint64_t& value) noexcept {
+    return readLE<uint64_t>(view, 8, value);
+}
+
+bool readBE(DataView view, uint32_t size, uint32_t& value) noexcept {
+    return readBE<uint32_t>(view, size, value);
+}
+
+bool readLE(DataView view, uint32_t size, uint32_t& value) noexcept {
+    return readLE<uint32_t>(view, size, value);
+}
+
+template<typename T>
+std::string toStringLE(T value) noexcept {
+    static_assert(std::is_unsigned<T>::value, "T must be unsigned");
+    std::string ret(sizeof(T), '\0');
+    for (size_t i = 0; i < sizeof(T); ++i) {
+        ret[i] = static_cast<char>((value >> (8 * i)) & 0xFF);
+    }
     return ret;
 }
 
-std::string uint32ToByteBE(uint32_t value) noexcept {
-    std::string ret(4,'\0');
-    ret[0] = static_cast<char>((value >> (8 * 3)) & 0xFF);
-    ret[1] = static_cast<char>((value >> (8 * 2)) & 0xFF);
-    ret[2] = static_cast<char>((value >> (8 * 1)) & 0xFF);
-    ret[3] = static_cast<char>((value >> (8 * 0)) & 0xFF);
+template<typename T>
+std::string toStringBE(T value) noexcept {
+    static_assert(std::is_unsigned<T>::value, "T must be unsigned");
+    std::string ret(sizeof(T), '\0');
+    for (size_t i = 0; i < sizeof(T); ++i) {
+        ret[i] = static_cast<char>((value >> (8 * (sizeof(T) - 1 - i))) & 0xFF);
+    }
     return ret;
 }
 
-uint32_t readUe(std::string_view view, int32_t& offset) {
-    int32_t zeroCount = 0;
-    auto getBit = [&view](int32_t offset) {
-        auto byteOffset = static_cast<size_t>(offset / 8);
-        auto bitInByte = 7 - (offset % 8);
-        return static_cast<uint32_t>((view[byteOffset] >> bitInByte) & 0x01);
-    };
+std::string uint32ToStringLE(uint32_t value) noexcept {
+    return toStringLE<uint32_t>(value);
+}
 
-    while (getBit(offset) == 0) {
-        zeroCount++;
-        offset++;
+std::string uint32ToStringBE(uint32_t value) noexcept {
+    return toStringBE<uint32_t>(value);
+}
+
+bool Golomb::readBit(DataView view, int32_t& offset) noexcept {
+    auto byteIndex = static_cast<uint32_t>(offset / 8);
+    int32_t bitIndex = 7 - (offset % 8);
+    ++offset;
+    return (view[byteIndex] >> bitIndex) & 0x01;
+}
+
+uint32_t Golomb::readBits(DataView view, int32_t& offset, int32_t numBits) noexcept {
+    uint32_t result = 0;
+    for (int32_t i = 0; i < numBits; ++i) {
+        result = (result << 1) | Golomb::readBit(view, offset);
     }
+    return result;
+}
 
-    offset++;
-
-    auto getBits = [getBit](int32_t offset, int32_t count) {
-        uint32_t value = 0;
-        for (int32_t i = 0; i < count; i++) {
-            value = (value << 1) | getBit(offset + i);
-        }
-        return value;
-    };
-
-    uint32_t value = 0;
-    if (zeroCount > 0) {
-        value = getBits(offset, zeroCount);
-        offset += zeroCount;
+uint32_t Golomb::readUe(DataView view, int32_t& offset) noexcept {
+    int32_t leadingZeroBits = 0;
+    while (!readBit(view, offset)) {
+        ++leadingZeroBits;
     }
-
-    return (1 << zeroCount) - 1 + value;
+    uint32_t value = (1 << leadingZeroBits) - 1;
+    value += readBits(view, offset, leadingZeroBits);
+    return value;
 }
 
 }

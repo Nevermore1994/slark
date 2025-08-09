@@ -8,8 +8,12 @@
 #include <string>
 #include <string_view>
 
-namespace slark::string {
+namespace slark {
 
-std::vector<std::string_view> spiltString(std::string_view stringView, std::string_view delimiter);
+struct StringUtil {
+    static std::vector<std::string_view> split(std::string_view stringView, std::string_view delimiter) noexcept;
+    static std::string removeSpace(std::string_view view) noexcept;
+};
+
 
 } // slark

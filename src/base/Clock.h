@@ -17,6 +17,9 @@ public:
 
     void setTime(Time::TimePoint count) noexcept;
 
+    ///Discard the time change since the last time
+    void keep() noexcept;
+
     Time::TimePoint time() noexcept;
 
     void start() noexcept;
@@ -24,13 +27,15 @@ public:
     void pause() noexcept;
 
     void reset() noexcept;
-private:
-    Time::TimePoint adjustSpeedTime(Time::TimePoint ) const noexcept;
+
+    void setSpeed(double speed) noexcept {
+        speed_ = speed;
+    }
 private:
     bool isInited_ = false;
     bool isPause_ = true;
     std::shared_mutex mutex_;
-    double speed = 1.0;
+    double speed_ = 1.0;
     Time::TimePoint lastUpdated_ = 0;
     Time::TimePoint pts_ = 0;
 };

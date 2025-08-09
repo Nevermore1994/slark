@@ -1,7 +1,6 @@
 # base type is macOS and linux, only test base and core library
 # -p platform: "base", "iOS", "Android"
 # -t build_type: "Debug", "Release"
-# -o output: "lib", "exe" build library or executable
 # -d disable component: "audio" or more
 # -a clear: clear cmake cache
 #  gen: generate project file build: generate and compile run: if executable file, build and run
@@ -20,8 +19,7 @@ config_file = os.path.join(root_path, "config.json")
 config_data = {
     "platform": "PC",
     "build_type": "Debug",
-    "output": "exe",
-    "disable": [],
+    "disable_http": False,
     "disable_test": False
 }
 
@@ -30,7 +28,7 @@ def delete_cmake_cache(file_path):
     print("-------clear start -------\n")
     for root_paths, dirs, files in os.walk(file_path):
         for file in files:
-            if any(ext in file for ext in ["CMakeCache", "cmake_install", ".a", "Makefile", ".dylib"]):
+            if any(ext in file for ext in ["CMakeCache", "cmake_install", "Makefile", ".dylib"]):
                 print("remove files:" + os.path.join(root_paths, file))
                 os.remove(os.path.join(root_paths, file))
         for path in dirs:
@@ -40,17 +38,36 @@ def delete_cmake_cache(file_path):
     print("-------clear end -------\n")
 
 
-def gen(platform):
+def gen(platform, need_build_demo):
     print("-------gen start -------\n")
     if platform == "iOS":
-        command = "cmake .. -B {} -G Xcode -DCMAKE_TOOLCHAIN_FILE=../ios.toolchain.cmake -DPLATFORM=OS64 " \
-                  "-DENABLE_BITCODE=FALSE".format(build_path)
+        command = "cmake .. -B {}/iOS -G Xcode " \
+                  "-DCMAKE_TOOLCHAIN_FILE=../../ios.toolchain.cmake " \
+                  "-DPLATFORM=OS64 " \
+                  "-DENABLE_BITCODE=FALSE " \
+                  "-DDEPLOYMENT_TARGET=16.5 ".format(build_path)
         print(command)
         os.system(command)
-        command = "cd ../demo/iOS/demo && pod install --repo-update"
-        os.system(command)
+        if need_build_demo:
+            command = "cd ../demo/iOS/demo && pod install --repo-update"
+            print(command)
+            os.system(command)
+            command = "cd ../demo/iOS/demo && open demo.xcworkspace"
+        else:
+            command = "open {}/iOS/slark.xcodeproj".format(build_path)
+
+    elif platform == "Android":
+        command = "cmake .. -B ../build/Android -G 'Ninja' " \
+                  "-DCMAKE_SYSTEM_NAME=Android " \
+                  "-DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake " \
+                  "-DANDROID_ABI=arm64-v8a " \
+                  "-DANDROID_PLATFORM=29 "
         print(command)
-        command = "cd ../demo/iOS/demo && open demo.xcworkspace"
+        os.system(command)
+        if need_build_demo:
+            command = "open -a 'Android Studio' '../demo/Android' "
+        else:
+            command = "open -a 'Android Studio' '../src/platform/Android/' "
     else:
         command = "cmake -DCMAKE_MAKE_PROGRAM=/usr/bin/make -S {} -B {} -G 'Unix Makefiles'".format(root_path,
                                                                                                     build_path)
@@ -59,53 +76,33 @@ def gen(platform):
     print("-------gen end -------\n")
 
 
-def build(platform):
-    print("-------build start -------\n")
-    command = "xcodebuild -project slark.xcodeproj" if platform == "iOS" else "cmake --build {}".format(build_path)
-    print(command)
-    os.system(command)
-    print("-------build end -------\n")
-
-
-def run():
-    print("-------run -------")
-    exec_path = "./bin/slark"
-    if os.path.exists(exec_path):
-        os.popen("chmod 777 " + exec_path)
-        os.system(exec_path)
-    else:
-        print("run:could not be launched.")
-
-
 def parse_args():
     parser = argparse.ArgumentParser(description="slark build script")
-    parser.add_argument('-p', '--platform', action='store', help="build platform", default="PC",
-                        choices=["PC", "iOS", "Android"])
+    parser.add_argument('-p', '--platform', action='store', help="build platform", choices=["iOS", "Android"])
     parser.add_argument('-t', '--type', action='store', help="build type", default="Debug",
                         choices=["Debug", "Release"])
-    parser.add_argument('-o', '--output', action='store', help="output type", default="exe", choices=["lib", "exe"])
-    parser.add_argument('-d', '--disable', action='store', nargs='+', help="disable component", choices=["http"])
-    parser.add_argument('-a', '--action', action='store', help="action", choices=["clear", "gen", "build", "run"],
+    parser.add_argument('--disable_http', action='store_true', help="disable http")
+    parser.add_argument('-a', '--action', action='store', help="action", choices=["clear", "gen"],
                         default="gen")
-    parser.add_argument('-disable_test', action='store_true', help="disable test")
+    parser.add_argument('--demo', action='store_true', help="build demo")
+    parser.add_argument('--disable_test', action='store_true', help="disable test")
     args = parser.parse_args()
 
     config_data["platform"] = args.platform
     config_data["build_type"] = args.type
-    config_data["output"] = args.output
-    config_data["disable"] = args.disable
+    config_data["disable_http"] = args.disable_http
     config_data["disable_test"] = args.disable_test
+    need_gen_demo = args.demo
 
     with open(config_file, mode='w', encoding='utf-8') as f:
         json.dump(config_data, f, indent=4)
         json_data = json.dumps(config_data, indent=4, ensure_ascii=True)
         print("------ build config ----- \n" + json_data)
 
-    action_list = ["clear", "gen", "build", "run"]
+    action_list = ["clear", "gen"]
     func_list = [lambda: delete_cmake_cache(root_path),
-                 lambda: gen(args.platform),
-                 lambda: build(args.platform),
-                 lambda: run()]
+                 lambda: gen(args.platform, need_gen_demo),
+                 ]
     func_index = action_list.index(args.action)
     index = 0
     while index <= func_index:

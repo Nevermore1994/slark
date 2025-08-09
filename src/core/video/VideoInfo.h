@@ -7,9 +7,9 @@
 
 #pragma once
 
-#include "Data.hpp"
-#include "MediaDefs.h"
 #include "Clock.h"
+#include "AVFrame.hpp"
+#include "Synchronized.hpp"
 
 namespace slark {
 
@@ -19,28 +19,62 @@ struct VideoInfo {
     uint32_t width{};
     uint32_t height{};
     uint32_t timeScale{};
-    std::string_view mediaInfo;
+    uint8_t profile{};
+    uint8_t level{};
+    std::string mediaInfo;
     DataRefPtr sps;
     DataRefPtr pps;
     DataRefPtr vps;
     
-    long double frameDuration() const noexcept {
-        return 1.0 / static_cast<long double>(fps);
+    double frameDuration() const noexcept {
+        if (fps == 0) {
+            return 33.0 / 1000.0;
+        }
+        return 1.0 / static_cast<double>(fps);
+    }
+
+    std::chrono::milliseconds frameDurationMs() const noexcept {
+        return std::chrono::milliseconds(static_cast<uint32_t>(frameDuration() * 1000));
     }
 };
 
+using RequestRenderFunc = std::function<AVFrameRefPtr()>;
 struct IVideoRender {
     virtual void start() noexcept = 0;
+
     virtual void pause() noexcept = 0;
+
     virtual void notifyVideoInfo(std::shared_ptr<VideoInfo> videoInfo) noexcept = 0;
+
     virtual void notifyRenderInfo() noexcept = 0;
-    virtual void pushVideoFrameRender(void* frame) noexcept = 0;
+
+    virtual void pushVideoFrameRender(AVFrameRefPtr frame) noexcept = 0;
+
+    virtual void renderEnd() noexcept = 0;
+
     virtual ~IVideoRender() = default;
-    Clock& clock() noexcept {
-        return videoClock_;
+
+    Time::TimePoint playedTime() noexcept {
+        return videoClock_.time();
     }
+
+    void setTime(Time::TimePoint time) noexcept {
+        videoClock_.setTime(time);
+    }
+
+    void setRequestRenderFunc(RequestRenderFunc func) noexcept {
+        auto ptr = std::make_shared<RequestRenderFunc>(std::move(func));
+        requestRenderFunc_.reset(ptr);
+    }
+
+    void setPlayerId(std::string_view playerId) noexcept {
+        playerId_ = playerId;
+    }
+    
 protected:
     Clock videoClock_;
+    AtomicSharedPtr<RequestRenderFunc> requestRenderFunc_;
+    std::string playerId_;
 };
 
 } //end namespace slark

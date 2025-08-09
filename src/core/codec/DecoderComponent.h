@@ -10,40 +10,69 @@
 
 namespace slark {
 
-class DecoderComponent : public NonCopyable {
+class DecoderComponent : public DecoderDataProvider,
+        public std::enable_shared_from_this<DecoderComponent> {
 public:
     explicit DecoderComponent(DecoderReceiveFunc&& callback);
+    
     ~DecoderComponent() override;
 
-    bool open(DecoderType type, std::shared_ptr<DecoderConfig> config) noexcept;
-    void send(AVFramePtr packet) noexcept;
-    void pause() noexcept;
-    void resume() noexcept;
-    void reset() noexcept;
-    void close() noexcept;
-    void flush() noexcept;
-
-    void setReachEnd(bool isReachEnd) noexcept {
-        isReachEnd_ = isReachEnd;
-    }
+    bool open(DecoderType type, const std::shared_ptr<DecoderConfig>& config) noexcept;
     
-    bool isNeedPushFrame() noexcept {
-        bool isNeed = true;
-        packets_.withReadLock([&isNeed](auto& packets){
-            isNeed = packets.empty();
-        });
-        return isNeed;
+    void close() noexcept;
+    
+    void send(AVFramePtr packet) noexcept;
+    
+    void flush() noexcept;
+    
+    void start() noexcept;
+    
+    void pause() noexcept;
+
+    bool empty() noexcept {
+        std::lock_guard lock(mutex_);
+        return pendingDecodeQueue_.empty();
     }
 
+    bool isFull() noexcept {
+        constexpr uint32_t kMaxPendingDecodeFrameCount = 10;
+        std::lock_guard lock(mutex_);
+        return pendingDecodeQueue_.size() >= kMaxPendingDecodeFrameCount;
+    }
+
+    bool isInputCompleted() noexcept {
+        return isInputCompleted_;
+    }
+
+    void setInputCompleted() noexcept {
+        isInputCompleted_ = true;
+        decodeWorker_.start();
+    }
+
+    bool isRunning() noexcept {
+        return decodeWorker_.isRunning();
+    }
+
+    bool isDecodeCompleted() noexcept;
+
+    AVFrameRefPtr requestDecodeFrame(bool isBlocking) noexcept override;
+
 private:
-    void decode();
+    void pushFrameDecode();
+
+    AVFrameRefPtr peekDecodeFrame() noexcept;
+
+    static AVFrameRefPtr buildEOSFrame(bool isVideo) noexcept;
 private:
-    std::atomic<bool> isReachEnd_ = false;
-    std::mutex mutex_;
-    std::unique_ptr<IDecoder> decoder_;
+    bool isVideo_ = false;
+    std::atomic_bool isOpened_ = false;
+    std::atomic_bool isInputCompleted_ = false;
     DecoderReceiveFunc callback_;
+    Synchronized<std::shared_ptr<IDecoder>> decoder_;
     Thread decodeWorker_;
-    Synchronized<std::deque<AVFramePtr>, std::shared_mutex> packets_;
+    std::mutex mutex_;
+    std::deque<AVFrameRefPtr> pendingDecodeQueue_;
+    std::condition_variable cond_;
 };
 
 }

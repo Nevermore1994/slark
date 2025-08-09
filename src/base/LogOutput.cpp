@@ -11,16 +11,16 @@
 namespace slark {
 
 std::string LogFileName() {
-    using namespace slark::FileUtil;
+    using namespace slark::File;
     const std::string logDir = cachePath() + "/logs";
     if (!isDirExist(logDir) && !createDir(logDir)) {
         LogP("create log folder failed.");
         return "";
     }
-    return logDir + "/" + Time::localShortTime() + ".log";
+    return logDir + "/" + Time::localShortTimeStr() + ".log";
 }
 
-constexpr uint32_t kMaxWriteLogCount = 8 * 1024;
+constexpr uint32_t kMaxWriteLogCount = 80 * 1024;
 
 LogOutput& LogOutput::shareInstance(){
    static std::unique_ptr<LogOutput> instance_;
@@ -31,24 +31,25 @@ LogOutput& LogOutput::shareInstance(){
    return *instance_;
 }
 
-LogOutput::LogOutput() = default;
+LogOutput::LogOutput() {
+    writer_.withLock([&](auto& writer){
+        writer = std::make_unique<Writer>();
+        recreateFile(writer);
+    });
+}
 
 LogOutput::~LogOutput() = default;
 
 void LogOutput::write(const std::string& str) noexcept {
     writer_.withLock([&](auto& writer){
-        if (writer == nullptr) {
-            writer = std::make_unique<Writer>();
-            updateFile(writer);
-        }
         writer->write(str);
         if (writer->writeCount() >= kMaxWriteLogCount) {
-            updateFile(writer);
+            recreateFile(writer);
         }
     });
 }
 
-void LogOutput::updateFile(std::unique_ptr<Writer>& writer) noexcept {
+void LogOutput::recreateFile(std::unique_ptr<Writer>& writer) noexcept {
     auto path = LogFileName();
     if (path.empty()) {
         LogP("log file path is empty");

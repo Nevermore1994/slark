@@ -1,0 +1,104 @@
+//
+// Created by Nevermore on 2024/3/28.
+// slark WriterTest
+// Copyright (c) 2024 Nevermore All rights reserved.
+//
+
+#include <gtest/gtest.h>
+#include <utility>
+#include "IReader.h"
+#include "Writer.hpp"
+#include "Reader.h"
+
+using namespace slark;
+
+TEST(Writer, open) {
+    Writer writer;
+    writer.open("test.txt");
+    ASSERT_EQ(writer.state(), IOState::Normal);
+    writer.write("open test");
+    writer.close();
+    ASSERT_EQ(writer.state(), IOState::Closed);
+}
+
+TEST(Writer, getPath) {
+    Writer writer;
+    writer.open("test1.txt");
+    auto path = writer.path();
+    ASSERT_EQ(path, std::string_view("test1.txt"));
+    writer.close();
+}
+
+TEST(Reader, getPath) {
+    Reader reader;
+    auto task = std::make_unique<ReaderTask>([](IReader*, DataPacket, IOState) {
+
+    });
+    task->path = "test1.txt";
+    reader.open(std::move(task));
+    auto path = reader.path();
+    ASSERT_EQ(path, std::string_view("test1.txt"));
+    reader.close();
+}
+
+TEST(Reader, open) {
+    using namespace std::chrono_literals;
+    using namespace std::string_literals;
+    File::deleteFile("test_read.txt");
+    auto writer = std::make_unique<Writer>();
+    writer->open("test_read.txt");
+    ASSERT_EQ(writer->isOpen(), true);
+    auto str = "This section provides definitions for the specific terminology and the concepts used when describing the C++ programming language.\n"
+               "A C++ program is a sequence of text files (typically header and source files) that contain declarations. They undergo translation to become an executable program, which is executed when the C++ implementation calls its main function.\n"
+               "Certain words in a C++ program have special meaning, and these are known as keywords. Others can be used as identifiers. Comments are ignored during translation. C++ programs also contain literals, the values of characters inside them are determined by character sets and encodings. Certain characters in the program have to be represented with escape sequences.\n"
+               ""s;
+    writer->write(str);
+    std::this_thread::sleep_for(100ms);
+    std::cout << "dispose 1" << std::endl;
+    writer->dispose();
+    std::cout << "dispose 2" << std::endl;
+    writer.reset();
+
+    Reader reader;
+    auto task = std::make_unique<ReaderTask>([&str](IReader*, DataPacket data, IOState state) {
+        std::cout << data.data->view().view() << std::endl;
+        ASSERT_EQ(data.offset, 0);
+        ASSERT_EQ(state, IOState::EndOfFile);
+        ASSERT_EQ(data.data->view().view(), std::string_view(str));
+    });
+    task->path = "test_read.txt";
+    reader.open(std::move(task));
+    reader.start();
+    IOState state;
+    do {
+        std::this_thread::sleep_for(100ms);
+        state = reader.state();
+        std::cout << static_cast<int>(state) << std::endl;
+    } while (state != IOState::EndOfFile);
+    reader.close();
+    ASSERT_EQ(reader.state(), IOState::Closed);
+}
+
+TEST(File, isExist) {
+    Writer writer1;
+    writer1.open("test1.txt");
+    Writer writer2;
+    writer2.open("test2.txt");
+    writer1.close();
+    writer2.close();
+    ASSERT_EQ(File::isFileExist("test1.txt"), true);
+    ASSERT_EQ(File::isFileExist("test2.txt"), true);
+    File::deleteFile("test1.txt");
+    File::deleteFile("test2.txt");
+    ASSERT_EQ(File::isFileExist("test1.txt"), false);
+    ASSERT_EQ(File::isFileExist("test2.txt"), false);
+}
+
+TEST(FileUtil, create) {
+    auto rootPath = File::rootPath();
+    auto testRootPath = rootPath + "/testDir";
+    auto testPath = testRootPath + "/test1";
+    ASSERT_EQ(File::isDirExist(testPath), false);
+    ASSERT_EQ(File::createDir(testPath), true);
+    ASSERT_EQ(File::removeDir(testRootPath), true);
+}

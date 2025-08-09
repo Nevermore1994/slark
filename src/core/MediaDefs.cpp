@@ -4,6 +4,8 @@
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
 #include "MediaDefs.h"
+#include <optional>
+#include <unordered_map>
 
 namespace slark {
 

@@ -53,14 +53,14 @@ std::shared_ptr<Thread> ThreadManager::thisThread() noexcept {
 
 void ThreadManager::reportRunInfo() noexcept {
     Time::TimePoint now = Time::nowTimeStamp();
-    LogI("ThreadManager report now:{}, now live size :{}", now.count, threadInfos_.size());
+    LogI("ThreadManager report now:{}, now live size :{}", now.point(), threadInfos_.size());
     std::unique_lock<std::mutex> lock(mutex_);
     std::erase_if(threadInfos_, [now] (auto& pair) {
         auto& [id, ptr] = pair;
         auto isExpired = ptr.expired();
         if (!isExpired) {
             auto thread = ptr.lock();
-            Time::TimePoint interval = (now - thread->getLastRunTimeStamp());
+            auto interval = now - thread->getLastRunTimeStamp();
             if (thread->isRunning() && interval >= kMaxThreadBlockTimeInterval) {
                 LogE("ThreadManager report [{}] is blocking.", thread->getName().data());
             }

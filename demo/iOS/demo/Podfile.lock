@@ -1,16 +1,23 @@
 PODS:
-  - slark (0.0.1)
+  - OpenSSL-Universal (3.3.3001)
+  - slark (0.0.1):
+    - OpenSSL-Universal
 
 DEPENDENCIES:
   - slark (from `../../..`)
+
+SPEC REPOS:
+  https://github.com/CocoaPods/Specs.git:
+    - OpenSSL-Universal
 
 EXTERNAL SOURCES:
   slark:
     :path: "../../.."
 
 SPEC CHECKSUMS:
-  slark: caf049bf86f9efdffd7a6291bbf11abcdd985209
+  OpenSSL-Universal: 6082b0bf950e5636fe0d78def171184e2b3899c2
+  slark: 6398e8a496fa155c30c62d4672c0761668e5545a
 
-PODFILE CHECKSUM: 22b98425c79d859aa83e431942c1f97edcf331ef
+PODFILE CHECKSUM: 5d536d6ad5bd21c2692d6cdc1169117f9278de78
 
-COCOAPODS: 1.15.2
+COCOAPODS: 1.16.2

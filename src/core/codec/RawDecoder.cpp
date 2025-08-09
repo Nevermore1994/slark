@@ -12,28 +12,30 @@ namespace slark {
 bool RawDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept {
     config_ = config;
     isOpen_ = true;
+    isCompleted_ = false;
     return true;
 }
 
 void RawDecoder::reset() noexcept {
     isOpen_ = false;
-    isFlushed_ = false;
+    isCompleted_ = false;
 }
 
 void RawDecoder::close() noexcept {
     reset();
 }
 
-bool RawDecoder::send(AVFramePtr frame) {
-    frame->stats.decodedStamp = Time::nowTimeStamp();
-    if (receiveFunc) {
-        receiveFunc(std::move(frame));
+DecoderErrorCode RawDecoder::decode(AVFrameRefPtr& frame) noexcept {
+    if (!frame->info->isEndOfStream) {
+        invokeReceiveFunc(std::move(frame));
+    } else {
+        isCompleted_ = true;
     }
-    return true;
+    return DecoderErrorCode::Success;
 }
 
 void RawDecoder::flush() noexcept {
-    isFlushed_ = true;
+    isCompleted_ = false;
 }
 
 

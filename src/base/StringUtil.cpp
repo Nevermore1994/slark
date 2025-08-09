@@ -7,10 +7,11 @@
 #include <sstream>
 #include <functional>
 #include <ranges>
+#include <algorithm>
 
-namespace slark::string {
+namespace slark {
 
-std::vector<std::string_view> spiltString(std::string_view stringView, std::string_view delimiter) {
+std::vector<std::string_view> StringUtil::split(std::string_view stringView, std::string_view delimiter) noexcept {
     auto res = stringView | std::ranges::views::split(delimiter) | std::views::filter([](auto&& range) {
         return !range.empty();
     }) | std::ranges::views::transform([](auto&& range) {
@@ -20,5 +21,12 @@ std::vector<std::string_view> spiltString(std::string_view stringView, std::stri
     return {res.begin(), res.end()};
 }
 
+std::string StringUtil::removeSpace(std::string_view view) noexcept {
+    std::string result;
+    std::ranges::copy_if(view, std::back_inserter(result), [](char ch) {
+        return !std::isspace(static_cast<unsigned char>(ch));
+    });
+    return result;
+}
 
 } // slark

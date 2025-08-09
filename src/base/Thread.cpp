@@ -45,10 +45,6 @@ void Thread::pause() noexcept {
     isRunning_ = false;
 }
 
-void Thread::resume() noexcept {
-    start();
-}
-
 void Thread::start() noexcept {
     {
         std::lock_guard<std::shared_mutex> lock(mutex_);
@@ -61,12 +57,12 @@ void Thread::start() noexcept {
 }
 
 void Thread::process() noexcept {
-    if (!isInit_) {
-        setup();
-    }
     while (!isExit_) {
+        if (!isInit_) {
+            setup();
+        }
         if (isRunning_) {
-            lastRunTimeStamp_ = Time::nowTimeStamp();
+            lastRunTimeStamp_ = Time::nowTimeStamp().point();
             if (func_) {
                 func_();
             }
@@ -83,11 +79,16 @@ void Thread::process() noexcept {
     }
 }
 
+void Thread::setThreadName(std::string_view nameView) noexcept {
+    std::lock_guard lock(mutex_);
+    name_ = std::string(nameView);
+    isInit_ = false;
+}
+
 void Thread::setup() noexcept {
 #ifndef __APPLE__
     auto handle = worker_.native_handle();
-    std::string name = name_;
-    name = name.substr(0, 15);   //linux thread name length < 15
+    auto name = name_.substr(0, 15);   //linux thread name length < 15
     pthread_setname_np(handle, name.c_str());
 #else
     pthread_setname_np(name_.c_str());
@@ -96,15 +97,15 @@ void Thread::setup() noexcept {
 }
 
 TimerId Thread::runAt(Time::TimePoint timeStamp, TimerTask func) noexcept {
-    return timerPool_.runAt(timeStamp, std::move(func));
+    return timerPool_.runAt(timeStamp, std::move(func), ExecuteMode::Serial);
 }
 
 TimerId Thread::runAfter(milliseconds delayTime, TimerTask func) noexcept {
-    return timerPool_.runAfter(delayTime, std::move(func));
+    return timerPool_.runAfter(delayTime, std::move(func), ExecuteMode::Serial);
 }
 
 TimerId Thread::runLoop(milliseconds timeInterval, TimerTask func) noexcept {
-    return timerPool_.runLoop(timeInterval, std::move(func));
+    return timerPool_.runLoop(timeInterval, std::move(func), ExecuteMode::Serial);
 }
 
 }//end namespace slark
