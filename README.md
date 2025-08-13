@@ -74,7 +74,7 @@ player.delegate = self;
 
 // Playback controls
 [player seek:30.0];  // Seek to 30 seconds
-[player setVolume:0.8f];  // Set volume
+[player setVolume:80.0f];  // Set volume
 [player setLoop:YES];  // Enable loop playback
 
 // Implement observer protocol
