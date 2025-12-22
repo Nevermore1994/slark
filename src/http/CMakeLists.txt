@@ -20,10 +20,31 @@ target_include_directories(${MODULE_NAME} PUBLIC include/public)
 
 option(DISABLE_HTTPS "disable https" OFF)
 
+macro(fetch_openssl)
+    set(OPENSSL_URL "https://github.com/Nevermore1994/openssl/archive/refs/tags/3.0.13.zip")
+    set(OPENSSL_DOWNLOAD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/openssl)
+    set(OPENSSL_UNPACK_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/openssl)
+
+    message("download openssl lib ${OPENSSL_DOWNLOAD_DIR}")
+    file(DOWNLOAD
+            ${OPENSSL_URL}
+            ${OPENSSL_DOWNLOAD_DIR}/openssl.zip
+            SHOW_PROGRESS
+    )
+
+    message("download openssl lib ${OPENSSL_UNPACK_DIR}")
+    file(ARCHIVE_EXTRACT
+            INPUT ${OPENSSL_DOWNLOAD_DIR}/openssl.zip
+            DESTINATION ${OPENSSL_UNPACK_DIR}
+    )
+    file(REMOVE ${OPENSSL_DOWNLOAD_DIR}/openssl.zip)
+endmacro()
+
 if (NOT DISABLE_HTTPS)
     message(STATUS "enable https")
+    fetch_openssl()
     if (${BUILD_PLATFORM} STREQUAL "iOS")
-        set(OPENSSL_LIBRARY_ROOT ../libs/openssl/ios)
+        set(OPENSSL_LIBRARY_ROOT ../third_party/openssl/ios)
         set(SSL_LIBRARY ${OPENSSL_LIBRARY_ROOT}/libssl.a)
         set(CRYPTO_LIBRARY ${OPENSSL_LIBRARY_ROOT}libcrypto.a)
         target_link_libraries(${MODULE_NAME} PUBLIC ${SSL_LIBRARY} ${CRYPTO_LIBRARY})
@@ -31,7 +52,7 @@ if (NOT DISABLE_HTTPS)
         target_compile_definitions(${MODULE_NAME} PUBLIC SLARK_IOS)
         target_include_directories(${MODULE_NAME} PRIVATE ../platform/iOS/)
     elseif(${BUILD_PLATFORM} STREQUAL "Android")
-        set(OPENSSL_LIBRARY_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../libs/openssl/android)
+        set(OPENSSL_LIBRARY_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/openssl/android)
         set(SSL_LIBRARY ${OPENSSL_LIBRARY_ROOT}/libssl.a)
         set(CRYPTO_LIBRARY ${OPENSSL_LIBRARY_ROOT}/libcrypto.a)
         target_link_libraries(${MODULE_NAME} PUBLIC ${SSL_LIBRARY} ${CRYPTO_LIBRARY})

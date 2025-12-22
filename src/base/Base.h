@@ -17,28 +17,28 @@
 
 namespace slark {
 
-template<typename T> requires requires (T&&) { std::is_floating_point_v<T>; }
-inline bool isEqual(T a, T b, T epsilon = std::numeric_limits<T>::epsilon()) {
+template<typename T> requires std::is_floating_point_v<T>
+bool isEqual(T a, T b, T epsilon = std::numeric_limits<T>::epsilon()) {
     return std::fabs(a - b) < epsilon;
 }
 
-template<typename T> requires requires (T&&) { std::is_floating_point_v<T>; }
-inline bool isEqualOrGreater(T a, T b, T epsilon = std::numeric_limits<T>::epsilon()) {
+template<typename T> requires std::is_floating_point_v<T>
+bool isEqualOrGreater(T a, T b, T epsilon = std::numeric_limits<T>::epsilon()) {
     return std::fabs(a - b) < epsilon || std::greater<T>()(a, b);
 }
 
-template<typename T> requires requires (T&&) { std::is_floating_point_v<T>; }
-inline bool isEqualOrLess(T a, T b, T epsilon = std::numeric_limits<T>::epsilon()) {
+template<typename T> requires std::is_floating_point_v<T>
+bool isEqualOrLess(T a, T b, T epsilon = std::numeric_limits<T>::epsilon()) {
     return std::fabs(a - b) < epsilon || std::less<T>()(a, b);
 }
 
 template<typename T>
-inline bool isGreater(T a, T b) {
+bool isGreater(T a, T b) {
     return std::greater<T>()(a, b);
 }
 
 template<typename T>
-inline bool isLess(T a, T b) {
+bool isLess(T a, T b) {
     return std::less<T>()(a, b);
 }
 
