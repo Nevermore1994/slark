@@ -1,54 +1,33 @@
-# base type is macOS and linux, only test base and core library
-# -p platform: "base", "iOS", "Android"
-# -t build_type: "Debug", "Release"
-# -d disable component: "audio" or more
-# -a clear: clear cmake cache
-#  gen: generate project file build: generate and compile run: if executable file, build and run
-# disable_test
-
 import os
-import shutil
 import argparse
-import json
 
 now_path = os.getcwd()
 root_path = os.path.abspath(os.path.dirname(now_path))
-build_path = os.path.join(root_path, "build")
-config_file = os.path.join(root_path, "config.json")
-
-config_data = {
-    "platform": "PC",
-    "build_type": "Debug",
-    "disable_http": False,
-    "disable_test": False
-}
+build_path = os.path.join(root_path, "cmake-build")
 
 
-def delete_cmake_cache(file_path):
+def delete_cmake_cache():
     print("-------clear start -------\n")
-    for root_paths, dirs, files in os.walk(file_path):
-        for file in files:
-            if any(ext in file for ext in ["CMakeCache", "cmake_install", "Makefile", ".dylib"]):
-                print("remove files:" + os.path.join(root_paths, file))
-                os.remove(os.path.join(root_paths, file))
-        for path in dirs:
-            if any(ext in path for ext in ["CMakeFiles", "_deps"]):
-                print("remove dirs:" + os.path.join(root_paths, path))
-                shutil.rmtree(os.path.join(root_paths, path))
+    command = "make clean; rm -rf ../cmake-build-debug ../cmake-build-release"
+    print(command)
+    os.system(command)
     print("-------clear end -------\n")
 
 
-def gen(platform, need_build_demo):
+def gen_project(args):
     print("-------gen start -------\n")
-    if platform == "iOS":
+    global build_path
+    build_path += "-" + args.type.lower()
+    if args.platform == "iOS":
         command = "cmake .. -B {}/iOS -G Xcode " \
                   "-DCMAKE_TOOLCHAIN_FILE=../../ios.toolchain.cmake " \
+                  "-DBUILD_PLATFORM=iOS" \
                   "-DPLATFORM=OS64 " \
                   "-DENABLE_BITCODE=FALSE " \
                   "-DDEPLOYMENT_TARGET=16.5 ".format(build_path)
         print(command)
         os.system(command)
-        if need_build_demo:
+        if args.demo:
             command = "cd ../demo/iOS/demo && pod install --repo-update"
             print(command)
             os.system(command)
@@ -56,63 +35,43 @@ def gen(platform, need_build_demo):
         else:
             command = "open {}/iOS/slark.xcodeproj".format(build_path)
 
-    elif platform == "Android":
-        command = "cmake .. -B ../build/Android -G 'Ninja' " \
+    elif args.platform == "Android":
+        command = "cmake .. -B {}/Android -G 'Ninja' " \
                   "-DCMAKE_SYSTEM_NAME=Android " \
+                  "-DBUILD_PLATFORM=Android" \
                   "-DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake " \
                   "-DANDROID_ABI=arm64-v8a " \
-                  "-DANDROID_PLATFORM=29 "
+                 "-DCMAKE_BUILD_TYPE={}" \
+                  "-DANDROID_PLATFORM=29 ".format(build_path, args.type)
         print(command)
         os.system(command)
-        if need_build_demo:
+        if args.demo:
             command = "open -a 'Android Studio' '../demo/Android' "
         else:
             command = "open -a 'Android Studio' '../src/platform/Android/' "
     else:
-        command = "cmake -DCMAKE_MAKE_PROGRAM=/usr/bin/make -S {} -B {} -G 'Unix Makefiles'".format(root_path,
-                                                                                                    build_path)
+        command = "cmake -DCMAKE_MAKE_PROGRAM=/usr/bin/make -S {} -B {} -G 'Unix Makefiles'" \
+            .format(root_path, build_path)
     print(command)
     os.system(command)
     print("-------gen end -------\n")
 
 
 def parse_args():
+    global build_path
     parser = argparse.ArgumentParser(description="slark build script")
     parser.add_argument('-p', '--platform', action='store', help="build platform", choices=["iOS", "Android"])
     parser.add_argument('-t', '--type', action='store', help="build type", default="Debug",
                         choices=["Debug", "Release"])
     parser.add_argument('--disable_http', action='store_true', help="disable http")
-    parser.add_argument('-a', '--action', action='store', help="action", choices=["clear", "gen"],
-                        default="gen")
-    parser.add_argument('--demo', action='store_true', help="build demo")
     parser.add_argument('--disable_test', action='store_true', help="disable test")
+    parser.add_argument('--demo', action='store_true', help="build demo")
     args = parser.parse_args()
-
-    config_data["platform"] = args.platform
-    config_data["build_type"] = args.type
-    config_data["disable_http"] = args.disable_http
-    config_data["disable_test"] = args.disable_test
-    need_gen_demo = args.demo
-
-    with open(config_file, mode='w', encoding='utf-8') as f:
-        json.dump(config_data, f, indent=4)
-        json_data = json.dumps(config_data, indent=4, ensure_ascii=True)
-        print("------ build config ----- \n" + json_data)
-
-    action_list = ["clear", "gen"]
-    func_list = [lambda: delete_cmake_cache(root_path),
-                 lambda: gen(args.platform, need_gen_demo),
-                 ]
-    func_index = action_list.index(args.action)
-    index = 0
-    while index <= func_index:
-        func_list[index]()
-        index += 1
-
+    delete_cmake_cache()
+    gen_project(parser.parse_args())
 
 def main():
     parse_args()
-
 
 if __name__ == '__main__':
     main()

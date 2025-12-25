@@ -26,42 +26,11 @@ set(BUILD_PLATFORM "PC" CACHE STRING "build platform")
 option(DISABLE_TEST "disable test" OFF)
 option(DISABLE_HTTP "disable http" OFF)
 
-macro(read_config)
-    # Check if config.json exists
-    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/config.json)
-        file(READ ${CMAKE_CURRENT_SOURCE_DIR}/config.json CONFIG_JSON_STRING)
-    else()
-        # Provide default configuration if file doesn't exist
-        set(CONFIG_JSON_STRING "{\"platform\": \"PC\", \"build_type\": \"Debug\", \"disable_http\": false, \"disable_test\": false }")
-        message(WARNING "config.json not found, using default configuration: ${CONFIG_JSON_STRING}")
-    endif()
-
-    #parse build platform
-    string(JSON BUILD_PLATFORM_VALUE GET ${CONFIG_JSON_STRING} platform)
-    set(BUILD_PLATFORM ${BUILD_PLATFORM_VALUE} CACHE STRING "build platform" FORCE)
-
-    #parse and set build type
-    string(JSON BUILD_TYPE GET ${CONFIG_JSON_STRING} build_type)
-    message(STATUS "build:${BUILD_TYPE}")
-    if(${BUILD_TYPE} STREQUAL "Debug")
-        set(CMAKE_BUILD_TYPE DEBUG)
-        add_definitions(-DDEBUG) #set DEBUG = 1
-    else()
-        set(CMAKE_BUILD_TYPE RELEASE)
-        add_definitions(-DRELEASE) #set RELEASE = 1
-    endif()
-
-    if(${BUILD_PLATFORM_VALUE} STREQUAL "iOS" OR ${BUILD_PLATFORM_VALUE} STREQUAL "Android")
-        set(DISABLE_TEST ON CACHE BOOL "Disable test" FORCE)
-    else()
-        string(JSON DISABLE_TEST_VALUE GET ${CONFIG_JSON_STRING} disable_test)
-        set(DISABLE_TEST ${DISABLE_TEST_VALUE} CACHE BOOL "Disable test" FORCE)
-    endif()
-
-    string(JSON DISABLE_HTTP_VALUE GET ${CONFIG_JSON_STRING} disable_http)
-    set(DISABLE_HTTP ${DISABLE_HTTP_VALUE} CACHE BOOL "Disable http" FORCE)
-
-endmacro()
+if(${CMAKE_BUILD_TYPE} STREQUAL "Release")
+    add_definitions(-DRELEASE) #set RELEASE = 1
+else()
+    add_definitions(-DDEBUG) #set DEBUG = 1
+endif()
 
 #add base file
 macro(add_base_file TARGET_NAME)
@@ -91,7 +60,6 @@ macro(add_core_file TARGET_NAME)
     )
 endmacro()
 
-read_config()
 add_library(${PROJECT_NAME} SHARED "")
 
 #add base file
