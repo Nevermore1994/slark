@@ -5,13 +5,21 @@
 //  Created by Nevermore on 2025/1/10.
 //
 
-#include "DataView.h"
+#include "DataView.hpp"
+
+#include <ranges>
 
 namespace slark {
 
-std::ostringstream& operator<<(std::ostringstream& stream, const DataView& view) noexcept {
-    stream << view.view();
-    return stream;
+std::vector<DataView> DataView::split(std::string_view delimiter) const noexcept {
+    return StringUtil::split(toStringView(), delimiter) | std::views::transform([](auto view) {
+               return DataView::fromString(view);
+           }) |
+           std::ranges::to<std::vector>();
 }
 
+std::string DataView::removeSpace() const noexcept {
+    return StringUtil::removeSpace(toStringView());
 }
+
+} // namespace slark

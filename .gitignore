@@ -1,4 +1,5 @@
 /third_party
+/.fetchcontent_cache
 *.debug.xcconfig
 *.release.xcconfig
 /CMakeFiles

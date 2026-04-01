@@ -3,22 +3,55 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android-lightgrey.svg)
 ![Version](https://img.shields.io/badge/version-0.0.1-green.svg)
+![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)
+
+[![Build Status](https://github.com/Nevermore1994/slark/workflows/Slark%20Build/badge.svg)](https://github.com/Nevermore1994/slark/actions)
+[![macOS Build](https://img.shields.io/github/actions/workflow/status/Nevermore1994/slark/cmake.yml?label=macOS&branch=main)](https://github.com/Nevermore1994/slark/actions)
+[![iOS Build](https://img.shields.io/github/actions/workflow/status/Nevermore1994/slark/cmake.yml?label=iOS&branch=main)](https://github.com/Nevermore1994/slark/actions)
+[![Android Build](https://img.shields.io/github/actions/workflow/status/Nevermore1994/slark/cmake.yml?label=Android&branch=main)](https://github.com/Nevermore1994/slark/actions)
 
 - [English Documentation](README.md)
 
-Slark 是一款跨平台视频播放器，支持 iOS 和 Android 平台。采用现代 C++23 从零构建，提供精简的媒体播放解决方案，具有极少的外部依赖（仅在 HTTPS 支持时需要 OpenSSL）。
+Slark 是一款跨平台视频播放器，支持 iOS 和 Android 平台。采用现代 C++23 从零构建，提供精简的媒体播放解决方案，具有极少的外部依赖。
 
 ## 🔧 支持平台
 
 ### iOS
 - **最低版本**：iOS 16.5+
-- **架构**：arm64
+- **架构**：arm64（真机），x86_64/arm64（模拟器）
 - **集成方式**：CocoaPods
 
 ### Android  
 - **最低版本**：API Level 29 (Android 10.0)+
-- **架构**：arm64-v8a
+- **架构**：arm64-v8a, armeabi-v7a, x86_64
 - **集成方式**：Gradle/CMake
+
+## 🔒 OpenSSL 依赖
+
+Slark 使用 OpenSSL 3.0.13 提供 HTTPS 支持。**OpenSSL 从源码编译**，以确保：
+- ✅ 安全性：完全控制编译选项
+- ✅ 一致性：所有平台使用相同版本
+- ✅ 交叉编译：原生支持 iOS 和 Android
+
+### 构建行为
+
+- **源码缓存**：OpenSSL 源码缓存在 `.cache/openssl/` 目录，避免重复下载
+- **构建缓存**：编译产物缓存在 `build/deps/openssl/` 目录
+- **自动下载**：从 OpenSSL 官方发布源自动获取
+
+### 禁用 HTTPS
+
+如果不需要 HTTPS 支持，可以禁用：
+
+```bash
+cmake -B build -DDISABLE_HTTPS=ON
+```
+
+或使用构建脚本：
+
+```bash
+./build.sh --disable_http
+```
 
 ## 📦 安装
 
@@ -150,14 +183,12 @@ cd slark
 
 2. **iOS 构建**：
 ```bash
-cd script
-python build.py -p iOS
+./build.sh -p iOS
 ```
 
 3. **Android 构建**：
 ```bash
-cd script
-python build.py -p Android
+./build.sh -p Android
 ```
 
 ## 📖 示例项目
@@ -171,10 +202,10 @@ python build.py -p Android
 
 ```bash
 # iOS
-cd script && python build.py -p iOS --demo
+./build.sh -p iOS --demo
 
 # Android  
-cd script && python build.py -p Android --demo
+./build.sh -p Android --demo
 ```
 
 ## 📚 API 文档

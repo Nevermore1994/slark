@@ -5,12 +5,13 @@
 //  Created by Nevermore.
 //
 #pragma once
-#include <utility>
-#include <condition_variable>
-#include "NonCopyable.h"
 #include "AVFrame.hpp"
+#include "NonCopyable.h"
 #include "Reflection.hpp"
 #include "Synchronized.hpp"
+
+#include <condition_variable>
+#include <utility>
 
 namespace slark {
 
@@ -23,7 +24,7 @@ enum class DecoderType {
     VideoHardWareDecoder = 2001,
 };
 
-enum class DecoderErrorCode: int8_t {
+enum class DecoderErrorCode : int8_t {
     Unknown = 0,
     Again = 1,
     Success = 2,
@@ -58,15 +59,14 @@ public:
 
 using DecoderReceiveFunc = std::function<void(AVFrameRefPtr)>;
 
-class IDecoder : public NonCopyable {
+class IDecoder : public NonCopyMovable {
 public:
-    explicit IDecoder(DecoderType type)
-        : decoderType_(type) {
+    explicit IDecoder(DecoderType type) : decoderType_(type) {}
 
-    }
     ~IDecoder() override {
         setReceiveFunc(nullptr);
     }
+
 public:
     [[nodiscard]] DecoderType type() const noexcept {
         return decoderType_;
@@ -97,14 +97,14 @@ public:
     }
 
     virtual void flush() noexcept = 0;
-    
+
     virtual void reset() noexcept {
         flush();
         isCompleted_ = false;
     }
-    
+
     virtual bool open(std::shared_ptr<DecoderConfig> config) noexcept = 0;
-    
+
     virtual void close() noexcept {
         reset();
     }
@@ -120,14 +120,15 @@ public:
     }
 
     bool isCompleted() const noexcept {
-        return isCompleted_ ;
+        return isCompleted_;
     }
-    
+
     void invokeReceiveFunc(AVFrameRefPtr frame) noexcept {
         if (auto func = receiveFunc_.load()) {
             (*func)(std::move(frame));
         }
     }
+
 protected:
     std::atomic_bool isOpen_ = false;
     std::atomic_bool isCompleted_ = false;
@@ -137,5 +138,4 @@ protected:
     std::shared_ptr<DecoderConfig> config_;
 };
 
-}
-
+} // namespace slark

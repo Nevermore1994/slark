@@ -10,13 +10,13 @@
 
 #include "IDemuxer.h"
 #include "NonCopyable.h"
+
 #include <memory>
 #include <unordered_set>
 
 namespace slark {
 
-class DemuxerManager : public slark::NonCopyable {
-
+class DemuxerManager : public slark::NonCopyMovable {
 public:
     static DemuxerManager& shareInstance();
 
@@ -37,6 +37,6 @@ private:
     std::unordered_map<DemuxerType, DemuxerInfo> demuxers_;
 };
 
-}
+} // namespace slark
 
 /* DemuxerManager_hpp */

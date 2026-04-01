@@ -2,18 +2,19 @@
 // Created by Nevermore- on 2025/7/6.
 //
 #pragma once
-#include "Thread.h"
-#include "NonCopyable.h"
 #include "DemuxerManager.h"
+#include "NonCopyable.h"
+#include "Thread.h"
+
 #include <list>
 
 namespace slark {
 
 using HandleSeekFunc = std::function<void(Range)>;
-using HandleDemuxResultFunc = std::function<void(const std::shared_ptr<IDemuxer>&, DemuxerResult&&)>;
+using HandleDemuxResultFunc =
+    std::function<void(const std::shared_ptr<IDemuxer>&, DemuxerResult&&)>;
 
-class DemuxerComponent: public slark::NonCopyable {
-
+class DemuxerComponent : public slark::NonCopyMovable {
 public:
     explicit DemuxerComponent(DemuxerConfig config);
 
@@ -35,7 +36,7 @@ public:
         flushed_ = true;
     }
 
-    ///In HLS, what you get is the TS index, while in other cases, it’s the file offset.
+    /// In HLS, what you get is the TS index, while in other cases, it’s the file offset.
     [[nodiscard]] uint64_t getSeekToPos(double time) noexcept;
 
     bool pushData(std::list<DataPacket>&& data) noexcept;
@@ -49,7 +50,7 @@ public:
     }
 
     [[nodiscard]] bool isRunning() const noexcept {
-        return worker_.isRunning();
+        return worker_->isRunning();
     }
 
     [[nodiscard]] bool isOpen() const noexcept {
@@ -144,11 +145,12 @@ public:
         }
         return DemuxerType::Unknown;
     }
+
 private:
     void demuxData() noexcept;
 
     void handleOpenMp4DemuxerResult(bool isSuccess) noexcept;
-    
+
     void handleOpenWavDemuxerResult(bool isSuccess) noexcept;
 
     void invokeHandleResultFunc(DemuxerResult&& result) noexcept {
@@ -164,6 +166,7 @@ private:
             std::invoke(*func, range);
         }
     }
+
     bool createDemuxer() noexcept;
 
     bool openDemuxer(DataPacket& packet) noexcept;
@@ -174,8 +177,9 @@ private:
         });
         flushed_ = false;
     }
+
 private:
-    Thread worker_;
+    std::shared_ptr<Thread> worker_;
     DemuxerConfig config_;
     AtomicSharedPtr<HandleDemuxResultFunc> handleResultFunc_;
     AtomicSharedPtr<HandleSeekFunc> handleSeekFunc_;
@@ -186,4 +190,4 @@ private:
     std::atomic_bool isClosed_ = false;
 };
 
-} // slark
+} // namespace slark

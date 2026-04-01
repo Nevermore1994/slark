@@ -2,8 +2,11 @@
 // Created by Nevermore on 2025/4/25.
 //
 #pragma once
+#include <compare>
 #include <cstdint>
+#include <format>
 #include <optional>
+#include <string>
 
 namespace slark {
 
@@ -13,14 +16,10 @@ struct Range {
 
     Range() = default;
 
-    Range(uint64_t position, int64_t length)
-        : pos(position), size(length) {}
+    Range(uint64_t position, int64_t length) : pos(position), size(length) {}
 
     /// to the end of file
-    explicit Range(uint64_t position)
-        : pos(position), size(std::nullopt) {
-
-    }
+    explicit Range(uint64_t position) : pos(position), size(std::nullopt) {}
 
     void moveTo(uint64_t position) noexcept {
         pos = position;
@@ -50,10 +49,49 @@ struct Range {
         if (!isValid()) {
             return 0;
         }
-        if (!size.has_value() ) {
+        if (!size.has_value()) {
             return INT64_MAX;
         }
         return pos.value() + static_cast<uint64_t>(size.value()) - 1;
+    }
+
+    [[nodiscard]] bool contains(uint64_t position) const noexcept {
+        if (!isValid()) {
+            return false;
+        }
+        return position >= start() && position <= end();
+    }
+
+    [[nodiscard]] std::optional<Range> overlap(const Range& other) const noexcept {
+        if (!isValid() || !other.isValid()) {
+            return std::nullopt;
+        }
+        auto overlapStart = std::max(start(), other.start());
+        auto overlapEnd = std::min(end(), other.end());
+        if (overlapStart > overlapEnd) {
+            return std::nullopt;
+        }
+        return Range(overlapStart, static_cast<int64_t>(overlapEnd - overlapStart + 1));
+    }
+
+    auto operator<=>(const Range& other) const noexcept {
+        if (!isValid() && !other.isValid()) {
+            return std::strong_ordering::equal;
+        }
+        if (!isValid()) {
+            return std::strong_ordering::less;
+        }
+        if (!other.isValid()) {
+            return std::strong_ordering::greater;
+        }
+        if (auto cmp = start() <=> other.start(); cmp != 0) {
+            return cmp;
+        }
+        return end() <=> other.end();
+    }
+
+    bool operator==(const Range& other) const noexcept {
+        return (*this <=> other) == 0;
     }
 
     [[nodiscard]] std::string toString() const noexcept {
@@ -61,9 +99,9 @@ struct Range {
             return "Invalid Range";
         }
         if (!size.has_value()) {
-            return "Range: [" + std::to_string(pos.value()) + ", end)";
+            return std::format("Range: [{}, end)", pos.value());
         }
-        return "Range: [" + std::to_string(pos.value()) + ", " + std::to_string(end()) + "]";
+        return std::format("Range: [{}, {}]", pos.value(), end());
     }
 
     [[nodiscard]] std::string toHeaderString() const noexcept {
@@ -71,11 +109,10 @@ struct Range {
             return "bytes=0-";
         }
         if (!size.has_value()) {
-            return "bytes=" + std::to_string(pos.value()) + "-";
+            return std::format("bytes={}-", pos.value());
         }
-        return "bytes=" + std::to_string(pos.value()) + "-" + std::to_string(end());
+        return std::format("bytes={}-{}", pos.value(), end());
     }
 };
 
-}
-
+} // namespace slark

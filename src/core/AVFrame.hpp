@@ -15,6 +15,7 @@
 #include <ranges>
 #include "Assert.hpp"
 #include "Data.hpp"
+#include "DataView.hpp"
 #include "Log.hpp"
 
 namespace slark {
@@ -211,7 +212,7 @@ struct AVFrame {
     
     [[nodiscard]] DataView view() const noexcept {
         if (data) {
-            return data->view();
+            return DataView(data->view());
         }
         return {};
     }

@@ -60,12 +60,13 @@ TEST(Reader, open) {
     writer.reset();
 
     Reader reader;
-    auto task = std::make_unique<ReaderTask>([&str](IReader*, DataPacket data, IOState state) {
-        std::cout << data.data->view().view() << std::endl;
+    ReaderDataCallBack callback = [&str](IReader*, DataPacket data, IOState state) {
+        std::cout << data.data->toStringView() << std::endl;
         ASSERT_EQ(data.offset, 0);
         ASSERT_EQ(state, IOState::EndOfFile);
-        ASSERT_EQ(data.data->view().view(), std::string_view(str));
-    });
+        ASSERT_EQ(data.data->toStringView(), std::string_view(str));
+    };
+    auto task = std::make_unique<ReaderTask>(std::move(callback));
     task->path = "test_read.txt";
     reader.open(std::move(task));
     reader.start();

@@ -4,7 +4,6 @@
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 #include "FileUtil.h"
-#include <filesystem>
 
 namespace slark::File {
 
@@ -22,58 +21,80 @@ std::string cachePath() noexcept {
 }
 #endif
 
-bool isDirExist(const std::string& path) noexcept {
+bool isDirExist(std::string_view path) noexcept {
     if (path.empty()) {
         return false;
     }
-    return std::filesystem::exists(path) && std::filesystem::is_directory(path);
+    std::error_code ec;
+    std::filesystem::path p(path);
+    return std::filesystem::exists(p, ec) && std::filesystem::is_directory(p, ec);
 }
 
-bool isFileExist(const std::string& path) noexcept {
+bool isFileExist(std::string_view path) noexcept {
     if (path.empty()) {
         return false;
     }
-    return std::filesystem::exists(path) && !std::filesystem::is_directory(path);
+    std::error_code ec;
+    std::filesystem::path p(path);
+    return std::filesystem::exists(p, ec) && !std::filesystem::is_directory(p, ec);
 }
 
-bool createDir(const std::string& path) noexcept {
-    return std::filesystem::create_directories(path);
+bool createDir(std::string_view path) noexcept {
+    std::error_code ec;
+    return std::filesystem::create_directories(std::filesystem::path(path), ec);
 }
 
-bool deleteFile(const std::string& path) noexcept {
-    return !path.empty() && std::filesystem::remove(path);
+bool deleteFile(std::string_view path) noexcept {
+    if (path.empty()) {
+        return false;
+    }
+    std::error_code ec;
+    return std::filesystem::remove(std::filesystem::path(path), ec);
 }
 
-bool renameFile(const std::string& oldName, const std::string& newName) noexcept {
+bool renameFile(std::string_view oldName, std::string_view newName) noexcept {
     if (oldName.empty() || newName.empty()) {
         return false;
     }
     std::error_code error;
-    std::filesystem::rename(oldName, newName, error);
+    std::filesystem::rename(std::filesystem::path(oldName), std::filesystem::path(newName), error);
     return !error;
 }
 
-uint64_t fileSize(const std::string& path) noexcept {
-    return path.empty() ? 0 : static_cast<uint64_t>(std::filesystem::file_size(path));
+uint64_t fileSize(std::string_view path) noexcept {
+    if (path.empty()) {
+        return 0;
+    }
+    std::error_code ec;
+    auto size = std::filesystem::file_size(std::filesystem::path(path), ec);
+    return ec ? 0 : static_cast<uint64_t>(size);
 }
 
-bool resizeFile(const std::string& path, uint64_t length) noexcept {
+bool resizeFile(std::string_view path, uint64_t length) noexcept {
     if (path.empty()) {
         return true;
     }
     std::error_code error;
-    std::filesystem::resize_file(path, length, error);
+    std::filesystem::resize_file(std::filesystem::path(path), length, error);
     return !error;
 }
 
-bool removeDir(const std::string& path) noexcept {
-    return path.empty() || std::filesystem::remove_all(path);
+bool removeDir(std::string_view path) noexcept {
+    if (path.empty()) {
+        return true;
+    }
+    std::error_code ec;
+    std::filesystem::remove_all(std::filesystem::path(path), ec);
+    return !ec;
 }
 
-bool copyFile(const std::string& from, const std::string& to) noexcept {
+bool copyFile(std::string_view from, std::string_view to) noexcept {
     std::error_code error;
-    std::filesystem::copy(from, to, std::filesystem::copy_options::recursive, error);
+    std::filesystem::copy(std::filesystem::path(from),
+                          std::filesystem::path(to),
+                          std::filesystem::copy_options::recursive,
+                          error);
     return !error;
 }
 
-}//end namespace slark
+} // namespace slark::File

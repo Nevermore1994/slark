@@ -1,88 +1,67 @@
 //
 // Created by Nevermore on 2022/5/13.
+// slark Reflection — lightweight factory registry
 // Copyright (c) 2022 Nevermore All rights reserved.
 //
 
 #pragma once
-#include <unordered_map>
-#include <string>
+
+#include "Synchronized.hpp"
+
 #include <functional>
-#include <mutex>
-#include "NonCopyable.h"
+#include <memory>
+#include <string>
+#include <unordered_map>
 
 namespace slark {
 
-using ReflectionFunction = std::function<std::shared_ptr<void>(void)>;
-
 class Reflection {
 public:
+    using Factory = std::function<std::shared_ptr<void>()>;
+
     static Reflection& shareInstance() noexcept {
         static Reflection instance;
         return instance;
     }
 
-    inline ReflectionFunction generate(const std::string& name) noexcept {
-        std::unique_lock<std::mutex> lock(mutex_);
-        auto it = builders_.find(name);
-        if (it == builders_.end()) {
-            return nullptr;
-        }
-        return it->second;
+    void registerFactory(std::string name, Factory factory) noexcept {
+        factories_.withLock([&](auto& map) {
+            map.insert_or_assign(std::move(name), std::move(factory));
+        });
     }
 
-    inline void enrolment(std::string name, ReflectionFunction func) noexcept {
-        std::unique_lock<std::mutex> lock(mutex_);
-        builders_.insert_or_assign(std::move(name), std::move(func));
+    template <typename T>
+    std::shared_ptr<T> create(const std::string& name) noexcept {
+        auto factory = factories_.withLock([&](const auto& map) -> Factory {
+            if (auto it = map.find(name); it != map.end()) {
+                return it->second;
+            }
+            return nullptr;
+        });
+        if (!factory) {
+            return nullptr;
+        }
+        return std::static_pointer_cast<T>(factory());
+    }
+
+    template <typename T>
+    static std::string enroll(const std::string& name) noexcept {
+        shareInstance().registerFactory(name, []() -> std::shared_ptr<void> {
+            return std::make_shared<T>();
+        });
+        return name;
     }
 
 private:
     Reflection() = default;
-
     ~Reflection() = default;
 
-private:
-    std::unordered_map<std::string, ReflectionFunction> builders_;
-    std::mutex mutex_;
+    Synchronized<std::unordered_map<std::string, Factory>> factories_;
 };
 
-template<typename T>
-std::string registerClassImpl(
-    const std::string& name,
-    std::function<std::shared_ptr<T>()>&& func
-) noexcept {
-    Reflection::shareInstance().enrolment(name, [func = std::move(func)]() {
-        return func();
-    });
-    return name;
-}
+#define SLARK_GET_CLASS_NAME(cls) #cls
+#define SLARK_REGISTER_CLASS(cls)                       \
+    static inline const std::string cls##_registered_ = \
+        ::slark::Reflection::enroll<cls>(SLARK_GET_CLASS_NAME(cls))
 
-template<typename T>
-inline std::shared_ptr<T> GenerateInstance(const std::string& name) {
-    auto f = Reflection::shareInstance().generate(name);
-    if (f) {
-        auto instance = f();
-        if (instance) {
-            return std::static_pointer_cast<T>(instance);
-        }
-    }
-    return nullptr;
-}
-
-struct BaseClass {
-    template<typename T>
-    static std::string registerClass(std::string name) noexcept{
-        return registerClassImpl<T>(name, []() {
-            return std::make_shared<T>();
-        });
-    }
-
-    template<typename T>
-    static std::shared_ptr<T> create(const std::string& name) noexcept {
-        return GenerateInstance<T>(name);
-    }
-};
-
-#define GetClassName(name) #name
-#define RegisterClass(name) BaseClass::registerClass<name>(GetClassName(name))
-
-}
+} // namespace slark

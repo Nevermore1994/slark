@@ -5,35 +5,35 @@
 //  Created by Nevermore on 2022/5/4.
 //
 
-#include "Player.h"
-#include "Log.hpp"
 #include "PlayerImpl.h"
-#include "PlayerImplHelper.h"
-#include "Util.hpp"
-#include "Base.h"
+
 #include "AudioRenderComponent.h"
-#include "DecoderComponent.h"
-#include "Event.h"
-#include "IDemuxer.h"
-#include "DecoderConfig.h"
-#include "GLContextManager.h"
-#include "MediaUtil.h"
+#include "Base.h"
 #include "Clock.h"
+#include "DecoderComponent.h"
+#include "DecoderConfig.h"
+#include "Event.h"
+#include "GLContextManager.h"
 #include "HLSReader.h"
+#include "IDemuxer.h"
+#include "Log.hpp"
+#include "MediaUtil.h"
+#include "Player.h"
+#include "PlayerImplHelper.h"
+#include "Util.h"
 
 namespace slark {
 
-const double kAVSyncMinThreshold = 0.1; //100ms
-const double kAVSyncMaxThreshold = 10; //10s
-const double kMinCanPlayTime = 0.5; //500ms
+const double kAVSyncMinThreshold = 0.1; // 100ms
+const double kAVSyncMaxThreshold = 10;  // 10s
+const double kMinCanPlayTime = 0.5;     // 500ms
 const uint32_t kMaxCacheDecodedVideoFrame = 8;
 const uint32_t kMaxCacheDecodedAudioFrame = 10;
-constexpr double kMinPushDecodeTime = 0.2; //second
+constexpr double kMinPushDecodeTime = 0.2; // second
 
-Player::Impl::Impl(std::unique_ptr<PlayerParams> params)
-    : playerId_(Random::uuid()) {
+Player::Impl::Impl(std::unique_ptr<PlayerParams> params) : playerId_(Random::uuid()) {
     GLContextManager::shareInstance().addMainContext(playerId_, params->mainGLContext);
-    params_.withWriteLock([&params](auto& p){
+    params_.withWriteLock([&params](auto& p) {
         p = std::move(params);
     });
 }
@@ -43,16 +43,13 @@ Player::Impl::~Impl() {
     if (ownerThread_) {
         updateState(PlayerState::Stop);
         std::unique_lock<std::mutex> lock(releaseMutex_);
-        cond_.wait(lock, [this]{
+        cond_.wait(lock, [this] {
             return isReleased_.load();
         });
     }
 }
 
-void Player::Impl::seek(
-    double time,
-    bool isAccurate
-) noexcept {
+void Player::Impl::seek(double time, bool isAccurate) noexcept {
     if (!sender_) {
         LogE("error!! not init");
         return;
@@ -67,9 +64,7 @@ void Player::Impl::seek(
     LogI("receive seek:{}, isAccurate:{}", time, isAccurate);
 }
 
-void Player::Impl::updateState(
-    PlayerState state
-) noexcept {
+void Player::Impl::updateState(PlayerState state) noexcept {
     if (!sender_) {
         LogE("error!! not init");
         return;
@@ -78,10 +73,8 @@ void Player::Impl::updateState(
     ownerThread_->start();
 }
 
-void Player::Impl::addObserver(
-    IPlayerObserverPtr observer
-) noexcept {
-    observer_.withWriteLock([observer = std::move(observer)] (auto& ob) {
+void Player::Impl::addObserver(IPlayerObserverPtr observer) noexcept {
+    observer_.withWriteLock([observer = std::move(observer)](auto& ob) {
         ob = observer;
     });
 }
@@ -105,20 +98,22 @@ void Player::Impl::init() noexcept {
         LogE("setupIOHandler failed.");
         return;
     }
-    ownerThread_ = std::make_unique<Thread>("playerThread", &Player::Impl::process, this);
-    ownerThread_->setInterval(10ms);
-    ownerThread_->runLoop(200ms, [this](){
+    ownerThread_ = Thread::create("playerThread");
+    ownerThread_->scheduleRepeat(10ms, [this]() {
+        process();
+    });
+    ownerThread_->scheduleRepeat(200ms, [this]() {
         if (state() == PlayerState::Playing) {
             notifyPlayedTime();
         }
     });
-    ownerThread_->runLoop(500ms, [this]() {
+    ownerThread_->scheduleRepeat(500ms, [this]() {
         if (!isStopped_) {
             notifyCacheTime();
             checkCacheState();
         }
     });
-    
+
     dataProvider_->start();
     ownerThread_->start();
     LogI("player Initializing start.");
@@ -126,12 +121,12 @@ void Player::Impl::init() noexcept {
 }
 
 bool Player::Impl::setupDataProvider() noexcept {
-    ///set file path
+    /// set file path
     std::string path;
-    params_.withReadLock([&](auto& params){
+    params_.withReadLock([&](auto& params) {
         path = params->item.path;
     });
-    
+
     if (path.empty()) {
         LogE("error, player param invalid.");
         setState(PlayerState::Stop);
@@ -139,45 +134,45 @@ bool Player::Impl::setupDataProvider() noexcept {
     }
 
     auto weak = weak_from_this();
-    auto readDataCallback = [weak = std::move(weak)]
-        (IReader* dataProvider, DataPacket data, IOState state) {
-        auto self = weak.lock();
-        if (!self || self->isStopped_) {
-            LogE("PlayerImpl is released, cannot process data.");
-            return;
-        }
-        LogI("receive data offset:{} size: {}", data.offset, data.length());
-        if (data.data) {
-            self->dataList_.withLock([&](auto& dataList) {
-                dataList.emplace_back(std::move(data));
-            });
-        }
-        
-        if (state == IOState::Error) {
-            self->sender_->send(buildEvent(EventType::ReadError));
-            auto errorCode = dataProvider->isNetwork() ?
-                std::to_string(static_cast<uint32_t>(PlayerErrorCode::NetWorkError)) :
-                std::to_string(static_cast<uint32_t>(PlayerErrorCode::FileError));
-            self->notifyPlayerEvent(PlayerEvent::OnError, errorCode);
-        }
-    };
+    auto readDataCallback =
+        [weak = std::move(weak)](IReader* dataProvider, DataPacket data, IOState state) {
+            auto self = weak.lock();
+            if (!self || self->isStopped_) {
+                LogE("PlayerImpl is released, cannot process data.");
+                return;
+            }
+            LogI("receive data offset:{} size: {}", data.offset, data.length());
+            if (data.data) {
+                self->dataList_.withLock([&](auto& dataList) {
+                    dataList.emplace_back(std::move(data));
+                });
+            }
+
+            if (state == IOState::Error) {
+                self->sender_->send(buildEvent(EventType::ReadError));
+                auto errorCode =
+                    dataProvider->isNetwork()
+                        ? std::to_string(static_cast<uint32_t>(PlayerErrorCode::NetWorkError))
+                        : std::to_string(static_cast<uint32_t>(PlayerErrorCode::FileError));
+                self->notifyPlayerEvent(PlayerEvent::OnError, errorCode);
+            }
+        };
 
     if (!helper_->createDataProvider(path, std::move(readDataCallback))) {
         setState(PlayerState::Error);
-        auto errorCode = isNetworkLink(path) ?
-                         std::to_string(static_cast<uint32_t>(PlayerErrorCode::NetWorkError)) :
-                         std::to_string(static_cast<uint32_t>(PlayerErrorCode::FileError));
+        auto errorCode = isNetworkLink(path)
+                             ? std::to_string(static_cast<uint32_t>(PlayerErrorCode::NetWorkError))
+                             : std::to_string(static_cast<uint32_t>(PlayerErrorCode::FileError));
         notifyPlayerEvent(PlayerEvent::OnError, errorCode);
         return false;
     }
     return true;
 }
 
-void Player::Impl::createAudioComponent(
-    const PlayerSetting& setting
-) noexcept {
+void Player::Impl::createAudioComponent(const PlayerSetting& setting) noexcept {
     auto audioInfo = demuxerComponent_->audioInfo();
-    auto decodeType = DecoderManager::shareInstance().getDecoderType(audioInfo->mediaInfo, setting.enableAudioSoftDecode);
+    auto decodeType = DecoderManager::shareInstance().getDecoderType(audioInfo->mediaInfo,
+                                                                     setting.enableAudioSoftDecode);
     if (!DecoderManager::shareInstance().contains(decodeType)) {
         LogE("not found decoder:media info {}", audioInfo->mediaInfo);
         return;
@@ -188,12 +183,12 @@ void Player::Impl::createAudioComponent(
         }
 
         if (auto seekRequest = seekRequest_.load();
-            seekRequest && (frame->ptsTime() < seekRequest-> seekTime) ) {
+            seekRequest && (frame->ptsTime() < seekRequest->seekTime)) {
             LogI("discard decoded audio frame pts:{}", frame->ptsTime());
             return;
         }
         LogI("decoded audio frame info:{}", frame->ptsTime());
-        audioFrames_.withLock([&frame](auto& frames){
+        audioFrames_.withLock([&frame](auto& frames) {
             frames.emplace_back(std::move(frame));
         });
     });
@@ -208,15 +203,15 @@ void Player::Impl::createAudioComponent(
     config->initWithAudioInfo(audioInfo);
     if (!audioDecodeComponent_->open(decodeType, config)) {
         LogI("create audio pushFrameDecode component success");
-        return ;
+        return;
     }
     helper_->debugInfo.openedAudioDecoderTime = Time::nowTimeStamp();
     auto renderAudioInfo = audioInfo->copy();
-    renderAudioInfo->bitsPerSample = 16; //default 16bit pcm
+    renderAudioInfo->bitsPerSample = 16; // default 16bit pcm
     audioRender_ = std::make_unique<AudioRenderComponent>(renderAudioInfo);
     audioRender_->setPullDataFunc([this](uint32_t requestSize) {
         AVFrameRefPtr frame;
-        audioFrames_.withLock([&frame, requestSize](auto& audioFrames){
+        audioFrames_.withLock([&frame, requestSize](auto& audioFrames) {
             if (audioFrames.empty()) {
                 return;
             }
@@ -234,15 +229,14 @@ void Player::Impl::createAudioComponent(
     LogI("create audio render success");
 }
 
-void Player::Impl::createVideoComponent(
-    const PlayerSetting& setting
-) noexcept {
+void Player::Impl::createVideoComponent(const PlayerSetting& setting) noexcept {
     if (!demuxerComponent_ || !demuxerComponent_->hasVideo()) {
         LogE("no video, cannot create video component.");
         return;
     }
     auto videoInfo = demuxerComponent_->videoInfo();
-    auto decodeType = DecoderManager::shareInstance().getDecoderType(videoInfo->mediaInfo, setting.enableVideoSoftDecode);
+    auto decodeType = DecoderManager::shareInstance().getDecoderType(videoInfo->mediaInfo,
+                                                                     setting.enableVideoSoftDecode);
     if (!DecoderManager::shareInstance().contains(decodeType)) {
         LogE("not found decoder:media info {}", videoInfo->mediaInfo);
         return;
@@ -252,12 +246,12 @@ void Player::Impl::createVideoComponent(
             return;
         }
         if (auto seekRequest = seekRequest_.load();
-            seekRequest && (frame->ptsTime() < seekRequest-> seekTime) ) {
+            seekRequest && (frame->ptsTime() < seekRequest->seekTime)) {
             LogI("discard decoded video frame pts:{}", frame->ptsTime());
             return;
         }
         LogI("decoded video frame info:{}", frame->ptsTime());
-        videoFrames_.withLock([&frame](auto& frames){
+        videoFrames_.withLock([&frame](auto& frames) {
             frames.emplace(frame->pts, std::move(frame));
         });
     });
@@ -281,7 +275,7 @@ void Player::Impl::createVideoComponent(
 }
 
 void Player::Impl::preparePlayerInfo() noexcept {
-    //prepare player info, no lock is added here because it is only changed once
+    // prepare player info, no lock is added here because it is only changed once
     if (!demuxerComponent_) {
         LogE("demuxer component is not created.");
         return;
@@ -294,7 +288,7 @@ void Player::Impl::preparePlayerInfo() noexcept {
     }
     setState(PlayerState::Prepared);
     PlayerSetting setting;
-    params_.withReadLock([&setting](auto& p){
+    params_.withReadLock([&setting](auto& p) {
         setting = p->setting;
     });
     if (info_.hasAudio) {
@@ -303,7 +297,7 @@ void Player::Impl::preparePlayerInfo() noexcept {
     } else {
         LogI("no audio");
     }
-    
+
     if (info_.hasVideo) {
         LogI("has video, video info:{}", demuxerComponent_->videoInfo()->mediaInfo);
         createVideoComponent(setting);
@@ -312,7 +306,7 @@ void Player::Impl::preparePlayerInfo() noexcept {
     }
     doPause();
     if (info_.hasVideo) {
-        dataProvider_->start(); //render first frame
+        dataProvider_->start(); // render first frame
         ownerThread_->start();
         stats_.setFastPush();
     }
@@ -320,9 +314,7 @@ void Player::Impl::preparePlayerInfo() noexcept {
     setState(PlayerState::Buffering);
 }
 
-void Player::Impl::handleAudioPacket(
-    AVFramePtrArray& audioPackets
-) noexcept {
+void Player::Impl::handleAudioPacket(AVFramePtrArray& audioPackets) noexcept {
     if (!demuxerComponent_ || audioPackets.empty()) {
         return;
     }
@@ -339,20 +331,21 @@ void Player::Impl::handleAudioPacket(
         if (isDemuxCompleted) {
             stats_.audioDemuxedTime = info_.duration;
         }
-        if (discardTime.has_value() && !isEqualOrGreater(pts, discardTime.value()) ) {
+        if (discardTime.has_value() && !isEqualOrGreater(pts, discardTime.value())) {
             LogI("discard audio frame:{}", packet->ptsTime());
             continue;
         }
-        LogI("demux audio frame:{}, pts:{}, dts:{}", packet->index, packet->dtsTime(), packet->ptsTime());
+        LogI("demux audio frame:{}, pts:{}, dts:{}",
+             packet->index,
+             packet->dtsTime(),
+             packet->ptsTime());
         audioPackets_.withLock([&packet](auto& audioPackets) {
             audioPackets.emplace_back(std::move(packet));
         });
     }
 }
 
-void Player::Impl::handleVideoPacket(
-    AVFramePtrArray& videoPackets
-) noexcept {
+void Player::Impl::handleVideoPacket(AVFramePtrArray& videoPackets) noexcept {
     if (!demuxerComponent_ || videoPackets.empty()) {
         return;
     }
@@ -362,10 +355,9 @@ void Player::Impl::handleVideoPacket(
         discardTime = seekRequest->seekTime;
         LogI("receive seek request, discard time:{}", discardTime.value());
     }
-    if (isDemuxCompleted &&
-        discardTime.has_value() &&
+    if (isDemuxCompleted && discardTime.has_value() &&
         discardTime.value() > videoPackets.back()->ptsTime()) {
-        //Ensure that the last frame is not discarded
+        // Ensure that the last frame is not discarded
         discardTime = videoPackets.back()->ptsTime();
     }
     for (auto& packet : videoPackets) {
@@ -375,12 +367,17 @@ void Player::Impl::handleVideoPacket(
         } else {
             stats_.videoDemuxedTime = pts + packet->duration / 1000.0;
         }
-        if (discardTime.has_value() &&
-            !isEqualOrGreater(pts, discardTime.value())) {
+        if (discardTime.has_value() && !isEqualOrGreater(pts, discardTime.value())) {
             packet->isDiscard = true;
             LogI("[seek info]discard video frame:{}, seek time:{}", pts, discardTime.value());
         }
-        LogI("demux video frame:{}, pts:{}, dts:{}, isKey:{}, offset:{}, size:{}", packet->index, pts, packet->dtsTime(), packet->info->isKeyFrame(), packet->offset, packet->data->length);
+        LogI("demux video frame:{}, pts:{}, dts:{}, isKey:{}, offset:{}, size:{}",
+             packet->index,
+             pts,
+             packet->dtsTime(),
+             packet->info->isKeyFrame(),
+             packet->offset,
+             packet->data->length);
         videoPackets_.withLock([&packet](auto& videoPackets) {
             videoPackets.emplace_back(std::move(packet));
         });
@@ -405,47 +402,48 @@ bool Player::Impl::createDemuxerComponent() noexcept {
     }
     demuxerComponent_ = std::make_shared<DemuxerComponent>(std::move(config));
     PlayerSetting setting;
-    params_.withReadLock([&setting](auto& p){
+    params_.withReadLock([&setting](auto& p) {
         setting = p->setting;
     });
-    demuxerComponent_->setHandleResultFunc([weak = weak_from_this(), maxCache = setting.maxCacheTime]
-       (const std::shared_ptr<IDemuxer>& demuxer, DemuxerResult&& result) {
-        auto self = weak.lock();
-        if (!self || self->isStopped_) {
-            return;
-        }
-        if (result.resultCode == DemuxerResultCode::ParsedHeader) {
-            self->sender_->send(buildEvent(EventType::Prepared));
-        } else if (result.resultCode == DemuxerResultCode::ParsedFPS) {
-            if (auto render = self->videoRender_.load()) {
-                render->notifyVideoInfo(demuxer->videoInfo());
+    demuxerComponent_->setHandleResultFunc(
+        [weak = weak_from_this(), maxCache = setting.maxCacheTime](
+            const std::shared_ptr<IDemuxer>& demuxer,
+            DemuxerResult&& result) {
+            auto self = weak.lock();
+            if (!self || self->isStopped_) {
+                return;
             }
-        }
-        self->handleAudioPacket(result.audioFrames);
-        self->handleVideoPacket(result.videoFrames);
-        auto cachedDuration = self->demuxedDuration();
-        auto playedTime = self->currentPlayedTime();
-        auto cacheTime = cachedDuration - playedTime;
-        cacheTime = std::max(0.0, cacheTime);
-        if (cacheTime < maxCache) {
-            return;
-        }
-        if (self->dataProvider_) {
-            self->dataProvider_->pause();
-        }
-        if (self->demuxerComponent_) {
-            self->demuxerComponent_->pause();
-        }
-        LogI("demuxer pause, cache time:{}", cacheTime);
-    });
-    demuxerComponent_->setHandleSeekFunc([weak = weak_from_this()]
-       (Range range) {
+            if (result.resultCode == DemuxerResultCode::ParsedHeader) {
+                self->sender_->send(buildEvent(EventType::Prepared));
+            } else if (result.resultCode == DemuxerResultCode::ParsedFPS) {
+                if (auto render = self->videoRender_.load()) {
+                    render->notifyVideoInfo(demuxer->videoInfo());
+                }
+            }
+            self->handleAudioPacket(result.audioFrames);
+            self->handleVideoPacket(result.videoFrames);
+            auto cachedDuration = self->demuxedDuration();
+            auto playedTime = self->currentPlayedTime();
+            auto cacheTime = cachedDuration - playedTime;
+            cacheTime = std::max(0.0, cacheTime);
+            if (cacheTime < maxCache) {
+                return;
+            }
+            if (self->dataProvider_) {
+                self->dataProvider_->pause();
+            }
+            if (self->demuxerComponent_) {
+                self->demuxerComponent_->pause();
+            }
+            LogI("demuxer pause, cache time:{}", cacheTime);
+        });
+    demuxerComponent_->setHandleSeekFunc([weak = weak_from_this()](Range range) {
         auto self = weak.lock();
         if (!self || self->isStopped_) {
             return;
         }
         self->dataList_.withLock([](auto& list) {
-            list.clear(); //clear data list when seek
+            list.clear(); // clear data list when seek
         });
         LogI("demuxer seek to pos:{}", range.toString());
         self->dataProvider_->updateReadRange(range);
@@ -486,22 +484,23 @@ void Player::Impl::pushAudioPacketDecode() noexcept {
     }
     audioPackets_.withLock([&audioTime, this](auto& audioPackets) {
         if (audioPackets.empty()) {
-            if (demuxerComponent_->isCompleted() &&
-                !audioDecodeComponent_->isDecodeCompleted()) {
+            if (demuxerComponent_->isCompleted() && !audioDecodeComponent_->isDecodeCompleted()) {
                 audioDecodeComponent_->setInputCompleted();
                 LogI("input audio completed");
             }
             return;
         }
         auto& packet = audioPackets.front();
-        LogI("[decode] push audio frame pushFrameDecode, dts:{}, audio time:{}", packet->dtsTime(), audioTime);
+        LogI("[decode] push audio frame pushFrameDecode, dts:{}, audio time:{}",
+             packet->dtsTime(),
+             audioTime);
         audioDecodeComponent_->send(std::move(packet));
         audioPackets.pop_front();
     });
 }
 
 void Player::Impl::pushVideoPacketDecode() noexcept {
-    constexpr int32_t kMaxPushCount = 3; //Push up to 5 frames at a time
+    constexpr int32_t kMaxPushCount = 3; // Push up to 5 frames at a time
     if (!videoDecodeComponent_ || !demuxerComponent_) {
         return;
     }
@@ -512,10 +511,9 @@ void Player::Impl::pushVideoPacketDecode() noexcept {
         }
         return;
     }
-    videoPackets_.withLock([&videoTime, this](auto& videoPackets){
+    videoPackets_.withLock([&videoTime, this](auto& videoPackets) {
         if (videoPackets.empty()) {
-            if (demuxerComponent_->isCompleted() &&
-                !videoDecodeComponent_->isInputCompleted()) {
+            if (demuxerComponent_->isCompleted() && !videoDecodeComponent_->isInputCompleted()) {
                 videoDecodeComponent_->setInputCompleted();
                 LogI("input video completed");
             }
@@ -534,8 +532,7 @@ void Player::Impl::pushVideoPacketDecode() noexcept {
                  frame->dtsTime(),
                  frame->ptsTime(),
                  videoTime,
-                 pushCount + 1
-            );
+                 pushCount + 1);
             videoDecodeComponent_->send(std::move(frame));
             videoPackets.pop_front();
             pushCount++;
@@ -564,7 +561,7 @@ void Player::Impl::pushVideoFrameToRender() noexcept {
             if (stats_.isAudioRenderEnd) {
                 diff = 0;
             }
-        } else if(!info_.hasVideo) {
+        } else if (!info_.hasVideo) {
             return;
         }
         if (diff < kAVSyncMinThreshold) {
@@ -576,16 +573,15 @@ void Player::Impl::pushVideoFrameToRender() noexcept {
         return;
     }
     AVFrameRefPtr framePtr = nullptr;
-    videoFrames_.withLock([&framePtr](auto& frames){
+    videoFrames_.withLock([&framePtr](auto& frames) {
         if (!frames.empty()) {
             framePtr = std::move(frames.begin()->second);
             frames.erase(frames.begin());
         }
     });
     if (!framePtr) {
-        if (videoDecodeComponent_->isDecodeCompleted() &&
-            !stats_.isVideoRenderEnd) {
-            //render end
+        if (videoDecodeComponent_->isDecodeCompleted() && !stats_.isVideoRenderEnd) {
+            // render end
             if (auto videoRender = videoRender_.load()) {
                 videoRender->renderEnd();
             }
@@ -597,14 +593,17 @@ void Player::Impl::pushVideoFrameToRender() noexcept {
     auto renderTime = framePtr->ptsTime();
     auto nowState = state();
     LogI("push video frame render time:{}, is force:{}, state:{}",
-         renderTime, stats_.isForceVideoRendered, static_cast<int>(nowState));
+         renderTime,
+         stats_.isForceVideoRendered,
+         static_cast<int>(nowState));
     render->setTime(Time::TimePoint::fromSeconds(renderTime));
     if (!stats_.isForceVideoRendered) {
         return;
     }
     if (auto seekRequest = seekRequest_.load()) {
         seekRequest_.reset();
-        LogI("seek done, cost time:{}", (Time::nowTimeStamp() - seekRequest->startTime).toMilliSeconds());
+        LogI("seek done, cost time:{}",
+             (Time::nowTimeStamp() - seekRequest->startTime).toMilliSeconds());
     }
     stats_.isForceVideoRendered = false;
     if (helper_->debugInfo.pushVideoRenderTime.point() == 0) {
@@ -628,11 +627,9 @@ void Player::Impl::pushAudioFrameToRender() noexcept {
             isPushFrame = true;
         }
     });
-    if (!isPushFrame &&
-        audioDecodeComponent_->isDecodeCompleted() &&
-        audioRender_->isHungry() &&
+    if (!isPushFrame && audioDecodeComponent_->isDecodeCompleted() && audioRender_->isHungry() &&
         !stats_.isAudioRenderEnd) {
-        //render end
+        // render end
         audioRender_->renderEnd();
         stats_.isAudioRenderEnd = true;
     }
@@ -655,8 +652,7 @@ void Player::Impl::process() noexcept {
     auto nowState = state();
     demuxData();
     pushAVFrameDecode();
-    if (stats_.isForceVideoRendered ||
-        nowState == PlayerState::Playing) {
+    if (stats_.isForceVideoRendered || nowState == PlayerState::Playing) {
         pushAVFrameToRender();
     }
 }
@@ -746,19 +742,16 @@ void Player::Impl::doStop() noexcept {
     LogI("do stop end");
 }
 
-void Player::Impl::doSeek(
-    PlayerSeekRequest seekRequest
-) noexcept {
+void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
     if (!demuxerComponent_ || isStopped_ || isReleased_) {
         return;
     }
-    
+
     constexpr double kSeekThreshold = 0.1;
     auto seekTime = seekRequest.seekTime;
     auto playedTime = currentPlayedTime();
     if (!seekRequest.isAccurate &&
-        (isEqual(playedTime, seekTime, kSeekThreshold) || seekRequest_.isValid())
-        ) {
+        (isEqual(playedTime, seekTime, kSeekThreshold) || seekRequest_.isValid())) {
         LogI("discard seek:{}", seekRequest.seekTime);
         return;
     }
@@ -774,11 +767,14 @@ void Player::Impl::doSeek(
     setState(PlayerState::Buffering);
     auto demuxedTime = demuxedDuration();
     auto videoInfo = demuxerComponent_->videoInfo();
-    LogI("[seek info]seek to time:{}, playedTime:{}, demuxedTime:{}", seekTime, playedTime, demuxedTime);
+    LogI("[seek info]seek to time:{}, playedTime:{}, demuxedTime:{}",
+         seekTime,
+         playedTime,
+         demuxedTime);
     if (playedTime <= seekTime && seekTime <= demuxedTime) {
         if (info_.hasVideo) {
-            videoFrames_.withLock([seekTime](auto& frames){
-                while(!frames.empty() && frames.begin()->second->ptsTime() < seekTime) {
+            videoFrames_.withLock([seekTime](auto& frames) {
+                while (!frames.empty() && frames.begin()->second->ptsTime() < seekTime) {
                     LogI("discard video frame:{}", frames.begin()->second->ptsTime());
                     frames.erase(frames.begin());
                 }
@@ -790,18 +786,18 @@ void Player::Impl::doSeek(
                 videoDecodeComponent_->flush();
             }
         }
-        
+
         if (info_.hasAudio) {
             audioDecodeComponent_->flush();
             audioRender_->flush();
-            audioFrames_.withLock([seekTime](auto& queue){
-                while(!queue.empty() && queue.front()->ptsTime() < seekTime) {
+            audioFrames_.withLock([seekTime](auto& queue) {
+                while (!queue.empty() && queue.front()->ptsTime() < seekTime) {
                     queue.pop_front();
                 }
             });
 
             audioPackets_.withLock([seekTime](auto& audioPackets) {
-                while(!audioPackets.empty() && audioPackets.front()->ptsTime() < seekTime) {
+                while (!audioPackets.empty() && audioPackets.front()->ptsTime() < seekTime) {
                     audioPackets.pop_front();
                 }
             });
@@ -811,7 +807,7 @@ void Player::Impl::doSeek(
         if (dataProvider_) {
             dataProvider_->pause();
             dataList_.withLock([](auto& dataList) {
-                dataList.clear(); //clear data list when seek
+                dataList.clear(); // clear data list when seek
             });
         }
         if (demuxerComponent_) {
@@ -825,10 +821,10 @@ void Player::Impl::doSeek(
         if (info_.hasVideo) {
             videoDecodeComponent_->flush();
         }
-        audioPackets_.withLock([](auto& audioPackets){
+        audioPackets_.withLock([](auto& audioPackets) {
             audioPackets.clear();
         });
-        videoPackets_.withLock([](auto& videoPackets){
+        videoPackets_.withLock([](auto& videoPackets) {
             videoPackets.clear();
         });
         audioFrames_.withLock([](auto& frames) {
@@ -854,26 +850,26 @@ void Player::Impl::doSeek(
         setVideoRenderTime(seekTime);
         stats_.setFastPush();
     } else {
-        seekRequest_.reset(); //If there is only audio, seek is complete
+        seekRequest_.reset(); // If there is only audio, seek is complete
     }
 }
 
 void Player::Impl::clearData() noexcept {
     if (info_.hasAudio) {
-        audioPackets_.withLock([](auto& audioPackets){
+        audioPackets_.withLock([](auto& audioPackets) {
             audioPackets.clear();
         });
-        audioFrames_.withLock([](auto& frames){
+        audioFrames_.withLock([](auto& frames) {
             frames.clear();
         });
         audioDecodeComponent_->pause();
         audioDecodeComponent_->flush();
     }
     if (info_.hasVideo) {
-        videoPackets_.withLock([](auto& videoPackets){
+        videoPackets_.withLock([](auto& videoPackets) {
             videoPackets.clear();
         });
-        videoFrames_.withLock([](auto& frames){
+        videoFrames_.withLock([](auto& frames) {
             frames.clear();
         });
         videoDecodeComponent_->pause();
@@ -915,11 +911,9 @@ void Player::Impl::doLoop() noexcept {
     dataProvider_->start();
 }
 
-void Player::Impl::setState(
-    PlayerState state
-) noexcept {
+void Player::Impl::setState(PlayerState state) noexcept {
     bool isChanged = false;
-    state_.withWriteLock([state, &isChanged](auto& nowState){
+    state_.withWriteLock([state, &isChanged](auto& nowState) {
         if (nowState == state) {
             return;
         }
@@ -939,9 +933,7 @@ void Player::Impl::setState(
     notifyPlayerState(state);
 }
 
-std::expected<PlayerState, bool> getStateFromEvent(
-    EventType event
-) {
+std::expected<PlayerState, bool> getStateFromEvent(EventType event) {
     switch (event) {
         case EventType::Play:
             return PlayerState::Playing;
@@ -961,9 +953,7 @@ std::expected<PlayerState, bool> getStateFromEvent(
     }
 }
 
-void Player::Impl::handleSettingUpdate(
-    Event& t
-) noexcept {
+void Player::Impl::handleSettingUpdate(Event& t) noexcept {
     if (t.type == EventType::UpdateSettingVolume) {
         auto volume = std::any_cast<float>(t.data);
         volume = std::max(0.0f, std::min(volume, 100.0f));
@@ -971,7 +961,7 @@ void Player::Impl::handleSettingUpdate(
         if (audioRender_) {
             audioRender_->setVolume(volume / 100.0f);
         }
-        params_.withWriteLock([volume](auto& p){
+        params_.withWriteLock([volume](auto& p) {
             p->setting.volume = volume;
         });
         LogI("set volume:{}", volume);
@@ -982,7 +972,7 @@ void Player::Impl::handleSettingUpdate(
                 audioRender_->setVolume(0);
             } else {
                 float volume;
-                params_.withReadLock([&volume](auto& p){
+                params_.withReadLock([&volume](auto& p) {
                     volume = p->setting.volume;
                 });
                 audioRender_->setVolume(volume);
@@ -992,9 +982,7 @@ void Player::Impl::handleSettingUpdate(
     }
 }
 
-void Player::Impl::handleEvent(
-    std::list<EventPtr>&& events
-) noexcept {
+void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
     PlayerState changeState = PlayerState::Unknown;
     auto currentState = state();
     for (auto& event : events) {
@@ -1006,7 +994,8 @@ void Player::Impl::handleEvent(
             doSeek(seekRequest);
         } else if (event->type == EventType::Prepared) {
             preparePlayerInfo();
-        } else if (EventType::UpdateSetting < event->type && event->type < EventType::UpdateSettingEnd) {
+        } else if (EventType::UpdateSetting < event->type &&
+                   event->type < EventType::UpdateSettingEnd) {
             handleSettingUpdate(*event);
         } else if (auto state = getStateFromEvent(event->type); state.has_value()) {
             LogI("eventType:{}", EventTypeToString(event->type));
@@ -1019,16 +1008,16 @@ void Player::Impl::handleEvent(
     }
 
     if (currentState == PlayerState::Playing && !isStopped_ && helper_->isRenderEnd()) {
-        notifyPlayedTime(true); //notify time to end
+        notifyPlayedTime(true); // notify time to end
         LogI("play end.");
         clearData();
         bool isLoop = false;
-        params_.withReadLock([&isLoop](auto& p){
+        params_.withReadLock([&isLoop](auto& p) {
             isLoop = p->setting.isLoop;
         });
         if (!isLoop) {
             changeState = PlayerState::Completed;
-            ownerThread_->pause(); //pause owner thread
+            ownerThread_->pause(); // pause owner thread
         } else {
             doLoop();
         }
@@ -1038,21 +1027,16 @@ void Player::Impl::handleEvent(
     }
 }
 
-void Player::Impl::notifyPlayerEvent(
-    PlayerEvent event,
-    std::string value
-) noexcept {
-    observer_.withReadLock([this, event, value = std::move(value)](auto& observer){
+void Player::Impl::notifyPlayerEvent(PlayerEvent event, std::string value) noexcept {
+    observer_.withReadLock([this, event, value = std::move(value)](auto& observer) {
         if (auto ptr = observer.lock(); ptr) {
             ptr->notifyPlayerEvent(playerId_, event, value);
         }
     });
 }
 
-void Player::Impl::notifyPlayerState(
-    PlayerState state
-) noexcept {
-    observer_.withReadLock([this, state](auto& observer){
+void Player::Impl::notifyPlayerState(PlayerState state) noexcept {
+    observer_.withReadLock([this, state](auto& observer) {
         if (auto ptr = observer.lock(); ptr) {
             ptr->notifyPlayerState(playerId_, state);
         }
@@ -1062,8 +1046,8 @@ void Player::Impl::notifyPlayerState(
 void Player::Impl::notifyPlayedTime(bool isEndTime) noexcept {
     double time = 0.0;
     if (!isEndTime) {
-        //Here, we specifically do not use the function currentPlayTime,
-        //but use render time to print the audio and video synchronization time difference
+        // Here, we specifically do not use the function currentPlayTime,
+        // but use render time to print the audio and video synchronization time difference
         if (info_.hasAudio && info_.hasVideo) {
             auto videoTime = videoRenderTime();
             auto audioTime = audioRenderTime();
@@ -1079,15 +1063,14 @@ void Player::Impl::notifyPlayedTime(bool isEndTime) noexcept {
             time = std::min(time, info_.duration);
             LogI("notifyTime:{} (video)", time);
         }
-        if (stats_.lastNotifyPlayedTime > 0 &&
-            isEqual(stats_.lastNotifyPlayedTime, time, 0.1)) {
+        if (stats_.lastNotifyPlayedTime > 0 && isEqual(stats_.lastNotifyPlayedTime, time, 0.1)) {
             return;
         }
     } else {
         time = info_.duration;
     }
     stats_.lastNotifyPlayedTime = time;
-    observer_.withReadLock([this, time](auto& observer){
+    observer_.withReadLock([this, time](auto& observer) {
         if (auto ptr = observer.lock(); ptr) {
             ptr->notifyPlayedTime(playerId_, time);
         }
@@ -1106,24 +1089,20 @@ void Player::Impl::notifyCacheTime() noexcept {
 
 PlayerParams Player::Impl::params() noexcept {
     PlayerParams params;
-    params_.withReadLock([&params](auto& p){
+    params_.withReadLock([&params](auto& p) {
         params = *p;
     });
     return params;
 }
 
-void Player::Impl::setLoop(
-    bool isLoop
-) noexcept {
-    params_.withWriteLock([isLoop](auto& p){
+void Player::Impl::setLoop(bool isLoop) noexcept {
+    params_.withWriteLock([isLoop](auto& p) {
         p->setting.isLoop = isLoop;
     });
     ownerThread_->start();
 }
 
-void Player::Impl::setVolume(
-    float volume
-) noexcept {
+void Player::Impl::setVolume(float volume) noexcept {
     if (!sender_) {
         LogE("error!! not init");
         return;
@@ -1134,9 +1113,7 @@ void Player::Impl::setVolume(
     ownerThread_->start();
 }
 
-void Player::Impl::setMute(
-    bool isMute
-) noexcept {
+void Player::Impl::setMute(bool isMute) noexcept {
     if (!sender_) {
         LogE("error!! not init");
         return;
@@ -1149,7 +1126,7 @@ void Player::Impl::setMute(
 
 PlayerState Player::Impl::state() noexcept {
     PlayerState state = PlayerState::NotInited;
-    state_.withReadLock([&state](auto& nowState){
+    state_.withReadLock([&state](auto& nowState) {
         state = nowState;
     });
     return state;
@@ -1188,15 +1165,14 @@ void Player::Impl::checkCacheState() noexcept {
         return;
     }
     PlayerSetting setting;
-    params_.withReadLock([&setting](auto& p){
+    params_.withReadLock([&setting](auto& p) {
         setting = p->setting;
     });
     auto cachedDuration = demuxedDuration();
     auto playedTime = currentPlayedTime();
     auto cacheTime = cachedDuration - playedTime;
     cacheTime = std::max(0.0, cacheTime);
-    if (nowState == PlayerState::Playing &&
-        isEqualOrGreater(kMinCanPlayTime, cacheTime, 0.1)) {
+    if (nowState == PlayerState::Playing && isEqualOrGreater(kMinCanPlayTime, cacheTime, 0.1)) {
         if (!dataProvider_->isCompleted()) {
             if (dataProvider_->isRunning()) {
                 dataProvider_->start();
@@ -1218,26 +1194,31 @@ void Player::Impl::checkCacheState() noexcept {
             isEqualOrGreater(cachedDuration, info_.duration, 0.1) ||
             demuxerComponent_->isCompleted()) {
             setState(stats_.resumeAfterBuffering ? PlayerState::Playing : PlayerState::Ready);
-            LogI("buffering end, cache time is enough:{}, playing:{}", cacheTime, stats_.resumeAfterBuffering);
+            LogI("buffering end, cache time is enough:{}, playing:{}",
+                 cacheTime,
+                 stats_.resumeAfterBuffering);
             stats_.resumeAfterBuffering = false;
         }
     }
 
-    LogI("demux cache time:{}, demuxedDuration:{} played time:{}", cacheTime, cachedDuration, playedTime);
+    LogI("demux cache time:{}, demuxedDuration:{} played time:{}",
+         cacheTime,
+         cachedDuration,
+         playedTime);
     if (isEqualOrGreater(setting.minCacheTime, cacheTime, 0.1)) {
         if (!dataProvider_->isCompleted()) {
             dataProvider_->start();
             LogI("cache time is too small:{:.2f}", cacheTime);
         }
-        
+
         if (!demuxerComponent_->isRunning() && !demuxerComponent_->isCompleted()) {
             demuxerComponent_->start();
         }
-        
+
         if (!ownerThread_->isRunning()) {
             ownerThread_->start();
         }
-        
+
     } else if (isEqualOrGreater(cacheTime, setting.maxCacheTime)) {
         if (dataProvider_) {
             dataProvider_->pause();
@@ -1247,14 +1228,12 @@ void Player::Impl::checkCacheState() noexcept {
         }
         LogI("read pause, cache time is too large:{:.2f}", cacheTime);
     }
-    
+
     if (!dataProvider_->isRunning() && !demuxerComponent_->isRunning()) {
-        static const std::vector<PlayerState> pauseStates = {
-            PlayerState::Ready,
-            PlayerState::Pause,
-            PlayerState::Completed,
-            PlayerState::Error
-        };
+        static const std::vector<PlayerState> pauseStates = {PlayerState::Ready,
+                                                             PlayerState::Pause,
+                                                             PlayerState::Completed,
+                                                             PlayerState::Error};
         auto isPauseState = std::ranges::any_of(pauseStates, [nowState](PlayerState state) {
             return state == nowState;
         });
@@ -1280,9 +1259,7 @@ double Player::Impl::audioRenderTime() noexcept {
     return 0;
 }
 
-bool Player::Impl::isVideoNeedDecode(
-    double renderedTime
-) noexcept {
+bool Player::Impl::isVideoNeedDecode(double renderedTime) noexcept {
     if (!videoDecodeComponent_) {
         return false;
     }
@@ -1307,9 +1284,7 @@ bool Player::Impl::isVideoNeedDecode(
     return isNeedDecode && !videoDecodeComponent_->isFull();
 }
 
-bool Player::Impl::isAudioNeedDecode(
-    double renderedTime
-) noexcept {
+bool Player::Impl::isAudioNeedDecode(double renderedTime) noexcept {
     if (!audioDecodeComponent_) {
         return false;
     }
@@ -1322,16 +1297,13 @@ bool Player::Impl::isAudioNeedDecode(
     });
 
     if (!isNeedDecode) {
-        isNeedDecode = audioFrames_.withLock(
-            [](auto& frames) {
-                LogI("[decode] cache audio frame size: {}",
-                     frames.size());
-                if (frames.size() >= kMaxCacheDecodedAudioFrame) {
-                    return false;
-                }
-                return true;
+        isNeedDecode = audioFrames_.withLock([](auto& frames) {
+            LogI("[decode] cache audio frame size: {}", frames.size());
+            if (frames.size() >= kMaxCacheDecodedAudioFrame) {
+                return false;
             }
-        );
+            return true;
+        });
     }
 
     return isNeedDecode && !audioDecodeComponent_->isFull();
@@ -1346,7 +1318,7 @@ AVFrameRefPtr Player::Impl::requestRender() noexcept {
         if (stats_.isAudioRenderEnd) {
             diff = 0;
         }
-    } else if(!info_.hasVideo) {
+    } else if (!info_.hasVideo) {
         return nullptr;
     }
 
@@ -1354,7 +1326,7 @@ AVFrameRefPtr Player::Impl::requestRender() noexcept {
     if (abs(diff) >= kAVSyncMaxThreshold) {
         isNeedCheckSync = false;
     }
-    
+
     if (isNeedCheckSync && diff < (-kAVSyncMinThreshold) && !stats_.isForceVideoRendered) {
         if (!demuxerComponent_) {
             LogE("demuxer component is nullptr");
@@ -1362,29 +1334,28 @@ AVFrameRefPtr Player::Impl::requestRender() noexcept {
         }
         auto videoInfo = demuxerComponent_->videoInfo();
         auto videoTime = videoRenderTime() - videoInfo->frameDuration();
-        
+
         videoTime = videoTime < 0 ? 0 : videoTime;
         setVideoRenderTime(videoTime);
         return nullptr;
     }
     AVFrameRefPtr framePtr = nullptr;
-    videoFrames_.withLock([&framePtr](auto& frames){
+    videoFrames_.withLock([&framePtr](auto& frames) {
         if (!frames.empty()) {
             framePtr = std::move(frames.begin()->second);
             frames.erase(frames.begin());
         }
     });
     if (framePtr) {
-        auto pts= framePtr->ptsTime();
+        auto pts = framePtr->ptsTime();
         LogI("push video frame render:{}, pts:{}", pts, framePtr->pts);
         setVideoRenderTime(pts);
         stats_.isForceVideoRendered = false;
         count = 0;
     } else if (videoDecodeComponent_) {
         if (videoDecodeComponent_->isInputCompleted() &&
-            videoDecodeComponent_->isDecodeCompleted() &&
-            !stats_.isVideoRenderEnd) {
-            //render end
+            videoDecodeComponent_->isDecodeCompleted() && !stats_.isVideoRenderEnd) {
+            // render end
             if (auto videoRender = videoRender_.load()) {
                 videoRender->renderEnd();
             }
@@ -1394,19 +1365,16 @@ AVFrameRefPtr Player::Impl::requestRender() noexcept {
             count++;
             LogI("no video frame to render:{}", count);
         }
-
     }
     return framePtr;
 }
 
-void Player::Impl::setRenderImpl(
-    std::weak_ptr<IVideoRender> render
-) noexcept {
+void Player::Impl::setRenderImpl(std::weak_ptr<IVideoRender> render) noexcept {
     videoRender_.store(std::move(render));
     auto ptr = videoRender_.load();
     if (ptr) {
         auto weak = weak_from_this();
-        ptr->setRequestRenderFunc([weak = std::move(weak)]() -> AVFrameRefPtr{
+        ptr->setRequestRenderFunc([weak = std::move(weak)]() -> AVFrameRefPtr {
             auto self = weak.lock();
             if (!self || self->isStopped_) {
                 return nullptr;
@@ -1416,12 +1384,10 @@ void Player::Impl::setRenderImpl(
     }
 }
 
-void Player::Impl::setVideoRenderTime(
-    double time
-) noexcept {
+void Player::Impl::setVideoRenderTime(double time) noexcept {
     if (auto render = videoRender_.load()) {
         render->setTime(Time::TimePoint::fromSeconds(time));
     }
 }
 
-}//end namespace slark
+} // end namespace slark

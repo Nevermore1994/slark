@@ -7,7 +7,9 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <string>
+#include <string_view>
 
 namespace slark::File {
 
@@ -17,25 +19,22 @@ namespace slark::File {
 
 [[maybe_unused]] extern std::string cachePath() noexcept;
 
-[[maybe_unused]] bool isDirExist(const std::string&) noexcept;
+[[nodiscard]] bool isDirExist(std::string_view path) noexcept;
 
-[[maybe_unused]] bool isFileExist(const std::string&) noexcept;
+[[nodiscard]] bool isFileExist(std::string_view path) noexcept;
 
-[[maybe_unused]] bool createDir(const std::string&) noexcept;
+bool createDir(std::string_view path) noexcept;
 
-[[maybe_unused]] bool deleteFile(const std::string&) noexcept;
+bool deleteFile(std::string_view path) noexcept;
 
-[[maybe_unused]] bool renameFile(const std::string& oldName, const std::string& newName) noexcept;
+bool renameFile(std::string_view oldName, std::string_view newName) noexcept;
 
-[[maybe_unused]] uint64_t fileSize(const std::string& path) noexcept;
+[[nodiscard]] uint64_t fileSize(std::string_view path) noexcept;
 
-[[maybe_unused]] bool resizeFile(const std::string& path, uint64_t length) noexcept;
+bool resizeFile(std::string_view path, uint64_t length) noexcept;
 
-[[maybe_unused]] bool removeDir(const std::string& path) noexcept;
+bool removeDir(std::string_view path) noexcept;
 
-[[maybe_unused]] bool copyFile(const std::string& from, const std::string& to) noexcept;
+bool copyFile(std::string_view from, std::string_view to) noexcept;
 
-}
-
-
-
+} // namespace slark::File

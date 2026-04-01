@@ -5,18 +5,21 @@
 //
 #pragma once
 
-#include <unordered_map>
 #include "Thread.h"
+
+#include <mutex>
+#include <thread>
+#include <unordered_map>
 
 namespace slark {
 
-static const Time::TimeDelta kMaxThreadBlockTimeInterval = Time::TimeDelta::fromSeconds(30.0); //30s
+static const Time::TimeDelta kMaxThreadBlockTimeInterval =
+    Time::TimeDelta::fromSeconds(30.0); // 30s
 
-class ThreadManager final: public NonCopyable {
+class ThreadManager final : public NonCopyMovable {
 public:
     static inline ThreadManager& shareInstance() {
         static ThreadManager instance;
-        std::this_thread::get_id();
         return instance;
     }
 
@@ -34,13 +37,15 @@ public:
     std::shared_ptr<Thread> thisThread() noexcept;
 
 private:
+    void monitorLoop(std::stop_token stopToken);
+
     void reportRunInfo() noexcept;
 
 private:
     std::unordered_map<std::thread::id, std::weak_ptr<Thread>> threadInfos_;
     std::mutex mutex_;
-    TimerId timerId_;
+    std::condition_variable_any cond_;
+    std::jthread monitorThread_;
 };
 
-}
-
+} // namespace slark

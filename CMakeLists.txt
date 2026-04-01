@@ -6,12 +6,16 @@ cmake_minimum_required(VERSION 3.20)
 
 project(slark)
 
-#C++ standard
+# Export compile commands for clangd
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# C++ standard
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
 #
-## Compiler flags
+# # Compiler flags
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic -Wcast-align -Wcast-qual -Wconversion -Wdisabled-optimization -Wendif-labels -Wfloat-equal -Winit-self -Winline -Wmissing-include-dirs -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual -Wpacked -Wpointer-arith -Wredundant-decls -Wshadow -Wsign-promo -Wwrite-strings -Wno-variadic-macros -Wno-unknown-pragmas -Wno-undef")
 
 # Set thread library
@@ -21,62 +25,39 @@ find_package(Threads REQUIRED)
 # print current path
 message(STATUS "current path: " ${CMAKE_CURRENT_SOURCE_DIR})
 
-# add core library
+# build options
 set(BUILD_PLATFORM "PC" CACHE STRING "build platform")
 option(DISABLE_TEST "disable test" OFF)
 option(DISABLE_HTTP "disable http" OFF)
 
 if(${CMAKE_BUILD_TYPE} STREQUAL "Release")
-    add_definitions(-DRELEASE) #set RELEASE = 1
+    add_definitions(-DRELEASE)
 else()
-    add_definitions(-DDEBUG) #set DEBUG = 1
+    add_definitions(-DDEBUG)
 endif()
 
-#add base file
-macro(add_base_file TARGET_NAME)
-    set(BASE_FILE_LISTS src/base/*.cpp src/base/*.hpp src/base/*.h)
-    file(GLOB BASE_FILES ${BASE_FILE_LISTS})
+# add src subdirectories
+add_subdirectory(src/include)
+add_subdirectory(src/base)
+add_subdirectory(src/core)
 
-    target_sources(${TARGET_NAME} PUBLIC ${BASE_FILES})
-    target_include_directories(${TARGET_NAME} PUBLIC src/base)
-endmacro()
-
-macro(add_core_file TARGET_NAME)
-    set(CORE_FILE_LISTS src/core/*.cpp src/core/*.hpp src/core/*.h
-            src/core/audio/*.cpp src/core/audio/*.hpp src/core/audio/*.h
-            src/core/demuxer/*.cpp src/core/demuxer/*.hpp src/core/demuxer/*.h
-            src/core/codec/*.cpp src/core/codec/*.hpp src/core/codec/*.h
-            src/core/video/*.h src/core/public/*.cpp public/*.h
-            )
-    file(GLOB CORE_FILES ${CORE_FILE_LISTS})
-    target_sources(${TARGET_NAME} PUBLIC ${CORE_FILES})
-
-    target_include_directories(${TARGET_NAME} PUBLIC src/core/public)
-    target_include_directories(${TARGET_NAME} PUBLIC src/core
-        src/core/demuxer
-        src/core/audio
-        src/core/codec
-        src/core/video
-    )
-endmacro()
-
-add_library(${PROJECT_NAME} SHARED "")
-
-#add base file
-add_base_file(${PROJECT_NAME})
-#add core file
-add_core_file(${PROJECT_NAME})
+# create shared library from object libraries
+add_library(${PROJECT_NAME} SHARED
+    $<TARGET_OBJECTS:slark_base>
+    $<TARGET_OBJECTS:slark_core>
+)
+target_link_libraries(${PROJECT_NAME} PUBLIC slark_core slark_base slark_include)
 
 if(${BUILD_PLATFORM} STREQUAL "iOS")
     message(STATUS "add iOS interface")
     include(CMake-iOS.cmake)
     add_ios_sources(${PROJECT_NAME})
     configure_ios_target(${PROJECT_NAME})
-elseif (${BUILD_PLATFORM} STREQUAL "Android")
+elseif(${BUILD_PLATFORM} STREQUAL "Android")
     message(STATUS "add Android interface")
     include(CMake-Android.cmake)
     add_android_sources(${PROJECT_NAME})
-endif ()
+endif()
 
 if(NOT DISABLE_HTTP)
     message(STATUS "enable http")
@@ -85,7 +66,6 @@ if(NOT DISABLE_HTTP)
 else()
     message(STATUS "disable http")
 endif()
-
 
 if(NOT DISABLE_TEST)
     message(STATUS "enable testing")
@@ -97,4 +77,3 @@ else()
 endif()
 
 target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_THREAD_LIBS_INIT})
-

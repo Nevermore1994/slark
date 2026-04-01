@@ -5,11 +5,13 @@
 //  Created by Nevermore.
 //
 
-#include <functional>
-#include <utility>
-#include <ranges>
 #include "Node.h"
-#include "Util.hpp"
+
+#include "Util.h"
+
+#include <functional>
+#include <ranges>
+#include <utility>
 
 namespace slark {
 
@@ -32,13 +34,14 @@ void OutputNode::removeAllTarget() noexcept {
 }
 
 void OutputNode::notifyTargets(std::shared_ptr<AVFrame> frame) noexcept {
-    for (auto& p : std::views::values(targets_)
-        | std::views::filter([](const auto& p) { return !p.expired();})) {
+    for (auto& p : std::views::values(targets_) | std::views::filter([](const auto& p) {
+                       return !p.expired();
+                   })) {
         if (auto ref = p.lock(); ref) {
             ref->send(frame);
         }
     }
-    std::erase_if(targets_, [frame](const auto& pair){
+    std::erase_if(targets_, [frame](const auto& pair) {
         return pair.second.expired();
     });
 }
@@ -57,4 +60,4 @@ bool Node::send(std::shared_ptr<AVFrame> frame) noexcept {
     return true;
 }
 
-}//end namespace slark
+} // end namespace slark

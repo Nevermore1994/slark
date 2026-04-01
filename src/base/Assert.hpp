@@ -4,8 +4,9 @@
 // Copyright (c) 2023 Nevermore All rights reserved.
 //
 #pragma once
-#include <string_view>
 #include <format>
+#include <print>
+#include <string_view>
 
 namespace slark {
 
@@ -16,15 +17,27 @@ namespace slark {
 
 #ifdef DEBUG
 
-#define SAssert(result, format, ...)
+#define SAssert(result, format, ...)                       \
+    do {                                                   \
+        if (!(result)) [[unlikely]] {                      \
+            std::print(stderr,                             \
+                       "[Assert] {}:{} ({}) " format "\n", \
+                       __FILE_NAME__,                      \
+                       __LINE__,                           \
+                       __FUNCTION__,                       \
+                       ##__VA_ARGS__);                     \
+            __builtin_trap();                              \
+        }                                                  \
+    } while (0)
 
 #else
 
-#define SAssert(result, format, ...)   /*nothing*/
+#define SAssert(result, format, ...) /*nothing*/
 
 #endif // if DEBUG
 
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
-}
+
+} // namespace slark

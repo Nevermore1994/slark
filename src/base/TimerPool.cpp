@@ -1,14 +1,12 @@
 //
 // Created by Nevermore on 2021/10/25.
-// slark TimerPool
+// slark TimerPool — Hierarchical Timing Wheel
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 #include "TimerPool.h"
-#include "Random.hpp"
-#include "Log.hpp"
-#include <chrono>
+
+#include <algorithm>
 #include <ranges>
-#include <future>
 
 namespace slark {
 
@@ -19,125 +17,154 @@ TimerPool::~TimerPool() {
     clear();
 }
 
+uint64_t TimerPool::nowMs() const noexcept {
+    return static_cast<uint64_t>(Time::nowTimeStamp().toMilliSeconds().count());
+}
+
 void TimerPool::clear() noexcept {
-    decltype(timerInfos_) temp;
-    std::lock_guard<std::mutex> lock(mutex_);
-    timerInfos_.swap(temp);
+    std::ranges::for_each(level1_, [](auto& s) {
+        s.clear();
+    });
+    std::ranges::for_each(level2_, [](auto& s) {
+        s.clear();
+    });
+    overflow_.clear();
     timers_.clear();
+    currentTick_ = 0;
+    startMs_ = 0;
+    earliestExpireMs_ = UINT64_MAX;
 }
 
-bool TimerPool::empty() noexcept {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return timerInfos_.empty();
+bool TimerPool::empty() const noexcept {
+    return timers_.empty();
 }
 
-std::chrono::milliseconds TimerPool::peekActiveTime() const noexcept {
-    auto now = Time::nowTimeStamp();
-    std::unique_lock<std::mutex> lock(mutex_);
-    if (timerInfos_.empty()) {
-        return std::chrono::milliseconds(1000); //1s
+milliseconds TimerPool::peekWaitTime() const noexcept {
+    if (timers_.empty() || earliestExpireMs_ == UINT64_MAX) {
+        return 1000ms;
     }
-    auto activeTime = timerInfos_.top().expireTime;
-    return (activeTime - now).toMilliSeconds();
+    auto now = nowMs();
+    return (earliestExpireMs_ <= now) ? 0ms : milliseconds(earliestExpireMs_ - now);
 }
 
-void TimerPool::loop(std::function<void(ExecuteMode, TimerTask&&)>&& doTask) noexcept {
-    std::vector<TimerInfo> expiredTimers;
-    {
-        auto now = Time::nowTimeStamp();
-        std::unique_lock<std::mutex> lock(mutex_);
-        while (!timerInfos_.empty() && now >= timerInfos_.top().expireTime) {
-            expiredTimers.push_back(timerInfos_.top());
-            timerInfos_.pop();
+void TimerPool::placeInWheel(const WheelEntry& entry) noexcept {
+    auto base = startMs_ + currentTick_;
+    auto diff = (entry.expireMs > base) ? (entry.expireMs - base) : 0ULL;
+
+    if (diff < kLevel1RangeMs) {
+        level1_[(currentTick_ + diff) % kWheelSize].push_back(entry);
+    } else if (diff < kLevel2RangeMs) {
+        level2_[((currentTick_ + diff) / kLevel2TickMs) % kWheelSize].push_back(entry);
+    } else {
+        overflow_.push_back(entry);
+    }
+}
+
+void TimerPool::cascadeLevel2(uint32_t slot) noexcept {
+    for (auto& e : level2_[slot]) {
+        if (auto it = timers_.find(e.timerId); it != timers_.end() && it->second.isValid) {
+            placeInWheel(e);
         }
     }
+    level2_[slot].clear();
+}
 
-    if (expiredTimers.empty()) {
-        return;
+void TimerPool::drainSlot(Slot& slot, std::vector<TimerEntry>& expired) noexcept {
+    for (auto& we : slot) {
+        if (auto it = timers_.find(we.timerId); it != timers_.end() && it->second.isValid) {
+            expired.push_back(std::move(it->second));
+            timers_.erase(it);
+        }
+    }
+    slot.clear();
+}
+
+void TimerPool::redistributeOverflow() noexcept {
+    std::list<WheelEntry> temp;
+    temp.swap(overflow_);
+    for (auto& e : temp) {
+        if (auto it = timers_.find(e.timerId); it != timers_.end() && it->second.isValid) {
+            placeInWheel(e);
+        }
+    }
+}
+
+void TimerPool::collectExpired(std::vector<TimerEntry>& expired) noexcept {
+    auto now = nowMs();
+    if (startMs_ == 0) {
+        startMs_ = now;
     }
 
-    std::lock_guard<std::mutex> lock(mutex_);
-    for (const auto& expiredTimer : expiredTimers) {
-        auto it = timers_.find(expiredTimer.timerId);
-        if (it == timers_.end()) {
-            continue;
-        }
+    auto targetTick = now - startMs_;
+    // 逐 tick 推进，处理 [currentTick_, targetTick] 范围内的所有 slot
+    while (currentTick_ < targetTick) {
+        auto idx = static_cast<uint32_t>(currentTick_ % kWheelSize);
 
-        Timer& timer = it->second;
-        if (timer.isValid && timer.func) {
-            auto task = timer.func;
-            mutex_.unlock();
-            doTask(expiredTimer.mode, std::move(task));
-            mutex_.lock();
-
-            it = timers_.find(expiredTimer.timerId);
-            if (it == timers_.end() || !it->second.isValid) {
-                continue;
+        if (idx == 0 && currentTick_ > 0) {
+            auto l2 = static_cast<uint32_t>((currentTick_ / kLevel2TickMs) % kWheelSize);
+            cascadeLevel2(l2);
+            if (l2 == 0) {
+                redistributeOverflow();
             }
         }
 
-        if (!timer.isValid || !timer.timerInfo.isLoop) {
-            timers_.erase(it);
-        } else {
-            TimerInfo newInfo = timer.timerInfo;
-            newInfo.expireTime = Time::nowTimeStamp() + newInfo.loopInterval;
-            timerInfos_.push(newInfo);
+        drainSlot(level1_[idx], expired);
+        ++currentTick_;
+    }
+    // 处理 targetTick 本身
+    auto idx = static_cast<uint32_t>(currentTick_ % kWheelSize);
+    if (idx == 0 && currentTick_ > 0) {
+        auto l2 = static_cast<uint32_t>((currentTick_ / kLevel2TickMs) % kWheelSize);
+        cascadeLevel2(l2);
+        if (l2 == 0) {
+            redistributeOverflow();
+        }
+    }
+    drainSlot(level1_[idx], expired);
+    // 到期定时器已移除，刷新缓存
+    refreshEarliestExpire();
+}
+
+void TimerPool::refreshEarliestExpire() noexcept {
+    earliestExpireMs_ = UINT64_MAX;
+    for (const auto& [_, entry] : timers_) {
+        if (entry.isValid) {
+            earliestExpireMs_ =
+                std::min(earliestExpireMs_,
+                         static_cast<uint64_t>(entry.expireTime.toMilliSeconds().count()));
         }
     }
 }
 
-void TimerPool::loop() noexcept {
-    loop([](ExecuteMode, TimerTask&& task){
-        task();
-    });
-}
-
-TimerId TimerPool::addTimer(Time::TimePoint timeStamp,
-                            TimerTask func,
-                            bool isLoop,
-                            std::chrono::milliseconds timeInterval,
-                            ExecuteMode mode) noexcept {
-    Timer timer(timeStamp, std::move(func));
-    timer.timerInfo.isLoop = isLoop;
-    timer.timerInfo.loopInterval = timeInterval;
-    timer.timerInfo.mode = mode;
-    auto id = Random::u32Random();
-    timer.timerInfo.timerId = id;
-    {
-        std::unique_lock<std::mutex> lock(mutex_);
-        timerInfos_.push(timer.timerInfo);
-        timers_.insert(std::make_pair(id, std::move(timer)));
+TimerId TimerPool::addTimer(TimerEntry entry) noexcept {
+    if (startMs_ == 0) {
+        startMs_ = nowMs();
     }
+    auto id = entry.id;
+    auto expMs = static_cast<uint64_t>(entry.expireTime.toMilliSeconds().count());
+    earliestExpireMs_ = std::min(earliestExpireMs_, expMs);
+    timers_.emplace(id, std::move(entry));
+    placeInWheel({id, expMs});
     return id;
 }
 
-TimerId TimerPool::runAt(Time::TimePoint timeStamp, TimerTask func, ExecuteMode mode) noexcept {
-    return addTimer(timeStamp, std::move(func), false, 0ms, mode);
-}
-
-TimerId TimerPool::runAfter(milliseconds delayTime, TimerTask func, ExecuteMode mode) noexcept {
-    auto now = Time::nowTimeStamp();
-    return addTimer(now + delayTime, std::move(func), false, 0ms, mode);
-}
-
-TimerId TimerPool::runLoop(milliseconds timeInterval, TimerTask func, ExecuteMode mode) noexcept {
-    return addTimer(Time::nowTimeStamp() + timeInterval, std::move(func), true, timeInterval, mode);
+void TimerPool::reinsert(TimerEntry entry) noexcept {
+    auto id = entry.id;
+    auto expMs = static_cast<uint64_t>(entry.expireTime.toMilliSeconds().count());
+    earliestExpireMs_ = std::min(earliestExpireMs_, expMs);
+    timers_.emplace(id, std::move(entry));
+    placeInWheel({id, expMs});
 }
 
 void TimerPool::cancel(TimerId id) noexcept {
-    std::lock_guard<std::mutex> lock(mutex_);
     if (auto it = timers_.find(id); it != timers_.end()) {
         it->second.isValid = false;
+        // 被取消的恰好是最早到期的，需要刷新
+        auto expMs = static_cast<uint64_t>(it->second.expireTime.toMilliSeconds().count());
+        if (expMs <= earliestExpireMs_) {
+            refreshEarliestExpire();
+        }
     }
 }
 
-void TimerPool::cancel(const std::vector<TimerId>& timers) noexcept {
-    std::lock_guard<std::mutex> lock(mutex_);
-    std::ranges::for_each(timers, [this](const TimerId& id){
-        if (auto it = timers_.find(id); it != timers_.end()) {
-            it->second.isValid = false;
-        }
-    });
-}
-
-}//end namespace slark
+} // end namespace slark

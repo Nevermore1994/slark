@@ -3,22 +3,55 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android-lightgrey.svg)
 ![Version](https://img.shields.io/badge/version-0.0.1-green.svg)
+![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)
+
+[![Build Status](https://github.com/Nevermore1994/slark/workflows/Slark%20Build/badge.svg)](https://github.com/Nevermore1994/slark/actions)
+[![macOS Build](https://img.shields.io/github/actions/workflow/status/Nevermore1994/slark/cmake.yml?label=macOS&branch=main)](https://github.com/Nevermore1994/slark/actions)
+[![iOS Build](https://img.shields.io/github/actions/workflow/status/Nevermore1994/slark/cmake.yml?label=iOS&branch=main)](https://github.com/Nevermore1994/slark/actions)
+[![Android Build](https://img.shields.io/github/actions/workflow/status/Nevermore1994/slark/cmake.yml?label=Android&branch=main)](https://github.com/Nevermore1994/slark/actions)
 
 - [中文文档](README_zh.md)
 
-Slark is a cross-platform video player that supports iOS and Android platforms. Built from the ground up with modern C++23, it provides a streamlined media playback solution with minimal dependencies (only OpenSSL for HTTPS support).
+Slark is a cross-platform video player that supports iOS and Android platforms. Built from the ground up with modern C++23, it provides a streamlined media playback solution with minimal dependencies.
 
 ## 🔧 Supported Platforms
 
 ### iOS
 - **Minimum Version**: iOS 16.5+
-- **Architecture**: arm64
+- **Architecture**: arm64 (device), x86_64/arm64 (simulator)
 - **Integration**: CocoaPods
 
 ### Android  
 - **Minimum Version**: API Level 29 (Android 10.0)+
-- **Architecture**: arm64-v8a
+- **Architecture**: arm64-v8a, armeabi-v7a, x86_64
 - **Integration**: Gradle/CMake
+
+## 🔒 OpenSSL Dependency
+
+Slark uses OpenSSL 3.0.13 for HTTPS support. **OpenSSL is built from source** for all platforms to ensure:
+- ✅ Security: Full control over compilation options
+- ✅ Consistency: Same version across all platforms
+- ✅ Cross-compilation: Native support for iOS and Android
+
+### Build Behavior
+
+- **Source Cache**: OpenSSL source is cached in `.cache/openssl/` to avoid re-downloading
+- **Build Cache**: Compiled libraries are cached in `build/deps/openssl/`
+- **Automatic Download**: Source is automatically fetched from official OpenSSL releases
+
+### Disable HTTPS
+
+If you don't need HTTPS support, you can disable it:
+
+```bash
+cmake -B build -DDISABLE_HTTPS=ON
+```
+
+Or using the build script:
+
+```bash
+./build.sh --disable_http
+```
 
 ## 📦 Installation
 
@@ -152,14 +185,12 @@ cd slark
 
 2. **iOS Build**:
 ```bash
-cd script
-python build.py -p iOS
+./build.sh -p iOS
 ```
 
 3. **Android Build**:
 ```bash
-cd script
-python build.py -p Android
+./build.sh -p Android
 ```
 
 ## 📖 Demo Projects
@@ -173,10 +204,10 @@ Run demos:
 
 ```bash
 # iOS
-cd script && python build.py -p iOS --demo
+./build.sh -p iOS --demo
 
 # Android  
-cd script && python build.py -p Android --demo
+./build.sh -p Android --demo
 ```
 
 ## 📚 API Documentation

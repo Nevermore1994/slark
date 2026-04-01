@@ -5,9 +5,11 @@
 //  Created by Nevermore
 //
 
-#include <format>
 #include "Mp4Box.hpp"
-#include "Util.hpp"
+
+#include "Util.h"
+
+#include <format>
 
 namespace slark {
 
@@ -21,12 +23,12 @@ std::expected<BoxInfo, bool> Box::tryParseBoxInfo(Buffer& buffer) noexcept {
     if (!buffer.read4ByteBE(tmpSize)) {
         return std::unexpected(false);
     }
-    
+
     if (!buffer.read4ByteBE(info.type)) {
         buffer.skip(-4);
         return std::unexpected(false);
     }
-    
+
     info.size = tmpSize;
     if (info.size == 1) {
         if (!buffer.read8ByteBE(info.size)) {
@@ -43,7 +45,11 @@ std::expected<BoxInfo, bool> Box::tryParseBoxInfo(Buffer& buffer) noexcept {
 }
 
 std::string Box::description(const std::string& prefix) const noexcept {
-    return std::format("{} {} [{}, {}) \n", prefix, info.symbol, info.start, info.start + info.size);
+    return std::format("{} {} [{}, {}) \n",
+                       prefix,
+                       info.symbol,
+                       info.start,
+                       info.start + info.size);
 }
 
 void Box::append(std::shared_ptr<Box> child) noexcept {
@@ -52,7 +58,7 @@ void Box::append(std::shared_ptr<Box> child) noexcept {
 
 BoxRefPtr Box::getChild(std::string_view childType) const noexcept {
     for (const auto& child : childs) {
-        if (child->info.symbol== childType) {
+        if (child->info.symbol == childType) {
             return child;
         }
     }
@@ -70,21 +76,61 @@ BoxRefPtr Box::createBox(Buffer& buffer) {
     }
     auto boxInfo = info.value();
     static const std::unordered_map<std::string, std::function<Box*(BoxInfo&&)>> boxFactory = {
-        {"ftyp", [](BoxInfo&& info) { return new BoxFtyp(std::move(info)); }},
-        {"mvhd", [](BoxInfo&& info) { return new BoxMvhd(std::move(info)); }},
-        {"stsd", [](BoxInfo&& info) { return new BoxStsd(std::move(info)); }},
-        {"stco", [](BoxInfo&& info) { return new BoxStco(std::move(info)); }},
-        {"stsz", [](BoxInfo&& info) { return new BoxStsz(std::move(info)); }},
-        {"stsc", [](BoxInfo&& info) { return new BoxStsc(std::move(info)); }},
-        {"stts", [](BoxInfo&& info) { return new BoxStts(std::move(info)); }},
-        {"ctts", [](BoxInfo&& info) { return new BoxCtts(std::move(info)); }},
-        {"stss", [](BoxInfo&& info) { return new BoxStss(std::move(info)); }},
-        {"esds", [](BoxInfo&& info) { return new BoxEsds(std::move(info)); }},
-        {"meta", [](BoxInfo&& info) { return new BoxMeta(std::move(info)); }},
-        {"avcC", [](BoxInfo&& info) { return new BoxAvcc(std::move(info)); }},
-        {"hvcC", [](BoxInfo&& info) { return new BoxHvcc(std::move(info)); }},
-        {"mdhd", [](BoxInfo&& info) { return new BoxMdhd(std::move(info)); }}
-    };
+        {"ftyp",
+         [](BoxInfo&& info) {
+             return new BoxFtyp(std::move(info));
+         }},
+        {"mvhd",
+         [](BoxInfo&& info) {
+             return new BoxMvhd(std::move(info));
+         }},
+        {"stsd",
+         [](BoxInfo&& info) {
+             return new BoxStsd(std::move(info));
+         }},
+        {"stco",
+         [](BoxInfo&& info) {
+             return new BoxStco(std::move(info));
+         }},
+        {"stsz",
+         [](BoxInfo&& info) {
+             return new BoxStsz(std::move(info));
+         }},
+        {"stsc",
+         [](BoxInfo&& info) {
+             return new BoxStsc(std::move(info));
+         }},
+        {"stts",
+         [](BoxInfo&& info) {
+             return new BoxStts(std::move(info));
+         }},
+        {"ctts",
+         [](BoxInfo&& info) {
+             return new BoxCtts(std::move(info));
+         }},
+        {"stss",
+         [](BoxInfo&& info) {
+             return new BoxStss(std::move(info));
+         }},
+        {"esds",
+         [](BoxInfo&& info) {
+             return new BoxEsds(std::move(info));
+         }},
+        {"meta",
+         [](BoxInfo&& info) {
+             return new BoxMeta(std::move(info));
+         }},
+        {"avcC",
+         [](BoxInfo&& info) {
+             return new BoxAvcc(std::move(info));
+         }},
+        {"hvcC",
+         [](BoxInfo&& info) {
+             return new BoxHvcc(std::move(info));
+         }},
+        {"mdhd", [](BoxInfo&& info) {
+             return new BoxMdhd(std::move(info));
+         }}};
     if (boxFactory.contains(boxInfo.symbol)) {
         auto box = boxFactory.at(boxInfo.symbol)(std::move(boxInfo));
         return std::shared_ptr<Box>(box);
@@ -98,7 +144,10 @@ std::string BoxFtyp::description(const std::string& prefix) const noexcept {
     desc.append(std::format("{1}  major brand: {1}\n"
                             "{1}  minor version: {2}\n"
                             "{1}  compatible brands: {3}\n",
-                            prefix, majorBrand, minorVersion, compatibleBrands));
+                            prefix,
+                            majorBrand,
+                            minorVersion,
+                            compatibleBrands));
     return desc;
 }
 
@@ -111,61 +160,68 @@ bool BoxFtyp::decode(Buffer& buffer) noexcept {
         } else {
             offset += 4;
         }
-        
+
         if (!buffer.readString(4, majorBrand)) {
             break;
         } else {
             offset += 4;
         }
-        
+
         auto size = info.size - buffer.pos() - info.start;
         if (!buffer.readString(size, compatibleBrands)) {
             break;
         } else {
             res = true;
         }
-    } while(false);
+    } while (false);
     if (!res) {
         buffer.skip(-offset);
     }
     return res;
 }
 
-
 std::string BoxMvhd::matrixString(const std::string& prefix) const noexcept {
     std::string res;
     static const std::vector<std::string> matrixNames = {"a, b, u", "c, d, v", "x, y, w"};
-    
+
     for (size_t i = 0; i < matrixNames.size(); ++i) {
         res += std::format("{}| {} |{}| {}, {}, {} |{}",
-                           prefix, matrixNames[i], (i != 1 ? "   " : " = "),
-                           matrix[i * 3], matrix[i * 3 + 1], matrix[i * 3 + 2],
+                           prefix,
+                           matrixNames[i],
+                           (i != 1 ? "   " : " = "),
+                           matrix[i * 3],
+                           matrix[i * 3 + 1],
+                           matrix[i * 3 + 2],
                            (i != matrixNames.size() - 1 ? "\n" : ""));
     }
-    
+
     return res;
 }
 
 std::string BoxMvhd::description(const std::string& prefix) const noexcept {
     std::string res = Box::description(prefix);
-    
-    res += std::format(
-        "{0}    version: {1}\n"
-        "{0}    flags: {2}\n"
-        "{0}    creationTime: {3}\n"
-        "{0}    modificationTime: {4}\n"
-        "{0}    timeScale: {5}\n"
-        "{0}    duration: {6}\n"
-        "{0}    preferredRate: {7}\n"
-        "{0}    preferredVolume: {8}\n"
-        "{0}    matrix: \n {9} \n"
-        "{0}    nextTrackId: {10}",
-        prefix,
-        version, flags, creationTime,
-        modificationTime, timeScale, duration,
-        preferredRate, preferredVolume, matrixString(prefix + "        "),
-        nextTrackId
-    );
+
+    res += std::format("{0}    version: {1}\n"
+                       "{0}    flags: {2}\n"
+                       "{0}    creationTime: {3}\n"
+                       "{0}    modificationTime: {4}\n"
+                       "{0}    timeScale: {5}\n"
+                       "{0}    duration: {6}\n"
+                       "{0}    preferredRate: {7}\n"
+                       "{0}    preferredVolume: {8}\n"
+                       "{0}    matrix: \n {9} \n"
+                       "{0}    nextTrackId: {10}",
+                       prefix,
+                       version,
+                       flags,
+                       creationTime,
+                       modificationTime,
+                       timeScale,
+                       duration,
+                       preferredRate,
+                       preferredVolume,
+                       matrixString(prefix + "        "),
+                       nextTrackId);
 
     return res;
 }
@@ -214,19 +270,23 @@ bool BoxMvhd::decode(Buffer& buffer) noexcept {
 
 std::string BoxMdhd::description(const std::string& prefix) const noexcept {
     auto res = Box::description(prefix);
-    res += std::format(
-        "{0}    version: {1}\n"
-        "{0}    flags: {2}\n"
-        "{0}    creation_time: {3}\n"
-        "{0}    modification_time: {4}\n"
-        "{0}    time_scale: {5}\n"
-        "{0}    duration: {6}\n"
-        "{0}    language: {7}\n"
-        "{0}    quality: {8}\n",
-        prefix, version, flags,
-        creationTime, modificationTime, timeScale,
-        duration, language, quality
-    );
+    res += std::format("{0}    version: {1}\n"
+                       "{0}    flags: {2}\n"
+                       "{0}    creation_time: {3}\n"
+                       "{0}    modification_time: {4}\n"
+                       "{0}    time_scale: {5}\n"
+                       "{0}    duration: {6}\n"
+                       "{0}    language: {7}\n"
+                       "{0}    quality: {8}\n",
+                       prefix,
+                       version,
+                       flags,
+                       creationTime,
+                       modificationTime,
+                       timeScale,
+                       duration,
+                       language,
+                       quality);
     return res;
 }
 
@@ -240,13 +300,13 @@ bool BoxMdhd::decode(Buffer& buffer) noexcept {
         uint32_t tCreationTime;
         buffer.read4ByteBE(tCreationTime);
         creationTime = static_cast<uint64_t>(tCreationTime);
-        
+
         uint32_t tModificationTime;
         buffer.read4ByteBE(tModificationTime);
         modificationTime = static_cast<uint64_t>(tModificationTime);
-        
+
         buffer.read4ByteBE(timeScale);
-        
+
         uint32_t tDuration;
         buffer.read4ByteBE(tDuration);
         duration = static_cast<uint64_t>(tDuration);
@@ -267,49 +327,47 @@ std::tuple<CodecId, std::string> BoxStsd::getCodecId() {
         if (auto box = ptr->getChild("esds"sv); box) {
             auto esds = std::dynamic_pointer_cast<BoxEsds>(box);
             return {esds->codecId, "mp4a"};
-        } else if (ptr->info.symbol == "hev1" ||
-                   ptr->info.symbol == "hvc1") {
+        } else if (ptr->info.symbol == "hev1" || ptr->info.symbol == "hvc1") {
             return {CodecId::HEVC, ptr->info.symbol};
-        } else if (ptr->info.symbol == "avc1" ||
-                   ptr->info.symbol == "avc3") {
+        } else if (ptr->info.symbol == "avc1" || ptr->info.symbol == "avc3") {
             return {CodecId::AVC, ptr->info.symbol};
         }
     }
     return {CodecId::Unknown, ""};
 }
 
-//stsd
-//  ├── size: 56
-//  ├── type: 'stsd'
-//  ├── version_and_flags: 0x000000
-//  ├── entry_count: 2
-//  ├── sample_entries:
-//  │   ├── [0]: mp4a (audio description)
-//  │   │   ├── size: 32
-//  │   │   ├── type: 'mp4a'
-//  │   │   ├── version_and_flags: 0x000000
-//  │   │   ├── data_reference_index: 0
-//  │   │   ├── version: 0
-//  │   │   ├── channels: 2
-//  │   │   ├── sample_size: 16
-//  │   │   ├── sample_rate: 44100
-//  │   │   ├── reserved: 0
-//  │   │   ├── avg_bytes_per_second: 128000
-//  │   │   ├── extra_data_size: 6
-//  │   │   └── extra_data: { 0x13, 0x10, 0x00, 0x00, 0x02, 0x00 }
-//  │   └── [1]: avc1 (video description)
-//  │       ├── size: 40
-//  │       ├── type: 'avc1'
-//  │       ├── version_and_flags: 0x000000
-//  │       ├── data_reference_index: 0
-//  │       ├── width: 1920
-//  │       ├── height: 1080
-//  │       ├── horizresolution: 72
-//  │       ├── vertresolution: 72
-//  │       ├── frame_count: 1
-//  │       ├── compressorname: 'AVC Coding'
-//  │       ├── depth: 24
-//  │       └── pre_defined: 0
+// stsd
+//   ├── size: 56
+//   ├── type: 'stsd'
+//   ├── version_and_flags: 0x000000
+//   ├── entry_count: 2
+//   ├── sample_entries:
+//   │   ├── [0]: mp4a (audio description)
+//   │   │   ├── size: 32
+//   │   │   ├── type: 'mp4a'
+//   │   │   ├── version_and_flags: 0x000000
+//   │   │   ├── data_reference_index: 0
+//   │   │   ├── version: 0
+//   │   │   ├── channels: 2
+//   │   │   ├── sample_size: 16
+//   │   │   ├── sample_rate: 44100
+//   │   │   ├── reserved: 0
+//   │   │   ├── avg_bytes_per_second: 128000
+//   │   │   ├── extra_data_size: 6
+//   │   │   └── extra_data: { 0x13, 0x10, 0x00, 0x00, 0x02, 0x00 }
+//   │   └── [1]: avc1 (video description)
+//   │       ├── size: 40
+//   │       ├── type: 'avc1'
+//   │       ├── version_and_flags: 0x000000
+//   │       ├── data_reference_index: 0
+//   │       ├── width: 1920
+//   │       ├── height: 1080
+//   │       ├── horizresolution: 72
+//   │       ├── vertresolution: 72
+//   │       ├── frame_count: 1
+//   │       ├── compressorname: 'AVC Coding'
+//   │       ├── depth: 24
+//   │       └── pre_defined: 0
 
 bool BoxStsd::decode(Buffer& buffer) noexcept {
     if (!buffer.require(110)) {
@@ -318,7 +376,7 @@ bool BoxStsd::decode(Buffer& buffer) noexcept {
     buffer.readByte(version);
     buffer.read3ByteBE(flags);
     buffer.read4ByteBE(entryCount);
-    
+
     for (uint32_t i = 0; i < entryCount; i++) {
         auto box = Box::createBox(buffer);
         append(box);
@@ -335,10 +393,8 @@ bool BoxStsd::decode(Buffer& buffer) noexcept {
             buffer.read4ByteBE(tSampleRate);
             sampleRate = static_cast<uint16_t>(tSampleRate >> 16);
             isAudio = true;
-        } else if (box->info.symbol == "avc1" ||
-                   box->info.symbol == "avc3" ||
-                   box->info.symbol == "hvc1" ||
-                   box->info.symbol == "hev1" ) {
+        } else if (box->info.symbol == "avc1" || box->info.symbol == "avc3" ||
+                   box->info.symbol == "hvc1" || box->info.symbol == "hev1") {
             buffer.skip(6);
             buffer.read2ByteBE(dataReferenceIndex);
             buffer.skip(2 + 2 + 3 * 4);
@@ -355,7 +411,7 @@ bool BoxStsd::decode(Buffer& buffer) noexcept {
             box->append(subBox);
             subBox->decode(buffer);
             buffer.skipTo(static_cast<int64_t>(subBox->info.end()));
-        } while(subBox->info.end() < endPos);
+        } while (subBox->info.end() < endPos);
         buffer.skip(static_cast<int64_t>(endPos - buffer.pos()));
     }
     return true;
@@ -368,11 +424,11 @@ bool BoxStsc::decode(Buffer& buffer) noexcept {
     int32_t offset = 0;
     buffer.skip(1 + 3);
     offset += 4;
-    
+
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
     offset += 4;
-    
+
     bool res = true;
     for (uint32_t i = 0; i < entryCount; i++) {
         if (!buffer.require(12)) {
@@ -396,19 +452,19 @@ bool BoxStsz::decode(Buffer& buffer) noexcept {
     if (!buffer.require(12)) {
         return false;
     }
-    
+
     int32_t offset = 0;
-    buffer.skip(1 + 3); //version + flags
+    buffer.skip(1 + 3); // version + flags
     offset += 4;
-    
+
     uint32_t sampleSize = 0;
     buffer.read4ByteBE(sampleSize);
     offset += 4;
-    
+
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
     offset += 4;
-    
+
     if (sampleSize != 0) {
         sampleSizes = std::vector<uint64_t>(entryCount, sampleSize);
     } else {
@@ -434,15 +490,15 @@ bool BoxStco::decode(Buffer& buffer) noexcept {
     if (!buffer.require(12)) {
         return false;
     }
-    
+
     int32_t offset = 0;
-    buffer.skip(1 + 3); //version + flags
+    buffer.skip(1 + 3); // version + flags
     offset += 4;
-    
+
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
     offset += 4;
-    
+
     bool res = true;
     for (uint32_t i = 0; i < entryCount; i++) {
         uint32_t size = 0;
@@ -460,11 +516,11 @@ bool BoxStco::decode(Buffer& buffer) noexcept {
 }
 
 bool BoxStts::decode(Buffer& buffer) noexcept {
-    buffer.skip(1 + 3); //version + flags
-    
+    buffer.skip(1 + 3); // version + flags
+
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
-    
+
     bool res = true;
     for (uint32_t i = 0; i < entryCount; i++) {
         SttsEntry entry;
@@ -485,8 +541,8 @@ uint32_t BoxStts::sampleSize() const noexcept {
 
 bool BoxCtts::decode(Buffer& buffer) noexcept {
     buffer.readByte(version);
-    buffer.skip(3); //flags
-    
+    buffer.skip(3); // flags
+
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
 
@@ -502,7 +558,7 @@ bool BoxCtts::decode(Buffer& buffer) noexcept {
 }
 
 bool BoxStss::decode(Buffer& buffer) noexcept {
-    buffer.skip(1 + 3); //version + flags
+    buffer.skip(1 + 3); // version + flags
     uint32_t size = 0;
     buffer.read4ByteBE(size);
     for (size_t i = 0; i < size; i++) {
@@ -524,48 +580,48 @@ bool BoxEsds::decode(Buffer& buffer) noexcept {
         return false;
     }
     auto size = info.size - info.headerSize;
-    buffer.skip(1 + 3); //version + flags
+    buffer.skip(1 + 3); // version + flags
     size -= 4;
-    
+
     uint8_t esDescTag = 0;
     buffer.readByte(esDescTag);
     size -= 1;
-    
-    [[maybe_unused]]auto descLen = getDescrLen(buffer);
+
+    [[maybe_unused]] auto descLen = getDescrLen(buffer);
     size -= descLen;
 
     if (esDescTag == 0x03) {
         buffer.skip(2);
-        
+
         uint8_t flags = 0;
         buffer.readByte(flags);
         if (flags & 0x80) {
             buffer.skip(2);
         }
-        
+
         if (flags & 0x40) {
             uint8_t len = 0;
             buffer.readByte(len);
             buffer.skip(len);
         }
-        
+
         if (flags & 0x20) {
             buffer.skip(2);
         }
     } else {
         buffer.skip(2);
     }
-    
+
     buffer.readByte(esDescTag);
     descLen = getDescrLen(buffer);
-    
+
     if (esDescTag == 0x04) {
         buffer.readByte(objectTypeId);
         buffer.skip(1);
         buffer.read3ByteBE(bufferSize);
         buffer.read4ByteBE(maxBitRate);
         buffer.read4ByteBE(avgBitRate);
-        
+
         buffer.readByte(esDescTag);
         descLen = getDescrLen(buffer);
         if (objectTypeId == 0x40) {
@@ -578,15 +634,13 @@ bool BoxEsds::decode(Buffer& buffer) noexcept {
                     audioSpecConfig.samplingFrequencyIndex = view.readBits(24);
                 }
                 audioSpecConfig.channelConfiguration = uint8_t(view.readBits(4));
-                if (audioSpecConfig.audioObjectType == 5 ||
-                    audioSpecConfig.audioObjectType == 29) {
+                if (audioSpecConfig.audioObjectType == 5 || audioSpecConfig.audioObjectType == 29) {
                     audioSpecConfig.samplingFreqIndexExt = view.readBits(4);
                     if (audioSpecConfig.samplingFreqIndexExt == 0x0f) {
                         audioSpecConfig.samplingFreqIndexExt = view.readBits(24);
                     }
                     audioSpecConfig.audioObjectTypeExt = uint8_t(view.readBits(5));
                 }
-
             }
         } else if (objectTypeId == 0x6b) {
             codecId = CodecId::MP3;
@@ -618,30 +672,31 @@ bool BoxMeta::decode(Buffer& buffer) noexcept {
     return true;
 }
 
-std::string BoxAvcc::description(const std::string&prefix) const noexcept {
+std::string BoxAvcc::description(const std::string& prefix) const noexcept {
     auto desc = Box::description(prefix);
     desc.pop_back();
-    return desc +
-        std::format("version: {}, profileIdc: {}, "
-                "profileCompatibility: {}, levelIdc: {},"
-                "naluByteSize: {}\n",
-                    version, profileIdc,
-                    profileCompatibility, levelIdc,
-                    naluByteSize);
+    return desc + std::format("version: {}, profileIdc: {}, "
+                              "profileCompatibility: {}, levelIdc: {},"
+                              "naluByteSize: {}\n",
+                              version,
+                              profileIdc,
+                              profileCompatibility,
+                              levelIdc,
+                              naluByteSize);
 }
 
-//avcC (size)
-//  |--- (size) 1byte: configurationVersion
-//  |--- (size) 1byte: AVCProfileIndication
-//  |--- (size) 1byte: profile_compatibility
-//  |--- (size) 1byte: AVCLevelIndication
-//  |--- (size) 6bit reserved + 2bit lengthSizeMinusOne
-//  |--- (size) 3bit reserved + 5bit numOfSPS
-//  |--- (size) 2byte: SPS length
-//  |--- (size) Nbyte: SPS data
-//  |--- (size) 1byte: numOfPPS
-//  |--- (size) 2byte: PPS length
-//  |--- (size) Nbyte: PPS data
+// avcC (size)
+//   |--- (size) 1byte: configurationVersion
+//   |--- (size) 1byte: AVCProfileIndication
+//   |--- (size) 1byte: profile_compatibility
+//   |--- (size) 1byte: AVCLevelIndication
+//   |--- (size) 6bit reserved + 2bit lengthSizeMinusOne
+//   |--- (size) 3bit reserved + 5bit numOfSPS
+//   |--- (size) 2byte: SPS length
+//   |--- (size) Nbyte: SPS data
+//   |--- (size) 1byte: numOfPPS
+//   |--- (size) 2byte: PPS length
+//   |--- (size) Nbyte: PPS data
 bool BoxAvcc::decode(Buffer& buffer) noexcept {
     buffer.readByte(version);
     buffer.readByte(profileIdc);
@@ -670,36 +725,40 @@ bool BoxAvcc::decode(Buffer& buffer) noexcept {
     return true;
 }
 
-std::string BoxHvcc::description(const std::string&prefix) const noexcept {
+std::string BoxHvcc::description(const std::string& prefix) const noexcept {
     return Box::description(prefix) +
-        std::format("version: {}, profileSpace: {}, "
-                "tierFlag: {}, profileIdc: {},"
-                "profileCompatibility: {} , levelIdc:{}, naluByteSize:{}\n",
-                version, profileSpace,
-                tierFlag, profileIdc,
-                profileCompatibility, levelIdc, naluByteSize);
+           std::format("version: {}, profileSpace: {}, "
+                       "tierFlag: {}, profileIdc: {},"
+                       "profileCompatibility: {} , levelIdc:{}, naluByteSize:{}\n",
+                       version,
+                       profileSpace,
+                       tierFlag,
+                       profileIdc,
+                       profileCompatibility,
+                       levelIdc,
+                       naluByteSize);
 }
 
-//hvcC (size)
-//  |--- (1byte) configurationVersion:
-//  |--- (1byte) general_profile_space
-//  |--- (4byte) general_profile_compatibility_flags
-//  |--- (6byte) general_constraint_indicator_flags
-//  |--- (1byte) general_level_idc
-//  |--- (2byte) min_spatial_segmentation_idc
-//  |--- (1byte) parallelismType
-//  |--- (1byte) chromaFormat
-//  |--- (1byte) bitDepthLumaMinus8
-//  |--- (1byte) bitDepthChromaMinus8
-//  |--- (2byte) avgFrameRate
-//  |--- (1byte) constantFrameRate, numTemporalLayers, temporalIdNested, lengthSizeMinusOne
-//  |--- (1byte) numOfArrays: NALU size
-//       |--- Array 1: (1byte) NAL unit type
-//                    (2byte) numNalus
-//                    (2byte) nalUnitLength
-//                    NALU data (VPS, SPS, PPS)
-//       |--- Array 2: (like Array 1)
-//       |--- ...
+// hvcC (size)
+//   |--- (1byte) configurationVersion:
+//   |--- (1byte) general_profile_space
+//   |--- (4byte) general_profile_compatibility_flags
+//   |--- (6byte) general_constraint_indicator_flags
+//   |--- (1byte) general_level_idc
+//   |--- (2byte) min_spatial_segmentation_idc
+//   |--- (1byte) parallelismType
+//   |--- (1byte) chromaFormat
+//   |--- (1byte) bitDepthLumaMinus8
+//   |--- (1byte) bitDepthChromaMinus8
+//   |--- (2byte) avgFrameRate
+//   |--- (1byte) constantFrameRate, numTemporalLayers, temporalIdNested, lengthSizeMinusOne
+//   |--- (1byte) numOfArrays: NALU size
+//        |--- Array 1: (1byte) NAL unit type
+//                     (2byte) numNalus
+//                     (2byte) nalUnitLength
+//                     NALU data (VPS, SPS, PPS)
+//        |--- Array 2: (like Array 1)
+//        |--- ...
 bool BoxHvcc::decode(Buffer& buffer) noexcept {
     auto endPos = info.size + info.start;
     buffer.readByte(version);
@@ -745,8 +804,10 @@ bool BoxHvcc::decode(Buffer& buffer) noexcept {
         }
     }
     auto skip = static_cast<int64_t>(endPos - buffer.readPos());
-    if (skip > 0) buffer.skip(skip);
+    if (skip > 0) {
+        buffer.skip(skip);
+    }
     return true;
 }
 
-}
+} // namespace slark

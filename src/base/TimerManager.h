@@ -6,49 +6,49 @@
 #pragma once
 
 #include "NonCopyable.h"
-#include "Thread.h"
 #include "Timer.h"
 #include "TimerPool.h"
-#include "ThreadPool.hpp"
+
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 
 namespace slark {
 
-class TimerManager final : public NonCopyable {
+/// 全局定时器管理器，负责线程调度和同步
+class TimerManager final : public NonCopyMovable {
 public:
     static TimerManager& shareInstance();
 
-public:
-    TimerManager();
-
     ~TimerManager() final;
 
-    TimerId runAt(Time::TimePoint timePoint,
-                  TimerTask func,
-                  ExecuteMode mode = ExecuteMode::Serial) noexcept;
+    TimerId runAt(Time::TimePoint timePoint, TimerTask func) noexcept;
 
-    TimerId runAfter(std::chrono::milliseconds timeStamp,
-                     TimerTask func,
-                     ExecuteMode mode = ExecuteMode::Serial) noexcept;
+    TimerId runAfter(std::chrono::milliseconds delay, TimerTask func) noexcept;
 
-    TimerId runLoop(std::chrono::milliseconds timeStamp,
-                    TimerTask func,
-                    ExecuteMode mode = ExecuteMode::Serial) noexcept;
+    TimerId runLoop(std::chrono::milliseconds interval, TimerTask func) noexcept;
 
     void cancel(TimerId id) noexcept;
 
     void clear() noexcept;
 
 private:
-    void loop();
+    TimerManager();
+
+    void tickLoop(std::stop_token stopToken);
+
+    TimerId addTimer(Time::TimePoint expireTime,
+                     TimerTask func,
+                     bool isLoop,
+                     std::chrono::milliseconds interval) noexcept;
 
 private:
-    bool isExited_ = false;
-    bool isAdded_ = false;
     std::mutex mutex_;
-    std::condition_variable cond_;
-    std::unique_ptr<Thread> timerThread_;
+    std::condition_variable_any cond_;
+    bool hasNewTimer_ = false;
     TimerPool timerPool_;
-    ThreadPool workPool_;
+    std::jthread tickThread_;
 };
 
-}
+} // namespace slark

@@ -4,27 +4,41 @@
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 #include "ThreadManager.h"
+
 #include "Log.hpp"
-#include "TimerManager.h"
 
 namespace slark {
-using namespace slark::Random;
 using namespace std::chrono_literals;
 
-ThreadManager::ThreadManager() {
-    timerId_ = TimerManager::shareInstance().runLoop(10s, [this]() {
-        reportRunInfo();
-    });
-}
+ThreadManager::ThreadManager()
+    : monitorThread_([this](std::stop_token token) {
+          monitorLoop(token);
+      }) {}
 
 ThreadManager::~ThreadManager() {
+    monitorThread_.request_stop();
+    cond_.notify_all();
+    // jthread 析构时自动 join
     {
         std::unique_lock<std::mutex> lock(mutex_);
         threadInfos_.clear();
     }
-    TimerManager::shareInstance().cancel(timerId_);
 }
 
+void ThreadManager::monitorLoop(std::stop_token stopToken) {
+    while (!stopToken.stop_requested()) {
+        {
+            std::unique_lock lock(mutex_);
+            cond_.wait_for(lock, stopToken, 10s, [] {
+                return false; // 仅等待超时或 stop
+            });
+        }
+        if (stopToken.stop_requested()) {
+            break;
+        }
+        reportRunInfo();
+    }
+}
 
 void ThreadManager::add(const std::shared_ptr<Thread>& thread) noexcept {
     std::unique_lock<std::mutex> lock(mutex_);
@@ -55,7 +69,7 @@ void ThreadManager::reportRunInfo() noexcept {
     Time::TimePoint now = Time::nowTimeStamp();
     LogI("ThreadManager report now:{}, now live size :{}", now.point(), threadInfos_.size());
     std::unique_lock<std::mutex> lock(mutex_);
-    std::erase_if(threadInfos_, [now] (auto& pair) {
+    std::erase_if(threadInfos_, [now](auto& pair) {
         auto& [id, ptr] = pair;
         auto isExpired = ptr.expired();
         if (!isExpired) {
@@ -69,4 +83,4 @@ void ThreadManager::reportRunInfo() noexcept {
     });
 }
 
-}//end namespace slark
+} // end namespace slark

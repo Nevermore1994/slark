@@ -6,169 +6,149 @@
 //
 
 #include "Writer.hpp"
-#include "Util.hpp"
+
 #include "Log.hpp"
+#include "Util.h"
 
 namespace slark {
 
 static const std::string kWriterPrefixName = "Writer_";
-Writer::Writer()
-    : worker_(Util::genRandomName(kWriterPrefixName), &Writer::process, this)
-{
 
+Writer::Writer() : worker_(Thread::create(Util::genRandomName(kWriterPrefixName))) {
+    using namespace std::chrono_literals;
+    worker_->scheduleRepeat(0ms, [this]() {
+        process();
+    });
 }
 
-Writer::~Writer() = default;
+Writer::~Writer() {
+    dispose();
+}
+
+void Writer::closeFile() noexcept {
+    file_.withLock([](auto& file) {
+        if (file) {
+            file->close();
+            file.reset();
+        }
+    });
+}
 
 bool Writer::open(std::string_view path, bool isAppend) noexcept {
     bool isSuccess = false;
-    file_.withLock([&](auto& file){
+    file_.withLock([&](auto& file) {
         file = std::make_unique<File::WriteFile>(std::string(path), isAppend);
-        if (!file->open()) {
+        auto result = file->open();
+        if (!result) {
             LogE("open file failed. {}", path);
         }
-        isSuccess = !file->isFailed();
+        isSuccess = result.has_value();
     });
     if (isSuccess) {
-        isOpen_ = true;
-        worker_.start();
+        isOpen_.store(true, std::memory_order_release);
+        worker_->start();
     }
     return isSuccess;
 }
 
 void Writer::close() noexcept {
-    isOpen_ = false;
-    worker_.start();
+    isOpen_.store(false, std::memory_order_release);
+    worker_->start();
 }
 
 void Writer::dispose() noexcept {
-    isStop_ = true;
-    worker_.start();
+    isStop_.store(true, std::memory_order_release);
+    worker_->stop();
 }
 
 IOState Writer::state() noexcept {
-    if (!isOpen_.load() || isStop_.load()) {
+    if (!isOpen_.load(std::memory_order_acquire) || isStop_.load(std::memory_order_acquire)) {
         return IOState::Closed;
     }
-    IOState state = IOState::Normal;
-    file_.withLock([&](auto& file){
+    return file_.withLock([](auto& file) -> IOState {
         if (!file) {
-            state = IOState::Closed;
-        } else if(file->isFailed()) {
-            state = IOState::Error;
+            return IOState::Closed;
         }
+        return file->isOpen() ? IOState::Normal : IOState::Error;
     });
-    return state;
 }
 
 std::string Writer::path() noexcept {
-    std::string path;
-    file_.withLock([&](auto& file){
-        if (file) {
-            path = file->path();
-        }
+    return file_.withLock([](auto& file) -> std::string {
+        return file ? file->path().string() : std::string{};
     });
-    return path;
 }
 
 bool Writer::checkState() noexcept {
-    if (!isOpen_ || isStop_) {
-        file_.withLock([](auto& file){
-            if (file) {
-                file->close();
-            }
-            file.reset();
-        });
-        if (!isOpen_) {
-            worker_.pause();
-            LogI("{} closed", worker_.getName());
+    if (!isOpen_.load(std::memory_order_acquire) || isStop_.load(std::memory_order_acquire)) {
+        closeFile();
+        if (!isOpen_.load(std::memory_order_acquire)) {
+            worker_->pause();
+            LogI("{} closed", worker_->getName());
         } else {
-            worker_.stop();
-            LogI("{} stoped", worker_.getName());
+            worker_->stop();
+            LogI("{} stopped", worker_->getName());
         }
         return false;
     }
     if (dataQueue_.empty()) {
-        worker_.pause();
+        worker_->pause();
         return false;
     }
     return true;
 }
 
 void Writer::process() noexcept {
-    constexpr static uint32_t kMaxWriteCount = 1024;
+    static constexpr uint32_t kMaxWriteCount = 1024;
     if (!checkState()) {
         return;
     }
-    file_.withLock([&](auto& file){
-        if (file->isFailed()){
+    file_.withLock([&](auto& file) {
+        if (!file || !file->isOpen()) {
             return;
         }
-        uint32_t writeCount = 0;
-        while (!dataQueue_.empty() && writeCount < kMaxWriteCount) {
-            if (file->isFailed()){
-                break;
-            }
+        for (uint32_t i = 0; i < kMaxWriteCount; ++i) {
             DataPtr data;
-            if (dataQueue_.tryPop(data)) {
-                file->write(*data);
-                writeCount++;
-            } else {
+            if (!dataQueue_.tryPop(data)) {
                 break;
             }
+            file->write(*data);
         }
     });
 }
 
 uint32_t Writer::getHashId() noexcept {
-    return worker_.getHashId();
+    return worker_->getHashId();
 }
 
 uint32_t Writer::writeCount() noexcept {
-    uint32_t count = 0;
-    file_.withLock([&](auto& file){
-        count = file->writeCount();
+    return file_.withLock([](auto& file) -> uint32_t {
+        return file ? file->writeCount() : 0;
     });
-    return count;
 }
 
 uint64_t Writer::writeSize() noexcept {
-    uint64_t size = 0;
-    file_.withLock([&](auto& file){
-        size = file->writeSize();
+    return file_.withLock([](auto& file) -> uint64_t {
+        return file ? file->writeSize() : 0;
     });
-    return size;
 }
 
 bool Writer::write(DataPtr data) noexcept {
-    if (!isOpen_ || isStop_) {
+    if (!isOpen_.load(std::memory_order_acquire) || isStop_.load(std::memory_order_acquire)) {
         LogE("unable to write data, file has been closed.");
         return false;
     }
     dataQueue_.push(std::move(data));
-    worker_.start();
+    worker_->start();
     return true;
 }
 
-bool Writer::write(Data&& data) noexcept {
-    auto dataPtr = data.detachData();
-    return write(std::move(dataPtr));
-}
-
 bool Writer::write(const Data& data) noexcept {
-    auto dataPtr = data.copy();
-    return write(std::move(dataPtr));
+    return write(data.copy());
 }
 
-bool Writer::write(const std::string& str) noexcept {
-    auto dataPtr = std::make_unique<Data>(str);
-    return write(std::move(dataPtr));
+bool Writer::write(std::string_view str) noexcept {
+    return write(std::make_unique<Data>(str));
 }
 
-bool Writer::write(std::string&& str) noexcept {
-    auto dataPtr = std::make_unique<Data>(str);
-    return write(std::move(dataPtr));
-}
-
-}
-
+} // namespace slark

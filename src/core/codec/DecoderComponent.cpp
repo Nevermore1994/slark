@@ -4,17 +4,19 @@
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
 #include "DecoderComponent.h"
-#include "Log.hpp"
-#include "Util.hpp"
+
 #include "DecoderConfig.h"
+#include "Log.hpp"
+#include "Util.h"
 
 namespace slark {
 
 DecoderComponent::DecoderComponent(DecoderReceiveFunc&& callback)
-    : callback_(callback)
-    , decodeWorker_("decoder", &DecoderComponent::pushFrameDecode, this) {
+    : callback_(callback), decodeWorker_(Thread::create("decoder")) {
     using namespace std::chrono_literals;
-    decodeWorker_.setInterval(5ms);
+    decodeWorker_->scheduleRepeat(5ms, [this]() {
+        pushFrameDecode();
+    });
 }
 
 DecoderComponent::~DecoderComponent() {
@@ -25,7 +27,7 @@ AVFrameRefPtr DecoderComponent::requestDecodeFrame(bool isBlocking) noexcept {
     AVFrameRefPtr frame;
     if (isBlocking) {
         std::unique_lock lock(mutex_);
-        cond_.wait(lock, [this]{
+        cond_.wait(lock, [this] {
             return !pendingDecodeQueue_.empty() || !isOpened_;
         });
         if (!isOpened_) {
@@ -53,7 +55,6 @@ AVFrameRefPtr DecoderComponent::peekDecodeFrame() noexcept {
     return pendingDecodeQueue_.front();
 }
 
-
 AVFrameRefPtr DecoderComponent::buildEOSFrame(bool isVideo) noexcept {
     AVFrameRefPtr frame = nullptr;
     if (isVideo) {
@@ -70,20 +71,18 @@ AVFrameRefPtr DecoderComponent::buildEOSFrame(bool isVideo) noexcept {
     return frame;
 }
 
-bool DecoderComponent::open(
-    DecoderType type,
-    const std::shared_ptr<DecoderConfig>& config
-) noexcept {
+bool DecoderComponent::open(DecoderType type,
+                            const std::shared_ptr<DecoderConfig>& config) noexcept {
     if (isOpened_) {
         close();
     }
     isVideo_ = IDecoder::isVideoDecoder(type);
-    std::thread([type, config, this](){
+    std::thread([type, config, this]() {
         auto decoder = std::shared_ptr<IDecoder>(DecoderManager::shareInstance().create(type));
         if (!decoder) {
             return;
         }
-        decoder->setReceiveFunc([this](auto frame){
+        decoder->setReceiveFunc([this](auto frame) {
             callback_(std::move(frame));
         });
         decoder->setDataProvider(shared_from_this());
@@ -95,9 +94,9 @@ bool DecoderComponent::open(
             coder = std::move(decoder);
         });
         isOpened_ = true;
-        auto workerName = Util::genRandomName(isVideo_ ?
-            std::string("videoDecode_") : std::string("audioDecode_"));
-        decodeWorker_.setThreadName(workerName);
+        auto workerName = Util::genRandomName(isVideo_ ? std::string("videoDecode_")
+                                                       : std::string("audioDecode_"));
+        decodeWorker_->setThreadName(workerName);
         LogI("open {} decoder", isVideo_ ? "video" : "audio");
     }).detach();
     return true;
@@ -114,15 +113,14 @@ void DecoderComponent::pushFrameDecode() {
         return;
     }
     bool isCompleted = false;
-    decoder_.withLock([&isCompleted, this]
-        (auto& decoder) mutable {
+    decoder_.withLock([&isCompleted, this](auto& decoder) mutable {
         if (!decoder || !decoder->isOpen() || decoder->isCompleted()) {
             if (decoder) {
                 isCompleted = decoder->isCompleted();
             }
             return;
         }
-        if (isInputCompleted_ && !decoder->isCompleted()){
+        if (isInputCompleted_ && !decoder->isCompleted()) {
             auto eosFrame = buildEOSFrame(decoder->isVideo());
             decoder->decode(eosFrame);
             LogI("push eos frame, {}", isVideo_ ? "video" : "audio");
@@ -144,7 +142,7 @@ void DecoderComponent::pushFrameDecode() {
                 pendingDecodeQueue_.pop_front();
             }
 
-        } while (frame && frame->isFastPushFrame()); //fast push
+        } while (frame && frame->isFastPushFrame()); // fast push
     });
     if (isCompleted) {
         pause();
@@ -158,26 +156,26 @@ void DecoderComponent::send(AVFramePtr packet) noexcept {
         pendingDecodeQueue_.emplace_back(std::move(packet));
     }
     cond_.notify_one();
-    decodeWorker_.start();
+    decodeWorker_->start();
 }
 
 void DecoderComponent::pause() noexcept {
-    decodeWorker_.pause();
+    decodeWorker_->pause();
 }
 
 void DecoderComponent::start() noexcept {
     if (empty()) {
-        return; //If it is empty, avoid starting the thread
-        //and push the frame later to continue starting the thread
+        return; // If it is empty, avoid starting the thread
+        // and push the frame later to continue starting the thread
     }
-    decodeWorker_.start();
+    decodeWorker_->start();
 }
 
 void DecoderComponent::close() noexcept {
     if (!isOpened_) {
         return;
     }
-    decoder_.withLock([](auto& coder){
+    decoder_.withLock([](auto& coder) {
         if (coder) {
             coder->close();
         }
@@ -188,7 +186,7 @@ void DecoderComponent::close() noexcept {
 }
 
 void DecoderComponent::flush() noexcept {
-    decoder_.withLock([](auto& coder){
+    decoder_.withLock([](auto& coder) {
         if (coder) {
             coder->flush();
         }
@@ -203,7 +201,7 @@ void DecoderComponent::flush() noexcept {
 
 bool DecoderComponent::isDecodeCompleted() noexcept {
     bool isCompleted_ = false;
-    decoder_.withLock([&isCompleted_](auto& coder){
+    decoder_.withLock([&isCompleted_](auto& coder) {
         if (coder) {
             isCompleted_ = coder->isCompleted();
         }
@@ -211,4 +209,4 @@ bool DecoderComponent::isDecodeCompleted() noexcept {
     return isCompleted_;
 }
 
-}
+} // namespace slark

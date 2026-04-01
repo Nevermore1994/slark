@@ -7,9 +7,10 @@
 
 #include "HLSReader.h"
 
-#include <utility>
 #include "Log.hpp"
-#include "Util.hpp"
+#include "Util.h"
+
+#include <utility>
 
 namespace slark {
 
@@ -27,9 +28,13 @@ bool parseTsTag(const std::string& tag, uint32_t& tsIndex) noexcept {
 }
 
 HLSReader::HLSReader()
-    : m3u8Buffer_(std::make_unique<Buffer>())
-    , worker_(Util::genRandomName("HLSRead_"), &HLSReader::sendRequest, this) {
+    : m3u8Buffer_(std::make_unique<Buffer>()),
+      worker_(Thread::create(Util::genRandomName("HLSRead_"))) {
     type_ = ReaderType::HLS;
+    using namespace std::chrono_literals;
+    worker_->scheduleRepeat(5ms, [this]() {
+        sendRequest();
+    });
 }
 
 void HLSReader::handleError(const http::ErrorInfo&) noexcept {
@@ -62,7 +67,7 @@ void HLSReader::handleM3u8Data(DataPtr data) noexcept {
         LogI("append m3u8 data error");
         return;
     }
-    
+
     std::lock_guard<std::mutex> lock(taskMutex_);
     if (demuxer_->open(m3u8Buffer_)) {
         LogI("parse m3u8 data success.");
@@ -110,8 +115,8 @@ void HLSReader::setupDataProvider() noexcept {
         requestSession_.reset();
     }
     auto handler = std::make_unique<http::ResponseHandler>();
-    handler->onParseHeaderDone = [this] (const http::RequestInfo& info,
-                                         http::ResponseHeader&& header) {
+    handler->onParseHeaderDone = [this](const http::RequestInfo& info,
+                                        http::ResponseHeader&& header) {
         if (header.httpStatusCode == http::HttpStatusCode::OK) {
             return;
         }
@@ -119,10 +124,12 @@ void HLSReader::setupDataProvider() noexcept {
         errorInfo.errorCode = static_cast<int>(header.httpStatusCode);
         errorInfo.retCode = http::ResultCode::ConnectGenericError;
         handleError(errorInfo);
-        LogE("{}, http code:{} error code:{}", info.tag, errorInfo.errorCode, static_cast<int>(errorInfo.retCode));
+        LogE("{}, http code:{} error code:{}",
+             info.tag,
+             errorInfo.errorCode,
+             static_cast<int>(errorInfo.retCode));
     };
-    handler->onData = [this] (const http::RequestInfo& info,
-                              DataPtr data) {
+    handler->onData = [this](const http::RequestInfo& info, DataPtr data) {
         if (info.tag == kM3u8Tag) {
             handleM3u8Data(std::move(data));
         } else {
@@ -134,12 +141,14 @@ void HLSReader::setupDataProvider() noexcept {
             handleTSData(tsIndex, std::move(data));
         }
     };
-    handler->onError = [this] (const http::RequestInfo& info,
-                               http::ErrorInfo errorInfo) {
+    handler->onError = [this](const http::RequestInfo& info, http::ErrorInfo errorInfo) {
         handleError(errorInfo);
-        LogE("{}, http code:{} error code:{}", info.tag, errorInfo.errorCode, static_cast<int>(errorInfo.retCode));
+        LogE("{}, http code:{} error code:{}",
+             info.tag,
+             errorInfo.errorCode,
+             static_cast<int>(errorInfo.retCode));
     };
-    handler->onCompleted = [this] (const http::RequestInfo& info) {
+    handler->onCompleted = [this](const http::RequestInfo& info) {
         if (info.tag == kM3u8Tag) {
             handleM3u8Completed();
         } else {
@@ -151,7 +160,7 @@ void HLSReader::setupDataProvider() noexcept {
             handleTSCompleted(tsIndex);
         }
     };
-    
+
     requestSession_ = std::make_unique<http::RequestSession>(std::move(handler));
 }
 
@@ -179,7 +188,7 @@ void HLSReader::sendTSRequest(uint32_t index, const std::string& url, Range rang
     if (range.isValid()) {
         info->headers["Range"] = range.toHeaderString();
     }
-    
+
     info->tag = std::format("{}_{}", kTsTag, std::to_string(index));
     receiveLength_ = range.start();
     addRequest(std::move(info));
@@ -187,22 +196,22 @@ void HLSReader::sendTSRequest(uint32_t index, const std::string& url, Range rang
 }
 
 void HLSReader::updateReadRange(Range) noexcept {
-    //nothing
+    // nothing
 }
 
 IOState HLSReader::state() noexcept {
     if (isClosed_) {
         return IOState::Closed;
     }
-    
+
     if (isErrorOccurred_) {
         return IOState::Error;
     }
-    
+
     if (isCompleted_) {
         return IOState::EndOfFile;
     }
-    
+
     if (isPause_) {
         return IOState::Pause;
     }
@@ -243,21 +252,21 @@ void HLSReader::reset() noexcept {
     requestTasks_.withLock([](auto& tasks) {
         tasks.clear();
     });
-    worker_.pause();
+    worker_->pause();
 }
 
 void HLSReader::close() noexcept {
     reset();
-    worker_.stop();
+    worker_->stop();
 }
 
 void HLSReader::start() noexcept {
     isPause_ = false;
-    worker_.start();
+    worker_->start();
 }
 
 void HLSReader::pause() noexcept {
-    worker_.pause();
+    worker_->pause();
     isPause_ = true;
 }
 
@@ -282,7 +291,7 @@ void HLSReader::seek(uint64_t pos) noexcept {
     const auto& infos = demuxer_->getTSInfos();
     if (0 <= tsIndex && tsIndex < infos.size()) {
         fetchTSData(static_cast<uint32_t>(tsIndex));
-        worker_.start();
+        worker_->start();
     } else {
         LogE("seek error:{}, info size:{}", tsIndex, infos.size());
     }
@@ -290,11 +299,11 @@ void HLSReader::seek(uint64_t pos) noexcept {
 }
 
 void HLSReader::addRequest(http::RequestInfoPtr task) noexcept {
-    requestTasks_.withLock([&task](auto& tasks){
+    requestTasks_.withLock([&task](auto& tasks) {
         tasks.push_back(std::move(task));
     });
     if (!isPause_) {
-        worker_.start();
+        worker_->start();
     }
 }
 
@@ -302,12 +311,12 @@ void HLSReader::sendRequest() noexcept {
     {
         std::lock_guard<std::mutex> lock(requestMutex_);
         if ((requestSession_ && requestSession_->isBusy()) || isPause_ || isErrorOccurred_) {
-            worker_.pause();
+            worker_->pause();
             return;
         }
     }
     http::RequestInfoPtr task = nullptr;
-    requestTasks_.withLock([&task](auto& tasks){
+    requestTasks_.withLock([&task](auto& tasks) {
         if (!tasks.empty()) {
             task = std::move(tasks.front());
             tasks.pop_front();
@@ -322,4 +331,4 @@ void HLSReader::sendRequest() noexcept {
     requestSession_->request(std::move(task));
 }
 
-}
+} // namespace slark

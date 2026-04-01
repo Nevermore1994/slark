@@ -3,18 +3,23 @@
 // slark TimerTest
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
-#include <gtest/gtest.h>
+#include "TimerManager.h"
+#include "TimerPool.h"
+#include "Util.h"
+
+#include <atomic>
 #include <chrono>
 #include <format>
-#include "TimerManager.h"
-#include "Util.hpp"
+#include <gtest/gtest.h>
+#include <latch>
+#include <vector>
 
 using namespace slark;
+using namespace std::chrono_literals;
 
 TEST(Timer, delay) {
-    using namespace std::chrono_literals;
     auto now = Time::nowTimeStamp();
-    TimerManager::shareInstance().runAfter(10ms, [&]{
+    TimerManager::shareInstance().runAfter(10ms, [&] {
         auto t = Time::nowTimeStamp() - now;
         std::println("delay {}", t.toMilliSeconds());
         ASSERT_GE(t, 10.0);
@@ -23,9 +28,8 @@ TEST(Timer, delay) {
 }
 
 TEST(Timer, loop) {
-    using namespace std::chrono_literals;
     auto now = Time::nowTimeStamp();
-    auto timerId = TimerManager::shareInstance().runLoop(10ms, [&]{
+    auto timerId = TimerManager::shareInstance().runLoop(10ms, [&] {
         auto n = Time::nowTimeStamp();
         auto t = n - now;
         std::println("delay {}", t.toMilliSeconds());
@@ -36,3 +40,170 @@ TEST(Timer, loop) {
     TimerManager::shareInstance().cancel(timerId);
 }
 
+namespace {
+
+TimerId addAfter(TimerPool& pool, std::chrono::milliseconds ms, TimerTask func) {
+    auto id = TimerId::next();
+    TimerEntry entry{
+        .id = id,
+        .expireTime = Time::nowTimeStamp() + ms,
+        .task = std::move(func),
+        .isLoop = false,
+        .loopInterval = {},
+        .isValid = true,
+    };
+    pool.addTimer(std::move(entry));
+    return id;
+}
+
+TimerId addLoop(TimerPool& pool, std::chrono::milliseconds ms, TimerTask func) {
+    auto id = TimerId::next();
+    TimerEntry entry{
+        .id = id,
+        .expireTime = Time::nowTimeStamp() + ms,
+        .task = std::move(func),
+        .isLoop = true,
+        .loopInterval = ms,
+        .isValid = true,
+    };
+    pool.addTimer(std::move(entry));
+    return id;
+}
+
+void tickPool(TimerPool& pool) {
+    std::vector<TimerEntry> expired;
+    pool.collectExpired(expired);
+    for (auto& entry : expired) {
+        if (entry.isValid && entry.task) {
+            entry.task();
+            if (entry.isLoop) {
+                entry.expireTime = Time::nowTimeStamp() + entry.loopInterval;
+                entry.isValid = true;
+                pool.reinsert(std::move(entry));
+            }
+        }
+    }
+}
+
+} // anonymous namespace
+
+TEST(TimerPool, runAfter) {
+    TimerPool pool;
+    std::atomic<bool> fired{false};
+
+    addAfter(pool, 10ms, [&fired]() {
+        fired.store(true);
+    });
+
+    for (int32_t i = 0; i < 20; ++i) {
+        std::this_thread::sleep_for(1ms);
+        tickPool(pool);
+    }
+    ASSERT_TRUE(fired.load());
+}
+
+TEST(TimerPool, runLoop) {
+    TimerPool pool;
+    std::atomic<int32_t> counter{0};
+
+    auto id = addLoop(pool, 5ms, [&counter]() {
+        counter.fetch_add(1);
+    });
+
+    for (int32_t i = 0; i < 50; ++i) {
+        std::this_thread::sleep_for(1ms);
+        tickPool(pool);
+    }
+    pool.cancel(id);
+
+    ASSERT_GE(counter.load(), 5);
+}
+
+TEST(TimerPool, cancel) {
+    TimerPool pool;
+    std::atomic<bool> fired{false};
+
+    auto id = addAfter(pool, 10ms, [&fired]() {
+        fired.store(true);
+    });
+
+    pool.cancel(id);
+
+    for (int32_t i = 0; i < 20; ++i) {
+        std::this_thread::sleep_for(1ms);
+        tickPool(pool);
+    }
+    ASSERT_FALSE(fired.load());
+}
+
+TEST(TimerPool, manyTimers) {
+    TimerPool pool;
+    constexpr int32_t kCount = 100;
+    std::atomic<int32_t> counter{0};
+
+    for (int32_t i = 0; i < kCount; ++i) {
+        addAfter(pool, std::chrono::milliseconds(i + 1), [&counter]() {
+            counter.fetch_add(1);
+        });
+    }
+
+    for (int32_t i = 0; i < 150; ++i) {
+        std::this_thread::sleep_for(1ms);
+        tickPool(pool);
+    }
+    ASSERT_EQ(counter.load(), kCount);
+}
+
+TEST(TimerPool, batchExpiry) {
+    TimerPool pool;
+    std::atomic<int32_t> counter{0};
+
+    for (int32_t i = 0; i < 10; ++i) {
+        addAfter(pool, 5ms, [&counter]() {
+            counter.fetch_add(1);
+        });
+    }
+
+    std::this_thread::sleep_for(10ms);
+    tickPool(pool);
+
+    ASSERT_EQ(counter.load(), 10);
+}
+
+TEST(TimerPool, timerIdUnique) {
+    TimerPool pool;
+    std::vector<TimerId> ids;
+
+    for (int32_t i = 0; i < 100; ++i) {
+        auto id = addAfter(pool, std::chrono::milliseconds(100 + i), []() {
+        });
+        ids.push_back(id);
+    }
+
+    std::sort(ids.begin(), ids.end(), [](const TimerId& a, const TimerId& b) {
+        return a.id_ < b.id_;
+    });
+    auto last = std::unique(ids.begin(), ids.end(), [](const TimerId& a, const TimerId& b) {
+        return a.id_ == b.id_;
+    });
+    ASSERT_EQ(std::distance(ids.begin(), last), 100);
+}
+
+TEST(TimerPool, clearStopsAll) {
+    TimerPool pool;
+    std::atomic<int32_t> counter{0};
+
+    for (int32_t i = 0; i < 10; ++i) {
+        addAfter(pool, 10ms, [&counter]() {
+            counter.fetch_add(1);
+        });
+    }
+
+    pool.clear();
+
+    for (int32_t i = 0; i < 20; ++i) {
+        std::this_thread::sleep_for(1ms);
+        tickPool(pool);
+    }
+    ASSERT_EQ(counter.load(), 0);
+}

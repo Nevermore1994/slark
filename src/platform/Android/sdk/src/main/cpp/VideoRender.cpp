@@ -3,72 +3,49 @@
 //
 
 #include "VideoRender.h"
-#include "JNIEnvGuard.hpp"
-#include "JNISignature.h"
+
 #include "JNICache.h"
+#include "JNIEnvGuard.hpp"
 #include "JNIHelper.h"
+#include "JNISignature.h"
 #include "TexturePool.h"
 
 namespace slark {
 
-void Native_RequestRender(
-    const std::string &playerId,
-    GLuint textureId,
-    uint32_t width,
-    uint32_t height
-) {
+void Native_RequestRender(const std::string& playerId,
+                          GLuint textureId,
+                          uint32_t width,
+                          uint32_t height) {
     using namespace slark::JNI;
     constexpr std::string_view kPlayerManagerClass = "com/slark/sdk/SlarkPlayerManager";
     JNIEnvGuard env(getJavaVM());
-    auto jPlayer = JNI::ToJVM::toString(
-        env.get(),
-        playerId
-    );
-    auto playerClass = JNICache::shareInstance().getClass(
-        env.get(),
-        kPlayerManagerClass
-    );
+    auto jPlayer = JNI::ToJVM::toString(env.get(), playerId);
+    auto playerClass = JNICache::shareInstance().getClass(env.get(), kPlayerManagerClass);
     if (!playerClass) {
         LogE("not found player manager class");
         return;
     }
-    auto methodSignature = JNI::makeJNISignature(
-        JNI::Void,
-        JNI::String,
-        JNI::Int,
-        JNI::Int,
-        JNI::Int
-    );
-    auto methodId = JNICache::shareInstance().getStaticMethodId(
-        playerClass,
-        "requestRender",
-        methodSignature
-    );
+    auto methodSignature =
+        JNI::makeJNISignature(JNI::Void, JNI::String, JNI::Int, JNI::Int, JNI::Int);
+    auto methodId =
+        JNICache::shareInstance().getStaticMethodId(playerClass, "requestRender", methodSignature);
     if (!methodId) {
         LogE("not found method");
         return;
     }
-    env.get()->CallStaticVoidMethod(
-        playerClass.get(),
-        methodId.get(),
-        jPlayer.get(),
-        static_cast<jint>(textureId),
-        static_cast<jint>(width),
-        static_cast<jint>(height)
-    );
-
+    env.get()->CallStaticVoidMethod(playerClass.get(),
+                                    methodId.get(),
+                                    jPlayer.get(),
+                                    static_cast<jint>(textureId),
+                                    static_cast<jint>(width),
+                                    static_cast<jint>(height));
 }
 
-VideoRender::VideoRender()
-    : renderThread_(
-    std::make_unique<Thread>(
-        "renderThread",
-        &VideoRender::requestRenderFrame,
-        this
-    )
-) {
+VideoRender::VideoRender() : renderThread_(Thread::create("renderThread")) {
     using namespace std::chrono_literals;
-    renderThread_->setInterval(33ms); //30fps
+    renderThread_->scheduleRepeat(33ms, [this]() {
+        requestRenderFrame();
+    });
 }
 
 VideoRender::~VideoRender() noexcept {
@@ -90,14 +67,10 @@ void VideoRender::pause() noexcept {
 
 void VideoRender::notifyVideoInfo(std::shared_ptr<VideoInfo> videoInfo) noexcept {
     auto duration = videoInfo->frameDurationMs();
-    LogE("frame duration: {}, fps:{}",
-         duration,
-         videoInfo->fps);
+    LogE("frame duration: {}, fps:{}", duration, videoInfo->fps);
 }
 
-void VideoRender::notifyRenderInfo() noexcept {
-
-}
+void VideoRender::notifyRenderInfo() noexcept {}
 
 void VideoRender::pushVideoFrameRender(AVFrameRefPtr frame) noexcept {
     renderFrame(frame);
@@ -112,13 +85,13 @@ void VideoRender::requestRenderFrame() noexcept {
     renderFrame(frame);
 }
 
-void VideoRender::renderFrame(const AVFrameRefPtr &frame) noexcept {
+void VideoRender::renderFrame(const AVFrameRefPtr& frame) noexcept {
     if (!frame) {
         return;
     }
     auto videoFrameInfo = std::dynamic_pointer_cast<VideoFrameInfo>(frame->info);
     if (videoFrameInfo->format == FrameFormat::MediaCodecSurface) {
-        auto texture = std::unique_ptr<Texture>(static_cast<Texture *>(frame->opaque));
+        auto texture = std::unique_ptr<Texture>(static_cast<Texture*>(frame->opaque));
         if (texture == nullptr) {
             LogE("texture is nullptr");
             return;
@@ -130,20 +103,11 @@ void VideoRender::renderFrame(const AVFrameRefPtr &frame) noexcept {
         LogI("render video frame ptsTime:{}", frame->ptsTime());
         {
             std::lock_guard lock(mutex_);
-            renderInfos_.try_emplace(
-                textureId,
-                RenderInfo(frame->ptsTime(), std::move(texture))
-            );
+            renderInfos_.try_emplace(textureId, RenderInfo(frame->ptsTime(), std::move(texture)));
         }
-        Native_RequestRender(
-            playerId_,
-            textureId,
-            width,
-            height
-        );
+        Native_RequestRender(playerId_, textureId, width, height);
     } else {
-        LogE("not support frame format:{}",
-             static_cast<int>(videoFrameInfo->format));
+        LogE("not support frame format:{}", static_cast<int>(videoFrameInfo->format));
     }
 }
 
@@ -168,4 +132,4 @@ void VideoRender::renderEnd() noexcept {
     renderThread_->pause();
 }
 
-} // slark
+} // namespace slark

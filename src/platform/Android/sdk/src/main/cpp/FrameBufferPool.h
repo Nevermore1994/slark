@@ -5,8 +5,9 @@
 #pragma once
 
 #include "FrameBuffer.h"
-#include "TexturePool.h"
 #include "NonCopyable.h"
+#include "TexturePool.h"
+
 #include <list>
 #include <unordered_map>
 
@@ -19,10 +20,7 @@ struct FrameBufferNode {
     FrameBufferRefPtrList useList;
     FrameBufferRefPtrList freeList;
 
-    explicit FrameBufferNode(uint8_t count)
-        : capacity(count) {
-
-    }
+    explicit FrameBufferNode(uint8_t count) : capacity(count) {}
 
     [[nodiscard]] bool isFull() const noexcept {
         return (useList.size() + freeList.size()) >= capacity;
@@ -31,20 +29,14 @@ struct FrameBufferNode {
     uint8_t capacity = kMaxFrameBufferCount;
 };
 
-class FrameBufferPool : public NonCopyable {
+class FrameBufferPool : public NonCopyMovable {
 public:
     explicit FrameBufferPool(uint8_t maxSlotCount = kMaxFrameBufferCount)
-        : maxFrameBufferCount_(maxSlotCount),
-          texturePool_(std::make_shared<TexturePool>()) {
-
-    }
+        : maxFrameBufferCount_(maxSlotCount), texturePool_(std::make_shared<TexturePool>()) {}
 
     ~FrameBufferPool() noexcept override;
 
-    FrameBufferRefPtr acquire(
-        uint32_t width,
-        uint32_t height
-    ) noexcept;
+    FrameBufferRefPtr acquire(uint32_t width, uint32_t height) noexcept;
 
 private:
     uint8_t maxFrameBufferCount_ = kMaxFrameBufferCount;
@@ -52,5 +44,4 @@ private:
     std::shared_ptr<TexturePool> texturePool_;
 };
 
-} // slark
-
+} // namespace slark

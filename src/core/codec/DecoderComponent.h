@@ -5,28 +5,28 @@
 //
 #pragma once
 #include "DecoderManager.h"
-#include "Thread.h"
 #include "Synchronized.hpp"
+#include "Thread.h"
 
 namespace slark {
 
 class DecoderComponent : public DecoderDataProvider,
-        public std::enable_shared_from_this<DecoderComponent> {
+                         public std::enable_shared_from_this<DecoderComponent> {
 public:
     explicit DecoderComponent(DecoderReceiveFunc&& callback);
-    
+
     ~DecoderComponent() override;
 
     bool open(DecoderType type, const std::shared_ptr<DecoderConfig>& config) noexcept;
-    
+
     void close() noexcept;
-    
+
     void send(AVFramePtr packet) noexcept;
-    
+
     void flush() noexcept;
-    
+
     void start() noexcept;
-    
+
     void pause() noexcept;
 
     bool empty() noexcept {
@@ -46,11 +46,11 @@ public:
 
     void setInputCompleted() noexcept {
         isInputCompleted_ = true;
-        decodeWorker_.start();
+        decodeWorker_->start();
     }
 
     bool isRunning() noexcept {
-        return decodeWorker_.isRunning();
+        return decodeWorker_->isRunning();
     }
 
     bool isDecodeCompleted() noexcept;
@@ -63,16 +63,17 @@ private:
     AVFrameRefPtr peekDecodeFrame() noexcept;
 
     static AVFrameRefPtr buildEOSFrame(bool isVideo) noexcept;
+
 private:
     bool isVideo_ = false;
     std::atomic_bool isOpened_ = false;
     std::atomic_bool isInputCompleted_ = false;
     DecoderReceiveFunc callback_;
     Synchronized<std::shared_ptr<IDecoder>> decoder_;
-    Thread decodeWorker_;
+    std::shared_ptr<Thread> decodeWorker_;
     std::mutex mutex_;
     std::deque<AVFrameRefPtr> pendingDecodeQueue_;
     std::condition_variable cond_;
 };
 
-}
+} // namespace slark

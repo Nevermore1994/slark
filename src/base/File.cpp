@@ -3,222 +3,201 @@
 // slark File
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
-#include <utility>
 #include "File.h"
+
 #include "Log.hpp"
+
+#include <array>
+#include <utility>
 
 namespace slark::File {
 
-IFile::IFile(std::string path, FileMode mode)
-    : path_(std::move(path))
-    , mode_(mode) {
+static constexpr std::array<std::string_view, 4> kModeStr = {"rb", "wb", "ab", "wb+"};
 
-}
+FileBase::FileBase(std::filesystem::path path, FileMode mode)
+    : path_(std::move(path)), mode_(mode) {}
 
-IFile::~IFile() {
-    if (file_) {
-        fclose(file_);
-        file_ = nullptr;
-    }
-}
+FileBase::~FileBase() = default;
 
-bool IFile::open() noexcept {
+Expected<void> FileBase::open() noexcept {
     if (path_.empty()) {
-        return false;
+        return std::unexpected(DataError::InvalidArgument);
     }
     if (file_) {
-        return true;
+        return {};
     }
-    file_ = fopen(path_.c_str(), kModeStr[static_cast<int>(mode_)].data());
-    if (!file_) {
-        isFailed_ = true;
+    auto* fp = fopen(path_.c_str(), kModeStr[static_cast<int32_t>(mode_)].data());
+    if (!fp) {
         LogE("open file:{}", std::strerror(errno));
+        return std::unexpected(DataError::FileNotFound);
     }
-    return file_ != nullptr;
+    file_.reset(fp);
+    return {};
 }
 
-void IFile::seek(int64_t offset) noexcept {
-    if (file_) {
-        fseeko(file_, offset, SEEK_SET);
-        LogI("seek to offset:{}, file size:{}", offset, File::fileSize(path_));
+Expected<void> FileBase::seek(int64_t offset) noexcept {
+    if (!file_) {
+        return std::unexpected(DataError::IOError);
     }
+    if (fseeko(file_.get(), offset, SEEK_SET) != 0) {
+        return std::unexpected(DataError::IOError);
+    }
+    return {};
 }
 
-uint64_t IFile::tell() const noexcept {
+uint64_t FileBase::tell() const noexcept {
     fpos_t pos = 0;
-    if (file_ && (fgetpos(file_, &pos) == 0)) {
+    if (file_ && (fgetpos(file_.get(), &pos) == 0)) {
         return static_cast<uint64_t>(pos);
     }
     return 0;
 }
 
-uint64_t IFile::fileSize() const noexcept {
-    return File::fileSize(path_);
+uint64_t FileBase::fileSize() const noexcept {
+    return File::fileSize(path_.string());
 }
 
-void IFile::close() noexcept {
-    if (file_) {
-        isFailed_ = false;
-        fclose(file_);
-        file_ = nullptr;
-    }
+void FileBase::close() noexcept {
+    file_.reset();
 }
 
-
-WriteFile::WriteFile(std::string path, bool isAppend)
-    : IFile(std::move(path), isAppend ? FileMode::AppendMode : FileMode::WriteMode)
-    , checkEveryN_(kCheckCount)
-    , checkCount_(0)
-    , writeSize_(0)
-    , writeCount_(0) {
-}
+WriteFile::WriteFile(std::filesystem::path path, bool isAppend)
+    : FileBase(std::move(path), isAppend ? FileMode::AppendMode : FileMode::WriteMode) {}
 
 WriteFile::~WriteFile() {
     flush();
-    IFile::close();
+    FileBase::close();
 }
 
-bool WriteFile::open() noexcept {
+Expected<void> WriteFile::open() noexcept {
     writeSize_ = 0;
     writeCount_ = 0;
-    return IFile::open();
+    return FileBase::open();
 }
 
 void WriteFile::close() noexcept {
     if (file_) {
-        fflush(file_);
+        fflush(file_.get());
     }
-    IFile::close();
+    FileBase::close();
 }
 
 void WriteFile::flush() noexcept {
     if (file_) {
-        fflush(file_);
+        fflush(file_.get());
     }
 }
 
-bool WriteFile::write(const Data& data) noexcept {
-    return write(data.rawData, data.length);
-}
-
-bool WriteFile::write(Data&& data) noexcept {
-    return write(data.rawData, data.length);
-}
-
-bool WriteFile::write(const uint8_t* data, uint64_t size) noexcept {
-    if (!file_ || isFailed_) {
-        return false;
+Expected<uint64_t> WriteFile::write(ConstByteSpan data) noexcept {
+    if (!file_) {
+        return std::unexpected(DataError::IOError);
     }
     writeCount_++;
-    auto writeSize = fwrite(data, 1, size, file_);
-    writeSize_ += size;
+    auto writeSize = fwrite(data.data(), 1, data.size(), file_.get());
+    writeSize_ += writeSize;
     if ((writeCount_ % checkEveryN_) == 0) {
         flush();
     }
-    if (writeSize <= 0) {
-        isFailed_ = true;
+    if (writeSize == 0) {
         LogE("write file: {}", std::strerror(errno));
+        return std::unexpected(DataError::IOError);
     }
-    return writeSize == size;
+    return static_cast<uint64_t>(writeSize);
 }
 
-bool WriteFile::write(const std::string& str) noexcept {
-    return write(reinterpret_cast<const uint8_t*>(str.data()), str.length());
+Expected<uint64_t> WriteFile::write(const Data& data) noexcept {
+    return write(ConstByteSpan(data.data(), data.length()));
 }
 
-bool WriteFile::write(std::string&& str) noexcept {
-    return write(reinterpret_cast<const uint8_t*>(str.data()), str.length());
+Expected<uint64_t> WriteFile::write(std::string_view str) noexcept {
+    return write(toByteSpan(str));
 }
 
-ReadFile::ReadFile(std::string path)
-    : IFile(std::move(path), FileMode::ReadMode)
-    , readOver_(false)
-    , readSize_(0){
-}
+ReadFile::ReadFile(std::filesystem::path path) : FileBase(std::move(path), FileMode::ReadMode) {}
 
-ReadFile::~ReadFile() {
-    if (file_) {
-        readSize_ = 0;
-        readOver_ = false;
+ReadFile::~ReadFile() = default;
+
+Expected<Byte> ReadFile::readByte() noexcept {
+    if (!file_) {
+        return std::unexpected(DataError::IOError);
     }
-}
-
-std::expected<uint8_t, bool> ReadFile::readByte() noexcept {
-    if (!file_ || readOver_) {
-        return std::unexpected(false);
+    if (readOver_) {
+        return std::unexpected(DataError::EndOfFile);
     }
-    uint8_t byte = 0;
-    auto res = fread(&byte, 1, 1, file_);
-    if (feof(file_) || tell() == fileSize()) {
+    Byte byte = 0;
+    auto res = fread(&byte, 1, 1, file_.get());
+    if (feof(file_.get()) || tell() == fileSize()) {
         readOver_ = true;
     }
     if (res == 0 && !readOver_) {
-        isFailed_ = true;
         LogE("read byte error:{}", std::strerror(errno));
+        return std::unexpected(DataError::IOError);
     }
-
     readSize_++;
     return byte;
 }
 
-std::expected<Data, bool> ReadFile::read(uint32_t size) noexcept {
-    if (!file_ || readOver_) {
-        return std::unexpected(false);
+Expected<Data> ReadFile::read(uint64_t size) noexcept {
+    if (!file_) {
+        return std::unexpected(DataError::IOError);
+    }
+    if (readOver_) {
+        return std::unexpected(DataError::EndOfFile);
     }
     Data data(size);
-    if (read(data)) {
-        return data;
+    auto result = readInto(data, size);
+    if (!result) {
+        return std::unexpected(result.error());
     }
-    return std::unexpected(false);
+    return data;
 }
 
-bool ReadFile::read(Data& data) noexcept {
-    return read(data, data.capacity);
-}
-
-bool ReadFile::read(Data& data, uint64_t size) noexcept {
-    if (!file_ || readOver_) {
-        return false;
+Expected<uint64_t> ReadFile::readInto(Data& data, uint64_t size) noexcept {
+    if (!file_) {
+        return std::unexpected(DataError::IOError);
     }
-    auto res = fread(data.rawData, 1, size, file_);
-    if (feof(file_) || tell() == fileSize()) {
+    if (readOver_) {
+        return std::unexpected(DataError::EndOfFile);
+    }
+    auto res = fread(data.data(), 1, size, file_.get());
+    if (feof(file_.get()) || tell() == fileSize()) {
         readOver_ = true;
     }
     if (res == 0 && !readOver_) {
-        isFailed_ = true;
         LogE("read error:{}", std::strerror(errno));
+        return std::unexpected(DataError::IOError);
     }
-    data.length = res;
+    data.setSize(res);
     readSize_ += res;
-    return res > 0;
+    return static_cast<uint64_t>(res);
 }
 
-void ReadFile::seek(int64_t offset) noexcept {
-    IFile::seek(offset);
-    readOver_ = false;
-    readSize_ = 0;
+Expected<void> ReadFile::seek(int64_t offset) noexcept {
+    auto result = FileBase::seek(offset);
+    if (result) {
+        readOver_ = false;
+        readSize_ = 0;
+    }
+    return result;
 }
 
-void ReadFile::backFillByte(uint8_t byte) noexcept {
+void ReadFile::backFillByte(Byte byte) noexcept {
     if (file_) {
-        ungetc(byte, file_);
+        ungetc(byte, file_.get());
         readSize_--;
     } else {
         LogE("can't back fill byte, file is null");
     }
 }
 
-bool ReadFile::open() noexcept {
+Expected<void> ReadFile::open() noexcept {
     readSize_ = 0;
     readOver_ = false;
-    return IFile::open();
+    return FileBase::open();
 }
-
 
 void ReadFile::close() noexcept {
-    if (file_) {
-        IFile::close();
-    }
+    FileBase::close();
 }
 
-}//end namespace slark::File
+} // namespace slark::File

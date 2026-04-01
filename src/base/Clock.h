@@ -4,9 +4,11 @@
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
 #pragma once
-#include <chrono>
-#include <shared_mutex>
 #include "Time.hpp"
+
+#include <chrono>
+#include <mutex>
+#include <shared_mutex>
 
 namespace slark {
 
@@ -17,10 +19,9 @@ public:
 
     void setTime(Time::TimePoint count) noexcept;
 
-    ///Discard the time change since the last time
     void keep() noexcept;
 
-    Time::TimePoint time() noexcept;
+    [[nodiscard]] Time::TimePoint time() noexcept;
 
     void start() noexcept;
 
@@ -29,16 +30,27 @@ public:
     void reset() noexcept;
 
     void setSpeed(double speed) noexcept {
+        std::lock_guard<std::shared_mutex> lock(mutex_);
         speed_ = speed;
     }
+
+    [[nodiscard]] double speed() const noexcept {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        return speed_;
+    }
+
+    [[nodiscard]] bool isPaused() const noexcept {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        return isPause_;
+    }
+
 private:
     bool isInited_ = false;
     bool isPause_ = true;
-    std::shared_mutex mutex_;
+    mutable std::shared_mutex mutex_;
     double speed_ = 1.0;
     Time::TimePoint lastUpdated_ = 0;
     Time::TimePoint pts_ = 0;
 };
 
-}
-
+} // namespace slark

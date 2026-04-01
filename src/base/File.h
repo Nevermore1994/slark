@@ -5,79 +5,67 @@
 //
 #pragma once
 
+#include "Data.hpp"
+#include "FileUtil.h"
+#include "NonCopyable.h"
+
 #include <cstdio>
+#include <filesystem>
 #include <memory>
 #include <string_view>
-#include <expected>
-#include "NonCopyable.h"
-#include "FileUtil.h"
-#include "Data.hpp"
 
 namespace slark::File {
 
-using FileHandle = FILE*;
-
-static std::string_view kModeStr[] = {"rb", "wb", "ab", "wb+"};
-
-enum class FileMode {
+enum class FileMode : uint8_t {
     ReadMode = 0,
     WriteMode = 1,
     AppendMode = 2,
     FreeMode = 3,
 };
 
-class IFile : public NonCopyable {
+class FileBase : public NonCopyMovable {
 public:
-    explicit IFile(std::string path, FileMode mode);
+    explicit FileBase(std::filesystem::path path, FileMode mode);
 
-    ~IFile() override;
+    ~FileBase() override;
 
-public:
-    virtual bool open() noexcept;
+    virtual Expected<void> open() noexcept;
 
     virtual void close() noexcept;
 
-    virtual void seek(int64_t offset) noexcept;
+    virtual Expected<void> seek(int64_t offset) noexcept;
 
     [[nodiscard]] uint64_t tell() const noexcept;
 
     [[nodiscard]] uint64_t fileSize() const noexcept;
 
-    [[nodiscard]] inline bool isFailed() const noexcept {
-        return isFailed_;
-    }
-
-    [[nodiscard]] inline bool isOpen() const noexcept {
+    [[nodiscard]] bool isOpen() const noexcept {
         return file_ != nullptr;
     }
-    
-    [[nodiscard]] inline std::string_view path() const noexcept {
+
+    [[nodiscard]] const std::filesystem::path& path() const noexcept {
         return path_;
     }
+
 protected:
-    std::string path_;
-    FileHandle file_ = nullptr;
-    FileMode mode_;
-    bool isFailed_ = false;
+    std::filesystem::path path_;
+    std::unique_ptr<FILE, decltype(&fclose)> file_{nullptr, &fclose};
+    FileMode mode_ = FileMode::ReadMode;
 };
 
+class WriteFile : public FileBase {
+    static constexpr uint32_t kCheckCount = 512;
 
-class WriteFile : public IFile {
-    constexpr static uint32_t kCheckCount = 512;
 public:
-    explicit WriteFile(std::string path, bool isAppend = false);
+    explicit WriteFile(std::filesystem::path path, bool isAppend = false);
 
     ~WriteFile() override;
 
-    bool write(const Data& data) noexcept;
-    
-    bool write(Data&& data) noexcept;
+    Expected<uint64_t> write(ConstByteSpan data) noexcept;
 
-    bool write(const std::string& str) noexcept;
-    
-    bool write(std::string&& str) noexcept;
+    Expected<uint64_t> write(const Data& data) noexcept;
 
-    bool write(const uint8_t* data, uint64_t size) noexcept;
+    Expected<uint64_t> write(std::string_view str) noexcept;
 
     void flush() noexcept;
 
@@ -88,48 +76,49 @@ public:
     [[nodiscard]] uint64_t writeSize() const noexcept {
         return writeSize_;
     }
-public:
-    bool open() noexcept override;
+
+    Expected<void> open() noexcept override;
 
     void close() noexcept override;
 
-protected:
-    uint32_t checkEveryN_;
-    uint32_t checkCount_;
-    uint64_t writeSize_;
-    uint32_t writeCount_;
+private:
+    uint32_t checkEveryN_ = kCheckCount;
+    uint32_t checkCount_ = 0;
+    uint64_t writeSize_ = 0;
+    uint32_t writeCount_ = 0;
 };
 
-class ReadFile : public IFile {
+class ReadFile : public FileBase {
 public:
-    explicit ReadFile(std::string path);
+    explicit ReadFile(std::filesystem::path path);
 
     ~ReadFile() override;
 
-    std::expected<Data, bool> read(uint32_t size) noexcept;
-    
-    void seek(int64_t offset) noexcept override;
+    Expected<Data> read(uint64_t size) noexcept;
 
-    std::expected<uint8_t, bool> readByte() noexcept;
+    Expected<Byte> readByte() noexcept;
 
-    bool read(Data& data) noexcept;
-    
-    bool read(Data& data, uint64_t size) noexcept;
+    Expected<uint64_t> readInto(Data& data, uint64_t size) noexcept;
 
-    void backFillByte(uint8_t byte) noexcept;
+    Expected<void> seek(int64_t offset) noexcept override;
 
-    [[nodiscard]] inline bool readOver() const noexcept { return readOver_; }
+    void backFillByte(Byte byte) noexcept;
 
-    [[nodiscard]] inline uint64_t readSize() const noexcept { return readSize_; }
+    [[nodiscard]] bool readOver() const noexcept {
+        return readOver_;
+    }
 
-public:
-    bool open() noexcept override;
+    [[nodiscard]] uint64_t readSize() const noexcept {
+        return readSize_;
+    }
+
+    Expected<void> open() noexcept override;
 
     void close() noexcept override;
 
-protected:
+private:
     bool readOver_ = false;
     uint64_t readSize_ = 0;
 };
 
-}//end namespace slark::FileUtil
+} // namespace slark::File

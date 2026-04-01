@@ -5,44 +5,30 @@
 //
 #pragma once
 
-#include <chrono>
-#include <shared_mutex>
-#include <condition_variable>
-#include <print>
-#include <thread>
-#include <functional>
-#include <atomic>
-#include <string_view>
-#include <type_traits>
-#include <concepts>
-#include "TimerPool.h"
-#include "Random.hpp"
+#include "Error.h"
+#include "MPSCQueue.hpp"
+#include "MoveOnlyFunction.hpp"
 #include "NonCopyable.h"
+#include "Timer.h"
+
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <expected>
+#include <memory>
+#include <mutex>
+#include <print>
+#include <string>
+#include <string_view>
+#include <thread>
 
 namespace slark {
 
+using Task = MoveOnlyFunction<void()>;
 
-class Thread : public NonCopyable {
-
+class Thread : public NonCopyMovable, public std::enable_shared_from_this<Thread> {
 public:
-    template <typename Func, typename ... Args>
-    requires std::is_invocable_v<Func, Args...>
-    Thread(std::string name, Func&& f, Args&& ... args)
-        : name_(std::move(name))
-        , lastRunTimeStamp_(0)
-        , func_(std::bind(std::forward<Func>(f), std::forward<Args>(args)...))
-        , worker_(&Thread::process, this) {
-        std::println("Thread create:{}", name_);
-    }
-    
-    template <typename Func, typename ... Args>
-    requires std::is_invocable_v<Func, Args...>
-    Thread(Func&& f, Args&& ... args)
-        : lastRunTimeStamp_(0)
-        , func_(std::bind(std::forward<Func>(f), std::forward<Args>(args)...))
-        , worker_(&Thread::process, this) {
-        
-    }
+    [[nodiscard]] static std::shared_ptr<Thread> create(std::string name);
 
     ~Thread() noexcept override;
 
@@ -52,20 +38,29 @@ public:
 
     void stop() noexcept;
 
-    TimerId runAt(Time::TimePoint timePoint, TimerTask func) noexcept;
-    
-    TimerId runAfter(std::chrono::milliseconds delayTime, TimerTask func) noexcept;
+    /// 立即投递任务到线程队列
+    Expected<void> schedule(Task task) noexcept;
 
-    TimerId runLoop(std::chrono::milliseconds timeInterval, TimerTask func) noexcept;
+    /// 延迟投递一次性任务
+    TimerId schedule(std::chrono::milliseconds delay, Task task) noexcept;
+
+    /// 指定时间点投递一次性任务
+    TimerId schedule(Time::TimePoint timePoint, Task task) noexcept;
+
+    /// 循环执行任务（执行完后再等待 interval，非固定间隔触发）
+    TimerId scheduleRepeat(std::chrono::milliseconds interval, Task task) noexcept;
+
+    /// 取消定时任务
+    void cancelSchedule(TimerId id) noexcept;
+
 public:
-    [[nodiscard]] inline bool isRunning() const  noexcept {
-        std::shared_lock<std::shared_mutex> lock(mutex_);
+    [[nodiscard]] inline bool isRunning() const noexcept {
+        std::lock_guard<std::mutex> lock(mutex_);
         return isRunning_;
     }
 
     [[nodiscard]] inline bool isExit() const noexcept {
-        std::shared_lock<std::shared_mutex> lock(mutex_);
-        return isExit_;
+        return worker_.get_stop_token().stop_requested();
     }
 
     [[nodiscard]] inline Time::TimePoint getLastRunTimeStamp() const noexcept {
@@ -84,34 +79,41 @@ public:
         return std::string_view(name_);
     }
 
-    void setInterval(std::chrono::milliseconds ms) noexcept {
-        std::lock_guard<std::shared_mutex> lock(mutex_);
-        interval_ = ms;
-    }
-
-    std::chrono::milliseconds interval() const noexcept {
-        std::shared_lock<std::shared_mutex> lock(mutex_);
-        return interval_;
-    }
-
     void setThreadName(std::string_view nameView) noexcept;
+
 private:
-    void process() noexcept;
-    
+    explicit Thread(std::string name);
+
+    void process(std::stop_token stopToken) noexcept;
+
     void setup() noexcept;
+
+    void drainTaskQueue() noexcept;
+
+    void runRepeatTasks() noexcept;
+
+    TimerTask wrapOneShotTask(Task task) noexcept;
+
+    TimerId registerTimer(TimerId id) noexcept;
+
 private:
+    struct RepeatTask {
+        TimerId id;
+        std::chrono::milliseconds interval;
+        Task task;
+        Time::TimePoint lastRunTime;
+    };
+
     bool isRunning_ = false;
-    bool isExit_ = false;
     std::atomic<bool> isInit_ = false;
-    std::chrono::milliseconds interval_{0};
     std::string name_;
-    mutable std::shared_mutex mutex_;
+    mutable std::mutex mutex_;
     std::condition_variable_any cond_;
     std::atomic<uint64_t> lastRunTimeStamp_;
-    std::function<void()> func_;
-    std::thread worker_;
-    TimerPool timerPool_;
+    MPSCQueue<Task> taskQueue_;
+    std::vector<TimerId> timerIds_; // guarded by mutex_
+    std::vector<RepeatTask> repeatTasks_;
+    std::jthread worker_;
 };
 
-}//end namespace slark
-
+} // end namespace slark

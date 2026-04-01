@@ -6,8 +6,9 @@
 //
 
 #include "RemoteReader.h"
-#include "Util.hpp"
+
 #include "Log.hpp"
+#include "Util.h"
 
 namespace slark {
 
@@ -22,10 +23,11 @@ IOState RemoteReader::state() noexcept {
     if (isErrorOccurred_) {
         return IOState::Error;
     }
-    return link_->isValid() ? IOState::Normal : (link_->isCompleted() ? IOState::EndOfFile : IOState::Error);
+    return link_->isValid() ? IOState::Normal
+                            : (link_->isCompleted() ? IOState::EndOfFile : IOState::Error);
 }
 
-void RemoteReader::close() noexcept  {
+void RemoteReader::close() noexcept {
     isClosed_ = true;
     reset();
 }
@@ -53,21 +55,18 @@ bool RemoteReader::open(ReaderTaskPtr task) noexcept {
     if (range.isValid()) {
         info.headers["Range"] = range.toHeaderString();
     }
-    
+
     http::ResponseHandler handler;
-    handler.onData = [this](const http::RequestInfo&,
-                            DataPtr data) {
+    handler.onData = [this](const http::RequestInfo&, DataPtr data) {
         handleData(std::move(data));
     };
-    handler.onParseHeaderDone = [this](const http::RequestInfo&,
-                                       http::ResponseHeader&& header) {
+    handler.onParseHeaderDone = [this](const http::RequestInfo&, http::ResponseHeader&& header) {
         handleHeader(std::move(header));
     };
-    handler.onError = [this](const http::RequestInfo&,
-                             http::ErrorInfo errorInfo) {
+    handler.onError = [this](const http::RequestInfo&, http::ErrorInfo errorInfo) {
         handleError(errorInfo);
     };
-    
+
     {
         std::lock_guard<std::mutex> lock(taskMutex_);
         task_ = std::move(task);
@@ -120,9 +119,7 @@ void RemoteReader::handleError(const http::ErrorInfo& info) noexcept {
     task_->callBack(this, DataPacket(), state());
 }
 
-void RemoteReader::handleDisconnect() noexcept {
-
-}
+void RemoteReader::handleDisconnect() noexcept {}
 
 void RemoteReader::updateReadRange(Range range) noexcept {
     if (!task_) {
@@ -173,7 +170,7 @@ void RemoteReader::start() noexcept {
     {
         std::lock_guard<std::mutex> lock(linkMutex_);
         if (link_ && link_->isValid()) {
-            return; //already started
+            return; // already started
         }
         if (isCompleted_) {
             LogI("RemoteReader is completed, no need to start again.");
@@ -200,4 +197,4 @@ void RemoteReader::pause() noexcept {
     }
 }
 
-}
+} // namespace slark

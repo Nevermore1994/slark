@@ -4,11 +4,13 @@
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
 
-#include <memory>
-#include <utility>
 #include "AudioRenderComponent.h"
+
 #include "Log.hpp"
 #include "MediaUtil.h"
+
+#include <memory>
+#include <utility>
 
 namespace slark {
 
@@ -18,10 +20,9 @@ uint32_t calcAudioBufferSize(const std::shared_ptr<AudioInfo>& audioInfo) {
         return 0;
     }
     // Calculate buffer size based on sample rate, channels, and bits per sample
-    return static_cast<uint32_t>(
-        kDefaultAudioBufferCacheTime *
-            static_cast<double>(audioInfo->sampleRate * audioInfo->channels * 2)
-    ); // default 16bit, 2 bytes per sample
+    return static_cast<uint32_t>(kDefaultAudioBufferCacheTime *
+                                 static_cast<double>(audioInfo->sampleRate * audioInfo->channels *
+                                                     2)); // default 16bit, 2 bytes per sample
 }
 
 AudioRenderComponent::AudioRenderComponent(std::shared_ptr<AudioInfo> info)
@@ -49,25 +50,25 @@ void AudioRenderComponent::init() noexcept {
     audioBuffer_ = std::make_unique<SyncRingBuffer<uint8_t>>(bufferSize);
     auto pimpl = createAudioRender(audioInfo_);
     pimpl->setProvider([this](uint8_t* data, uint32_t size, AudioDataFlag& flag) {
-        if (auto pullDataFunc = pullDataFunc_.load(); pullDataFunc && !isFull_) {
-            while (audioBuffer_->length() < size) {
-                auto frame = std::invoke(*pullDataFunc, audioBuffer_->tail());
-                if (frame == nullptr) {
-                    break;
+        auto isSuccess = audioBuffer_->withLock([&](auto& ring) {
+            if (auto pullDataFunc = pullDataFunc_.load(); pullDataFunc && !isFull_) {
+                while (ring.length() < size) {
+                    auto frame = std::invoke(*pullDataFunc, ring.available());
+                    if (frame == nullptr) {
+                        break;
+                    }
+                    ring.writeExact(frame->data->rawData,
+                                    static_cast<uint32_t>(frame->data->length));
                 }
-                audioBuffer_->writeExact(
-                    frame->data->rawData,
-                    static_cast<uint32_t>(frame->data->length)
-                );
             }
-        }
-        auto isSuccess = audioBuffer_->readExact(data, size);
+            return ring.readExact(data, size);
+        });
         if (isSuccess && !isFirstFrameRendered) {
             isFirstFrameRendered = true;
             if (firstFrameRenderCallBack) {
                 firstFrameRenderCallBack(Time::nowTimeStamp());
             }
-        } 
+        }
         isHungry_ = !isSuccess;
         auto readSize = isSuccess ? size : 0u;
         LogI("request audio size:{}", readSize);
@@ -88,10 +89,8 @@ bool AudioRenderComponent::process(AVFrameRefPtr frame) noexcept {
         LogE("frame data is nullptr");
         return false;
     }
-    auto res = audioBuffer_->writeExact(
-        frame->data->rawData,
-        static_cast<uint32_t>(frame->data->length)
-    );
+    auto res =
+        audioBuffer_->writeExact(frame->data->rawData, static_cast<uint32_t>(frame->data->length));
     if (!res) {
         isFull_ = true;
     }
@@ -185,5 +184,4 @@ void AudioRenderComponent::renderEnd() noexcept {
     }
 }
 
-}
-
+} // namespace slark

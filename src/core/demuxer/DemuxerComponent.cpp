@@ -3,24 +3,26 @@
 //
 
 #include "DemuxerComponent.h"
+
 #include "Mp4Demuxer.h"
 
 namespace slark {
 
 DemuxerComponent::DemuxerComponent(DemuxerConfig config)
-    : worker_("DemuxerWorker", &DemuxerComponent::demuxData, this)
-    , config_(std::move(config)) {
+    : worker_(Thread::create("DemuxerWorker")), config_(std::move(config)) {
     using namespace std::chrono_literals;
-    worker_.setInterval(5ms);
+    worker_->scheduleRepeat(5ms, [this]() {
+        demuxData();
+    });
 }
 
 DemuxerComponent::~DemuxerComponent() {
     close();
-    worker_.stop();
+    worker_->stop();
 }
 
 void DemuxerComponent::reset() noexcept {
-    worker_.pause();
+    worker_->pause();
     if (auto demuxer = demuxer_.load()) {
         demuxer->close();
     }
@@ -35,11 +37,11 @@ void DemuxerComponent::close() noexcept {
 }
 
 void DemuxerComponent::start() noexcept {
-    worker_.start();
+    worker_->start();
 }
 
 void DemuxerComponent::pause() noexcept {
-    worker_.pause();
+    worker_->pause();
 }
 
 bool DemuxerComponent::pushData(std::list<DataPacket>&& dataList) noexcept {
@@ -66,7 +68,7 @@ void DemuxerComponent::demuxData() noexcept {
         list.pop_front();
     });
     if (demuxData.empty()) {
-        worker_.pause();
+        worker_->pause();
         return;
     }
     flushed_ = false; // Reset flushed state at the start of demuxing
@@ -168,14 +170,15 @@ void DemuxerComponent::handleOpenMp4DemuxerResult(bool isSuccess) noexcept {
     }
     auto mp4Demuxer = std::dynamic_pointer_cast<Mp4Demuxer>(demuxer);
     if (isSuccess) {
-        auto dataStart = mp4Demuxer->headerInfo()->headerLength + 8; //skip size and type
+        auto dataStart = mp4Demuxer->headerInfo()->headerLength + 8; // skip size and type
         Range range;
         range.pos = dataStart;
-        range.size = static_cast<int64_t>(mp4Demuxer->headerInfo()->dataSize) - 8; //skip size and type
+        range.size =
+            static_cast<int64_t>(mp4Demuxer->headerInfo()->dataSize) - 8; // skip size and type
         mp4Demuxer->seekPos(dataStart);
         invokeSeekFunc(range);
         LogI("mp4 seek to:{}", dataStart);
-        
+
         DemuxerResult result;
         result.resultCode = DemuxerResultCode::ParsedHeader;
         invokeHandleResultFunc(std::move(result));
@@ -237,4 +240,4 @@ uint64_t DemuxerComponent::getSeekToPos(double time) noexcept {
     }
     return 0;
 }
-} // slark
+} // namespace slark

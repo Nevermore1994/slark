@@ -6,48 +6,46 @@
 //
 #pragma once
 
-#include "IReader.h"
 #include "Buffer.hpp"
 #include "HLSDemuxer.h"
-#include "Thread.h"
+#include "IReader.h"
 #include "RequestSession.h"
+#include "Thread.h"
 
 namespace slark {
 
-enum class HLSRequestTaskType {
-    M3U8,
-    TS
-};
+enum class HLSRequestTaskType { M3U8, TS };
 
 class HLSReader : public IReader {
 public:
     HLSReader();
-    
+
     ~HLSReader() override = default;
-    
+
     bool open(ReaderTaskPtr) noexcept override;
-    
+
     void updateReadRange(Range range) noexcept override;
-    
+
     IOState state() noexcept override;
-    
+
     void reset() noexcept override;
-    
+
     void close() noexcept override;
-    
+
     void start() noexcept override;
-    
+
     void pause() noexcept override;
-    
+
     bool isCompleted() noexcept override;
-    
+
     bool isRunning() noexcept override;
-    
+
     void seek(uint64_t pos) noexcept override;
-    
+
     uint64_t size() noexcept override;
-    
+
     void setDemuxer(std::shared_ptr<HLSDemuxer> demuxer) noexcept;
+
 private:
     void setupDataProvider() noexcept;
 
@@ -70,6 +68,7 @@ private:
     void handleTSCompleted(uint32_t tsIndex) noexcept;
 
     void handleError(const http::ErrorInfo& info) noexcept;
+
 private:
     std::atomic_bool isPause_ = false;
     std::atomic_bool isClosed_ = false;
@@ -82,7 +81,7 @@ private:
     std::shared_ptr<HLSDemuxer> demuxer_;
     Synchronized<std::deque<http::RequestInfoPtr>> requestTasks_;
     Synchronized<std::unordered_map<std::string, HLSRequestTaskType>> request;
-    Thread worker_;
+    std::shared_ptr<Thread> worker_;
 };
 
-}
+} // namespace slark

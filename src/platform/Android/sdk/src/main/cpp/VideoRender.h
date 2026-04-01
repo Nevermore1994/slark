@@ -4,10 +4,10 @@
 
 #pragma once
 
-#include "VideoInfo.h"
-#include "Thread.h"
 #include "Manager.hpp"
 #include "Texture.h"
+#include "Thread.h"
+#include "VideoInfo.h"
 
 namespace slark {
 
@@ -16,19 +16,16 @@ struct RenderInfo {
     TexturePtr texture = nullptr;
 
     RenderInfo() = default;
-    RenderInfo(double ptsTime, TexturePtr texture)
-        : ptsTime(ptsTime), texture(std::move(texture)) {
 
-    }
+    RenderInfo(double ptsTime, TexturePtr texture)
+        : ptsTime(ptsTime), texture(std::move(texture)) {}
 
     [[nodiscard]] bool isValid() const noexcept {
         return texture && texture->isValid();
     }
 };
 
-class VideoRender
-    : public IVideoRender,
-      public std::enable_shared_from_this<VideoRender> {
+class VideoRender : public IVideoRender, public std::enable_shared_from_this<VideoRender> {
 public:
     VideoRender();
 
@@ -52,19 +49,19 @@ public:
         std::lock_guard lock(mutex_);
         return backupRenderInfo_.texture;
     }
+
 private:
     void requestRenderFrame() noexcept;
 
-    void renderFrame(const AVFrameRefPtr &frame) noexcept;
+    void renderFrame(const AVFrameRefPtr& frame) noexcept;
 
 public:
-    std::unique_ptr<Thread> renderThread_;
+    std::shared_ptr<Thread> renderThread_;
     std::mutex mutex_;
     std::unordered_map<uint32_t, RenderInfo> renderInfos_;
-    RenderInfo backupRenderInfo_; //Used to rotate the screen when paused
+    RenderInfo backupRenderInfo_; // Used to rotate the screen when paused
 };
 
 using VideoRenderManager = Manager<VideoRender>;
 
-} // slark
-
+} // namespace slark

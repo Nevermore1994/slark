@@ -5,13 +5,15 @@
 //
 #pragma once
 
-#include <chrono>
-#include <cstdint>
-#include <cmath>
+#include "Assert.hpp"
+
 #include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <compare>
+#include <cstdint>
 #include <string>
 #include <type_traits>
-#include "Assert.hpp"
 
 namespace slark {
 
@@ -22,133 +24,140 @@ struct Time {
 
     struct TimeDelta {
     private:
-        int64_t microseconds{};
-    public:
-        TimeDelta(int64_t us = 0) : microseconds(us) {}
+        int64_t microseconds_{};
 
-        int64_t point() const noexcept {
-            return microseconds;
+    public:
+        explicit(false) TimeDelta(int64_t us = 0) noexcept : microseconds_(us) {}
+
+        [[nodiscard]] int64_t point() const noexcept {
+            return microseconds_;
         }
 
         [[nodiscard]] std::chrono::milliseconds toMilliSeconds() const noexcept {
-            return std::chrono::milliseconds(microseconds / 1000);
+            return std::chrono::milliseconds(microseconds_ / 1000);
         }
 
         [[nodiscard]] double second() const noexcept {
-            return static_cast<double>(microseconds) / kMicroSecondScale;
+            return static_cast<double>(microseconds_) / kMicroSecondScale;
         }
 
         static TimeDelta fromMilliSeconds(std::chrono::milliseconds ms) noexcept {
-            return {ms.count() * 1000};
+            return TimeDelta(ms.count() * 1000);
         }
 
         static TimeDelta fromMicroSeconds(std::chrono::microseconds us) noexcept {
-            return {us.count()};
+            return TimeDelta(us.count());
         }
 
-        template <typename T> requires std::is_floating_point_v<T>
+        template <typename T>
+            requires std::is_floating_point_v<T>
         static TimeDelta fromSeconds(T seconds) noexcept {
             return TimeDelta(static_cast<int64_t>(seconds * kMicroSecondScale));
         }
 
         TimeDelta operator+(const TimeDelta& rhs) const noexcept {
-            return {microseconds + rhs.microseconds};
+            return TimeDelta(microseconds_ + rhs.microseconds_);
         }
+
         TimeDelta& operator+=(const TimeDelta& rhs) noexcept {
-            microseconds += rhs.microseconds;
-            return *this;
-        }
-        TimeDelta operator-(const TimeDelta& rhs) const noexcept {
-            return {microseconds - rhs.microseconds};
-        }
-        TimeDelta& operator-=(const TimeDelta& rhs) noexcept {
-            microseconds -= rhs.microseconds;
+            microseconds_ += rhs.microseconds_;
             return *this;
         }
 
-        bool operator==(const TimeDelta& rhs) const noexcept {
-            return microseconds == rhs.microseconds;
+        TimeDelta operator-(const TimeDelta& rhs) const noexcept {
+            return TimeDelta(microseconds_ - rhs.microseconds_);
         }
-        bool operator!=(const TimeDelta& rhs) const noexcept {
-            return microseconds != rhs.microseconds;
+
+        TimeDelta& operator-=(const TimeDelta& rhs) noexcept {
+            microseconds_ -= rhs.microseconds_;
+            return *this;
         }
-        bool operator<(const TimeDelta& rhs) const noexcept {
-            return microseconds < rhs.microseconds;
-        }
-        bool operator>(const TimeDelta& rhs) const noexcept {
-            return microseconds > rhs.microseconds;
-        }
-        bool operator<=(const TimeDelta& rhs) const noexcept {
-            return microseconds <= rhs.microseconds;
-        }
-        bool operator>=(const TimeDelta& rhs) const noexcept {
-            return microseconds >= rhs.microseconds;
-        }
+
+        auto operator<=>(const TimeDelta& rhs) const noexcept = default;
     };
 
-    ///microseconds
     struct TimePoint {
     private:
-        uint64_t microseconds{};
+        uint64_t microseconds_{};
+
     public:
-#pragma clang diagnostic push
-#pragma ide diagnostic ignored "google-explicit-constructor"
-        constexpr TimePoint(uint64_t t = 0)
-            : microseconds(t) {
+        explicit(false) constexpr TimePoint(uint64_t t = 0) noexcept : microseconds_(t) {}
+
+        [[nodiscard]] uint64_t point() const noexcept {
+            return microseconds_;
         }
 
-        uint64_t point() const noexcept{
-            return microseconds;
+        [[nodiscard]] std::chrono::milliseconds toMilliSeconds() const noexcept {
+            return std::chrono::milliseconds(microseconds_ / 1000);
+        }
+
+        [[nodiscard]] double second() const noexcept {
+            return static_cast<double>(microseconds_) / kMicroSecondScale;
         }
 
         static TimePoint fromMilliSeconds(std::chrono::milliseconds ms) noexcept {
-            return {static_cast<uint64_t>(ms.count() * 1000)};
+            return TimePoint(static_cast<uint64_t>(ms.count() * 1000));
         }
 
         static TimePoint fromMicroSeconds(std::chrono::microseconds micros) noexcept {
-            return {static_cast<uint64_t>(micros.count())};
+            return TimePoint(static_cast<uint64_t>(micros.count()));
         }
 
-        template <typename T> requires std::is_floating_point_v<T>
+        template <typename T>
+            requires std::is_floating_point_v<T>
         static TimePoint fromSeconds(T seconds) noexcept {
-            return {static_cast<uint64_t>(seconds * kMicroSecondScale)};
+            return TimePoint(static_cast<uint64_t>(seconds * kMicroSecondScale));
         }
 
-#pragma clang diagnostic pop
-        bool operator==(const TimePoint& rhs) const noexcept {
-            return microseconds == rhs.microseconds;
-        }
-        bool operator!=(const TimePoint& rhs) const noexcept {
-            return microseconds != rhs.microseconds;
-        }
-        bool operator<(const TimePoint& rhs) const noexcept {
-            return microseconds < rhs.microseconds;
-        }
-        bool operator>(const TimePoint& rhs) const noexcept {
-            return microseconds > rhs.microseconds;
-        }
-        bool operator<=(const TimePoint& rhs) const noexcept {
-            return microseconds <= rhs.microseconds;
-        }
-        bool operator>=(const TimePoint& rhs) const noexcept {
-            return microseconds >= rhs.microseconds;
+        auto operator<=>(const TimePoint& rhs) const noexcept = default;
+
+        TimePoint operator+(const TimeDelta& delta) const noexcept {
+            return TimePoint(microseconds_ + static_cast<uint64_t>(delta.point()));
         }
 
-        [[nodiscard]] std::chrono::milliseconds toMilliSeconds() const noexcept;
-        [[nodiscard]] double second() const noexcept;
-        TimePoint operator+(std::chrono::milliseconds t) const noexcept;
-        TimePoint& operator+=(std::chrono::milliseconds t) noexcept;
-        TimePoint operator+(TimePoint t) const noexcept;
-        TimePoint& operator+=(TimePoint t) noexcept;
-        TimeDelta operator-(const TimePoint& other) const noexcept;
-        TimeDelta operator-(std::chrono::milliseconds other) const noexcept;
-        TimePoint operator+(const Time::TimeDelta& delta) const noexcept;
-        TimePoint& operator+=(const Time::TimeDelta& delta) noexcept;
-        TimePoint operator-(const Time::TimeDelta& delta) const noexcept;
-        TimePoint& operator-=(const TimeDelta& delta) noexcept;
+        TimePoint& operator+=(const TimeDelta& delta) noexcept {
+            microseconds_ += static_cast<uint64_t>(delta.point());
+            return *this;
+        }
+
+        TimePoint operator-(const TimeDelta& delta) const noexcept {
+            return TimePoint(microseconds_ - static_cast<uint64_t>(delta.point()));
+        }
+
+        TimePoint& operator-=(const TimeDelta& delta) noexcept {
+            microseconds_ -= static_cast<uint64_t>(delta.point());
+            return *this;
+        }
+
+        TimeDelta operator-(const TimePoint& other) const noexcept {
+            return TimeDelta(static_cast<int64_t>(microseconds_) -
+                             static_cast<int64_t>(other.microseconds_));
+        }
+
+        TimePoint operator+(std::chrono::milliseconds ms) const noexcept {
+            return *this + TimeDelta::fromMilliSeconds(ms);
+        }
+
+        TimePoint& operator+=(std::chrono::milliseconds ms) noexcept {
+            return *this += TimeDelta::fromMilliSeconds(ms);
+        }
+
+        TimeDelta operator-(std::chrono::milliseconds ms) const noexcept {
+            return *this - TimePoint::fromMilliSeconds(ms);
+        }
+
+        TimePoint operator+(TimePoint other) const noexcept {
+            return TimePoint(microseconds_ + other.microseconds_);
+        }
+
+        TimePoint& operator+=(TimePoint other) noexcept {
+            microseconds_ += other.microseconds_;
+            return *this;
+        }
     };
+
     static TimePoint nowTimeStamp() noexcept;
-    [[maybe_unused]] static std::chrono::milliseconds nowUTCTime() noexcept;
+    static std::chrono::milliseconds nowUTCTime() noexcept;
     static std::chrono::seconds offsetFromUTC() noexcept;
     static std::string localTimeStr() noexcept;
     static std::string localShortTimeStr() noexcept;
@@ -156,69 +165,54 @@ struct Time {
 
 struct CTime {
 private:
-    constexpr static double kTimePrecision = std::numeric_limits<double>::epsilon();
-    constexpr static uint64_t kDefaultScale = 1000U;
+    static constexpr double kTimePrecision = std::numeric_limits<double>::epsilon();
+    static constexpr uint64_t kDefaultScale = 1000U;
+
 public:
     int64_t value;
     uint64_t scale = kDefaultScale;
 
-    CTime()
-        : value(0)
-        , scale(Time::kTimeInvalid) {
-    }
+    CTime() : value(0), scale(Time::kTimeInvalid) {}
 
-    explicit CTime(int64_t value_, uint64_t scale_)
-        : value(value_)
-        , scale(scale_) {
-    }
+    explicit CTime(int64_t v, uint64_t s) : value(v), scale(s) {}
 
-    /// init with seconds
     explicit CTime(double t)
-        : value(static_cast<int64_t>(kDefaultScale * t))
-        , scale(kDefaultScale) {
-    }
+        : value(static_cast<int64_t>(kDefaultScale * t)), scale(kDefaultScale) {}
 
-    [[nodiscard]] inline double second() const noexcept {
-        bool isValid = this->isValid();
-        SAssert(isValid, "time is invalid");
-        if (isValid) {
-            return std::round(static_cast<double>(value) / static_cast<double>(scale) * 1000000.0) / 1000000.0;
+    [[nodiscard]] double second() const noexcept {
+        bool valid = isValid();
+        SAssert(valid, "time is invalid");
+        if (valid) {
+            return std::round(static_cast<double>(value) / static_cast<double>(scale) * 1000000.0) /
+                   1000000.0;
         }
         return 0;
     }
 
-    inline bool operator==(const CTime& rhs) const noexcept {
-        return fabsl(second() - rhs.second()) < kTimePrecision;
+    [[nodiscard]] bool isValid() const noexcept {
+        return scale != Time::kTimeInvalid;
     }
 
-    inline bool operator>(const CTime& rhs) const noexcept {
-        return (second() - rhs.second()) > kTimePrecision;
+    bool operator==(const CTime& rhs) const noexcept {
+        return std::fabs(second() - rhs.second()) < kTimePrecision;
     }
 
-    inline bool operator<(const CTime& rhs) const noexcept {
-        return (second() - rhs.second()) < -kTimePrecision;
+    std::partial_ordering operator<=>(const CTime& rhs) const noexcept {
+        auto diff = second() - rhs.second();
+        if (std::fabs(diff) < kTimePrecision) {
+            return std::partial_ordering::equivalent;
+        }
+        return diff > 0 ? std::partial_ordering::greater : std::partial_ordering::less;
     }
 
-    inline bool operator>=(const CTime& rhs) const noexcept {
-        return this->operator==(rhs) || this->operator>(rhs);
-    }
-
-    inline bool operator<=(const CTime& rhs) const noexcept {
-        return this->operator==(rhs) || this->operator<(rhs);
-    }
-
-    inline CTime operator-(const CTime& rhs) const noexcept {
+    CTime operator-(const CTime& rhs) const noexcept {
         auto t = second() - rhs.second();
         return CTime(static_cast<int64_t>(t * static_cast<double>(scale)), scale);
     }
 
-    inline CTime operator+(const CTime& rhs) const noexcept {
+    CTime operator+(const CTime& rhs) const noexcept {
         auto t = second() + rhs.second();
         return CTime(static_cast<int64_t>(t * static_cast<double>(scale)), scale);
-    }
-
-    [[nodiscard]] inline bool isValid() const noexcept {
-        return scale != Time::kTimeInvalid;
     }
 };
 
@@ -226,19 +220,19 @@ struct CTimeRange {
     CTime start;
     CTime duration;
 
-    CTimeRange()
-        : start()
-        , duration() {
+    CTimeRange() = default;
 
+    CTimeRange(CTime s, CTime d) : start(s), duration(d) {}
+
+    [[nodiscard]] CTime end() const noexcept {
+        return start + duration;
     }
 
-    [[maybe_unused]] CTimeRange(CTime start_, CTime duration_)
-        : start(start_)
-        , duration(duration_) {
-
+    [[nodiscard]] bool isValid() const noexcept {
+        return start.isValid() && duration.isValid();
     }
 
-    [[nodiscard]] inline bool operator==(const CTimeRange& rhs) const noexcept {
+    bool operator==(const CTimeRange& rhs) const noexcept {
         SAssert(isValid() && rhs.isValid(), "time is invalid");
         if (!isValid() || !rhs.isValid()) {
             return false;
@@ -246,55 +240,35 @@ struct CTimeRange {
         return start == rhs.start && duration == rhs.duration;
     }
 
-    [[nodiscard]] inline bool operator<(const CTimeRange& rhs) const noexcept {
+    std::partial_ordering operator<=>(const CTimeRange& rhs) const noexcept {
         SAssert(isValid() && rhs.isValid(), "time is invalid");
         if (!isValid() || !rhs.isValid()) {
-            return false;
+            return std::partial_ordering::unordered;
         }
-        return end() < rhs.start;
+        if (end() < rhs.start) {
+            return std::partial_ordering::less;
+        }
+        if (end() > rhs.start) {
+            return std::partial_ordering::greater;
+        }
+        return std::partial_ordering::equivalent;
     }
 
-    [[nodiscard]] inline bool operator>(const CTimeRange& rhs) const noexcept {
-        SAssert(isValid() && rhs.isValid(), "time is invalid");
+    [[nodiscard]] bool isOverlap(const CTimeRange& rhs) const noexcept {
         if (!isValid() || !rhs.isValid()) {
             return false;
         }
-        return end() > rhs.start;
+        return start.second() < rhs.end().second() && rhs.start.second() < end().second();
     }
 
-    [[nodiscard]] inline bool isOverlap(const CTimeRange& rhs) const noexcept {
-        if (!isValid() || !rhs.isValid()) {
-            return false;
+    [[nodiscard]] CTimeRange overlap(const CTimeRange& rhs) const noexcept {
+        if (!isOverlap(rhs)) {
+            return {};
         }
-        auto end = start.second() + duration.second();
-        auto rend = rhs.start.second() + rhs.duration.second();
-        if (rend < start.second() || rhs.start.second() > end) {
-            return false;
-        }
-        return true;
-    }
-
-    [[nodiscard]] inline CTime end() const noexcept {
-        return start + duration;
-    }
-
-    [[nodiscard]] inline bool isValid() const noexcept {
-        return start.isValid() && duration.isValid();
-    }
-
-    [[maybe_unused]] [[nodiscard]] inline CTimeRange overlap(const CTimeRange& rhs) const noexcept {
-        CTimeRange range;
-        if (!this->isOverlap(rhs)) {
-            return range;
-        }
-        auto end = this->end().second();
-        auto rend = rhs.end().second();
-        range.start = std::max(start, rhs.start);
-        range.duration = CTime(static_cast<int64_t>(std::min(end, rend)), start.scale) - range.start;
-        return range;
+        auto overlapStart = std::max(start, rhs.start);
+        auto overlapEnd = CTime(std::min(end().second(), rhs.end().second()));
+        return {overlapStart, overlapEnd - overlapStart};
     }
 };
 
-}
-
-
+} // namespace slark

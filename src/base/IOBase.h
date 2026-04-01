@@ -7,9 +7,11 @@
 
 #pragma once
 
+#include <cstdint>
+
 namespace slark {
 
-enum class IOState {
+enum class IOState : uint8_t {
     Unknown,
     Normal,
     Pause,

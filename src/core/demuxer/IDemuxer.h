@@ -7,14 +7,15 @@
 
 #pragma once
 
-#include <tuple>
-#include <memory>
-#include "NonCopyable.h"
 #include "AVFrame.hpp"
-#include "VideoInfo.h"
 #include "AudioInfo.h"
-#include "Reflection.hpp"
 #include "Buffer.hpp"
+#include "NonCopyable.h"
+#include "Reflection.hpp"
+#include "VideoInfo.h"
+
+#include <memory>
+#include <tuple>
 
 namespace slark {
 
@@ -58,8 +59,7 @@ struct DemuxerResult {
     AVFramePtrArray videoFrames;
 };
 
-class IDemuxer : public NonCopyable {
-
+class IDemuxer : public NonCopyMovable {
 public:
     ~IDemuxer() override = default;
 
@@ -76,7 +76,7 @@ public:
         videoInfo_.reset();
         audioInfo_.reset();
     }
-    
+
     virtual void seekPos(uint64_t pos) noexcept {
         isCompleted_ = false;
         if (buffer_) {
@@ -86,8 +86,8 @@ public:
     }
 
     virtual DemuxerResult parseData(DataPacket& packet) noexcept = 0;
-     
-    ///In HLS, what you get is the TS index, while in other cases, it’s the file offset.
+
+    /// In HLS, what you get is the TS index, while in other cases, it’s the file offset.
     [[nodiscard]] virtual uint64_t getSeekToPos(double) noexcept = 0;
 
     [[nodiscard]] bool isOpened() const noexcept {
@@ -117,14 +117,14 @@ public:
     [[nodiscard]] std::shared_ptr<DemuxerHeaderInfo> headerInfo() noexcept {
         return headerInfo_;
     }
-    
+
     [[nodiscard]] CTime totalDuration() const noexcept {
         if (!isOpened_) {
             return {};
         }
         return totalDuration_;
     }
-    
+
     [[nodiscard]] DemuxerType type() const noexcept {
         return type_;
     }
@@ -136,10 +136,10 @@ public:
         return 0;
     }
 
-    virtual void init(DemuxerConfig config) noexcept{
+    virtual void init(DemuxerConfig config) noexcept {
         config_ = std::move(config);
     }
-    
+
 protected:
     bool isOpened_ = false;
     bool isCompleted_ = false;
@@ -152,6 +152,6 @@ protected:
     std::shared_ptr<DemuxerHeaderInfo> headerInfo_;
 };
 
-}//end namespace slark
+} // end namespace slark
 
 /* IDemuxer_hpp */

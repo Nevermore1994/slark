@@ -5,15 +5,15 @@
 //  Created by Nevermore on 2022/4/24.
 //
 
-#include <unordered_map>
-#include <memory>
 #include "IDecoder.h"
 #include "NonCopyable.h"
 
+#include <memory>
+#include <unordered_map>
+
 namespace slark {
 
-class DecoderManager : public NonCopyable {
-
+class DecoderManager : public NonCopyMovable {
 public:
     static DecoderManager& shareInstance();
 
@@ -31,4 +31,4 @@ private:
     std::unordered_map<DecoderType, DecoderTypeInfo> decoderInfo_;
 };
 
-}
+} // namespace slark

@@ -3,40 +3,42 @@
 // slark Request
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
+#include "Request.h"
+
+#include "HttpUtil.h"
+#include "Log.hpp"
+#include "PlainSocket.h"
+#include "Random.hpp"
+#include "TSLSocket.h"
+#include "Time.hpp"
+#include "Type.h"
+#include "Url.h"
+#include "Util.h"
+
 #include <cstdint>
+#include <ios>
 #include <string_view>
 #include <utility>
-#include <ios>
-#include "Request.h"
-#include "TSLSocket.h"
-#include "Type.h"
-#include "PlainSocket.h"
-#include "Url.h"
-#include "Random.hpp"
-#include "Time.hpp"
-#include "Util.hpp"
-#include "Log.hpp"
-#include "HttpUtil.h"
 
 namespace slark::http {
 
 using namespace std::chrono_literals;
 
 Request::Request(const RequestInfo& info, const ResponseHandler& responseHandler)
-    : startStamp_(Time::nowTimeStamp().point())
-    , info_(info)
-    , handler_(responseHandler)
-    , socket_(nullptr, freeSocket)
-    , url_(nullptr, freeUrl) {
+    : startStamp_(Time::nowTimeStamp().point()),
+      info_(info),
+      handler_(responseHandler),
+      socket_(nullptr, freeSocket),
+      url_(nullptr, freeUrl) {
     config();
 }
 
 Request::Request(RequestInfo&& info, ResponseHandler&& responseHandler)
-    : startStamp_(Time::nowTimeStamp().point())
-    , info_(std::move(info))
-    , handler_(std::move(responseHandler))
-    , socket_(nullptr,freeSocket)
-    , url_(nullptr, freeUrl) {
+    : startStamp_(Time::nowTimeStamp().point()),
+      info_(std::move(info)),
+      handler_(std::move(responseHandler)),
+      socket_(nullptr, freeSocket),
+      url_(nullptr, freeUrl) {
     config();
 }
 
@@ -61,12 +63,12 @@ void Request::sendRequest() noexcept {
     auto errorHandler = [&](ResultCode code, int32_t errorCode) {
         this->onError(code, errorCode);
     };
-    timerId_ = TimerManager::shareInstance().runAfter(info_.timeout, [this]{
+    timerId_ = TimerManager::shareInstance().runAfter(info_.timeout, [this] {
         onError(ResultCode::Timeout, 0);
     });
     addrinfo hints{};
     hints.ai_family = GetAddressFamily(info_.ipVersion);
-    hints.ai_socktype = SOCK_STREAM; //tcp
+    hints.ai_socktype = SOCK_STREAM; // tcp
     addrinfo* addressInfo = nullptr;
     ResponseHeader responseData;
     auto addrCode = getaddrinfo(url_->host.data(), url_->port.data(), &hints, &addressInfo);
@@ -106,7 +108,9 @@ void Request::sendRequest() noexcept {
     auto result = socket_->connect(addressInfoPtr, timeout);
     if (!result.isSuccess()) {
         LogE("connect {} failed, error code: {}, result code: {}",
-             url_->url(), result.errorCode, static_cast<int>(result.resultCode));
+             url_->url(),
+             result.errorCode,
+             static_cast<int>(result.resultCode));
         errorHandler(result.resultCode, GetLastError());
         return;
     } else {
@@ -195,7 +199,7 @@ bool Request::isReceivable() noexcept {
             onCompleted();
             return false;
         }
-        auto canReceive = socket_->canReceive(100);//wait 1000ms
+        auto canReceive = socket_->canReceive(100); // wait 1000ms
         if (canReceive.isSuccess()) {
             return true;
         }
@@ -207,13 +211,16 @@ bool Request::isReceivable() noexcept {
             continue;
         }
         onError(canReceive.resultCode, canReceive.errorCode);
-        return false;//disconnect
+        return false; // disconnect
     }
 }
 
 bool Request::parseChunk(DataPtr& data, int64_t& chunkSize, bool& isCompleted) noexcept {
-    return Util::parseChunkHandler(data, chunkSize, isCompleted,
-        [this](ResultCode resultCode, int32_t errorCode){
+    return Util::parseChunkHandler(
+        data,
+        chunkSize,
+        isCompleted,
+        [this](ResultCode resultCode, int32_t errorCode) {
             onError(resultCode, errorCode);
         },
         [this](DataPtr data) {
@@ -276,11 +283,11 @@ void Request::receive() noexcept {
         if (transferCoding == "chunked") {
             recvDataPtr->append(std::move(dataPtr));
             if (!parseChunk(recvDataPtr, chunkSize, isCompleted)) {
-                return; //disconnect
+                return; // disconnect
             }
         } else {
             isCompleted = isCompleted || recvLength >= contentLength;
-            if (parseHeaderSuccess && !dataPtr->empty()){
+            if (parseHeaderSuccess && !dataPtr->empty()) {
                 onResponseData(std::move(dataPtr));
             }
         }
@@ -288,7 +295,7 @@ void Request::receive() noexcept {
         if (isCompleted) {
             isCompleted_ = true;
             onCompleted();
-            return; //disconnect
+            return; // disconnect
         }
     }
 }
@@ -332,7 +339,7 @@ void Request::onCompleted() noexcept {
         }
     }
     isValid_ = false;
-    socket_.reset(); //release resource
+    socket_.reset(); // release resource
 }
 
-} //end of namespace slark::http
+} // end of namespace slark::http

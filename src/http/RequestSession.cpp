@@ -2,32 +2,32 @@
 // Created by Nevermore- on 2025/6/24.
 //
 
-#include <cstdint>
-#include <string_view>
-#include <utility>
-#include <ios>
+#include "include/public//RequestSession.h"
+
+#include "Log.hpp"
 #include "Random.hpp"
 #include "Time.hpp"
-#include "Util.hpp"
-#include "Log.hpp"
+#include "Util.h"
 #include "include/HttpUtil.h"
-#include "include/public//RequestSession.h"
-#include "include/TSLSocket.h"
-#include "include/public/Type.h"
 #include "include/PlainSocket.h"
+#include "include/TSLSocket.h"
 #include "include/Url.h"
+#include "include/public/Type.h"
+
+#include <cstdint>
+#include <ios>
+#include <string_view>
+#include <utility>
 
 #define MakeUrlPtr(url) std::unique_ptr<Url, decltype(&freeUrl)>(new Url(url), freeUrl)
 
 namespace slark::http {
 
 RequestSession::RequestSession(std::unique_ptr<ResponseHandler> handler)
-    : socket_(nullptr, freeSocket)
-    , host_(nullptr, freeUrl)
-    , worker_(std::make_unique<std::thread>(&RequestSession::process, this))
-    , handler_(std::move(handler)) {
-
-}
+    : socket_(nullptr, freeSocket),
+      host_(nullptr, freeUrl),
+      worker_(std::make_unique<std::thread>(&RequestSession::process, this)),
+      handler_(std::move(handler)) {}
 
 RequestSession::~RequestSession() {
     if (!isExited_) {
@@ -68,7 +68,7 @@ void RequestSession::setupSocket() noexcept {
     }
     addrinfo hints{};
     hints.ai_family = GetAddressFamily(IPVersion::Auto);
-    hints.ai_socktype = SOCK_STREAM; //tcp
+    hints.ai_socktype = SOCK_STREAM; // tcp
     addrinfo* addressInfo = nullptr;
     ResponseHeader responseData;
     LogI("host:{}, port:{}", host_->host, host_->port);
@@ -98,7 +98,7 @@ void RequestSession::setupSocket() noexcept {
     } else {
         LogE("set keep live failed");
     }
-    auto result = socket_->connect(addressInfoPtr, 60000); //60s
+    auto result = socket_->connect(addressInfoPtr, 60000); // 60s
     if (result.isSuccess()) {
         LogI("connect success:{}", host_->host);
     } else {
@@ -114,7 +114,9 @@ void RequestSession::process() noexcept {
         } else {
             currentTask_.reset();
             std::unique_lock<std::mutex> lock(taskMutex_);
-            cond_.wait(lock, [this](){ return !requestTaskQueue_.empty() || isExited_; });
+            cond_.wait(lock, [this]() {
+                return !requestTaskQueue_.empty() || isExited_;
+            });
             if (isExited_ || requestTaskQueue_.empty()) {
                 return;
             }
@@ -130,7 +132,7 @@ void RequestSession::process() noexcept {
         }
         isBusy_ = true;
         LogI("current task url:{}", currentTask_->requestInfo->url);
-        if (!host_ || (host_ && host_->host != currentTask_->host->host) ) {
+        if (!host_ || (host_ && host_->host != currentTask_->host->host)) {
             LogI("host change");
             host_ = std::move(currentTask_->host);
             socket_.reset();
@@ -160,7 +162,9 @@ bool RequestSession::send() noexcept {
     std::this_thread::sleep_for(1ms);
     currentTask_->requestInfo->headers["Connection"] = "keep-alive";
     if (!currentTask_->host) {
-        currentTask_->host = std::unique_ptr<Url, decltype(&freeUrl)>(new Url(currentTask_->requestInfo->url), freeUrl);
+        currentTask_->host =
+            std::unique_ptr<Url, decltype(&freeUrl)>(new Url(currentTask_->requestInfo->url),
+                                                     freeUrl);
     }
     auto sendData = Util::htmlEncode(*currentTask_->requestInfo, *currentTask_->host);
     auto dataView = std::string_view(sendData);
@@ -193,7 +197,7 @@ std::string RequestSession::request(RequestInfoPtr requestInfo) noexcept {
     taskPtr->requestInfo = std::move(requestInfo);
     taskPtr->host = std::move(host);
     auto reqId = Random::randomString(12);
-    taskPtr->requestInfo ->reqId = reqId;
+    taskPtr->requestInfo->reqId = reqId;
     taskPtr->startStamp = Time::nowTimeStamp().point();
     {
         std::lock_guard<std::mutex> lock(taskMutex_);
@@ -224,18 +228,21 @@ bool RequestSession::isReceivable() noexcept {
             continue;
         }
         onError(canReceive.resultCode, canReceive.errorCode);
-        return false;//disconnect
+        return false; // disconnect
     }
 }
 
 bool RequestSession::parseChunk(DataPtr& data, int64_t& chunkSize, bool& isCompleted) noexcept {
-    return Util::parseChunkHandler(data, chunkSize, isCompleted,
-     [this](ResultCode resultCode, int32_t errorCode){
-         onError(resultCode, errorCode);
-     },
-     [this](DataPtr data) {
-         onResponseData(std::move(data));
-     });
+    return Util::parseChunkHandler(
+        data,
+        chunkSize,
+        isCompleted,
+        [this](ResultCode resultCode, int32_t errorCode) {
+            onError(resultCode, errorCode);
+        },
+        [this](DataPtr data) {
+            onResponseData(std::move(data));
+        });
 }
 
 void RequestSession::redirect(const std::string& host) noexcept {
@@ -314,11 +321,11 @@ void RequestSession::receive() noexcept {
         if (transferCoding == "chunked") {
             recvDataPtr->append(std::move(dataPtr));
             if (!parseChunk(recvDataPtr, chunkSize, isCompleted)) {
-                return; //disconnect
+                return; // disconnect
             }
         } else {
             isCompleted = isCompleted || recvLength >= contentLength;
-            if (parseHeaderSuccess && !dataPtr->empty()){
+            if (parseHeaderSuccess && !dataPtr->empty()) {
                 onResponseData(std::move(dataPtr));
             }
         }
@@ -355,8 +362,7 @@ void RequestSession::onError(ResultCode code, int32_t errorCode) noexcept {
 void RequestSession::onCompleted() noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     isBusy_ = false;
-    if (currentTask_ && currentTask_->isValid_ &&
-        handler_ && handler_->onCompleted) {
+    if (currentTask_ && currentTask_->isValid_ && handler_ && handler_->onCompleted) {
         handler_->onCompleted(*currentTask_->requestInfo);
     }
 }
@@ -370,4 +376,4 @@ int64_t RequestSession::getRemainTime() noexcept {
     return std::max<int64_t>(diff.count(), 0ll);
 }
 
-} // slark
+} // namespace slark::http

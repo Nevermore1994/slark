@@ -1,59 +1,64 @@
 //
 // Created by Nevermore on 2021/10/25.
-// slark TimerPool
+// slark TimerPool — Hierarchical Timing Wheel
 // Copyright (c) 2021 Nevermore All rights reserved.
 //
 #pragma once
 
-#include <chrono>
-#include <memory>
-#include <queue>
-#include <unordered_map>
-#include <mutex>
 #include "NonCopyable.h"
 #include "Timer.h"
 
+#include <array>
+#include <chrono>
+#include <list>
+#include <unordered_map>
+#include <vector>
+
 namespace slark {
 
-class TimerPool: public NonCopyable {
+/// 纯时间轮数据结构，不持有锁，由 TimerManager 负责同步
+class TimerPool : public NonCopyMovable {
 public:
     TimerPool() = default;
-
     ~TimerPool() override;
 
-    TimerId runAt(Time::TimePoint timePoint, TimerTask func, ExecuteMode mode) noexcept;
-
-    TimerId runAfter(std::chrono::milliseconds ms, TimerTask func, ExecuteMode mode) noexcept;
-
-    TimerId runLoop(std::chrono::milliseconds interval, TimerTask func, ExecuteMode mode) noexcept;
-
+    TimerId addTimer(TimerEntry entry) noexcept;
+    void reinsert(TimerEntry entry) noexcept;
     void cancel(TimerId id) noexcept;
-
-    void cancel(const std::vector<TimerId>& timers) noexcept;
-
-    ///execution of the current thread
-    void loop() noexcept;
-
-    ///the caller is responsible for handling the task
-    void loop(std::function<void(ExecuteMode, TimerTask&&)>&& doTask) noexcept;
-
+    void collectExpired(std::vector<TimerEntry>& expired) noexcept;
+    [[nodiscard]] std::chrono::milliseconds peekWaitTime() const noexcept;
     void clear() noexcept;
-
-    bool empty() noexcept;
-    
-    std::chrono::milliseconds peekActiveTime() const noexcept;
-private:
-    TimerId addTimer(Time::TimePoint timePoint,
-                     TimerTask func,
-                     bool isLoop,
-                     std::chrono::milliseconds timeInterval = {},
-                     ExecuteMode mode = ExecuteMode::Serial) noexcept;
+    [[nodiscard]] bool empty() const noexcept;
 
 private:
-    bool isExited_ = false;
-    std::priority_queue<TimerInfo, std::vector<TimerInfo>, decltype(TimerInfoCompare())> timerInfos_;
-    std::unordered_map<TimerId, Timer, TimerIdHasher, TimerIdEqual> timers_;
-    mutable std::mutex mutex_;
+    static constexpr uint32_t kWheelSize = 256;
+    static constexpr uint32_t kLevel1RangeMs = kWheelSize;                 // 256ms
+    static constexpr uint32_t kLevel2TickMs = kLevel1RangeMs;              // 256ms
+    static constexpr uint32_t kLevel2RangeMs = kWheelSize * kLevel2TickMs; // 65536ms
+
+    struct WheelEntry {
+        uint64_t timerId;
+        uint64_t expireMs;
+    };
+
+    using Slot = std::list<WheelEntry>;
+
+    [[nodiscard]] uint64_t nowMs() const noexcept;
+    void placeInWheel(const WheelEntry& entry) noexcept;
+    void cascadeLevel2(uint32_t slot) noexcept;
+    void drainSlot(Slot& slot, std::vector<TimerEntry>& expired) noexcept;
+    void redistributeOverflow() noexcept;
+    void refreshEarliestExpire() noexcept;
+
+private:
+    uint64_t currentTick_ = 0;
+    uint64_t startMs_ = 0;
+    uint64_t earliestExpireMs_ = UINT64_MAX;
+
+    std::array<Slot, kWheelSize> level1_{};
+    std::array<Slot, kWheelSize> level2_{};
+    std::list<WheelEntry> overflow_;
+    std::unordered_map<uint64_t, TimerEntry> timers_;
 };
 
-}
+} // namespace slark

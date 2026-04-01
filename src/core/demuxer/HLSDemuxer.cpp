@@ -5,17 +5,16 @@
 //  Created by Nevermore on 2024/12/9.
 //
 
-#include <utility>
 #include "HLSDemuxer.h"
-#include "Util.hpp"
+
 #include "MediaUtil.h"
+#include "Util.h"
+
+#include <utility>
 
 namespace slark {
 
-M3U8Parser::M3U8Parser(std::string  baseUrl)
-    : baseUrl_(std::move(baseUrl)) {
-    
-}
+M3U8Parser::M3U8Parser(std::string baseUrl) : baseUrl_(std::move(baseUrl)) {}
 
 void M3U8Parser::reset() noexcept {
     isPlayList_ = false;
@@ -45,13 +44,13 @@ std::string spliceUrl(const std::string& baseUrl, std::string_view view) {
         }
         return baseUrl;
     };
-    
+
     // Handle "../" paths
     if (view.starts_with("../")) {
         auto url = normalizeRelativePath(baseUrl, view);
         return url + '/' + std::string(view);
     }
-    
+
     // Handle root-relative paths "/path"
     if (view.starts_with('/')) {
         auto protocolEnd = baseUrl.find("//") + 2;
@@ -59,25 +58,25 @@ std::string spliceUrl(const std::string& baseUrl, std::string_view view) {
         std::string baseHost = baseUrl.substr(0, hostEnd);
         return baseHost + std::string(view);
     }
-    
+
     // Handle "./" paths
     while (view.starts_with("./")) {
         view.remove_prefix(2);
     }
-    
+
     // Handle remaining cases (relative to baseUrl)
     return baseUrl + "/" + std::string(view);
 }
 
 bool M3U8Parser::parse(Buffer& buffer) noexcept {
     DataView line;
-    while(buffer.readLine(line)) {
+    while (buffer.readLine(line)) {
         auto content = line.removeSpace();
         if (content.empty()) {
             continue;
         }
         auto view = std::string_view(content);
-        if(view.starts_with("#EXTINF:")) {
+        if (view.starts_with("#EXTINF:")) {
             view = view.substr(8);
             view = view.substr(0, view.find(','));
             TSInfo info;
@@ -105,10 +104,10 @@ bool M3U8Parser::parse(Buffer& buffer) noexcept {
             info.range.size = std::stol(std::string(lengthView));
         } else if (view.starts_with("#EXT-X-DISCONTINUITY")) {
             if (!infos_.empty()) {
-                infos_.back().isDiscontinuity = true; //The next TS needs to reset the decoder
+                infos_.back().isDiscontinuity = true; // The next TS needs to reset the decoder
             }
         } else if (view.starts_with("#EXT-X-STREAM-INF:")) {
-            //play list
+            // play list
             isPlayList_ = true;
             view = view.substr(18);
             view = view.substr(0, view.find(','));
@@ -116,7 +115,7 @@ bool M3U8Parser::parse(Buffer& buffer) noexcept {
             PlayListInfo info;
             info.codeRate = static_cast<uint32_t>(std::stoi(std::string(view)));
             playListInfos_.push_back(info);
-        } else if(view.starts_with("#EXT-X-ENDLIST")) {
+        } else if (view.starts_with("#EXT-X-ENDLIST")) {
             isCompleted_ = true;
             LogI("parse m3u8 is completed.");
         } else if (!view.starts_with("#")) {
@@ -141,7 +140,7 @@ bool M3U8Parser::parse(Buffer& buffer) noexcept {
             }
         }
     }
-    
+
     if (!line.empty()) {
         line = DataView(); // cannot be used anymore
         buffer.shrink();
@@ -169,13 +168,12 @@ bool TSDemuxer::checkPacket(Buffer& buffer, uint64_t& pos) noexcept {
 }
 
 bool TSDemuxer::parsePacket(DataView data, uint32_t tsIndex, DemuxerResult& result) noexcept {
-    TSHeader header; //4byte
-    Util::readByte(data, header.syncbyte);
+    TSHeader header; // 4byte
+    data.readNumberLE(header.syncbyte, 1);
     header.payloadUinitIndicator = (static_cast<uint8_t>(data[1]) & 0x40) >> 6;
     header.errorIndicator = (static_cast<uint8_t>(data[1]) & 0x80) >> 7;
-    header.pid = static_cast<uint16_t>(
-        ((static_cast<uint8_t>(data[1]) & 0x1f) << 8) | (static_cast<uint8_t>(data[2]))
-    );
+    header.pid = static_cast<uint16_t>(((static_cast<uint8_t>(data[1]) & 0x1f) << 8) |
+                                       (static_cast<uint8_t>(data[2])));
     header.adaptationFieldControl = (static_cast<uint8_t>(data[3]) & 0x30) >> 4;
     data = data.substr(4);
     if (header.syncbyte != 0x47) {
@@ -186,20 +184,19 @@ bool TSDemuxer::parsePacket(DataView data, uint32_t tsIndex, DemuxerResult& resu
         LogE("transport error:{}", header.errorIndicator);
         return false;
     }
-    
-    //has adaption
+
+    // has adaption
     if ((header.adaptationFieldControl & 0x02) == 0x02) {
         uint8_t adaptionLen;
-        Util::readByte(data, adaptionLen);
+        data.readNumberLE(adaptionLen, 1);
         data = data.substr(adaptionLen + 1);
     }
-    
-    if (header.payloadUinitIndicator &&
-        (header.pid == 0 || header.pid == pat_.pmtPid)) {
-        //skip psi
+
+    if (header.payloadUinitIndicator && (header.pid == 0 || header.pid == pat_.pmtPid)) {
+        // skip psi
         data = data.substr(1);
     }
-    
+
     if (header.pid == 0) {
         parseTSPAT(data);
     } else if (header.pid == pat_.pmtPid) {
@@ -209,7 +206,7 @@ bool TSDemuxer::parsePacket(DataView data, uint32_t tsIndex, DemuxerResult& resu
             if (videoInfo_->mediaInfo == MEDIA_MIMETYPE_VIDEO_AVC) {
                 packH264VideoPacket(tsIndex, result.videoFrames);
             } else {
-                //TODO: pack h265
+                // TODO: pack h265
             }
         }
         parseTSPes(data, header.payloadUinitIndicator, videoESFrame_);
@@ -232,18 +229,17 @@ bool TSDemuxer::parseTSPAT(DataView data) noexcept {
         LogE("syntax indicator != 1, {}", syntaxIndicator);
         return false;
     }
-    pat_.sectionLength = (static_cast<uint8_t>(data[1]) & 0x0f << 8) | static_cast<uint8_t>(data[2]);
+    pat_.sectionLength =
+        (static_cast<uint8_t>(data[1]) & 0x0f << 8) | static_cast<uint8_t>(data[2]);
     pat_.currentNextIndicator = static_cast<uint8_t>(data[5]) & 0x01;
     data = data.substr(8);
     if (pat_.currentNextIndicator == 1) {
-        auto infoLength = pat_.sectionLength - 5 - 4; //streamId, sectionNumber + crc32
+        auto infoLength = pat_.sectionLength - 5 - 4; // streamId, sectionNumber + crc32
         while (infoLength >= 4) {
-            auto pnum = static_cast<uint16_t>(
-                (static_cast<uint8_t>(data[0]) << 8) | static_cast<uint8_t>(data[1])
-            );
-            auto pid = static_cast<uint16_t>(
-                ((static_cast<uint8_t>(data[2]) & 0x1f) << 8) | static_cast<uint8_t>(data[3])
-            );
+            auto pnum = static_cast<uint16_t>((static_cast<uint8_t>(data[0]) << 8) |
+                                              static_cast<uint8_t>(data[1]));
+            auto pid = static_cast<uint16_t>(((static_cast<uint8_t>(data[2]) & 0x1f) << 8) |
+                                             static_cast<uint8_t>(data[3]));
             if (pnum == 0x0001) {
                 pat_.pmtPid = pid;
             }
@@ -263,14 +259,14 @@ bool TSDemuxer::parseTSPMT(DataView view) noexcept {
     pmt_.sectionLength = (view[1] & 0x0f << 8) | view[2];
     pmt_.progamInfoLength = (view[10] & 0x0f << 8) | view[11];
     view = view.substr(12);
-    //4:crc32, 9:program info length
+    // 4:crc32, 9:program info length
     auto infoLength = pmt_.sectionLength - 4 - 9 - pmt_.progamInfoLength;
     while (infoLength >= 5) {
         uint8_t streamType = view[0];
         auto pid = static_cast<uint16_t>(((view[1] & 0x1f) << 8) | view[2]);
         auto esInfoLength = static_cast<uint16_t>(((view[3] & 0x0f) << 8) | view[4]);
         if (streamType == 0x1b || streamType == 0x24) {
-            //h264
+            // h264
             pmt_.videoPid = pid;
             if (!videoInfo_) {
                 videoInfo_ = std::make_shared<VideoInfo>();
@@ -282,7 +278,7 @@ bool TSDemuxer::parseTSPMT(DataView view) noexcept {
             }
 
         } else if (streamType == 0x0f) {
-            //aac
+            // aac
             pmt_.audioPid = pid;
             if (!audioInfo_) {
                 audioInfo_ = std::make_shared<AudioInfo>();
@@ -300,26 +296,30 @@ bool TSDemuxer::parseTSPes(DataView data, uint8_t payloadIndicator, TSPESFrame& 
         pes.mediaData.append(data);
         return true;
     }
-    
+
     if (data.length() < 6) {
         LogE("data length is too short.");
         return false;
     }
-    //pes header: start code 0x00 0x00 0x01, stream id (1 byte), packet length(2 byte)
+    // pes header: start code 0x00 0x00 0x01, stream id (1 byte), packet length(2 byte)
     if (data[0] != 0 || data[1] != 0 || data[2] != 1) {
         LogE("start code error:{} {} {}", data[0], data[1], data[2]);
         return false;
     }
-    
+
     auto isAudio = (&pes == &audioESFrame_);
     uint8_t streamId = data[3];
-    LogI("{} stream id:{}, pesPacketLength:{}", isAudio ? "audio" : "video",
-         data[3], (data[4] << 8) | data[5]);
-    
+    LogI("{} stream id:{}, pesPacketLength:{}",
+         isAudio ? "audio" : "video",
+         data[3],
+         (data[4] << 8) | data[5]);
+
     static const std::array<uint8_t, 6> kSpecialStreamArray = {0xbc, 0xbe, 0xbf, 0xf0, 0xf1, 0xff};
-    auto isSpecialStream = std::any_of(kSpecialStreamArray.begin(), kSpecialStreamArray.end(), [pesStreamId = streamId](uint8_t streamId) {
-        return pesStreamId == streamId;
-    });
+    auto isSpecialStream = std::any_of(kSpecialStreamArray.begin(),
+                                       kSpecialStreamArray.end(),
+                                       [pesStreamId = streamId](uint8_t streamId) {
+                                           return pesStreamId == streamId;
+                                       });
     uint32_t dataOffset = 0;
     if (!isSpecialStream) {
         if (data.length() < 20) {
@@ -331,30 +331,32 @@ bool TSDemuxer::parseTSPes(DataView data, uint8_t payloadIndicator, TSPESFrame& 
         auto headerDataLength = data[8];
         if (ptsFlag & 0x02) {
             if (headerDataLength >= 5) {
-                //PTS = PTS[32..30] + PTS[29..15] + PTS[14..0]
-                pes.pts = static_cast<int64_t>(((data[9] & 0x0e) << 29) | ((data[10] & 0xff) << 22) |
-                                                ((data[11] & 0xfe) << 14) | ((data[12] & 0xff) << 7) |
-                                                ((data[13] & 0xfe) >> 1));
+                // PTS = PTS[32..30] + PTS[29..15] + PTS[14..0]
+                pes.pts =
+                    static_cast<int64_t>(((data[9] & 0x0e) << 29) | ((data[10] & 0xff) << 22) |
+                                         ((data[11] & 0xfe) << 14) | ((data[12] & 0xff) << 7) |
+                                         ((data[13] & 0xfe) >> 1));
             } else {
                 LogE("pes header data length error:{}", headerDataLength);
             }
         }
         if (ptsFlag & 0x01) {
             if (headerDataLength >= 10) {
-                //DTS = DTS[32..30] + PTS[29..15] + PTS[14..0]
-                pes.dts = static_cast<int64_t>(((data[14] & 0x0e) << 29) | ((data[15] & 0xff) << 22) |
-                                                ((data[16] & 0xfe) << 14) | ((data[17] & 0xff) << 7) |
-                                                ((data[18] & 0xfe) >> 1));
+                // DTS = DTS[32..30] + PTS[29..15] + PTS[14..0]
+                pes.dts =
+                    static_cast<int64_t>(((data[14] & 0x0e) << 29) | ((data[15] & 0xff) << 22) |
+                                         ((data[16] & 0xfe) << 14) | ((data[17] & 0xff) << 7) |
+                                         ((data[18] & 0xfe) >> 1));
             } else {
                 LogE("pes header data length error:{}", headerDataLength);
             }
         } else {
             pes.dts = pes.pts;
         }
-        //pes header (6 byte), flags (3 byte)
+        // pes header (6 byte), flags (3 byte)
         dataOffset = 6 + 3 + headerDataLength;
     } else if (streamId != 0xbe) {
-        dataOffset = 6; //pes header (6 byte)
+        dataOffset = 6; // pes header (6 byte)
     }
     SAssert(dataOffset < data.length(), "error! data offset > data length!");
     pes.mediaData.append(data.substr(dataOffset));
@@ -376,7 +378,7 @@ void TSDemuxer::writeVideoData(AVFramePtr& frame, DataView view) noexcept {
     header.rawData[3] = static_cast<uint8_t>(length);
 #endif
     header.length = 4;
-    frame->data->append(header); //write header
+    frame->data->append(header); // write header
     frame->data->append(view);
 }
 
@@ -393,7 +395,7 @@ bool TSDemuxer::packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) n
     std::vector<Range> naluRanges;
     auto view = videoESFrame_.mediaData.view();
     uint64_t pos = 0;
-    while(!view.empty()) {
+    while (!view.empty()) {
         Range range;
         if (!findNaluUnit(view, range)) {
             break;
@@ -403,7 +405,7 @@ bool TSDemuxer::packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) n
         pos = range.end();
         naluRanges.push_back(range);
     }
-    
+
     view = videoESFrame_.mediaData.view();
     for (const auto& range : naluRanges) {
         auto dataView = view.substr(range);
@@ -428,7 +430,7 @@ bool TSDemuxer::packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) n
         } else if (naluType == 5 || naluType == 1) {
             auto [firstMBInSlice, sliceType] = parseAvcSliceType(dataView);
             if (firstMBInSlice != 0) {
-                //multi slice
+                // multi slice
                 if (frames.empty()) {
                     LogE("frames array is empty!");
                 } else {
@@ -449,12 +451,12 @@ bool TSDemuxer::packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) n
         } else {
             continue;
         }
-        
+
         auto frame = std::make_unique<AVFrame>(AVFrameType::Video);
         frame->info = info;
         frame->data = std::make_unique<Data>();
         writeVideoData(frame, dataView);
-        frame->timeScale = 90000; //90k hz
+        frame->timeScale = 90000; // 90k hz
         frame->pts = videoESFrame_.pts;
         frame->dts = videoESFrame_.dts;
         frame->index = parseInfo_.videoInfo.frameIndex++;
@@ -464,14 +466,15 @@ bool TSDemuxer::packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) n
         LogI("video, ts index: {} parse data:{}", tsIndex, frame->pts);
         frame->pts -= parseInfo_.videoInfo.firstPts;
         frame->dts -= parseInfo_.videoInfo.firstDts;
-    
+
         if (parseInfo_.calculatedFps == 0) {
             if (frame->index != 0) {
-                frame->duration = static_cast<uint32_t>( (frame->ptsTime() /
-                    static_cast<double>(frame->index)) * 1000);
-                parseInfo_.calculatedFps = static_cast<uint32_t>(round(1000.0 / static_cast<double>(frame->duration)));
+                frame->duration = static_cast<uint32_t>(
+                    (frame->ptsTime() / static_cast<double>(frame->index)) * 1000);
+                parseInfo_.calculatedFps =
+                    static_cast<uint32_t>(round(1000.0 / static_cast<double>(frame->duration)));
             } else {
-                frame->duration = 33; //default 33 ms
+                frame->duration = 33; // default 33 ms
             }
         } else {
             frame->duration = 1000 / parseInfo_.calculatedFps;
@@ -483,8 +486,8 @@ bool TSDemuxer::packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) n
 }
 
 void TSDemuxer::recalculatePtsDts(int64_t& pts, int64_t& dts, bool isAudio) noexcept {
-    //Offset to handle wraparound
-    auto& fixInfo = isAudio ? audioFixInfo_: videoFixInfo_;
+    // Offset to handle wraparound
+    auto& fixInfo = isAudio ? audioFixInfo_ : videoFixInfo_;
     if (dts < fixInfo.preDtsTime) {
         fixInfo.offset += TSPtsFixInfo::kMaxPTS;
         LogI("dts wraparound:{}, {}, offset:{}", dts, fixInfo.preDtsTime, fixInfo.offset);
@@ -518,12 +521,14 @@ bool parseAdtsHeader(DataView dataView, AACAdtsHeader& header) noexcept {
     }
     header.id = (dataView[1] >> 3) & 0x1;
     header.layer = (dataView[1] >> 1) & 0x3;
-    header.hasCRC = !(dataView[1] & 0x1); //1 no CRC data
+    header.hasCRC = !(dataView[1] & 0x1); // 1 no CRC data
     header.profile = (dataView[2] >> 6) & 0x3;
     header.samplingIndex = (dataView[2] >> 2) & 0xF;
     header.channel = static_cast<uint8_t>(((dataView[2] & 0x1) << 2) | ((dataView[3] >> 6) & 0x3));
-    header.frameLength = static_cast<uint16_t>(((dataView[3] & 0x3) << 11) | (dataView[4] << 3) | (dataView[5] >> 5));
-    header.bufferFullness = static_cast<uint16_t>(((dataView[5] & 0x1F) << 6) | ((dataView[6] >> 2) & 0x3f));
+    header.frameLength = static_cast<uint16_t>(((dataView[3] & 0x3) << 11) | (dataView[4] << 3) |
+                                               (dataView[5] >> 5));
+    header.bufferFullness =
+        static_cast<uint16_t>(((dataView[5] & 0x1F) << 6) | ((dataView[6] >> 2) & 0x3f));
     header.blockCount = dataView[6] & 0x3;
     return true;
 }
@@ -573,26 +578,27 @@ bool TSDemuxer::packAudioPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexc
         info->refIndex = tsIndex;
         auto frame = std::make_unique<AVFrame>(AVFrameType::Audio);
         frame->data = std::make_unique<Data>(dataView);
-        frame->duration = 1024 * 1000 / info->sampleRate; //ms
+        frame->duration = 1024 * 1000 / info->sampleRate; // ms
         frame->info = info;
-        frame->timeScale = 90000;//90k
+        frame->timeScale = 90000; // 90k
         frame->pts = audioESFrame_.pts;
         frame->dts = audioESFrame_.dts;
         frame->index = parseInfo_.audioInfo.frameIndex++;
         recalculatePtsDts(frame->pts, frame->dts, true);
-        
+
         if (audioInfo_ && !parseInfo_.audioInfo.isValid) {
             audioInfo_->channels = header.channel;
-            audioInfo_->profile = getAudioProfile(header.profile + 1); //the adts profile starts at 0
+            audioInfo_->profile =
+                getAudioProfile(header.profile + 1); // the adts profile starts at 0
             audioInfo_->sampleRate = info->sampleRate;
             audioInfo_->timeScale = 90000;
-            audioInfo_->bitsPerSample = 16; //default uint16
+            audioInfo_->bitsPerSample = 16; // default uint16
             audioInfo_->samplingFrequencyIndex = header.samplingIndex;
             parseInfo_.audioInfo.firstPts = frame->pts;
             parseInfo_.audioInfo.firstDts = frame->dts;
             parseInfo_.audioInfo.isValid = true;
         }
-        
+
         frame->pts -= parseInfo_.audioInfo.firstPts;
         frame->dts -= parseInfo_.audioInfo.firstDts;
         frames.push_back(std::move(frame));
@@ -622,7 +628,8 @@ bool TSDemuxer::parseData(Buffer& buffer, uint32_t tsIndex, DemuxerResult& resul
             videoInfo_->fps = static_cast<uint16_t>(parseInfo_.calculatedFps);
         }
         parseInfo_.isNotifiedHeader = true;
-        result.resultCode = isNotifiedHeader ? DemuxerResultCode::VideoInfoChange :  DemuxerResultCode::ParsedHeader;
+        result.resultCode =
+            isNotifiedHeader ? DemuxerResultCode::VideoInfoChange : DemuxerResultCode::ParsedHeader;
     } else if (videoInfo_->fps == 0 && parseInfo_.isNotifiedHeader) {
         videoInfo_->fps = static_cast<uint16_t>(parseInfo_.calculatedFps);
         result.resultCode = DemuxerResultCode::ParsedFPS;
@@ -642,21 +649,23 @@ DemuxerResult HLSDemuxer::parseData(DataPacket& packet) noexcept {
     } else {
         LogI("data packet tag is empty!");
     }
-    
+
     if (seekTsIndex_ != kInvalidTSIndex && seekTsIndex_ != tsIndex) {
         LogI("[seek info], seek index:{} expired data:{},", seekTsIndex_, tsIndex);
         return result;
     } else {
-        seekTsIndex_ = kInvalidTSIndex; //reset
+        seekTsIndex_ = kInvalidTSIndex; // reset
     }
-    
+
     if (!buffer_->append(static_cast<uint64_t>(packet.offset), std::move(packet.data))) {
         LogE("discard data, ts index:{}, data offset:{}, parse offset:{}",
-             tsIndex, packet.offset, buffer_->offset());
+             tsIndex,
+             packet.offset,
+             buffer_->offset());
         result.resultCode = DemuxerResultCode::InvalidData;
         return result;
     }
-    
+
     if (!tsDemuxer_->parseData(*buffer_, static_cast<uint32_t>(tsIndex), result)) {
         LogE("parse ts data error! offset:{}, ts index:{}", packet.offset, tsIndex);
         result.resultCode = DemuxerResultCode::Failed;
@@ -737,7 +746,7 @@ uint64_t HLSDemuxer::getSeekToPos(double time) noexcept {
     if (!isOpened_) {
         return kInvalidTSIndex;
     }
-    auto comp = [time](const auto& tsInfo){
+    auto comp = [time](const auto& tsInfo) {
         return tsInfo.startTime <= time && time <= tsInfo.endTime();
     };
     auto& infos = getTSInfos();
@@ -756,5 +765,4 @@ const std::vector<TSInfo>& HLSDemuxer::getTSInfos() const noexcept {
     return mainParser_->TSInfos();
 }
 
-}
-
+} // namespace slark
