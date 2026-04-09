@@ -16,7 +16,7 @@
 
 namespace slark {
 
-/// 纯时间轮数据结构，不持有锁，由 TimerManager 负责同步
+/// 纯时间轮数据结构
 class TimerPool : public NonCopyMovable {
 public:
     TimerPool() = default;

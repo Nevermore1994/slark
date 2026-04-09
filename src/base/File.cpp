@@ -5,6 +5,7 @@
 //
 #include "File.h"
 
+#include "ByteUtils.hpp"
 #include "Log.hpp"
 
 #include <array>
@@ -26,7 +27,7 @@ Expected<void> FileBase::open() noexcept {
     if (file_) {
         return {};
     }
-    auto* fp = fopen(path_.c_str(), kModeStr[static_cast<int32_t>(mode_)].data());
+    auto* fp = fopen(path_.c_str(), kModeStr[static_cast<size_t>(mode_)].data());
     if (!fp) {
         LogE("open file:{}", std::strerror(errno));
         return std::unexpected(DataError::FileNotFound);
@@ -184,7 +185,9 @@ Expected<void> ReadFile::seek(int64_t offset) noexcept {
 void ReadFile::backFillByte(Byte byte) noexcept {
     if (file_) {
         ungetc(byte, file_.get());
-        readSize_--;
+        if (readSize_ > 0) {
+            readSize_--;
+        }
     } else {
         LogE("can't back fill byte, file is null");
     }

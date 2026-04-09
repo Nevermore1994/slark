@@ -1,0 +1,64 @@
+---
+Checks: >
+  -*,
+  readability-identifier-naming
+
+CheckOptions:
+  # Class naming: PascalCase
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  
+  # Function/Method naming: camelCase
+  - key: readability-identifier-naming.FunctionCase
+    value: camelBack
+  - key: readability-identifier-naming.MethodCase
+    value: camelBack
+  # Ignore C++ standard coroutine interface names (await_ready, await_suspend, await_resume)
+  - key: readability-identifier-naming.MethodIgnoredRegexp
+    value: 'await_(ready|suspend|resume)'
+  
+  # Parameter naming: camelCase
+  - key: readability-identifier-naming.ParameterCase
+    value: camelBack
+  
+  # Variable naming: camelCase
+  - key: readability-identifier-naming.VariableCase
+    value: camelBack
+  - key: readability-identifier-naming.LocalVariableCase
+    value: camelBack
+  
+  # Member variable naming: camelCase with trailing underscore
+  - key: readability-identifier-naming.MemberCase
+    value: camelBack
+  - key: readability-identifier-naming.MemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.PrivateMemberCase
+    value: camelBack
+  - key: readability-identifier-naming.PrivateMemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.ProtectedMemberCase
+    value: camelBack
+  - key: readability-identifier-naming.ProtectedMemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.PublicMemberCase
+    value: camelBack
+  
+  # Constants and macros
+  - key: readability-identifier-naming.ConstantCase
+    value: CamelCase
+  - key: readability-identifier-naming.ConstantPrefix
+    value: 'k'
+  - key: readability-identifier-naming.MacroDefinitionCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.EnumConstantCase
+    value: CamelCase
+  
+  # Namespace naming: lowercase
+  - key: readability-identifier-naming.NamespaceCase
+    value: lower_case
+  
+  # Enum naming: PascalCase
+  - key: readability-identifier-naming.EnumCase
+    value: CamelCase

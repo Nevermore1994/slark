@@ -14,16 +14,36 @@ class MPSCQueue {
 private:
     struct Node {
         std::atomic<Node*> next{nullptr};
-        T value;
-        Node() = default;
+        alignas(T) std::byte storage[sizeof(T)];
+        bool hasValue{false};
+
+        Node() : hasValue(false) {}
 
         template <typename U>
             requires std::copyable<U> && std::convertible_to<U, T>
-        Node(const U& val) : value(val) {}
+        Node(const U& val) : hasValue(true) {
+            new (storage) T(val);
+        }
 
         template <typename U>
             requires std::movable<U> && std::convertible_to<U, T>
-        Node(U&& val) : value(std::move(val)) {}
+        Node(U&& val) : hasValue(true) {
+            new (storage) T(std::move(val));
+        }
+
+        T& getValue() {
+            return *reinterpret_cast<T*>(storage);
+        }
+
+        const T& getValue() const {
+            return *reinterpret_cast<const T*>(storage);
+        }
+
+        ~Node() {
+            if (hasValue) {
+                getValue().~T();
+            }
+        }
     };
 
     alignas(64) std::atomic<Node*> tail_;
@@ -73,7 +93,7 @@ public:
         if (!next) {
             return false;
         }
-        value = std::move(next->value);
+        value = std::move(next->getValue());
         Node* oldHead = head_;
         head_ = next;
         delete oldHead;
@@ -83,9 +103,15 @@ public:
 
     [[nodiscard]] std::vector<T> tryPopAll() {
         std::vector<T> result;
-        T value;
-        while (tryPop(value)) {
-            result.push_back(std::move(value));
+        // 直接遍历节点，避免要求 T 默认可构造
+        Node* next = head_->next.load(std::memory_order_acquire);
+        while (next) {
+            result.push_back(std::move(next->getValue()));
+            Node* oldHead = head_;
+            head_ = next;
+            delete oldHead;
+            size_.fetch_sub(1, std::memory_order_relaxed);
+            next = head_->next.load(std::memory_order_acquire);
         }
         return result;
     }

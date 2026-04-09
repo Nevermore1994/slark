@@ -75,8 +75,9 @@ public:
         return static_cast<uint32_t>(std::hash<std::thread::id>{}(worker_.get_id()));
     }
 
-    [[nodiscard]] inline std::string_view getName() const noexcept {
-        return std::string_view(name_);
+    [[nodiscard]] inline std::string getName() const noexcept {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return name_;
     }
 
     void setThreadName(std::string_view nameView) noexcept;
@@ -92,6 +93,8 @@ private:
 
     void runRepeatTasks() noexcept;
 
+    [[nodiscard]] bool checkRepeatTaskDue() noexcept;
+
     TimerTask wrapOneShotTask(Task task) noexcept;
 
     TimerId registerTimer(TimerId id) noexcept;
@@ -100,7 +103,7 @@ private:
     struct RepeatTask {
         TimerId id;
         std::chrono::milliseconds interval;
-        Task task;
+        std::shared_ptr<Task> task; // 使用 shared_ptr 避免悬空指针
         Time::TimePoint lastRunTime;
     };
 

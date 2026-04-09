@@ -18,8 +18,11 @@ namespace slark {
 using TimerTask = MoveOnlyFunction<void()>;
 
 struct TimerId {
-    static constexpr uint64_t kInvalidTimerId = 0;
+private:
     uint64_t id_ = kInvalidTimerId;
+
+public:
+    static constexpr uint64_t kInvalidTimerId = 0;
 
     TimerId() = default;
 
@@ -38,6 +41,14 @@ struct TimerId {
         return id_ != kInvalidTimerId;
     }
 
+    uint64_t id() const noexcept {
+        return id_;
+    }
+
+    [[nodiscard]] bool operator==(const TimerId& other) const noexcept {
+        return id_ == other.id_;
+    }
+
     static TimerId next() noexcept {
         static std::atomic<uint64_t> counter{1};
         return TimerId{counter.fetch_add(1, std::memory_order_relaxed)};
@@ -54,3 +65,11 @@ struct TimerEntry {
 };
 
 } // namespace slark
+
+// std::hash 特化，支持 TimerId 在 unordered_map/unordered_set 中使用
+template <>
+struct std::hash<slark::TimerId> {
+    size_t operator()(const slark::TimerId& id) const noexcept {
+        return std::hash<uint64_t>{}(id.id());
+    }
+};

@@ -4,6 +4,8 @@
 // Copyright (c) 2023 Nevermore All rights reserved.
 //
 #pragma once
+#include <algorithm>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -26,6 +28,22 @@ struct StringUtil {
 
     [[nodiscard]] static bool contains(std::string_view str, std::string_view sub) noexcept {
         return str.find(sub) != std::string_view::npos;
+    }
+
+    [[nodiscard]] static std::string toLower(std::string str) noexcept {
+        std::ranges::transform(str, str.begin(), [](unsigned char c) {
+            return std::tolower(c);
+        });
+        return str;
+    }
+
+    [[nodiscard]] static bool iequals(std::string_view a, std::string_view b) noexcept {
+        if (a.size() != b.size()) {
+            return false;
+        }
+        return std::ranges::equal(a, b, [](unsigned char ca, unsigned char cb) {
+            return std::tolower(ca) == std::tolower(cb);
+        });
     }
 };
 

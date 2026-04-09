@@ -29,8 +29,9 @@ void ThreadManager::monitorLoop(std::stop_token stopToken) {
     while (!stopToken.stop_requested()) {
         {
             std::unique_lock lock(mutex_);
+            // 等待变化通知（由 notify_one 唤醒）或 10s 超时
             cond_.wait_for(lock, stopToken, 10s, [] {
-                return false; // 仅等待超时或 stop
+                return false;
             });
         }
         if (stopToken.stop_requested()) {
@@ -41,18 +42,27 @@ void ThreadManager::monitorLoop(std::stop_token stopToken) {
 }
 
 void ThreadManager::add(const std::shared_ptr<Thread>& thread) noexcept {
-    std::unique_lock<std::mutex> lock(mutex_);
-    threadInfos_.emplace(thread->getId(), thread);
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        threadInfos_.emplace(thread->getId(), thread);
+    }
+    cond_.notify_one();
 }
 
 void ThreadManager::remove(const std::shared_ptr<Thread>& thread) noexcept {
-    std::unique_lock<std::mutex> lock(mutex_);
-    threadInfos_.erase(thread->getId());
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        threadInfos_.erase(thread->getId());
+    }
+    cond_.notify_one();
 }
 
 void ThreadManager::remove(std::thread::id id) noexcept {
-    std::unique_lock<std::mutex> lock(mutex_);
-    threadInfos_.erase(id);
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        threadInfos_.erase(id);
+    }
+    cond_.notify_one();
 }
 
 std::shared_ptr<Thread> ThreadManager::thisThread() noexcept {
@@ -67,8 +77,8 @@ std::shared_ptr<Thread> ThreadManager::thisThread() noexcept {
 
 void ThreadManager::reportRunInfo() noexcept {
     Time::TimePoint now = Time::nowTimeStamp();
-    LogI("ThreadManager report now:{}, now live size :{}", now.point(), threadInfos_.size());
     std::unique_lock<std::mutex> lock(mutex_);
+    LogI("ThreadManager report now:{}, now live size :{}", now.point(), threadInfos_.size());
     std::erase_if(threadInfos_, [now](auto& pair) {
         auto& [id, ptr] = pair;
         auto isExpired = ptr.expired();
@@ -76,7 +86,7 @@ void ThreadManager::reportRunInfo() noexcept {
             auto thread = ptr.lock();
             auto interval = now - thread->getLastRunTimeStamp();
             if (thread->isRunning() && interval >= kMaxThreadBlockTimeInterval) {
-                LogE("ThreadManager report [{}] is blocking.", thread->getName().data());
+                LogE("ThreadManager report [{}] is blocking.", std::string(thread->getName()));
             }
         }
         return isExpired;

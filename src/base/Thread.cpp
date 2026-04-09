@@ -99,7 +99,7 @@ TimerId Thread::scheduleRepeat(milliseconds interval, Task task) noexcept {
     repeatTasks_.push_back(RepeatTask{
         .id = id,
         .interval = interval,
-        .task = std::move(task),
+        .task = std::make_shared<Task>(std::move(task)),
         .lastRunTime = Time::TimePoint{0},
     });
     return id;
@@ -124,6 +124,14 @@ void Thread::process(std::stop_token stopToken) noexcept {
             setup();
         }
 
+        // 先检查 repeat task 是否到期
+        bool hasDueRepeatTask = checkRepeatTaskDue();
+
+        // 如果 repeat task 到期，优先处理
+        if (hasDueRepeatTask) {
+            runRepeatTasks();
+        }
+
         drainTaskQueue();
 
         bool running;
@@ -134,7 +142,6 @@ void Thread::process(std::stop_token stopToken) noexcept {
 
         if (running) {
             lastRunTimeStamp_ = Time::nowTimeStamp().point();
-            runRepeatTasks();
 
             auto waitTime = std::chrono::milliseconds::max();
             {
@@ -179,6 +186,21 @@ void Thread::process(std::stop_token stopToken) noexcept {
     }
 }
 
+bool Thread::checkRepeatTaskDue() noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto now = Time::nowTimeStamp();
+    for (const auto& rt : repeatTasks_) {
+        if (rt.lastRunTime.point() == 0) {
+            return true;
+        }
+        auto elapsed = (now - rt.lastRunTime).toMilliSeconds();
+        if (elapsed >= rt.interval) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void Thread::runRepeatTasks() noexcept {
     // 按 TimerId 收集到期任务，避免索引在并发删除下错位
     std::vector<TimerId> dueIds;
@@ -198,16 +220,16 @@ void Thread::runRepeatTasks() noexcept {
     }
 
     for (auto dueId : dueIds) {
-        Task* taskPtr = nullptr;
+        std::shared_ptr<Task> taskPtr;
         {
             std::lock_guard<std::mutex> lock(mutex_);
             auto it = std::ranges::find(repeatTasks_, dueId, &RepeatTask::id);
-            if (it != repeatTasks_.end() && it->task) {
-                taskPtr = &it->task;
+            if (it != repeatTasks_.end() && it->task && *it->task) {
+                taskPtr = it->task; // shared_ptr 引用计数增加，避免悬空
             }
         }
 
-        if (taskPtr) {
+        if (taskPtr && *taskPtr) {
             (*taskPtr)();
             std::lock_guard<std::mutex> lock(mutex_);
             auto it = std::ranges::find(repeatTasks_, dueId, &RepeatTask::id);

@@ -11,8 +11,10 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <thread>
+#include <unordered_map>
 
 namespace slark {
 
@@ -38,17 +40,32 @@ private:
 
     void tickLoop(std::stop_token stopToken);
 
+    void processLoopTask(TimerEntry& entry);
+
     TimerId addTimer(Time::TimePoint expireTime,
                      TimerTask func,
                      bool isLoop,
                      std::chrono::milliseconds interval) noexcept;
 
 private:
+    // 循环任务包装器，支持 move-only callable
+    struct LoopTaskWrapper {
+        TimerTask task;
+
+        void operator()() const {
+            if (task) {
+                task();
+            }
+        }
+    };
+
     std::mutex mutex_;
     std::condition_variable_any cond_;
     bool hasNewTimer_ = false;
     TimerPool timerPool_;
     std::jthread tickThread_;
+    // 循环任务存储：shared_ptr 支持多次执行
+    std::unordered_map<uint64_t, std::shared_ptr<LoopTaskWrapper>> loopTasks_;
 };
 
 } // namespace slark

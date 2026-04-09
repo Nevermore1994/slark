@@ -8,7 +8,6 @@
 
 #include "Data.hpp"
 #include "DataView.hpp"
-#include "Error.h"
 #include "NonCopyable.h"
 
 #include <expected>
@@ -266,9 +265,10 @@ public:
             bitBuffer_ = byte;
             bitPos_ = 8;
         }
-        uint8_t value = (bitBuffer_ >> (bitPos_ - 1)) & 0x01;
+        uint32_t value =
+            static_cast<uint32_t>(static_cast<uint8_t>((bitBuffer_ >> (bitPos_ - 1)) & 0x01));
         bitPos_--;
-        return value;
+        return static_cast<uint8_t>(value);
     }
 
     uint32_t readBits(uint32_t n) noexcept {
@@ -277,7 +277,7 @@ public:
         }
         uint32_t value = 0;
         for (uint32_t i = 0; i < n; ++i) {
-            value = (value << 1) | readBit();
+            value = (value << 1) | static_cast<uint32_t>(readBit());
         }
         return value;
     }
@@ -285,7 +285,7 @@ public:
 private:
     Buffer& buffer_;
     uint8_t bitBuffer_ = 0;
-    int8_t bitPos_ = 0;
+    uint8_t bitPos_ = 0;
 };
 
 } // namespace slark

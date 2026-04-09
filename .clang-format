@@ -1,0 +1,103 @@
+---
+# clang-format 配置文件
+# 基于 C++ 开发规则定制
+
+# 基础语言设置
+Language: Cpp
+Standard: c++20
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+NamespaceIndentation: None
+AccessModifierOffset: -4
+
+# 花括号风格 - 所有花括号不换行
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel: false
+  AfterClass: false
+  AfterControlStatement: Never
+  AfterEnum: false
+  AfterFunction: false
+  AfterNamespace: false
+  AfterUnion: false
+  BeforeCatch: false
+  BeforeElse: false
+  IndentBraces: false
+  SplitEmptyFunction: false
+  SplitEmptyRecord: true
+
+# 指针和引用对齐 - 靠近类型
+PointerAlignment: Left
+ReferenceAlignment: Left
+
+# Lambda 表达式格式化
+# Lambda 函数体缩进
+LambdaBodyIndentation: Signature
+# 允许在参数后换行
+AllowShortLambdasOnASingleLine: None
+
+# 函数调用参数
+BinPackArguments: false
+BinPackParameters: false
+AlignAfterOpenBracket: Align
+AllowAllArgumentsOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: false
+
+# 操作符周围空格
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: false
+SpacesInAngles: false
+SpacesInContainerLiterals: false
+SpacesInCStyleCastParentheses: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# 行长度
+ColumnLimit: 100
+# 强制长函数调用换行
+PenaltyBreakBeforeFirstCallParameter: 1
+# 增加返回值单独一行的惩罚，优先选择参数换行
+PenaltyReturnTypeOnItsOwnLine: 1000
+
+# 换行设置
+AlwaysBreakAfterReturnType: None
+AlwaysBreakTemplateDeclarations: Yes
+BreakBeforeBinaryOperators: None
+BreakBeforeTernaryOperators: true
+BreakConstructorInitializers: BeforeColon
+BreakInheritanceList: BeforeColon
+
+# 空格和空行
+MaxEmptyLinesToKeep: 1
+KeepEmptyLinesAtTheStartOfBlocks: false
+# 在函数定义/声明块之间插入空行
+SeparateDefinitionBlocks: Always
+
+# 注释对齐
+AlignTrailingComments: true
+
+# 宏定义续行符对齐 - 靠左对齐
+AlignEscapedNewlines: Left
+
+# 包含头文件排序
+SortIncludes: true
+IncludeBlocks: Regroup
+
+# 其他格式设置
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+InsertBraces: true
+AlwaysBreakBeforeMultilineStrings: false
+CompactNamespaces: false
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
+Cpp11BracedListStyle: true
+FixNamespaceComments: true
+IndentCaseLabels: true
+IndentPPDirectives: None
+ReflowComments: true

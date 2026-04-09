@@ -1,7 +1,6 @@
 //
 // Created by Nevermore on 2025/4/23.
 //
-
 #pragma once
 #include "Error.h"
 #include "Log.hpp"
@@ -9,6 +8,7 @@
 #include "NonCopyable.h"
 
 #include <algorithm>
+#include <atomic>
 #include <condition_variable>
 #include <future>
 #include <mutex>
@@ -17,7 +17,7 @@
 
 namespace slark {
 
-enum class TaskPriority : uint8_t {
+enum class JobPriority : uint8_t {
     High = 0,
     Normal = 1,
     Low = 2,
@@ -36,7 +36,6 @@ public:
             std::unique_lock<std::mutex> lock(mutex_);
             shutdown_ = true;
         }
-
         notEmpty_.notify_all();
         for (auto& worker : workers_) {
             if (worker.joinable()) {
@@ -47,47 +46,62 @@ public:
 
     template <class F, typename... Args>
     auto submit(F&& f, Args&&... args) -> Expected<std::future<std::invoke_result_t<F, Args...>>> {
-        return submitWithPriority(TaskPriority::Normal,
+        return submitWithPriority(JobPriority::Normal,
                                   std::forward<F>(f),
                                   std::forward<Args>(args)...);
     }
 
     template <class F, typename... Args>
-    auto submit(TaskPriority priority, F&& f, Args&&... args)
+    auto submit(JobPriority priority, F&& f, Args&&... args)
         -> Expected<std::future<std::invoke_result_t<F, Args...>>> {
         return submitWithPriority(priority, std::forward<F>(f), std::forward<Args>(args)...);
     }
 
-    /// fire-and-forget 任务投递
     template <class F, typename... Args>
         requires std::is_invocable_v<F, Args...>
-    Expected<void> postTask(F&& f, Args&&... args) {
-        return postTaskWithPriority(TaskPriority::Normal,
-                                    std::forward<F>(f),
-                                    std::forward<Args>(args)...);
+    Expected<void> postJob(F&& f, Args&&... args) {
+        return postJobWithPriority(JobPriority::Normal,
+                                   std::forward<F>(f),
+                                   std::forward<Args>(args)...);
     }
 
     template <class F, typename... Args>
         requires std::is_invocable_v<F, Args...>
-    Expected<void> postTask(TaskPriority priority, F&& f, Args&&... args) {
-        return postTaskWithPriority(priority, std::forward<F>(f), std::forward<Args>(args)...);
+    Expected<void> postJob(JobPriority priority, F&& f, Args&&... args) {
+        return postJobWithPriority(priority, std::forward<F>(f), std::forward<Args>(args)...);
     }
 
-    size_t getTaskCount() const noexcept {
+    size_t getJobCount() const noexcept {
         std::lock_guard<std::mutex> lock(mutex_);
-        return heap_.size();
+        return jobs_.size();
     }
 
     void waitForAll() noexcept {
         std::unique_lock<std::mutex> lock(mutex_);
-        allTasksDone_.wait(lock, [this] {
-            return heap_.empty() && activeThreads_ == 0;
+        allJobsDone_.wait(lock, [this] {
+            return jobs_.empty() && activeCount_ == 0;
         });
     }
 
+    // 移除所有待执行任务，并异步触发取消回调
+    // 取消回调在独立线程中执行，避免阻塞调用线程
     void clear() noexcept {
-        std::lock_guard<std::mutex> lock(mutex_);
-        heap_.clear();
+        std::vector<Job> jobsToCancel;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            jobsToCancel = std::move(jobs_);
+            jobs_.clear();
+        }
+        // 异步执行取消回调，避免阻塞调用线程
+        if (!jobsToCancel.empty()) {
+            postJob([jobs = std::move(jobsToCancel)]() {
+                for (auto& job : jobs) {
+                    if (job.cancel) {
+                        job.cancel();
+                    }
+                }
+            });
+        }
     }
 
     size_t getThreadCount() const noexcept {
@@ -99,13 +113,13 @@ public:
     }
 
 private:
-    struct PrioritizedTask {
-        TaskPriority priority;
+    struct Job {
+        JobPriority priority;
         uint64_t sequence;
         MoveOnlyFunction<void()> func;
+        MoveOnlyFunction<void()> cancel; // 取消回调，用于让 future 返回
 
-        // 小顶堆：优先级低值优先，同优先级 sequence 小的优先
-        bool operator>(const PrioritizedTask& other) const noexcept {
+        bool operator>(const Job& other) const noexcept {
             if (priority != other.priority) {
                 return static_cast<uint8_t>(priority) > static_cast<uint8_t>(other.priority);
             }
@@ -113,113 +127,105 @@ private:
         }
     };
 
-    static constexpr auto kHeapCmp = std::greater<>{};
-
     template <class F, typename... Args>
-    auto submitWithPriority(TaskPriority priority, F&& f, Args&&... args)
+    auto submitWithPriority(JobPriority priority, F&& f, Args&&... args)
         -> Expected<std::future<std::invoke_result_t<F, Args...>>>;
 
     template <class F, typename... Args>
         requires std::is_invocable_v<F, Args...>
-    Expected<void> postTaskWithPriority(TaskPriority priority, F&& f, Args&&... args);
+    Expected<void> postJobWithPriority(JobPriority priority, F&& f, Args&&... args);
 
-    void enqueueTask(PrioritizedTask task) noexcept;
-    PrioritizedTask dequeueTask() noexcept;
-
-    void initThreads();
     void workThread(std::stop_token stopToken);
 
     std::vector<std::jthread> workers_;
-    std::vector<PrioritizedTask> heap_;
-
+    std::vector<Job> jobs_;
     mutable std::mutex mutex_;
     std::condition_variable notEmpty_;
-    std::condition_variable allTasksDone_;
-
+    std::condition_variable allJobsDone_;
     std::atomic<bool> shutdown_{false};
-    std::atomic<size_t> activeThreads_{0};
+    std::atomic<size_t> activeCount_{0};
     std::atomic<uint64_t> sequenceCounter_{0};
-
-    ThreadPoolConfig config_;
 };
 
-inline ThreadPool::ThreadPool(const ThreadPoolConfig& config) : config_(config) {
-    initThreads();
-}
-
-inline void ThreadPool::initThreads() {
-    for (uint32_t i = 0; i < config_.threadCount; ++i) {
+inline ThreadPool::ThreadPool(const ThreadPoolConfig& config) {
+    for (uint32_t i = 0; i < config.threadCount; ++i) {
         workers_.emplace_back([this](std::stop_token token) {
             workThread(token);
         });
     }
 }
 
-inline void ThreadPool::enqueueTask(PrioritizedTask task) noexcept {
-    heap_.push_back(std::move(task));
-    std::push_heap(heap_.begin(), heap_.end(), kHeapCmp);
-}
-
-inline ThreadPool::PrioritizedTask ThreadPool::dequeueTask() noexcept {
-    std::pop_heap(heap_.begin(), heap_.end(), kHeapCmp);
-    auto task = std::move(heap_.back());
-    heap_.pop_back();
-    return task;
-}
-
 inline void ThreadPool::workThread(std::stop_token stopToken) {
     while (true) {
-        MoveOnlyFunction<void()> task;
+        MoveOnlyFunction<void()> job;
+
         {
             std::unique_lock<std::mutex> lock(mutex_);
             notEmpty_.wait(lock, [this, &stopToken] {
-                return (shutdown_ && heap_.empty()) || !heap_.empty() || stopToken.stop_requested();
+                return !jobs_.empty() || shutdown_ || stopToken.stop_requested();
             });
 
-            if ((shutdown_ || stopToken.stop_requested()) && heap_.empty()) {
+            if ((shutdown_ || stopToken.stop_requested()) && jobs_.empty()) {
                 return;
             }
 
-            auto pt = dequeueTask();
-            task = std::move(pt.func);
+            std::pop_heap(jobs_.begin(), jobs_.end(), std::greater<>{});
+            job = std::move(jobs_.back().func);
+            jobs_.pop_back();
         }
 
-        ++activeThreads_;
+        ++activeCount_;
         try {
-            task();
+            job();
         } catch (...) {
-            LogE("error in executing task");
+            LogE("error in executing job");
         }
-        --activeThreads_;
-        allTasksDone_.notify_all();
+        --activeCount_;
+
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (jobs_.empty() && activeCount_ == 0) {
+            allJobsDone_.notify_all();
+        }
     }
 }
 
 template <class F, typename... Args>
-auto ThreadPool::submitWithPriority(TaskPriority priority, F&& f, Args&&... args)
+auto ThreadPool::submitWithPriority(JobPriority priority, F&& f, Args&&... args)
     -> Expected<std::future<std::invoke_result_t<F, Args...>>> {
     using ReturnType = std::invoke_result_t<F, Args...>;
 
-    auto task = std::make_shared<std::packaged_task<ReturnType()>>(
+    auto packagedJob = std::make_shared<std::packaged_task<ReturnType()>>(
         [fn = std::forward<F>(f), ... capturedArgs = std::forward<Args>(args)]() mutable {
             return fn(std::move(capturedArgs)...);
         });
 
-    std::future<ReturnType> future = task->get_future();
+    std::future<ReturnType> future = packagedJob->get_future();
     {
         std::unique_lock<std::mutex> lock(mutex_);
         if (shutdown_) {
             LogE("The thread pool is exiting");
             return std::unexpected(DataError::InvalidOperation);
         }
-        enqueueTask(PrioritizedTask{
+
+        jobs_.push_back(Job{
             .priority = priority,
             .sequence = sequenceCounter_.fetch_add(1, std::memory_order_relaxed),
             .func =
-                [task]() {
-                    (*task)();
+                [packagedJob]() {
+                    (*packagedJob)();
+                },
+            .cancel =
+                [packagedJob]() {
+                    // 设置异常状态，让 future.get() 抛出异常而非执行任务
+                    auto placeholder =
+                        std::make_shared<std::packaged_task<ReturnType()>>([]() -> ReturnType {
+                            throw std::runtime_error("Job cancelled");
+                        });
+                    *packagedJob = std::move(*placeholder);
+                    (*packagedJob)();
                 },
         });
+        std::push_heap(jobs_.begin(), jobs_.end(), std::greater<>{});
     }
 
     notEmpty_.notify_one();
@@ -228,21 +234,25 @@ auto ThreadPool::submitWithPriority(TaskPriority priority, F&& f, Args&&... args
 
 template <class F, typename... Args>
     requires std::is_invocable_v<F, Args...>
-Expected<void> ThreadPool::postTaskWithPriority(TaskPriority priority, F&& f, Args&&... args) {
+Expected<void> ThreadPool::postJobWithPriority(JobPriority priority, F&& f, Args&&... args) {
     {
         std::unique_lock<std::mutex> lock(mutex_);
         if (shutdown_) {
             return std::unexpected(DataError::InvalidOperation);
         }
-        enqueueTask(PrioritizedTask{
+
+        jobs_.push_back(Job{
             .priority = priority,
             .sequence = sequenceCounter_.fetch_add(1, std::memory_order_relaxed),
             .func =
                 [fn = std::forward<F>(f), ... capturedArgs = std::forward<Args>(args)]() mutable {
                     fn(std::move(capturedArgs)...);
                 },
+            .cancel = {},
         });
+        std::push_heap(jobs_.begin(), jobs_.end(), std::greater<>{});
     }
+
     notEmpty_.notify_one();
     return {};
 }

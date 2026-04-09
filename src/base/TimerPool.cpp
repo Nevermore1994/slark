@@ -96,6 +96,13 @@ void TimerPool::collectExpired(std::vector<TimerEntry>& expired) noexcept {
     }
 
     auto targetTick = now - startMs_;
+    // 限制单次推进的 tick 数量，避免时间跳变时卡顿
+    constexpr uint64_t kMaxTicksPerCall = 1024;
+    auto maxTick = currentTick_ + kMaxTicksPerCall;
+    if (targetTick > maxTick) {
+        targetTick = maxTick;
+    }
+
     // 逐 tick 推进，处理 [currentTick_, targetTick] 范围内的所有 slot
     while (currentTick_ < targetTick) {
         auto idx = static_cast<uint32_t>(currentTick_ % kWheelSize);
@@ -152,7 +159,8 @@ void TimerPool::reinsert(TimerEntry entry) noexcept {
     auto id = entry.id;
     auto expMs = static_cast<uint64_t>(entry.expireTime.toMilliSeconds().count());
     earliestExpireMs_ = std::min(earliestExpireMs_, expMs);
-    timers_.emplace(id, std::move(entry));
+    // 显式覆盖，避免静默失败
+    timers_.insert_or_assign(id, std::move(entry));
     placeInWheel({id, expMs});
 }
 

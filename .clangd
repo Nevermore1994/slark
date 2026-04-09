@@ -1,0 +1,17 @@
+CompileFlags:
+  Add:
+    - "-std=c++23"
+    - "-I."
+    - "-Isrc"
+    - "-Isrc/base"
+    - "-Isrc/core"
+    - "-Isrc/core/public"
+    - "-Isrc/core/demuxer"
+    - "-Isrc/core/audio"
+    - "-Isrc/core/codec"
+    - "-Isrc/core/video"
+    - "-Isrc/http/include"
+  Compiler: clang++
+
+Diagnostics:
+  UnusedIncludes: None
