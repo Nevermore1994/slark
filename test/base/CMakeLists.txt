@@ -4,13 +4,15 @@ include(GoogleTest)
 
 PROJECT(Base_test)
 
-set(TEST_FILE_LISTS *.cpp)
+set(TEST_FILE_LISTS
+        *.cpp
+        AsyncGeneratorTest.cpp
+)
 file(GLOB TEST_FILES ${TEST_FILE_LISTS})
 add_executable(${PROJECT_NAME} ${TEST_FILES})
 
 target_link_libraries(${PROJECT_NAME}
         slark_base
-        gtest
         gtest_main
         pthread)
 

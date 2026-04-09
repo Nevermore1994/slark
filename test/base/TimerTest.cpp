@@ -40,6 +40,36 @@ TEST(Timer, loop) {
     TimerManager::shareInstance().cancel(timerId);
 }
 
+TEST(Timer, exceptionDoesNotKillThread) {
+    // 异常不应导致 TimerManager 线程终止
+    std::atomic<int32_t> counter{0};
+
+    // 第一个定时器会抛出异常
+    auto id1 = TimerManager::shareInstance().runAfter(10ms, [&counter]() {
+        counter.fetch_add(1);
+        throw std::runtime_error("test exception");
+    });
+
+    // 第二个定时器在第一个之后执行
+    auto id2 = TimerManager::shareInstance().runAfter(50ms, [&counter]() {
+        counter.fetch_add(1);
+    });
+
+    std::this_thread::sleep_for(200ms);
+
+    // 两个任务都应该执行（异常不应阻止第二个任务）
+    EXPECT_EQ(counter.load(), 2);
+
+    // 再添加一个定时器验证 TimerManager 仍然工作
+    std::atomic<bool> thirdExecuted{false};
+    TimerManager::shareInstance().runAfter(10ms, [&thirdExecuted]() {
+        thirdExecuted.store(true);
+    });
+
+    std::this_thread::sleep_for(100ms);
+    EXPECT_TRUE(thirdExecuted.load());
+}
+
 namespace {
 
 TimerId addAfter(TimerPool& pool, std::chrono::milliseconds ms, TimerTask func) {
@@ -181,10 +211,10 @@ TEST(TimerPool, timerIdUnique) {
     }
 
     std::sort(ids.begin(), ids.end(), [](const TimerId& a, const TimerId& b) {
-        return a.id_ < b.id_;
+        return a.id() < b.id();
     });
     auto last = std::unique(ids.begin(), ids.end(), [](const TimerId& a, const TimerId& b) {
-        return a.id_ == b.id_;
+        return a.id() == b.id();
     });
     ASSERT_EQ(std::distance(ids.begin(), last), 100);
 }

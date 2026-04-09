@@ -46,7 +46,7 @@ TEST(MPSCQueueTest, MultiProducerSingleConsumer) {
     std::thread consumer([&]() {
         int totalItems = kThreads * kItemsPerThread;
         int val;
-        while (results.size() < totalItems) {
+        while (static_cast<int>(results.size()) < totalItems) {
             if (queue.tryPop(val)) {
                 results.insert(val);
             }
@@ -120,9 +120,10 @@ TEST(MPSCQueueTest, StressTest_MultiProducerSingleConsumer) {
 
     ASSERT_EQ(poppedItems.load(), kTotalItems);
     for (int tid = 0; tid < kProducerThreads; ++tid) {
-        ASSERT_EQ(resultMap[tid].size(), kItemsPerProducer);
+        ASSERT_EQ(resultMap[tid].size(), static_cast<size_t>(kItemsPerProducer));
         for (int i = 0; i < kItemsPerProducer; ++i) {
-            EXPECT_EQ(resultMap[tid][i], i) << "Thread " << tid << " value mismatch at index " << i;
+            EXPECT_EQ(resultMap[tid][static_cast<size_t>(i)], i)
+                << "Thread " << tid << " value mismatch at index " << i;
         }
     }
 }
@@ -158,16 +159,16 @@ TEST(MPSCQueueTest, PushNullptrSharedPtr) {
 
 TEST(MPSCQueueTest, LargeVolume) {
     MPSCQueue<int> queue;
-    constexpr int N = 100000;
-    for (int i = 0; i < N; ++i) {
+    constexpr int kN = 100000;
+    for (int i = 0; i < kN; ++i) {
         queue.push(i);
     }
     int sum = 0, out;
-    for (int i = 0; i < N; ++i) {
+    for (int i = 0; i < kN; ++i) {
         EXPECT_TRUE(queue.tryPop(out));
         sum += out;
     }
-    EXPECT_EQ(sum, (N - 1) * N / 2);
+    EXPECT_EQ(sum, static_cast<int64_t>(kN - 1) * kN / 2);
     EXPECT_FALSE(queue.tryPop(out));
 }
 
@@ -213,7 +214,7 @@ struct ThrowOnCopy {
 
     ThrowOnCopy& operator=(const ThrowOnCopy&) = delete;
 
-    ThrowOnCopy& operator=(ThrowOnCopy&& rhs) {
+    ThrowOnCopy& operator=(ThrowOnCopy&&) {
         return *this;
     }
 };
@@ -316,7 +317,7 @@ TEST(MPSCQueueTest, TryPopAll) {
     auto all = queue.tryPopAll();
     EXPECT_EQ(all.size(), 100u);
     for (int i = 0; i < 100; ++i) {
-        EXPECT_EQ(all[i], i);
+        EXPECT_EQ(all[static_cast<size_t>(i)], i);
     }
     EXPECT_TRUE(queue.empty());
 }
@@ -339,7 +340,7 @@ TEST(MPSCQueueTest, SizeTracking) {
         queue.tryPop(out);
     }
     EXPECT_EQ(queue.size(), 30u);
-    queue.tryPopAll();
+    (void)queue.tryPopAll();
     EXPECT_EQ(queue.size(), 0u);
 }
 
@@ -362,4 +363,54 @@ TEST(MPSCQueueTest, TryPopAllMultiProducer) {
     EXPECT_EQ(all.size(), kThreads * kItemsPerThread);
     std::unordered_set<int> unique(all.begin(), all.end());
     EXPECT_EQ(unique.size(), kThreads * kItemsPerThread);
+}
+
+// 测试非默认可构造类型
+struct NonDefaultConstructible {
+    int value;
+
+    explicit NonDefaultConstructible(int v) : value(v) {}
+
+    NonDefaultConstructible(const NonDefaultConstructible&) = delete;
+
+    NonDefaultConstructible(NonDefaultConstructible&& other) noexcept : value(other.value) {
+        other.value = -1;
+    }
+
+    NonDefaultConstructible& operator=(const NonDefaultConstructible&) = delete;
+
+    NonDefaultConstructible& operator=(NonDefaultConstructible&& other) noexcept {
+        value = other.value;
+        other.value = -1;
+        return *this;
+    }
+};
+
+TEST(MPSCQueueTest, NonDefaultConstructibleType) {
+    // 验证非默认可构造类型可以编译和使用
+    MPSCQueue<NonDefaultConstructible> queue;
+    queue.push(NonDefaultConstructible(42));
+    queue.push(NonDefaultConstructible(100));
+
+    // tryPop 需要默认构造，所以不测试
+    auto all = queue.tryPopAll();
+    EXPECT_EQ(all.size(), 2u);
+    EXPECT_EQ(all[0].value, 42);
+    EXPECT_EQ(all[1].value, 100);
+}
+
+TEST(MPSCQueueTest, TryPopAllWithNonDefaultConstructible) {
+    MPSCQueue<NonDefaultConstructible> queue;
+    constexpr int32_t kCount = 100;
+
+    for (int32_t i = 0; i < kCount; ++i) {
+        queue.push(NonDefaultConstructible(i));
+    }
+
+    auto all = queue.tryPopAll();
+    EXPECT_EQ(all.size(), static_cast<size_t>(kCount));
+
+    for (int32_t i = 0; i < kCount; ++i) {
+        EXPECT_EQ(all[static_cast<size_t>(i)].value, i);
+    }
 }

@@ -4,11 +4,12 @@
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
 
+#include "IReader.h"
+#include "Reader.h"
+#include "Writer.hpp"
+
 #include <gtest/gtest.h>
 #include <utility>
-#include "IReader.h"
-#include "Writer.hpp"
-#include "Reader.h"
 
 using namespace slark;
 
@@ -48,9 +49,16 @@ TEST(Reader, open) {
     auto writer = std::make_unique<Writer>();
     writer->open("test_read.txt");
     ASSERT_EQ(writer->isOpen(), true);
-    auto str = "This section provides definitions for the specific terminology and the concepts used when describing the C++ programming language.\n"
-               "A C++ program is a sequence of text files (typically header and source files) that contain declarations. They undergo translation to become an executable program, which is executed when the C++ implementation calls its main function.\n"
-               "Certain words in a C++ program have special meaning, and these are known as keywords. Others can be used as identifiers. Comments are ignored during translation. C++ programs also contain literals, the values of characters inside them are determined by character sets and encodings. Certain characters in the program have to be represented with escape sequences.\n"
+    auto str = "This section provides definitions for the specific terminology and the concepts "
+               "used when describing the C++ programming language.\n"
+               "A C++ program is a sequence of text files (typically header and source files) that "
+               "contain declarations. They undergo translation to become an executable program, "
+               "which is executed when the C++ implementation calls its main function.\n"
+               "Certain words in a C++ program have special meaning, and these are known as "
+               "keywords. Others can be used as identifiers. Comments are ignored during "
+               "translation. C++ programs also contain literals, the values of characters inside "
+               "them are determined by character sets and encodings. Certain characters in the "
+               "program have to be represented with escape sequences.\n"
                ""s;
     writer->write(str);
     std::this_thread::sleep_for(100ms);
@@ -102,4 +110,38 @@ TEST(FileUtil, create) {
     ASSERT_EQ(File::isDirExist(testPath), false);
     ASSERT_EQ(File::createDir(testPath), true);
     ASSERT_EQ(File::removeDir(testRootPath), true);
+}
+
+TEST(File, BackFillByteBoundary) {
+    // 测试 backFillByte 边界情况，不应下溢
+    const std::string kTestFile = "test_backfill.txt";
+    {
+        File::WriteFile writer(kTestFile);
+        ASSERT_TRUE(writer.isOpen());
+        writer.write("A");
+        writer.flush();
+    }
+
+    File::ReadFile reader(kTestFile);
+    ASSERT_TRUE(reader.isOpen());
+
+    // 读取一个字节
+    auto data = reader.read(1);
+    ASSERT_TRUE(data);
+    EXPECT_EQ(data->size(), 1u);
+
+    // backFillByte
+    reader.backFillByte('A');
+
+    // 再读取
+    data = reader.read(1);
+    ASSERT_TRUE(data);
+    EXPECT_EQ(data->size(), 1u);
+
+    // 此时 readSize_ 应该是 0，再 backFillByte 不应下溢
+    reader.backFillByte('B');
+    // 验证不会崩溃
+    SUCCEED();
+
+    File::deleteFile(kTestFile);
 }

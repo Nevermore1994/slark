@@ -199,3 +199,41 @@ TEST(Thread, cancelSchedule) {
     // counter should not increase after cancel
     ASSERT_LE(counter.load(), countBeforeCancel + 1);
 }
+
+TEST(Thread, repeatTaskNoDanglingPointer) {
+    // 测试并发取消不会导致悬空指针
+    using namespace std::chrono;
+    std::atomic<int32_t> counter{0};
+    std::atomic<bool> stopFlag{false};
+
+    auto thread = Thread::create(Util::genRandomName("thread"));
+    std::vector<TimerId> timerIds;
+
+    for (int i = 0; i < 10; ++i) {
+        timerIds.push_back(thread->scheduleRepeat(5ms, [&counter, &stopFlag]() {
+            if (!stopFlag.load()) {
+                counter.fetch_add(1);
+                std::this_thread::sleep_for(1ms); // 模拟耗时任务
+            }
+        }));
+    }
+    thread->start();
+
+    std::this_thread::sleep_for(30ms);
+
+    // 并发取消所有定时器
+    std::vector<std::jthread> cancelThreads;
+    for (auto id : timerIds) {
+        cancelThreads.emplace_back([thread, id]() {
+            thread->cancelSchedule(id);
+        });
+    }
+    for (auto& t : cancelThreads) {
+        t.join();
+    }
+
+    stopFlag.store(true);
+    std::this_thread::sleep_for(20ms);
+    // 测试不应崩溃
+    SUCCEED();
+}

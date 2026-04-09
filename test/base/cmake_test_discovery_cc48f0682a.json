@@ -1,0 +1,2481 @@
+{
+  "tests": 441,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "AsyncGeneratorTest",
+      "tests": 34,
+      "testsuite": [
+        {
+          "name": "BasicGenerator",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 21
+        },
+        {
+          "name": "EmptyGenerator",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 47
+        },
+        {
+          "name": "SingleValueGenerator",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 61
+        },
+        {
+          "name": "MoveOnlyType",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 79
+        },
+        {
+          "name": "IsValid",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 102
+        },
+        {
+          "name": "IsDone",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 114
+        },
+        {
+          "name": "Transform",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 134
+        },
+        {
+          "name": "TransformStringType",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 164
+        },
+        {
+          "name": "Filter",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 193
+        },
+        {
+          "name": "FilterAll",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 224
+        },
+        {
+          "name": "Take",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 252
+        },
+        {
+          "name": "TakeZero",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 280
+        },
+        {
+          "name": "TakeMoreThanAvailable",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 297
+        },
+        {
+          "name": "Drop",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 322
+        },
+        {
+          "name": "DropAll",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 350
+        },
+        {
+          "name": "TakeWhile",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 368
+        },
+        {
+          "name": "DropWhile",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 399
+        },
+        {
+          "name": "Enumerate",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 430
+        },
+        {
+          "name": "Fold",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 462
+        },
+        {
+          "name": "FoldStringConcat",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 481
+        },
+        {
+          "name": "Count",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 501
+        },
+        {
+          "name": "CountEmpty",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 517
+        },
+        {
+          "name": "Find",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 532
+        },
+        {
+          "name": "FindNotFound",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 553
+        },
+        {
+          "name": "AnyTrue",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 572
+        },
+        {
+          "name": "AnyFalse",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 590
+        },
+        {
+          "name": "AllTrue",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 609
+        },
+        {
+          "name": "AllFalse",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 627
+        },
+        {
+          "name": "ForEach",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 646
+        },
+        {
+          "name": "CollectVector",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 670
+        },
+        {
+          "name": "ChainedOperations",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 691
+        },
+        {
+          "name": "ComplexPipeline",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 714
+        },
+        {
+          "name": "ExceptionInGenerator",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 738
+        },
+        {
+          "name": "ConcurrentAccess",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/AsyncGeneratorTest.cpp",
+          "line": 758
+        }
+      ]
+    },
+    {
+      "name": "Base",
+      "tests": 10,
+      "testsuite": [
+        {
+          "name": "IsEqualDouble",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/BaseTest.cpp",
+          "line": 10
+        },
+        {
+          "name": "IsEqualFloat",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/BaseTest.cpp",
+          "line": 16
+        },
+        {
+          "name": "IsEqualNearEpsilon",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/BaseTest.cpp",
+          "line": 21
+        },
+        {
+          "name": "IsEqualCustomEpsilon",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/BaseTest.cpp",
+          "line": 27
+        },
+        {
+          "name": "IsEqualOrGreater",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/BaseTest.cpp",
+          "line": 32
+        },
+        {
+          "name": "IsEqualOrLess",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/BaseTest.cpp",
+          "line": 38
+        },
+        {
+          "name": "IsEqualNegativeValues",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/BaseTest.cpp",
+          "line": 44
+        },
+        {
+          "name": "IsEqualOrGreaterNegative",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/BaseTest.cpp",
+          "line": 49
+        },
+        {
+          "name": "IsEqualOrLessNegative",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/BaseTest.cpp",
+          "line": 54
+        },
+        {
+          "name": "IsEqualSpecialValues",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/BaseTest.cpp",
+          "line": 59
+        }
+      ]
+    },
+    {
+      "name": "BufferTest",
+      "tests": 8,
+      "testsuite": [
+        {
+          "name": "CheckMinSize",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/BufferTest.cpp",
+          "line": 13
+        },
+        {
+          "name": "Append",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/BufferTest.cpp",
+          "line": 24
+        },
+        {
+          "name": "ReadByte",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/BufferTest.cpp",
+          "line": 37
+        },
+        {
+          "name": "ReadData",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/BufferTest.cpp",
+          "line": 64
+        },
+        {
+          "name": "ReadString",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/BufferTest.cpp",
+          "line": 80
+        },
+        {
+          "name": "ReadLine",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/BufferTest.cpp",
+          "line": 95
+        },
+        {
+          "name": "BitReadView",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/BufferTest.cpp",
+          "line": 110
+        },
+        {
+          "name": "DataViewIntegration",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/BufferTest.cpp",
+          "line": 125
+        }
+      ]
+    },
+    {
+      "name": "CTime",
+      "tests": 5,
+      "testsuite": [
+        {
+          "name": "equal",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CTimeTest.cpp",
+          "line": 12
+        },
+        {
+          "name": "add",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CTimeTest.cpp",
+          "line": 20
+        },
+        {
+          "name": "sub",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CTimeTest.cpp",
+          "line": 28
+        },
+        {
+          "name": "less",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CTimeTest.cpp",
+          "line": 35
+        },
+        {
+          "name": "gerater",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CTimeTest.cpp",
+          "line": 41
+        }
+      ]
+    },
+    {
+      "name": "CTimeRange",
+      "tests": 3,
+      "testsuite": [
+        {
+          "name": "equal",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CTimeTest.cpp",
+          "line": 47
+        },
+        {
+          "name": "overloop",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CTimeTest.cpp",
+          "line": 53
+        },
+        {
+          "name": "less",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CTimeTest.cpp",
+          "line": 73
+        }
+      ]
+    },
+    {
+      "name": "ChannelTest",
+      "tests": 10,
+      "testsuite": [
+        {
+          "name": "CheckType",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ChannelTest.cpp",
+          "line": 16
+        },
+        {
+          "name": "PtrSendSingleMessage",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ChannelTest.cpp",
+          "line": 25
+        },
+        {
+          "name": "Receive",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ChannelTest.cpp",
+          "line": 52
+        },
+        {
+          "name": "PtrSendMultiMessage",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ChannelTest.cpp",
+          "line": 73
+        },
+        {
+          "name": "RefPtrSendMultiMessage",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ChannelTest.cpp",
+          "line": 95
+        },
+        {
+          "name": "Close",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ChannelTest.cpp",
+          "line": 118
+        },
+        {
+          "name": "Range",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ChannelTest.cpp",
+          "line": 145
+        },
+        {
+          "name": "MultiThread",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ChannelTest.cpp",
+          "line": 163
+        },
+        {
+          "name": "BitwiseCopy",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ChannelTest.cpp",
+          "line": 279
+        },
+        {
+          "name": "ImplicitConversion",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ChannelTest.cpp",
+          "line": 296
+        }
+      ]
+    },
+    {
+      "name": "ClockTest",
+      "tests": 5,
+      "testsuite": [
+        {
+          "name": "InitialState",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ClockTest.cpp",
+          "line": 14
+        },
+        {
+          "name": "SetTime",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ClockTest.cpp",
+          "line": 19
+        },
+        {
+          "name": "StartPauseReset",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ClockTest.cpp",
+          "line": 28
+        },
+        {
+          "name": "MultiThreadedStartPause",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ClockTest.cpp",
+          "line": 46
+        },
+        {
+          "name": "MultiThreadedReset",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ClockTest.cpp",
+          "line": 67
+        }
+      ]
+    },
+    {
+      "name": "CoroutineTest",
+      "tests": 8,
+      "testsuite": [
+        {
+          "name": "CreateAndResume",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 20
+        },
+        {
+          "name": "ReturnValue",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 33
+        },
+        {
+          "name": "StringReturn",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 43
+        },
+        {
+          "name": "MoveOnlyReturn",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 53
+        },
+        {
+          "name": "ExceptionHandling",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 63
+        },
+        {
+          "name": "IsValid",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 73
+        },
+        {
+          "name": "Cancel",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 84
+        },
+        {
+          "name": "MoveSemantics",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 93
+        }
+      ]
+    },
+    {
+      "name": "CancellationTokenTest",
+      "tests": 4,
+      "testsuite": [
+        {
+          "name": "DefaultNotCancelled",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 110
+        },
+        {
+          "name": "Cancel",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 116
+        },
+        {
+          "name": "CopySharesState",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 123
+        },
+        {
+          "name": "MultipleCancellations",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 131
+        }
+      ]
+    },
+    {
+      "name": "CoroutineSchedulerTest",
+      "tests": 5,
+      "testsuite": [
+        {
+          "name": "SingletonInstance",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 139
+        },
+        {
+          "name": "ScheduleImmediate",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 145
+        },
+        {
+          "name": "ScheduleAfter",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 160
+        },
+        {
+          "name": "CancelTimerByTimerId",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 178
+        },
+        {
+          "name": "ScheduleCoroutineTemplate",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 195
+        }
+      ]
+    },
+    {
+      "name": "ThreadPoolBasicTest",
+      "tests": 7,
+      "testsuite": [
+        {
+          "name": "PostJob",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 214
+        },
+        {
+          "name": "MultipleJobs",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 227
+        },
+        {
+          "name": "SubmitWithFuture",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 241
+        },
+        {
+          "name": "Clear",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 254
+        },
+        {
+          "name": "JobPriority",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 267
+        },
+        {
+          "name": "GetThreadCount",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 295
+        },
+        {
+          "name": "IsShutdown",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 303
+        }
+      ]
+    },
+    {
+      "name": "CoroutineIntegrationTest",
+      "tests": 4,
+      "testsuite": [
+        {
+          "name": "AsyncOperation",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 309
+        },
+        {
+          "name": "ChainedCoroutines",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 321
+        },
+        {
+          "name": "CancellationTokenInCoroutine",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 337
+        },
+        {
+          "name": "CoroutineWithThreadPool",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 369
+        }
+      ]
+    },
+    {
+      "name": "TimerIdTest",
+      "tests": 3,
+      "testsuite": [
+        {
+          "name": "InvalidTimerId",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 387
+        },
+        {
+          "name": "NextGeneratesUniqueIds",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 393
+        },
+        {
+          "name": "Comparison",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/CoroutineTest.cpp",
+          "line": 399
+        }
+      ]
+    },
+    {
+      "name": "Data",
+      "tests": 9,
+      "testsuite": [
+        {
+          "name": "release",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataTest.cpp",
+          "line": 15
+        },
+        {
+          "name": "detachData",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataTest.cpp",
+          "line": 22
+        },
+        {
+          "name": "copy",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataTest.cpp",
+          "line": 32
+        },
+        {
+          "name": "append",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataTest.cpp",
+          "line": 67
+        },
+        {
+          "name": "reset",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataTest.cpp",
+          "line": 99
+        },
+        {
+          "name": "safeOperations",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataTest.cpp",
+          "line": 106
+        },
+        {
+          "name": "factoryMethods",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataTest.cpp",
+          "line": 130
+        },
+        {
+          "name": "comparison",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataTest.cpp",
+          "line": 149
+        },
+        {
+          "name": "rangeBasedFor",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataTest.cpp",
+          "line": 159
+        }
+      ]
+    },
+    {
+      "name": "DataView",
+      "tests": 55,
+      "testsuite": [
+        {
+          "name": "basicOperations",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataTest.cpp",
+          "line": 168
+        },
+        {
+          "name": "findOperations",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataTest.cpp",
+          "line": 184
+        },
+        {
+          "name": "numberOperations",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataTest.cpp",
+          "line": 200
+        },
+        {
+          "name": "literal",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataTest.cpp",
+          "line": 229
+        },
+        {
+          "name": "DefaultConstruction",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 11
+        },
+        {
+          "name": "ConstructFromStringView",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 18
+        },
+        {
+          "name": "ConstructFromPointerAndSize",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 25
+        },
+        {
+          "name": "FromString",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 32
+        },
+        {
+          "name": "FromCString",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 37
+        },
+        {
+          "name": "FromArray",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 43
+        },
+        {
+          "name": "UserDefinedLiteral",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 50
+        },
+        {
+          "name": "ElementAccess",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 56
+        },
+        {
+          "name": "AtSafe",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 64
+        },
+        {
+          "name": "Subview",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 74
+        },
+        {
+          "name": "SubviewOutOfRange",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 83
+        },
+        {
+          "name": "First",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 89
+        },
+        {
+          "name": "FirstExceedsSize",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 95
+        },
+        {
+          "name": "Last",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 101
+        },
+        {
+          "name": "LastExceedsSize",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 107
+        },
+        {
+          "name": "ToString",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 113
+        },
+        {
+          "name": "StartsWith",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 119
+        },
+        {
+          "name": "EndsWith",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 126
+        },
+        {
+          "name": "Contains",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 133
+        },
+        {
+          "name": "ContainsLargerNeedle",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 141
+        },
+        {
+          "name": "FindByte",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 146
+        },
+        {
+          "name": "FindChar",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 152
+        },
+        {
+          "name": "FindDataView",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 158
+        },
+        {
+          "name": "FindStringView",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 165
+        },
+        {
+          "name": "FindWithOffset",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 170
+        },
+        {
+          "name": "Rfind",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 177
+        },
+        {
+          "name": "RfindWithPos",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 184
+        },
+        {
+          "name": "RfindEmpty",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 189
+        },
+        {
+          "name": "Compare",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 194
+        },
+        {
+          "name": "CompareStringView",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 201
+        },
+        {
+          "name": "CompareEmpty",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 206
+        },
+        {
+          "name": "StartWith",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 212
+        },
+        {
+          "name": "Substr",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 218
+        },
+        {
+          "name": "Split",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 227
+        },
+        {
+          "name": "RemoveSpace",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 237
+        },
+        {
+          "name": "RemovePrefix",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 243
+        },
+        {
+          "name": "RemovePrefixNoMatch",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 249
+        },
+        {
+          "name": "Equality",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 255
+        },
+        {
+          "name": "Ordering",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 263
+        },
+        {
+          "name": "Iterators",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 270
+        },
+        {
+          "name": "ToNumberLE",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 279
+        },
+        {
+          "name": "ToNumberBE",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 287
+        },
+        {
+          "name": "ToNumberTooSmall",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 295
+        },
+        {
+          "name": "ReadNumberLE",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 302
+        },
+        {
+          "name": "ReadNumberBE",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 310
+        },
+        {
+          "name": "ReadNumberPartialBytes",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 318
+        },
+        {
+          "name": "ReadNumberZeroBytes",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 326
+        },
+        {
+          "name": "ReadNumberTooManyBytes",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 333
+        },
+        {
+          "name": "Hash",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 340
+        },
+        {
+          "name": "CopyAndMove",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 350
+        },
+        {
+          "name": "EmptyOperations",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataViewTest.cpp",
+          "line": 359
+        }
+      ]
+    },
+    {
+      "name": "DataError",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "errorHandling",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/DataTest.cpp",
+          "line": 213
+        }
+      ]
+    },
+    {
+      "name": "EventLoopTest",
+      "tests": 10,
+      "testsuite": [
+        {
+          "name": "CreateAndRun",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/EventLoopTest.cpp",
+          "line": 41
+        },
+        {
+          "name": "RegisterFd",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/EventLoopTest.cpp",
+          "line": 57
+        },
+        {
+          "name": "SetReadable",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/EventLoopTest.cpp",
+          "line": 63
+        },
+        {
+          "name": "SetWritable",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/EventLoopTest.cpp",
+          "line": 73
+        },
+        {
+          "name": "RegisterContinuation",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/EventLoopTest.cpp",
+          "line": 83
+        },
+        {
+          "name": "EventInterestConvergence",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/EventLoopTest.cpp",
+          "line": 94
+        },
+        {
+          "name": "MultipleInterests",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/EventLoopTest.cpp",
+          "line": 122
+        },
+        {
+          "name": "UnregisterAllContinuations",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/EventLoopTest.cpp",
+          "line": 142
+        },
+        {
+          "name": "NativeFd",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/EventLoopTest.cpp",
+          "line": 158
+        },
+        {
+          "name": "StopIdempotent",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/EventLoopTest.cpp",
+          "line": 164
+        }
+      ]
+    },
+    {
+      "name": "Writer",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "open",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/FileTest.cpp",
+          "line": 16
+        },
+        {
+          "name": "getPath",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/FileTest.cpp",
+          "line": 25
+        }
+      ]
+    },
+    {
+      "name": "Reader",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "getPath",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/FileTest.cpp",
+          "line": 33
+        },
+        {
+          "name": "open",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/FileTest.cpp",
+          "line": 45
+        }
+      ]
+    },
+    {
+      "name": "File",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "isExist",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/FileTest.cpp",
+          "line": 91
+        },
+        {
+          "name": "BackFillByteBoundary",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/FileTest.cpp",
+          "line": 115
+        }
+      ]
+    },
+    {
+      "name": "FileUtil",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "create",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/FileTest.cpp",
+          "line": 106
+        }
+      ]
+    },
+    {
+      "name": "MPSCQueueTest",
+      "tests": 21,
+      "testsuite": [
+        {
+          "name": "SingleThreadPushPop",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MPSCQueueTestcase.cpp",
+          "line": 16
+        },
+        {
+          "name": "MultiProducerSingleConsumer",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MPSCQueueTestcase.cpp",
+          "line": 27
+        },
+        {
+          "name": "PopFromEmptyQueue",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MPSCQueueTestcase.cpp",
+          "line": 68
+        },
+        {
+          "name": "StressTest_MultiProducerSingleConsumer",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MPSCQueueTestcase.cpp",
+          "line": 74
+        },
+        {
+          "name": "PopEmptyMultipleTimes",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MPSCQueueTestcase.cpp",
+          "line": 131
+        },
+        {
+          "name": "PushPopAlternating",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MPSCQueueTestcase.cpp",
+          "line": 139
+        },
+        {
+          "name": "PushNullptrSharedPtr",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MPSCQueueTestcase.cpp",
+          "line": 151
+        },
+        {
+          "name": "LargeVolume",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MPSCQueueTestcase.cpp",
+          "line": 160
+        },
+        {
+          "name": "DestructWithItems",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MPSCQueueTestcase.cpp",
+          "line": 175
+        },
+        {
+          "name": "SingleProducerSingleConsumer",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MPSCQueueTestcase.cpp",
+          "line": 183
+        },
+        {
+          "name": "StringType",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MPSCQueueTestcase.cpp",
+          "line": 200
+        },
+        {
+          "name": "ExceptionSafety",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MPSCQueueTestcase.cpp",
+          "line": 222
+        },
+        {
+          "name": "MultiProducerPopToEmpty",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MPSCQueueTestcase.cpp",
+          "line": 227
+        },
+        {
+          "name": "BatchPushPop",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MPSCQueueTestcase.cpp",
+          "line": 249
+        },
+        {
+          "name": "MultiProducerUnorderedPush",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MPSCQueueTestcase.cpp",
+          "line": 262
+        },
+        {
+          "name": "TryPopAll",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MPSCQueueTestcase.cpp",
+          "line": 312
+        },
+        {
+          "name": "TryPopAllEmpty",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MPSCQueueTestcase.cpp",
+          "line": 325
+        },
+        {
+          "name": "SizeTracking",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MPSCQueueTestcase.cpp",
+          "line": 331
+        },
+        {
+          "name": "TryPopAllMultiProducer",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MPSCQueueTestcase.cpp",
+          "line": 347
+        },
+        {
+          "name": "NonDefaultConstructibleType",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MPSCQueueTestcase.cpp",
+          "line": 389
+        },
+        {
+          "name": "TryPopAllWithNonDefaultConstructible",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MPSCQueueTestcase.cpp",
+          "line": 402
+        }
+      ]
+    },
+    {
+      "name": "Manager",
+      "tests": 8,
+      "testsuite": [
+        {
+          "name": "AddAndFind",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ManagerTest.cpp",
+          "line": 25
+        },
+        {
+          "name": "FindNonExistent",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ManagerTest.cpp",
+          "line": 38
+        },
+        {
+          "name": "Remove",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ManagerTest.cpp",
+          "line": 44
+        },
+        {
+          "name": "RemoveNonExistent",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ManagerTest.cpp",
+          "line": 54
+        },
+        {
+          "name": "OverwriteExisting",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ManagerTest.cpp",
+          "line": 59
+        },
+        {
+          "name": "SingletonInstance",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ManagerTest.cpp",
+          "line": 75
+        },
+        {
+          "name": "MultipleItems",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ManagerTest.cpp",
+          "line": 81
+        },
+        {
+          "name": "ConcurrentAccess",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ManagerTest.cpp",
+          "line": 100
+        }
+      ]
+    },
+    {
+      "name": "MoveOnlyFunction",
+      "tests": 14,
+      "testsuite": [
+        {
+          "name": "DefaultConstruction",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MoveOnlyFunctionTest.cpp",
+          "line": 11
+        },
+        {
+          "name": "NullptrConstruction",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MoveOnlyFunctionTest.cpp",
+          "line": 16
+        },
+        {
+          "name": "LambdaConstruction",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MoveOnlyFunctionTest.cpp",
+          "line": 21
+        },
+        {
+          "name": "LambdaWithCapture",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MoveOnlyFunctionTest.cpp",
+          "line": 29
+        },
+        {
+          "name": "LambdaWithArgs",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MoveOnlyFunctionTest.cpp",
+          "line": 37
+        },
+        {
+          "name": "MoveConstruction",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MoveOnlyFunctionTest.cpp",
+          "line": 44
+        },
+        {
+          "name": "MoveAssignment",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MoveOnlyFunctionTest.cpp",
+          "line": 53
+        },
+        {
+          "name": "AssignNullptr",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MoveOnlyFunctionTest.cpp",
+          "line": 63
+        },
+        {
+          "name": "MoveOnlyCapture",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MoveOnlyFunctionTest.cpp",
+          "line": 72
+        },
+        {
+          "name": "VoidReturn",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MoveOnlyFunctionTest.cpp",
+          "line": 80
+        },
+        {
+          "name": "StringReturn",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MoveOnlyFunctionTest.cpp",
+          "line": 90
+        },
+        {
+          "name": "MoveOnlyCaptureChain",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MoveOnlyFunctionTest.cpp",
+          "line": 97
+        },
+        {
+          "name": "LargeCapture",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MoveOnlyFunctionTest.cpp",
+          "line": 106
+        },
+        {
+          "name": "ConstCall",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/MoveOnlyFunctionTest.cpp",
+          "line": 119
+        }
+      ]
+    },
+    {
+      "name": "NonCopyableTest",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "AllowMove",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/NonCopyableTest.cpp",
+          "line": 29
+        }
+      ]
+    },
+    {
+      "name": "NonCopyMovableTest",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "DisallowCopyAndMove",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/NonCopyableTest.cpp",
+          "line": 44
+        }
+      ]
+    },
+    {
+      "name": "OrderedLogOutputBenchmark",
+      "tests": 4,
+      "testsuite": [
+        {
+          "name": "SingleThread_ThreeWayCompare",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/OrderedLogOutputBenchmark.cpp",
+          "line": 489
+        },
+        {
+          "name": "MultiThread_4_ThreeWayCompare",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/OrderedLogOutputBenchmark.cpp",
+          "line": 519
+        },
+        {
+          "name": "MultiThread_8_ThreeWayCompare",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/OrderedLogOutputBenchmark.cpp",
+          "line": 550
+        },
+        {
+          "name": "Summary_ThreeWay",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/OrderedLogOutputBenchmark.cpp",
+          "line": 581
+        }
+      ]
+    },
+    {
+      "name": "Random",
+      "tests": 19,
+      "testsuite": [
+        {
+          "name": "IntegerRange",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RandomTest.cpp",
+          "line": 13
+        },
+        {
+          "name": "IntegerSameMinMax",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RandomTest.cpp",
+          "line": 21
+        },
+        {
+          "name": "FloatingPointRange",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RandomTest.cpp",
+          "line": 28
+        },
+        {
+          "name": "FloatingPointNegativeRange",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RandomTest.cpp",
+          "line": 36
+        },
+        {
+          "name": "U32Random",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RandomTest.cpp",
+          "line": 44
+        },
+        {
+          "name": "I32Random",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RandomTest.cpp",
+          "line": 52
+        },
+        {
+          "name": "RandomStringLength",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RandomTest.cpp",
+          "line": 59
+        },
+        {
+          "name": "RandomStringCharacters",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RandomTest.cpp",
+          "line": 70
+        },
+        {
+          "name": "RandomStringUniqueness",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RandomTest.cpp",
+          "line": 79
+        },
+        {
+          "name": "UniqueIdLength",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RandomTest.cpp",
+          "line": 87
+        },
+        {
+          "name": "UniqueIdUniqueness",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RandomTest.cpp",
+          "line": 92
+        },
+        {
+          "name": "UuidFormat",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RandomTest.cpp",
+          "line": 100
+        },
+        {
+          "name": "UuidUniqueness",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RandomTest.cpp",
+          "line": 115
+        },
+        {
+          "name": "UuidHexCharacters",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RandomTest.cpp",
+          "line": 123
+        },
+        {
+          "name": "RandomSelectAll",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RandomTest.cpp",
+          "line": 135
+        },
+        {
+          "name": "RandomSelectSubset",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RandomTest.cpp",
+          "line": 144
+        },
+        {
+          "name": "RandomSelectEmpty",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RandomTest.cpp",
+          "line": 154
+        },
+        {
+          "name": "RandomSelectZeroCount",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RandomTest.cpp",
+          "line": 160
+        },
+        {
+          "name": "Int64Range",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RandomTest.cpp",
+          "line": 166
+        }
+      ]
+    },
+    {
+      "name": "Range",
+      "tests": 33,
+      "testsuite": [
+        {
+          "name": "DefaultConstruction",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 8
+        },
+        {
+          "name": "ConstructWithPosAndSize",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 15
+        },
+        {
+          "name": "ConstructWithPosOnly",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 22
+        },
+        {
+          "name": "MoveTo",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 30
+        },
+        {
+          "name": "ShiftPositive",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 37
+        },
+        {
+          "name": "ShiftNegative",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 43
+        },
+        {
+          "name": "ShiftNegativeClampToZero",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 49
+        },
+        {
+          "name": "ShiftFromInvalid",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 55
+        },
+        {
+          "name": "ContainsValid",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 61
+        },
+        {
+          "name": "ContainsInvalid",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 70
+        },
+        {
+          "name": "ContainsOpenEnd",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 76
+        },
+        {
+          "name": "OverlapNormal",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 83
+        },
+        {
+          "name": "OverlapNoIntersection",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 92
+        },
+        {
+          "name": "OverlapFullContainment",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 99
+        },
+        {
+          "name": "OverlapWithInvalid",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 108
+        },
+        {
+          "name": "OverlapBothInvalid",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 115
+        },
+        {
+          "name": "OverlapOpenEnd",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 121
+        },
+        {
+          "name": "ComparisonEqual",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 130
+        },
+        {
+          "name": "ComparisonLess",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 137
+        },
+        {
+          "name": "ComparisonGreater",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 143
+        },
+        {
+          "name": "ComparisonSameStartDifferentEnd",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 149
+        },
+        {
+          "name": "ComparisonBothInvalid",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 155
+        },
+        {
+          "name": "ComparisonInvalidLessThanValid",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 161
+        },
+        {
+          "name": "ComparisonValidGreaterThanInvalid",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 167
+        },
+        {
+          "name": "ToStringInvalid",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 173
+        },
+        {
+          "name": "ToStringWithSize",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 178
+        },
+        {
+          "name": "ToStringOpenEnd",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 185
+        },
+        {
+          "name": "ToHeaderStringInvalid",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 192
+        },
+        {
+          "name": "ToHeaderStringOpenEnd",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 197
+        },
+        {
+          "name": "ToHeaderStringWithSize",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 202
+        },
+        {
+          "name": "EndWithSizeOne",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 207
+        },
+        {
+          "name": "OverlapAdjacentRanges",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 215
+        },
+        {
+          "name": "OverlapSinglePointIntersection",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RangeTest.cpp",
+          "line": 222
+        }
+      ]
+    },
+    {
+      "name": "Reflection",
+      "tests": 8,
+      "testsuite": [
+        {
+          "name": "RegisterAndCreate",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ReflectionTest.cpp",
+          "line": 28
+        },
+        {
+          "name": "CreateUnregistered",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ReflectionTest.cpp",
+          "line": 36
+        },
+        {
+          "name": "RegisterMultipleTypes",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ReflectionTest.cpp",
+          "line": 41
+        },
+        {
+          "name": "OverwriteRegistration",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ReflectionTest.cpp",
+          "line": 54
+        },
+        {
+          "name": "MacroRegistration",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ReflectionTest.cpp",
+          "line": 66
+        },
+        {
+          "name": "CreateReturnsDistinctInstances",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ReflectionTest.cpp",
+          "line": 72
+        },
+        {
+          "name": "SingletonInstance",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ReflectionTest.cpp",
+          "line": 81
+        },
+        {
+          "name": "EmptyNameRegistration",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ReflectionTest.cpp",
+          "line": 87
+        }
+      ]
+    },
+    {
+      "name": "RingBufferTest",
+      "tests": 13,
+      "testsuite": [
+        {
+          "name": "InitialState",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 63
+        },
+        {
+          "name": "WriteAndRead",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 71
+        },
+        {
+          "name": "WriteExact",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 83
+        },
+        {
+          "name": "ReadExact",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 90
+        },
+        {
+          "name": "WrapAround",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 103
+        },
+        {
+          "name": "EdgeCases",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 123
+        },
+        {
+          "name": "Reset",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 158
+        },
+        {
+          "name": "FullBuffer",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 170
+        },
+        {
+          "name": "SpanWriteAndRead",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 522
+        },
+        {
+          "name": "SpanWriteExactAndReadExact",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 534
+        },
+        {
+          "name": "PeekDoesNotMoveReadPointer",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 545
+        },
+        {
+          "name": "PeekWithSpan",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 563
+        },
+        {
+          "name": "PeekEmpty",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 574
+        }
+      ]
+    },
+    {
+      "name": "SyncRingBufferTest",
+      "tests": 14,
+      "testsuite": [
+        {
+          "name": "InitialState",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 191
+        },
+        {
+          "name": "WriteAndRead",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 199
+        },
+        {
+          "name": "WriteExact",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 211
+        },
+        {
+          "name": "ReadExact",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 219
+        },
+        {
+          "name": "WrapAround",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 231
+        },
+        {
+          "name": "EdgeCases",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 251
+        },
+        {
+          "name": "Reset",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 264
+        },
+        {
+          "name": "FullBuffer",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 276
+        },
+        {
+          "name": "ConcurrentWriteRead",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 290
+        },
+        {
+          "name": "SPSCBatchReadWrite",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 331
+        },
+        {
+          "name": "StressTest",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 377
+        },
+        {
+          "name": "MultiThreadedReadWrite",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 419
+        },
+        {
+          "name": "RestTest",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 475
+        },
+        {
+          "name": "PeekThreadSafe",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/RingBufferTest.cpp",
+          "line": 579
+        }
+      ]
+    },
+    {
+      "name": "String",
+      "tests": 5,
+      "testsuite": [
+        {
+          "name": "spilt1",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/StringUtilTest.cpp",
+          "line": 12
+        },
+        {
+          "name": "spilt3",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/StringUtilTest.cpp",
+          "line": 20
+        },
+        {
+          "name": "spilt4",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/StringUtilTest.cpp",
+          "line": 26
+        },
+        {
+          "name": "spilt5",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/StringUtilTest.cpp",
+          "line": 35
+        },
+        {
+          "name": "spilt6",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/StringUtilTest.cpp",
+          "line": 44
+        }
+      ]
+    },
+    {
+      "name": "Synchronized",
+      "tests": 10,
+      "testsuite": [
+        {
+          "name": "WithLockBasic",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/SynchronizedTest.cpp",
+          "line": 15
+        },
+        {
+          "name": "WithLockReturnValue",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/SynchronizedTest.cpp",
+          "line": 29
+        },
+        {
+          "name": "WithLockVoidReturn",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/SynchronizedTest.cpp",
+          "line": 41
+        },
+        {
+          "name": "ConcurrentAccess",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/SynchronizedTest.cpp",
+          "line": 53
+        },
+        {
+          "name": "SharedMutexReadLock",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/SynchronizedTest.cpp",
+          "line": 82
+        },
+        {
+          "name": "SharedMutexWriteLock",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/SynchronizedTest.cpp",
+          "line": 96
+        },
+        {
+          "name": "SharedMutexConcurrentReaders",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/SynchronizedTest.cpp",
+          "line": 108
+        },
+        {
+          "name": "WithScopeLock",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/SynchronizedTest.cpp",
+          "line": 135
+        },
+        {
+          "name": "WaitWithCondition",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/SynchronizedTest.cpp",
+          "line": 159
+        },
+        {
+          "name": "ConstWithLock",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/SynchronizedTest.cpp",
+          "line": 184
+        }
+      ]
+    },
+    {
+      "name": "AtomicWeakPtr",
+      "tests": 5,
+      "testsuite": [
+        {
+          "name": "DefaultConstruction",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/SynchronizedTest.cpp",
+          "line": 199
+        },
+        {
+          "name": "StoreAndLoad",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/SynchronizedTest.cpp",
+          "line": 205
+        },
+        {
+          "name": "LoadAfterExpiry",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/SynchronizedTest.cpp",
+          "line": 215
+        },
+        {
+          "name": "Swap",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/SynchronizedTest.cpp",
+          "line": 225
+        },
+        {
+          "name": "ConcurrentStoreLoad",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/SynchronizedTest.cpp",
+          "line": 242
+        }
+      ]
+    },
+    {
+      "name": "AtomicSharedPtr",
+      "tests": 6,
+      "testsuite": [
+        {
+          "name": "DefaultConstruction",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/SynchronizedTest.cpp",
+          "line": 268
+        },
+        {
+          "name": "ConstructWithPtr",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/SynchronizedTest.cpp",
+          "line": 274
+        },
+        {
+          "name": "Reset",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/SynchronizedTest.cpp",
+          "line": 284
+        },
+        {
+          "name": "ResetWithNewPtr",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/SynchronizedTest.cpp",
+          "line": 294
+        },
+        {
+          "name": "Swap",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/SynchronizedTest.cpp",
+          "line": 306
+        },
+        {
+          "name": "ConcurrentAccess",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/SynchronizedTest.cpp",
+          "line": 321
+        }
+      ]
+    },
+    {
+      "name": "ThreadPoolTest",
+      "tests": 13,
+      "testsuite": [
+        {
+          "name": "BasicFunctionality",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadPoolTest.cpp",
+          "line": 29
+        },
+        {
+          "name": "MultipleTasksExecution",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadPoolTest.cpp",
+          "line": 37
+        },
+        {
+          "name": "ExceptionHandling",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadPoolTest.cpp",
+          "line": 51
+        },
+        {
+          "name": "ShutdownBehavior",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadPoolTest.cpp",
+          "line": 61
+        },
+        {
+          "name": "Statistics",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadPoolTest.cpp",
+          "line": 76
+        },
+        {
+          "name": "StressTest",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadPoolTest.cpp",
+          "line": 82
+        },
+        {
+          "name": "ExecutionOrder",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadPoolTest.cpp",
+          "line": 97
+        },
+        {
+          "name": "SubmitWithPriority",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadPoolTest.cpp",
+          "line": 114
+        },
+        {
+          "name": "PostJobFireAndForget",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadPoolTest.cpp",
+          "line": 155
+        },
+        {
+          "name": "PostJobWithPriority",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadPoolTest.cpp",
+          "line": 169
+        },
+        {
+          "name": "PostJobAfterShutdown",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadPoolTest.cpp",
+          "line": 181
+        },
+        {
+          "name": "DefaultPriorityIsNormal",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadPoolTest.cpp",
+          "line": 192
+        },
+        {
+          "name": "ClearDoesNotHangFuture",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadPoolTest.cpp",
+          "line": 201
+        }
+      ]
+    },
+    {
+      "name": "Thread",
+      "tests": 11,
+      "testsuite": [
+        {
+          "name": "state",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadTest.cpp",
+          "line": 19
+        },
+        {
+          "name": "timer",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadTest.cpp",
+          "line": 43
+        },
+        {
+          "name": "schedule",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadTest.cpp",
+          "line": 56
+        },
+        {
+          "name": "scheduleWhenPaused",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadTest.cpp",
+          "line": 70
+        },
+        {
+          "name": "scheduleAfterStop",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadTest.cpp",
+          "line": 87
+        },
+        {
+          "name": "scheduleMultiProducer",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadTest.cpp",
+          "line": 97
+        },
+        {
+          "name": "scheduleDelayed",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadTest.cpp",
+          "line": 123
+        },
+        {
+          "name": "schedulePriorityOverRepeat",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadTest.cpp",
+          "line": 142
+        },
+        {
+          "name": "scheduleRepeat",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadTest.cpp",
+          "line": 166
+        },
+        {
+          "name": "cancelSchedule",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadTest.cpp",
+          "line": 184
+        },
+        {
+          "name": "repeatTaskNoDanglingPointer",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/ThreadTest.cpp",
+          "line": 203
+        }
+      ]
+    },
+    {
+      "name": "TimeDelta",
+      "tests": 13,
+      "testsuite": [
+        {
+          "name": "DefaultConstruction",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 12
+        },
+        {
+          "name": "ConstructFromMicroseconds",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 17
+        },
+        {
+          "name": "ToMilliSeconds",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 22
+        },
+        {
+          "name": "Second",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 27
+        },
+        {
+          "name": "FromMilliSeconds",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 32
+        },
+        {
+          "name": "FromMicroSeconds",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 37
+        },
+        {
+          "name": "FromSeconds",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 42
+        },
+        {
+          "name": "Addition",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 47
+        },
+        {
+          "name": "AdditionAssign",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 54
+        },
+        {
+          "name": "Subtraction",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 60
+        },
+        {
+          "name": "SubtractionAssign",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 67
+        },
+        {
+          "name": "NegativeResult",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 73
+        },
+        {
+          "name": "Comparison",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 80
+        }
+      ]
+    },
+    {
+      "name": "TimePoint",
+      "tests": 16,
+      "testsuite": [
+        {
+          "name": "DefaultConstruction",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 95
+        },
+        {
+          "name": "ConstructFromValue",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 100
+        },
+        {
+          "name": "ToMilliSeconds",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 105
+        },
+        {
+          "name": "Second",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 110
+        },
+        {
+          "name": "FromMilliSeconds",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 115
+        },
+        {
+          "name": "FromMicroSeconds",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 120
+        },
+        {
+          "name": "FromSeconds",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 125
+        },
+        {
+          "name": "AddTimeDelta",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 130
+        },
+        {
+          "name": "AddTimeDeltaAssign",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 137
+        },
+        {
+          "name": "SubtractTimeDelta",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 143
+        },
+        {
+          "name": "SubtractTimeDeltaAssign",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 150
+        },
+        {
+          "name": "SubtractTimePoint",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 156
+        },
+        {
+          "name": "AddMilliseconds",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 163
+        },
+        {
+          "name": "AddMillisecondsAssign",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 169
+        },
+        {
+          "name": "AddTimePoint",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 175
+        },
+        {
+          "name": "Comparison",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "name": "Time",
+      "tests": 6,
+      "testsuite": [
+        {
+          "name": "NowTimeStamp",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 197
+        },
+        {
+          "name": "NowTimeStampMonotonic",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 204
+        },
+        {
+          "name": "NowUTCTime",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 213
+        },
+        {
+          "name": "OffsetFromUTC",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 218
+        },
+        {
+          "name": "LocalTimeStr",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 224
+        },
+        {
+          "name": "LocalShortTimeStr",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimeTest.cpp",
+          "line": 229
+        }
+      ]
+    },
+    {
+      "name": "Timer",
+      "tests": 3,
+      "testsuite": [
+        {
+          "name": "delay",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimerTest.cpp",
+          "line": 20
+        },
+        {
+          "name": "loop",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimerTest.cpp",
+          "line": 30
+        },
+        {
+          "name": "exceptionDoesNotKillThread",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimerTest.cpp",
+          "line": 43
+        }
+      ]
+    },
+    {
+      "name": "TimerPool",
+      "tests": 7,
+      "testsuite": [
+        {
+          "name": "runAfter",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimerTest.cpp",
+          "line": 120
+        },
+        {
+          "name": "runLoop",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimerTest.cpp",
+          "line": 135
+        },
+        {
+          "name": "cancel",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimerTest.cpp",
+          "line": 152
+        },
+        {
+          "name": "manyTimers",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimerTest.cpp",
+          "line": 169
+        },
+        {
+          "name": "batchExpiry",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimerTest.cpp",
+          "line": 187
+        },
+        {
+          "name": "timerIdUnique",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimerTest.cpp",
+          "line": 203
+        },
+        {
+          "name": "clearStopsAll",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/TimerTest.cpp",
+          "line": 222
+        }
+      ]
+    },
+    {
+      "name": "Util",
+      "tests": 14,
+      "testsuite": [
+        {
+          "name": "GenRandomName",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 11
+        },
+        {
+          "name": "GenRandomNameUniqueness",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 17
+        },
+        {
+          "name": "GenRandomNameEmptyPrefix",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 25
+        },
+        {
+          "name": "Uint32ToStringLE",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 30
+        },
+        {
+          "name": "Uint32ToStringBE",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 39
+        },
+        {
+          "name": "Uint32ToStringLEZero",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 48
+        },
+        {
+          "name": "Uint32ToStringBEZero",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 56
+        },
+        {
+          "name": "Uint16ToStringLE",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 64
+        },
+        {
+          "name": "Uint16ToStringBE",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 71
+        },
+        {
+          "name": "Uint64ToStringLE",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 78
+        },
+        {
+          "name": "Uint64ToStringBE",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 85
+        },
+        {
+          "name": "GetWeakPtrAddressValid",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 92
+        },
+        {
+          "name": "GetWeakPtrAddressExpired",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 100
+        },
+        {
+          "name": "GetWeakPtrAddressEmpty",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 111
+        }
+      ]
+    },
+    {
+      "name": "Golomb",
+      "tests": 8,
+      "testsuite": [
+        {
+          "name": "ReadBit",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 119
+        },
+        {
+          "name": "ReadBits",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 136
+        },
+        {
+          "name": "ReadBitsMultiByte",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 151
+        },
+        {
+          "name": "ReadUeZero",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 161
+        },
+        {
+          "name": "ReadUeOne",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 172
+        },
+        {
+          "name": "ReadUeTwo",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 183
+        },
+        {
+          "name": "ReadUeThree",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 194
+        },
+        {
+          "name": "ReadUeSeven",
+          "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/UtilTest.cpp",
+          "line": 205
+        }
+      ]
+    }
+  ]
+}

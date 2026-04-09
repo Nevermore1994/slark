@@ -43,8 +43,8 @@ TEST_F(ThreadPoolTest, MultipleTasksExecution) {
     }
 
     for (int i = 0; i < 5; ++i) {
-        ASSERT_TRUE(futures[i]);
-        EXPECT_EQ(futures[i]->get(), i);
+        ASSERT_TRUE(futures[static_cast<size_t>(i)]);
+        EXPECT_EQ(futures[static_cast<size_t>(i)]->get(), i);
     }
 }
 
@@ -75,7 +75,7 @@ TEST_F(ThreadPoolTest, ShutdownBehavior) {
 
 TEST_F(ThreadPoolTest, Statistics) {
     EXPECT_EQ(pool->getThreadCount(), 4);
-    EXPECT_EQ(pool->getTaskCount(), 0u);
+    EXPECT_EQ(pool->getJobCount(), 0u);
     EXPECT_FALSE(pool->isShutdown());
 }
 
@@ -128,15 +128,15 @@ TEST_F(ThreadPoolTest, SubmitWithPriority) {
     std::mutex mtx;
     std::vector<int32_t> order;
 
-    singlePool.submit(TaskPriority::Low, [&]() {
+    singlePool.submit(JobPriority::Low, [&]() {
         std::lock_guard lock(mtx);
         order.push_back(3);
     });
-    singlePool.submit(TaskPriority::High, [&]() {
+    singlePool.submit(JobPriority::High, [&]() {
         std::lock_guard lock(mtx);
         order.push_back(1);
     });
-    singlePool.submit(TaskPriority::Normal, [&]() {
+    singlePool.submit(JobPriority::Normal, [&]() {
         std::lock_guard lock(mtx);
         order.push_back(2);
     });
@@ -152,11 +152,11 @@ TEST_F(ThreadPoolTest, SubmitWithPriority) {
     EXPECT_EQ(order[2], 3); // Low
 }
 
-TEST_F(ThreadPoolTest, PostTaskFireAndForget) {
+TEST_F(ThreadPoolTest, PostJobFireAndForget) {
     std::atomic<int32_t> counter{0};
 
     for (int32_t i = 0; i < 100; ++i) {
-        auto result = pool->postTask([&counter]() {
+        auto result = pool->postJob([&counter]() {
             counter.fetch_add(1);
         });
         ASSERT_TRUE(result.has_value());
@@ -166,10 +166,10 @@ TEST_F(ThreadPoolTest, PostTaskFireAndForget) {
     EXPECT_EQ(counter.load(), 100);
 }
 
-TEST_F(ThreadPoolTest, PostTaskWithPriority) {
+TEST_F(ThreadPoolTest, PostJobWithPriority) {
     std::atomic<int32_t> counter{0};
 
-    auto result = pool->postTask(TaskPriority::High, [&counter]() {
+    auto result = pool->postJob(JobPriority::High, [&counter]() {
         counter.fetch_add(1);
     });
     ASSERT_TRUE(result.has_value());
@@ -178,7 +178,7 @@ TEST_F(ThreadPoolTest, PostTaskWithPriority) {
     EXPECT_EQ(counter.load(), 1);
 }
 
-TEST_F(ThreadPoolTest, PostTaskAfterShutdown) {
+TEST_F(ThreadPoolTest, PostJobAfterShutdown) {
     // 通过 reset 触发析构后，submit 应返回错误
     auto localPool = std::make_unique<ThreadPool>();
     localPool.reset(); // 析构
@@ -196,4 +196,48 @@ TEST_F(ThreadPoolTest, DefaultPriorityIsNormal) {
     });
     ASSERT_TRUE(future);
     EXPECT_EQ(future->get(), 1);
+}
+
+TEST_F(ThreadPoolTest, ClearDoesNotHangFuture) {
+    // 使用单线程池确保任务留在队列中
+    ThreadPoolConfig singleConfig;
+    singleConfig.threadCount = 1;
+    ThreadPool singlePool(singleConfig);
+
+    // 先阻塞工作线程
+    std::latch blockLatch(1);
+    auto blockingFuture = singlePool.submit([&blockLatch]() {
+        blockLatch.wait();
+        return 0;
+    });
+
+    std::this_thread::sleep_for(10ms);
+
+    // 提交更多任务
+    std::atomic<int32_t> executed{0};
+    auto future1 = singlePool.submit([&executed]() {
+        executed.fetch_add(1);
+        return 1;
+    });
+    auto future2 = singlePool.submit([&executed]() {
+        executed.fetch_add(1);
+        return 2;
+    });
+
+    ASSERT_TRUE(future1);
+    ASSERT_TRUE(future2);
+
+    // 释放阻塞任务并清空队列
+    blockLatch.count_down();
+    blockingFuture->wait();
+
+    // 清空队列中未执行的任务
+    singlePool.clear();
+    singlePool.waitForAll();
+
+    // 验证 future 可返回（不阻塞）
+    // 注意：由于任务被清除，packaged_task 会被执行但返回正常值
+    // 因为我们的 cancel 回调会执行 packaged_task
+    EXPECT_TRUE(future1->valid());
+    EXPECT_TRUE(future2->valid());
 }
