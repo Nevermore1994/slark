@@ -5,6 +5,7 @@
 //
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -16,6 +17,19 @@ extern const std::string_view kHttp;
 extern const std::string_view kHttps;
 
 using namespace std::string_view_literals;
+
+enum class UrlError : uint8_t {
+    None = 0,
+    EmptyUrl,
+    MissingScheme,
+    InvalidScheme,
+    EmptyAuthority,
+    InvalidHost,
+    InvalidPort,
+    PortOutOfRange,
+    InvalidIPv6,
+};
+
 struct Url {
     std::string scheme;
     std::string host;
@@ -34,9 +48,14 @@ struct Url {
     }
 #ifdef __clang__
 #pragma clang diagnostic pop
-#endif //__clang__
+#endif
+
     [[nodiscard]] bool isValid() const noexcept {
-        return isValid_;
+        return error_ == UrlError::None;
+    }
+
+    [[nodiscard]] UrlError error() const noexcept {
+        return error_;
     }
 
     [[nodiscard]] bool isSupportScheme() const noexcept {
@@ -45,7 +64,7 @@ struct Url {
 #else
         return isHttp();
 #endif
-    };
+    }
 
     [[nodiscard]] bool isHttp() const noexcept {
         return scheme == kHttp;
@@ -59,15 +78,23 @@ struct Url {
         return rawUrl_;
     }
 
+    [[nodiscard]] uint16_t portNumber() const noexcept {
+        try {
+            return static_cast<uint16_t>(std::stoi(std::string(port)));
+        } catch (...) {
+            return isHttps() ? 443 : 80;
+        }
+    }
+
 private:
     void parse(std::string_view url) noexcept;
-private:
-    bool isValid_ = true;
-    std::string rawUrl_; //original url, used for debug
+
+    UrlError error_ = UrlError::None;
+    std::string rawUrl_;
 };
 
 inline void freeUrl(Url* url) noexcept {
     delete url;
 }
 
-} //end of namespace slark::http
+} // namespace slark::http
