@@ -29,8 +29,14 @@ message(STATUS "current path: " ${CMAKE_CURRENT_SOURCE_DIR})
 set(BUILD_PLATFORM "PC" CACHE STRING "build platform")
 option(DISABLE_TEST "disable test" OFF)
 option(DISABLE_HTTP "disable http" OFF)
+option(DISABLE_CORE "disable core module (for testing base/http only)" OFF)
 
-if(${CMAKE_BUILD_TYPE} STREQUAL "Release")
+# 设置默认构建类型
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build type" FORCE)
+endif()
+
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
     add_definitions(-DRELEASE)
 else()
     add_definitions(-DDEBUG)
@@ -39,14 +45,24 @@ endif()
 # add src subdirectories
 add_subdirectory(src/include)
 add_subdirectory(src/base)
-add_subdirectory(src/core)
+
+if(NOT DISABLE_CORE)
+    add_subdirectory(src/core)
+endif()
 
 # create shared library from object libraries
-add_library(${PROJECT_NAME} SHARED
-    $<TARGET_OBJECTS:slark_base>
-    $<TARGET_OBJECTS:slark_core>
-)
-target_link_libraries(${PROJECT_NAME} PUBLIC slark_core slark_base slark_include)
+if(NOT DISABLE_CORE)
+    add_library(${PROJECT_NAME} SHARED
+        $<TARGET_OBJECTS:slark_base>
+        $<TARGET_OBJECTS:slark_core>
+    )
+    target_link_libraries(${PROJECT_NAME} PUBLIC slark_core slark_base slark_include)
+else()
+    add_library(${PROJECT_NAME} SHARED
+        $<TARGET_OBJECTS:slark_base>
+    )
+    target_link_libraries(${PROJECT_NAME} PUBLIC slark_base slark_include)
+endif()
 
 if(${BUILD_PLATFORM} STREQUAL "iOS")
     message(STATUS "add iOS interface")
@@ -62,7 +78,7 @@ endif()
 if(NOT DISABLE_HTTP)
     message(STATUS "enable http")
     add_subdirectory(src/http)
-    target_link_libraries(${PROJECT_NAME} PUBLIC http_request)
+    target_link_libraries(${PROJECT_NAME} PUBLIC slark_http)
 else()
     message(STATUS "disable http")
 endif()

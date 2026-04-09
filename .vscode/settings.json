@@ -3,32 +3,33 @@
     "editor.tabSize": 4,
     "editor.insertSpaces": true,
     // ---- clangd 插件配置 ----
-    "clangd.path": "/usr/bin/clangd",
-    "clangd.arguments": [
-        "--background-index",
-        "--clang-tidy",
-        "--header-insertion=iwyu",
-        "--completion-style=detailed",
-        "--function-arg-placeholders",
-        "--compile-commands-dir=${workspaceFolder}/compile_commands.json",
-        "-j=4"
-    ],
-    "clangd.detectExtensionConflicts": true,
-    // ---- cpptools 禁用 IntelliSense/格式化，只保留调试 ----
-    "C_Cpp.intelliSenseEngine": "disabled",
-    "C_Cpp.autocomplete": "disabled",
-    "C_Cpp.errorSquiggles": "disabled",
-    "C_Cpp.formatting": "disabled",
-    "C_Cpp.codeAnalysis.clangTidy.enabled": false,
-    // ---- 格式化由 clangd 负责 ----
+    // "clangd.path": "/usr/bin/clangd",
+    // "clangd.arguments": [
+    //     "--background-index",
+    //     "--clang-tidy",
+    //     "--header-insertion=iwyu",
+    //     "--completion-style=detailed",
+    //     "--function-arg-placeholders",
+    //     "--compile-commands-dir=${workspaceFolder}/compile_commands.json",
+    //     "-j=4"
+    // ],
+    // "clangd.detectExtensionConflicts": true,
+    // ---- cpptools 配置 ----
+    "C_Cpp.intelliSenseEngine": "default",
+    "C_Cpp.default.cppStandard": "c++23",
+    "C_Cpp.autocomplete": "default",
+    "C_Cpp.errorSquiggles": "enabled",
+    "C_Cpp.formatting": "clangFormat",
+    "C_Cpp.codeAnalysis.clangTidy.enabled": true,
+    // ---- 格式化由 clang-format 负责 ----
     "[cpp]": {
-        "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+        "editor.defaultFormatter": "ms-vscode.cpptools",
         "editor.formatOnSave": true,
         "editor.tabSize": 4,
         "editor.insertSpaces": true
     },
     "[c]": {
-        "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+        "editor.defaultFormatter": "ms-vscode.cpptools",
         "editor.formatOnSave": true,
         "editor.tabSize": 4,
         "editor.insertSpaces": true

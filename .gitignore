@@ -54,3 +54,7 @@ src/platform/Android/sdk/.cxx
 demo/Android/.idea
 src/http/.idea
 config.json
+build_*/
+.review/
+test/base/cache/
+compile_commands.json
