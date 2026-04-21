@@ -1,8 +1,9 @@
+
 //
-//  AudioDescription.mm
-//  slark
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
-//  Created by Nevermore on 2022/8/22.
+// This file is part of Slark.
+// Licensed under the MIT License.
 //
 
 #import "AudioDescription.h"
@@ -25,5 +26,4 @@ AudioStreamBasicDescription convertInfo2Description(const AudioInfo& info) {
     return description;
 }
 
-
-}
+} // namespace slark

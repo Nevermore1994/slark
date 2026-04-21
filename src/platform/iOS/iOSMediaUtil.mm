@@ -1,8 +1,9 @@
+
 //
-//  iOSMediaUtil.cpp
-//  slark
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
-//  Created by Nevermore on 2024/10/21.
+// This file is part of Slark.
+// Licensed under the MIT License.
 //
 
 #include "iOSMediaUtil.h"
@@ -13,13 +14,31 @@ CMSampleBufferRef createSampleBuffer(CMFormatDescriptionRef fmtDesc, void* buff,
     @autoreleasepool {
         CMBlockBufferRef blockBuffer = nullptr;
         CMSampleBufferRef sampleBuffer = nullptr;
-        auto status = CMBlockBufferCreateWithMemoryBlock(NULL, buff, size, kCFAllocatorNull, NULL, 0, size, FALSE, &blockBuffer);
-        
+        auto status = CMBlockBufferCreateWithMemoryBlock(NULL,
+                                                         buff,
+                                                         size,
+                                                         kCFAllocatorNull,
+                                                         NULL,
+                                                         0,
+                                                         size,
+                                                         FALSE,
+                                                         &blockBuffer);
+
         if (status == noErr) {
-            status = CMSampleBufferCreate(NULL, blockBuffer, TRUE, 0, 0, fmtDesc, 1, 0, NULL, 0, NULL, &sampleBuffer);
-            
+            status = CMSampleBufferCreate(NULL,
+                                          blockBuffer,
+                                          TRUE,
+                                          0,
+                                          0,
+                                          fmtDesc,
+                                          1,
+                                          0,
+                                          NULL,
+                                          0,
+                                          NULL,
+                                          &sampleBuffer);
         }
-        
+
         if (blockBuffer) {
             CFRelease(blockBuffer);
         }
@@ -32,27 +51,27 @@ UIImage* imageFromPixelBuffer(CVPixelBufferRef pixelBuffer) {
         return NULL;
     }
     CVPixelBufferLockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
-    void *baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer);
-    
+    void* baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer);
+
     size_t width = CVPixelBufferGetWidth(pixelBuffer);
     size_t height = CVPixelBufferGetHeight(pixelBuffer);
     size_t bytesPerRow = 4 * width;
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-    
+
     CGBitmapInfo info = kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little;
-    CGContextRef context = CGBitmapContextCreate(baseAddress, width, height, 8, bytesPerRow, colorSpace, info);
-    
+    CGContextRef context =
+        CGBitmapContextCreate(baseAddress, width, height, 8, bytesPerRow, colorSpace, info);
+
     CGImageRef cgImage = CGBitmapContextCreateImage(context);
-    UIImage *image = [UIImage imageWithCGImage:cgImage];
-    
+    UIImage* image = [UIImage imageWithCGImage:cgImage];
+
     CGImageRelease(cgImage);
     CGContextRelease(context);
     CGColorSpaceRelease(colorSpace);
-    
+
     CVPixelBufferUnlockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
-    
+
     return image;
 }
 
-}
-
+} // namespace slark

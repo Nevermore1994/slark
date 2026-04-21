@@ -1,28 +1,28 @@
+
 //
-//  iOSEGLContext.cpp
-//  slark
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
-//  Created by Nevermore on 2024/10/30.
+// This file is part of Slark.
+// Licensed under the MIT License.
 //
 
+#include "iOSEGLContext.h"
 
+#import <AVFoundation/AVFoundation.h>
+#import <Foundation/Foundation.h>
 #import <OpenGLES/EAGL.h>
 #import <OpenGLES/ES2/gl.h>
 #import <OpenGLES/ES2/glext.h>
-#import <AVFoundation/AVFoundation.h>
-#import <Foundation/Foundation.h>
-#include "iOSEGLContext.h"
 
 @interface EGLContext : NSObject
 
 @end
 
-@implementation EGLContext
-{
+@implementation EGLContext {
     EAGLContext* _glContext;
 }
 
-- (BOOL)initWithContext:(EAGLContext*) context {
+- (BOOL)initWithContext:(EAGLContext*)context {
     _glContext = nil;
     if (context) {
         _glContext = [[EAGLContext alloc] initWithAPI:context.API sharegroup:context.sharegroup];
@@ -46,7 +46,7 @@
     _glContext = nil;
 }
 
-- (EAGLContext*)setCurrentContext:(EAGLContext*) context {
+- (EAGLContext*)setCurrentContext:(EAGLContext*)context {
     EAGLContext* preContext = [EAGLContext currentContext];
     if (preContext != context) {
         [EAGLContext setCurrentContext:context];
@@ -62,6 +62,7 @@
 - (EAGLContext*)context {
     return _glContext;
 }
+
 @end
 
 namespace slark {
@@ -85,7 +86,7 @@ bool iOSEGLContext::init(void* context) {
         if (inited_) {
             return true;
         }
-        inited_ = [(__bridge EGLContext*)context_ initWithContext:(__bridge EAGLContext*) context];
+        inited_ = [(__bridge EGLContext*)context_ initWithContext:(__bridge EAGLContext*)context];
         if (!inited_) {
             release();
         }
@@ -121,4 +122,4 @@ IEGLContextRefPtr createGLContext() noexcept {
     return std::make_shared<iOSEGLContext>();
 }
 
-}
+} // namespace slark

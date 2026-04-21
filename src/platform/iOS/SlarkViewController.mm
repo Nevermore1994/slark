@@ -1,35 +1,39 @@
+
 //
-//  SlarkViewController.m
-//  slark
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
-//  Created by Nevermore on 2024/11/6.
+// This file is part of Slark.
+// Licensed under the MIT License.
 //
 
-#import <Foundation/Foundation.h>
 #import "SlarkViewController.h"
-#import "RenderGLView.hpp"
+
 #import "GLContextManager.h"
 #import "Player.h"
+#import "RenderGLView.hpp"
 
-@interface SlarkPlayer(Render)
-- (void)setRenderImpl:(std::weak_ptr<slark::IVideoRender>) ptr;
+#import <Foundation/Foundation.h>
+
+@interface SlarkPlayer (Render)
+- (void)setRenderImpl:(std::weak_ptr<slark::IVideoRender>)ptr;
 - (void)setRenderDelegate:(id<RenderGLViewDelegate>)renderDelegate;
 @end
 
-@interface SlarkViewController() 
-@property(nonatomic, strong) RenderGLView* renderView;
-@property(nonatomic, strong) SlarkPlayer* player;
-@property(nonatomic, assign) BOOL isActive;
+@interface SlarkViewController ()
+@property (nonatomic, strong) RenderGLView* renderView;
+@property (nonatomic, strong) SlarkPlayer* player;
+@property (nonatomic, assign) BOOL isActive;
 @end
 
 @implementation SlarkViewController
 
-- (instancetype)initWithPlayer:(CGRect) frame player:(SlarkPlayer*) player {
+- (instancetype)initWithPlayer:(CGRect)frame player:(SlarkPlayer*)player {
     if (self = [self init]) {
         self.player = player;
         self.renderView = [[RenderGLView alloc] initWithFrame:frame];
         NSString* playerId = [self.player playerId];
-        auto shareContext = slark::GLContextManager::shareInstance().createShareContextWithId([playerId UTF8String]);
+        auto shareContext = slark::GLContextManager::shareInstance().createShareContextWithId(
+            [playerId UTF8String]);
         [self.renderView setContext:shareContext];
         [self.player setRenderImpl:[self.renderView renderImpl]];
         self.player.renderDelegate = self.renderView;
@@ -39,7 +43,7 @@
     return self;
 }
 
-- (void)setupNotifications{
+- (void)setupNotifications {
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(deviceOrientationDidChange:)
                                                  name:UIDeviceOrientationDidChangeNotification
@@ -52,17 +56,18 @@
                                              selector:@selector(applicationDidBecomeActive)
                                                  name:UIApplicationDidBecomeActiveNotification
                                                object:nil];
-
 }
 
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
 }
 
-- (void)deviceOrientationDidChange:(NSNotification *)notification {
+- (void)deviceOrientationDidChange:(NSNotification*)notification {
     UIDeviceOrientation orientation = [UIDevice currentDevice].orientation;
-    if (orientation == UIDeviceOrientationPortrait || orientation == UIDeviceOrientationPortraitUpsideDown) {
-    } else if (orientation == UIDeviceOrientationLandscapeLeft || orientation == UIDeviceOrientationLandscapeRight) {
+    if (orientation == UIDeviceOrientationPortrait ||
+        orientation == UIDeviceOrientationPortraitUpsideDown) {
+    } else if (orientation == UIDeviceOrientationLandscapeLeft ||
+               orientation == UIDeviceOrientationLandscapeRight) {
     }
 }
 

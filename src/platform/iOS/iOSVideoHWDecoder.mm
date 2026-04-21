@@ -1,13 +1,16 @@
+
 //
-//  iOSVideoHWDecoder.m
-//  slark
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
-//  Created by Nevermore on 2024/10/20.
+// This file is part of Slark.
+// Licensed under the MIT License.
 //
+
 #import "iOSVideoHWDecoder.h"
-#import "iOSMediaUtil.h"
-#include "Log.hpp"
+
 #include "DecoderConfig.h"
+#include "Log.hpp"
+#import "iOSMediaUtil.h"
 
 namespace slark {
 
@@ -15,19 +18,19 @@ struct DecodeInfo {
     int64_t pts = 0;
     uint64_t timeScale = 1;
     bool isDiscard = false;
-    
+
     double ptsTime() {
         return static_cast<double>(pts) / static_cast<double>(timeScale);
     }
 };
 
 void decompressionOutputCallback(void* decompressionOutputRefCon,
-                   void* sourceFrameRefCon,
-                   OSStatus status,
-                   VTDecodeInfoFlags infoFlags,
-                   CVImageBufferRef pixelBuffer,
-                   CMTime,
-                   CMTime) {
+                                 void* sourceFrameRefCon,
+                                 OSStatus status,
+                                 VTDecodeInfoFlags infoFlags,
+                                 CVImageBufferRef pixelBuffer,
+                                 CMTime,
+                                 CMTime) {
     @autoreleasepool {
         auto* decodeInfo = reinterpret_cast<DecodeInfo*>(sourceFrameRefCon);
         if (decodeInfo->isDiscard) {
@@ -45,12 +48,12 @@ void decompressionOutputCallback(void* decompressionOutputRefCon,
                 LogE("OSStatus:{}", status);
                 break;
             }
-            
+
             if (decodeInfo->isDiscard) {
                 LogE("discard video frame:{}", decodeInfo->ptsTime());
                 break;
             }
-            
+
             OSType formatType = CVPixelBufferGetPixelFormatType(pixelBuffer);
             if (formatType != kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange) {
                 LogI("formatType error:{}", formatType);
@@ -65,12 +68,10 @@ void decompressionOutputCallback(void* decompressionOutputRefCon,
         if (opaque == nullptr) {
             return;
         }
-        
-        auto frame = std::shared_ptr<AVFrame>(new AVFrame(AVFrameType::Video), [](AVFrame* frame){
+
+        auto frame = std::shared_ptr<AVFrame>(new AVFrame(AVFrameType::Video), [](AVFrame* frame) {
             auto videoInfo = std::dynamic_pointer_cast<VideoFrameInfo>(frame->info);
-            if (videoInfo &&
-                videoInfo->format == FrameFormat::VideoToolBox &&
-                frame->opaque) {
+            if (videoInfo && videoInfo->format == FrameFormat::VideoToolBox && frame->opaque) {
                 auto* opaque = reinterpret_cast<CVPixelBufferRef>(frame->opaque);
                 frame->opaque = nullptr;
                 CVPixelBufferRelease(opaque);
@@ -128,11 +129,13 @@ DecoderErrorCode iOSVideoHWDecoder::decode(AVFrameRefPtr& frame) noexcept {
     auto& data = frame->data;
     auto videoInfo = std::dynamic_pointer_cast<VideoFrameInfo>(frame->info);
     if (videoInfo->isEndOfStream) {
-        flush(); //Output remain frames
-        isCompleted_ = true;
+        flush();
+        Output remain frames isCompleted_ = true;
         return DecoderErrorCode::Success;
     }
-    auto sampleBuffer = createSampleBuffer(videoFormatDescription_, static_cast<void*>(data->rawData), static_cast<size_t>(data->length));
+    auto sampleBuffer = createSampleBuffer(videoFormatDescription_,
+                                           static_cast<void*>(data->rawData),
+                                           static_cast<size_t>(data->length));
     auto decodeInfo = new (std::nothrow) DecodeInfo();
     if (decodeInfo == nullptr) {
         return DecoderErrorCode::Unknown;
@@ -140,16 +143,19 @@ DecoderErrorCode iOSVideoHWDecoder::decode(AVFrameRefPtr& frame) noexcept {
     decodeInfo->pts = frame->pts;
     decodeInfo->timeScale = frame->timeScale;
     decodeInfo->isDiscard = frame->isDiscard;
-    
+
     auto status = VTDecompressionSessionDecodeFrame(decodeSession_,
-        sampleBuffer, kVTDecodeFrame_EnableAsynchronousDecompression,
-        reinterpret_cast<void*>(decodeInfo), nullptr);
-    if (status == kVTInvalidSessionErr ||
-        status == kVTVideoDecoderMalfunctionErr) {
+                                                    sampleBuffer,
+                                                    kVTDecodeFrame_EnableAsynchronousDecompression,
+                                                    reinterpret_cast<void*>(decodeInfo),
+                                                    nullptr);
+    if (status == kVTInvalidSessionErr || status == kVTVideoDecoderMalfunctionErr) {
         createDecodeSession();
         status = VTDecompressionSessionDecodeFrame(decodeSession_,
-            sampleBuffer, kVTDecodeFrame_EnableAsynchronousDecompression,
-            reinterpret_cast<void*>(decodeInfo), nullptr);
+                                                   sampleBuffer,
+                                                   kVTDecodeFrame_EnableAsynchronousDecompression,
+                                                   reinterpret_cast<void*>(decodeInfo),
+                                                   nullptr);
     }
     if (sampleBuffer) {
         CFRelease(sampleBuffer);
@@ -180,20 +186,25 @@ bool iOSVideoHWDecoder::createDecodeSession() noexcept {
     }
     if (config->mediaInfo == MEDIA_MIMETYPE_VIDEO_AVC) {
         const uint8_t* const parameterSetPointers[2] = {config->sps->rawData, config->pps->rawData};
-        const size_t parameterSetSizes[2] = { config->sps->length, config->pps->length };
-        status = CMVideoFormatDescriptionCreateFromH264ParameterSets(kCFAllocatorDefault,
-                                                                     2,
-                                                                     parameterSetPointers,
-                                                                     parameterSetSizes,
-                                                                     static_cast<int>(config->naluHeaderLength),
-                                                                     &videoFormatDescription_);
+        const size_t parameterSetSizes[2] = {config->sps->length, config->pps->length};
+        status = CMVideoFormatDescriptionCreateFromH264ParameterSets(
+            kCFAllocatorDefault,
+            2,
+            parameterSetPointers,
+            parameterSetSizes,
+            static_cast<int>(config->naluHeaderLength),
+            &videoFormatDescription_);
     } else if (config->mediaInfo == MEDIA_MIMETYPE_VIDEO_HEVC) {
         if (!VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC)) {
             LogI("not support hevc");
             return false;
         }
-        const uint8_t* const parameterSetPointers[3] = {config->sps->rawData, config->pps->rawData, config->vps->rawData};
-        const size_t parameterSetSizes[3] = { config->sps->length, config->pps->length, config->vps->length };
+        const uint8_t* const parameterSetPointers[3] = {config->sps->rawData,
+                                                        config->pps->rawData,
+                                                        config->vps->rawData};
+        const size_t parameterSetSizes[3] = {config->sps->length,
+                                             config->pps->length,
+                                             config->vps->length};
         status = CMVideoFormatDescriptionCreateFromHEVCParameterSets(kCFAllocatorDefault,
                                                                      3,
                                                                      parameterSetPointers,
@@ -211,18 +222,19 @@ bool iOSVideoHWDecoder::createDecodeSession() noexcept {
         return false;
     }
     CFDictionaryRef attrs = NULL;
-    const void *keys[] = { kCVPixelBufferPixelFormatTypeKey };
+    const void* keys[] = {kCVPixelBufferPixelFormatTypeKey};
     uint32_t v = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
-    const void *values[] = { CFNumberCreate(nullptr, kCFNumberSInt32Type, &v) };
+    const void* values[] = {CFNumberCreate(nullptr, kCFNumberSInt32Type, &v)};
     attrs = CFDictionaryCreate(nullptr, keys, values, 1, nullptr, nullptr);
-    
+
     VTDecompressionOutputCallbackRecord callBackRecord;
     callBackRecord.decompressionOutputCallback = decompressionOutputCallback;
     callBackRecord.decompressionOutputRefCon = this;
 
     status = VTDecompressionSessionCreate(kCFAllocatorDefault,
                                           videoFormatDescription_,
-                                          NULL, attrs,
+                                          NULL,
+                                          attrs,
                                           &callBackRecord,
                                           &decodeSession_);
     if (status != noErr) {
@@ -245,4 +257,4 @@ void iOSVideoHWDecoder::close() noexcept {
     config_.reset();
 }
 
-}
+} // namespace slark

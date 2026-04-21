@@ -1,9 +1,14 @@
+
 //
-//  iOSBase.m
-//  slark
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
-//  Created by Nevermore on 2022/8/15.
+// This file is part of Slark.
+// Licensed under the MIT License.
 //
+
+Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
+This file is part of Slark.
+Licensed under the MIT License.
 #import <Foundation/NSObjCRuntime.h>
 #import <Foundation/NSString.h>
 #import <Foundation/NSPathUtilities.h>
@@ -27,7 +32,6 @@ NSString* stringViewToNSString(std::string_view view) {
                                     length:view.size()
                                   encoding:NSUTF8StringEncoding];
 }
-
 
 namespace slark::File {
 
