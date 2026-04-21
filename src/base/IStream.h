@@ -1,0 +1,109 @@
+//
+// Copyright (c) 2026 Nevermore-. All rights reserved.
+//
+
+#pragma once
+
+#include "Data.h"
+#include "DataView.hpp"
+#include "Error.h"
+#include "Range.h"
+
+#include <expected>
+#include <functional>
+#include <memory>
+#include <optional>
+#include <string>
+
+namespace slark {
+
+enum class StreamType : uint8_t {
+    File,
+    Http,
+    HLS,
+};
+
+enum class StreamState : uint8_t {
+    Idle,
+    Opening,
+    Ready,
+    Reading,
+    Paused,
+    Completed,
+    Error,
+};
+
+template <typename T>
+using StreamResult = std::expected<T, Error>;
+
+struct DataChunk {
+    DataView data;
+    DataRefPtr owner;
+    uint64_t offset = 0;
+    uint32_t segmentIndex = 0;
+    bool isLastChunk = false;
+
+    [[nodiscard]] bool empty() const noexcept {
+        return data.empty();
+    }
+
+    [[nodiscard]] size_t size() const noexcept {
+        return data.size();
+    }
+
+    [[nodiscard]] bool valid() const noexcept {
+        return owner != nullptr;
+    }
+};
+
+struct StreamInfo {
+    StreamType type = StreamType::File;
+    uint64_t totalSize = 0;
+    double duration = 0.0;
+    bool isSeekable = true;
+    bool isLive = false;
+    std::string contentType;
+};
+
+using DataCallback = std::function<void(DataChunk)>;
+
+class MediaPlaylist;
+using MetadataCallback = std::function<void(const MediaPlaylist&)>;
+
+using ErrorCallback = std::function<void(Error)>;
+
+using CompletionCallback = std::function<void()>;
+
+struct OpenParams {
+    std::string uri;
+    Range range;
+    uint32_t readChunkSize = 64 * 1024;
+
+    DataCallback onData;
+    MetadataCallback onMetadata;
+    ErrorCallback onError;
+    CompletionCallback onComplete;
+};
+
+class IStream {
+public:
+    virtual ~IStream() = default;
+
+    virtual auto open(const OpenParams& params) -> StreamResult<StreamInfo> = 0;
+    virtual void close() noexcept = 0;
+    virtual void start() noexcept = 0;
+    virtual void pause() noexcept = 0;
+    virtual auto seek(uint64_t position) -> StreamResult<void> = 0;
+    virtual void updateRange(Range range) noexcept = 0;
+
+    [[nodiscard]] virtual StreamState state() const noexcept = 0;
+    [[nodiscard]] virtual const StreamInfo& info() const noexcept = 0;
+    [[nodiscard]] virtual uint64_t position() const noexcept = 0;
+    [[nodiscard]] virtual bool isRunning() const noexcept = 0;
+    [[nodiscard]] virtual bool isCompleted() const noexcept = 0;
+};
+
+using StreamPtr = std::unique_ptr<IStream>;
+
+} // namespace slark
+namespace slark
