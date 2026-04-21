@@ -46,8 +46,6 @@ Pod::Spec.new do |s|
 
     s.requires_arc = true
     
-    s.pod_target_xcconfig = { 'ONLY_ACTIVE_ARCH' => 'YES' }
-
     s.user_target_xcconfig = { 
         'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'arm64'
     }
@@ -57,7 +55,11 @@ Pod::Spec.new do |s|
     end
 
     s.pod_target_xcconfig = { 
+        'ONLY_ACTIVE_ARCH' => 'YES',
         'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'arm64',
+        'CLANG_C_LANGUAGE_STANDARD' => 'c17',
+        'CLANG_CXX_LANGUAGE_STANDARD' => 'c++23',
+        'GCC_PREPROCESSOR_DEFINITIONS' => 'ENABLE_HTTPS=#{enable_https_flag} SLARK_IOS=1',
         'HEADER_SEARCH_PATHS' => %(
             $(inherited)
             $(PODS_TARGET_SRCROOT)/include
@@ -79,15 +81,7 @@ Pod::Spec.new do |s|
             $(inherited)
             $(PODS_TARGET_SRCROOT)/libs/openssl/ios/libssl.a
             $(PODS_TARGET_SRCROOT)/libs/openssl/ios/libcrypto.a
-        ).gsub("\n", " ")
-    }
-
-    enable_https_flag = is_enable_https ? 1 : 0
-
-    s.xcconfig = { 
-        'CLANG_C_LANGUAGE_STANDARD' => 'c17',
-        'CLANG_CXX_LANGUAGE_STANDARD' => 'c++23',
-        "GCC_PREPROCESSOR_DEFINITIONS" => "ENABLE_HTTPS=#{enable_https_flag} SLARK_IOS=1",
+        ).gsub("\n", " "),
         'OTHER_CPLUSPLUSFLAGS' => '-Wall -Wextra -Wpedantic -Wcast-align -Wcast-qual -Wconversion -Wdisabled-optimization -Wendif-labels -Wfloat-equal -Winit-self -Winline -Wmissing-include-dirs -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual -Wpacked -Wpointer-arith -Wredundant-decls -Wshadow -Wsign-promo -Wvariadic-macros -Wwrite-strings -Wno-variadic-macros -Wno-unknown-pragmas'
     }
     s.frameworks = 'Foundation', 'AVFoundation', 'VideoToolBox', 'AudioToolBox', 'CoreMedia'

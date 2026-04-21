@@ -7,8 +7,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(MODULE_NAME slark_http)
 
 # 自动收集所有源文件和头文件
-file(GLOB HTTP_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/*.cc")
-file(GLOB HTTP_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp")
+file(GLOB HTTP_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.cc")
+file(GLOB HTTP_HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp")
 
 # HTTPS 支持选项
 option(ENABLE_HTTPS "Enable HTTPS support" ON)
@@ -53,7 +53,7 @@ else()
     )
 
     # 收集 base 源文件
-    file(GLOB BASE_SOURCES
+    file(GLOB BASE_SOURCES CONFIGURE_DEPENDS
         "${SLARK_BASE_DIR}/*.cc"
         "${SLARK_BASE_DIR}/*.hpp"
         "${SLARK_BASE_DIR}/*.h"

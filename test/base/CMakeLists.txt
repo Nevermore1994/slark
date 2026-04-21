@@ -7,12 +7,14 @@ PROJECT(Base_test)
 set(TEST_FILE_LISTS
         *.cpp
         AsyncGeneratorTest.cpp
+        PlayerStateMachineTest.cpp
 )
 file(GLOB TEST_FILES ${TEST_FILE_LISTS})
 add_executable(${PROJECT_NAME} ${TEST_FILES})
 
 target_link_libraries(${PROJECT_NAME}
         slark_base
+        slark_core
         gtest_main
         pthread)
 

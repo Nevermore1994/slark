@@ -43,7 +43,8 @@ else()
 endif()
 
 # add src subdirectories
-add_subdirectory(src/include)
+add_subdirectory(include)
+add_subdirectory(internal)
 add_subdirectory(src/base)
 
 if(NOT DISABLE_CORE)

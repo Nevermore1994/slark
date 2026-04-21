@@ -1016,28 +1016,28 @@
         {
           "name": "open",
           "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/FileTest.cpp",
-          "line": 16
+          "line": 15
         },
         {
           "name": "getPath",
           "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/FileTest.cpp",
-          "line": 25
+          "line": 24
         }
       ]
     },
     {
-      "name": "Reader",
+      "name": "FileStream",
       "tests": 2,
       "testsuite": [
         {
-          "name": "getPath",
+          "name": "openAndClose",
           "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/FileTest.cpp",
-          "line": 33
+          "line": 32
         },
         {
           "name": "open",
           "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/FileTest.cpp",
-          "line": 45
+          "line": 44
         }
       ]
     },
@@ -1048,12 +1048,12 @@
         {
           "name": "isExist",
           "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/FileTest.cpp",
-          "line": 91
+          "line": 92
         },
         {
           "name": "BackFillByteBoundary",
           "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/FileTest.cpp",
-          "line": 115
+          "line": 116
         }
       ]
     },
@@ -1064,7 +1064,7 @@
         {
           "name": "create",
           "file": "\/Users\/nevermore-\/selfspace\/slark\/test\/base\/FileTest.cpp",
-          "line": 106
+          "line": 107
         }
       ]
     },
