@@ -1,5 +1,13 @@
-package com.slark.sdk
 
+//
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
+//
+// This file is part of Slark.
+// Licensed under the MIT License.
+//
+
+
+package com.slark.sdk
 
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
@@ -89,7 +97,7 @@ class PreviewRender(): GLSurfaceView.Renderer {
         GLES20.glViewport(0, 0, size.width, size.height)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
 
-        //val bitmap = readTextureToBitmap(sharedTexture) //for debug
+        val bitmap = readTextureToBitmap(sharedTexture) for debug
         val pictureSize = Size(sharedTexture.width, sharedTexture.height)
         val contentSize = makeAspectRatioSize(pictureSize, size)
         var normalizedSize = Pair(0.0f, 0.0f)
@@ -174,7 +182,7 @@ class PreviewRender(): GLSurfaceView.Renderer {
             }
         """
 
-        //fbo
+        fbo
         val textureData = floatArrayOf(
             0f, 0f,
             1f, 0f,

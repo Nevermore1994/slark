@@ -1,3 +1,12 @@
+
+//
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
+//
+// This file is part of Slark.
+// Licensed under the MIT License.
+//
+
+
 package com.slark.sdk
 
 import android.media.MediaCodec
@@ -57,7 +66,7 @@ class MediaCodecDecoder(
                     surface?.init()
                     decoder.configure(format, surface?.surface(), null, 0)
                 } else {
-                    // Use flexible color format for YUV420
+                    Use flexible color format for YUV420
                     format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
                     decoder.configure(format, null, null, 0)
                 }
@@ -72,11 +81,11 @@ class MediaCodecDecoder(
         }
     }
 
-    /// BUFFER_FLAG_CODEC_CONFIG: 2
-    /// BUFFER_FLAG_DECODE_ONLY: 32
-    /// BUFFER_FLAG_END_OF_STREAM: 4
-    /// BUFFER_FLAG_KEY_FRAME: 1
-    /// BUFFER_FLAG_PARTIAL_FRAME: 8
+    / BUFFER_FLAG_CODEC_CONFIG: 2
+    / BUFFER_FLAG_DECODE_ONLY: 32
+    / BUFFER_FLAG_END_OF_STREAM: 4
+    / BUFFER_FLAG_KEY_FRAME: 1
+    / BUFFER_FLAG_PARTIAL_FRAME: 8
     fun sendPacket(byteBuffer: ByteArray?, presentationTimeUs: Long, flag: Int): Int {
         val mediaInfo =  if (format.isVideoFormat()) "video " else "audio "
         var errorCode: ErrorCode = ErrorCode.Unknown
@@ -92,7 +101,7 @@ class MediaCodecDecoder(
 
         execute {
             val inputBufferIndex =
-                decoder?.dequeueInputBuffer(10_000) ?: return@execute //10 ms
+                decoder?.dequeueInputBuffer(10_000) ?: return@execute 10 ms
             if (inputBufferIndex == -1) {
                 SlarkLog.e(LOG_TAG,  mediaInfo + "no input buffer available")
                 errorCode = ErrorCode.NotProcessed
@@ -122,7 +131,7 @@ class MediaCodecDecoder(
         execute {
             val info = MediaCodec.BufferInfo()
             val outputBufferIndex =
-                decoder?.dequeueOutputBuffer(info, 10_000) ?: return@execute //10 ms
+                decoder?.dequeueOutputBuffer(info, 10_000) ?: return@execute 10 ms
             isCompleted = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
             @Suppress("DEPRECATION")
             when (outputBufferIndex) {
@@ -210,7 +219,7 @@ class MediaCodecDecoder(
             val res = it.awaitFrame(waitTime)
             if (res.first) {
                 it.drawFrame(format, Size(width, height))
-                // set high bit to indicate frame available
+                set high bit to indicate frame available
                 val flag = (1L shl 63) or ((if (isCompleted) 1L else 0L) shl 62)
                 return flag or (res.second and 0x3FFFFFFFFFFFFFFF)
             }
@@ -241,7 +250,7 @@ class MediaCodecDecoder(
             if (extractorMaxSize > 0) {
                 format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, extractorMaxSize)
             } else {
-                format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 1048576 * 2) //2MB
+                format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 1048576 * 2) 2MB
             }
             val decoder = MediaCodecDecoder(mediaInfo, format, DecodeMode.fromInt(if (videoInfos.size >=5) videoInfos[4] else 0 ))
             val decoderId = decoder.decoderId

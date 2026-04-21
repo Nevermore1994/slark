@@ -1,3 +1,12 @@
+
+//
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
+//
+// This file is part of Slark.
+// Licensed under the MIT License.
+//
+
+
 package com.slark.sdk
 
 import android.media.MediaCodec
@@ -14,9 +23,9 @@ import java.util.concurrent.LinkedBlockingQueue
 
 object MediaCodecDecoderPool {
     private val poolSizePerType = mapOf(
-        MediaFormat.MIMETYPE_VIDEO_AVC to 2, //H264
-        //MediaFormat.MIMETYPE_VIDEO_HEVC to 2, // H265
-        MediaFormat.MIMETYPE_AUDIO_AAC to 2 // AAC
+        MediaFormat.MIMETYPE_VIDEO_AVC to 2, H264
+        MediaFormat.MIMETYPE_VIDEO_HEVC to 2, H265
+        MediaFormat.MIMETYPE_AUDIO_AAC to 2 AAC
     )
     private val decoderPools = ConcurrentHashMap<String, LinkedBlockingQueue<MediaCodec>>()
     private val lock = Any()

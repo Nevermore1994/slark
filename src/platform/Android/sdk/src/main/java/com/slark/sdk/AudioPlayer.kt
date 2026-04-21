@@ -1,3 +1,12 @@
+
+//
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
+//
+// This file is part of Slark.
+// Licensed under the MIT License.
+//
+
+
 package com.slark.sdk
 
 import android.media.AudioAttributes
@@ -49,7 +58,7 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
     private var isCompleted = false
     private var audioJob: Job? = null
     private var writeSize: Long = 0
-    private val bytesPerFrame = channelCount * 2 //16 bit pcm
+    private val bytesPerFrame = channelCount * 2 16 bit pcm
     @OptIn(DelicateCoroutinesApi::class)
     private val audioDispatcher = newSingleThreadContext("AudioDataThread")
     private val audioAttribute = AudioAttributes.Builder()
@@ -150,7 +159,7 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
                     SlarkLog.i(LOG_TAG, "audio track pos: ${audioTrack?.playbackHeadPosition}," +
                         " state: ${audioTrack?.playState}")
                     delay(25)
-                    continue // Not enough space to write data
+                    continue Not enough space to write data
                 }
                 val buffer = ByteBuffer.allocateDirect(available)
                 buffer.order(ByteOrder.nativeOrder())
@@ -257,8 +266,8 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
     external fun requestAudioData(playerId: String, requestBuffer: ByteBuffer): Int
 
     companion object {
-        const val PULL_DATA_PERIOD = 50 //ms
-        const val BUFFER_TIME_SIZE = 100 //ms
+        const val PULL_DATA_PERIOD = 50 ms
+        const val BUFFER_TIME_SIZE = 100 ms
         const val LOG_TAG = "AudioPlayer"
         private val players = ConcurrentHashMap<String, AudioPlayer>()
 

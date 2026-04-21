@@ -1,3 +1,12 @@
+
+//
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
+//
+// This file is part of Slark.
+// Licensed under the MIT License.
+//
+
+
 package com.slark.api
 
 enum class SlarkPlayerEvent {
@@ -8,7 +17,7 @@ enum class SlarkPlayerEvent {
     OnError,
 }
 
-///There is currently no specific error code
+/There is currently no specific error code
 enum class PlayerErrorCode {
     OpenFileError,
     NetWorkError,

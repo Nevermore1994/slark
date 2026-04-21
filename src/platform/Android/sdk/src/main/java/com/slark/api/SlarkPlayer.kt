@@ -1,3 +1,12 @@
+
+//
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
+//
+// This file is part of Slark.
+// Licensed under the MIT License.
+//
+
+
 package com.slark.api
 
 import com.slark.sdk.SlarkPlayerImpl
@@ -95,10 +104,10 @@ interface SlarkPlayer {
     fun setRenderSize(width: Int, height: Int)
 
     enum class Rotation {
-        ROTATION_0,   // 0 degrees
-        ROTATION_90,  // 90 degrees
-        ROTATION_180, // 180 degrees
-        ROTATION_270  // 270 degrees
+        ROTATION_0,   0 degrees
+        ROTATION_90,  90 degrees
+        ROTATION_180, 180 degrees
+        ROTATION_270  270 degrees
     }
     /**
      * Set the rotation of the video.

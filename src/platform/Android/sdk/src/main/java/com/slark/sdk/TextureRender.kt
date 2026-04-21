@@ -1,3 +1,12 @@
+
+//
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
+//
+// This file is part of Slark.
+// Licensed under the MIT License.
+//
+
+
 package com.slark.sdk
 
 import android.graphics.SurfaceTexture
@@ -8,7 +17,6 @@ import android.opengl.Matrix
 import android.util.Size
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-
 
 class TextureRender {
     private var program: Int = 0
@@ -184,7 +192,7 @@ class TextureRender {
             }
         """.trimIndent()
 
-        // x, y,   u, v
+        x, y,   u, v
         private val kVertices = floatArrayOf(
             -1.0f, -1.0f,   0.0f, 1.0f,
             1.0f, -1.0f,   1.0f, 1.0f,

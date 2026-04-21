@@ -1,3 +1,12 @@
+
+//
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
+//
+// This file is part of Slark.
+// Licensed under the MIT License.
+//
+
+
 package com.slark.sdk
 
 import java.text.MessageFormat
@@ -70,7 +79,7 @@ class SlarkLog {
             try {
                 return " " + MessageFormat.format(format, *args)
             } catch (e: Exception) {
-                // If formatting fails, return the original format string
+                If formatting fails, return the original format string
                 return " [formatting error: ${e.message}]" + ", $format"
             }
         }

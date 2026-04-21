@@ -1,3 +1,12 @@
+
+//
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
+//
+// This file is part of Slark.
+// Licensed under the MIT License.
+//
+
+
 package com.slark.sdk
 
 import android.graphics.SurfaceTexture
@@ -69,7 +78,7 @@ class RenderSurface : SurfaceTexture.OnFrameAvailableListener {
     fun awaitFrame(waitTime: Long): Pair<Boolean, Long> {
         synchronized(mutex) {
             if (!isFrameAvailable) {
-                mutex.wait(waitTime) // wait some time for frame available
+                mutex.wait(waitTime) wait some time for frame available
                 if (!isFrameAvailable) {
                     SlarkLog.e(LOG_TAG, "wait frame timeout")
                     return false to 0
@@ -85,7 +94,7 @@ class RenderSurface : SurfaceTexture.OnFrameAvailableListener {
         try {
             surfaceTexture?.let {
                 it.updateTexImage()
-                timestamp = it.timestamp / 1000L //to us
+                timestamp = it.timestamp / 1000L to us
             }
         } catch (e: Exception) {
             SlarkLog.e(LOG_TAG, "updateTexImage failed: ${e.message}")

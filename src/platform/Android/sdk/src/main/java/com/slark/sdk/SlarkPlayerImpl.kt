@@ -1,3 +1,12 @@
+
+//
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
+//
+// This file is part of Slark.
+// Licensed under the MIT License.
+//
+
+
 package com.slark.sdk
 
 import android.graphics.SurfaceTexture
@@ -20,7 +29,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.ceil
 import kotlin.math.min
-
 
 class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: String): SlarkPlayer {
     private var playerObserver: SlarkPlayerObserver? = null
@@ -161,8 +169,8 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
                     state == SlarkPlayerState.Ready ||
                     state == SlarkPlayerState.Completed
                 if (isRefresh) {
-                    //It seems that the first refresh does not fully adapt to the surface,
-                    //and it always takes the second refresh to display normally.
+                    It seems that the first refresh does not fully adapt to the surface,
+                    and it always takes the second refresh to display normally.
                     renderThread?.rebuildSurface()
                 }
             }
