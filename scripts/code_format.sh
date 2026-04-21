@@ -14,8 +14,16 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 
-# 明确指定 clang 工具版本（与 CI 一致：Ubuntu clang-format-17/clang-tidy-17 17.0.6）
-CLANG_FORMAT="${CLANG_FORMAT:-/usr/bin/clang-format-17}"
+# 自动查找可用的 clang-format（优先使用环境变量，其次按版本从新到旧查找）
+if [ -z "${CLANG_FORMAT}" ]; then
+    for candidate in clang-format clang-format-19 clang-format-18 clang-format-17 clang-format-16; do
+        if command -v "${candidate}" &>/dev/null; then
+            CLANG_FORMAT="$(command -v "${candidate}")"
+            break
+        fi
+    done
+fi
+CLANG_FORMAT="${CLANG_FORMAT:-clang-format}"
 
 # 默认配置
 FIX_FORMAT="${FIX_FORMAT:-OFF}"
@@ -128,11 +136,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# 收集源文件
+# 收集源文件（结果存入全局数组 SOURCE_FILES）
+SOURCE_FILES=()
 collect_source_files() {
-    local -n result=$1
-    result=()
-    
+    SOURCE_FILES=()
+
     for dir in "${SOURCE_DIRS[@]}"; do
         if [ -d "${dir}" ]; then
             while IFS= read -r -d '' file; do
@@ -144,9 +152,9 @@ collect_source_files() {
                     fi
                 done
                 if [ "${exclude}" -eq 0 ]; then
-                    result+=("${file}")
+                    SOURCE_FILES+=("${file}")
                 fi
-            done < <(find "${dir}" -type f \( -name "*.cpp" -o -name "*.cc" -o -name "*.h" -o -name "*.hpp" \) -print0 2>/dev/null)
+            done < <(find "${dir}" -type f \( -name "*.cpp" -o -name "*.cc" -o -name "*.h" -o -name "*.hpp" -o -name "*.mm" -o -name "*.m" \) -print0 2>/dev/null)
         fi
     done
 }
@@ -154,7 +162,7 @@ collect_source_files() {
 # 检查 clang-format 是否可用
 check_clang_format() {
     if [ ! -x "${CLANG_FORMAT}" ]; then
-        print_error "clang-format not found at ${CLANG_FORMAT}. Please install clang-format-17."
+        print_error "clang-format not found. Please install clang-format (e.g. brew install clang-format or apt install clang-format)."
         exit 1
     fi
     print_info "Using clang-format: ${CLANG_FORMAT} ($(${CLANG_FORMAT} --version | head -1))"
@@ -168,9 +176,9 @@ run_format_check() {
     
     check_clang_format
     
-    local files=()
-    collect_source_files files
-    
+    collect_source_files
+    local files=("${SOURCE_FILES[@]}")
+
     if [ ${#files[@]} -eq 0 ]; then
         print_warn "No source files found."
         return 0

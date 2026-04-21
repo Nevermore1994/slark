@@ -14,8 +14,16 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 
-# 明确指定 clang 工具版本（与 CI 一致：Ubuntu clang-tidy-17 17.0.6）
-CLANG_TIDY="${CLANG_TIDY:-/usr/bin/clang-tidy-17}"
+# 自动查找可用的 clang-tidy（优先使用环境变量，其次按版本从新到旧查找）
+if [ -z "${CLANG_TIDY}" ]; then
+    for candidate in clang-tidy clang-tidy-19 clang-tidy-18 clang-tidy-17 clang-tidy-16; do
+        if command -v "${candidate}" &>/dev/null; then
+            CLANG_TIDY="$(command -v "${candidate}")"
+            break
+        fi
+    done
+fi
+CLANG_TIDY="${CLANG_TIDY:-clang-tidy}"
 
 # 默认配置
 VERBOSE="${VERBOSE:-ON}"
@@ -50,6 +58,8 @@ print_warn() {
 }
 
 print_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
 
 print_detail() {
     echo -e "${BLUE}[DETAIL]${NC} $1"
@@ -117,27 +127,26 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# 收集源文件
+# 收集源文件（结果存入全局数组 SOURCE_FILES）
+SOURCE_FILES=()
 collect_source_files() {
-    local -n result=$1
-    result=()
-    
+    SOURCE_FILES=()
+
     for dir in "${SOURCE_DIRS[@]}"; do
         if [ -d "${dir}" ]; then
             while IFS= read -r -d '' file; do
                 local exclude=0
-                # 检查基础排除模式
                 for pattern in "${EXCLUDE_PATTERNS[@]}"; do
                     if [[ "${file}" == ${pattern} ]]; then
                         exclude=1
                         break
                     fi
                 done
-                
+
                 if [ "${exclude}" -eq 0 ]; then
-                    result+=("${file}")
+                    SOURCE_FILES+=("${file}")
                 fi
-            done < <(find "${dir}" -type f \( -name "*.cpp" -o -name "*.cc" -o -name "*.h" -o -name "*.hpp" \) -print0 2>/dev/null)
+            done < <(find "${dir}" -type f \( -name "*.cpp" -o -name "*.cc" -o -name "*.h" -o -name "*.hpp" -o -name "*.mm" -o -name "*.m" \) -print0 2>/dev/null)
         fi
     done
 }
@@ -145,7 +154,7 @@ collect_source_files() {
 # 检查 clang-tidy 是否可用
 check_clang_tidy() {
     if [ ! -x "${CLANG_TIDY}" ]; then
-        print_error "clang-tidy not found at ${CLANG_TIDY}. Please install clang-tidy-17."
+        print_error "clang-tidy not found. Please install clang-tidy (e.g. brew install llvm or apt install clang-tidy)."
         exit 1
     fi
     print_info "Using clang-tidy: ${CLANG_TIDY} ($(${CLANG_TIDY} --version | head -1))"
@@ -173,9 +182,9 @@ run_tidy_check() {
         print_info "Using compile_commands.json from: $(dirname "${compile_db}")"
     fi
     
-    local files=()
-    collect_source_files files
-    
+    collect_source_files
+    local files=("${SOURCE_FILES[@]}")
+
     if [ ${#files[@]} -eq 0 ]; then
         print_warn "No source files found."
         return 0
@@ -184,7 +193,7 @@ run_tidy_check() {
     # 筛选出C++源文件（仅.cpp/.cc）
     local cpp_files=()
     for file in "${files[@]}"; do
-        if [[ "${file}" == *.cpp ]] || [[ "${file}" == *.cc ]]; then
+        if [[ "${file}" == *.cpp ]] || [[ "${file}" == *.cc ]] || [[ "${file}" == *.mm ]]; then
             cpp_files+=("${file}")
         fi
     done

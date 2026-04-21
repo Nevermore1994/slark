@@ -79,7 +79,7 @@ check_ios_dependencies() {
 # 如果直接执行此脚本
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-    source "${SCRIPT_DIR}/scripts/common.sh"
+    source "${SCRIPT_DIR}/scripts/build_utils.sh"
     
     BUILD_TYPE="Debug"
     DISABLE_HTTP=false
