@@ -1,24 +1,27 @@
+
 //
-//  AudioViewController.m
-//  demo
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
+//
+// This file is part of Slark.
+// Licensed under the MIT License.
 //
 
-
-#import <AVFoundation/AVFoundation.h>
-#import "Masonry.h"
-#import "EXTScope.h"
 #import "AudioViewController.h"
+
+#import "EXTScope.h"
+#import "Masonry.h"
 #import "PlayerControllerView.h"
 #include "SlarkPlayer.h"
 
-@interface AudioViewController()<UIGestureRecognizerDelegate, ISlarkPlayerObserver>
+#import <AVFoundation/AVFoundation.h>
+
+@interface AudioViewController () <UIGestureRecognizerDelegate, ISlarkPlayerObserver>
 @property (nonatomic, strong) UIImageView* iconView;
 @property (nonatomic, strong) PlayerControllerView* controllerView;
 @property (nonatomic, strong) UILabel* nameLabel;
 @property (nonatomic, assign) BOOL hasAuthorization;
 @property (nonatomic, strong) SlarkPlayer* player;
 @end
-
 
 @implementation AudioViewController
 
@@ -36,18 +39,17 @@
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     self.navigationController.interactivePopGestureRecognizer.delegate = self;
-    AVAuthorizationStatus AVstatus = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
+    AVAuthorizationStatus AVstatus =
+        [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
     switch (AVstatus) {
         case AVAuthorizationStatusAuthorized: {
             NSLog(@"Authorized");
             self.hasAuthorization = YES;
-        }
-          break;
+        } break;
         case AVAuthorizationStatusDenied: {
             NSLog(@"Denied");
             self.hasAuthorization = NO;
-        }
-          break;
+        } break;
         case AVAuthorizationStatusNotDetermined: {
             NSLog(@"not Determined");
             @weakify(self);
@@ -55,46 +57,45 @@
                 @strongify(self);
                 self.hasAuthorization = grant;
             }];
-        }
-          break;
+        } break;
         case AVAuthorizationStatusRestricted: {
             NSLog(@"Restricted");
             self.hasAuthorization = YES;
-        }
-          break;
-      default:
-          break;
+        } break;
+        default:
+            break;
     }
     [self setupAudioSession];
     NSLog(@"audio viewDidAppear");
 }
 
-- (void)requestAccess:(void(^)(BOOL)) block {
+- (void)requestAccess:(void (^)(BOOL))block {
     [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:block];
 }
 
 - (void)setupAudioSession {
-    AVAudioSession *session = [AVAudioSession sharedInstance];
-    NSError *error = nil;
+    AVAudioSession* session = [AVAudioSession sharedInstance];
+    NSError* error = nil;
     [session setCategory:AVAudioSessionCategoryPlayback error:&error];
     [session setActive:YES error:&error];
 }
 
-- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer {
+- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer*)gestureRecognizer {
     return NO;
 }
 
 - (void)initSubviews {
     self.navigationItem.title = @"music";
-    [self.navigationController.navigationBar setTitleTextAttributes:@{NSForegroundColorAttributeName:[UIColor blackColor]}];
+    [self.navigationController.navigationBar
+        setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor blackColor]}];
     self.view.backgroundColor = [UIColor blackColor];
     [self.view addSubview:self.iconView];
     [self.view addSubview:self.controllerView];
-    [self.iconView mas_makeConstraints:^(MASConstraintMaker *make) {
+    [self.iconView mas_makeConstraints:^(MASConstraintMaker* make) {
         UIEdgeInsets insets = UIEdgeInsetsMake(100, 60, 300, 60);
         make.edges.equalTo(self.view).with.insets(insets);
     }];
-    [self.controllerView mas_makeConstraints:^(MASConstraintMaker *make) {
+    [self.controllerView mas_makeConstraints:^(MASConstraintMaker* make) {
         make.width.mas_equalTo(self.view.mas_width);
         make.height.mas_equalTo(120);
         make.centerX.equalTo(self.view);
@@ -106,7 +107,7 @@
     NSString* bundlePath = [[NSBundle mainBundle] pathForResource:@"resource" ofType:@"bundle"];
     NSBundle* resouceBundle = [NSBundle bundleWithPath:bundlePath];
     NSString* path = [resouceBundle pathForResource:@"sample-3s.wav" ofType:@""];
-    self.player = [[SlarkPlayer alloc] init:path];
+    self.player = [[SlarkPlayer alloc] initWithPath:path];
     self.player.delegate = self;
     self.hasAuthorization = NO;
     [self.player prepare];
@@ -121,7 +122,7 @@
     return _iconView;
 }
 
-- (void)handlePlayClick:(BOOL) isPlay {
+- (void)handlePlayClick:(BOOL)isPlay {
     if (!isPlay) {
         [self.player pause];
         return;
@@ -140,11 +141,11 @@
     }
 }
 
-- (PlayerControllerView*)controllerView{
+- (PlayerControllerView*)controllerView {
     if (_controllerView == nil) {
         _controllerView = [[PlayerControllerView alloc] initWithFrame:CGRectZero];
         @weakify(self);
-        _controllerView.onPlayClick = ^(BOOL isPlay){
+        _controllerView.onPlayClick = ^(BOOL isPlay) {
             @strongify(self);
             [self handlePlayClick:isPlay];
         };
@@ -153,7 +154,7 @@
             [self.player seek:time];
             NSLog(@"seek to:%f", time);
         };
-        _controllerView.onSeekDone = ^(double time){
+        _controllerView.onSeekDone = ^(double time) {
             @strongify(self);
             [self.player seek:time isAccurate:YES];
             NSLog(@"seek done");
@@ -166,24 +167,24 @@
     return _controllerView;
 }
 
-- (void)notifyTime:(NSString *)playerId time:(double)time {
+- (void)notifyTime:(NSString*)playerId time:(double)time {
     [self.controllerView updateCurrentTime:time];
 }
 
-- (void)notifyState:(NSString *)playerId state:(SlarkPlayerState)state {
+- (void)notifyState:(NSString*)playerId state:(SlarkPlayerState)state {
     if (state == SlarkPlayerStatePrepared) {
         [self.controllerView updateTotalTime:CMTimeGetSeconds(self.player.totalDuration)];
-    } else if (state == SlarkPlayerStateCompleted ||
-               state == SlarkPlayerStatePause) {
+    } else if (state == SlarkPlayerStateCompleted || state == SlarkPlayerStatePause) {
         [self.controllerView setIsPause:YES];
     } else if (state == SlarkPlayerStatePlaying) {
         [self.controllerView setIsPause:NO];
     }
 }
 
-- (void)notifyEvent:(NSString *)playerId event:(SlarkPlayerEvent)event value:(NSString *)value {
+- (void)notifyEvent:(NSString*)playerId event:(SlarkPlayerEvent)event value:(NSString*)value {
     if (event == SlarkPlayerEventUpdateCacheTime) {
         [self.controllerView updateCacheTime:[value doubleValue]];
     }
 }
+
 @end

@@ -1,3 +1,11 @@
+
+//
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
+//
+// This file is part of Slark.
+// Licensed under the MIT License.
+//
+
 package com.slark.demo.ui.theme
 
 import android.app.Activity
@@ -36,7 +44,7 @@ private val LightColorScheme = lightColorScheme(
 @Composable
 fun DemoTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
+    Dynamic color is available on Android 12+
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {

@@ -1,3 +1,11 @@
+
+//
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
+//
+// This file is part of Slark.
+// Licensed under the MIT License.
+//
+
 package com.slark.demo.ui.model
 
 import android.view.Surface
@@ -19,7 +27,6 @@ import com.slark.sdk.SlarkLog
 
 class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
     var isPlaying by mutableStateOf(false)
-
 
     var currentTime by mutableStateOf(0.0)
 
@@ -113,11 +120,11 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
     }
 
     fun skipPrev() {
-        // Implement skip previous logic
+        Implement skip previous logic
     }
 
     fun skipNext() {
-        // Implement skip next logic
+        Implement skip next logic
     }
 
     fun onBackground(isBackground: Boolean) {

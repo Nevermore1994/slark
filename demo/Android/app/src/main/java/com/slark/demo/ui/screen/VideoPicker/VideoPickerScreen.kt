@@ -1,3 +1,11 @@
+
+//
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
+//
+// This file is part of Slark.
+// Licensed under the MIT License.
+//
+
 package com.slark.demo.ui.screen.VideoPicker
 
 import android.content.Context
@@ -98,7 +106,7 @@ fun VideoPickerScreen(
 
 object ImageLoaderFactory {
     private var imageLoader: ImageLoader? = null
-    private const val MEMORY_CACHE_SIZE = 20 * 1024 * 1024 // 20MB
+    private const val MEMORY_CACHE_SIZE = 20 * 1024 * 1024 20MB
 
     fun create(context: Context): ImageLoader {
         if (imageLoader == null) {

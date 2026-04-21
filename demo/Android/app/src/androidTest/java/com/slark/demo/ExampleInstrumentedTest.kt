@@ -1,3 +1,11 @@
+
+//
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
+//
+// This file is part of Slark.
+// Licensed under the MIT License.
+//
+
 package com.slark.demo
 
 import androidx.test.platform.app.InstrumentationRegistry
@@ -11,13 +19,13 @@ import org.junit.Assert.*
 /**
  * Instrumented test, which will execute on an Android device.
  *
- * See [testing documentation](http://d.android.com/tools/testing).
+ * See [testing documentation](http:d.android.com/tools/testing).
  */
 @RunWith(AndroidJUnit4::class)
 class ExampleInstrumentedTest {
     @Test
     fun useAppContext() {
-        // Context of the app under test.
+        Context of the app under test.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
         assertEquals("com.slark.demo", appContext.packageName)
     }

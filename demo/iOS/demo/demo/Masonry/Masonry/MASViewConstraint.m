@@ -1,9 +1,9 @@
+
 //
-//  MASViewConstraint.m
-//  Masonry
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
-//  Created by Jonas Budelmann on 20/07/13.
-//  Copyright (c) 2013 cloudling. All rights reserved.
+// This file is part of Slark.
+// Licensed under the MIT License.
 //
 
 #import "MASViewConstraint.h"
@@ -33,7 +33,6 @@ static char kInstalledConstraintsKey;
 }
 
 @end
-
 
 @interface MASViewConstraint ()
 
@@ -142,7 +141,6 @@ static char kInstalledConstraintsKey;
         return self;
     };
 }
-
 
 - (MASConstraint * (^)(CGFloat))dividedBy {
     return ^id(CGFloat divider) {
@@ -316,9 +314,9 @@ static char kInstalledConstraintsKey;
     MAS_VIEW *secondLayoutItem = self.secondViewAttribute.item;
     NSLayoutAttribute secondLayoutAttribute = self.secondViewAttribute.layoutAttribute;
 
-    // alignment attributes must have a secondViewAttribute
-    // therefore we assume that is refering to superview
-    // eg make.left.equalTo(@10)
+    alignment attributes must have a secondViewAttribute
+    therefore we assume that is refering to superview
+    eg make.left.equalTo(@10)
     if (!self.firstViewAttribute.isSizeAttribute && !self.secondViewAttribute) {
         secondLayoutItem = self.firstViewAttribute.view.superview;
         secondLayoutAttribute = firstLayoutAttribute;
@@ -348,13 +346,12 @@ static char kInstalledConstraintsKey;
         self.installedView = self.firstViewAttribute.view.superview;
     }
 
-
     MASLayoutConstraint *existingConstraint = nil;
     if (self.updateExisting) {
         existingConstraint = [self layoutConstraintSimilarTo:layoutConstraint];
     }
     if (existingConstraint) {
-        // just update the constant
+        just update the constant
         existingConstraint.constant = layoutConstraint.constant;
         self.layoutConstraint = existingConstraint;
     } else {
@@ -365,10 +362,10 @@ static char kInstalledConstraintsKey;
 }
 
 - (MASLayoutConstraint *)layoutConstraintSimilarTo:(MASLayoutConstraint *)layoutConstraint {
-    // check if any constraints are the same apart from the only mutable property constant
+    check if any constraints are the same apart from the only mutable property constant
 
-    // go through constraints in reverse as we do not want to match auto-resizing or interface builder constraints
-    // and they are likely to be added first.
+    go through constraints in reverse as we do not want to match auto-resizing or interface builder constraints
+    and they are likely to be added first.
     for (NSLayoutConstraint *existingConstraint in self.installedView.constraints.reverseObjectEnumerator) {
         if (![existingConstraint isKindOfClass:MASLayoutConstraint.class]) continue;
         if (existingConstraint.firstItem != layoutConstraint.firstItem) continue;

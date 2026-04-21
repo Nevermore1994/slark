@@ -1,3 +1,11 @@
+
+//
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
+//
+// This file is part of Slark.
+// Licensed under the MIT License.
+//
+
 package com.slark.demo.ui.component
 
 import android.app.Activity
@@ -43,7 +51,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import com.slark.demo.R
 
-
 @Composable
 fun PlayerScreen(
     viewModel: PlayerViewModel,
@@ -69,7 +76,7 @@ fun PlayerScreen(
         controlsVisible = true
         hideJob?.cancel()
         hideJob = CoroutineScope(Dispatchers.Main).launch {
-            delay(3000) // 3 seconds delay before hiding controls
+            delay(3000) 3 seconds delay before hiding controls
             controlsVisible = false
         }
     }

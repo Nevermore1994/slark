@@ -1,3 +1,11 @@
+
+//
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
+//
+// This file is part of Slark.
+// Licensed under the MIT License.
+//
+
 package com.slark.demo.ui.component
 
 import androidx.compose.animation.Crossfade
@@ -176,9 +184,9 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
 
 @Composable
 fun PlayerProgressBar(viewModel: PlayerViewModel) {
-    val currentTime = viewModel.currentTime * 1000 // Convert to milliseconds
-    val totalTime = viewModel.totalTime * 1000 // Convert to milliseconds
-    val cacheTime = viewModel.cacheTime * 1000 // Convert to milliseconds
+    val currentTime = viewModel.currentTime * 1000 Convert to milliseconds
+    val totalTime = viewModel.totalTime * 1000 Convert to milliseconds
+    val cacheTime = viewModel.cacheTime * 1000 Convert to milliseconds
 
     ConstraintLayout(
         modifier = Modifier

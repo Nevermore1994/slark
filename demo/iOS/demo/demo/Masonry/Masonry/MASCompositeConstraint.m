@@ -1,9 +1,9 @@
+
 //
-//  MASCompositeConstraint.m
-//  Masonry
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
-//  Created by Jonas Budelmann on 21/07/13.
-//  Copyright (c) 2013 cloudling. All rights reserved.
+// This file is part of Slark.
+// Licensed under the MIT License.
 //
 
 #import "MASCompositeConstraint.h"

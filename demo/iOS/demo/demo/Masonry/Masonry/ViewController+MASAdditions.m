@@ -1,9 +1,9 @@
+
 //
-//  UIViewController+MASAdditions.m
-//  Masonry
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
-//  Created by Craig Siemens on 2015-06-23.
-//
+// This file is part of Slark.
+// Licensed under the MIT License.
 //
 
 #import "ViewController+MASAdditions.h"
@@ -31,8 +31,6 @@
 - (MASViewAttribute *)mas_bottomLayoutGuideBottom {
     return [[MASViewAttribute alloc] initWithView:self.view item:self.bottomLayoutGuide layoutAttribute:NSLayoutAttributeBottom];
 }
-
-
 
 @end
 

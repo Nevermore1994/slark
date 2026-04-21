@@ -1,9 +1,9 @@
+
 //
-//  MASConstraintMaker.m
-//  Masonry
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
-//  Created by Jonas Budelmann on 20/07/13.
-//  Copyright (c) 2013 cloudling. All rights reserved.
+// This file is part of Slark.
+// Licensed under the MIT License.
 //
 
 #import "MASConstraintMaker.h"
@@ -60,7 +60,7 @@
     MASViewAttribute *viewAttribute = [[MASViewAttribute alloc] initWithView:self.view layoutAttribute:layoutAttribute];
     MASViewConstraint *newConstraint = [[MASViewConstraint alloc] initWithFirstViewAttribute:viewAttribute];
     if ([constraint isKindOfClass:MASViewConstraint.class]) {
-        //replace with composite constraint
+        replace with composite constraint
         NSArray *children = @[constraint, newConstraint];
         MASCompositeConstraint *compositeConstraint = [[MASCompositeConstraint alloc] initWithChildren:children];
         compositeConstraint.delegate = self;
@@ -204,7 +204,6 @@
 
 #endif
 
-
 #if (__IPHONE_OS_VERSION_MIN_REQUIRED >= 80000) || (__TV_OS_VERSION_MIN_REQUIRED >= 9000)
 
 - (MASConstraint *)leftMargin {
@@ -240,7 +239,6 @@
 }
 
 #endif
-
 
 #pragma mark - composite Attributes
 

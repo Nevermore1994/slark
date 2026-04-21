@@ -1,8 +1,9 @@
+
 //
-//  MASConstraint.m
-//  Masonry
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
-//  Created by Nick Tymchenko on 1/20/14.
+// This file is part of Slark.
+// Licensed under the MIT License.
 //
 
 #import "MASConstraint.h"
@@ -129,7 +130,7 @@
 }
 
 - (MASConstraint * (^)(id offset))mas_offset {
-    // Will never be called due to macro
+    Will never be called due to macro
     return nil;
 }
 

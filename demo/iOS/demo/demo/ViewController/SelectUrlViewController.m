@@ -1,8 +1,9 @@
+
 //
-//  SelectUrlViewController.m
-//  demo
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
-//  Created by Nevermore- on 2025/7/29.
+// This file is part of Slark.
+// Licensed under the MIT License.
 //
 
 #import "SelectUrlViewController.h"
@@ -38,13 +39,13 @@
     self.view.backgroundColor = [UIColor whiteColor];
 
     self.items = @[
-        [VideoItem initWithName:@"Sintel trailer mp4" url:@"https://media.w3.org/2010/05/sintel/trailer.mp4"],
-        [VideoItem initWithName:@"西瓜视频 mp4" url:@"https://sf1-cdn-tos.huoshanstatic.com/obj/media-fe/xgplayer_doc_video/mp4/xgplayer-demo-360p.mp4"],
-        [VideoItem initWithName:@"大灰熊 mp4" url:@"https://www.w3schools.com/html/movie.mp4"],
-        [VideoItem initWithName:@"新闻 mp4" url:@"https://stream7.iqilu.com/10339/upload_transcode/202002/09/20200209105011F0zPoYzHry.mp4"],
-        [VideoItem initWithName:@"西瓜视频 m3u8" url:@"https://sf1-cdn-tos.huoshanstatic.com/obj/media-fe/xgplayer_doc_video/hls/xgplayer-demo.m3u8"],
-        [VideoItem initWithName:@"定时器 m3u8" url:@"http://devimages.apple.com/iphone/samples/bipbop/gear3/prog_index.m3u8"],
-        [VideoItem initWithName:@"大兔子 m3u8" url:@"https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"]
+        [VideoItem initWithName:@"Sintel trailer mp4" url:@"https:media.w3.org/2010/05/sintel/trailer.mp4"],
+        [VideoItem initWithName:@"西瓜视频 mp4" url:@"https:sf1-cdn-tos.huoshanstatic.com/obj/media-fe/xgplayer_doc_video/mp4/xgplayer-demo-360p.mp4"],
+        [VideoItem initWithName:@"大灰熊 mp4" url:@"https:www.w3schools.com/html/movie.mp4"],
+        [VideoItem initWithName:@"新闻 mp4" url:@"https:stream7.iqilu.com/10339/upload_transcode/202002/09/20200209105011F0zPoYzHry.mp4"],
+        [VideoItem initWithName:@"西瓜视频 m3u8" url:@"https:sf1-cdn-tos.huoshanstatic.com/obj/media-fe/xgplayer_doc_video/hls/xgplayer-demo.m3u8"],
+        [VideoItem initWithName:@"定时器 m3u8" url:@"http:devimages.apple.com/iphone/samples/bipbop/gear3/prog_index.m3u8"],
+        [VideoItem initWithName:@"大兔子 m3u8" url:@"https:test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"]
     ];
 
     self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStylePlain];

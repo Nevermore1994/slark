@@ -1,8 +1,9 @@
+
 //
-//  VideoPickerViewController.m
-//  demo
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
-//  Created by Nevermore- on 2025/7/25.
+// This file is part of Slark.
+// Licensed under the MIT License.
 //
 
 #import "VideoPickerViewController.h"

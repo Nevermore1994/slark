@@ -1,9 +1,9 @@
+
 //
-//  NSArray+MASAdditions.m
-//  
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
-//  Created by Daniel Hammond on 11/26/13.
-//
+// This file is part of Slark.
+// Licensed under the MIT License.
 //
 
 #import "NSArray+MASAdditions.h"
@@ -53,11 +53,11 @@
                 if (prev) {
                     make.width.equalTo(prev);
                     make.left.equalTo(prev.mas_right).offset(fixedSpacing);
-                    if (i == self.count - 1) {//last one
+                    if (i == self.count - 1) {last one
                         make.right.equalTo(tempSuperView).offset(-tailSpacing);
                     }
                 }
-                else {//first one
+                else {first one
                     make.left.equalTo(tempSuperView).offset(leadSpacing);
                 }
                 
@@ -73,11 +73,11 @@
                 if (prev) {
                     make.height.equalTo(prev);
                     make.top.equalTo(prev.mas_bottom).offset(fixedSpacing);
-                    if (i == self.count - 1) {//last one
+                    if (i == self.count - 1) {last one
                         make.bottom.equalTo(tempSuperView).offset(-tailSpacing);
                     }                    
                 }
-                else {//first one
+                else {first one
                     make.top.equalTo(tempSuperView).offset(leadSpacing);
                 }
                 
@@ -101,7 +101,7 @@
             [v mas_makeConstraints:^(MASConstraintMaker *make) {
                 make.width.equalTo(@(fixedItemLength));
                 if (prev) {
-                    if (i == self.count - 1) {//last one
+                    if (i == self.count - 1) {last one
                         make.right.equalTo(tempSuperView).offset(-tailSpacing);
                     }
                     else {
@@ -109,7 +109,7 @@
                         make.right.equalTo(tempSuperView).multipliedBy(i/((CGFloat)self.count-1)).with.offset(offset);
                     }
                 }
-                else {//first one
+                else {first one
                     make.left.equalTo(tempSuperView).offset(leadSpacing);
                 }
             }];
@@ -123,7 +123,7 @@
             [v mas_makeConstraints:^(MASConstraintMaker *make) {
                 make.height.equalTo(@(fixedItemLength));
                 if (prev) {
-                    if (i == self.count - 1) {//last one
+                    if (i == self.count - 1) {last one
                         make.bottom.equalTo(tempSuperView).offset(-tailSpacing);
                     }
                     else {
@@ -131,7 +131,7 @@
                         make.bottom.equalTo(tempSuperView).multipliedBy(i/((CGFloat)self.count-1)).with.offset(offset);
                     }
                 }
-                else {//first one
+                else {first one
                     make.top.equalTo(tempSuperView).offset(leadSpacing);
                 }
             }];

@@ -1,8 +1,9 @@
+
 //
-//  AppDelegate.m
-//  demo
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
-//  Created by Nevermore on 2023/10/18.
+// This file is part of Slark.
+// Licensed under the MIT License.
 //
 
 #import "AppDelegate.h"
@@ -14,9 +15,8 @@
 
 @implementation AppDelegate
 
-
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-    // Override point for customization after application launch.
+    Override point for customization after application launch.
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController: [ViewController new]];
     
     self.window = [[UIWindow alloc] initWithFrame: [UIScreen mainScreen].bounds];
@@ -24,6 +24,5 @@
     [self.window makeKeyAndVisible];
     return YES;
 }
-
 
 @end

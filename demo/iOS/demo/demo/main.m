@@ -1,8 +1,9 @@
+
 //
-//  main.m
-//  demo
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
-//  Created by Nevermore on 2023/10/18.
+// This file is part of Slark.
+// Licensed under the MIT License.
 //
 
 #import <UIKit/UIKit.h>
@@ -11,7 +12,7 @@
 int main(int argc, char * argv[]) {
     NSString * appDelegateClassName;
     @autoreleasepool {
-        // Setup code that might create autoreleased objects goes here.
+        Setup code that might create autoreleased objects goes here.
         appDelegateClassName = NSStringFromClass([AppDelegate class]);
     }
     return UIApplicationMain(argc, argv, nil, appDelegateClassName);

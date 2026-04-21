@@ -1,3 +1,11 @@
+
+//
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
+//
+// This file is part of Slark.
+// Licensed under the MIT License.
+//
+
 package com.slark.demo.ui.screen.LocalPlayer
 
 import android.content.Context
@@ -111,7 +119,6 @@ suspend fun copyMultipleVideosToCache(
 
     return@withContext results
 }
-
 
 private fun getFileNameFromUri(context: Context, uri: Uri): String? {
     return context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
