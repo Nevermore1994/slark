@@ -47,9 +47,9 @@
 
 - **状态与参数**：`state_`、`params_`、`info_`、`bufferingReason_`
 - **线程与事件**：`ownerThread_`、`sender_/receiver_`（事件通道）
-- **数据源**：`dataProvider_`（`IStream`）
+- **数据源**：`mediaSourceManager_`（`MediaSourceManager`，持有 `IStream`）
 - **管线**：`pipeline_`（`PlayPipeline`）
-- **通知**：`notifyCenter_`、`playSession_`
+- **通知**：`playSession_`
 
 ### 状态机
 
@@ -71,7 +71,7 @@ NotInited → Initializing → Prepared → Buffering → Ready → Playing ⇄ 
 
 1. 构建 `NotifyCenter`、性能会话。
 2. 初始化事件通道（`Channel<EventPtr>`）。
-3. `setupDataProvider()`：创建 `IStream`，注册 `onData` 回调（将数据推给 `DemuxerComponent`）。
+3. `setupDataProvider()`：调用 `mediaSourceManager_.open(uri, onData, onError, onComplete)`，在 `onData` 回调中将 `DataChunk` 转为 `DataPacket` 推给 `DemuxerComponent`。
 4. `buildPipeline()`：创建 `PlayPipeline`，注入 `DemuxerComponent`，注册 Pipeline 事件回调。
 5. 创建 `ownerThread_`，注册三个周期任务：
    - 10ms：`process()`（懒初始化 `pipeline_->build()` + 事件处理 + `drainPendingTasks()`）
@@ -118,10 +118,10 @@ process()
 
 ### 生命周期
 
-- `doPlay()`：`pipeline_->start()`
-- `doPause()`：`pipeline_->pause()`
-- `doStop()`：`dataProvider_->close()` → `pipeline_->teardown()` → `ownerThread_->stop()`
-- `doLoop()`：`pipeline_->seek(0)` → `dataProvider_->start()` → `pipeline_->start()`
+- `doPlay()`：`pipeline_->start()` + `mediaSourceManager_.start()`
+- `doPause()`：`pipeline_->pause()` + `mediaSourceManager_.pause()`
+- `doStop()`：`mediaSourceManager_.close()` → `pipeline_->teardown()` → `ownerThread_->stop()`
+- `doLoop()`：`pipeline_->seek(0)` → `mediaSourceManager_.start()` → `pipeline_->start()`
 
 ---
 
@@ -205,7 +205,7 @@ src/core/perf/
 - `onDataEnqueued()`：每次 demuxer 入队后触发背压检查（事件驱动 + 节流：本地 100ms，网络 50ms）
 - `onHeartbeat()`：200ms 低频心跳，兜底 resume 检查，防止 pause 后入队事件稀少导致 resume 延迟
 - `reset()`：seek 后重置所有状态
-- 通过 `pauseStreamFunc_` / `resumeStreamFunc_` 回调控制 `IStream` 数据流速
+- 通过 `pauseStreamFunc_` / `resumeStreamFunc_` 回调控制 `MediaSourceManager::pause()` / `start()` 数据流速
 - `demuxedDuration()`：通过 `audioFrames_` 队列尾部 pts 减去当前主时钟时间估算缓冲时长
 
 **追帧上限保护**（`BackpressureConfig::maxDropPerVsync`）：

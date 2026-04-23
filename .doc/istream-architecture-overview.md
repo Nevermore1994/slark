@@ -147,22 +147,21 @@ seek 行为：
 ### 1) 创建与打开
 
 入口文件：
-- [ComponentFactory.cc](/Users/nevermore-/selfspace/slark/src/core/ComponentFactory.cc)
+- [MediaSourceManager.h](/Users/nevermore-/selfspace/slark/src/core/MediaSourceManager.h)
 - [PlayerImpl.cpp](/Users/nevermore-/selfspace/slark/src/core/PlayerImpl.cpp)
 
 流程：
 
-1. `Player::Impl::setupDataProvider()` 构造数据回调。
-2. `ComponentFactory::createDataProvider()` 调用 `StreamFactory::createStream(path)`。
-3. 组装 `OpenParams`（`onData`、`onError`、`onComplete`）。
-4. 执行 `stream->open(params)`，成功后挂到 `dataProvider_`。
+1. `Player::Impl::setupDataProvider()` 调用 `mediaSourceManager_.open(uri, onData, onError, onComplete)`。
+2. `MediaSourceManager::open()` 调用 `StreamFactory::createStream(uri)` 创建具体流实现。
+3. 组装 `OpenParams`，在 `onData` 回调中完成 `DataChunk` → `DataPacket` 转换。
+4. 执行 `stream_->open(params)`，成功后缓存 `StreamInfo`。
 
 ### 2) 数据流转
 
-1. `dataProvider_->start()` 开始读取。
-2. `onData(DataChunk)` 回调进入 `Player::Impl`。
-3. `DataChunk.owner` 被转移为 `DataPacket.data`，写入 `dataList_`。
-4. `Player::Impl::demuxData()` 将 `dataList_` 批量推送给 `DemuxerComponent`。
+1. `mediaSourceManager_.start()` 开始读取。
+2. `onData(DataChunk)` 回调在 `MediaSourceManager::open` 内部转换为 `DataPacket`。
+3. `DataPacket` 直接推送给 `DemuxerComponent::pushData()`。
 
 ### 3) 错误与完成
 
@@ -189,14 +188,14 @@ seek 行为：
 
 ```text
 Player::Impl
-  └─ ComponentFactory::createDataProvider
+  └─ MediaSourceManager::open(uri)
       └─ StreamFactory::createStream(uri)
           ├─ FileStream
           ├─ HttpStream
           └─ HLSStream
 
 IStream::onData(DataChunk)
-  └─ Player::Impl::dataList_
+  └─ MediaSourceManager 内部转换为 DataPacket
       └─ DemuxerComponent::pushData
 ```
 

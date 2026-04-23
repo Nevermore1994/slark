@@ -30,13 +30,22 @@ diff = audioTime - videoTime
 
 ### 同步动作（AVSyncAction）
 
-| 动作     | 触发条件                                 | 行为                     |
-| -------- | ---------------------------------------- | ------------------------ |
-| `Render` | `abs(diff) < 0.1s` 或 `abs(diff) >= 10s` | 正常渲染当前帧           |
-| `Hold`   | `diff < -0.1s`（视频超前）               | 跳过本次渲染，等音频追上 |
-| `Drop`   | `diff > 0.1s`（视频落后）                | 追赶音频                 |
+| 动作     | 触发条件                                  | 行为                     |
+| -------- | ----------------------------------------- | ------------------------ |
+| `Render` | `abs(diff) < 0.04s` 或 `abs(diff) >= 10s` | 正常渲染当前帧           |
+| `Hold`   | `diff < -0.04s`（视频超前）               | 跳过本次渲染，等音频追上 |
+| `Drop`   | `diff > 0.04s`（视频落后）                | 追赶音频                 |
 
-`kAVSyncMinThreshold = 0.1s`，`kAVSyncMaxThreshold = 10.0s`（超过 10s 认为时钟异常，强制渲染）。
+`kAVSyncMinThreshold = 0.04s`（40ms，覆盖人眼对音视频不同步的感知阈值），`kAVSyncMaxThreshold = 10.0s`（超过 10s 认为时钟异常，强制渲染）。
+
+### 音频主时钟（audioMasterTime）
+
+`requestVideoFrame()` 中的 diff 计算使用 `audioMasterTime()`，而非 `clockSync_->audioTime()`：
+
+- **有音频时**：使用 `audioRender_->playedTime()`，即 `AudioTrack.getTimestamp()` 返回的硬件实际播出时间（µs 级精度），消除音频缓冲区延迟（50~100ms）带来的系统性偏差
+- **无音频时**：回退到 `clockSync_->audioTime()`（视频时钟自驱）
+
+`clockSync_->setAudioTime()` 仍在 `requestAudioFrame()` 中更新，用于 `demuxedDuration()` 背压水位计算，语义不变。
 
 ---
 
