@@ -3,7 +3,7 @@
 // Slark EventLoop
 // Copyright (c) 2025 Nevermore All rights reserved.
 //
-#include "EventLoop.hpp"
+#include "EventLoop.h"
 
 #include "CoroutineScheduler.hpp"
 #include "Log.hpp"

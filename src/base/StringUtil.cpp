@@ -4,20 +4,24 @@
 // Copyright (c) 2023 Nevermore All rights reserved.
 //
 #include "StringUtil.h"
-#include <sstream>
+
+#include <algorithm>
 #include <functional>
 #include <ranges>
-#include <algorithm>
+#include <sstream>
 
 namespace slark {
 
-std::vector<std::string_view> StringUtil::split(std::string_view stringView, std::string_view delimiter) noexcept {
-    auto res = stringView | std::ranges::views::split(delimiter) | std::views::filter([](auto&& range) {
-        return !range.empty();
-    }) | std::ranges::views::transform([](auto&& range) {
-        return std::string_view(range);
-    });
-    
+std::vector<std::string_view> StringUtil::split(std::string_view stringView,
+                                                std::string_view delimiter) noexcept {
+    auto res = stringView | std::ranges::views::split(delimiter) |
+               std::views::filter([](auto&& range) {
+                   return !range.empty();
+               }) |
+               std::ranges::views::transform([](auto&& range) {
+                   return std::string_view(range);
+               });
+
     return {res.begin(), res.end()};
 }
 
@@ -29,4 +33,4 @@ std::string StringUtil::removeSpace(std::string_view view) noexcept {
     return result;
 }
 
-} // slark
+} // namespace slark

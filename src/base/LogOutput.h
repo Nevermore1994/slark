@@ -4,7 +4,7 @@
 // Copyright (c) 2023 Nevermore All rights reserved.
 //
 #pragma once
-#include "Writer.hpp"
+#include "Writer.h"
 
 #include <atomic>
 #include <condition_variable>

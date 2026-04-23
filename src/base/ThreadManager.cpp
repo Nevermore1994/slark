@@ -1,11 +1,12 @@
 //
-// Created by Nevermore on 2021/10/25.
-// slark ThreadManager
-// Copyright (c) 2021 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
+
 #include "ThreadManager.h"
 
 #include "Log.hpp"
+
+#include <vector>
 
 namespace slark {
 using namespace std::chrono_literals;
@@ -65,6 +66,11 @@ void ThreadManager::remove(std::thread::id id) noexcept {
     cond_.notify_one();
 }
 
+void ThreadManager::setBlockCallback(BlockCallback callback) noexcept {
+    std::unique_lock<std::mutex> lock(mutex_);
+    blockCallback_ = std::move(callback);
+}
+
 std::shared_ptr<Thread> ThreadManager::thisThread() noexcept {
     std::unique_lock<std::mutex> lock(mutex_);
     auto id = std::this_thread::get_id();
@@ -77,20 +83,32 @@ std::shared_ptr<Thread> ThreadManager::thisThread() noexcept {
 
 void ThreadManager::reportRunInfo() noexcept {
     Time::TimePoint now = Time::nowTimeStamp();
-    std::unique_lock<std::mutex> lock(mutex_);
-    LogI("ThreadManager report now:{}, now live size :{}", now.point(), threadInfos_.size());
-    std::erase_if(threadInfos_, [now](auto& pair) {
-        auto& [id, ptr] = pair;
-        auto isExpired = ptr.expired();
-        if (!isExpired) {
-            auto thread = ptr.lock();
-            auto interval = now - thread->getLastRunTimeStamp();
-            if (thread->isRunning() && interval >= kMaxThreadBlockTimeInterval) {
-                LogE("ThreadManager report [{}] is blocking.", std::string(thread->getName()));
+    std::vector<std::pair<std::string, Time::TimeDelta>> blockedThreads;
+    BlockCallback callback;
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        LogI("ThreadManager report now:{}, now live size :{}", now.point(), threadInfos_.size());
+        std::erase_if(threadInfos_, [now, &blockedThreads](auto& pair) {
+            auto& [id, ptr] = pair;
+            auto isExpired = ptr.expired();
+            if (!isExpired) {
+                auto thread = ptr.lock();
+                auto interval = now - thread->getLastRunTimeStamp();
+                if (thread->isRunning() && interval >= kMaxThreadBlockTimeInterval) {
+                    LogE("ThreadManager report [{}] is blocking.", std::string(thread->getName()));
+                    blockedThreads.emplace_back(thread->getName(), interval);
+                }
             }
+            return isExpired;
+        });
+        callback = blockCallback_;
+    }
+    // 在锁外执行回调，避免死锁
+    for (auto& [name, duration] : blockedThreads) {
+        if (callback) {
+            callback(name, duration);
         }
-        return isExpired;
-    });
+    }
 }
 
 } // end namespace slark

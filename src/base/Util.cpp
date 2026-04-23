@@ -1,7 +1,7 @@
 //
-// Created by Nevermore
-// slark Util
-// Copyright (c) 2024 Nevermore All rights reserved.
+//
+// Copyright (c) 2026 Nevermore-. All rights reserved.
+//
 
 #include "Util.h"
 

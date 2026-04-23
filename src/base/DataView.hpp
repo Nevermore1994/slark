@@ -126,6 +126,18 @@ public:
     }
 
     template <typename T>
+    [[nodiscard]] std::optional<T> fromChars(int base = 10) const noexcept {
+        return StringUtil::fromChars<T>(toStringView(), base);
+    }
+
+    template <typename T>
+    [[nodiscard]] std::optional<T> fromChars(size_t pos,
+                                             size_t count,
+                                             int base = 10) const noexcept {
+        return StringUtil::fromChars<T>(toStringView(), pos, count, base);
+    }
+
+    template <typename T>
     [[nodiscard]] constexpr std::optional<T> toNumber() const noexcept {
         if (span_.size() < sizeof(T)) {
             return std::nullopt;

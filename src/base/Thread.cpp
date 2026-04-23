@@ -1,7 +1,5 @@
 //
-// Created by Nevermore on 2021/10/22.
-// slark Thread
-// Copyright (c) 2021 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #include <functional>
@@ -21,7 +19,13 @@ using namespace std::chrono_literals;
 
 std::shared_ptr<Thread> Thread::create(std::string name) {
     auto thread = std::shared_ptr<Thread>(new Thread(std::move(name)));
-    thread->worker_ = std::jthread(std::bind_front(&Thread::process, thread.get()));
+    // 使用 shared_from_this() 确保 jthread 回调持有 shared_ptr，
+    // 避免调用方提前释放 Thread 导致 process 访问已析构对象
+    thread->worker_ = std::jthread([weak = thread->weak_from_this()](std::stop_token stopToken) {
+        if (auto self = weak.lock()) {
+            self->process(stopToken);
+        }
+    });
     return thread;
 }
 
@@ -76,7 +80,7 @@ void Thread::start() noexcept {
 
 Expected<void> Thread::schedule(Task task) noexcept {
     if (worker_.get_stop_token().stop_requested()) {
-        return std::unexpected(DataError::InvalidOperation);
+        return std::unexpected(Error::InvalidOperation);
     }
     taskQueue_.push(std::move(task));
     cond_.notify_one();
@@ -256,12 +260,17 @@ void Thread::setThreadName(std::string_view nameView) noexcept {
 }
 
 void Thread::setup() noexcept {
+    std::string name;
+    {
+        std::lock_guard lock(mutex_);
+        name = name_;
+    }
 #ifndef __APPLE__
     auto handle = worker_.native_handle();
-    auto name = name_.substr(0, 15);
-    pthread_setname_np(handle, name.c_str());
+    auto truncated = name.substr(0, 15);
+    pthread_setname_np(handle, truncated.c_str());
 #else
-    pthread_setname_np(name_.c_str());
+    pthread_setname_np(name.c_str());
 #endif
     isInit_ = true;
 }

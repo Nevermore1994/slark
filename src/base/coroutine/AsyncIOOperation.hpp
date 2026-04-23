@@ -19,7 +19,7 @@
 namespace slark {
 
 template <typename T>
-using IOResult = std::expected<T, DataError>;
+using IOResult = std::expected<T, Error>;
 
 namespace detail {
 
@@ -36,14 +36,14 @@ struct IOState {
     std::atomic<CompletionState> state{CompletionState::Pending};
     std::coroutine_handle<> handle;
     std::optional<T> result;
-    std::optional<DataError> error;
+    std::optional<Error> error;
 };
 
 template <>
 struct IOState<void> {
     std::atomic<CompletionState> state{CompletionState::Pending};
     std::coroutine_handle<> handle;
-    std::optional<DataError> error;
+    std::optional<Error> error;
 };
 
 } // namespace detail
@@ -73,7 +73,7 @@ public:
                 if (state->state.compare_exchange_strong(expected,
                                                          detail::CompletionState::TimedOut,
                                                          std::memory_order_acq_rel)) {
-                    state->error = DataError::ConnectionTimeout;
+                    state->error = Error::ConnectionTimeout;
                     scheduleResume(*state);
                 }
             });
@@ -86,12 +86,12 @@ public:
     IOResult<T> await_resume() {
         auto s = state_->state.load(std::memory_order_acquire);
         if (s == detail::CompletionState::Failed || s == detail::CompletionState::TimedOut) {
-            return std::unexpected(state_->error.value_or(DataError::NetworkError));
+            return std::unexpected(state_->error.value_or(Error::NetworkError));
         }
         if (s == detail::CompletionState::Completed && state_->result.has_value()) {
             return std::move(*state_->result);
         }
-        return std::unexpected(DataError::NetworkError);
+        return std::unexpected(Error::NetworkError);
     }
 
     void setTimeout(std::chrono::milliseconds timeout) noexcept {
@@ -114,7 +114,7 @@ protected:
         }
     }
 
-    void fail(DataError error) noexcept {
+    void fail(Error error) noexcept {
         auto expected = detail::CompletionState::Pending;
         if (state_->state.compare_exchange_strong(expected,
                                                   detail::CompletionState::Failed,
@@ -177,7 +177,7 @@ public:
                 if (state->state.compare_exchange_strong(expected,
                                                          detail::CompletionState::TimedOut,
                                                          std::memory_order_acq_rel)) {
-                    state->error = DataError::ConnectionTimeout;
+                    state->error = Error::ConnectionTimeout;
                     scheduleResume(*state);
                 }
             });
@@ -190,7 +190,7 @@ public:
     IOResult<void> await_resume() {
         auto s = state_->state.load(std::memory_order_acquire);
         if (s == detail::CompletionState::Failed || s == detail::CompletionState::TimedOut) {
-            return std::unexpected(state_->error.value_or(DataError::NetworkError));
+            return std::unexpected(state_->error.value_or(Error::NetworkError));
         }
         return {};
     }
@@ -214,7 +214,7 @@ protected:
         }
     }
 
-    void fail(DataError error) noexcept {
+    void fail(Error error) noexcept {
         auto expected = detail::CompletionState::Pending;
         if (state_->state.compare_exchange_strong(expected,
                                                   detail::CompletionState::Failed,
@@ -236,7 +236,7 @@ protected:
     }
 
     // 设置错误（供子类使用）
-    void setError(DataError error) noexcept {
+    void setError(Error error) noexcept {
         state_->error = error;
     }
 
@@ -246,7 +246,7 @@ protected:
     }
 
     // 获取错误值
-    [[nodiscard]] std::optional<DataError> getError() const noexcept {
+    [[nodiscard]] std::optional<Error> getError() const noexcept {
         return state_->error;
     }
 

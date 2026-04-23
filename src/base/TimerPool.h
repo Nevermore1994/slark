@@ -1,8 +1,7 @@
 //
-// Created by Nevermore on 2021/10/25.
-// slark TimerPool — Hierarchical Timing Wheel
-// Copyright (c) 2021 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
+
 #pragma once
 
 #include "NonCopyable.h"

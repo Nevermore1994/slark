@@ -1,10 +1,11 @@
 //
-// Created by Nevermore on 2023/6/15.
-// slark StringUtil
-// Copyright (c) 2023 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
+
 #pragma once
 #include <algorithm>
+#include <charconv>
+#include <optional>
 #include <ranges>
 #include <string>
 #include <string_view>
@@ -44,6 +45,27 @@ struct StringUtil {
         return std::ranges::equal(a, b, [](unsigned char ca, unsigned char cb) {
             return std::tolower(ca) == std::tolower(cb);
         });
+    }
+
+    template <typename T>
+    [[nodiscard]] static std::optional<T> fromChars(std::string_view sv, int base = 10) noexcept {
+        T value{};
+        auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), value, base);
+        if (ec != std::errc()) {
+            return std::nullopt;
+        }
+        return value;
+    }
+
+    template <typename T>
+    [[nodiscard]] static std::optional<T> fromChars(std::string_view sv,
+                                                    size_t pos,
+                                                    size_t count,
+                                                    int base = 10) noexcept {
+        if (pos >= sv.size()) {
+            return std::nullopt;
+        }
+        return fromChars<T>(sv.substr(pos, count), base);
     }
 };
 

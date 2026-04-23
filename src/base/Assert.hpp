@@ -34,7 +34,7 @@ namespace slark {
 
 #define SAssert(result, format, ...) /*nothing*/
 
-#endif // if DEBUG
+#endif // DEBUG
 
 #ifdef __clang__
 #pragma clang diagnostic pop

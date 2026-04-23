@@ -22,7 +22,7 @@ Expected<uint64_t> getWeakPtrAddress(const std::weak_ptr<T>& ptr) noexcept {
     if (auto p = ptr.lock()) {
         return std::hash<std::shared_ptr<T>>()(p);
     }
-    return std::unexpected(DataError::NullPointer);
+    return std::unexpected(Error::NullPointer);
 }
 
 std::string genRandomName(std::string_view prefix) noexcept;

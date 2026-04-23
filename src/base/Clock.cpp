@@ -3,10 +3,12 @@
 // slark Clock
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
-#include <mutex>
 #include "Clock.h"
-#include "Time.hpp"
+
 #include "Log.hpp"
+#include "Time.hpp"
+
+#include <mutex>
 
 namespace slark {
 
@@ -62,4 +64,4 @@ void Clock::reset() noexcept {
     isInited_ = false;
 }
 
-}
+} // namespace slark

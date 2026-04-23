@@ -16,9 +16,9 @@ namespace slark {
 
 #ifdef DEBUG
 
-#define SAssert(result, format, ...)                       \
-    do {                                                   \
-        if (!(result)) [[unlikely]] {                      \
+#define SAssert(result, format, ...)  \
+    do {                              \
+        if (!(result)) [[unlikely]] { \
             std::print(stderr,                             \
                        "[Assert] {}:{} ({}) " format "
 ", \
@@ -34,11 +34,10 @@ namespace slark {
 
 #define SAssert(result, format, ...) /*nothing*/
 
-#endif if DEBUG
+#endif // DEBUG
 
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
 
 } // namespace slark
-namespace slark

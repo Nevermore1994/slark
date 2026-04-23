@@ -1,11 +1,8 @@
 //
-//  WriteHandler.cpp
-//  slark
-//
-//  Copyright (c) 2023 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
-#include "Writer.hpp"
+#include "Writer.h"
 
 #include "Log.hpp"
 #include "Util.h"

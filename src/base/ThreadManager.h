@@ -1,12 +1,12 @@
 //
-// Created by Nevermore on 2021/10/25.
-// slark ThreadManager
-// Copyright (c) 2021 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
+
 #pragma once
 
 #include "Thread.h"
 
+#include <functional>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -18,6 +18,9 @@ static const Time::TimeDelta kMaxThreadBlockTimeInterval =
 
 class ThreadManager final : public NonCopyMovable {
 public:
+    using BlockCallback =
+        std::function<void(std::string_view threadName, Time::TimeDelta blockDuration)>;
+
     static inline ThreadManager& shareInstance() {
         static ThreadManager instance;
         return instance;
@@ -36,6 +39,9 @@ public:
 
     std::shared_ptr<Thread> thisThread() noexcept;
 
+    // 设置线程阻塞回调，业务层可据此上报/abort
+    void setBlockCallback(BlockCallback callback) noexcept;
+
 private:
     void monitorLoop(std::stop_token stopToken);
 
@@ -46,6 +52,7 @@ private:
     std::mutex mutex_;
     std::condition_variable_any cond_;
     std::jthread monitorThread_;
+    BlockCallback blockCallback_;
 };
 
 } // namespace slark

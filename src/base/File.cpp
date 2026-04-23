@@ -22,7 +22,7 @@ FileBase::~FileBase() = default;
 
 Expected<void> FileBase::open() noexcept {
     if (path_.empty()) {
-        return std::unexpected(DataError::InvalidArgument);
+        return std::unexpected(Error::InvalidArgument);
     }
     if (file_) {
         return {};
@@ -30,7 +30,7 @@ Expected<void> FileBase::open() noexcept {
     auto* fp = fopen(path_.c_str(), kModeStr[static_cast<size_t>(mode_)].data());
     if (!fp) {
         LogE("open file:{}", std::strerror(errno));
-        return std::unexpected(DataError::FileNotFound);
+        return std::unexpected(Error::FileNotFound);
     }
     file_.reset(fp);
     return {};
@@ -38,10 +38,10 @@ Expected<void> FileBase::open() noexcept {
 
 Expected<void> FileBase::seek(int64_t offset) noexcept {
     if (!file_) {
-        return std::unexpected(DataError::IOError);
+        return std::unexpected(Error::IOError);
     }
     if (fseeko(file_.get(), offset, SEEK_SET) != 0) {
-        return std::unexpected(DataError::IOError);
+        return std::unexpected(Error::IOError);
     }
     return {};
 }
@@ -91,7 +91,7 @@ void WriteFile::flush() noexcept {
 
 Expected<uint64_t> WriteFile::write(ConstByteSpan data) noexcept {
     if (!file_) {
-        return std::unexpected(DataError::IOError);
+        return std::unexpected(Error::IOError);
     }
     writeCount_++;
     auto writeSize = fwrite(data.data(), 1, data.size(), file_.get());
@@ -101,7 +101,7 @@ Expected<uint64_t> WriteFile::write(ConstByteSpan data) noexcept {
     }
     if (writeSize == 0) {
         LogE("write file: {}", std::strerror(errno));
-        return std::unexpected(DataError::IOError);
+        return std::unexpected(Error::IOError);
     }
     return static_cast<uint64_t>(writeSize);
 }
@@ -120,10 +120,10 @@ ReadFile::~ReadFile() = default;
 
 Expected<Byte> ReadFile::readByte() noexcept {
     if (!file_) {
-        return std::unexpected(DataError::IOError);
+        return std::unexpected(Error::IOError);
     }
     if (readOver_) {
-        return std::unexpected(DataError::EndOfFile);
+        return std::unexpected(Error::EndOfFile);
     }
     Byte byte = 0;
     auto res = fread(&byte, 1, 1, file_.get());
@@ -132,7 +132,7 @@ Expected<Byte> ReadFile::readByte() noexcept {
     }
     if (res == 0 && !readOver_) {
         LogE("read byte error:{}", std::strerror(errno));
-        return std::unexpected(DataError::IOError);
+        return std::unexpected(Error::IOError);
     }
     readSize_++;
     return byte;
@@ -140,10 +140,10 @@ Expected<Byte> ReadFile::readByte() noexcept {
 
 Expected<Data> ReadFile::read(uint64_t size) noexcept {
     if (!file_) {
-        return std::unexpected(DataError::IOError);
+        return std::unexpected(Error::IOError);
     }
     if (readOver_) {
-        return std::unexpected(DataError::EndOfFile);
+        return std::unexpected(Error::EndOfFile);
     }
     Data data(size);
     auto result = readInto(data, size);
@@ -155,10 +155,10 @@ Expected<Data> ReadFile::read(uint64_t size) noexcept {
 
 Expected<uint64_t> ReadFile::readInto(Data& data, uint64_t size) noexcept {
     if (!file_) {
-        return std::unexpected(DataError::IOError);
+        return std::unexpected(Error::IOError);
     }
     if (readOver_) {
-        return std::unexpected(DataError::EndOfFile);
+        return std::unexpected(Error::EndOfFile);
     }
     auto res = fread(data.data(), 1, size, file_.get());
     if (feof(file_.get()) || tell() == fileSize()) {
@@ -166,7 +166,7 @@ Expected<uint64_t> ReadFile::readInto(Data& data, uint64_t size) noexcept {
     }
     if (res == 0 && !readOver_) {
         LogE("read error:{}", std::strerror(errno));
-        return std::unexpected(DataError::IOError);
+        return std::unexpected(Error::IOError);
     }
     data.setSize(res);
     readSize_ += res;

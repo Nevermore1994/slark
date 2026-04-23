@@ -58,6 +58,7 @@ struct DataChunk {
 
 struct StreamInfo {
     StreamType type = StreamType::File;
+    std::string uri;
     uint64_t totalSize = 0;
     double duration = 0.0;
     bool isSeekable = true;
@@ -106,4 +107,3 @@ public:
 using StreamPtr = std::unique_ptr<IStream>;
 
 } // namespace slark
-namespace slark

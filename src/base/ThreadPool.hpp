@@ -204,7 +204,7 @@ auto ThreadPool::submitWithPriority(JobPriority priority, F&& f, Args&&... args)
         std::unique_lock<std::mutex> lock(mutex_);
         if (shutdown_) {
             LogE("The thread pool is exiting");
-            return std::unexpected(DataError::InvalidOperation);
+            return std::unexpected(Error::InvalidOperation);
         }
 
         jobs_.push_back(Job{
@@ -238,7 +238,7 @@ Expected<void> ThreadPool::postJobWithPriority(JobPriority priority, F&& f, Args
     {
         std::unique_lock<std::mutex> lock(mutex_);
         if (shutdown_) {
-            return std::unexpected(DataError::InvalidOperation);
+            return std::unexpected(Error::InvalidOperation);
         }
 
         jobs_.push_back(Job{

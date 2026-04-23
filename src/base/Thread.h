@@ -1,8 +1,7 @@
 //
-// Created by Nevermore on 2021/10/22.
-// slark Thread
-// Copyright (c) 2021 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
+
 #pragma once
 
 #include "Error.h"

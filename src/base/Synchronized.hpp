@@ -1,9 +1,6 @@
 //
-//  Synchronized.hpp
-//  base
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-//  Copyright (c) 2024 Nevermore All rights reserved.
-
 #pragma once
 
 #include "NonCopyable.h"
@@ -106,6 +103,28 @@ public:
             return;
         } else {
             return func(std::as_const(container_));
+        }
+    }
+
+    template <typename F, typename G>
+    auto withTryLock(F&& lockFunc, G&& failedFunc)
+        requires IsMutex<Mutex>
+    {
+        if (mutex_.try_lock()) {
+            std::lock_guard<Mutex> lock(mutex_, std::adopt_lock);
+            if constexpr (std::is_void_v<std::invoke_result_t<F, Container&>>) {
+                lockFunc(container_);
+                return;
+            } else {
+                return std::optional{lockFunc(container_)};
+            }
+        } else {
+            if constexpr (std::is_void_v<std::invoke_result_t<G>>) {
+                failedFunc();
+                return;
+            } else {
+                return std::optional<std::invoke_result_t<F, Container&>>{};
+            }
         }
     }
 

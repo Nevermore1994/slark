@@ -1,3 +1,10 @@
+//
+// Copyright (c) 2026 Nevermore-. All rights reserved.
+//
+
+#include "Log.hpp"
+
+#include <exception>
 #include <functional>
 #include <utility>
 
@@ -16,7 +23,11 @@ public:
     ScopeGuard& operator=(ScopeGuard&& other) = delete;
 
     ~ScopeGuard() {
-        release();
+        try {
+            release();
+        } catch (const std::exception& e) {
+            LogE("ScopeGuard::~ScopeGuard() failed:{}", e.what());
+        }
     }
 
     void dismiss() noexcept {
