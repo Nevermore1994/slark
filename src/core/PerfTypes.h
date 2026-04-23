@@ -15,8 +15,6 @@
 
 namespace slark::perf {
 
-// ─── 配置 ────────────────────────────────────────────────────────────────────
-
 struct PerfConfig {
     bool enabled = false;
     bool enableFrameTrace = false;
@@ -33,8 +31,6 @@ struct DeviceEnv {
     std::string appVersion;
     std::string networkType;
 };
-
-// ─── 统计 ────────────────────────────────────────────────────────────────────
 
 struct PerfStats {
     std::string name;
@@ -142,8 +138,6 @@ struct SlowOpsStats {
     }
 };
 
-// ─── 会话报告 ─────────────────────────────────────────────────────────────────
-
 struct SessionReport {
     std::string sessionId;
     std::string url;
@@ -157,8 +151,6 @@ struct SessionReport {
     ResourceStats resourceStats;
     DeviceEnv deviceEnv;
 };
-
-// ─── 帧追踪 ───────────────────────────────────────────────────────────────────
 
 struct SpanEntry {
     std::string name;

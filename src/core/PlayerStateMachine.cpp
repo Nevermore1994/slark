@@ -54,5 +54,22 @@ std::expected<PlayerState, bool> PlayerStateMachine::getStateFromEvent(EventType
     }
 }
 
+std::expected<PlayerState, bool> PlayerStateMachine::getStateFromPipelineEvent(
+    PipelineEvent event) noexcept {
+    using enum PipelineEvent;
+    switch (event) {
+        case AudioDecoderFailed:
+        case VideoDecoderFailed:
+        case ReadError:
+        case DecodeError:
+            return PlayerState::Error;
+        case BufferingStart:
+            return PlayerState::Buffering;
+        case RenderEnd:
+            return PlayerState::Completed;
+        default:
+            return std::unexpected(false);
+    }
+}
+
 } // namespace slark
-namespace slark

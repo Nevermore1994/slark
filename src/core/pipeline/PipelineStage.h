@@ -10,6 +10,7 @@ namespace slark {
 
 // Pipeline 内部阶段，用于错误定位
 enum class PipelineStage : uint8_t {
+    Unknown,
     Demux,
     AudioDecode,
     VideoDecode,

@@ -4,8 +4,8 @@
 
 #pragma once
 
-#include "../base/IStream.hpp"
-#include "../http/HttpRequest.hpp"
+#include "HttpRequest.h"
+#include "IStream.h"
 
 #include <atomic>
 #include <memory>
@@ -65,4 +65,3 @@ private:
 };
 
 } // namespace slark
-namespace slark

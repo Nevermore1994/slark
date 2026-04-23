@@ -15,26 +15,32 @@
 
 namespace slark {
 
-using StreamControlFunc = std::function<void()>;
-using DemuxedDurationFunc = std::function<double()>;
-using PrebufferCompleteFunc = std::function<void()>;
-using DropOldestFunc = std::function<void()>;
+/**
+ * @brief BufferMonitor 的委托接口，由 PlayPipeline 实现。
+ *
+ * 所有方法均在 ownerThread 调用。
+ */
+struct IBufferMonitorDelegate {
+    virtual ~IBufferMonitorDelegate() = default;
+
+    [[nodiscard]] virtual double demuxedDuration() const noexcept = 0;
+    virtual void pauseStream() noexcept = 0;
+    virtual void resumeStream() noexcept = 0;
+    virtual void onPrebufferComplete() noexcept = 0;
+    virtual void onDropOldest() noexcept = 0;
+    virtual void onBufferEvent(PipelineEvent event,
+                               std::optional<PipelineError> error) noexcept = 0;
+};
 
 /**
  * @brief 背压与缓冲监控器。
  *
  * 线程安全约定：所有方法必须在 ownerThread 调用。
- * 通过 pauseStream/resumeStream 回调控制 IStream 数据流速。
+ * 通过 IBufferMonitorDelegate 控制 IStream 数据流速并上报事件。
  */
 class BufferMonitor {
 public:
-    BufferMonitor(const BackpressureConfig& config,
-                  PipelineEventCallback onEvent,
-                  DemuxedDurationFunc demuxedDuration,
-                  StreamControlFunc pauseStream,
-                  StreamControlFunc resumeStream,
-                  PrebufferCompleteFunc onPrebufferComplete = nullptr,
-                  DropOldestFunc dropOldest = nullptr) noexcept;
+    BufferMonitor(const BackpressureConfig& config, IBufferMonitorDelegate& delegate) noexcept;
 
     void onDataEnqueued() noexcept;
 
@@ -66,12 +72,12 @@ private:
     void checkRebufferComplete() noexcept;
 
     [[nodiscard]] double demuxedDuration() const noexcept {
-        return demuxedDuration_ ? demuxedDuration_() : 0.0;
+        return delegate_.demuxedDuration();
     }
 
     void pauseStream() noexcept {
-        if (!streamPaused_ && pauseStream_) {
-            pauseStream_();
+        if (!streamPaused_) {
+            delegate_.pauseStream();
             streamPaused_ = true;
             pauseTime_ = Clock::now();
             pauseFailCount_ = 0;
@@ -79,8 +85,8 @@ private:
     }
 
     void resumeStream() noexcept {
-        if (streamPaused_ && resumeStream_) {
-            resumeStream_();
+        if (streamPaused_) {
+            delegate_.resumeStream();
             streamPaused_ = false;
             resumeTime_ = Clock::now();
             pauseTime_.reset();
@@ -89,9 +95,7 @@ private:
 
     void fireEvent(PipelineEvent event,
                    std::optional<PipelineError> error = std::nullopt) noexcept {
-        if (onEvent_) {
-            onEvent_(event, std::move(error));
-        }
+        delegate_.onBufferEvent(event, std::move(error));
     }
 
 private:
@@ -102,12 +106,7 @@ private:
     static constexpr int32_t kPauseFailThreshold = 3;
 
     BackpressureConfig config_;
-    PipelineEventCallback onEvent_;
-    DemuxedDurationFunc demuxedDuration_;
-    StreamControlFunc pauseStream_;
-    StreamControlFunc resumeStream_;
-    PrebufferCompleteFunc onPrebufferComplete_;
-    DropOldestFunc dropOldest_;
+    IBufferMonitorDelegate& delegate_;
 
     bool streamPaused_ = false;
     bool isPrebuffering_ = false;
@@ -123,4 +122,3 @@ private:
 };
 
 } // namespace slark
-namespace slark

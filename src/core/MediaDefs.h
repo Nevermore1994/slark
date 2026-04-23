@@ -28,6 +28,4 @@ enum class RenderStatus {
     Error,
 };
 
-}
-
-
+} // namespace slark

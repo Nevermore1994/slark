@@ -16,8 +16,6 @@ DemuxerComponent::DemuxerComponent(DemuxerConfig config)
     : worker_(Thread::create("DemuxerWorker")), config_(std::move(config)) {}
 
 DemuxerComponent::~DemuxerComponent() {
-    worker_->pause();
-    // 先确保回调不再执行
     close();
     worker_->stop();
 }
@@ -35,7 +33,6 @@ void DemuxerComponent::reset() noexcept {
 void DemuxerComponent::close() noexcept {
     reset();
     isClosed_ = true;
-    cond_.notify_all();
 }
 
 void DemuxerComponent::start() noexcept {

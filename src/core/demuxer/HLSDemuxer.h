@@ -237,10 +237,7 @@ public:
     }
 
     bool isPlayList() const noexcept {
-        if (mainParser_) {
-            mainParser_->isPlayList();
-        }
-        return false;
+        return mainParser_ ? mainParser_->isPlayList() : false;
     }
 
     const std::vector<PlayListInfo>& playListInfos() const noexcept {

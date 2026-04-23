@@ -14,13 +14,6 @@
 namespace slark {
 
 FactoryResult<std::shared_ptr<IStream>> StreamFactory::createStream(const std::string& uri) {
-    OpenParams params;
-    params.uri = uri;
-    return createStream(uri, params);
-}
-
-FactoryResult<std::shared_ptr<IStream>> StreamFactory::createStream(const std::string& uri,
-                                                                    const OpenParams& params) {
     auto type = detectStreamType(uri);
 
     switch (type) {
@@ -112,4 +105,3 @@ bool StreamFactory::isHttp(const std::string& uri) noexcept {
 }
 
 } // namespace slark
-namespace slark

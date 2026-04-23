@@ -3,7 +3,7 @@
 //
 #pragma once
 
-#include "../base/IStream.hpp"
+#include "IStream.h"
 
 #include <expected>
 #include <memory>
@@ -23,9 +23,6 @@ class StreamFactory {
 public:
     static FactoryResult<std::shared_ptr<IStream>> createStream(const std::string& uri);
 
-    static FactoryResult<std::shared_ptr<IStream>> createStream(const std::string& uri,
-                                                                const OpenParams& params);
-
     static FactoryResult<std::shared_ptr<IStream>> createFileStream(const std::string& uri);
 
     static FactoryResult<std::shared_ptr<IStream>> createHttpStream(const std::string& uri);
@@ -42,4 +39,3 @@ public:
 };
 
 } // namespace slark
-namespace slark

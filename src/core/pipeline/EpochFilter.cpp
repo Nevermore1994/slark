@@ -22,4 +22,3 @@ bool EpochFilter::shouldBreak(const SeekCoordinator& coordinator, uint64_t captu
 }
 
 } // namespace slark
-namespace slark

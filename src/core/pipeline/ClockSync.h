@@ -29,15 +29,6 @@ public:
     ClockSync() = default;
     ~ClockSync() override = default;
 
-    // teardown 闸门：vsync 回调检查此标志，置位后立即返回 nullptr，防止悬空访问
-    void notifyTeardown() noexcept {
-        teardownFlag_.store(true, std::memory_order_release);
-    }
-
-    [[nodiscard]] bool isTearingDown() const noexcept {
-        return teardownFlag_.load(std::memory_order_acquire);
-    }
-
     void setAudioTime(Time::TimePoint t) noexcept {
         audioTime_.store(t.point(), std::memory_order_release);
     }
@@ -63,7 +54,7 @@ public:
         videoTime_.store(0, std::memory_order_release);
         playbackRate_.store(static_cast<uint16_t>(kDefaultPlaybackRate * kPlaybackRateScale),
                             std::memory_order_release);
-        teardownFlag_.store(false, std::memory_order_release);
+        videoFps_.store(0, std::memory_order_release);
         dropCount_.store(0, std::memory_order_relaxed);
         chaseRoundCount_.store(0, std::memory_order_relaxed);
         vsyncDurationUs_.store(0, std::memory_order_relaxed);
@@ -99,44 +90,59 @@ public:
                static_cast<double>(kPlaybackRateScale);
     }
 
+    void setVideoFps(double fps) noexcept {
+        if (fps > 0.0) {
+            videoFps_.store(static_cast<uint32_t>(fps * kFpsScale), std::memory_order_release);
+        }
+    }
+
+    [[nodiscard]] double videoFps() const noexcept {
+        return videoFps_.load(std::memory_order_acquire) / static_cast<double>(kFpsScale);
+    }
+
+    // VSync 边界容忍窗口：消除 VSync 回调 ±1~2ms 抖动导致的误 Hold，供调用方传入
+    static constexpr double kEarlyTolerance = 0.002; // 2ms
+
     // diff = audioTime - videoTime；正数表示视频落后，负数表示视频超前
+    // earlyToleranceSec：VSync 边界容忍窗口，视频超前但在容忍范围内仍 Render，消除边界抖动
     [[nodiscard]] static AVSyncAction evaluateAVSync(double diffSec,
-                                                     double playbackRate = 1.0) noexcept {
-        // 变速模式下，diff 除以当前播放速率，使同步阈值与速率成比例缩放
+                                                     double playbackRate = 1.0,
+                                                     double earlyToleranceSec = 0.0) noexcept {
         double scaledMinThreshold = kMinThreshold * playbackRate;
         double scaledMaxThreshold = kMaxThreshold * playbackRate;
 
-        auto absDiff = std::abs(diffSec);
-
-        // 同步阈值随速率缩放：高速播放时阈值更宽松，低速更严格
-        if (absDiff <= scaledMinThreshold || absDiff >= scaledMaxThreshold) {
-            // 差值在阈值内或过大（时钟异常），正常渲染
-            return AVSyncAction::Render;
-        }
-
+        // 视频落后音频 → 追帧，无论落后多少都不放弃追帧
         if (diffSec > scaledMinThreshold) {
-            // 视频落后音频 → 追帧
             return AVSyncAction::Drop;
         }
 
-        // 视频超前音频 → 保持，等音频追上
-        return AVSyncAction::Hold;
+        // 视频超前音频：在容忍窗口内（VSync 边界抖动）仍 Render，超出才 Hold
+        // 超前异常（> kMaxThreshold）视为时钟跳变，强制 Render 避免长时间 Hold
+        if (diffSec < -(scaledMinThreshold + earlyToleranceSec)) {
+            if (-diffSec >= scaledMaxThreshold) {
+                return AVSyncAction::Render;
+            }
+            return AVSyncAction::Hold;
+        }
+
+        return AVSyncAction::Render;
     }
 
 private:
     static constexpr double kMinPlaybackRate = 0.5;
     static constexpr double kMaxPlaybackRate = 2.0;
     static constexpr double kDefaultPlaybackRate = 1.0;
-    static constexpr uint32_t kPlaybackRateScale = 1000; // 整数化精度
+    static constexpr uint32_t kPlaybackRateScale = 1000;
+    static constexpr uint32_t kFpsScale = 100;
 
-    static constexpr double kMinThreshold = 0.1;  // 100ms
+    static constexpr double kMinThreshold = 0.04; // 40ms，覆盖人眼对音视频不同步的感知阈值
     static constexpr double kMaxThreshold = 10.0; // 10s
 
     std::atomic<uint64_t> audioTime_{0};
     std::atomic<uint64_t> videoTime_{0};
-    std::atomic<bool> teardownFlag_{false};
     std::atomic<uint16_t> playbackRate_{
         static_cast<uint16_t>(kDefaultPlaybackRate * kPlaybackRateScale)};
+    std::atomic<uint32_t> videoFps_{0};
     std::atomic<int32_t> dropCount_{0};
     std::atomic<int32_t> chaseRoundCount_{0};
     std::atomic<int64_t> vsyncDurationUs_{0};

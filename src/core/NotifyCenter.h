@@ -39,4 +39,3 @@ private:
 };
 
 } // namespace slark
-namespace slark

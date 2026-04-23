@@ -25,7 +25,7 @@ void RawDecoder::flush() noexcept {
 
 Error RawDecoder::decode(AVFrameRefPtr& frame) noexcept {
     if (!frame) {
-        return Error::DecoderInputError;
+        return Error::CodecInputError;
     }
     if (frame->isEndOfStream) {
         isCompleted_ = true;
@@ -36,4 +36,3 @@ Error RawDecoder::decode(AVFrameRefPtr& frame) noexcept {
 }
 
 } // namespace slark
-namespace slark

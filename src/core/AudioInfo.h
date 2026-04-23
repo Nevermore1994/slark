@@ -15,15 +15,6 @@
 
 namespace slark {
 
-enum class RenderStatus {
-    Unknown,
-    Ready,
-    Playing,
-    Pause,
-    Stop,
-    Error,
-};
-
 enum class AudioProfile : uint8_t {
     AAC_MAIN = 1,
     AAC_LC = 2,
@@ -133,9 +124,8 @@ public:
         if (auto func = dataFunc_.load()) {
             auto getSize = std::invoke(*func, data, size, flag);
             renderedDataLength_ += getSize;
-            Even if it is 0, it must be updated,
-                otherwise the latency will cause the update to be incorrect.clock_.setTime(
-                    offsetTime_ + audioInfo_->dataLen2TimePoint(renderedDataLength_));
+            // 即使是0也必须更新，否则延迟会导致更新不正确
+            clock_.setTime(offsetTime_ + audioInfo_->dataLen2TimePoint(renderedDataLength_));
             return getSize;
         } else {
             flag = AudioDataFlag::Error;
@@ -146,7 +136,7 @@ public:
 
 protected:
     std::atomic<float> volume_{1.0f};
-    0.0 ~1.0 Time::TimePoint offsetTime_{};
+    Time::TimePoint offsetTime_{};
     std::shared_ptr<AudioInfo> audioInfo_ = nullptr;
     std::atomic<uint64_t> renderedDataLength_ = 0;
     Clock clock_;
@@ -163,4 +153,3 @@ inline std::shared_ptr<IAudioRender> createAudioRender(
 }
 #endif
 } // namespace slark
-namespace slark

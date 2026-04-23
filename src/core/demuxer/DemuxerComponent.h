@@ -3,6 +3,7 @@
 //
 #pragma once
 #include "DemuxerManager.h"
+#include "IPipelineComponent.h"
 #include "NonCopyable.h"
 #include "Thread.h"
 
@@ -14,7 +15,7 @@ using HandleSeekFunc = std::function<void(Range)>;
 using HandleDemuxResultFunc =
     std::function<void(const std::shared_ptr<IDemuxer>&, DemuxerResult&&)>;
 
-class DemuxerComponent : public slark::NonCopyMovable {
+class DemuxerComponent : public IPipelineComponent, public slark::NonCopyMovable {
 public:
     explicit DemuxerComponent(DemuxerConfig config);
 
@@ -24,19 +25,27 @@ public:
 
     bool open() noexcept;
 
-    void close() noexcept;
+    void close() noexcept override;
 
-    void start() noexcept;
+    void start() noexcept override;
 
-    void pause() noexcept;
+    void pause() noexcept override;
 
-    void seekToPos(uint64_t pos) noexcept;
-
-    void flush() noexcept {
+    void flush() noexcept override {
         flushed_ = true;
     }
 
-    /// In HLS, what you get is the TS index, while in other cases, it’s the file offset.
+    void seekStream() noexcept override {
+        pause();
+    }
+
+    [[nodiscard]] bool isRunning() const noexcept override {
+        return worker_->isRunning();
+    }
+
+    void seekToPos(uint64_t pos) noexcept;
+
+    /// In HLS, what you get is the TS index, while in other cases, it's the file offset.
     [[nodiscard]] uint64_t getSeekToPos(double time) noexcept;
 
     bool pushData(std::list<DataPacket>&& data) noexcept;
@@ -47,10 +56,6 @@ public:
 
     void setHandleSeekFunc(HandleSeekFunc&& func) noexcept {
         handleSeekFunc_.reset(std::make_shared<HandleSeekFunc>(std::move(func)));
-    }
-
-    [[nodiscard]] bool isRunning() const noexcept {
-        return worker_->isRunning();
     }
 
     [[nodiscard]] bool isOpen() const noexcept {

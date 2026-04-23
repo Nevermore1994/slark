@@ -7,16 +7,17 @@
 
 #pragma once
 
+#include "Assert.hpp"
+#include "Data.h"
+#include "DataView.hpp"
+#include "Log.hpp"
+
 #include <any>
 #include <cstdint>
 #include <exception>
-#include <memory>
 #include <expected>
+#include <memory>
 #include <ranges>
-#include "Assert.hpp"
-#include "Data.hpp"
-#include "DataView.hpp"
-#include "Log.hpp"
 
 namespace slark {
 
@@ -57,12 +58,14 @@ struct AudioFrameInfo : public FrameInfo {
         }
         *info = *this;
     }
-    
+
     [[nodiscard]] double duration(uint64_t size) const noexcept {
-        return static_cast<double>(size) / static_cast<double>(bitsPerSample / 8 * channels * sampleRate);
+        return static_cast<double>(size) /
+               static_cast<double>(bitsPerSample / 8 * channels * sampleRate);
     }
-    
+
     ~AudioFrameInfo() override = default;
+
 public:
     uint16_t channels = 0;
     uint16_t bitsPerSample = 0;
@@ -89,24 +92,23 @@ struct VideoFrameInfo : public FrameInfo {
     }
 
     [[nodiscard]] bool hasContent() const noexcept {
-        static const std::vector<VideoFrameType> kNormalFrameTypes = {
-            VideoFrameType::IFrame,
-            VideoFrameType::PFrame,
-            VideoFrameType::BFrame
-        };
+        static const std::vector<VideoFrameType> kNormalFrameTypes = {VideoFrameType::IFrame,
+                                                                      VideoFrameType::PFrame,
+                                                                      VideoFrameType::BFrame};
         return std::ranges::any_of(kNormalFrameTypes, [frameType = frameType](const auto type) {
             return frameType == type;
         });
     }
-    
+
     void copy(std::shared_ptr<VideoFrameInfo>& info) const noexcept {
         if (!info || info.get() == this) {
             return;
         }
         *info = *this;
     }
-    
+
     ~VideoFrameInfo() override = default;
+
 public:
     bool isIDRFrame = false;
     VideoFrameType frameType = VideoFrameType::Unknown;
@@ -119,25 +121,22 @@ public:
 
 struct AVFrame {
     bool isDiscard = false;
-    bool isFastPush = false; //Fast push frame
+    bool isFastPush = false; // Fast push frame
     AVFrameType frameType = AVFrameType::Unknown;
-    uint32_t duration = 0; //ms
+    uint32_t duration = 0; // ms
     uint64_t timeScale = 1;
     uint64_t index = 0;
     int64_t pts = 0;
     int64_t dts = 0;
     uint64_t offset = 0;
-    std::unique_ptr<Data> data; //Undecoded
+    std::unique_ptr<Data> data; // Undecoded
     void* opaque = nullptr;
     std::shared_ptr<FrameInfo> info;
 
     AVFrame() = default;
-    
-    explicit AVFrame(AVFrameType type)
-        : frameType(type) {
-        
-    }
-    
+
+    explicit AVFrame(AVFrameType type) : frameType(type) {}
+
     inline void reset() noexcept {
         frameType = AVFrameType::Unknown;
         index = 0;
@@ -155,11 +154,11 @@ struct AVFrame {
         data.reset();
         return d;
     }
-    
+
     [[nodiscard]] double dtsTime() const noexcept {
         return std::round(static_cast<double>(dts) / static_cast<double>(timeScale) * 1000) / 1000;
     }
-    
+
     [[nodiscard]] double ptsTime() const noexcept {
         return std::round(static_cast<double>(pts) / static_cast<double>(timeScale) * 1000) / 1000;
     }
@@ -185,8 +184,7 @@ struct AVFrame {
             frame->info = newInfo;
         } else if (frameType == AVFrameType::Video) {
             auto newInfo = std::make_shared<VideoFrameInfo>();
-            if (auto videoInfo = std::dynamic_pointer_cast<VideoFrameInfo>(info);
-                videoInfo) {
+            if (auto videoInfo = std::dynamic_pointer_cast<VideoFrameInfo>(info); videoInfo) {
                 videoInfo->copy(newInfo);
             }
             frame->info = newInfo;
@@ -209,7 +207,7 @@ struct AVFrame {
     [[nodiscard]] inline bool isAudio() const noexcept {
         return frameType == AVFrameType::Audio;
     }
-    
+
     [[nodiscard]] DataView view() const noexcept {
         if (data) {
             return DataView(data->view());
@@ -226,4 +224,4 @@ using AVFramePtr = std::unique_ptr<AVFrame>;
 using AVFrameRefPtr = std::shared_ptr<AVFrame>;
 using AVFrameRef = AVFrame&;
 using AVFramePtrArray = std::vector<AVFramePtr>;
-}
+} // namespace slark

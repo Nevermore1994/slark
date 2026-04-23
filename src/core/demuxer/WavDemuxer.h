@@ -6,41 +6,36 @@
 #pragma once
 
 #include "IDemuxer.h"
+
 #include <string_view>
 
 namespace slark {
 
-class WAVDemuxer: public IDemuxer {
+class WAVDemuxer : public IDemuxer {
 public:
     WAVDemuxer();
 
     ~WAVDemuxer() override;
 
-    bool open(std::unique_ptr<Buffer>& ) noexcept override;
+    bool open(std::unique_ptr<Buffer>&) noexcept override;
 
     void close() noexcept override;
 
     DemuxerResult parseData(DataPacket& packet) noexcept override;
-    
+
     [[nodiscard]] uint64_t getSeekToPos(double time) noexcept override;
-    
+
     void reset() noexcept override;
 
     inline static const DemuxerInfo& info() noexcept {
-        static DemuxerInfo info = {
-            DemuxerType::WAV,
-            "WAVE",
-            BaseClass::registerClass<WAVDemuxer>(GetClassName(WAVDemuxer))
-        };
+        static DemuxerInfo info = {DemuxerType::WAV,
+                                   "WAVE",
+                                   BaseClass::registerClass<WAVDemuxer>(GetClassName(WAVDemuxer))};
         return info;
     }
+
 private:
     uint32_t parsedFrameCount_ = 0;
 };
 
-}
-
-
-
-
-
+} // namespace slark

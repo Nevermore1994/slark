@@ -47,6 +47,8 @@ struct IVideoRender : public IPipelineComponent {
 
     void flush() noexcept override {}
 
+    void seekStream() noexcept override {}
+
     [[nodiscard]] bool isRunning() const noexcept override {
         return false;
     }

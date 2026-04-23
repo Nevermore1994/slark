@@ -22,14 +22,13 @@ public:
     [[nodiscard]] bool beginSeek(CTime target) noexcept {
         bool superseded = isSeekPending_.load(std::memory_order_acquire);
         seekEpoch_.fetch_add(1, std::memory_order_acq_rel);
-        // release fence 保证读方看到新 epoch 时 seekTime 一定已更新
-        std::atomic_thread_fence(std::memory_order_release);
-        activeSeekTimeSec_.store(target.second(), std::memory_order_relaxed);
-        isSeekPending_.store(true, std::memory_order_relaxed);
-        isVideoSeeked_.store(false, std::memory_order_relaxed);
-        isAudioSeeked_.store(false, std::memory_order_relaxed);
+        // release store 保证读方看到新 epoch 时 seekTime 已更新
+        activeSeekTimeSec_.store(target.second(), std::memory_order_release);
+        isSeekPending_.store(true, std::memory_order_release);
+        isVideoSeeked_.store(false, std::memory_order_release);
+        isAudioSeeked_.store(false, std::memory_order_release);
         seekStartTimeNs_.store(std::chrono::steady_clock::now().time_since_epoch().count(),
-                               std::memory_order_relaxed);
+                               std::memory_order_release);
         return superseded;
     }
 
@@ -94,4 +93,3 @@ private:
 };
 
 } // namespace slark
-namespace slark

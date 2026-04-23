@@ -2,67 +2,51 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
-slark
 #include "GLContextManager.h"
-
-#include "OpenGLEGraphicsContext.h"
 
 #include <mutex>
 
-    namespace slark {
+namespace slark {
 
-    GLContextManager& GLContextManager::shareInstance() noexcept {
-        static auto manager_ = std::unique_ptr<GLContextManager>(new GLContextManager());
-        return *manager_;
-    }
+GLContextManager& GLContextManager::shareInstance() noexcept {
+    static auto manager_ = std::unique_ptr<GLContextManager>(new GLContextManager());
+    return *manager_;
+}
 
-    void GLContextManager::addMainContext(const std::string& id, IEGLContextRefPtr context) {
-        contexts_.withWriteLock([&id, context = std::move(context)](auto& contexts) {
-            contexts[id] = context;
-        });
-    }
+void GLContextManager::addMainContext(const std::string& id, IEGLContextRefPtr context) {
+    contexts_.withWriteLock([&id, context = std::move(context)](auto& contexts) {
+        contexts[id] = context;
+    });
+}
 
-    void GLContextManager::removeMainContext(const std::string& id) {
-        contexts_.withWriteLock([&id](auto& contexts) {
-            contexts.erase(id);
-        });
-    }
+void GLContextManager::removeMainContext(const std::string& id) {
+    contexts_.withWriteLock([&id](auto& contexts) {
+        contexts.erase(id);
+    });
+}
 
-    IEGLContextRefPtr GLContextManager::getMainContext(const std::string& id) noexcept {
-        IEGLContextRefPtr res;
-        contexts_.withReadLock([&id, &res](auto& contexts) {
-            if (contexts.count(id) == 0) {
-                return;
-            }
-            res = contexts.at(id);
-        });
-        return res;
-    }
-
-    IEGLContextRefPtr GLContextManager::createShareContextWithId(const std::string& id) noexcept {
-        auto ptr = getMainContext(id);
-        auto res = std::shared_ptr<IEGLContext>(createGLContext());
-        res->init(ptr->nativeContext());
-        return res;
-    }
-
-    IGraphicsContextRefPtr GLContextManager::createGraphicsContextWithId(
-        const std::string& id) noexcept {
-        auto mainCtx = getMainContext(id);
-        if (!mainCtx) {
-            return nullptr;
+IEGLContextRefPtr GLContextManager::getMainContext(const std::string& id) noexcept {
+    IEGLContextRefPtr res;
+    contexts_.withReadLock([&id, &res](auto& contexts) {
+        if (contexts.count(id) == 0) {
+            return;
         }
-        auto ctx = std::make_shared<OpenGLEGraphicsContext>();
-        if (!ctx->init(mainCtx->nativeContext())) {
-            return nullptr;
-        }
-        return ctx;
-    }
+        res = contexts.at(id);
+    });
+    return res;
+}
+
+IEGLContextRefPtr GLContextManager::createShareContextWithId(const std::string& id) noexcept {
+    auto ptr = getMainContext(id);
+    auto res = std::shared_ptr<IEGLContext>(createGLContext());
+    res->init(ptr->nativeContext());
+    return res;
+}
 
 #if !SLARK_IOS && !SLARK_ANDROID
-    IEGLContextRefPtr createGLContext() noexcept {
-        return nullptr;
-    }
-#endif
+IEGLContextRefPtr createGLContext() noexcept {
+    return nullptr;
 }
-namespace slark
+#endif
+
+} // namespace slark

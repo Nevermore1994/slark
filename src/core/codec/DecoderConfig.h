@@ -5,9 +5,9 @@
 //
 #pragma once
 
+#include "AudioInfo.h"
 #include "IDecoder.h"
 #include "VideoInfo.h"
-#include "AudioInfo.h"
 
 namespace slark {
 
@@ -16,7 +16,7 @@ enum class DecodeMode {
     ByteBuffer,
 };
 
-struct AudioDecoderConfig: public DecoderConfig {
+struct AudioDecoderConfig : public DecoderConfig {
     uint16_t channels{};
     uint16_t bitsPerSample{};
     uint64_t sampleRate{};
@@ -41,14 +41,14 @@ struct AudioDecoderConfig: public DecoderConfig {
     }
 };
 
-struct VideoDecoderConfig: public DecoderConfig {
+struct VideoDecoderConfig : public DecoderConfig {
     uint16_t naluHeaderLength{};
     uint32_t width{};
     uint32_t height{};
     DataRefPtr sps;
     DataRefPtr pps;
     DataRefPtr vps;
-    
+
     ~VideoDecoderConfig() override = default;
 
     bool initWithVideoInfo(const std::shared_ptr<VideoInfo>& videoInfo) noexcept {
@@ -69,4 +69,4 @@ struct VideoDecoderConfig: public DecoderConfig {
     }
 };
 
-}
+} // namespace slark

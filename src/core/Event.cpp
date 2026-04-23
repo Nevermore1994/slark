@@ -5,6 +5,7 @@
 //
 
 #include "Event.h"
+
 #include "Player.h"
 
 namespace slark {
@@ -14,16 +15,13 @@ EventPtr buildEvent(PlayerState state) {
     switch (state) {
         case PlayerState::Playing: {
             eventType = EventType::Play;
-        }
-            break;
+        } break;
         case PlayerState::Pause: {
             eventType = EventType::Pause;
-        }
-            break;
+        } break;
         case PlayerState::Stop: {
             eventType = EventType::Stop;
-        }
-            break;
+        } break;
         default:
             break;
     }
@@ -34,7 +32,9 @@ EventPtr buildEvent(EventType type) {
     return std::make_unique<Event>(type);
 }
 
-#define ENUM_TO_STRING_CASE(value) case value: return std::string_view(#value)
+#define ENUM_TO_STRING_CASE(value) \
+    case value:                    \
+        return std::string_view(#value)
 
 std::string_view EventTypeToString(EventType type) {
     switch (type) {
@@ -51,4 +51,3 @@ std::string_view EventTypeToString(EventType type) {
 }
 
 } // end of namespace slark
-

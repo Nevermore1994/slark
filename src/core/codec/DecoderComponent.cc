@@ -31,7 +31,7 @@ bool DecoderComponent::open(DecoderType type,
         if (!decoder) {
             LogE("create {} decoder failed", self->isVideo_ ? "video" : "audio");
             if (onOpened) {
-                onOpened({false, Error::DecoderUnsupportedFormat, "create decoder failed"});
+                onOpened({false, Error::CodecUnsupportedFormat, "create decoder failed"});
             }
             return;
         }
@@ -43,7 +43,7 @@ bool DecoderComponent::open(DecoderType type,
         if (!decoder->open(config)) {
             LogE("open {} decoder failed", self->isVideo_ ? "video" : "audio");
             if (onOpened) {
-                onOpened({false, Error::DecoderConfigInvalid, "open decoder failed"});
+                onOpened({false, Error::CodecConfigInvalid, "open decoder failed"});
             }
             return;
         }
@@ -134,9 +134,12 @@ bool DecoderComponent::empty() const noexcept {
     return pendingDecodeQueue_.empty();
 }
 
-bool DecoderComponent::isFull() const noexcept {
+double DecoderComponent::pendingMaxPts() const noexcept {
     std::lock_guard lock(mutex_);
-    return pendingDecodeQueue_.size() >= kMaxPendingDecodeFrameCount;
+    if (pendingDecodeQueue_.empty()) {
+        return -1.0;
+    }
+    return pendingDecodeQueue_.back()->ptsTime();
 }
 
 bool DecoderComponent::isRunning() const noexcept {
@@ -151,6 +154,29 @@ bool DecoderComponent::isDecodeCompleted() const noexcept {
         }
     });
     return completed;
+}
+
+AVFrameRefPtr DecoderComponent::requestDecodeFrame(bool isBlocking) noexcept {
+    if (isBlocking) {
+        std::unique_lock lock(mutex_);
+        cond_.wait(lock, [this] {
+            return !pendingDecodeQueue_.empty() || !isOpened_;
+        });
+        if (!isOpened_ || pendingDecodeQueue_.empty()) {
+            return nullptr;
+        }
+        auto frame = pendingDecodeQueue_.front();
+        pendingDecodeQueue_.pop_front();
+        return frame;
+    } else {
+        std::lock_guard lock(mutex_);
+        if (pendingDecodeQueue_.empty()) {
+            return nullptr;
+        }
+        auto frame = pendingDecodeQueue_.front();
+        pendingDecodeQueue_.pop_front();
+        return frame;
+    }
 }
 
 AVFrameRefPtr DecoderComponent::peekDecodeFrame() noexcept {
@@ -205,7 +231,7 @@ void DecoderComponent::pushFrameDecode() {
             }
         }
         auto res = decoder->decode(frame);
-        if (res != Error::Success && res != Error::DecoderAgain) {
+        if (res != Error::Success && res != Error::CodecAgain) {
             LogE("decode error:{}", toString(res));
             // 连续失败计数
             auto failCount = consecutiveFailCount_.fetch_add(1, std::memory_order_relaxed) + 1;

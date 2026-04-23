@@ -4,9 +4,9 @@
 
 #pragma once
 
-#include "../base/IStream.hpp"
-#include "../base/MediaPlaylist.hpp"
-#include "../http/HttpRequest.hpp"
+#include "HttpRequest.h"
+#include "IStream.h"
+#include "MediaPlaylist.h"
 
 #include <atomic>
 #include <memory>
@@ -20,11 +20,11 @@ public:
     HLSStream();
     ~HLSStream() override;
 
-    auto open(const OpenParams& params) -> StreamResult<StreamInfo> override;
+    StreamResult<StreamInfo> open(const OpenParams& params) override;
     void close() noexcept override;
     void start() noexcept override;
     void pause() noexcept override;
-    auto seek(uint64_t position) -> StreamResult<void> override;
+    StreamResult<void> seek(uint64_t position) override;
     void updateRange(Range range) noexcept override;
 
     [[nodiscard]] StreamState state() const noexcept override {
@@ -56,14 +56,14 @@ public:
     }
 
 private:
-    auto parseMasterPlaylist(const std::string& content) -> StreamResult<void>;
-    auto parseMediaPlaylist(const std::string& content) -> StreamResult<void>;
-    auto selectVariantUri(uint32_t bandwidth) -> std::optional<std::string>;
+    StreamResult<void> parseMasterPlaylist(const std::string& content);
+    StreamResult<void> parseMediaPlaylist(const std::string& content);
+    std::optional<std::string> selectVariantUri(uint32_t bandwidth);
 
     void downloadSegments();
     void downloadSegment(const Segment& segment);
     void refreshPlaylist();
-    auto parseMediaPlaylistIncremental(const std::string& content) -> StreamResult<void>;
+    StreamResult<void> parseMediaPlaylistIncremental(const std::string& content);
 
     void handlePlaylistResponse(http::HttpResponse&& response);
     void handleSegmentChunk(http::StreamChunk&& chunk, uint32_t segmentIndex);

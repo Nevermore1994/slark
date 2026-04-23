@@ -35,4 +35,3 @@ using PipelineEventCallback = std::function<void(PipelineEvent, std::optional<Pi
 }
 
 } // namespace slark
-namespace slark

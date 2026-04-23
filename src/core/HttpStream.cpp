@@ -4,7 +4,8 @@
 
 #include "HttpStream.h"
 
-#include "../base/coroutine/Coroutine.hpp"
+#include "Coroutine.hpp"
+#include "DataView.hpp"
 
 namespace slark {
 
@@ -19,6 +20,7 @@ auto HttpStream::open(const OpenParams& params) -> StreamResult<StreamInfo> {
     readRange_ = params.range;
 
     info_.type = StreamType::Http;
+    info_.uri = params.uri;
     info_.isSeekable = false;
     info_.isLive = false;
 
@@ -149,10 +151,10 @@ void HttpStream::handleChunk(http::StreamChunk&& chunk) noexcept {
 
         auto lengthIt = chunk.headers.find("Content-Length");
         if (lengthIt != chunk.headers.end()) {
-            try {
-                contentLength_ = std::stoull(lengthIt->second);
+            auto lenResult = StringUtil::fromChars<uint64_t>(lengthIt->second);
+            if (lenResult) {
+                contentLength_ = *lenResult;
                 info_.totalSize = contentLength_;
-            } catch (...) {
             }
         }
 
@@ -161,9 +163,10 @@ void HttpStream::handleChunk(http::StreamChunk&& chunk) noexcept {
             const auto& rangeStr = rangeIt->second;
             auto slashPos = rangeStr.find('/');
             if (slashPos != std::string::npos) {
-                try {
-                    info_.totalSize = std::stoull(rangeStr.substr(slashPos + 1));
-                } catch (...) {
+                auto totalStr = rangeStr.substr(slashPos + 1);
+                auto totalResult = StringUtil::fromChars<uint64_t>(totalStr);
+                if (totalResult) {
+                    info_.totalSize = *totalResult;
                 }
             }
         }
@@ -209,4 +212,3 @@ void HttpStream::handleError(const http::ErrorInfo& error) noexcept {
 }
 
 } // namespace slark
-namespace slark

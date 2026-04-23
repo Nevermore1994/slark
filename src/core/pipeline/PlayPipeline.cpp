@@ -4,6 +4,7 @@
 
 #include "PlayPipeline.h"
 
+#include "AudioDecoderConfig.h"
 #include "AudioRenderComponent.h"
 #include "BufferMonitor.h"
 #include "DecoderComponent.h"
@@ -13,10 +14,12 @@
 #include "IDemuxer.h"
 #include "Log.hpp"
 #include "Thread.h"
+#include "VideoDecoderConfig.h"
 #include "perf/Perf.h"
 
 #include <cassert>
 #include <chrono>
+#include <map>
 
 namespace slark {
 
@@ -103,15 +106,15 @@ void PlayPipeline::flush() noexcept {
     liveHasFirstVideoKeyframe_.store(false, std::memory_order_release);
     liveHasFirstAudioPacket_.store(false, std::memory_order_release);
     renderEndFired_.store(false, std::memory_order_release);
-    // flush 后 ready 状态必须重置，允许重新触发 PipelineReady
-    readyFired_.store(false, std::memory_order_release);
-    decoderReadyCount_.store(0, std::memory_order_release);
 
     if (bufferMonitor_) {
         bufferMonitor_->reset();
     }
     for (auto& comp : components_) {
         comp->flush();
+    }
+    if (auto render = videoRender_.load()) {
+        render->flush();
     }
 }
 
@@ -120,13 +123,10 @@ void PlayPipeline::teardown() noexcept {
         return;
     }
     teardownFlag_.store(true, std::memory_order_release);
-    clockSync_->notifyTeardown();
-    LogI("PlayPipeline teardown 开始");
-
+    LogI("PlayPipeline teardown");
     stopComponents();
-
     if (!joinWithTimeout(kTeardownTimeout)) {
-        LogE("PlayPipeline teardown join 超时，进入 Faulted 终态");
+        LogE("PlayPipeline teardown timeout, entering Faulted");
         enterFaultedState();
         return;
     }
@@ -139,7 +139,6 @@ void PlayPipeline::applyLiveConfig() noexcept {
         return;
     }
     config_ = BackpressureConfig::forLive();
-    // 重建 BufferMonitor 以使新配置生效
     bufferMonitor_.reset();
     initBufferMonitor();
     LogI("PlayPipeline: switched to live backpressure config");
@@ -157,7 +156,7 @@ void PlayPipeline::seek(CTime target) noexcept {
         fireEvent(PipelineEvent::SeekTimeout);
     }
     SLARK_TRACE_MILESTONE(playSession_.lock().get(), "seek_start");
-    // 6步 seek 顺序：pause → flush → seekStream → seekDemuxer → resetClocks → resume
+    // pause → flush → seekStream → seekDemuxer → resetClocks → resume
     pause();
     flush();
     for (auto& comp : components_) {
@@ -184,15 +183,26 @@ Time::TimePoint PlayPipeline::currentTime() noexcept {
 }
 
 AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
-    auto vsyncStart = std::chrono::steady_clock::now();
+    auto vsyncNow = std::chrono::steady_clock::now();
+    // 记录两次 VSync 回调的间隔，而非函数耗时
+    if (lastVsyncTime_ != std::chrono::steady_clock::time_point{}) {
+        auto intervalUs =
+            std::chrono::duration_cast<std::chrono::microseconds>(vsyncNow - lastVsyncTime_)
+                .count();
+        clockSync_->recordVsyncDuration(intervalUs);
+    }
+    lastVsyncTime_ = vsyncNow;
+
     if (isolated_.load(std::memory_order_acquire)) {
         return nullptr;
     }
 
-    // AV 同步：Hold 跳帧
-    double diff = clockSync_->audioTime().second() - clockSync_->videoTime().second();
+    const double playbackRate = clockSync_->playbackRate();
+    double diff = audioMasterTime().second() - clockSync_->videoTime().second();
     if (mediaInfo_.hasAudio && !seekCoordinator_->isSeekPending()) {
-        if (ClockSync::evaluateAVSync(diff, clockSync_->playbackRate()) == AVSyncAction::Hold) {
+        // 传入 kEarlyTolerance，消除 VSync 边界 ±2ms 抖动导致的误 Hold
+        if (ClockSync::evaluateAVSync(diff, playbackRate, ClockSync::kEarlyTolerance) ==
+            AVSyncAction::Hold) {
             return nullptr;
         }
     }
@@ -212,11 +222,23 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
     }
     onSeekFrameConsumed(true);
 
-    // 追帧
     if (mediaInfo_.hasAudio && !seekCoordinator_->isSeekPending()) {
-        diff = clockSync_->audioTime().second() - clockSync_->videoTime().second();
+        diff = audioMasterTime().second() - clockSync_->videoTime().second();
+        // 用实测 VSync 间隔推算屏幕刷新率，fallback 到 kVsyncHz
+        double videoFps = clockSync_->videoFps();
+        int64_t vsyncUs = clockSync_->metrics().vsyncDurationUs;
+        constexpr double kFallbackHz = 60.0;
+        double displayHz = (vsyncUs > 0) ? (1e6 / static_cast<double>(vsyncUs)) : kFallbackHz;
+        // 每个 VSync 窗口内视频帧数：120fps/60Hz=2，240fps/60Hz=4，180fps/60Hz=3
+        // 用于限制单次追帧上限，防止一个 VSync 内丢过多帧导致画面跳跃
+        int32_t framesPerVsync =
+            (videoFps > 0.0 && displayHz > 0.0)
+                ? std::max(1, static_cast<int32_t>(std::round(videoFps / displayHz)))
+                : 1;
+        // 每个 VSync 最多追 framesPerVsync-1 帧，至少保留 1 帧渲染
+        int32_t chaseLimit = framesPerVsync - 1;
         int32_t dropCount = 0;
-        while (ClockSync::evaluateAVSync(diff, clockSync_->playbackRate()) == AVSyncAction::Drop &&
+        while (ClockSync::evaluateAVSync(diff, playbackRate) == AVSyncAction::Drop &&
                dropCount < config_.maxDropPerVsync) {
             auto nextFrame = popVideoFrame();
             if (!nextFrame) {
@@ -224,18 +246,22 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
             }
             frame = std::move(nextFrame);
             clockSync_->setVideoTime(Time::TimePoint::fromSeconds(frame->ptsTime()));
-            diff = clockSync_->audioTime().second() - clockSync_->videoTime().second();
             ++dropCount;
+
+            // 达到本 VSync 窗口追帧上限，强制保留当前帧退出，避免画面跳跃
+            if (chaseLimit > 0 && dropCount >= chaseLimit) {
+                break;
+            }
+
+            diff = audioMasterTime().second() - clockSync_->videoTime().second();
         }
         if (dropCount > 0) {
             clockSync_->recordDrop(dropCount);
+            if (dropCount >= config_.maxDropPerVsync) {
+                LogW("drop limit reached: dropped {} frames in one vsync", dropCount);
+            }
         }
     }
-
-    auto vsyncEnd = std::chrono::steady_clock::now();
-    auto vsyncUs =
-        std::chrono::duration_cast<std::chrono::microseconds>(vsyncEnd - vsyncStart).count();
-    clockSync_->recordVsyncDuration(vsyncUs);
 
     return frame;
 }
@@ -258,10 +284,68 @@ AVFrameRefPtr PlayPipeline::requestAudioFrame() noexcept {
     return frame;
 }
 
-void PlayPipeline::setStreamControl(StreamControlFunc pauseStream,
-                                    StreamControlFunc resumeStream) noexcept {
-    pauseStreamFunc_ = std::move(pauseStream);
-    resumeStreamFunc_ = std::move(resumeStream);
+double PlayPipeline::demuxedDuration() const noexcept {
+    double maxPts = 0.0;
+    audioFrames_.withLock([&maxPts](const auto& q) {
+        if (!q.empty()) {
+            maxPts = q.back()->ptsTime();
+        }
+    });
+    videoFrames_.withLock([&maxPts](const auto& m) {
+        if (!m.empty()) {
+            maxPts = std::max(maxPts, m.rbegin()->second->ptsTime());
+        }
+    });
+    // 纳入待解码队列中最新帧的 pts，确保背压水位覆盖 demux → decode 这一层缓冲
+    if (audioDecoder_) {
+        auto pts = audioDecoder_->pendingMaxPts();
+        if (pts >= 0.0) {
+            maxPts = std::max(maxPts, pts);
+        }
+    }
+    if (videoDecoder_) {
+        auto pts = videoDecoder_->pendingMaxPts();
+        if (pts >= 0.0) {
+            maxPts = std::max(maxPts, pts);
+        }
+    }
+    const double kCurrentSec = clockSync_->masterTime(mediaInfo_.hasAudio).second();
+    return std::max(0.0, maxPts - kCurrentSec);
+}
+
+void PlayPipeline::pauseStream() noexcept {
+    if (pauseStreamFunc_) {
+        pauseStreamFunc_();
+    }
+}
+
+void PlayPipeline::resumeStream() noexcept {
+    if (resumeStreamFunc_) {
+        resumeStreamFunc_();
+    }
+}
+
+void PlayPipeline::firePipelineReady() noexcept {
+    bool expected = false;
+    if (readyFired_.compare_exchange_strong(expected,
+                                            true,
+                                            std::memory_order_acq_rel,
+                                            std::memory_order_acquire)) {
+        SLARK_TRACE_MILESTONE(playSession_.lock().get(), "pipeline_ready");
+        fireEvent(PipelineEvent::PipelineReady);
+    }
+}
+
+void PlayPipeline::onPrebufferComplete() noexcept {
+    firePipelineReady();
+}
+
+void PlayPipeline::onDropOldest() noexcept {
+    dropOldestFrames();
+}
+
+void PlayPipeline::onBufferEvent(PipelineEvent event, std::optional<PipelineError> error) noexcept {
+    fireEvent(event, std::move(error));
 }
 
 void PlayPipeline::onHeartbeat() noexcept {
@@ -274,7 +358,7 @@ void PlayPipeline::onHeartbeat() noexcept {
     if (seekCoordinator_->isSeekTimedOut(kSeekTimeout)) {
         seekCoordinator_->completeSeek();
         fireEvent(PipelineEvent::SeekTimeout);
-        LogW("seek timeout: seek did not complete within 5s");
+        LogW("seek timeout");
     }
 }
 
@@ -293,13 +377,21 @@ void PlayPipeline::drainPendingTasks() noexcept {
 
 AVFrameRefPtr PlayPipeline::popVideoFrame() noexcept {
     AVFrameRefPtr frame;
-    auto currentEpoch = seekCoordinator_->seekEpoch();
 
-    // try_lock 退化策略：vsync 路径不阻塞
+    auto popFrame = [](auto& m) -> AVFrameRefPtr {
+        if (m.empty()) {
+            return nullptr;
+        }
+        auto frame = std::move(m.begin()->second);
+        m.erase(m.begin());
+        return frame;
+    };
+
+    // vsync 路径不阻塞，try_lock 失败时有界自旋
     bool locked = false;
     videoFrames_.withTryLock(
-        [&frame, currentEpoch, &locked](auto& container) {
-            frame = container.pop(currentEpoch);
+        [&frame, &popFrame, &locked](auto& m) {
+            frame = popFrame(m);
             locked = true;
         },
         [] {
@@ -314,11 +406,10 @@ AVFrameRefPtr PlayPipeline::popVideoFrame() noexcept {
             constexpr auto kSpinBudget120Hz = std::chrono::microseconds(250);
             auto spinBudget = mediaInfo_.fps >= 120 ? kSpinBudget120Hz : kSpinBudget60Hz;
             auto deadline = std::chrono::steady_clock::now() + spinBudget;
-
             while (std::chrono::steady_clock::now() <= deadline) {
                 videoFrames_.withTryLock(
-                    [&frame, currentEpoch, &locked](auto& container) {
-                        frame = container.pop(currentEpoch);
+                    [&frame, &popFrame, &locked](auto& m) {
+                        frame = popFrame(m);
                         locked = true;
                     },
                     [] {
@@ -351,31 +442,49 @@ void PlayPipeline::setVideoRender(std::weak_ptr<IVideoRender> render) noexcept {
     videoRender_.store(render);
 }
 
-void PlayPipeline::setAudioRender(std::shared_ptr<AudioRenderComponent> render) noexcept {
-    audioRender_ = std::move(render);
+void PlayPipeline::setVolume(float volume) noexcept {
     if (audioRender_) {
-        audioRender_->setRenderEndCallback([this] {
-            // 音频系统线程回调，投递到 ownerThread
-            if (!demuxer_ || !demuxer_->isCompleted()) {
-                return;
-            }
-            bool expected = false;
-            if (renderEndFired_.compare_exchange_strong(expected,
-                                                        true,
-                                                        std::memory_order_acq_rel)) {
-                postToOwnerThread([this] {
-                    fireEvent(PipelineEvent::RenderEnd);
-                });
-            }
-        });
+        audioRender_->setVolume(volume);
     }
+}
+
+Time::TimePoint PlayPipeline::audioPlayedTime() noexcept {
+    if (audioRender_) {
+        return audioRender_->playedTime();
+    }
+    return {};
 }
 
 void PlayPipeline::setDemuxerComponent(std::shared_ptr<DemuxerComponent> demuxer) noexcept {
     demuxer_ = std::move(demuxer);
+    connectComponents();
+    registerComponents();
 }
 
-void PlayPipeline::createAudioDecoder() noexcept {
+void PlayPipeline::setupAudioTrack(DecoderType type,
+                                   std::shared_ptr<AudioDecoderConfig> config,
+                                   std::shared_ptr<AudioInfo> audioInfo,
+                                   float volume) noexcept {
+    SAssert(!audioDecoder_, "audio track already set up");
+    auto renderInfo = std::make_shared<AudioInfo>(*audioInfo);
+    renderInfo->bitsPerSample = 16;
+    audioRender_ = std::make_shared<AudioRenderComponent>(renderInfo);
+    audioRender_->setVolume(volume);
+    audioRender_->setPullDataFunc([this](uint32_t) {
+        return requestAudioFrame();
+    });
+    audioRender_->setRenderEndCallback([this] {
+        if (!demuxer_ || !demuxer_->isCompleted()) {
+            return;
+        }
+        bool expected = false;
+        if (renderEndFired_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+            postToOwnerThread([this] {
+                fireEvent(PipelineEvent::RenderEnd);
+            });
+        }
+    });
+
     audioDecoder_ = std::make_shared<DecoderComponent>([this](AVFrameRefPtr frame) {
         if (teardownFlag_.load(std::memory_order_acquire)) {
             return;
@@ -391,57 +500,53 @@ void PlayPipeline::createAudioDecoder() noexcept {
             q.emplace_back(std::move(frame));
         });
     });
-    audioDecoder_->setErrorCallback([this](Error err, bool isVideo) {
-        postToOwnerThread([this, err, isVideo] {
-            fireEvent(
-                PipelineEvent::DecodeError,
-                PipelineError{
-                    .event = PipelineEvent::DecodeError,
-                    .stage = isVideo ? PipelineStage::VideoDecode : PipelineStage::AudioDecode,
-                    .code = static_cast<int32_t>(err),
-                    .message = "consecutive decode failure exceeded threshold",
-                });
+    audioDecoder_->setErrorCallback([this](Error err, bool /*fatal*/) {
+        postToOwnerThread([this, err] {
+            fireEvent(PipelineEvent::DecodeError,
+                      PipelineError{
+                          .event = PipelineEvent::DecodeError,
+                          .stage = PipelineStage::AudioDecode,
+                          .code = static_cast<int32_t>(err),
+                          .message = "consecutive decode failure exceeded threshold",
+                      });
         });
     });
+
+    registerComponents();
+    openDecoderInternal(audioDecoder_, type, config, false);
 }
 
-void PlayPipeline::createVideoDecoder() noexcept {
+void PlayPipeline::setupVideoTrack(DecoderType type,
+                                   std::shared_ptr<VideoDecoderConfig> config) noexcept {
+    SAssert(!videoDecoder_, "video track already set up");
     videoDecoder_ = std::make_shared<DecoderComponent>([this](AVFrameRefPtr frame) {
         if (teardownFlag_.load(std::memory_order_acquire)) {
             return;
         }
-        const uint64_t kFrameEpoch = seekCoordinator_->seekEpoch();
         if (EpochFilter::shouldDiscard(*seekCoordinator_, frame->ptsTime())) {
             return;
         }
-        // 首次检测到 B 帧，切换容器策略
-        if (!bFrameDetected_.load(std::memory_order_acquire)) {
-            if (auto* vi = frame->videoInfo(); vi && vi->frameType == VideoFrameType::BFrame) {
-                if (!bFrameDetected_.exchange(true, std::memory_order_acq_rel)) {
-                    onBFrameDetected();
-                }
-            }
-        }
-        videoFrames_.withLock([&frame, kFrameEpoch](auto& container) {
-            container.push(TaggedFrame{std::move(frame), kFrameEpoch});
+        videoFrames_.withLock([&frame](auto& m) {
+            m.emplace(frame->pts, std::move(frame));
         });
-        // 通知渲染层有新帧可消费，替代 CADisplayLink 轮询
         if (auto render = videoRender_.load()) {
             render->onNewFrameAvailable();
         }
     });
-    videoDecoder_->setErrorCallback([this](Error err, bool isVideo) {
-        postToOwnerThread([this, err, isVideo] {
-            fireEvent(
-                PipelineEvent::DecodeError,
-                PipelineError{
-                    .event = PipelineEvent::DecodeError,
-                    .stage = isVideo ? PipelineStage::VideoDecode : PipelineStage::AudioDecode,
-                    .code = static_cast<int32_t>(err),
-                    .message = "consecutive decode failure exceeded threshold",
-                });
+    videoDecoder_->setErrorCallback([this](Error err, bool /*fatal*/) {
+        postToOwnerThread([this, err] {
+            fireEvent(PipelineEvent::DecodeError,
+                      PipelineError{
+                          .event = PipelineEvent::DecodeError,
+                          .stage = PipelineStage::VideoDecode,
+                          .code = static_cast<int32_t>(err),
+                          .message = "consecutive decode failure exceeded threshold",
+                      });
         });
     });
+
+    registerComponents();
+    openDecoderInternal(videoDecoder_, type, config, true);
 }
 
 void PlayPipeline::postToOwnerThread(std::function<void()> task) noexcept {
@@ -459,7 +564,6 @@ void PlayPipeline::postToOwnerThread(std::function<void()> task) noexcept {
 
 void PlayPipeline::fireEvent(PipelineEvent event, std::optional<PipelineError> error) noexcept {
     assert(isOnOwnerThread() && "fireEvent must be called on ownerThread");
-    // 必填载荷校验：这些事件必须携带 PipelineError
     assert((event != PipelineEvent::AudioDecoderFailed || error.has_value()) &&
            "AudioDecoderFailed must carry PipelineError");
     assert((event != PipelineEvent::VideoDecoderFailed || error.has_value()) &&
@@ -468,7 +572,6 @@ void PlayPipeline::fireEvent(PipelineEvent event, std::optional<PipelineError> e
            "ReadError must carry PipelineError");
     assert((event != PipelineEvent::DecodeError || error.has_value()) &&
            "DecodeError must carry PipelineError");
-    // 反向校验：无载荷事件不得携带 PipelineError
     assert((event == PipelineEvent::AudioDecoderFailed ||
             event == PipelineEvent::VideoDecoderFailed || event == PipelineEvent::ReadError ||
             event == PipelineEvent::DecodeError || !error.has_value()) &&
@@ -498,21 +601,10 @@ void PlayPipeline::checkAndFirePipelineReady() noexcept {
     if (decoderReadyCount_.load(std::memory_order_acquire) < expected) {
         return;
     }
-
-    // decoder 全部就绪，通知 BufferMonitor 开始预缓冲
-    // BufferMonitor 完成预缓冲后触发 PipelineReady（本地播放立即触发）
     if (bufferMonitor_) {
         bufferMonitor_->startPrebuffering();
     } else {
-        // 无 BufferMonitor 时直接触发
-        bool expectedFired = false;
-        if (readyFired_.compare_exchange_strong(expectedFired,
-                                                true,
-                                                std::memory_order_acq_rel,
-                                                std::memory_order_acquire)) {
-            SLARK_TRACE_MILESTONE(playSession_.lock().get(), "pipeline_ready");
-            fireEvent(PipelineEvent::PipelineReady);
-        }
+        firePipelineReady();
     }
 }
 
@@ -544,81 +636,91 @@ void PlayPipeline::registerComponents() noexcept {
     if (audioRender_) {
         components_.push_back(audioRender_);
     }
-    // videoRender_ 是 weak_ptr，生命周期由外部管理，不纳入 components_
 }
 
 void PlayPipeline::connectComponents() noexcept {
     if (!demuxer_) {
         return;
     }
-
     demuxer_->setHandleResultFunc(
         [this](const std::shared_ptr<IDemuxer>& demuxer, DemuxerResult&& result) {
             if (!demuxer) {
                 return;
             }
-
-            if (!mediaInfo_.hasAudio && !mediaInfo_.hasVideo) {
-                mediaInfo_.hasAudio = demuxer->hasAudio();
-                mediaInfo_.hasVideo = demuxer->hasVideo();
-                auto duration = demuxer->totalDuration();
-                if (duration.isValid()) {
-                    mediaInfo_.totalDuration = duration;
-                }
-                postToOwnerThread([this] {
-                    fireEvent(PipelineEvent::DemuxHeaderParsed);
-                    SLARK_TRACE_MILESTONE(playSession_.lock().get(), "demux_header_parsed");
-                });
-            }
-
-            // 快照当前 epoch，demux 包过滤与 decoder callback 保持同一代际隔离语义
+            handleDemuxHeader(demuxer);
             const uint64_t kCurrentEpoch = seekCoordinator_->seekEpoch();
-            for (auto& frame : result.audioFrames) {
-                if (!audioDecoder_) {
-                    continue;
-                }
-                if (config_.isLiveSource) {
-                    liveHasFirstAudioPacket_.store(true, std::memory_order_release);
-                }
-                if (EpochFilter::shouldDiscard(*seekCoordinator_, frame->ptsTime())) {
-                    continue;
-                }
-                if (EpochFilter::shouldBreak(*seekCoordinator_, kCurrentEpoch)) {
-                    break;
-                }
-                audioDecoder_->send(std::move(frame));
-            }
-            for (auto& frame : result.videoFrames) {
-                if (!videoDecoder_) {
-                    continue;
-                }
-                if (config_.isLiveSource && frame && frame->isKeyFrame()) {
-                    liveHasFirstVideoKeyframe_.store(true, std::memory_order_release);
-                }
-                if (EpochFilter::shouldDiscard(*seekCoordinator_, frame->ptsTime())) {
-                    continue;
-                }
-                if (EpochFilter::shouldBreak(*seekCoordinator_, kCurrentEpoch)) {
-                    break;
-                }
-                videoDecoder_->send(std::move(frame));
-            }
-
-            // 每次入队后触发背压检查
-            if (!result.audioFrames.empty() || !result.videoFrames.empty()) {
-                postToOwnerThread([this] {
-                    if (bufferMonitor_) {
-                        bufferMonitor_->onDataEnqueued();
-                    }
-                });
-            }
+            dispatchFrames(std::move(result), kCurrentEpoch);
         });
 }
 
-void PlayPipeline::openDecoder(std::shared_ptr<DecoderComponent> decoder,
-                               DecoderType type,
-                               const std::shared_ptr<DecoderConfig>& config,
-                               bool isVideo) noexcept {
+void PlayPipeline::handleDemuxHeader(const std::shared_ptr<IDemuxer>& demuxer) noexcept {
+    if (mediaInfo_.hasAudio || mediaInfo_.hasVideo) {
+        return;
+    }
+    mediaInfo_.hasAudio = demuxer->hasAudio();
+    mediaInfo_.hasVideo = demuxer->hasVideo();
+    auto duration = demuxer->totalDuration();
+    if (duration.isValid()) {
+        mediaInfo_.totalDuration = duration;
+    }
+    postToOwnerThread([this] {
+        fireEvent(PipelineEvent::DemuxHeaderParsed);
+        SLARK_TRACE_MILESTONE(playSession_.lock().get(), "demux_header_parsed");
+    });
+}
+
+void PlayPipeline::dispatchFrames(DemuxerResult&& result, uint64_t epoch) noexcept {
+    for (auto& frame : result.audioFrames) {
+        if (!audioDecoder_) {
+            continue;
+        }
+        if (config_.isLiveSource) {
+            liveHasFirstAudioPacket_.store(true, std::memory_order_release);
+        }
+        if (EpochFilter::shouldDiscard(*seekCoordinator_, frame->ptsTime())) {
+            continue;
+        }
+        if (EpochFilter::shouldBreak(*seekCoordinator_, epoch)) {
+            break;
+        }
+        audioDecoder_->send(std::move(frame));
+    }
+    for (auto& frame : result.videoFrames) {
+        if (!videoDecoder_) {
+            continue;
+        }
+        if (config_.isLiveSource && frame && frame->isKeyFrame()) {
+            liveHasFirstVideoKeyframe_.store(true, std::memory_order_release);
+        }
+        if (EpochFilter::shouldDiscard(*seekCoordinator_, frame->ptsTime())) {
+            continue;
+        }
+        if (EpochFilter::shouldBreak(*seekCoordinator_, epoch)) {
+            break;
+        }
+        videoDecoder_->send(std::move(frame));
+    }
+    if (!result.audioFrames.empty() || !result.videoFrames.empty()) {
+        notifyDataEnqueued();
+    }
+}
+
+void PlayPipeline::notifyDataEnqueued() noexcept {
+    bool expected = false;
+    if (dataEnqueuedPending_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+        postToOwnerThread([this] {
+            dataEnqueuedPending_.store(false, std::memory_order_release);
+            if (bufferMonitor_) {
+                bufferMonitor_->onDataEnqueued();
+            }
+        });
+    }
+}
+
+void PlayPipeline::openDecoderInternal(std::shared_ptr<DecoderComponent> decoder,
+                                       DecoderType type,
+                                       const std::shared_ptr<DecoderConfig>& config,
+                                       bool isVideo) noexcept {
     if (!decoder) {
         return;
     }
@@ -669,98 +771,88 @@ bool PlayPipeline::joinWithTimeout(std::chrono::milliseconds timeout) noexcept {
     return false;
 }
 
-void PlayPipeline::onBFrameDetected() noexcept {
-    videoFrames_.withLock([](auto& container) {
-        container.switchToSorted();
-    });
-    LogI("PlayPipeline: B 帧检测到，videoFrames_ 切换为 multimap 策略");
-}
-
 void PlayPipeline::initBufferMonitor() noexcept {
-    bufferMonitor_ = std::make_unique<BufferMonitor>(
-        config_,
-        [this](PipelineEvent event, std::optional<PipelineError> error) {
-            fireEvent(event, std::move(error));
-        },
-        [this]() -> double {
-            return demuxedDuration();
-        },
-        pauseStreamFunc_ ? pauseStreamFunc_ : []() {},
-        resumeStreamFunc_ ? resumeStreamFunc_ : []() {},
-        [this]() {
-            // 预缓冲完成，统一由 PlayPipeline 触发 PipelineReady（readyFired_ 防重）
-            bool expectedFired = false;
-            if (readyFired_.compare_exchange_strong(expectedFired,
-                                                    true,
-                                                    std::memory_order_acq_rel,
-                                                    std::memory_order_acquire)) {
-                SLARK_TRACE_MILESTONE(playSession_.lock().get(), "pipeline_ready");
-                fireEvent(PipelineEvent::PipelineReady);
-            }
-        },
-        [this]() {
-            dropOldestFrames();
-        });
-}
-
-double PlayPipeline::demuxedDuration() const noexcept {
-    double maxPts = 0.0;
-    bool hasAudioPts = false;
-    audioFrames_.withLock([&maxPts, &hasAudioPts](const auto& q) {
-        if (!q.empty()) {
-            maxPts = std::max(maxPts, q.back()->ptsTime());
-            hasAudioPts = true;
-        }
-    });
-    // 纯视频流时 audioFrames_ 为空，回退到 videoFrames_ 尾帧 pts
-    if (!hasAudioPts) {
-        videoFrames_.withLock([&maxPts](const auto& container) {
-            if (auto pts = container.backPts()) {
-                maxPts = *pts;
-            }
-        });
-    }
-    const double kCurrentSec = clockSync_->masterTime(mediaInfo_.hasAudio).second();
-    return std::max(0.0, maxPts - kCurrentSec);
+    bufferMonitor_ = std::make_unique<BufferMonitor>(config_, *this);
 }
 
 void PlayPipeline::dropOldestFrames() noexcept {
-    // hard-cap 收敛：丢最旧的音视频帧，直到缓冲量降至 highWatermark 以下
     const double kTarget = config_.highWatermarkDuration;
+    const double kCurrentSec = clockSync_->masterTime(mediaInfo_.hasAudio).second();
     int32_t droppedTotal = 0;
-    while (demuxedDuration() > kTarget) {
-        bool dropped = false;
-        audioFrames_.withLock([&dropped](auto& q) {
+
+    while (true) {
+        // 每轮先读取两端队列中最老帧的 pts，取较大值作为截断点
+        // 这样保证音视频在 pts 上对齐丢弃，避免一路多丢一路少丢
+        double audioOldestPts = -1.0;
+        double videoOldestPts = -1.0;
+        audioFrames_.withLock([&audioOldestPts](const auto& q) {
             if (!q.empty()) {
-                q.pop_front();
-                dropped = true;
+                audioOldestPts = q.front()->ptsTime();
             }
         });
-        videoFrames_.withLock([&dropped](auto& container) {
-            if (!container.empty()) {
-                container.popFront();
-                dropped = true;
+        videoFrames_.withLock([&videoOldestPts](const auto& m) {
+            if (!m.empty()) {
+                videoOldestPts = m.begin()->second->ptsTime();
             }
         });
-        if (!dropped) {
+
+        // 计算当前缓冲时长：取两端最新帧 pts 中的较大值
+        double maxPts = 0.0;
+        audioFrames_.withLock([&maxPts](const auto& q) {
+            if (!q.empty()) {
+                maxPts = q.back()->ptsTime();
+            }
+        });
+        videoFrames_.withLock([&maxPts](const auto& m) {
+            if (!m.empty()) {
+                maxPts = std::max(maxPts, m.rbegin()->second->ptsTime());
+            }
+        });
+        const double kDuration = std::max(0.0, maxPts - kCurrentSec);
+        if (kDuration <= kTarget) {
             break;
         }
-        ++droppedTotal;
+
+        // 按 pts 对齐：丢弃 pts 不超过截断点的帧
+        // 截断点取两端最老帧的较大值，保证一帧对齐
+        double cutoffPts = std::max(audioOldestPts, videoOldestPts);
+        if (cutoffPts < 0.0) {
+            break;
+        }
+
+        int32_t audioDropped = 0;
+        int32_t videoDropped = 0;
+        audioFrames_.withLock([&cutoffPts, &audioDropped](auto& q) {
+            while (!q.empty() && q.front()->ptsTime() <= cutoffPts) {
+                q.pop_front();
+                ++audioDropped;
+            }
+        });
+        videoFrames_.withLock([&cutoffPts, &videoDropped](auto& m) {
+            while (!m.empty() && m.begin()->second->ptsTime() <= cutoffPts) {
+                m.erase(m.begin());
+                ++videoDropped;
+            }
+        });
+
+        droppedTotal += audioDropped + videoDropped;
+        if (audioDropped == 0 && videoDropped == 0) {
+            break;
+        }
     }
     if (droppedTotal > 0) {
-        LogW("hard-cap triggered: dropped {} frame pairs to converge buffer", droppedTotal);
+        LogW("hard-cap triggered: dropped {} frames to converge buffer", droppedTotal);
     }
 }
 
 void PlayPipeline::enterFaultedState() noexcept {
     isolated_.store(true, std::memory_order_release);
     pipelineState_ = PipelineState::Faulted;
-    LogE("PlayPipeline 进入 Faulted 终态");
-    // Faulted 为终态事件，必须直达上层，不受 teardownFlag_ 拦截
+    LogE("PlayPipeline entered Faulted state");
+    // Faulted 为终态，绕过 teardownFlag_ 直达上层
     if (isOnOwnerThread()) {
         reportFaultedError();
     } else {
-        // 绕过 teardownFlag_ 检查，直接入队 pendingTasks_
         pendingTasks_.withLock([this](auto& q) {
             q.emplace_back([this] {
                 fireEvent(PipelineEvent::ReadError,
@@ -773,6 +865,16 @@ void PlayPipeline::enterFaultedState() noexcept {
             });
         });
     }
+}
+
+Time::TimePoint PlayPipeline::audioMasterTime() const noexcept {
+    if (mediaInfo_.hasAudio && audioRender_) {
+        auto t = audioRender_->playedTime();
+        if (t.point() != 0) {
+            return t;
+        }
+    }
+    return clockSync_->audioTime();
 }
 
 void PlayPipeline::reportFaultedError() noexcept {
@@ -805,4 +907,3 @@ void PlayPipeline::onSeekFrameConsumed(bool isVideo) noexcept {
 }
 
 } // namespace slark
-namespace slark

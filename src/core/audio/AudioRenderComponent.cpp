@@ -70,10 +70,8 @@ void AudioRenderComponent::init() noexcept {
             }
         }
         isHungry_ = !isSuccess;
-        auto readSize = isSuccess ? size : 0u;
-        LogI("request audio size:{}", readSize);
         isFull_ = false;
-        return readSize;
+        return isSuccess ? size : 0u;
     });
     pimpl_.reset(std::move(pimpl));
     LogI("init success");
@@ -182,6 +180,16 @@ void AudioRenderComponent::renderEnd() noexcept {
     if (auto pimpl = pimpl_.load()) {
         pimpl->renderEnd();
     }
+    if (renderEndCallback_) {
+        renderEndCallback_();
+    }
+}
+
+bool AudioRenderComponent::isRunning() const noexcept {
+    if (auto pimpl = pimpl_.load()) {
+        return pimpl->status() == RenderStatus::Playing;
+    }
+    return false;
 }
 
 } // namespace slark

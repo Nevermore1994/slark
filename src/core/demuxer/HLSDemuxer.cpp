@@ -7,6 +7,7 @@
 
 #include "HLSDemuxer.h"
 
+#include "DataView.hpp"
 #include "MediaUtil.h"
 #include "Util.h"
 
@@ -81,7 +82,12 @@ bool M3U8Parser::parse(Buffer& buffer) noexcept {
             view = view.substr(0, view.find(','));
             TSInfo info;
             info.sequence = index++;
-            info.duration = std::stod(std::string(view));
+            auto durResult = StringUtil::fromChars<double>(view);
+            if (!durResult) {
+                LogE("parse EXTINF duration failed: {}", view);
+                continue;
+            }
+            info.duration = *durResult;
             info.startTime = totalDuration_;
             infos_.push_back(info);
             totalDuration_ += info.duration;
@@ -100,8 +106,14 @@ bool M3U8Parser::parse(Buffer& buffer) noexcept {
             }
             auto lengthView = view.substr(0, pos);
             auto offsetView = view.substr(pos + 1);
-            info.range.pos = static_cast<uint64_t>(std::stol(std::string(offsetView)));
-            info.range.size = std::stol(std::string(lengthView));
+            auto rangePosResult = StringUtil::fromChars<uint64_t>(offsetView);
+            auto rangeSizeResult = StringUtil::fromChars<int64_t>(lengthView);
+            if (!rangePosResult || !rangeSizeResult) {
+                LogE("parse byte range value failed: {}", view);
+                continue;
+            }
+            info.range.pos = *rangePosResult;
+            info.range.size = *rangeSizeResult;
         } else if (view.starts_with("#EXT-X-DISCONTINUITY")) {
             if (!infos_.empty()) {
                 infos_.back().isDiscontinuity = true; // The next TS needs to reset the decoder
@@ -113,7 +125,12 @@ bool M3U8Parser::parse(Buffer& buffer) noexcept {
             view = view.substr(0, view.find(','));
             view = view.substr(view.find('=') + 1);
             PlayListInfo info;
-            info.codeRate = static_cast<uint32_t>(std::stoi(std::string(view)));
+            auto codeRateResult = StringUtil::fromChars<uint32_t>(view);
+            if (!codeRateResult) {
+                LogE("parse stream info code rate failed: {}", view);
+                continue;
+            }
+            info.codeRate = *codeRateResult;
             playListInfos_.push_back(info);
         } else if (view.starts_with("#EXT-X-ENDLIST")) {
             isCompleted_ = true;
@@ -189,6 +206,10 @@ bool TSDemuxer::parsePacket(DataView data, uint32_t tsIndex, DemuxerResult& resu
     if ((header.adaptationFieldControl & 0x02) == 0x02) {
         uint8_t adaptionLen;
         data.readNumberLE(adaptionLen, 1);
+        if (adaptionLen + 1 > data.length()) {
+            LogE("adaption field overflow: len={}, remaining={}", adaptionLen, data.length());
+            return false;
+        }
         data = data.substr(adaptionLen + 1);
     }
 
@@ -645,7 +666,13 @@ DemuxerResult HLSDemuxer::parseData(DataPacket& packet) noexcept {
     }
     uint64_t tsIndex = 0;
     if (!packet.tag.empty()) {
-        tsIndex = static_cast<uint64_t>(std::stoi(packet.tag));
+        auto tsResult = StringUtil::fromChars<uint64_t>(packet.tag);
+        if (!tsResult) {
+            LogE("parse ts index failed: {}", packet.tag);
+            result.resultCode = DemuxerResultCode::Failed;
+            return result;
+        }
+        tsIndex = *tsResult;
     } else {
         LogI("data packet tag is empty!");
     }

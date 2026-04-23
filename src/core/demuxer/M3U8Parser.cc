@@ -4,9 +4,9 @@
 
 #include "M3U8Parser.h"
 
+#include "DataView.hpp"
 #include "Log.hpp"
 
-#include <charconv>
 #include <utility>
 
 namespace slark {
@@ -79,12 +79,10 @@ bool M3U8Parser::parse(Buffer& buffer) noexcept {
             view = view.substr(0, view.find(','));
             TSInfo info;
             info.sequence = index_++;
-            // 使用 from_chars 避免 strtod 需要 null-terminated 字符串的 UB 风险
-            double dur = 0.0;
-            auto [ptr, ec] = std::from_chars(view.data(), view.data() + view.size(), dur);
-            if (ec != std::errc{}) {
+            auto durResult = StringUtil::fromChars<double>(view);
+            double dur = durResult.value_or(0.0);
+            if (!durResult) {
                 LogE("invalid EXTINF duration: {}", view);
-                dur = 0.0;
             }
             info.duration = dur;
             info.startTime = totalDuration_;

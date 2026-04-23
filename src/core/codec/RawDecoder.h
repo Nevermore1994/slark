@@ -13,11 +13,9 @@
 namespace slark {
 
 class RawDecoder : public IDecoder {
-
 public:
-    RawDecoder()
-        : IDecoder(DecoderType::RAW) {
-    }
+    RawDecoder() : IDecoder(DecoderType::RAW) {}
+
     ~RawDecoder() override = default;
 
     bool open(std::shared_ptr<DecoderConfig> config) noexcept override;
@@ -33,10 +31,9 @@ public:
     inline static const DecoderTypeInfo& info() noexcept {
         static DecoderTypeInfo info = {
             DecoderType::RAW,
-            BaseClass::registerClass<RawDecoder>(GetClassName(RawDecoder))
-        };
+            BaseClass::registerClass<RawDecoder>(GetClassName(RawDecoder))};
         return info;
     }
 };
 
-}
+} // namespace slark

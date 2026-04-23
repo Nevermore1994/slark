@@ -7,64 +7,29 @@
 
 #pragma once
 
-#include "AudioRenderComponent.h"
 #include "Channel.hpp"
-#include "DecoderComponent.h"
 #include "DemuxerComponent.h"
 #include "DemuxerManager.h"
 #include "Event.h"
-#include "IReader.h"
-#include "PlayerImplHelper.h"
+#include "MediaSourceManager.h"
+#include "NotifyCenter.h"
+#include "Player.h"
 #include "Synchronized.hpp"
+#include "pipeline/PlayPipeline.h"
 
-#include <deque>
-#include <map>
+#include <atomic>
+#include <memory>
 
 namespace slark {
 
 struct PlayerSeekRequest {
     bool isAccurate = false;
     double seekTime{0};
-    Time::TimePoint startTime{Time::TimePoint::fromSeconds(0.0)};
-};
-
-struct PlayerStats {
-    bool isForceVideoRendered = false;
-    bool isAudioRenderEnd = false;
-    bool isVideoRenderEnd = false;
-    bool resumeAfterBuffering = false;
-    std::atomic<double> audioDemuxedTime = 0;
-    std::atomic<double> videoDemuxedTime = 0;
-    double lastNotifyPlayedTime = 0;
-    double lastNotifyCacheTime = 0;
-    uint32_t fastPushDecodeCount = 0;
-
-    void reset() noexcept {
-        isForceVideoRendered = false;
-        fastPushDecodeCount = 0;
-        isVideoRenderEnd = false;
-        isAudioRenderEnd = false;
-        audioDemuxedTime = 0;
-        videoDemuxedTime = 0;
-        lastNotifyPlayedTime = 0;
-        lastNotifyCacheTime = 0;
-    }
-
-    void setSeekTime(double seekTime) noexcept {
-        audioDemuxedTime = seekTime;
-        videoDemuxedTime = seekTime;
-    }
-
-    void setFastPush() noexcept {
-        isForceVideoRendered = true;
-        fastPushDecodeCount = 10;
-    }
+    Time::TimePoint startTime;
 };
 
 class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
 public:
-    friend class PlayerImplHelper;
-
     explicit Impl(std::unique_ptr<PlayerParams> params);
 
     ~Impl();
@@ -97,7 +62,7 @@ public:
         return info_;
     }
 
-    [[nodiscard]] PlayerState state() noexcept;
+    [[nodiscard]] PlayerState state() const noexcept;
 
     [[nodiscard]] PlayerParams params() noexcept;
 
@@ -105,24 +70,16 @@ public:
         return std::string_view(playerId_);
     }
 
-    [[nodiscard]] double currentPlayedTime() noexcept;
+    [[nodiscard]] double currentPlayedTime() const noexcept;
 
     [[nodiscard]] AVFrameRefPtr requestRender() noexcept;
 
 private:
+    void buildPipeline() noexcept;
+
+    void handlePipelineEvent(PipelineEvent event, std::optional<PipelineError> error) noexcept;
+
     void preparePlayerInfo() noexcept;
-
-    void demuxData() noexcept;
-
-    void handleAudioPacket(AVFramePtrArray& audioPackets) noexcept;
-
-    void handleVideoPacket(AVFramePtrArray& videoPackets) noexcept;
-
-    void pushAVFrameToRender() noexcept;
-
-    void pushAudioFrameToRender() noexcept;
-
-    void pushVideoFrameToRender() noexcept;
 
     void process() noexcept;
 
@@ -130,13 +87,7 @@ private:
 
     void handleSettingUpdate(Event& t) noexcept;
 
-    void notifyPlayerState(PlayerState state) noexcept;
-
-    void notifyPlayerEvent(PlayerEvent event, std::string value = "") noexcept;
-
     void notifyPlayedTime(bool isEndTime = false) noexcept;
-
-    void notifyCacheTime() noexcept;
 
     void setState(PlayerState state) noexcept;
 
@@ -145,12 +96,6 @@ private:
     void createAudioComponent(const PlayerSetting& setting) noexcept;
 
     void createVideoComponent(const PlayerSetting& setting) noexcept;
-
-    void pushAVFrameDecode() noexcept;
-
-    void pushAudioPacketDecode() noexcept;
-
-    void pushVideoPacketDecode() noexcept;
 
     void doPlay() noexcept;
 
@@ -162,57 +107,30 @@ private:
 
     void doLoop() noexcept;
 
-    void clearData() noexcept;
-
-    double demuxedDuration() const noexcept;
-
-    void checkCacheState() noexcept;
+    void resumeFromBuffering() noexcept;
 
     bool setupDataProvider() noexcept;
 
-    double videoRenderTime() noexcept;
-
-    double audioRenderTime() noexcept;
-
-    void setVideoRenderTime(double time) noexcept;
-
-    bool isVideoNeedDecode(double renderedTime) noexcept;
-
-    bool isAudioNeedDecode(double renderedTime) noexcept;
+    [[nodiscard]] double demuxedDuration() const noexcept;
 
 private:
     std::atomic_bool isStopped_ = false;
     std::atomic_bool isReleased_ = false;
-    std::unique_ptr<PlayerImplHelper> helper_ = nullptr;
     Synchronized<PlayerState, std::shared_mutex> state_;
     AtomicSharedPtr<PlayerSeekRequest> seekRequest_;
     PlayerInfo info_;
     std::string playerId_;
     Synchronized<std::unique_ptr<PlayerParams>, std::shared_mutex> params_;
-    Synchronized<IPlayerObserverPtr, std::shared_mutex> observer_;
-
     SenderPtr<EventPtr> sender_;
     ReceiverPtr<EventPtr> receiver_;
 
     std::shared_ptr<Thread> ownerThread_ = nullptr;
 
-    // IO
-    std::unique_ptr<IReader> dataProvider_ = nullptr;
-    Synchronized<std::list<DataPacket>> dataList_;
-
-    // demux
+    NotifyCenter notifyCenter_;
+    MediaSourceManager mediaSourceManager_;
     std::shared_ptr<DemuxerComponent> demuxerComponent_ = nullptr;
-    Synchronized<std::deque<AVFramePtr>> audioPackets_;
-    Synchronized<std::deque<AVFramePtr>> videoPackets_;
+    std::shared_ptr<PlayPipeline> pipeline_ = nullptr;
 
-    // decoded frames
-    Synchronized<std::deque<AVFrameRefPtr>> audioFrames_;
-    Synchronized<std::map<int64_t, AVFrameRefPtr>> videoFrames_;
-    std::shared_ptr<DecoderComponent> audioDecodeComponent_ = nullptr;
-    std::shared_ptr<DecoderComponent> videoDecodeComponent_ = nullptr;
-
-    // render
-    std::unique_ptr<AudioRenderComponent> audioRender_ = nullptr;
     AtomicWeakPtr<IVideoRender> videoRender_;
     PlayerStats stats_;
 

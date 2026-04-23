@@ -4,11 +4,11 @@
 
 #include "HLSStream.h"
 
-#include "../base/coroutine/Coroutine.hpp"
-#include "../http/HttpUtil.hpp"
+#include "Coroutine.hpp"
+#include "DataView.hpp"
+#include "HttpUtil.hpp"
 
 #include <algorithm>
-#include <charconv>
 #include <regex>
 #include <unordered_set>
 
@@ -28,7 +28,7 @@ HLSStream::~HLSStream() {
     close();
 }
 
-auto HLSStream::open(const OpenParams& params) -> StreamResult<StreamInfo> {
+StreamResult<StreamInfo> HLSStream::open(const OpenParams& params) {
     params_ = params;
 
     // 将 OpenParams 的 onMetadata 接到内部 metadataCallback_，打通 live 识别链路
@@ -109,9 +109,13 @@ void HLSStream::pause() noexcept {
     isRunning_ = false;
 }
 
-auto HLSStream::seek(uint64_t position) -> StreamResult<void> {
+StreamResult<void> HLSStream::seek(uint64_t position) {
     if (!playlist_ || playlist_->segments().empty()) {
         return std::unexpected(Error::StreamInvalidData);
+    }
+
+    if (playlist_->isLive()) {
+        return std::unexpected(Error::InvalidOperation);
     }
 
     double timeInSeconds = static_cast<double>(position) / 1000.0;
@@ -217,7 +221,7 @@ void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
     }
 }
 
-auto HLSStream::parseMasterPlaylist(const std::string& content) -> StreamResult<void> {
+StreamResult<void> HLSStream::parseMasterPlaylist(const std::string& content) {
     std::smatch match;
     std::string::const_iterator searchStart(content.cbegin());
 
@@ -225,17 +229,23 @@ auto HLSStream::parseMasterPlaylist(const std::string& content) -> StreamResult<
         Variant variant;
         uint32_t bandwidth = 0;
         auto bwStr = match[1].str();
-        auto [ptr, ec] = std::from_chars(bwStr.data(), bwStr.data() + bwStr.size(), bandwidth);
-        if (ec != std::errc{}) {
+        auto bwResult = StringUtil::fromChars<uint32_t>(bwStr);
+        if (!bwResult) {
             searchStart = match.suffix().first;
             continue;
         }
-        variant.bandwidth = bandwidth;
+        variant.bandwidth = *bwResult;
         variant.uri = match[4].str();
 
         if (match[2].matched && match[3].matched) {
-            variant.width = std::stoul(match[2].str());
-            variant.height = std::stoul(match[3].str());
+            auto wStr = match[2].str();
+            auto hStr = match[3].str();
+            auto wResult = StringUtil::fromChars<uint32_t>(wStr);
+            auto hResult = StringUtil::fromChars<uint32_t>(hStr);
+            if (wResult && hResult) {
+                variant.width = *wResult;
+                variant.height = *hResult;
+            }
         }
 
         playlist_->addVariant(std::move(variant));
@@ -249,10 +259,11 @@ auto HLSStream::parseMasterPlaylist(const std::string& content) -> StreamResult<
     return {};
 }
 
-auto HLSStream::parseMediaPlaylist(const std::string& content) -> StreamResult<void> {
+StreamResult<void> HLSStream::parseMediaPlaylist(const std::string& content) {
     if (!std::regex_search(content, kEndListRegex)) {
         playlist_->setLive(true);
         info_.isLive = true;
+        info_.isSeekable = false;
     }
 
     std::smatch match;
@@ -261,12 +272,18 @@ auto HLSStream::parseMediaPlaylist(const std::string& content) -> StreamResult<v
 
     while (std::regex_search(searchStart, content.cend(), match, kExtinfRegex)) {
         Segment segment;
-        segment.duration = std::stod(match[1].str());
+        auto durStr = match[1].str();
+        auto durResult = StringUtil::fromChars<double>(durStr);
+        if (!durResult) {
+            searchStart = match.suffix().first;
+            continue;
+        }
+        segment.duration = *durResult;
         segment.startTime = currentTime;
         segment.uri = match[3].str();
 
         playlist_->addSegment(std::move(segment));
-        currentTime += std::stod(match[1].str());
+        currentTime += segment.duration;
 
         searchStart = match.suffix().first;
     }
@@ -281,7 +298,7 @@ auto HLSStream::parseMediaPlaylist(const std::string& content) -> StreamResult<v
     return {};
 }
 
-auto HLSStream::selectVariantUri(uint32_t bandwidth) -> std::optional<std::string> {
+std::optional<std::string> HLSStream::selectVariantUri(uint32_t bandwidth) {
     const auto& variants = playlist_->variants();
     if (variants.empty()) {
         return std::nullopt;
@@ -435,7 +452,7 @@ void HLSStream::refreshPlaylist() {
     (void)fetchTask(request_, requestInfo, self);
 }
 
-auto HLSStream::parseMediaPlaylistIncremental(const std::string& content) -> StreamResult<void> {
+StreamResult<void> HLSStream::parseMediaPlaylistIncremental(const std::string& content) {
     // 已知 segment 的 URI 集合，用于去重
     std::unordered_set<std::string> knownUris;
     for (const auto& seg : playlist_->segments()) {
@@ -451,7 +468,13 @@ auto HLSStream::parseMediaPlaylistIncremental(const std::string& content) -> Str
         std::string uri = match[3].str();
         if (knownUris.find(uri) == knownUris.end()) {
             Segment segment;
-            segment.duration = std::stod(match[1].str());
+            auto durStr = match[1].str();
+            auto durResult = StringUtil::fromChars<double>(durStr);
+            if (!durResult) {
+                searchStart = match.suffix().first;
+                continue;
+            }
+            segment.duration = *durResult;
             segment.startTime = currentTime;
             segment.uri = uri;
             currentTime += segment.duration;

@@ -67,11 +67,10 @@ uint64_t TrackContext::getSeekPos(double targetTime) const noexcept {
 
     uint32_t seekSampleIndex = sampleIndex;
     if (type == TrackType::Video && stss) {
-        // found key frame index
         const auto& keyIndexes = stss->keyIndexs;
         auto it = std::lower_bound(keyIndexes.begin(), keyIndexes.end(), sampleIndex);
         uint32_t keySampleIndex = it != keyIndexes.end() ? *it : keyIndexes.back();
-        seekSampleIndex = seekSampleIndex;
+        seekSampleIndex = keySampleIndex;
     }
 
     // found chunkIndex & sampleCount
@@ -104,8 +103,10 @@ uint64_t TrackContext::getSeekPos(double targetTime) const noexcept {
 
     uint32_t firstSampleInChunk = sampleCount + 1;
     uint64_t sampleOffsetInChunk = 0;
-    for (uint32_t i = 0; i < seekSampleIndex - firstSampleInChunk; ++i) {
-        sampleOffsetInChunk += stsz->sampleSizes[firstSampleInChunk - 1 + i];
+    if (seekSampleIndex >= firstSampleInChunk) {
+        for (uint32_t i = 0; i < seekSampleIndex - firstSampleInChunk; ++i) {
+            sampleOffsetInChunk += stsz->sampleSizes[firstSampleInChunk - 1 + i];
+        }
     }
     auto pos = chunkOffset + sampleOffsetInChunk;
     LogI("[seek info] {} keySampleIndex:{}, time:{}, pos:{}",

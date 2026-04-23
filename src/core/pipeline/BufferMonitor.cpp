@@ -9,24 +9,12 @@
 namespace slark {
 
 BufferMonitor::BufferMonitor(const BackpressureConfig& config,
-                             PipelineEventCallback onEvent,
-                             DemuxedDurationFunc demuxedDuration,
-                             StreamControlFunc pauseStream,
-                             StreamControlFunc resumeStream,
-                             PrebufferCompleteFunc onPrebufferComplete,
-                             DropOldestFunc dropOldest) noexcept
-    : config_(config),
-      onEvent_(std::move(onEvent)),
-      demuxedDuration_(std::move(demuxedDuration)),
-      pauseStream_(std::move(pauseStream)),
-      resumeStream_(std::move(resumeStream)),
-      onPrebufferComplete_(std::move(onPrebufferComplete)),
-      dropOldest_(std::move(dropOldest)) {}
+                             IBufferMonitorDelegate& delegate) noexcept
+    : config_(config), delegate_(delegate) {}
 
 void BufferMonitor::onDataEnqueued() noexcept {
-    const auto throttleMs =
-        config_.isLiveSource ? 50 : (config_.startBufferDuration == 0.0 ? 100 : 50);
-    const auto now = Clock::now();
+    auto throttleMs = config_.isLiveSource ? 50 : (config_.startBufferDuration == 0.0 ? 100 : 50);
+    auto now = Clock::now();
     if (lastCheckTime_.has_value()) {
         auto elapsed =
             std::chrono::duration_cast<std::chrono::milliseconds>(now - *lastCheckTime_).count();
@@ -47,9 +35,9 @@ void BufferMonitor::onHeartbeat() noexcept {
     if (!streamPaused_) {
         return;
     }
-    const double duration = demuxedDuration();
-    const auto now = Clock::now();
-    const bool canResume =
+    double duration = demuxedDuration();
+    auto now = Clock::now();
+    bool canResume =
         pauseTime_.has_value() &&
         std::chrono::duration_cast<std::chrono::milliseconds>(now - *pauseTime_).count() >=
             config_.minPauseHoldMs;
@@ -67,9 +55,7 @@ void BufferMonitor::startPrebuffering() noexcept {
     if (config_.startBufferDuration <= 0.0) {
         isPrebuffering_ = false;
         readyFired_ = true;
-        if (onPrebufferComplete_) {
-            onPrebufferComplete_();
-        }
+        delegate_.onPrebufferComplete();
     }
 }
 
@@ -86,14 +72,12 @@ void BufferMonitor::reset() noexcept {
 }
 
 void BufferMonitor::regulateDataFlow() noexcept {
-    const double duration = demuxedDuration();
-    const auto now = Clock::now();
+    double duration = demuxedDuration();
+    auto now = Clock::now();
 
     if (duration > config_.hardCapDuration) {
         pauseStream();
-        if (dropOldest_) {
-            dropOldest_();
-        }
+        delegate_.onDropOldest();
         // hard-cap 收敛期间通知上层进入缓冲态
         if (!isRebuffering_ && readyFired_) {
             isRebuffering_ = true;
@@ -102,12 +86,12 @@ void BufferMonitor::regulateDataFlow() noexcept {
         return;
     }
 
-    const bool canPause =
+    bool canPause =
         !streamPaused_ &&
         (!resumeTime_.has_value() ||
          std::chrono::duration_cast<std::chrono::milliseconds>(now - *resumeTime_).count() >=
              config_.minResumeHoldMs);
-    const bool canResume =
+    bool canResume =
         streamPaused_ && pauseTime_.has_value() &&
         std::chrono::duration_cast<std::chrono::milliseconds>(now - *pauseTime_).count() >=
             config_.minPauseHoldMs;
@@ -137,7 +121,7 @@ void BufferMonitor::regulateDataFlow() noexcept {
                           PipelineError{
                               .event = PipelineEvent::ReadError,
                               .stage = PipelineStage::BackPressure,
-                              .code = -1,
+                              .code = static_cast<int32_t>(Error::InvalidOperation),
                               .message = "stream pause not effective after retries",
                           });
                 pauseFailCount_ = 0;
@@ -154,9 +138,7 @@ void BufferMonitor::checkPrebufferComplete() noexcept {
         isPrebuffering_ = false;
         if (!readyFired_) {
             readyFired_ = true;
-            if (onPrebufferComplete_) {
-                onPrebufferComplete_();
-            }
+            delegate_.onPrebufferComplete();
         }
     }
 }

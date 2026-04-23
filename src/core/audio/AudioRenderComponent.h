@@ -7,6 +7,7 @@
 
 #include "AudioInfo.h"
 #include "Clock.h"
+#include "IPipelineComponent.h"
 #include "Node.h"
 #include "NonCopyable.h"
 #include "RingBuffer.hpp"
@@ -26,7 +27,8 @@ constexpr double kDefaultAudioBufferCacheTime = 0.2; // 200ms,
 
 using PullDataFunc = std::function<AVFrameRefPtr(uint32_t)>;
 
-class AudioRenderComponent : public slark::NonCopyMovable,
+class AudioRenderComponent : public IPipelineComponent,
+                             public slark::NonCopyMovable,
                              public InputNode,
                              public std::enable_shared_from_this<AudioRenderComponent> {
 public:
@@ -42,19 +44,31 @@ public:
 
     void reset() noexcept;
 
-    void start() noexcept;
+    void start() noexcept override;
 
-    void pause() noexcept;
+    void pause() noexcept override;
 
     void stop() noexcept;
 
-    void setVolume(float volume) noexcept;
+    void close() noexcept override {
+        stop();
+    }
 
-    void flush() noexcept;
+    void flush() noexcept override;
+
+    void seekStream() noexcept override {}
+
+    [[nodiscard]] bool isRunning() const noexcept override;
+
+    void setVolume(float volume) noexcept;
 
     void seek(double time) noexcept;
 
     Time::TimePoint playedTime() noexcept;
+
+    void setRenderEndCallback(std::function<void()> callback) noexcept {
+        renderEndCallback_ = std::move(callback);
+    }
 
     bool isFull() noexcept {
         if (!audioBuffer_) {
@@ -95,6 +109,7 @@ private:
     std::unique_ptr<SyncRingBuffer<uint8_t>> audioBuffer_;
     AtomicSharedPtr<IAudioRender> pimpl_;
     AtomicSharedPtr<PullDataFunc> pullDataFunc_;
+    std::function<void()> renderEndCallback_;
 };
 
 } // namespace slark

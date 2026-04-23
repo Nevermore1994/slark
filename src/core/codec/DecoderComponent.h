@@ -5,55 +5,63 @@
 //
 #pragma once
 #include "DecoderManager.h"
+#include "Error.h"
+#include "IPipelineComponent.h"
 #include "Synchronized.hpp"
 #include "Thread.h"
 
+#include <functional>
+#include <string>
+
 namespace slark {
 
-class DecoderComponent : public DecoderDataProvider,
+struct DecoderOpenResult {
+    bool success = false;
+    Error error = Error::Success;
+    std::string message;
+};
+
+using DecoderOpenCallback = std::function<void(DecoderOpenResult)>;
+using ErrorCallback = std::function<void(Error, bool /*isVideo*/)>;
+
+class DecoderComponent : public IPipelineComponent,
+                         public DecoderDataProvider,
                          public std::enable_shared_from_this<DecoderComponent> {
 public:
     explicit DecoderComponent(DecoderReceiveFunc&& callback);
 
     ~DecoderComponent() override;
 
-    bool open(DecoderType type, const std::shared_ptr<DecoderConfig>& config) noexcept;
+    bool open(DecoderType type,
+              const std::shared_ptr<DecoderConfig>& config,
+              DecoderOpenCallback onOpened = nullptr) noexcept;
 
-    void close() noexcept;
+    void close() noexcept override;
 
     void send(AVFramePtr packet) noexcept;
 
-    void flush() noexcept;
+    void flush() noexcept override;
 
-    void start() noexcept;
+    void seekStream() noexcept override {}
 
-    void pause() noexcept;
+    void start() noexcept override;
 
-    bool empty() noexcept {
-        std::lock_guard lock(mutex_);
-        return pendingDecodeQueue_.empty();
-    }
+    void pause() noexcept override;
 
-    bool isFull() noexcept {
-        constexpr uint32_t kMaxPendingDecodeFrameCount = 10;
-        std::lock_guard lock(mutex_);
-        return pendingDecodeQueue_.size() >= kMaxPendingDecodeFrameCount;
-    }
+    void setErrorCallback(ErrorCallback cb) noexcept;
 
-    bool isInputCompleted() noexcept {
-        return isInputCompleted_;
-    }
+    [[nodiscard]] bool empty() const noexcept;
 
-    void setInputCompleted() noexcept {
-        isInputCompleted_ = true;
-        decodeWorker_->start();
-    }
+    /// Returns the max pts (seconds) of the pending decode queue, or -1.0 if empty.
+    [[nodiscard]] double pendingMaxPts() const noexcept;
 
-    bool isRunning() noexcept {
-        return decodeWorker_->isRunning();
-    }
+    [[nodiscard]] bool isRunning() const noexcept override;
 
-    bool isDecodeCompleted() noexcept;
+    [[nodiscard]] bool isInputCompleted() const noexcept;
+
+    void setInputCompleted() noexcept;
+
+    [[nodiscard]] bool isDecodeCompleted() const noexcept;
 
     AVFrameRefPtr requestDecodeFrame(bool isBlocking) noexcept override;
 
@@ -65,13 +73,18 @@ private:
     static AVFrameRefPtr buildEOSFrame(bool isVideo) noexcept;
 
 private:
+    static constexpr int32_t kMaxConsecutiveFailCount = 5;
+
     bool isVideo_ = false;
     std::atomic_bool isOpened_ = false;
     std::atomic_bool isInputCompleted_ = false;
+    std::atomic_bool eosInjected_ = false;
+    std::atomic<int32_t> consecutiveFailCount_ = 0;
     DecoderReceiveFunc callback_;
+    ErrorCallback errorCallback_;
     Synchronized<std::shared_ptr<IDecoder>> decoder_;
     std::shared_ptr<Thread> decodeWorker_;
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::deque<AVFrameRefPtr> pendingDecodeQueue_;
     std::condition_variable cond_;
 };

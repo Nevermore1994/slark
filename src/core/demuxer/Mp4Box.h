@@ -47,10 +47,8 @@ public:
 public:
     virtual bool decode(Buffer&) noexcept;
     [[nodiscard]] virtual std::string description(const std::string&) const noexcept;
-    debug
 
-        void
-        append(std::shared_ptr<Box> child) noexcept;
+    void append(std::shared_ptr<Box> child) noexcept;
     [[nodiscard]] virtual BoxRefPtr getChild(std::string_view type) const noexcept;
 
 public:
@@ -128,7 +126,8 @@ public:
     std::string description(const std::string&) const noexcept override;
 };
 
-/ Sample Description class BoxStsd : public Box {
+// Sample Description
+class BoxStsd : public Box {
 public:
     bool isAudio = false;
     bool isVideo = false;
@@ -138,10 +137,12 @@ public:
     uint16_t dataReferenceIndex{};
 
     uint16_t frameCount{};
-    video info uint16_t width{};
+    // video info
+    uint16_t width{};
     uint16_t height{};
 
-    audio info uint16_t channelCount{};
+    // audio info
+    uint16_t channelCount{};
     uint16_t sampleSize{};
     uint16_t audioCompressionId{};
     uint16_t packetSize{};
@@ -164,7 +165,8 @@ struct StscEntry {
     uint32_t sampleDescriptionIndex{};
 };
 
-/ Sample - to - Chunk class BoxStsc : public Box {
+// Sample - to - Chunk
+class BoxStsc : public Box {
 public:
     std::vector<StscEntry> entrys;
 
@@ -177,7 +179,8 @@ public:
     bool decode(Buffer&) noexcept override;
 };
 
-/ Sample Size class BoxStsz : public Box {
+// Sample Size
+class BoxStsz : public Box {
 public:
     std::vector<uint64_t> sampleSizes;
 
@@ -190,7 +193,8 @@ public:
     bool decode(Buffer&) noexcept override;
 };
 
-/ Chunk Offset class BoxStco : public Box {
+// Chunk Offset
+class BoxStco : public Box {
 public:
     std::vector<uint64_t> chunkOffsets;
 
@@ -208,7 +212,8 @@ struct SttsEntry {
     uint32_t sampleDelta{};
 };
 
-/ Time - to - Sample class BoxStts : public Box {
+// Time - to - Sample
+class BoxStts : public Box {
 public:
     std::vector<SttsEntry> entrys;
 
@@ -345,4 +350,3 @@ public:
 };
 
 } // namespace slark
-namespace slark
