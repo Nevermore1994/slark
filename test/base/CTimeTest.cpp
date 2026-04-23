@@ -4,8 +4,9 @@
 // Copyright (c) 2023 Nevermore All rights reserved.
 //
 
-#include <gtest/gtest.h>
 #include "Time.hpp"
+
+#include <gtest/gtest.h>
 
 using namespace slark;
 
@@ -83,6 +84,3 @@ TEST(CTimeRange, less) {
         ASSERT_EQ(timeRange1 < timeRange2, true);
     }
 }
-
-
-

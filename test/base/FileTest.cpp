@@ -6,7 +6,7 @@
 
 #include "IReader.h"
 #include "Reader.h"
-#include "Writer.hpp"
+#include "Writer.h"
 
 #include <gtest/gtest.h>
 #include <utility>

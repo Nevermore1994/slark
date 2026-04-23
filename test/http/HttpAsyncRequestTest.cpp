@@ -4,10 +4,10 @@
 // Copyright (c) 2026 Nevermore All rights reserved.
 //
 #include "AsyncGenerator.hpp"
-#include "CancellationToken.hpp"
+#include "CancellationToken.h"
 #include "Coroutine.hpp"
 #include "CoroutineScheduler.hpp"
-#include "HttpRequest.hpp"
+#include "HttpRequest.h"
 #include "ThreadPool.hpp"
 
 #include <atomic>

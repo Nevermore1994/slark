@@ -5,7 +5,7 @@
 //
 #include "Coroutine.hpp"
 
-#include "CancellationToken.hpp"
+#include "CancellationToken.h"
 #include "CoroutineScheduler.hpp"
 #include "ThreadPool.hpp"
 

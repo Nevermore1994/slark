@@ -1,10 +1,10 @@
 
-#include "Data.hpp"
+#include "Data.h"
 #include "FileUtil.h"
 #include "MPSCQueue.hpp"
 #include "Synchronized.hpp"
 #include "Time.hpp"
-#include "Writer.hpp"
+#include "Writer.h"
 
 #include <algorithm>
 #include <atomic>

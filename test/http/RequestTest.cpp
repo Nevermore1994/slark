@@ -3,11 +3,11 @@
 // slark RequestTest - Real HTTP request integration tests
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
-#include "CancellationToken.hpp"
+#include "CancellationToken.h"
 #include "CoroutineScheduler.hpp"
-#include "Data.hpp"
-#include "HttpRequest.hpp"
-#include "Type.hpp"
+#include "Data.h"
+#include "HttpRequest.h"
+#include "Type.h"
 
 #include <atomic>
 #include <chrono>

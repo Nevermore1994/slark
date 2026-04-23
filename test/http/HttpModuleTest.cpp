@@ -3,13 +3,13 @@
 // Slark HTTP Module Tests
 // Copyright (c) 2026 Nevermore All rights reserved.
 //
-#include "CancellationToken.hpp"
-#include "HttpRequest.hpp"
-#include "HttpResponseParser.hpp"
+#include "CancellationToken.h"
+#include "HttpRequest.h"
+#include "HttpResponseParser.h"
 #include "HttpUtil.hpp"
 #include "ThreadPool.hpp"
-#include "Type.hpp"
-#include "Url.hpp"
+#include "Type.h"
+#include "Url.h"
 
 #include <chrono>
 #include <condition_variable>

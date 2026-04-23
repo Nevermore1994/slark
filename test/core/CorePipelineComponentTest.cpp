@@ -9,7 +9,6 @@
 #include "pipeline/ClockSync.h"
 #include "pipeline/EpochFilter.h"
 #include "pipeline/SeekCoordinator.h"
-#include "pipeline/VideoFrameContainer.h"
 
 #include <chrono>
 #include <gtest/gtest.h>
@@ -361,189 +360,6 @@ TEST(SeekCoordinatorTest, SeekEpochMonotonicallyIncreasing) {
     EXPECT_EQ(sc.seekEpoch(), 3u);
 }
 
-MARK : -VideoFrameContainer 测试
-
-       namespace {
-    辅助函数：创建带指定 pts 和 epoch 的 TaggedFrame TaggedFrame makeVideoFrame(double pts,
-                                                                                uint64_t epoch) {
-        auto frame = std::make_shared<AVFrame>(AVFrameType::Video);
-        frame->pts = static_cast<int64_t>(pts * 1000);
-        frame->timeScale = 1000;
-        return {frame, epoch};
-    }
-}
-
-namespace
-
-    TEST(VideoFrameContainerTest, InitiallyEmpty) {
-VideoFrameContainer container;
-EXPECT_TRUE(container.empty());
-EXPECT_EQ(container.size(), 0u);
-EXPECT_EQ(container.backPts(), std::nullopt);
-} // namespace TEST(VideoFrameContainerTest,InitiallyEmpty)
-
-TEST(VideoFrameContainerTest, PushAndPopWithDeque) {
-    VideoFrameContainer container;
-    auto tf1 = makeVideoFrame(1.0, 0);
-    auto tf2 = makeVideoFrame(2.0, 0);
-    auto tf3 = makeVideoFrame(3.0, 0);
-
-    container.push(tf1);
-    container.push(tf2);
-    container.push(tf3);
-    EXPECT_EQ(container.size(), 3u);
-    EXPECT_FALSE(container.empty());
-
-    pop 当前 epoch 的帧 auto frame = container.pop(0);
-    ASSERT_TRUE(frame != nullptr);
-    EXPECT_DOUBLE_EQ(frame->ptsTime(), 1.0);
-
-    frame = container.pop(0);
-    ASSERT_TRUE(frame != nullptr);
-    EXPECT_DOUBLE_EQ(frame->ptsTime(), 2.0);
-
-    frame = container.pop(0);
-    ASSERT_TRUE(frame != nullptr);
-    EXPECT_DOUBLE_EQ(frame->ptsTime(), 3.0);
-
-    无更多帧
-    frame = container.pop(0);
-    EXPECT_EQ(frame, nullptr);
-}
-
-TEST(VideoFrameContainerTest, PeekWithCurrentEpoch) {
-    VideoFrameContainer container;
-    auto tf1 = makeVideoFrame(1.0, 1);
-    auto tf2 = makeVideoFrame(2.0, 1);
-    auto tf3 = makeVideoFrame(3.0, 0);
-    旧 epoch
-
-        container.push(tf1);
-    container.push(tf2);
-    container.push(tf3);
-
-    peek 应该跳过旧 epoch 帧，返回第一个当前 epoch 的帧 auto frame = container.peek(1);
-    ASSERT_TRUE(frame != nullptr);
-    EXPECT_DOUBLE_EQ(frame->ptsTime(), 1.0);
-}
-
-TEST(VideoFrameContainerTest, PopSkipsOldEpochFrames) {
-    VideoFrameContainer container;
-    auto tfOld = makeVideoFrame(1.0, 0);
-    auto tfCurrent = makeVideoFrame(2.0, 1);
-
-    container.push(tfOld);
-    container.push(tfCurrent);
-
-    pop(1) 应该跳过 epoch = 0 的帧，返回 epoch = 1 的帧 auto frame = container.pop(1);
-    ASSERT_TRUE(frame != nullptr);
-    EXPECT_DOUBLE_EQ(frame->ptsTime(), 2.0);
-
-    容器中旧 epoch 帧被清理 EXPECT_TRUE(container.empty());
-}
-
-TEST(VideoFrameContainerTest, PopReturnsNullptrWhenEmpty) {
-    VideoFrameContainer container;
-    auto frame = container.pop(0);
-    EXPECT_EQ(frame, nullptr);
-}
-
-TEST(VideoFrameContainerTest, PopReturnsNullptrWhenOnlyOldEpochFrames) {
-    VideoFrameContainer container;
-    container.push(makeVideoFrame(1.0, 0));
-    container.push(makeVideoFrame(2.0, 0));
-
-    auto frame = container.pop(1);
-    当前 epoch 是 1，但帧都是 epoch 0 EXPECT_EQ(frame, nullptr);
-}
-
-TEST(VideoFrameContainerTest, SwitchToSorted) {
-    VideoFrameContainer container;
-    auto tf1 = makeVideoFrame(3.0, 0);
-    pts 乱序 auto tf2 = makeVideoFrame(1.0, 0);
-    auto tf3 = makeVideoFrame(2.0, 0);
-
-    container.push(tf1);
-    container.push(tf2);
-    container.push(tf3);
-
-    切换到 sorted map container.switchToSorted();
-
-    pop 应该按 pts 顺序返回 auto frame = container.pop(0);
-    ASSERT_TRUE(frame != nullptr);
-    EXPECT_DOUBLE_EQ(frame->ptsTime(), 1.0);
-
-    frame = container.pop(0);
-    ASSERT_TRUE(frame != nullptr);
-    EXPECT_DOUBLE_EQ(frame->ptsTime(), 2.0);
-
-    frame = container.pop(0);
-    ASSERT_TRUE(frame != nullptr);
-    EXPECT_DOUBLE_EQ(frame->ptsTime(), 3.0);
-}
-
-TEST(VideoFrameContainerTest, SwitchToSortedIdempotent) {
-    VideoFrameContainer container;
-    container.push(makeVideoFrame(1.0, 0));
-    container.switchToSorted();
-    container.switchToSorted();
-    第二次调用应该无操作
-    EXPECT_EQ(container.size(), 1u);
-}
-
-TEST(VideoFrameContainerTest, BackPtsReturnsLastFramePts) {
-    VideoFrameContainer container;
-    container.push(makeVideoFrame(1.0, 0));
-    container.push(makeVideoFrame(5.0, 0));
-    container.push(makeVideoFrame(3.0, 0));
-
-    auto backPts = container.backPts();
-    ASSERT_TRUE(backPts.has_value());
-    EXPECT_DOUBLE_EQ(backPts.value(), 3.0);
-deque:
-    last pushed
-}
-
-TEST(VideoFrameContainerTest, BackPtsWithSortedMap) {
-    VideoFrameContainer container;
-    container.push(makeVideoFrame(3.0, 0));
-    container.push(makeVideoFrame(1.0, 0));
-    container.push(makeVideoFrame(5.0, 0));
-    container.switchToSorted();
-
-    auto backPts = container.backPts();
-    ASSERT_TRUE(backPts.has_value());
-    EXPECT_DOUBLE_EQ(backPts.value(), 5.0);
-    sorted map : highest pts
-}
-
-TEST(VideoFrameContainerTest, BackPtsReturnsNulloptWhenEmpty) {
-    VideoFrameContainer container;
-    EXPECT_EQ(container.backPts(), std::nullopt);
-}
-
-TEST(VideoFrameContainerTest, PopFrontRemovesOldestRegardlessOfEpoch) {
-    VideoFrameContainer container;
-    container.push(makeVideoFrame(1.0, 0));
-    container.push(makeVideoFrame(2.0, 0));
-
-    container.popFront();
-    EXPECT_EQ(container.size(), 1u);
-
-    auto frame = container.pop(0);
-    ASSERT_TRUE(frame != nullptr);
-    EXPECT_DOUBLE_EQ(frame->ptsTime(), 2.0);
-}
-
-TEST(VideoFrameContainerTest, ClearRemovesAllFrames) {
-    VideoFrameContainer container;
-    container.push(makeVideoFrame(1.0, 0));
-    container.push(makeVideoFrame(2.0, 0));
-    container.clear();
-    EXPECT_TRUE(container.empty());
-    EXPECT_EQ(container.size(), 0u);
-}
-
 MARK : -EpochFilter 测试
 
        TEST(EpochFilterTest, ShouldNotDiscardWhenNoSeekPending) {
@@ -690,14 +506,14 @@ TEST(PipelineErrorBridgeTest, ErrorWithEmptyMessage) {
     EXPECT_TRUE(pipelineErr.message.empty());
 }
 
-TEST(PipelineErrorBridgeTest, DecoderUnsupportedFormatToPipelineError) {
-    auto pipelineErr = toPipelineError(Error::DecoderUnsupportedFormat,
+TEST(PipelineErrorBridgeTest, CodecUnsupportedFormatToPipelineError) {
+    auto pipelineErr = toPipelineError(Error::CodecUnsupportedFormat,
                                        PipelineEvent::AudioDecoderFailed,
                                        PipelineStage::VideoDecode,
                                        "unsupported codec");
     EXPECT_EQ(pipelineErr.event, PipelineEvent::AudioDecoderFailed);
     EXPECT_EQ(pipelineErr.stage, PipelineStage::VideoDecode);
-    EXPECT_EQ(pipelineErr.error, Error::DecoderUnsupportedFormat);
+    EXPECT_EQ(pipelineErr.error, Error::CodecUnsupportedFormat);
     EXPECT_EQ(pipelineErr.message, "unsupported codec");
 }
 
@@ -708,16 +524,16 @@ TEST(PipelineErrorBridgeTest, DecoderSuccessToPipelineError) {
     EXPECT_EQ(pipelineErr.error, Error::Success);
 }
 
-TEST(PipelineErrorBridgeTest, DecoderResourceExhaustedToPipelineError) {
-    auto pipelineErr = toPipelineError(Error::DecoderResourceExhausted,
+TEST(PipelineErrorBridgeTest, CodecResourceExhaustedToPipelineError) {
+    auto pipelineErr = toPipelineError(Error::CodecResourceExhausted,
                                        PipelineEvent::VideoDecoderFailed,
                                        PipelineStage::VideoDecode);
-    EXPECT_EQ(pipelineErr.error, Error::DecoderResourceExhausted);
+    EXPECT_EQ(pipelineErr.error, Error::CodecResourceExhausted);
 }
 
-TEST(PipelineErrorBridgeTest, DecoderConfigInvalidToPipelineError) {
-    auto pipelineErr = toPipelineError(Error::DecoderConfigInvalid,
+TEST(PipelineErrorBridgeTest, CodecConfigInvalidToPipelineError) {
+    auto pipelineErr = toPipelineError(Error::CodecConfigInvalid,
                                        PipelineEvent::AudioDecoderFailed,
                                        PipelineStage::VideoDecode);
-    EXPECT_EQ(pipelineErr.error, Error::DecoderConfigInvalid);
+    EXPECT_EQ(pipelineErr.error, Error::CodecConfigInvalid);
 }

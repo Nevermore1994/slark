@@ -3,7 +3,7 @@
 // Slark EventLoop Test
 // Copyright (c) 2026 Nevermore All rights reserved.
 //
-#include "EventLoop.hpp"
+#include "EventLoop.h"
 
 #include <atomic>
 #include <chrono>

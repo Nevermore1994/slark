@@ -4,9 +4,10 @@
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
 
+#include "Buffer.hpp"
+
 #include <gtest/gtest.h>
 #include <string_view>
-#include "Buffer.hpp"
 
 using namespace slark;
 
@@ -27,9 +28,9 @@ TEST(BufferTest, Append) {
     auto data = std::make_unique<Data>("hello world!");
     buffer.append(0, std::move(data));
     buffer.append(0, std::make_unique<Data>(5050, [](uint8_t* data) {
-        std::fill_n(data, 5050, 'a');
-        return 5050;
-    }));
+                      std::fill_n(data, 5050, 'a');
+                      return 5050;
+                  }));
     EXPECT_TRUE(buffer.require(5062));
     EXPECT_TRUE(buffer.length() == 5062);
 }
@@ -81,14 +82,14 @@ TEST(BufferTest, ReadString) {
     Buffer buffer;
     auto data = std::make_unique<Data>("hello world");
     buffer.append(0, std::move(data));
-    
+
     std::string str;
     EXPECT_TRUE(buffer.readString(5, str));
     EXPECT_EQ(str, "hello");
-    
+
     EXPECT_TRUE(buffer.readString(6, str));
     EXPECT_EQ(str, " world");
-    
+
     EXPECT_FALSE(buffer.readString(100, str));
 }
 
@@ -96,14 +97,14 @@ TEST(BufferTest, ReadLine) {
     Buffer buffer;
     auto data = std::make_unique<Data>("line1\nline2\nline3");
     buffer.append(0, std::move(data));
-    
+
     DataView line;
     EXPECT_TRUE(buffer.readLine(line));
     EXPECT_EQ(line.toStringView(), "line1");
-    
+
     EXPECT_TRUE(buffer.readLine(line));
     EXPECT_EQ(line.toStringView(), "line2");
-    
+
     EXPECT_FALSE(buffer.readLine(line));
 }
 
@@ -111,9 +112,9 @@ TEST(BufferTest, BitReadView) {
     Buffer buffer;
     auto data = std::make_unique<Data>(std::string_view("\xAB\xCD"));
     buffer.append(0, std::move(data));
-    
+
     BitReadView bitView(buffer);
-    
+
     // \xAB = 10101011, first bit is 1
     EXPECT_EQ(bitView.readBit(), 1u);
     // next 7 bits: 0101011 = 0x2B = 43
@@ -126,14 +127,14 @@ TEST(BufferTest, DataViewIntegration) {
     Buffer buffer;
     auto data = std::make_unique<Data>("hello world");
     buffer.append(0, std::move(data));
-    
+
     DataView view = buffer.view();
     EXPECT_EQ(view.size(), 11u);
     EXPECT_EQ(view.toStringView(), "hello world");
-    
+
     DataView shot = buffer.shotView();
     EXPECT_EQ(shot.toStringView(), "hello world");
-    
+
     buffer.skip(6);
     shot = buffer.shotView();
     EXPECT_EQ(shot.toStringView(), "world");

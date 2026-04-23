@@ -3,12 +3,12 @@
 // slark ChannelTest
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
-#include <gtest/gtest.h>
+#include "Channel.hpp"
 
+#include <gtest/gtest.h>
+#include <numeric>
 #include <string>
 #include <thread>
-#include <numeric>
-#include "Channel.hpp"
 
 using namespace slark;
 using namespace std::literals;
@@ -25,7 +25,7 @@ TEST(ChannelTest, CheckType) {
 TEST(ChannelTest, PtrSendSingleMessage) {
     using type = int;
     auto [sp, rp] = Channel<type>::create();
-    std::thread t1([rp = std::move(rp)]{
+    std::thread t1([rp = std::move(rp)] {
         type value = 0;
         int t1, t2;
         rp >> t1 >> t2;
@@ -33,7 +33,7 @@ TEST(ChannelTest, PtrSendSingleMessage) {
         value++;
         EXPECT_EQ(t2, value);
         value++;
-        for(;;) {
+        for (;;) {
             if (auto res = rp->receive(); res.has_value()) {
                 EXPECT_EQ(*res, value);
                 value++;
@@ -42,8 +42,8 @@ TEST(ChannelTest, PtrSendSingleMessage) {
             }
         }
     });
-    for (std::weakly_incrementable auto i : std::views::iota(0,10)) {
-    sp << i;
+    for (std::weakly_incrementable auto i : std::views::iota(0, 10)) {
+        sp << i;
     }
     sp->done();
     t1.join();
@@ -52,9 +52,9 @@ TEST(ChannelTest, PtrSendSingleMessage) {
 TEST(ChannelTest, Receive) {
     using type = std::string;
     auto [sp, rp] = Channel<type>::create();
-    std::thread t1([rp = std::move(rp)]{
+    std::thread t1([rp = std::move(rp)] {
         int value = 0;
-        for(;;) {
+        for (;;) {
             if (auto res = rp->receive(); res.has_value()) {
                 EXPECT_EQ(*res, std::to_string(value));
                 value++;
@@ -63,8 +63,8 @@ TEST(ChannelTest, Receive) {
             }
         }
     });
-    for(std::weakly_incrementable auto i : std::views::iota(0, 10)) {
-    sp << std::to_string(i);
+    for (std::weakly_incrementable auto i : std::views::iota(0, 10)) {
+        sp << std::to_string(i);
     }
     sp->done();
     t1.join();
@@ -73,9 +73,9 @@ TEST(ChannelTest, Receive) {
 TEST(ChannelTest, PtrSendMultiMessage) {
     using type = int;
     auto [sp, rp] = Channel<type>::create();
-    std::thread t1([rp = std::move(rp)]{
+    std::thread t1([rp = std::move(rp)] {
         type value = 0;
-        for(;;) {
+        for (;;) {
             if (auto res = rp->receive(); res.has_value()) {
                 EXPECT_EQ(*res, value);
                 value++;
@@ -96,9 +96,9 @@ TEST(ChannelTest, RefPtrSendMultiMessage) {
     using type = int;
     auto [sp, rp] = Channel<type>::create();
     auto ssp = SenderRefPtr<type>(std::move(sp));
-    std::thread t1([rp = std::move(rp)]{
+    std::thread t1([rp = std::move(rp)] {
         type value = 0;
-        for(;;) {
+        for (;;) {
             if (auto res = rp->receive(); res.has_value()) {
                 EXPECT_EQ(*res, value);
                 value++;
@@ -145,9 +145,9 @@ TEST(ChannelTest, Close) {
 TEST(ChannelTest, Range) {
     using type = int;
     auto [sp, rp] = Channel<type>::create();
-    std::thread t1([rp = std::move(rp)]{
+    std::thread t1([rp = std::move(rp)] {
         type value = 0;
-        for(auto res : *rp) {
+        for (auto res : *rp) {
             EXPECT_EQ(res, value);
             value++;
         }
@@ -163,18 +163,18 @@ TEST(ChannelTest, Range) {
 TEST(ChannelTest, MultiThread) {
     using type = int;
     auto [sp, rp] = Channel<type>::create();
-    auto ssp = SenderRefPtr<type> (std::move(sp));
+    auto ssp = SenderRefPtr<type>(std::move(sp));
     std::condition_variable cond;
     std::mutex mutex;
     int count = 0;
-    std::thread t1([ssp, &cond, &mutex, &count]{
-        for(;;) {
+    std::thread t1([ssp, &cond, &mutex, &count] {
+        for (;;) {
             std::unique_lock<std::mutex> lock(mutex);
-            cond.wait(lock, [&count, &ssp]{
+            cond.wait(lock, [&count, &ssp] {
                 return (count % 3) == 0 || ssp->isDone();
             });
             if (ssp->isDone()) {
-                //std::cout << "--- MultiThread test t1 exit ---" << std::endl;
+                // std::cout << "--- MultiThread test t1 exit ---" << std::endl;
                 return;
             }
             ssp << count;
@@ -185,14 +185,14 @@ TEST(ChannelTest, MultiThread) {
             cond.notify_all();
         }
     });
-    std::thread t2([ssp, &cond, &mutex, &count]{
-        for(;;) {
+    std::thread t2([ssp, &cond, &mutex, &count] {
+        for (;;) {
             std::unique_lock<std::mutex> lock(mutex);
-            cond.wait(lock, [&count, &ssp]{
+            cond.wait(lock, [&count, &ssp] {
                 return (count % 3) == 1 || ssp->isDone();
             });
             if (ssp->isDone()) {
-                //std::cout << "--- MultiThread test t2 exit ---" << std::endl;
+                // std::cout << "--- MultiThread test t2 exit ---" << std::endl;
                 return;
             }
             ssp << count;
@@ -203,14 +203,14 @@ TEST(ChannelTest, MultiThread) {
             cond.notify_all();
         }
     });
-    std::thread t3([ssp, &cond, &mutex, &count]{
-        for(;;) {
+    std::thread t3([ssp, &cond, &mutex, &count] {
+        for (;;) {
             std::unique_lock<std::mutex> lock(mutex);
-            cond.wait(lock, [&count, &ssp]{
+            cond.wait(lock, [&count, &ssp] {
                 return (count % 3) == 2 || ssp->isDone();
             });
             if (ssp->isDone()) {
-                //std::cout << "--- MultiThread test t3 exit ---" << std::endl;
+                // std::cout << "--- MultiThread test t3 exit ---" << std::endl;
                 return;
             }
             ssp << count;
@@ -221,17 +221,17 @@ TEST(ChannelTest, MultiThread) {
             cond.notify_all();
         }
     });
-    std::thread t4([rp = std::move(rp)]{
-    type value = 0;
-        for(;;) {
+    std::thread t4([rp = std::move(rp)] {
+        type value = 0;
+        for (;;) {
             if (auto res = rp->tryReceive(); res.has_value()) {
                 EXPECT_EQ(*res, value);
                 value++;
-            } else if (res.error() == ChannelEventType::Closed){
+            } else if (res.error() == ChannelEventType::Closed) {
                 break;
             }
         }
-        //std::cout << "--- MultiThread test t4 exit ---" << std::endl;
+        // std::cout << "--- MultiThread test t4 exit ---" << std::endl;
     });
     t1.join();
     t2.join();
@@ -243,25 +243,17 @@ struct A {
     int value = 0;
     virtual ~A() = default;
     A() = default;
-    explicit A(int value_)
-    : value(value_) {
 
-    }
+    explicit A(int value_) : value(value_) {}
 };
 
-struct TestValue: public A {
+struct TestValue : public A {
     TestValue() = default;
     ~TestValue() override = default;
-    explicit TestValue(const std::string& key_)
-    : key(key_) {
 
-    }
+    explicit TestValue(const std::string& key_) : key(key_) {}
 
-    TestValue(TestValue&& rhs) noexcept
-    : A(rhs.value)
-      , key(std::move(rhs.key)) {
-
-    }
+    TestValue(TestValue&& rhs) noexcept : A(rhs.value), key(std::move(rhs.key)) {}
 
     TestValue& operator=(TestValue&& rhs) noexcept {
         if (&rhs == this) {
@@ -271,6 +263,7 @@ struct TestValue: public A {
         key = std::move(rhs.key);
         return *this;
     }
+
     TestValue(const TestValue&) = default;
     TestValue& operator=(const TestValue& rhs) = default;
     std::string key = "key";
@@ -278,9 +271,9 @@ struct TestValue: public A {
 
 TEST(ChannelTest, BitwiseCopy) {
     auto [sp, rp] = Channel<TestValue>::create();
-    std::thread t1([rp = std::move(rp)]{
+    std::thread t1([rp = std::move(rp)] {
         int value = 0;
-        for(auto& res : *rp) {
+        for (auto& res : *rp) {
             EXPECT_EQ(res.value, value);
             EXPECT_EQ(res.key, std::to_string(value));
             value++;
@@ -296,9 +289,9 @@ TEST(ChannelTest, BitwiseCopy) {
 TEST(ChannelTest, ImplicitConversion) {
     using type = A;
     auto [sp, rp] = Channel<type*>::create();
-    std::thread t1([rp = std::move(rp)]{
+    std::thread t1([rp = std::move(rp)] {
         int value = 0;
-        for(auto res : *rp) {
+        for (auto res : *rp) {
             auto k = static_cast<TestValue*>(res);
             EXPECT_EQ(k->value, value);
             EXPECT_EQ(k->key, std::to_string(value));
@@ -312,10 +305,10 @@ TEST(ChannelTest, ImplicitConversion) {
     value->key = std::to_string(0);
     sp << value;
     for (int i = 1; i < 10; i++) {
-    auto tmepValue = new TestValue();
-    tmepValue->value = i;
-    tmepValue->key = std::to_string(i);
-    values.emplace_back(tmepValue);
+        auto tmepValue = new TestValue();
+        tmepValue->value = i;
+        tmepValue->key = std::to_string(i);
+        values.emplace_back(tmepValue);
     }
     sp << std::move(values);
     sp->done();
