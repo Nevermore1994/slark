@@ -43,7 +43,7 @@ class SharedViewModel : ViewModel() {
 @Composable
 fun LocalPlayerScreenRoute(navController: NavHostController, sharedViewModel: SharedViewModel) {
     var playerViewModel by remember { mutableStateOf<PlayerViewModel?>(null) }
-    var context = LocalContext.current
+    val context = LocalContext.current
     val activity = context as ComponentActivity
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -83,8 +83,7 @@ fun LocalPlayerScreenRoute(navController: NavHostController, sharedViewModel: Sh
     playerViewModel?.let { playerViewModel ->
         PlayerScreen(
             playerViewModel,
-            onBackClick = { navController.popBackStack() },
-            onPickClick = { navController.navigate("pick_video") }
+            onBackClick = { navController.popBackStack() }
         )
     }
 

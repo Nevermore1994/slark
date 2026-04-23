@@ -36,6 +36,7 @@ import kotlinx.coroutines.withContext
 
 @Composable
 fun VideoPickerScreen(
+    innerPadding: PaddingValues = PaddingValues(),
     onResult: (List<Uri>) -> Unit
 ) {
     val context = LocalContext.current
@@ -51,6 +52,10 @@ fun VideoPickerScreen(
     }
 
     Scaffold(
+        topBar = {
+            @OptIn(ExperimentalMaterial3Api::class)
+            TopAppBar(title = { Text("Local Player") })
+        },
         bottomBar = {
             if (selectedItems.isNotEmpty()) {
                 Button(
@@ -59,14 +64,17 @@ fun VideoPickerScreen(
                         .fillMaxWidth()
                         .padding(16.dp)
                 ) {
-                    Text("确定（${selectedItems.size}）")
+                    Text("Confirm (${selectedItems.size})")
                 }
             }
         }
     ) { paddingValues ->
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 100.dp),
-            contentPadding = paddingValues,
+            contentPadding = PaddingValues(
+                top = paddingValues.calculateTopPadding(),
+                bottom = maxOf(paddingValues.calculateBottomPadding(), innerPadding.calculateBottomPadding())
+            ),
             modifier = Modifier.fillMaxSize()
         ) {
             items(videoItems) { video ->
@@ -106,7 +114,7 @@ fun VideoPickerScreen(
 
 object ImageLoaderFactory {
     private var imageLoader: ImageLoader? = null
-    private const val MEMORY_CACHE_SIZE = 20 * 1024 * 1024 20MB
+    private const val MEMORY_CACHE_SIZE = 20 * 1024 * 1024
 
     fun create(context: Context): ImageLoader {
         if (imageLoader == null) {

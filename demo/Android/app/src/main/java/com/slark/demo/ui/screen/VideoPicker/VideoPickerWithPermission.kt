@@ -23,6 +23,7 @@ import com.google.accompanist.permissions.rememberPermissionState
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun VideoPickerWithPermission(
+    innerPadding: PaddingValues = PaddingValues(),
     onResult: (List<Uri>) -> Unit
 ) {
     val context = LocalContext.current
@@ -42,7 +43,7 @@ fun VideoPickerWithPermission(
 
     when {
         permissionState.status.isGranted -> {
-            VideoPickerScreen(onResult = onResult)
+            VideoPickerScreen(innerPadding = innerPadding, onResult = onResult)
         }
 
         permissionState.status.shouldShowRationale -> {

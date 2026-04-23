@@ -48,6 +48,8 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
 
     var isMute by mutableStateOf(false)
 
+    var speed by mutableStateOf(1.0f)
+
     var errorMessage by mutableStateOf<String?>(null)
 
     private fun setPlayState(isPlaying: Boolean, isLoading: Boolean) {
@@ -119,12 +121,13 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
         player?.seekTo(time, isAccurate)
     }
 
-    fun skipPrev() {
-        Implement skip previous logic
-    }
+    fun skipPrev() {}
 
-    fun skipNext() {
-        Implement skip next logic
+    fun skipNext() {}
+
+    fun setSpeed(speed: Float) {
+        player?.speed = speed
+        this.speed = speed
     }
 
     fun onBackground(isBackground: Boolean) {

@@ -1,5 +1,3 @@
-
-//
 // Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
 // This file is part of Slark.
@@ -12,75 +10,78 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.*
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.res.painterResource
 import androidx.navigation.NavHostController
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.slark.demo.ui.navigation.Screen
-import com.slark.demo.ui.navigation.AppNavHost
 import com.slark.api.SlarkSdk
+import com.slark.demo.ui.navigation.AppNavHost
+import com.slark.demo.ui.navigation.Screen
+import com.slark.demo.ui.theme.SlarkDemoTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        val myApp = application
-        SlarkSdk.init(myApp)
+        SlarkSdk.init(application)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            val navController = rememberNavController()
-            AppNavHost(navController = navController)
-        }
-    }
-}
-
-@Composable
-fun HomeScreen(innerPadding: PaddingValues,
-               onItemClick: (Int) -> Unit) {
-    val items = listOf("local player", "network player")
-    LazyColumn (modifier = Modifier
-        .fillMaxWidth()
-        .padding(innerPadding)
-        .padding(top = 16.dp, start = 16.dp, end = 16.dp)) {
-        itemsIndexed(items) { index, item ->
-            Column {
-                Text(
-                    text = item,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .clickable { onItemClick(index) }
-                        .fillMaxWidth()
-                        .padding(top = 16.dp))
-                HorizontalDivider(thickness = 1.dp, color = Color.Gray)
+            SlarkDemoTheme {
+                val navController = rememberNavController()
+                MainScreen(navController)
             }
-
         }
     }
 }
 
 @Composable
-fun HomeScreenRoute(navController: NavHostController) {
+fun MainScreen(navController: NavHostController) {
+    val backStack by navController.currentBackStackEntryAsState()
+    val currentRoute = backStack?.destination?.route
+
+    val showBottomBar = currentRoute in listOf(
+        Screen.SelectUrlScreen.route,
+        Screen.VideoPickerScreen.route
+    )
+
     Scaffold(
-        modifier = Modifier.fillMaxSize()
-    ) { innerPadding ->
-        HomeScreen(
-            innerPadding = innerPadding,
-            onItemClick = { index ->
-                when (index) {
-                    0 -> navController.navigate(Screen.VideoPickerScreen.route)
-                    1 -> navController.navigate(Screen.SelectUrlScreen.route)
-                    else -> {}
+        bottomBar = {
+            if (showBottomBar) {
+                NavigationBar {
+                    NavigationBarItem(
+                        selected = currentRoute == Screen.SelectUrlScreen.route,
+                        onClick = {
+                            navController.navigate(Screen.SelectUrlScreen.route) {
+                                popUpTo(Screen.SelectUrlScreen.route) { inclusive = true }
+                            }
+                        },
+                        icon = {
+                            Icon(painterResource(R.drawable.video), contentDescription = null)
+                        },
+                        label = { Text("Network") }
+                    )
+                    NavigationBarItem(
+                        selected = currentRoute == Screen.VideoPickerScreen.route,
+                        onClick = {
+                            navController.navigate(Screen.VideoPickerScreen.route) {
+                                popUpTo(Screen.VideoPickerScreen.route) { inclusive = true }
+                            }
+                        },
+                        icon = {
+                            Icon(painterResource(R.drawable.music_file), contentDescription = null)
+                        },
+                        label = { Text("Local") }
+                    )
                 }
             }
-        )
+        }
+    ) { innerPadding ->
+        AppNavHost(navController = navController, innerPadding = innerPadding)
     }
 }
-

@@ -1,5 +1,3 @@
-
-//
 // Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
 // This file is part of Slark.
@@ -9,32 +7,36 @@
 package com.slark.demo.ui.component
 
 import androidx.compose.animation.Crossfade
-import androidx.compose.runtime.Composable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.material3.Text
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Icon
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.constraintlayout.compose.Dimension
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Shadow
-import androidx.compose.ui.graphics.graphicsLayer
 import com.slark.demo.R
 import com.slark.demo.ui.model.PlayerViewModel
-import kotlin.math.ceil
 import kotlin.math.round
+
+private val kSpeedOptions = listOf(0.5f, 1.0f, 1.5f, 2.0f)
+
+private fun formatTime(ms: Int): String {
+    val totalSeconds = round(ms / 1000.0).toInt()
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    return if (hours > 0) "%02d:%02d:%02d".format(hours, minutes, seconds)
+    else "%02d:%02d".format(minutes, seconds)
+}
 
 @Composable
 fun PlayerControls(
@@ -42,24 +44,17 @@ fun PlayerControls(
     modifier: Modifier = Modifier
 ) {
     Column(
-        modifier = modifier.fillMaxWidth().padding(16.dp),
+        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Bottom
     ) {
         PlayerProgressBar(viewModel)
-        Spacer(modifier = Modifier.height(2.dp))
+        Spacer(modifier = Modifier.height(4.dp))
         PlayerControlBar(viewModel)
     }
     LaunchedEffect(Unit) {
         viewModel.prepare()
     }
-}
-
-private fun formatTime(ms: Int): String {
-    val totalSeconds = round(ms / 1000.0).toInt()
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return "%02d:%02d".format(minutes, seconds)
 }
 
 @Composable
@@ -69,76 +64,63 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
             .fillMaxWidth()
             .padding(horizontal = 8.dp)
     ) {
-        val (volumeIcon, volumeSlider, prevBtn, playBtn, nextBtn, loopBtn, muteBtn) = createRefs()
+        val (volumeIcon, volumeSlider, prevBtn, playBtn, nextBtn, loopBtn, speedBtn) = createRefs()
 
         IconButton(
             onClick = { viewModel.mute(!viewModel.isMute) },
             modifier = Modifier
-                .size(24.dp)
+                .size(28.dp)
                 .constrainAs(volumeIcon) {
                     start.linkTo(parent.start)
-                    top.linkTo(parent.top)
-                    bottom.linkTo(parent.bottom)
+                    centerVerticallyTo(parent)
                 }
         ) {
             Crossfade(targetState = viewModel.isMute, label = "") {
                 Icon(
                     painterResource(id = if (it) R.drawable.mute else R.drawable.volume),
-                    contentDescription = "Volume",
+                    contentDescription = null,
                     tint = Color(0xFFE6E6E6)
                 )
             }
-
         }
 
         CustomSlider(
             value = viewModel.volume,
-            onValueChange = {  t, _ ->
-                viewModel.volume = t
-            },
+            onValueChange = { t, _ -> viewModel.volume = t },
             valueRange = 0f..100f,
             trackColor = Color.LightGray,
             activeColor = Color(0xFFE6E6E6),
-            modifier = Modifier
-                .constrainAs(volumeSlider) {
-                    start.linkTo(volumeIcon.end)
-                    centerVerticallyTo(parent)
-                    width = Dimension.percent(0.2f)
-                }
+            modifier = Modifier.constrainAs(volumeSlider) {
+                start.linkTo(volumeIcon.end, margin = 4.dp)
+                centerVerticallyTo(parent)
+                width = Dimension.percent(0.18f)
+            }
         )
 
         IconButton(
             onClick = { viewModel.skipPrev() },
             modifier = Modifier
-                .size(36.dp)
+                .size(40.dp)
                 .constrainAs(prevBtn) {
                     end.linkTo(playBtn.start, margin = 20.dp)
                     centerVerticallyTo(parent)
                 }
         ) {
-            Icon(
-                painterResource(id = R.drawable.prev),
-                contentDescription = "Prev",
-                tint = Color(0xFFE6E6E6)
-            )
+            Icon(painterResource(id = R.drawable.prev), contentDescription = null, tint = Color(0xFFE6E6E6))
         }
 
         IconButton(
             onClick = { viewModel.play(!viewModel.isPlaying) },
             modifier = Modifier
-                .size(36.dp)
-                .constrainAs(playBtn) {
-                    centerTo(parent)
-                }
+                .size(40.dp)
+                .constrainAs(playBtn) { centerTo(parent) }
         ) {
             Crossfade(targetState = viewModel.isPlaying, label = "") {
                 Icon(
-                    painter = painterResource(
-                        id = if (it) R.drawable.pause_icon else R.drawable.play_icon
-                    ),
-                    contentDescription = if (it) "Pause" else "Play",
+                    painter = painterResource(id = if (it) R.drawable.pause_icon else R.drawable.play_icon),
+                    contentDescription = null,
                     tint = Color(0xFFE6E6E6),
-                    modifier = Modifier.size(48.dp)
+                    modifier = Modifier.size(52.dp)
                 )
             }
         }
@@ -146,47 +128,67 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
         IconButton(
             onClick = { viewModel.skipNext() },
             modifier = Modifier
-                .size(36.dp)
+                .size(40.dp)
                 .constrainAs(nextBtn) {
                     start.linkTo(playBtn.end, margin = 20.dp)
                     centerVerticallyTo(parent)
                 }
         ) {
-            Icon(
-                painterResource(id = R.drawable.next),
-                contentDescription = "Next",
-                tint = Color(0xFFE6E6E6)
-            )
+            Icon(painterResource(id = R.drawable.next), contentDescription = null, tint = Color(0xFFE6E6E6))
         }
 
         IconButton(
             onClick = { viewModel.loop(!viewModel.isLoop) },
             modifier = Modifier
-                .size(24.dp)
+                .size(28.dp)
                 .constrainAs(loopBtn) {
-                    start.linkTo(nextBtn.end, margin = 48.dp)
+                    end.linkTo(speedBtn.start, margin = 12.dp)
                     centerVerticallyTo(parent)
                 }
         ) {
             Crossfade(targetState = viewModel.isLoop, label = "") {
                 Icon(
-                    painter = painterResource(
-                        id = if (it) R.drawable.loop else R.drawable.stop_loop
-                    ),
-                    contentDescription = "Loop",
+                    painter = painterResource(id = if (it) R.drawable.loop else R.drawable.stop_loop),
+                    contentDescription = null,
                     tint = Color(0xFFE6E6E6)
                 )
             }
         }
 
+        SpeedButton(
+            speed = viewModel.speed,
+            onSpeedChange = { viewModel.setSpeed(it) },
+            modifier = Modifier.constrainAs(speedBtn) {
+                end.linkTo(parent.end)
+                centerVerticallyTo(parent)
+            }
+        )
+    }
+}
+
+@Composable
+fun SpeedButton(speed: Float, onSpeedChange: (Float) -> Unit, modifier: Modifier = Modifier) {
+    val label = if (speed == speed.toLong().toFloat()) "%.0fx".format(speed) else "%.1fx".format(speed)
+    Box(
+        modifier = modifier
+            .border(1.dp, Color(0xFFE6E6E6), RoundedCornerShape(6.dp))
+            .clickable {
+                val idx = kSpeedOptions.indexOfFirst { kotlin.math.abs(it - speed) < 0.01f }
+                val next = kSpeedOptions[(if (idx < 0) 1 else (idx + 1) % kSpeedOptions.size)]
+                onSpeedChange(next)
+            }
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text = label, color = Color(0xFFE6E6E6), fontSize = 13.sp)
     }
 }
 
 @Composable
 fun PlayerProgressBar(viewModel: PlayerViewModel) {
-    val currentTime = viewModel.currentTime * 1000 Convert to milliseconds
-    val totalTime = viewModel.totalTime * 1000 Convert to milliseconds
-    val cacheTime = viewModel.cacheTime * 1000 Convert to milliseconds
+    val currentTime = viewModel.currentTime * 1000
+    val totalTime = viewModel.totalTime * 1000
+    val cacheTime = viewModel.cacheTime * 1000
 
     ConstraintLayout(
         modifier = Modifier
@@ -196,20 +198,14 @@ fun PlayerProgressBar(viewModel: PlayerViewModel) {
         val (startTime, endTime, slider) = createRefs()
 
         CustomSlider(
-            value = if (totalTime > 0) {
-                (currentTime / totalTime).toFloat()
-            } else 0f,
+            value = if (totalTime > 0) (currentTime / totalTime).toFloat() else 0f,
             onValueChange = { t, b ->
-                if (!b) {
-                    viewModel.currentTime = (t * totalTime) / 1000.0
-                }
+                if (!b) viewModel.currentTime = (t * totalTime) / 1000.0
                 viewModel.seekTo(viewModel.currentTime, b)
             },
             valueRange = 0f..1f,
             bufferedColor = Color.Gray,
-            bufferedValue =  if (totalTime > 0) {
-                (cacheTime / totalTime).toFloat()
-            } else 0f,
+            bufferedValue = if (totalTime > 0) (cacheTime / totalTime).toFloat() else 0f,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(24.dp)
@@ -220,36 +216,26 @@ fun PlayerProgressBar(viewModel: PlayerViewModel) {
                 }
         )
 
+        val timeStyle = MaterialTheme.typography.labelMedium.copy(
+            shadow = Shadow(color = Color.Black, offset = Offset(1f, 1f), blurRadius = 2f)
+        )
         Text(
             text = formatTime(currentTime.toInt()),
             color = Color.LightGray,
-            style = MaterialTheme.typography.labelMedium.copy(
-                shadow = Shadow(
-                    color = Color.Black,
-                    offset = Offset(1f, 1f),
-                    blurRadius = 2f
-                )
-            ),
+            style = timeStyle,
             modifier = Modifier.constrainAs(startTime) {
                 start.linkTo(parent.start)
                 top.linkTo(slider.bottom, margin = 2.dp)
-            },
+            }
         )
-
         Text(
             text = formatTime(totalTime.toInt()),
             color = Color.LightGray,
-            style = MaterialTheme.typography.labelMedium.copy(
-                shadow = Shadow(
-                    color = Color.Black,
-                    offset = Offset(1f, 1f),
-                    blurRadius = 2f
-                )
-            ),
+            style = timeStyle,
             modifier = Modifier.constrainAs(endTime) {
                 end.linkTo(parent.end)
                 top.linkTo(slider.bottom, margin = 2.dp)
-            },
+            }
         )
     }
 }
