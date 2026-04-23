@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include "DataView.hpp"
+
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -78,11 +80,11 @@ struct Url {
     }
 
     [[nodiscard]] uint16_t portNumber() const noexcept {
-        try {
-            return static_cast<uint16_t>(std::stoi(std::string(port)));
-        } catch (...) {
+        auto result = StringUtil::fromChars<uint16_t>(port);
+        if (!result) {
             return isHttps() ? 443 : 80;
         }
+        return *result;
     }
 
 private:
@@ -97,4 +99,3 @@ inline void freeUrl(Url* url) noexcept {
 }
 
 } // namespace slark::http
-namespace slark::http

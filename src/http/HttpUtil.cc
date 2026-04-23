@@ -6,7 +6,7 @@
 
 #include "DataView.hpp"
 #include "StringUtil.h"
-#include "Url.hpp"
+#include "Url.h"
 
 namespace slark::http::Util {
 
@@ -67,14 +67,12 @@ bool extractFixedBody(const void* data,
     auto available = totalSize - bodyStart;
 
     if (!contentLengthStr.empty()) {
-        try {
-            auto expected = static_cast<size_t>(std::stoull(std::string(contentLengthStr)));
-            if (available < expected) {
+        auto expectedLen = StringUtil::fromChars<uint64_t>(contentLengthStr);
+        if (expectedLen) {
+            if (available < *expectedLen) {
                 return false;
             }
-            available = expected;
-        } catch (...) {
-            // Content-Length 解析失败，使用实际可用大小
+            available = *expectedLen;
         }
     }
 
@@ -174,12 +172,12 @@ bool parseChunkData(DataPtr& data,
                 sizeStr = sizeStr.substr(0, semicolonPos);
             }
 
-            try {
-                context.chunkSize = std::stol(sizeStr, nullptr, 16);
-            } catch (...) {
+            auto chunkSizeResult = StringUtil::fromChars<int64_t>(sizeStr, 16);
+            if (!chunkSizeResult) {
                 callbacks.onError(ResultCode::ChunkSizeError, 0);
                 return false;
             }
+            context.chunkSize = *chunkSizeResult;
 
             dataView = dataView.subview(pos + kCRLF.size());
 
@@ -243,11 +241,11 @@ std::tuple<bool, int64_t> parseResponseHeader(DataView data, ResponseHeader& res
     auto statusCodeStr = afterVersion.substr(0, secondSpace);
     auto reasonPhrase = afterVersion.substr(secondSpace + 1);
 
-    try {
-        response.httpStatusCode = static_cast<HttpStatusCode>(std::stoi(statusCodeStr.toString()));
-    } catch (...) {
+    auto statusCodeResult = StringUtil::fromChars<int32_t>(statusCodeStr.toStringView());
+    if (!statusCodeResult) {
         return {false, 0};
     }
+    response.httpStatusCode = static_cast<HttpStatusCode>(*statusCodeResult);
 
     response.headers["Version"] = version.toString();
     response.reasonPhrase = reasonPhrase.toString();

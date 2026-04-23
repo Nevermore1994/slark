@@ -147,6 +147,7 @@ private:
     static constexpr std::string_view kCRLF = "\r\n";
     static constexpr std::string_view kHeaderEnd = "\r\n\r\n";
     static constexpr size_t kCompactionThreshold = 8192; // 碎片化阈值
+    static constexpr size_t kMaxTrailerSize = 16384;     // trailer 最大累计长度
 
     State state_ = State::StatusLine;
     Callbacks callbacks_;
@@ -162,6 +163,7 @@ private:
     int64_t bodyReceived_ = 0;
     int64_t currentChunkSize_ = 0;
     int64_t chunkBytesRead_ = 0;
+    size_t trailerBytesRead_ = 0;
 
     // 性能统计
     RequestPerf* perf_ = nullptr;

@@ -4,7 +4,7 @@
 // Copyright (c) 2026 Nevermore All rights reserved.
 //
 
-#include "Type.hpp"
+#include "Type.h"
 
 #include <sstream>
 

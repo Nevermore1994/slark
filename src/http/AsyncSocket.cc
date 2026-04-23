@@ -3,10 +3,10 @@
 // slark AsyncSocket
 // Copyright (c) 2025 Nevermore All rights reserved.
 //
-#include "AsyncSocket.hpp"
+#include "AsyncSocket.h"
 
 #include "Log.hpp"
-#include "SSLManager.hpp"
+#include "SSLManager.h"
 #include "ScopeGuard.h"
 #include "Time.hpp"
 
@@ -77,7 +77,7 @@ Coroutine<void> tcpConnect(Socket socket,
     auto result = co_await connector;
     if (!result) {
         auto error = result.error();
-        if (error == DataError::ConnectionTimeout) {
+        if (error == Error::ConnectionTimeout) {
             throw TimeoutException("Connection timeout");
         }
         throw std::runtime_error("Connection failed");
@@ -183,7 +183,7 @@ Coroutine<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data
                                                     std::chrono::milliseconds timeout,
                                                     CancellationToken token) {
     if (socket_ == kInvalidSocket || !transport_) {
-        co_return std::unexpected(DataError::InvalidSocket);
+        co_return std::unexpected(Error::InvalidSocket);
     }
 
     Time::Deadline deadline(timeout);
@@ -193,14 +193,14 @@ Coroutine<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data
     while (totalSent < data.size()) {
         // 检查取消状态
         if (token.isCancelled()) {
-            co_return std::unexpected(DataError::Cancelled);
+            co_return std::unexpected(Error::Cancelled);
         }
 
         if (deadline.isExpired()) {
             if (perf_) {
                 perf_->transport.timeoutSource = TimeoutSource::Write;
             }
-            co_return std::unexpected(DataError::ConnectionTimeout);
+            co_return std::unexpected(Error::ConnectionTimeout);
         }
 
         ssize_t result = transport_->write(data.data() + totalSent, data.size() - totalSent);
@@ -217,17 +217,17 @@ Coroutine<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data
                                                          &token);
             if (!ready) {
                 if (token.isCancelled()) {
-                    co_return std::unexpected(DataError::Cancelled);
+                    co_return std::unexpected(Error::Cancelled);
                 }
                 if (perf_) {
                     perf_->transport.timeoutSource = TimeoutSource::Write;
                 }
-                co_return std::unexpected(DataError::ConnectionTimeout);
+                co_return std::unexpected(Error::ConnectionTimeout);
             }
             continue;
         }
 
-        co_return std::unexpected(DataError::BrokenPipe);
+        co_return std::unexpected(Error::BrokenPipe);
     }
 
     if (perf_) {
@@ -247,7 +247,7 @@ Coroutine<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
                                                        std::chrono::milliseconds timeout,
                                                        CancellationToken token) {
     if (socket_ == kInvalidSocket || !transport_) {
-        co_return std::unexpected(DataError::InvalidSocket);
+        co_return std::unexpected(Error::InvalidSocket);
     }
 
     Time::Deadline deadline(timeout);
@@ -256,14 +256,14 @@ Coroutine<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
     while (true) {
         // 检查取消状态
         if (token.isCancelled()) {
-            co_return std::unexpected(DataError::Cancelled);
+            co_return std::unexpected(Error::Cancelled);
         }
 
         if (deadline.isExpired()) {
             if (perf_) {
                 perf_->transport.timeoutSource = TimeoutSource::ReadIdle;
             }
-            co_return std::unexpected(DataError::ConnectionTimeout);
+            co_return std::unexpected(Error::ConnectionTimeout);
         }
 
         ssize_t result = transport_->read(buffer, size);
@@ -275,7 +275,7 @@ Coroutine<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
         }
 
         if (result == 0) {
-            co_return std::unexpected(DataError::ConnectionReset);
+            co_return std::unexpected(Error::ConnectionReset);
         }
 
         if (transport_->needsRetry(result)) {
@@ -286,17 +286,17 @@ Coroutine<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
                                                          &token);
             if (!ready) {
                 if (token.isCancelled()) {
-                    co_return std::unexpected(DataError::Cancelled);
+                    co_return std::unexpected(Error::Cancelled);
                 }
                 if (perf_) {
                     perf_->transport.timeoutSource = TimeoutSource::ReadIdle;
                 }
-                co_return std::unexpected(DataError::ConnectionTimeout);
+                co_return std::unexpected(Error::ConnectionTimeout);
             }
             continue;
         }
 
-        co_return std::unexpected(DataError::ConnectionReset);
+        co_return std::unexpected(Error::ConnectionReset);
     }
 }
 
@@ -319,7 +319,8 @@ Coroutine<DataPtr> AsyncSocket::asyncReceiveAll(std::chrono::milliseconds timeou
             break;
         }
 
-        ssize_t result = transport_->read(data->data() + totalReceived, kDefaultReadSize);
+        ssize_t result =
+            transport_->read(data->data() + totalReceived, data->size() - totalReceived);
         if (result > 0) {
             totalReceived += static_cast<size_t>(result);
             if (data->size() - totalReceived < static_cast<size_t>(kDefaultReadSize)) {

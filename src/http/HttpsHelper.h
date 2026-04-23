@@ -20,4 +20,3 @@ struct HttpsHelper {
 };
 
 } // namespace slark::http
-namespace slark::http

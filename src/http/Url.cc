@@ -3,7 +3,7 @@
 // slark Url
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
-#include "Url.hpp"
+#include "Url.h"
 
 #include <algorithm>
 
@@ -123,14 +123,9 @@ void Url::parse(std::string_view url) noexcept {
                 return;
             }
         }
-        try {
-            auto portNum = std::stoi(std::string(port));
-            if (portNum < 0 || portNum > 65535) {
-                error_ = UrlError::PortOutOfRange;
-                return;
-            }
-        } catch (...) {
-            error_ = UrlError::InvalidPort;
+        auto portNumResult = StringUtil::fromChars<int32_t>(port);
+        if (!portNumResult || *portNumResult < 0 || *portNumResult > 65535) {
+            error_ = UrlError::PortOutOfRange;
             return;
         }
     }

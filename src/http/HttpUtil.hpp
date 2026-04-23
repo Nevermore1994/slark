@@ -5,8 +5,8 @@
 
 #include "Socket.hpp"
 #include "StringUtil.h"
-#include "Type.hpp"
-#include "Url.hpp"
+#include "Type.h"
+#include "Url.h"
 
 #include <netdb.h>
 #include <sstream>
@@ -31,35 +31,35 @@ bool parseFieldValue(const std::unordered_map<std::string, std::string>& headers
                      T& value) {
     for (const auto& [k, v] : headers) {
         if (StringUtil::iequals(k, key)) {
-            try {
-                if constexpr (std::is_same_v<double, T>) {
-                    value = std::stod(v);
-                } else if constexpr (std::is_same_v<float, T>) {
-                    value = std::stof(v);
-                } else if constexpr (std::is_same_v<uint32_t, T>) {
-                    value = static_cast<uint32_t>(std::stoul(v));
-                } else if constexpr (std::is_same_v<int32_t, T>) {
-                    value = std::stoi(v);
-                } else if constexpr (std::is_same_v<uint64_t, T>) {
-                    value = std::stoull(v);
-                } else if constexpr (std::is_same_v<int64_t, T>) {
-                    value = std::stoll(v);
-                } else if constexpr (std::is_same_v<std::string, T> ||
-                                     std::is_same_v<std::string_view, T>) {
-                    value = v;
-                } else if constexpr (std::is_same_v<bool, T>) {
-                    std::istringstream(v) >> std::boolalpha >> value;
-                } else if constexpr (std::is_same_v<char, T>) {
-                    value = static_cast<char>(std::stoi(v));
-                } else if constexpr (std::is_same_v<unsigned char, T>) {
-                    value = static_cast<unsigned char>(std::stoi(v));
-                } else {
+            if constexpr (std::is_same_v<double, T> || std::is_same_v<float, T> ||
+                          std::is_same_v<uint32_t, T> || std::is_same_v<int32_t, T> ||
+                          std::is_same_v<uint64_t, T> || std::is_same_v<int64_t, T>) {
+                auto result = StringUtil::fromChars<T>(v);
+                if (!result) {
                     return false;
                 }
-                return true;
-            } catch (...) {
+                value = *result;
+            } else if constexpr (std::is_same_v<std::string, T> ||
+                                 std::is_same_v<std::string_view, T>) {
+                value = v;
+            } else if constexpr (std::is_same_v<bool, T>) {
+                std::istringstream(v) >> std::boolalpha >> value;
+            } else if constexpr (std::is_same_v<char, T>) {
+                auto result = StringUtil::fromChars<int32_t>(v);
+                if (!result) {
+                    return false;
+                }
+                value = static_cast<char>(*result);
+            } else if constexpr (std::is_same_v<unsigned char, T>) {
+                auto result = StringUtil::fromChars<uint32_t>(v);
+                if (!result) {
+                    return false;
+                }
+                value = static_cast<unsigned char>(*result);
+            } else {
                 return false;
             }
+            return true;
         }
     }
     return false;

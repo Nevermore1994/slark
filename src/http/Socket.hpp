@@ -5,8 +5,8 @@
 //
 #pragma once
 
-#include "Data.hpp"
-#include "Type.hpp"
+#include "Data.h"
+#include "Type.h"
 
 #include <cerrno>
 #include <chrono>

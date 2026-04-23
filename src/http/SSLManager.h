@@ -30,6 +30,5 @@ private:
 };
 
 } // namespace slark::http
-namespace slark::http
 
 #endif

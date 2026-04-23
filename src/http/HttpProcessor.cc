@@ -3,31 +3,31 @@
 // Slark HttpProcessor
 // Copyright (c) 2025 Nevermore All rights reserved.
 //
-#include "HttpProcessor.hpp"
+#include "HttpProcessor.h"
 
 #include "Clock.h"
-#include "ConnectionPool.hpp"
+#include "ConnectionPool.h"
 #include "CoroutineScheduler.hpp"
-#include "HttpResponseParser.hpp"
+#include "HttpResponseParser.h"
 #include "HttpUtil.hpp"
-#include "Url.hpp"
+#include "Url.h"
 
 namespace slark::http {
 
 namespace {
 
-ResultCode mapDataErrorToResultCode(DataError error) noexcept {
+ResultCode mapErrorToResultCode(Error error) noexcept {
     switch (error) {
-        case DataError::ConnectionTimeout:
+        case Error::ConnectionTimeout:
             return ResultCode::Timeout;
-        case DataError::Cancelled:
+        case Error::Cancelled:
             return ResultCode::Cancelled;
-        case DataError::ConnectionReset:
-        case DataError::ConnectionRefused:
-        case DataError::BrokenPipe:
-        case DataError::SocketClosed:
-        case DataError::SocketError:
-        case DataError::ConnectionFailed:
+        case Error::ConnectionReset:
+        case Error::ConnectionRefused:
+        case Error::BrokenPipe:
+        case Error::SocketClosed:
+        case Error::SocketError:
+        case Error::ConnectionFailed:
             return ResultCode::Disconnected;
         default:
             return ResultCode::Failed;
@@ -68,7 +68,7 @@ Coroutine<ResultCode> HttpProcessor::sendRequestBody(PooledConnection& conn,
         if (token.isCancelled()) {
             co_return ResultCode::Cancelled;
         }
-        co_return mapDataErrorToResultCode(bodyResult.error());
+        co_return mapErrorToResultCode(bodyResult.error());
     }
     co_return ResultCode::Success;
 }
@@ -154,7 +154,7 @@ Coroutine<ResponseResult> HttpProcessor::executeSingle(const RequestInfo& reques
         if (token.isCancelled()) {
             co_return std::unexpected(ErrorInfo{ResultCode::Cancelled, 0});
         }
-        co_return std::unexpected(ErrorInfo{mapDataErrorToResultCode(sendResult.error()), 0});
+        co_return std::unexpected(ErrorInfo{mapErrorToResultCode(sendResult.error()), 0});
     }
 
     // 发送 body
@@ -283,7 +283,7 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
             co_yield StreamChunk::makeError(ErrorInfo{ResultCode::Cancelled, 0});
             co_return;
         }
-        co_yield StreamChunk::makeError(ErrorInfo{mapDataErrorToResultCode(sendResult.error()), 0});
+        co_yield StreamChunk::makeError(ErrorInfo{mapErrorToResultCode(sendResult.error()), 0});
         co_return;
     }
 
@@ -301,8 +301,7 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
                 co_yield StreamChunk::makeError(ErrorInfo{ResultCode::Cancelled, 0});
                 co_return;
             }
-            co_yield StreamChunk::makeError(
-                ErrorInfo{mapDataErrorToResultCode(bodyResult.error()), 0});
+            co_yield StreamChunk::makeError(ErrorInfo{mapErrorToResultCode(bodyResult.error()), 0});
             co_return;
         }
     }
@@ -388,7 +387,7 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
             }
             // 区分超时和其他错误：超时不应被当作 EOF
             auto error = readResult.error();
-            if (error == DataError::ConnectionTimeout) {
+            if (error == Error::ConnectionTimeout) {
                 // 区分是空闲超时还是总时限超时
                 if (overallDeadline.isExpired()) {
                     perf.transport.timeoutSource = TimeoutSource::ReadOverall;

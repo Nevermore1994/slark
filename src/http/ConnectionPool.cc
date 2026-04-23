@@ -3,10 +3,10 @@
 // Slark ConnectionPool
 // Copyright (c) 2025 Nevermore All rights reserved.
 //
-#include "ConnectionPool.hpp"
+#include "ConnectionPool.h"
 
 #include "HttpUtil.hpp"
-#include "IOContext.hpp"
+#include "IOContext.h"
 #include "Log.hpp"
 
 #include <netdb.h>
@@ -377,11 +377,16 @@ void ConnectionPool::tryScheduleCleanup() {
         return; // 另一个线程正在执行清理
     }
 
-    // 异步调度清理任务，避免阻塞请求线程
-    std::thread([this] {
-        cleanupIdleConnections();
+    // 复用 cleanupThread_ 管理 jthread，避免 detach 导致 UAF
+    if (cleanupThread_ && cleanupThread_->joinable()) {
+        cleanupThread_->join();
+    }
+    cleanupThread_.emplace([this](std::stop_token st) {
+        if (!st.stop_requested()) {
+            cleanupIdleConnections();
+        }
         cleanupInProgress_.store(false);
-    }).detach();
+    });
 }
 
 PooledConnection::PooledConnection(std::unique_ptr<IAsyncSocket> socket,

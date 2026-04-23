@@ -3,11 +3,10 @@
 // Slark HttpResponseParser
 // Copyright (c) 2026 Nevermore All rights reserved.
 //
-#include "HttpResponseParser.hpp"
+#include "HttpResponseParser.h"
 
+#include "DataView.hpp"
 #include "Time.hpp"
-
-#include <charconv>
 
 namespace slark::http {
 
@@ -72,6 +71,7 @@ void HttpResponseParser::reset() noexcept {
     bodyReceived_ = 0;
     currentChunkSize_ = 0;
     chunkBytesRead_ = 0;
+    trailerBytesRead_ = 0;
 }
 
 void HttpResponseParser::processStatusLine() {
@@ -106,15 +106,13 @@ void HttpResponseParser::processStatusLine() {
     auto statusCodeStr = afterVersion.substr(0, secondSpace);
     auto reasonPhrase = afterVersion.substr(secondSpace + 1);
 
-    int32_t code = 0;
-    auto [ptr, ec] =
-        std::from_chars(statusCodeStr.data(), statusCodeStr.data() + statusCodeStr.size(), code);
-    if (ec != std::errc{}) {
+    auto codeResult = StringUtil::fromChars<int32_t>(statusCodeStr);
+    if (!codeResult) {
         fail(ResultCode::Failed);
         return;
     }
 
-    statusCode_ = static_cast<HttpStatusCode>(code);
+    statusCode_ = static_cast<HttpStatusCode>(*codeResult);
     consume(pos + kCRLF.size());
     state_ = State::Headers;
 
@@ -169,13 +167,12 @@ void HttpResponseParser::processHeaders() {
     } else {
         auto contentLengthStr = findHeader("Content-Length");
         if (!contentLengthStr.empty()) {
-            int64_t cl = 0;
-            auto [ptr, ec] = std::from_chars(contentLengthStr.data(),
-                                             contentLengthStr.data() + contentLengthStr.size(),
-                                             cl);
-            if (ec == std::errc{} && cl >= 0) {
-                contentLength_ = cl;
+            auto clResult = StringUtil::fromChars<int64_t>(contentLengthStr);
+            if (!clResult || *clResult < 0) {
+                fail(ResultCode::Failed);
+                return;
             }
+            contentLength_ = *clResult;
         }
 
         // RFC 7230: 特定状态码和请求方法无 body
@@ -232,8 +229,8 @@ void HttpResponseParser::processBodyFixed() {
 void HttpResponseParser::processChunkSize() {
     auto data = readableData();
 
-    // 跳过 chunk 间的 CRLF
-    while (data.starts_with(kCRLF)) {
+    // 只跳一个 chunk 间的 CRLF（RFC 7230 §4.1 严格限定）
+    if (data.starts_with(kCRLF)) {
         consume(kCRLF.size());
         data = readableData();
     }
@@ -251,13 +248,12 @@ void HttpResponseParser::processChunkSize() {
         sizeStr = sizeStr.substr(0, semicolonPos);
     }
 
-    int64_t chunkSize = 0;
-    auto [ptr, ec] =
-        std::from_chars(sizeStr.data(), sizeStr.data() + sizeStr.size(), chunkSize, 16);
-    if (ec != std::errc{}) {
+    auto chunkSizeResult = StringUtil::fromChars<int64_t>(sizeStr, 16);
+    if (!chunkSizeResult) {
         fail(ResultCode::ChunkSizeError);
         return;
     }
+    auto chunkSize = *chunkSizeResult;
 
     consume(pos + kCRLF.size());
 
@@ -300,9 +296,17 @@ void HttpResponseParser::processChunkData() {
 
 void HttpResponseParser::processChunkTrailer() {
     auto data = readableData();
+
+    // 累计长度超限时直接 fail，防止 OOM
+    if (trailerBytesRead_ + data.size() > kMaxTrailerSize) {
+        fail(ResultCode::Failed);
+        return;
+    }
+
     // trailer 以空行 CRLF 结束
     auto pos = data.find(kCRLF);
     if (pos == std::string_view::npos) {
+        trailerBytesRead_ += data.size();
         return;
     }
 
@@ -312,7 +316,9 @@ void HttpResponseParser::processChunkTrailer() {
         complete();
     } else {
         // 跳过 trailer header
-        consume(pos + kCRLF.size());
+        auto consumed = pos + kCRLF.size();
+        trailerBytesRead_ += consumed;
+        consume(consumed);
     }
 }
 

@@ -5,13 +5,13 @@
 //
 #pragma once
 
-#include "CancellationToken.hpp"
+#include "CancellationToken.h"
 #include "Coroutine.hpp"
 #include "CoroutineScheduler.hpp"
 #include "Log.hpp"
 #include "NonCopyable.h"
 #include "ThreadPool.hpp"
-#include "Type.hpp"
+#include "Type.h"
 
 #include <atomic>
 #include <condition_variable>
