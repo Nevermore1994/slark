@@ -10,7 +10,7 @@ namespace slark::JNI {
 
 namespace {
 
-清理JNI异常状态
+// 清理 JNI 异常状态
 void clearException(JNIEnv* env) noexcept {
     if (env && env->ExceptionCheck()) {
         env->ExceptionDescribe();
@@ -18,9 +18,10 @@ void clearException(JNIEnv* env) noexcept {
     }
 }
 
-构建方法缓存key std::string makeMethodKey(std::string_view classTag,
-                                          std::string_view methodName,
-                                          std::string_view signature) {
+// 构建方法缓存 key
+std::string makeMethodKey(std::string_view classTag,
+                          std::string_view methodName,
+                          std::string_view signature) {
     std::string key;
     key.reserve(classTag.size() + methodName.size() + signature.size());
     key.append(classTag).append(methodName).append(signature);
@@ -29,10 +30,7 @@ void clearException(JNIEnv* env) noexcept {
 
 } // namespace
 
-namespace
-
-    ClassReference
-    JNICache::getClass(JNIEnv* env, std::string_view className) noexcept {
+ClassReference JNICache::getClass(JNIEnv* env, std::string_view className) noexcept {
     if (!env) {
         return {env, nullptr};
     }
@@ -41,7 +39,8 @@ namespace
 
     std::string key(className);
 
-    先用读锁查找 {
+    // 先用读锁查找
+    {
         std::shared_lock lock(classCacheMutex_);
         if (auto it = classCache_.find(key); it != classCache_.end()) {
             if (auto cls = static_cast<jclass>(env->NewLocalRef(it->second.classRef))) {
@@ -50,18 +49,19 @@ namespace
         }
     }
 
-    写锁：检查并更新 {
+    // 写锁：检查并更新
+    {
         std::unique_lock lock(classCacheMutex_);
         if (auto it = classCache_.find(key); it != classCache_.end()) {
             if (auto cls = static_cast<jclass>(env->NewLocalRef(it->second.classRef))) {
                 return {env, cls, className};
             }
-            弱引用已失效，清理旧条目
+            // 弱引用已失效，清理旧条目
             env->DeleteWeakGlobalRef(it->second.classRef);
             classCache_.erase(it);
         }
 
-        查找类并缓存
+        // 查找类并缓存
         if (auto cls = env->FindClass(className.data())) {
             auto weakRef = env->NewWeakGlobalRef(cls);
             classCache_.emplace(std::move(key), ClassInfo{weakRef});
@@ -70,7 +70,7 @@ namespace
     }
 
     return {env, nullptr};
-} // namespace JNICache::getClass(JNIEnv*env,std::string_viewclassName)
+}
 
 MethodReference JNICache::findMethod(const ClassReference& clazz, const std::string& key) noexcept {
     auto env = clazz.env();
@@ -91,18 +91,18 @@ MethodReference JNICache::updateMethod(const ClassReference& clazz,
     auto env = clazz.env();
     std::unique_lock lock(methodCacheMutex_);
 
-    检查是否已存在且有效
+    // 检查是否已存在且有效
     if (auto it = methodCache_.find(key); it != methodCache_.end()) {
         ClassReference oldClass(env, static_cast<jclass>(env->NewLocalRef(it->second.classRef)));
         if (oldClass && env->IsSameObject(oldClass.get(), clazz.get())) {
             return {env, it->second.methodId};
         }
-        清理失效条目
+        // 清理失效条目
         env->DeleteWeakGlobalRef(it->second.classRef);
         methodCache_.erase(it);
     }
 
-    添加新条目
+    // 添加新条目
     if (methodId) {
         methodCache_.emplace(key, MethodInfo{methodId, env->NewWeakGlobalRef(clazz.get())});
     }
@@ -160,7 +160,8 @@ ObjectReference JNICache::getEnumField(JNIEnv* env,
     key.reserve(className.size() + fieldName.size() + 1);
     key.append(className).append(1, '.').append(fieldName);
 
-    先用读锁查找缓存 {
+    // 先用读锁查找缓存
+    {
         std::shared_lock lock(enumFieldCacheMutex_);
         if (auto it = enumFieldCache_.find(key); it != enumFieldCache_.end()) {
             if (auto local = env->NewLocalRef(it->second.fieldRef)) {
@@ -169,7 +170,7 @@ ObjectReference JNICache::getEnumField(JNIEnv* env,
         }
     }
 
-    未命中，查找并写入缓存
+    // 未命中，查找并写入缓存
     auto enumClass = getClass(env, className);
     if (!enumClass) {
         return {env, nullptr, fieldName};
@@ -186,7 +187,8 @@ ObjectReference JNICache::getEnumField(JNIEnv* env,
         return {env, nullptr, fieldName};
     }
 
-    写入缓存（weak global ref） {
+    // 写入缓存（weak global ref）
+    {
         std::unique_lock lock(enumFieldCacheMutex_);
         if (auto it = enumFieldCache_.find(key); it == enumFieldCache_.end()) {
             enumFieldCache_.emplace(key, EnumFieldInfo{env->NewWeakGlobalRef(field)});
@@ -204,8 +206,8 @@ void JNICache::clear() {
 
     JNIEnv* env = nullptr;
 
-    JNI_OnUnload 在已 attach 的线程中调用，无需临时 attach /
-        detach if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK || !env) {
+    // JNI_OnUnload 在已 attach 的线程中调用，无需临时 attach / detach
+    if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK || !env) {
         return;
     }
 
@@ -233,4 +235,3 @@ void JNICache::clear() {
 }
 
 } // namespace slark::JNI
-namespace slark::JNI

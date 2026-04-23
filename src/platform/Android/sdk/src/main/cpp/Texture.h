@@ -5,11 +5,12 @@
 #pragma once
 
 #include "BitMap.h"
+
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
-#include <vector>
 #include <mutex>
+#include <vector>
 
 namespace slark {
 
@@ -20,10 +21,12 @@ struct TextureConfig {
         GLint s = GL_CLAMP_TO_EDGE;
         GLint t = GL_CLAMP_TO_EDGE;
     };
+
     struct Filter {
         GLint min = GL_LINEAR;
         GLint mag = GL_LINEAR;
     };
+
     Warp warp{};
     Filter filter{};
     GLint internalFormat = GL_RGBA;
@@ -33,12 +36,7 @@ struct TextureConfig {
 
 class Texture {
 public:
-    Texture(
-        uint32_t width,
-        uint32_t height,
-        TextureConfig config = {},
-        DataPtr data = nullptr
-    );
+    Texture(uint32_t width, uint32_t height, TextureConfig config = {}, DataPtr data = nullptr);
 
     ~Texture();
 
@@ -56,7 +54,7 @@ public:
         return textureId_;
     }
 
-    [[nodiscard]] const TextureConfig &config() const noexcept {
+    [[nodiscard]] const TextureConfig& config() const noexcept {
         return config_;
     }
 
@@ -65,17 +63,11 @@ public:
     }
 
     void bind() const noexcept {
-        glBindTexture(
-            GL_TEXTURE_2D,
-            textureId_
-        );
+        glBindTexture(GL_TEXTURE_2D, textureId_);
     }
 
     void unbind() const noexcept {
-        glBindTexture(
-            GL_TEXTURE_2D,
-            0
-        );
+        glBindTexture(GL_TEXTURE_2D, 0);
     }
 
     void setManager(std::weak_ptr<TexturePool> manager) noexcept {

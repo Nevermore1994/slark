@@ -9,9 +9,10 @@
 
 package com.slark.sdk
 
+import android.view.Choreographer
 import android.view.Surface
 
-/ OpenGL-backed render thread implementing IRenderThread
+// OpenGL-backed render thread implementing IRenderThread
 class GLRenderThread(
     private val surface: Surface,
     private var width: Int,
@@ -29,6 +30,18 @@ class GLRenderThread(
     @Volatile
     private var isRebuildingSurface = false
 
+    // Choreographer 驱动 VSync 节拍，通知 C++ 侧拉帧
+    private val vsyncCallback = object : Choreographer.FrameCallback {
+        override fun doFrame(frameTimeNanos: Long) {
+            if (!running) return
+            if (playerId.isNotEmpty()) {
+                onVSync(playerId)
+            }
+            // 重新注册，持续接收下一帧 VSync
+            Choreographer.getInstance().postFrameCallback(this)
+        }
+    }
+
     override fun run() {
         if (playerId.isEmpty()) {
             SlarkLog.e(LOG_TAG, "playerId is empty")
@@ -39,6 +52,10 @@ class GLRenderThread(
             return
         }
         renderer.setSurfaceSize(width, height)
+        // 在 GL 线程启动后，向主线程 Choreographer 注册 VSync 回调
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            Choreographer.getInstance().postFrameCallback(vsyncCallback)
+        }
         while (running) {
             synchronized(lock) {
                 if (!hasRenderRequest) {
@@ -60,6 +77,10 @@ class GLRenderThread(
         renderer.release()
         destroyEGLContext(playerId)
         surface.release()
+        // 确保 VSync 回调已取消
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            Choreographer.getInstance().removeFrameCallback(vsyncCallback)
+        }
     }
 
     override fun render(textureId: Int, width: Int, height: Int) {
@@ -84,6 +105,10 @@ class GLRenderThread(
 
     override fun shutdown() {
         running = false
+        // 立即取消 VSync 回调，避免空转
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            Choreographer.getInstance().removeFrameCallback(vsyncCallback)
+        }
         synchronized(lock) { lock.notify() }
     }
 
@@ -121,6 +146,8 @@ class GLRenderThread(
     private external fun swapGLBuffers(playerId: String, textureId: Int): Boolean
     private external fun getBackupTextureId(playerId: String): RenderTexture?
     private external fun rebuildSurface(playerId: String, surface: Surface)
+    /// Notify C++ VideoRender::onVSync() on each VSync beat.
+    private external fun onVSync(playerId: String)
 
     companion object {
         const val LOG_TAG = "GLRenderThread"

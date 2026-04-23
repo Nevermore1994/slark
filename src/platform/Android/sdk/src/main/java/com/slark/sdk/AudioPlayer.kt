@@ -56,6 +56,7 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
     private var lastRawPosition: Int = 0
     private var wrapCount: Long = 0
     private var isCompleted = false
+    private val audioTimestamp = android.media.AudioTimestamp()
     private var audioJob: Job? = null
     private var writeSize: Long = 0
     private val bytesPerFrame = channelCount * 2 16 bit pcm
@@ -263,6 +264,23 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
         }
     }
 
+    // 使用 AudioTrack.getTimestamp() 获取硬件级精确播放时间（µs）
+    // 返回值：已播出的媒体时间（µs），失败时回退到 getPlaybackPositionInUs()
+    fun getTimestampInUs(): Long {
+        lock.withLock {
+            val track = audioTrack ?: return 0L
+            return if (track.getTimestamp(audioTimestamp)) {
+                // framePosition: 硬件已播出帧数；nanoTime: 对应系统时间（ns）
+                val elapsedNs = System.nanoTime() - audioTimestamp.nanoTime
+                val elapsedUs = elapsedNs / 1000L
+                val frameUs = audioTimestamp.framePosition * 1000000L / sampleRate
+                frameUs + elapsedUs
+            } else {
+                getPlaybackPositionInUs()
+            }
+        }
+    }
+
     external fun requestAudioData(playerId: String, requestBuffer: ByteBuffer): Int
 
     companion object {
@@ -285,7 +303,7 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
                 SlarkLog.e(LOG_TAG,"not found player")
                 return 0
             }
-            return players[playerId]?.getPlaybackPositionInUs() ?: 0L
+            return players[playerId]?.getTimestampInUs() ?: 0L
         }
 
         @JvmStatic

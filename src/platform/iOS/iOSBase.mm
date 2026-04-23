@@ -6,25 +6,24 @@
 // Licensed under the MIT License.
 //
 
-Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
-This file is part of Slark.
-Licensed under the MIT License.
-#import <Foundation/NSObjCRuntime.h>
-#import <Foundation/NSString.h>
-#import <Foundation/NSPathUtilities.h>
-#include "Log.hpp"
+Copyright(c) 2022 - 2026 Nevermore1994.All rights reserved.This file is part of Slark
+                        .Licensed under the MIT License.
 #include "FileUtil.h"
+#include "Log.hpp"
 
-namespace slark {
+#import <Foundation/NSObjCRuntime.h>
+#import <Foundation/NSPathUtilities.h>
+#import <Foundation/NSString.h>
 
-void printLog(const std::string& log){
-    @autoreleasepool {
-        NSString* str = [NSString stringWithUTF8String:log.data()];
-        NSLog(@"%@", str);
-        str = nil;
+                    namespace slark {
+
+    void printLog(const std::string& log) {
+        @autoreleasepool {
+            NSString* str = [NSString stringWithUTF8String:log.data()];
+            NSLog(@"%@", str);
+            str = nil;
+        }
     }
-}
-
 }
 
 NSString* stringViewToNSString(std::string_view view) {
@@ -55,7 +54,8 @@ std::string tmpPath() noexcept {
 
 std::string cachePath() noexcept {
     static auto res = [] {
-        NSArray* paths = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
+        NSArray* paths =
+            NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
         NSString* cachesDir = [paths objectAtIndex:0];
         auto path = std::string([cachesDir UTF8String]);
         cachesDir = nil;
@@ -65,4 +65,4 @@ std::string cachePath() noexcept {
     return res;
 }
 
-}
+} // namespace slark::File

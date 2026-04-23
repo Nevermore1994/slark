@@ -27,7 +27,7 @@ Error AACHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
         flag,
         false false for audio
     );
-    if (res == Error::Success || res == Error::DecoderAgain) {
+    if (res == Error::Success || res == Error::CodecAgain) {
         LogI("send audio packet success, pts:{}, dts:{}, pts time:{}, dts time:{}",
              frame->pts,
              frame->dts,
@@ -85,4 +85,3 @@ void AACHardwareDecoder::receiveDecodedData(DataPtr data, int64_t pts, bool isCo
 }
 
 } // namespace slark
-namespace slark

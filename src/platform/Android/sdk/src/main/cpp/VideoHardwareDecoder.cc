@@ -19,7 +19,7 @@ Error VideoHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
     assert(frame && frame->isVideo());
     if (!isOpen_) {
         LogE("decoder is not open");
-        return Error::DecoderNotStarted;
+        return Error::CodecNotStarted;
     }
     if (mode_ == DecodeMode::ByteBuffer) {
         return decodeByteBufferMode(frame);
@@ -39,7 +39,7 @@ Error VideoHardwareDecoder::sendPacket(AVFrameRefPtr& frame) noexcept {
     auto inputPts = int64_t(frame->ptsTime() * 1000000);
     convert to microseconds auto res =
         NativeHardwareDecoder::sendPacket(decoderId_, frame->data, inputPts, flag);
-    if (res != Error::Success && res != Error::DecoderAgain) {
+    if (res != Error::Success && res != Error::CodecAgain) {
         LogE("send video packet failed, {}", toString(res));
     } else {
         LogI("send video packet success:{}, pts:{}, dts:{}, isDiscard:{}",
@@ -57,7 +57,7 @@ Error VideoHardwareDecoder::sendPacket(AVFrameRefPtr& frame) noexcept {
 Error VideoHardwareDecoder::decodeByteBufferMode(AVFrameRefPtr& frame) noexcept {
     auto pts = frame->pts;
     auto res = sendPacket(frame);
-    if (res != Error::Success && res != Error::DecoderAgain) {
+    if (res != Error::Success && res != Error::CodecAgain) {
         LogE("send packet failed, {}", toString(res));
     } else {
         LogI("send video packet success, pts:{}, dts:{}", pts, frame->dts);
@@ -92,7 +92,7 @@ void VideoHardwareDecoder::receiveDecodedData(DataPtr data,
 Error VideoHardwareDecoder::decodeTextureMode(AVFrameRefPtr& frame) noexcept {
     if (!resource_->isValid()) {
         LogE("resource is invalid");
-        return Error::DecoderNotProcessed;
+        return Error::CodecNotProcessed;
     }
     resource_->attachContext(surface_.get());
     auto res = sendPacket(frame);
@@ -253,4 +253,3 @@ bool VideoHardwareDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept 
 }
 
 } // namespace slark
-namespace slark

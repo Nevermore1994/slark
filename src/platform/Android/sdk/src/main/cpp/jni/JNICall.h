@@ -17,19 +17,21 @@
 
 namespace slark::JNI {
 
-运行时签名的 jobject 参数包装器 用于参数类型为具体 Java 类时，携带精确签名
-    可选持有引用的所有权（RAII），避免.detach() 导致的 local ref 泄漏 struct JObjectWithSig {
+// 运行时签名的 jobject 参数包装器
+// 用于参数类型为具体 Java 类时，携带精确签名
+// 可选持有引用的所有权（RAII），避免 .detach() 导致的 local ref 泄漏
+struct JObjectWithSig {
     jobject obj;
     std::string_view sig;
 
     JObjectWithSig(jobject o, std::string_view s) noexcept : obj(o), sig(s) {}
 
-    从 StringReference 构造，持有其所有权（RAII） JObjectWithSig(StringReference ref,
-                                                                 std::string_view s) noexcept
+    // 从 StringReference 构造，持有其所有权（RAII）
+    JObjectWithSig(StringReference ref, std::string_view s) noexcept
         : obj(ref.get()), sig(s), ownedStrRef_(std::move(ref)) {}
 
-    从 ObjectReference 构造，持有其所有权（RAII） JObjectWithSig(ObjectReference ref,
-                                                                 std::string_view s) noexcept
+    // 从 ObjectReference 构造，持有其所有权（RAII）
+    JObjectWithSig(ObjectReference ref, std::string_view s) noexcept
         : obj(ref.get()), sig(s), ownedObjRef_(std::move(ref)) {}
 
     explicit operator bool() const noexcept {
@@ -41,15 +43,15 @@ private:
     ObjectReference ownedObjRef_;
 };
 
-运行时返回值签名
-
-用于返回值为具体 Java 类时，指定精确签名 struct ReturnSig {
+// 运行时返回值签名
+// 用于返回值为具体 Java 类时，指定精确签名
+struct ReturnSig {
     std::string_view sig;
 
     explicit ReturnSig(std::string_view s) noexcept : sig(s) {}
 };
 
-编译期签名推导
+// 编译期签名推导
 template <typename T>
 constexpr std::string_view sigOf() {
     using D = std::decay_t<T>;
@@ -74,8 +76,9 @@ constexpr std::string_view sigOf() {
     } else if constexpr (std::is_same_v<D, jstring>) {
         return Sig::String;
     } else if constexpr (std::is_same_v<D, JObjectWithSig>) {
-        运行时签名，无法在编译期返回，此分支不应被 methodSig()
-            调用 实际签名由 methodSigWithRuntime() 处理 return "Ljava/lang/Object;";
+        // 运行时签名，无法在编译期返回，此分支不应被 methodSig() 调用
+        // 实际签名由 methodSigRuntime() 处理
+        return "Ljava/lang/Object;";
     } else {
         static_assert(!sizeof(D), "sigOf<T>: unknown type");
         return "";
@@ -87,7 +90,8 @@ std::string methodSig() {
     return makeSignature(sigOf<Args>()...);
 }
 
-从参数列表中提取每个参数的签名（支持 JObjectWithSig 的运行时签名） template <typename T>
+// 从参数列表中提取每个参数的签名（支持 JObjectWithSig 的运行时签名）
+template <typename T>
 std::string sigOfArg(const T& v) {
     using D = std::decay_t<T>;
     if constexpr (std::is_same_v<D, JObjectWithSig>) {
@@ -102,9 +106,9 @@ std::string methodSigRuntime(const Args&... args) {
     return makeSignature(sigOf<R>(), sigOfArg(args)...);
 }
 
-参数转换：基础类型直接转，string 类型返回 StringReference（RAII 管理 local
-    ref） template <typename T>
-    auto toArg(JNIEnv* env, T&& v) {
+// 参数转换：基础类型直接转，string 类型返回 StringReference（RAII 管理 local ref）
+template <typename T>
+auto toArg(JNIEnv* env, T&& v) {
     using D = std::decay_t<T>;
     if constexpr (std::is_same_v<D, bool>) {
         return jboolean(v ? JNI_TRUE : JNI_FALSE);
@@ -125,7 +129,8 @@ std::string methodSigRuntime(const Args&... args) {
     }
 }
 
-从转换结果中提取实际传给 JNI 的值（StringReference 需要.get()） template <typename T>
+// 从转换结果中提取实际传给 JNI 的值（StringReference 需要 .get()）
+template <typename T>
 auto argValue(T&& v) {
     using D = std::decay_t<T>;
     if constexpr (std::is_same_v<D, StringReference>) {
@@ -137,8 +142,9 @@ auto argValue(T&& v) {
 
 class JNICall {
 public:
-    调用静态方法
-    参数中若含有 JObjectWithSig，会自动使用其携带的精确签名 template <typename R, typename... Args>
+    // 调用静态方法
+    // 参数中若含有 JObjectWithSig，会自动使用其携带的精确签名
+    template <typename R, typename... Args>
     static auto callStatic(JNIEnv* env,
                            std::string_view cls,
                            std::string_view name,
@@ -159,14 +165,14 @@ public:
                  : emptyResult<R>();
     }
 
-    调用静态方法（指定精确返回类型签名）
-    返回值为具体 Java 类时必须传入 ReturnSig，参数中若含有 JObjectWithSig
-        同样兼容 template <typename R, typename... Args>
-        static auto callStatic(JNIEnv* env,
-                               std::string_view cls,
-                               std::string_view name,
-                               ReturnSig returnSig,
-                               Args&&... args) {
+    // 调用静态方法（指定精确返回类型签名）
+    // 返回值为具体 Java 类时必须传入 ReturnSig，参数中若含有 JObjectWithSig 同样兼容
+    template <typename R, typename... Args>
+    static auto callStatic(JNIEnv* env,
+                           std::string_view cls,
+                           std::string_view name,
+                           ReturnSig returnSig,
+                           Args&&... args) {
         auto c = JNICache::instance().getClass(env, cls);
         if (!c) {
             return emptyResult<R>();
@@ -177,8 +183,9 @@ public:
                  : emptyResult<R>();
     }
 
-    调用实例方法
-    参数中若含有 JObjectWithSig，会自动使用其携带的精确签名 template <typename R, typename... Args>
+    // 调用实例方法
+    // 参数中若含有 JObjectWithSig，会自动使用其携带的精确签名
+    template <typename R, typename... Args>
     static auto call(JNIEnv* env,
                      jobject obj,
                      std::string_view cls,
@@ -199,15 +206,15 @@ public:
         return m ? invoke<R>(env, obj, m.get(), std::forward<Args>(args)...) : emptyResult<R>();
     }
 
-    调用实例方法（指定精确返回类型签名）
-    返回值为具体 Java 类时必须传入 ReturnSig，参数中若含有 JObjectWithSig
-        同样兼容 template <typename R, typename... Args>
-        static auto call(JNIEnv* env,
-                         jobject obj,
-                         std::string_view cls,
-                         std::string_view name,
-                         ReturnSig returnSig,
-                         Args&&... args) {
+    // 调用实例方法（指定精确返回类型签名）
+    // 返回值为具体 Java 类时必须传入 ReturnSig，参数中若含有 JObjectWithSig 同样兼容
+    template <typename R, typename... Args>
+    static auto call(JNIEnv* env,
+                     jobject obj,
+                     std::string_view cls,
+                     std::string_view name,
+                     ReturnSig returnSig,
+                     Args&&... args) {
         auto c = JNICache::instance().getClass(env, cls);
         if (!c) {
             return emptyResult<R>();
@@ -232,13 +239,13 @@ public:
             env->NewObject(c.get(), m.get(), argValue(toArg(env, std::forward<Args>(args)))...)};
     }
 
-    获取静态字段（基础类型返回 optional<R>，jobject /
-        jbyteArray 等对象类型返回 ObjectReference） sig：字段的
-            JNI 类型签名，对象类型必须传入真实签名（如 "[B"），基础类型可省略 template <typename R>
-            static auto getStaticField(JNIEnv* env,
-                                       std::string_view cls,
-                                       std::string_view name,
-                                       std::string_view sig = "") {
+    // 获取静态字段（基础类型返回 optional<R>，jobject / jbyteArray 等对象类型返回 ObjectReference）
+    // sig：字段的 JNI 类型签名，对象类型必须传入真实签名（如 "[B"），基础类型可省略
+    template <typename R>
+    static auto getStaticField(JNIEnv* env,
+                               std::string_view cls,
+                               std::string_view name,
+                               std::string_view sig = "") {
         auto c = JNICache::instance().getClass(env, cls);
         if constexpr (std::is_same_v<R, jobject>) {
             if (!c) {
@@ -266,14 +273,14 @@ public:
         }
     }
 
-    获取实例字段（基础类型返回 optional<R>，jobject /
-        jbyteArray 等对象类型返回 ObjectReference） sig：字段的
-            JNI 类型签名，对象类型必须传入真实签名（如 "[B"），基础类型可省略 template <typename R>
-            static auto getField(JNIEnv* env,
-                                 jobject obj,
-                                 std::string_view cls,
-                                 std::string_view name,
-                                 std::string_view sig = "") {
+    // 获取实例字段（基础类型返回 optional<R>，jobject / jbyteArray 等对象类型返回 ObjectReference）
+    // sig：字段的 JNI 类型签名，对象类型必须传入真实签名（如 "[B"），基础类型可省略
+    template <typename R>
+    static auto getField(JNIEnv* env,
+                         jobject obj,
+                         std::string_view cls,
+                         std::string_view name,
+                         std::string_view sig = "") {
         auto c = JNICache::instance().getClass(env, cls);
         if constexpr (std::is_same_v<R, jobject>) {
             if (!c) {
@@ -306,8 +313,8 @@ private:
         if constexpr (std::is_same_v<R, void>) {
             return false;
         } else if constexpr (std::is_same_v<R, jobject>) {
-            callStatic<jobject> / call<jobject> 返回 ObjectReference，emptyResult
-                                      需保持一致 return ObjectReference(nullptr, nullptr);
+            // callStatic<jobject> / call<jobject> 返回 ObjectReference，emptyResult 需保持一致
+            return ObjectReference(nullptr, nullptr);
         } else {
             return std::optional<R>{std::nullopt};
         }
@@ -475,4 +482,3 @@ private:
 };
 
 } // namespace slark::JNI
-namespace slark::JNI

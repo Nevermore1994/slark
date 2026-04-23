@@ -4,9 +4,10 @@
 
 #pragma once
 
-#include <string>
-#include "Data.hpp"
+#include "Data.h"
 #include "DecoderConfig.h"
+
+#include <string>
 
 namespace slark {
 
@@ -17,34 +18,28 @@ enum NativeDecodeFlag {
     EndOfStream = 4,
 };
 
-enum class DecoderErrorCode: int8_t;
+enum class DecoderErrorCode : int8_t;
 
 struct NativeHardwareDecoder {
-    static std::string createVideoDecoder(
-        const std::shared_ptr<VideoDecoderConfig>& decoderConfig,
-        DecodeMode mode
-    );
+    static std::string createVideoDecoder(const std::shared_ptr<VideoDecoderConfig>& decoderConfig,
+                                          DecodeMode mode);
 
     static std::string createAudioDecoder(const std::shared_ptr<AudioDecoderConfig>& decoderConfig);
 
-    static DecoderErrorCode sendPacket(
-        std::string_view decoderId,
-        DataPtr& data,
-        int64_t pts,
-        NativeDecodeFlag flag,
-        bool isVideo = true
-    );
+    static DecoderErrorCode sendPacket(std::string_view decoderId,
+                                       DataPtr& data,
+                                       int64_t pts,
+                                       NativeDecodeFlag flag,
+                                       bool isVideo = true);
 
     static void release(std::string_view decoderId);
 
     static void flush(std::string_view decoderId);
 
-    static uint64_t requestVideoFrame(
-        std::string_view decoderId,
-        uint64_t waitTime,
-        uint32_t width,
-        uint32_t height
-    );
+    static uint64_t requestVideoFrame(std::string_view decoderId,
+                                      uint64_t waitTime,
+                                      uint32_t width,
+                                      uint32_t height);
 };
 
-}
+} // namespace slark

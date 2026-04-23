@@ -11,7 +11,7 @@ package com.slark.sdk
 
 import android.view.Surface
 
-/ Abstraction for render threads supporting different graphics backends
+// Abstraction for render threads supporting different graphics backends
 interface IRenderThread {
     var playerId: String
     fun start()
@@ -23,7 +23,7 @@ interface IRenderThread {
     fun rebuildSurface()
 }
 
-/ Factory for creating render threads based on graphics backend
+// Factory for creating render threads based on graphics backend
 object RenderThreadFactory {
     fun create(
         backend: GraphicsBackend,

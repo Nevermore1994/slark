@@ -3,8 +3,10 @@
 //
 
 #include "NativeDecoderManager.h"
-#include <utility>
+
 #include "NativeHardwareDecoder.h"
+
+#include <utility>
 
 namespace slark {
 
@@ -22,9 +24,8 @@ void NativeDecoder::close() noexcept {
     }
     NativeHardwareDecoder::release(decoderId_);
     NativeDecoderManager::shareInstance().remove(decoderId_);
-    LogI("release video decoder:{}",
-         decoderId_);
+    LogI("release video decoder:{}", decoderId_);
     decoderId_.clear();
 }
 
-}
+} // namespace slark

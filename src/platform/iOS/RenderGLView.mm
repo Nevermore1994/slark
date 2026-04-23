@@ -6,11 +6,11 @@
 // Licensed under the MIT License.
 //
 
-#import "RenderGLView.hpp"
+#import "RenderGLView.h"
 
 #include "GLProgram.h"
 #include "GLShader.h"
-#include "video/VideoInfo.h"
+#include "VideoInfo.h"
 
 #import <AVFoundation/AVUtilities.h>
 #import <OpenGLES/ES2/gl.h>
@@ -30,7 +30,8 @@ class GLProgram;
 
 using namespace slark;
 
-Simplified VideoRender implementation struct VideoRender : public IVideoRender {
+// Simplified VideoRender implementation
+struct VideoRender : public IVideoRender {
     void notifyVideoInfo(std::shared_ptr<VideoInfo> videoInfo) noexcept override {
         if (notifyVideoInfoFunc) {
             notifyVideoInfoFunc(videoInfo);
@@ -57,12 +58,8 @@ Simplified VideoRender implementation struct VideoRender : public IVideoRender {
         }
     }
 
-    void pushVideoFrameRender(AVFrameRefPtr frame) noexcept override {
-        if (pushVideoFrameRenderFunc && frame) {
-            auto* opaque = frame->opaque;
-            frame->opaque = nullptr;
-            pushVideoFrameRenderFunc(opaque);
-        }
+    void pushVideoFrameRender(AVFrameRefPtr /*frame*/) noexcept override {
+        // pull 模式下由 CADisplayLink 主动拉取，不使用 push 路径
     }
 
     void renderEnd() noexcept override {
@@ -89,10 +86,10 @@ Simplified VideoRender implementation struct VideoRender : public IVideoRender {
     std::function<void(void)> startFunc;
     std::function<void(void)> pauseFunc;
     std::function<void(void)> notifyRenderInfoFunc;
-    std::function<void(void*)> pushVideoFrameRenderFunc;
 };
 
-Uniform and attribute indices enum {
+// Uniform and attribute indices
+enum {
     UNIFORM_Y,
     UNIFORM_UV,
     UNIFORM_ROTATION_ANGLE,
@@ -106,7 +103,8 @@ enum { ATTRIB_VERTEX, ATTRIB_TEXCOORD, NUM_ATTRIBUTES };
 
 GLuint attributes[NUM_ATTRIBUTES];
 
-Color conversion matrices static const GLfloat kColorConversion601VideoRange[] = {
+// Color conversion matrices
+static const GLfloat kColorConversion601VideoRange[] = {
     1.164f,
     1.164f,
     1.164f,
@@ -136,10 +134,11 @@ static const GLfloat kColorConversion709VideoRange[] = {
     const GLfloat* _preferredConversion;
     CVOpenGLESTextureCacheRef _videoTextureCache;
 
-    Simple state management std::atomic<bool> _setupComplete;
+    // Simple state management
+    std::atomic<bool> _setupComplete;
     std::atomic<bool> _isDestructing;
 
-    Texture references for cleanup
+    // Texture references for cleanup
     CVOpenGLESTextureRef _lumaTexture;
     CVOpenGLESTextureRef _chromaTexture;
     CVOpenGLESTextureRef _renderTexture;
@@ -153,9 +152,9 @@ static const GLfloat kColorConversion709VideoRange[] = {
 @property (nonatomic, assign) GLint height;
 @property (nonatomic, assign) GLuint frameBuffer;
 @property (nonatomic, assign) GLuint renderBuffer;
-@property (nonatomic, assign) CVPixelBufferRef pendingBuffer;
 @property (nonatomic, assign) CVPixelBufferRef preRenderBuffer;
-For screen rotation @property(nonatomic, assign) GLuint vertexCoordinateBuffer;
+// For screen rotation
+@property (nonatomic, assign) GLuint vertexCoordinateBuffer;
 @property (nonatomic, assign) GLuint textureCoordinateBuffer;
 @end
 
@@ -185,10 +184,7 @@ For screen rotation @property(nonatomic, assign) GLuint vertexCoordinateBuffer;
         });
     }
 
-    Clean up pixel buffers if (_pendingBuffer) {
-        CVPixelBufferRelease(_pendingBuffer);
-        _pendingBuffer = NULL;
-    }
+    // Clean up pixel buffers
     if (_preRenderBuffer) {
         CVPixelBufferRelease(_preRenderBuffer);
         _preRenderBuffer = NULL;
@@ -217,7 +213,6 @@ For screen rotation @property(nonatomic, assign) GLuint vertexCoordinateBuffer;
     _width = self.bounds.size.width * scale;
     _height = self.bounds.size.height * scale;
 
-    _pendingBuffer = NULL;
     _preRenderBuffer = NULL;
     _lumaTexture = NULL;
     _chromaTexture = NULL;
@@ -259,12 +254,7 @@ For screen rotation @property(nonatomic, assign) GLuint vertexCoordinateBuffer;
         }
     };
 
-    _videoRenderImpl->pushVideoFrameRenderFunc = [weakSelf](void* buffer) {
-        __strong __typeof(weakSelf) strongSelf = weakSelf;
-        if (strongSelf) {
-            [strongSelf pushRenderPixelBuffer:(CVPixelBufferRef)buffer];
-        }
-    };
+    // pull 模式：由 CADisplayLink 回调主动调用 requestRender() 拉取帧，无需注册 push 回调
 }
 
 - (void)setupLayer {
@@ -334,7 +324,8 @@ For screen rotation @property(nonatomic, assign) GLuint vertexCoordinateBuffer;
 
         dispatch_async(_renderQueue, ^{
             [self rebuildFramebuffer];
-            Render the last frame after screen rotation[self renderPreBufferIfNeeded];
+            // Render the last frame after screen rotation
+            [self renderPreBufferIfNeeded];
         });
     }
 }
@@ -351,22 +342,6 @@ For screen rotation @property(nonatomic, assign) GLuint vertexCoordinateBuffer;
     });
 }
 
-- (void)pushRenderPixelBuffer:(CVPixelBufferRef)pixelBuffer {
-    if (!pixelBuffer || _isDestructing.load()) {
-        return;
-    }
-
-    Replace pending buffer if (_pendingBuffer) {
-        CVPixelBufferRelease(_pendingBuffer);
-    }
-    _pendingBuffer = CVPixelBufferRetain(pixelBuffer);
-    CVPixelBufferRelease(pixelBuffer);
-
-    dispatch_async(_renderQueue, ^{
-        [self renderPendingBuffer];
-    });
-}
-
 - (void)renderFrame {
     if (!_setupComplete.load() || _isDestructing.load()) {
         return;
@@ -374,20 +349,6 @@ For screen rotation @property(nonatomic, assign) GLuint vertexCoordinateBuffer;
 
     CVPixelBufferRef buffer = _videoRenderImpl->requestRender();
     if (buffer) {
-        [self displayPixelBuffer:buffer];
-        [self saveAsPreRenderBuffer:buffer];
-        CVPixelBufferRelease(buffer);
-    }
-}
-
-- (void)renderPendingBuffer {
-    if (!_setupComplete.load() || _isDestructing.load()) {
-        return;
-    }
-
-    if (_pendingBuffer) {
-        CVPixelBufferRef buffer = _pendingBuffer;
-        _pendingBuffer = NULL;
         [self displayPixelBuffer:buffer];
         [self saveAsPreRenderBuffer:buffer];
         CVPixelBufferRelease(buffer);
@@ -425,14 +386,15 @@ For screen rotation @property(nonatomic, assign) GLuint vertexCoordinateBuffer;
 
     _context->attachContext();
 
-    Setup program _program =
-        std::make_unique<GLProgram>(GLShader::vertexShader, GLShader::fragmentShader);
+    // Setup program
+    _program = std::make_unique<GLProgram>(GLShader::vertexShader, GLShader::fragmentShader);
     if (!_program->isValid()) {
         _context->detachContext();
         return;
     }
 
-    Get locations auto program = _program->program();
+    // Get locations
+    auto program = _program->program();
     attributes[ATTRIB_VERTEX] = glGetAttribLocation(program, "position");
     attributes[ATTRIB_TEXCOORD] = glGetAttribLocation(program, "texCoord");
     uniforms[UNIFORM_Y] = glGetUniformLocation(program, "SamplerY");
@@ -458,6 +420,7 @@ For screen rotation @property(nonatomic, assign) GLuint vertexCoordinateBuffer;
 
     auto nativeContext = (__bridge EAGLContext*)_context->nativeContext();
     if (!nativeContext) {
+        _context->detachContext();
         return;
     }
     glDisable(GL_DEPTH_TEST);
@@ -494,7 +457,8 @@ For screen rotation @property(nonatomic, assign) GLuint vertexCoordinateBuffer;
     glGenRenderbuffers(1, &_renderBuffer);
     glBindRenderbuffer(GL_RENDERBUFFER, _renderBuffer);
 
-    Access layer on main thread __block BOOL success = NO;
+    // Access layer on main thread
+    __block BOOL success = NO;
     dispatch_sync(dispatch_get_main_queue(), ^{
         CAEAGLLayer* layer = (CAEAGLLayer*)self.layer;
         success = [nativeContext renderbufferStorage:GL_RENDERBUFFER fromDrawable:layer];
@@ -506,11 +470,12 @@ For screen rotation @property(nonatomic, assign) GLuint vertexCoordinateBuffer;
                                   GL_RENDERBUFFER,
                                   _renderBuffer);
 
-        Create texture cache CVOpenGLESTextureCacheCreate(kCFAllocatorDefault,
-                                                          NULL,
-                                                          nativeContext,
-                                                          NULL,
-                                                          &_videoTextureCache);
+        // Create texture cache
+        CVOpenGLESTextureCacheCreate(kCFAllocatorDefault,
+                                     NULL,
+                                     nativeContext,
+                                     NULL,
+                                     &_videoTextureCache);
     }
 }
 
@@ -521,7 +486,8 @@ For screen rotation @property(nonatomic, assign) GLuint vertexCoordinateBuffer;
 
     _context->attachContext();
 
-    Delete old if (_frameBuffer) {
+    // Delete old
+    if (_frameBuffer) {
         glDeleteFramebuffers(1, &_frameBuffer);
         _frameBuffer = 0;
     }
@@ -530,7 +496,8 @@ For screen rotation @property(nonatomic, assign) GLuint vertexCoordinateBuffer;
         _renderBuffer = 0;
     }
 
-    Recreate[self createFramebuffer];
+    // Recreate
+    [self createFramebuffer];
 
     _context->detachContext();
 }
@@ -595,7 +562,8 @@ For screen rotation @property(nonatomic, assign) GLuint vertexCoordinateBuffer;
     auto frameWidth = CVPixelBufferGetWidth(pixelBuffer);
     auto frameHeight = CVPixelBufferGetHeight(pixelBuffer);
 
-    Determine color conversion matrix CFTypeRef colorAttachments =
+    // Determine color conversion matrix
+    CFTypeRef colorAttachments =
         CVBufferCopyAttachment(pixelBuffer, kCVImageBufferYCbCrMatrixKey, NULL);
     if (colorAttachments) {
         if (CFStringCompare(static_cast<CFStringRef>(colorAttachments),
@@ -608,7 +576,8 @@ For screen rotation @property(nonatomic, assign) GLuint vertexCoordinateBuffer;
         CFRelease(colorAttachments);
     }
 
-    Y texture glActiveTexture(GL_TEXTURE0);
+    // Y texture
+    glActiveTexture(GL_TEXTURE0);
     CVReturn err = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault,
                                                                 _videoTextureCache,
                                                                 pixelBuffer,
@@ -634,7 +603,8 @@ For screen rotation @property(nonatomic, assign) GLuint vertexCoordinateBuffer;
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glUniform1i(uniforms[UNIFORM_Y], 0);
 
-    UV texture glActiveTexture(GL_TEXTURE1);
+    // UV texture
+    glActiveTexture(GL_TEXTURE1);
     err = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault,
                                                        _videoTextureCache,
                                                        pixelBuffer,
@@ -671,7 +641,7 @@ For screen rotation @property(nonatomic, assign) GLuint vertexCoordinateBuffer;
     return YES;
 }
 
-Reserve - (BOOL)uploadRGBATexture : (CVPixelBufferRef)pixelBuffer {
+- (BOOL)uploadRGBATexture:(CVPixelBufferRef)pixelBuffer {
     auto frameWidth = CVPixelBufferGetWidth(pixelBuffer);
     auto frameHeight = CVPixelBufferGetHeight(pixelBuffer);
 
@@ -711,8 +681,8 @@ Reserve - (BOOL)uploadRGBATexture : (CVPixelBufferRef)pixelBuffer {
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    Calculate aspect ratio preserving viewport CGRect viewBounds =
-        CGRectMake(0, 0, _width, _height);
+    // Calculate aspect ratio preserving viewport
+    CGRect viewBounds = CGRectMake(0, 0, _width, _height);
     CGSize contentSize = CGSizeMake(frameWidth, frameHeight);
     CGRect vertexSamplingRect = AVMakeRectWithAspectRatioInsideRect(contentSize, viewBounds);
 
@@ -728,23 +698,15 @@ Reserve - (BOOL)uploadRGBATexture : (CVPixelBufferRef)pixelBuffer {
         normalizedSamplingSize.height = 1.0;
     }
 
-    Vertex data for quad with aspect ratio
-    GLfloat vertices[] = {
-        (GLfloat)(-1 * normalizedSamplingSize.width), (GLfloat)(-1 * normalizedSamplingSize.height),
-        (GLfloat)(normalizedSamplingSize.width), (GLfloat)(-1 * normalizedSamplingSize.height),
-        (GLfloat)(-1 * normalizedSamplingSize.width), (GLfloat)(normalizedSamplingSize.height),
-        (GLfloat)(normalizedSamplingSize.width), (GLfloat)(normalizedSamplingSize.height)
-    };
-
-    NSLog(@"vertices: [%f, %f] [%f, %f] [%f, %f] [%f, %f]",
-          vertices[0],
-          vertices[1],
-          vertices[2],
-          vertices[3],
-          vertices[4],
-          vertices[5],
-          vertices[6],
-          vertices[7]);
+    // Vertex data for quad with aspect ratio
+    GLfloat vertices[] = {(GLfloat)(-1 * normalizedSamplingSize.width),
+                          (GLfloat)(-1 * normalizedSamplingSize.height),
+                          (GLfloat)(normalizedSamplingSize.width),
+                          (GLfloat)(-1 * normalizedSamplingSize.height),
+                          (GLfloat)(-1 * normalizedSamplingSize.width),
+                          (GLfloat)(normalizedSamplingSize.height),
+                          (GLfloat)(normalizedSamplingSize.width),
+                          (GLfloat)(normalizedSamplingSize.height)};
 
     glBindBuffer(GL_ARRAY_BUFFER, _vertexCoordinateBuffer);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float) * 8, vertices);

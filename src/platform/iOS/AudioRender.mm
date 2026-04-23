@@ -85,7 +85,6 @@ static OSStatus AudioRenderCallback(void* inRefCon,
             }
             AudioDataFlag flag = AudioDataFlag::Normal;
             auto size = render->requestAudioData(dataPtr, needSize, flag);
-            LogI("[audio render] get audio data:{}", size);
             if (size < ioData->mBuffers[i].mDataByteSize) {
                 std::fill_n(dataPtr + size, needSize - size, 0);
             }
@@ -130,6 +129,7 @@ AudioRender::AudioRender(std::shared_ptr<AudioInfo> audioInfo) : IAudioRender(au
 }
 
 AudioRender::~AudioRender() {
+    TimerManager::shareInstance().cancel(timerId_);
     stop();
 }
 
@@ -216,7 +216,7 @@ void AudioRender::setVolume(float volume) noexcept {
                           kMultiChannelMixerParam_Volume,
                           kAudioUnitScope_Input,
                           0,
-                          volume / 100.0f,
+                          volume,
                           0);
     LogI("set volume:{}", volume);
 }
@@ -281,27 +281,28 @@ bool AudioRender::setupAudioComponent() noexcept {
     }
     auto format = convertInfo2Description(*audioInfo_);
 
-    Set the format on the input scope of the output element /
-        bus.if (!checkOSStatus(AudioUnitSetProperty(renderUnit_,
-                                                    kAudioUnitProperty_StreamFormat,
-                                                    kAudioUnitScope_Input,
-                                                    kAudioRemoteIOUnitOutputBus,
-                                                    &format,
-                                                    sizeof(format)),
-                               "set Property_StreamFormat on outputbus : input scope")) {
+    // Set the format on the input scope of the output element / bus.
+    if (!checkOSStatus(AudioUnitSetProperty(renderUnit_,
+                                            kAudioUnitProperty_StreamFormat,
+                                            kAudioUnitScope_Input,
+                                            kAudioRemoteIOUnitOutputBus,
+                                            &format,
+                                            sizeof(format)),
+                       "set Property_StreamFormat on outputbus : input scope")) {
         return false;
     }
     AudioUnitConnection connection;
     connection.sourceAudioUnit = volumeUnit_;
     connection.sourceOutputNumber = kMixerOutputBus;
     connection.destInputNumber = kAudioRemoteIOUnitOutputBus;
-    loudspeaker if (!checkOSStatus(AudioUnitSetProperty(renderUnit_,
-                                                        kAudioUnitProperty_MakeConnection,
-                                                        kAudioUnitScope_Input,
-                                                        kAudioRemoteIOUnitOutputBus,
-                                                        &connection,
-                                                        sizeof(connection)),
-                                   "volume unit connect render unit error")) {
+    // loudspeaker
+    if (!checkOSStatus(AudioUnitSetProperty(renderUnit_,
+                                            kAudioUnitProperty_MakeConnection,
+                                            kAudioUnitScope_Input,
+                                            kAudioRemoteIOUnitOutputBus,
+                                            &connection,
+                                            sizeof(connection)),
+                       "volume unit connect render unit error")) {
         return false;
     }
 

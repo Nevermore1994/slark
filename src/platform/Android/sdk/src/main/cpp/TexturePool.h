@@ -2,23 +2,18 @@
 // Created by Nevermore- on 2025/5/15.
 //
 
+#include "Texture.h"
 
 #include <deque>
 #include <mutex>
-#include "Texture.h"
 
 namespace slark {
 
 class TexturePool : public std::enable_shared_from_this<TexturePool> {
 public:
-    explicit TexturePool(size_t maxSize = 8)
-        : maxSize_(maxSize) {}
+    explicit TexturePool(size_t maxSize = 8) : maxSize_(maxSize) {}
 
-    TexturePtr acquire(
-        uint32_t width,
-        uint32_t height,
-        TextureConfig config = {}
-    );
+    TexturePtr acquire(uint32_t width, uint32_t height, TextureConfig config = {});
 
     void restore(TexturePtr texture);
 

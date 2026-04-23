@@ -27,10 +27,8 @@
     if (context) {
         _glContext = [[EAGLContext alloc] initWithAPI:context.API sharegroup:context.sharegroup];
     } else {
-        if (!context) {
-            _glContext = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3];
-        }
-        if (!context) {
+        _glContext = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3];
+        if (!_glContext) {
             _glContext = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES2];
         }
     }

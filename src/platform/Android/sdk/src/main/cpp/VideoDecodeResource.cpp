@@ -3,14 +3,14 @@
 //
 
 #include "VideoDecodeResource.h"
+
 #include "GLContextManager.h"
+
 #include <utility>
 
 namespace slark {
 
-VideoDecodeResource::VideoDecodeResource(std::string  playerId)
-    : playerId_(std::move(playerId)) {
-}
+VideoDecodeResource::VideoDecodeResource(std::string playerId) : playerId_(std::move(playerId)) {}
 
 VideoDecodeResource::~VideoDecodeResource() noexcept {
     if (context_) {
@@ -36,20 +36,14 @@ void VideoDecodeResource::attachContext(EGLSurface surface) noexcept {
     }
 }
 
-FrameBufferRefPtr VideoDecodeResource::acquire(
-    uint32_t width,
-    uint32_t height
-) noexcept {
+FrameBufferRefPtr VideoDecodeResource::acquire(uint32_t width, uint32_t height) noexcept {
     if (frameBufferPool_) {
         return frameBufferPool_->acquire(width, height);
     }
     return nullptr;
 }
 
-EGLSurface VideoDecodeResource::createOffscreenSurface(
-    uint32_t width,
-    uint32_t height
-) noexcept {
+EGLSurface VideoDecodeResource::createOffscreenSurface(uint32_t width, uint32_t height) noexcept {
     if (context_) {
         return context_->createOffscreenSurface(width, height);
     }
@@ -62,5 +56,4 @@ void VideoDecodeResource::releaseSurface(EGLSurface surface) noexcept {
     }
 }
 
-
-} // slark
+} // namespace slark

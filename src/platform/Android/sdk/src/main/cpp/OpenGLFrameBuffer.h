@@ -10,8 +10,9 @@
 
 namespace slark {
 
-/ OpenGL frame buffer implementing IFrameBuffer interface,
-    wraps existing FrameBuffer class OpenGLFrameBuffer : public IFrameBuffer {
+// OpenGL frame buffer implementing IFrameBuffer interface,
+// wraps existing FrameBuffer
+class OpenGLFrameBuffer : public IFrameBuffer {
 public:
     explicit OpenGLFrameBuffer(FrameBufferRefPtr frameBuffer)
         : frameBuffer_(std::move(frameBuffer)) {}
@@ -41,7 +42,7 @@ public:
         if (!tex) {
             return nullptr;
         }
-        Wrap raw Texture* in OpenGLTexture (non-owning for pool texture lifecycle)
+        // Wrap raw Texture* in OpenGLTexture (non-owning for pool texture lifecycle)
         return std::make_shared<OpenGLTexture>(TextureRefPtr(tex.get(), [](Texture*) {
         }));
     }
@@ -63,4 +64,3 @@ private:
 };
 
 } // namespace slark
-namespace slark

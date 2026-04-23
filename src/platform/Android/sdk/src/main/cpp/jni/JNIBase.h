@@ -85,23 +85,14 @@ public:
 private:
     void release() noexcept {
         if (env_ && ref_) {
-            所有 jobject 派生类型都需要 DeleteLocalRef 包括
-                : jclass,
-                  jstring,
-                  jarray,
-                  jbyteArray,
-                  jintArray 等 if constexpr (std::is_same_v<T, jclass> ||
-                                             std::is_same_v<T, jobject> ||
-                                             std::is_same_v<T, jstring> ||
-                                             std::is_same_v<T, jarray> ||
-                                             std::is_same_v<T, jbyteArray> ||
-                                             std::is_same_v<T, jintArray> ||
-                                             std::is_same_v<T, jlongArray> ||
-                                             std::is_same_v<T, jfloatArray> ||
-                                             std::is_same_v<T, jdoubleArray> ||
-                                             std::is_same_v<T, jbooleanArray> ||
-                                             std::is_same_v<T, jcharArray> ||
-                                             std::is_same_v<T, jshortArray>) {
+            // 所有 jobject 派生类型都需要 DeleteLocalRef
+            // 包括 jclass、jstring、jarray、jbyteArray、jintArray 等
+            if constexpr (std::is_same_v<T, jclass> || std::is_same_v<T, jobject> ||
+                          std::is_same_v<T, jstring> || std::is_same_v<T, jarray> ||
+                          std::is_same_v<T, jbyteArray> || std::is_same_v<T, jintArray> ||
+                          std::is_same_v<T, jlongArray> || std::is_same_v<T, jfloatArray> ||
+                          std::is_same_v<T, jdoubleArray> || std::is_same_v<T, jbooleanArray> ||
+                          std::is_same_v<T, jcharArray> || std::is_same_v<T, jshortArray>) {
                 env_->DeleteLocalRef(ref_);
             }
         }
@@ -152,4 +143,3 @@ using ByteArrayReference = JNIReference<jbyteArray>;
 using IntArrayReference = JNIReference<jintArray>;
 
 } // namespace slark::JNI
-namespace slark::JNI

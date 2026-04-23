@@ -3,7 +3,7 @@
 //
 #pragma once
 
-#include "Data.hpp"
+#include "Data.h"
 
 namespace slark {
 
@@ -18,33 +18,22 @@ enum class BitMapFormat : uint8_t {
 
 class BitMap {
 public:
-    BitMap(
-        BitMapFormat format,
-        uint32_t width,
-        uint32_t height,
-        DataPtr data
-    )
-        : format_(format),
-          width_(width),
-          height_(height),
-          data_(std::move(data)) {
-    }
+    BitMap(BitMapFormat format, uint32_t width, uint32_t height, DataPtr data)
+        : format_(format), width_(width), height_(height), data_(std::move(data)) {}
 
     ~BitMap() = default;
 
-    BitMap(const BitMap &) = delete;
+    BitMap(const BitMap&) = delete;
 
-    BitMap &operator=(const BitMap &) = delete;
+    BitMap& operator=(const BitMap&) = delete;
 
-    BitMap(BitMap &&rhs) noexcept
+    BitMap(BitMap&& rhs) noexcept
         : format_(rhs.format_),
           width_(rhs.width_),
           height_(rhs.height_),
-          data_(std::move(rhs.data_)) {
+          data_(std::move(rhs.data_)) {}
 
-    }
-
-    BitMap &operator=(BitMap &&rhs) noexcept {
+    BitMap& operator=(BitMap&& rhs) noexcept {
         if (this != &rhs) {
             format_ = rhs.format_;
             width_ = rhs.width_;
@@ -66,7 +55,7 @@ public:
         return height_;
     }
 
-    uint8_t *data() const noexcept {
+    uint8_t* data() const noexcept {
         if (data_) {
             return data_->rawData;
         }
@@ -100,5 +89,4 @@ private:
 
 using BitMapPtr = std::unique_ptr<BitMap>;
 using BitMapRefPtr = std::shared_ptr<BitMap>;
-} // slark
-
+} // namespace slark

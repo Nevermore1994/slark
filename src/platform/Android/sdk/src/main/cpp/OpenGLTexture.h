@@ -9,8 +9,9 @@
 
 namespace slark {
 
-/ OpenGL texture implementing ITexture interface,
-    wraps existing Texture class OpenGLTexture : public ITexture {
+// OpenGL texture implementing ITexture interface,
+// wraps existing Texture
+class OpenGLTexture : public ITexture {
 public:
     explicit OpenGLTexture(TextureRefPtr texture) : texture_(std::move(texture)) {}
 
@@ -47,4 +48,3 @@ private:
 };
 
 } // namespace slark
-namespace slark

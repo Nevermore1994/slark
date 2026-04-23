@@ -6,16 +6,14 @@
 //
 
 #include "GLProgram.h"
+
 #include "Log.hpp"
 #include "Random.hpp"
 
 namespace slark {
 
 Shader::Shader(ShaderType type, std::string_view source)
-    : type_(type)
-    , shaderString_(source)
-    , shader_(0){
-}
+    : type_(type), shaderString_(source), shader_(0) {}
 
 Shader::~Shader() {
     if (shader_) {
@@ -29,7 +27,7 @@ bool Shader::compile() noexcept {
     auto source = reinterpret_cast<const GLchar*>(shaderString_.c_str());
     glShaderSource(shader_, 1, &source, nullptr);
     glCompileShader(shader_);
-    
+
     GLint status = GL_FALSE;
     glGetShaderiv(shader_, GL_COMPILE_STATUS, &status);
     if (status == GL_FALSE) {
@@ -42,8 +40,7 @@ bool Shader::compile() noexcept {
 }
 
 GLProgram::GLProgram(std::string_view vertexShaderString, std::string_view fragmentShaderString)
-    : id_(Random::randomString(8))
-    , program_(0) {
+    : id_(Random::randomString(8)), program_(0) {
     auto vertexShader = std::make_unique<Shader>(ShaderType::Vertex, vertexShaderString);
     auto fragmentShader = std::make_unique<Shader>(ShaderType::Fragment, fragmentShaderString);
     if (!vertexShader || !fragmentShader) {
@@ -58,9 +55,9 @@ GLProgram::GLProgram(std::string_view vertexShaderString, std::string_view fragm
     }
     glAttachShader(program_, vertexShader->shader());
     glAttachShader(program_, fragmentShader->shader());
-    
+
     glLinkProgram(program_);
-    
+
     GLint status = GL_FALSE;
     glGetProgramiv(program_, GL_LINK_STATUS, &status);
     if (status == GL_FALSE) {
@@ -94,4 +91,4 @@ void GLProgram::deleteProgram() noexcept {
     program_ = 0;
 }
 
-}
+} // namespace slark

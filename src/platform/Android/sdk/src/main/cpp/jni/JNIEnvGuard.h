@@ -82,4 +82,3 @@ private:
 };
 
 } // namespace slark::JNI
-namespace slark::JNI

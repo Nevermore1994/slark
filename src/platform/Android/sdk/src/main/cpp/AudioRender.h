@@ -4,9 +4,10 @@
 
 #pragma once
 
-#include <utility>
 #include "AudioInfo.h"
 #include "Manager.hpp"
+
+#include <utility>
 
 namespace slark {
 
@@ -38,6 +39,7 @@ public:
     const std::string& playerId() const noexcept {
         return playerId_;
     }
+
 private:
     void init() noexcept;
 
@@ -45,11 +47,8 @@ private:
 
 private:
     std::string playerId_;
-    TimerId timerId_{};
-    Time::TimeDelta latency_;
 };
 
 using AudioRenderManager = Manager<AudioRender>;
 
-} // slark
-
+} // namespace slark

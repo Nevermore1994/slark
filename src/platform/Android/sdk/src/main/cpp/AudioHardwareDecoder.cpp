@@ -3,6 +3,7 @@
 //
 
 #include "AudioHardwareDecoder.h"
+
 #include "DecoderConfig.h"
 #include "NativeHardwareDecoder.h"
 
@@ -13,7 +14,7 @@ void AudioHardwareDecoder::flush() noexcept {
     isCompleted_ = false;
 }
 
-DecoderErrorCode AudioHardwareDecoder::decode(AVFrameRefPtr &frame) noexcept {
+DecoderErrorCode AudioHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
     assert(frame && frame->isAudio());
     NativeDecodeFlag flag = NativeDecodeFlag::None;
     if (frame->info->isEndOfStream) {
@@ -31,8 +32,7 @@ DecoderErrorCode AudioHardwareDecoder::decode(AVFrameRefPtr &frame) noexcept {
              frame->pts,
              frame->dts,
              frame->ptsTime(),
-             frame->dtsTime()
-        );
+             frame->dtsTime());
     } else {
         LogE("decode frame error:{}", static_cast<int>(res));
     }
@@ -51,20 +51,15 @@ bool AudioHardwareDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept 
         LogE("create audio decoder failed");
         return false;
     }
-    NativeDecoderManager::shareInstance().add(
-        decoderId_,
-        shared_from_this());
-    LogI("create audio decoder:{}",
-         decoderId_);
+    NativeDecoderManager::shareInstance().add(decoderId_, shared_from_this());
+    LogI("create audio decoder:{}", decoderId_);
     isOpen_ = true;
     return true;
 }
 
-void AudioHardwareDecoder::receiveDecodedData(
-    DataPtr data,
-    int64_t pts,
-    bool isCompleted
-) noexcept {
+void AudioHardwareDecoder::receiveDecodedData(DataPtr data,
+                                              int64_t pts,
+                                              bool isCompleted) noexcept {
     isCompleted_ = isCompleted;
     if (isCompleted) {
         LogI("audio decode completed");
@@ -81,7 +76,7 @@ void AudioHardwareDecoder::receiveDecodedData(
     auto frame = std::make_unique<AVFrame>(AVFrameType::Audio);
     frame->pts = pts;
     frame->dts = pts;
-    frame->timeScale = 1000000; //us
+    frame->timeScale = 1000000; // us
     frame->data = std::move(data);
     auto audioFrameInfo = std::make_shared<AudioFrameInfo>();
     audioFrameInfo->sampleRate = audioConfig->sampleRate;
@@ -91,5 +86,4 @@ void AudioHardwareDecoder::receiveDecodedData(
     invokeReceiveFunc(std::move(frame));
 }
 
-
-} // slark
+} // namespace slark

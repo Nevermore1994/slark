@@ -10,8 +10,9 @@
 
 namespace slark {
 
-/ OpenGL surface implementing IGraphicsSurface,
-    wraps EGLSurface class OpenGLSurface : public IGraphicsSurface {
+// OpenGL surface implementing IGraphicsSurface,
+// wraps EGLSurface
+class OpenGLSurface : public IGraphicsSurface {
 public:
     OpenGLSurface(EGLSurface surface, EGLDisplay display) : surface_(surface), display_(display) {}
 
@@ -35,4 +36,3 @@ private:
 };
 
 } // namespace slark
-namespace slark

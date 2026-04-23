@@ -16,7 +16,7 @@
 #define iPhoneNavigationHeight 64.0f
 #define iPhoneStatusBarHeight 20.0f
 
-#define iPhoneNavigationBarHeight 44.0f //Same for all iPhone models
+#define iPhoneNavigationBarHeight 44.0f // Same for all iPhone models
 
 #define NavigationHeight (isIphoneXSeries() ? iPhoneXNavigationHeight : iPhoneNavigationHeight)
 

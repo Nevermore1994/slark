@@ -26,16 +26,18 @@ enum class DecoderErrorCode(val value: Int) {
     PermissionDenied(102),
     FileNotFound(103),
     FileAlreadyExists(104),
-    DecoderNotFound(200),
-    DecoderError(201),
-    DecoderInputError(202),
-    DecoderInputTooLarge(203),
-    DecoderNotStarted(204),
-    DecoderNotProcessed(205),
-    DecoderAgain(206),
-    DecoderUnsupportedFormat(207),
-    DecoderResourceExhausted(208),
-    DecoderConfigInvalid(209),
+    StreamNotReady(110),
+    StreamInvalidData(111),
+    CodecNotFound(200),
+    CodecError(201),
+    CodecInputError(202),
+    CodecInputTooLarge(203),
+    CodecNotStarted(204),
+    CodecNotProcessed(205),
+    CodecAgain(206),
+    CodecUnsupportedFormat(207),
+    CodecResourceExhausted(208),
+    CodecConfigInvalid(209),
     NetworkError(300),
     ConnectionFailed(301),
     ConnectionTimeout(302),
@@ -44,7 +46,7 @@ enum class DecoderErrorCode(val value: Int) {
 
     companion object {
         fun fromValue(value: Int): DecoderErrorCode {
-            return entries.firstOrNull { it.value == value } ?: DecoderError
+            return entries.firstOrNull { it.value == value } ?: CodecError
         }
     }
 }

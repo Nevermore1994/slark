@@ -10,7 +10,7 @@
 
 #import "GLContextManager.h"
 #import "Player.h"
-#import "RenderGLView.hpp"
+#import "RenderGLView.h"
 
 #import <Foundation/Foundation.h>
 

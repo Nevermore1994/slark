@@ -5,9 +5,10 @@
 #include "VideoRender.h"
 
 #include "JNICache.h"
-#include "JNIEnvGuard.hpp"
-#include "JNIHelper.h"
+#include "JNIEnvGuard.h"
+#include "JNIMarshal.h"
 #include "JNISignature.h"
+#include "Log.hpp"
 #include "TexturePool.h"
 
 namespace slark {
@@ -19,16 +20,19 @@ void Native_RequestRender(const std::string& playerId,
     using namespace slark::JNI;
     constexpr std::string_view kPlayerManagerClass = "com/slark/sdk/SlarkPlayerManager";
     JNIEnvGuard env(getJavaVM());
-    auto jPlayer = JNI::ToJVM::toString(env.get(), playerId);
-    auto playerClass = JNICache::shareInstance().getClass(env.get(), kPlayerManagerClass);
+    auto jPlayer = JNI::ToJVM::str(env.get(), playerId);
+    auto playerClass = JNICache::instance().getClass(env.get(), kPlayerManagerClass);
     if (!playerClass) {
         LogE("not found player manager class");
         return;
     }
-    auto methodSignature =
-        JNI::makeJNISignature(JNI::Void, JNI::String, JNI::Int, JNI::Int, JNI::Int);
+    auto methodSignature = JNI::makeSignature(JNI::Sig::Void,
+                                              JNI::Sig::String,
+                                              JNI::Sig::Int,
+                                              JNI::Sig::Int,
+                                              JNI::Sig::Int);
     auto methodId =
-        JNICache::shareInstance().getStaticMethodId(playerClass, "requestRender", methodSignature);
+        JNICache::instance().getStaticMethod(playerClass, "requestRender", methodSignature);
     if (!methodId) {
         LogE("not found method");
         return;
@@ -41,33 +45,29 @@ void Native_RequestRender(const std::string& playerId,
                                     static_cast<jint>(height));
 }
 
-VideoRender::VideoRender() : renderThread_(Thread::create("renderThread")) {
-    using namespace std::chrono_literals;
-    renderThread_->scheduleRepeat(33ms, [this]() {
-        requestRenderFrame();
-    });
-}
+VideoRender::VideoRender() = default;
 
-VideoRender::~VideoRender() noexcept {
-    if (renderThread_) {
-        renderThread_->stop();
-        renderThread_.reset();
-    }
-}
+VideoRender::~VideoRender() noexcept = default;
 
 void VideoRender::start() noexcept {
-    renderThread_->start();
     videoClock_.start();
+    LogI("VideoRender started, playerId:{}", playerId_);
 }
 
 void VideoRender::pause() noexcept {
-    renderThread_->pause();
     videoClock_.pause();
+    LogI("VideoRender paused, playerId:{}", playerId_);
 }
 
 void VideoRender::notifyVideoInfo(std::shared_ptr<VideoInfo> videoInfo) noexcept {
-    auto duration = videoInfo->frameDurationMs();
-    LogE("frame duration: {}, fps:{}", duration, videoInfo->fps);
+    // 帧率信息由 AV Sync 模块在 onVSync() 中使用，Choreographer 负责提供节拍
+    LogI("video info: fps:{}, frame duration:{}ms",
+         videoInfo->fps,
+         videoInfo->frameDurationMs().count());
+}
+
+void VideoRender::onVSync() noexcept {
+    requestRenderFrame();
 }
 
 void VideoRender::notifyRenderInfo() noexcept {}
@@ -117,19 +117,21 @@ void VideoRender::renderFrameComplete(int32_t id) noexcept {
     if (renderInfos_.contains(textureId)) {
         auto info = std::move(renderInfos_[textureId]);
         renderInfos_.erase(textureId);
-        videoClock_.setTime(Time::TimePoint::fromSeconds(info.ptsTime));
+        auto ptsTime = info.ptsTime;
+        videoClock_.setTime(Time::TimePoint::fromSeconds(ptsTime));
         if (backupRenderInfo_.isValid()) {
             Texture::releaseResource(std::move(backupRenderInfo_.texture));
         }
         backupRenderInfo_ = std::move(info);
-        LogI("rendered video, ptsTime:{}, texture id:{}", info.ptsTime, id);
+        LogI("rendered video, ptsTime:{}, texture id:{}", ptsTime, id);
     } else {
         LogE("not found texture id:{}", id);
     }
 }
 
 void VideoRender::renderEnd() noexcept {
-    renderThread_->pause();
+    videoClock_.pause();
+    LogI("VideoRender renderEnd, playerId:{}", playerId_);
 }
 
 } // namespace slark

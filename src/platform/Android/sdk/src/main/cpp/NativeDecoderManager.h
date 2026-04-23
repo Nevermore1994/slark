@@ -11,10 +11,7 @@ namespace slark {
 
 class NativeDecoder : public IDecoder {
 public:
-    explicit NativeDecoder(DecoderType type)
-        : IDecoder(type) {
-
-    }
+    explicit NativeDecoder(DecoderType type) : IDecoder(type) {}
 
     ~NativeDecoder() override = default;
 
@@ -24,9 +21,7 @@ public:
 
     void close() noexcept override;
 
-    virtual void receiveDecodedData(DataPtr data,
-                                    int64_t pts,
-                                    bool isCompleted) noexcept = 0;
+    virtual void receiveDecodedData(DataPtr data, int64_t pts, bool isCompleted) noexcept = 0;
 
 protected:
     std::string decoderId_;
@@ -34,4 +29,4 @@ protected:
 
 using NativeDecoderManager = Manager<NativeDecoder>;
 
-}
+} // namespace slark

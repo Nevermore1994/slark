@@ -26,9 +26,7 @@ std::vector<int32_t> ints(JNIEnv* env, jintArray arr) noexcept;
 
 } // namespace FromJVM
 
-namespace FromJVM
-
-    namespace ToJVM {
+namespace ToJVM {
 
 StringReference str(JNIEnv* env, std::string_view s) noexcept;
 
@@ -42,8 +40,6 @@ ByteArrayReference naluBytes(JNIEnv* env,
                              const slark::Data& data,
                              bool skipExistingHeader = true) noexcept;
 
-} // namespace FromJVMnamespace ToJVM
- namespace ToJVM
+} // namespace ToJVM
 
-}
- namespace slark::JNI
+} // namespace slark::JNI

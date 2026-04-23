@@ -24,16 +24,14 @@ public:
 
     void attachContext(EGLSurface surface) noexcept;
 
-    FrameBufferRefPtr acquire(
-        uint32_t width,
-        uint32_t height
-    ) noexcept;
+    FrameBufferRefPtr acquire(uint32_t width, uint32_t height) noexcept;
 
     [[nodiscard]] bool isValid() const noexcept {
         return context_ != nullptr && frameBufferPool_ != nullptr;
     }
 
     void init() noexcept;
+
 private:
     std::string playerId_;
     std::shared_ptr<AndroidEGLContext> context_;
@@ -42,6 +40,4 @@ private:
 
 using VideoDecodeResourceManager = Manager<VideoDecodeResource>;
 
-} // slark
-
-
+} // namespace slark

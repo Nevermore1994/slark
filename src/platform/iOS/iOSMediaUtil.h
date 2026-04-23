@@ -8,16 +8,14 @@
 #ifndef iOSMediaUtil_h
 #define iOSMediaUtil_h
 
-#import <VideoToolbox/VideoToolbox.h>
 #import <UIKit/UIImage.h>
+#import <VideoToolbox/VideoToolbox.h>
 
 namespace slark {
 
-CMSampleBufferRef createSampleBuffer(CMFormatDescriptionRef fmtDesc,
-                                     void* buff,
-                                     size_t size);
+CMSampleBufferRef createSampleBuffer(CMFormatDescriptionRef fmtDesc, void* buff, size_t size);
 
 UIImage* imageFromPixelBuffer(CVPixelBufferRef pixelBuffer);
-}
+} // namespace slark
 
 #endif /* iOSMediaUtil_h */

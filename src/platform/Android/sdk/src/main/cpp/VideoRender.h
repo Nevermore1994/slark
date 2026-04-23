@@ -4,9 +4,9 @@
 
 #pragma once
 
+#include "Clock.h"
 #include "Manager.hpp"
 #include "Texture.h"
-#include "Thread.h"
 #include "VideoInfo.h"
 
 namespace slark {
@@ -45,21 +45,25 @@ public:
 
     void renderFrameComplete(int32_t id) noexcept;
 
+    /// Called from Kotlin Choreographer.doFrame() via JNI on each VSync beat.
+    void onVSync() noexcept;
+
     TexturePtr& getBackupTexture() noexcept {
         std::lock_guard lock(mutex_);
         return backupRenderInfo_.texture;
     }
+
+public:
+    std::mutex mutex_;
+    std::unordered_map<uint32_t, RenderInfo> renderInfos_;
+    RenderInfo backupRenderInfo_;
 
 private:
     void requestRenderFrame() noexcept;
 
     void renderFrame(const AVFrameRefPtr& frame) noexcept;
 
-public:
-    std::shared_ptr<Thread> renderThread_;
-    std::mutex mutex_;
-    std::unordered_map<uint32_t, RenderInfo> renderInfos_;
-    RenderInfo backupRenderInfo_; // Used to rotate the screen when paused
+    Clock videoClock_;
 };
 
 using VideoRenderManager = Manager<VideoRender>;

@@ -3,7 +3,7 @@
 //  slark
 //
 //  Created by Nevermore
-//  
+//
 //  SlarkPlayer - iOS media player framework
 //
 
@@ -15,30 +15,29 @@
  * Player state definitions
  */
 typedef NS_ENUM(NSUInteger, SlarkPlayerState) {
-    SlarkPlayerStateNotInited,      // Not initialized
-    SlarkPlayerStateInitializing,   // Initializing
-    SlarkPlayerStatePrepared,       // Ready for playback
-    SlarkPlayerStateBuffering,      // Loading content
-    SlarkPlayerStateReady,          // Ready to play
-    SlarkPlayerStatePlaying,        // Currently playing
-    SlarkPlayerStatePause,          // Paused
-    SlarkPlayerStateStop,           // Stopped
-    SlarkPlayerStateError,          // Error occurred
-    SlarkPlayerStateCompleted,      // Playback finished
-    SlarkPlayerStateUnknown         // Unknown state
+    SlarkPlayerStateNotInited,    // Not initialized
+    SlarkPlayerStateInitializing, // Initializing
+    SlarkPlayerStatePrepared,     // Ready for playback
+    SlarkPlayerStateBuffering,    // Loading content
+    SlarkPlayerStateReady,        // Ready to play
+    SlarkPlayerStatePlaying,      // Currently playing
+    SlarkPlayerStatePause,        // Paused
+    SlarkPlayerStateStop,         // Stopped
+    SlarkPlayerStateError,        // Error occurred
+    SlarkPlayerStateCompleted,    // Playback finished
+    SlarkPlayerStateUnknown       // Unknown state
 };
 
 /**
  * Player event types
  */
 typedef NS_ENUM(NSUInteger, SlarkPlayerEvent) {
-    SlarkPlayerEventFirstFrameRendered,  // First frame displayed
+    SlarkPlayerEventFirstFrameRendered, // First frame displayed
     SlarkPlayerEventSeekDone,           // Seek completed
     SlarkPlayerEventPlayEnd,            // Playback ended
     SlarkPlayerEventUpdateCacheTime,    // Cache updated
     SlarkPlayerEventOnError,            // Error occurred
 };
-
 
 typedef NS_ENUM(NSUInteger, SlarkPlayerErrorCode) {
     SlarkPlayerErrorFileError = 1000,
@@ -61,32 +60,32 @@ typedef NS_ENUM(NSUInteger, SlarkPlayerRotation) {
  */
 @protocol ISlarkPlayerObserver <NSObject>
 // Time update callback
-- (void)notifyTime:(NSString*) playerId time:(double) time;
+- (void)notifyTime:(NSString*)playerId time:(double)time;
 // State change callback
-- (void)notifyState:(NSString*) playerId state:(SlarkPlayerState) state;
+- (void)notifyState:(NSString*)playerId state:(SlarkPlayerState)state;
 // Event callback
-- (void)notifyEvent:(NSString*) playerId event:(SlarkPlayerEvent) event value:(NSString*) value;
+- (void)notifyEvent:(NSString*)playerId event:(SlarkPlayerEvent)event value:(NSString*)value;
 @end
 
 /**
  * Main media player class
  */
 @interface SlarkPlayer : NSObject
-@property(nonatomic, assign) BOOL isLoop;
-@property(nonatomic, assign) BOOL isMute;
-@property(nonatomic, assign) CGFloat volume;
-@property(nonatomic, assign) SlarkPlayerRotation rotation;
-@property(nonatomic, assign, readonly) SlarkPlayerState currentState;
-@property(nonatomic, assign, readonly) NSString* playerId;
-@property(nonatomic, assign, readonly) CMTime totalDuration;
-@property(nonatomic, assign, readonly) CMTime currentTime;
+@property (nonatomic, assign) BOOL isLoop;
+@property (nonatomic, assign) BOOL isMute;
+@property (nonatomic, assign) CGFloat volume;
+@property (nonatomic, assign) SlarkPlayerRotation rotation;
+@property (nonatomic, assign, readonly) SlarkPlayerState currentState;
+@property (nonatomic, assign, readonly) NSString* playerId;
+@property (nonatomic, assign, readonly) CMTime totalDuration;
+@property (nonatomic, assign, readonly) CMTime currentTime;
 @property (nonatomic, weak) id<ISlarkPlayerObserver> delegate;
 
 // Initialize with file path
-- (instancetype)init:(NSString*) path;
+- (instancetype)init:(NSString*)path;
 
 // Initialize with file path and time range
-- (instancetype)initWithTimeRange:(NSString*) path range:(CMTimeRange)range;
+- (instancetype)initWithTimeRange:(NSString*)path range:(CMTimeRange)range;
 
 // Prepare for playback
 - (void)prepare;
@@ -101,9 +100,9 @@ typedef NS_ENUM(NSUInteger, SlarkPlayerRotation) {
 - (void)stop;
 
 // Seek to time position
-- (void)seek:(double) seekToTime;
+- (void)seek:(double)seekToTime;
 
 // Seek with accuracy option
-- (void)seek:(double) seekToTime isAccurate:(BOOL)isAccurate;
+- (void)seek:(double)seekToTime isAccurate:(BOOL)isAccurate;
 
 @end

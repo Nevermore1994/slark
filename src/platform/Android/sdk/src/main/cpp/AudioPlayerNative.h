@@ -4,8 +4,9 @@
 
 #pragma once
 
+#include "Data.h"
+
 #include <string>
-#include "Data.hpp"
 
 enum class AudioPlayerAction {
     Play,
@@ -22,24 +23,13 @@ enum class AudioPlayerConfig {
 namespace slark {
 
 struct NativeAudioPlayer {
-    static std::string create(
-        uint64_t sampleRate,
-        uint8_t channelCount
-    );
+    static std::string create(uint64_t sampleRate, uint8_t channelCount);
 
-    static uint64_t getPlayedTime(const std::string &playerId);
+    static uint64_t getPlayedTime(const std::string& playerId);
 
-    static void doAction(
-        const std::string &playerId,
-        AudioPlayerAction action
-    );
+    static void doAction(const std::string& playerId, AudioPlayerAction action);
 
-    static void setConfig(
-        const std::string &playerId,
-        AudioPlayerConfig config,
-        float value
-    );
+    static void setConfig(const std::string& playerId, AudioPlayerConfig config, float value);
 };
 
-
-}
+} // namespace slark

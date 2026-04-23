@@ -108,4 +108,3 @@ void* OpenGLEGraphicsContext::nativeContext() noexcept {
 }
 
 } // namespace slark
-namespace slark

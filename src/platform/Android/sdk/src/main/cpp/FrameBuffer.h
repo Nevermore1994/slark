@@ -5,8 +5,9 @@
 #pragma once
 
 #include "Texture.h"
-#include <unordered_set>
+
 #include <thread>
+#include <unordered_set>
 
 namespace slark {
 
@@ -62,6 +63,4 @@ private:
 
 using FrameBufferRefPtr = std::shared_ptr<FrameBuffer>;
 
-} // slark
-
-
+} // namespace slark

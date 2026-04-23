@@ -11,7 +11,7 @@ class AACHardwareDecoder : public NativeDecoder,
 public:
     AACHardwareDecoder() : NativeDecoder(DecoderType::AACHardwareDecoder) {}
 
-    ~AudioHardwareDecoder() override = default;
+    ~AACHardwareDecoder() override = default;
 
     Error decode(AVFrameRefPtr& frame) noexcept override;
 
@@ -25,4 +25,3 @@ public:
 };
 
 } // namespace slark
-namespace slark

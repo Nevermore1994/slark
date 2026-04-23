@@ -56,9 +56,7 @@ std::unique_ptr<slark::Data> bytes(JNIEnv* env, jobject byteBuffer) noexcept {
 
 } // namespace FromJVM
 
-namespace FromJVM
-
-    namespace ToJVM {
+namespace ToJVM {
 
 StringReference str(JNIEnv* env, std::string_view s) noexcept {
     if (!env) {
@@ -107,7 +105,8 @@ ByteArrayReference naluBytes(JNIEnv* env,
         return {env, nullptr};
     }
 
-    计算跳过已有header后的偏移和大小 const uint32_t kHeaderSize = 4;
+    // 计算跳过已有 header 后的偏移和大小
+    const uint32_t kHeaderSize = 4;
     uint32_t offset = 0;
     uint32_t size = static_cast<uint32_t>(data.size());
 
@@ -116,13 +115,13 @@ ByteArrayReference naluBytes(JNIEnv* env,
         size -= kHeaderSize;
     }
 
-    创建包含起始码的NALU数据
+    // 创建包含起始码的 NALU 数据
     jbyteArray arr = env->NewByteArray(static_cast<jsize>(size + kHeaderSize));
     if (!arr) {
         return {env, nullptr};
     }
 
-    NALU起始码
+    // NALU 起始码
     constexpr jbyte kNaluHeader[4] = {0x00, 0x00, 0x00, 0x01};
     env->SetByteArrayRegion(arr, 0, kHeaderSize, kNaluHeader);
 
@@ -135,8 +134,6 @@ ByteArrayReference naluBytes(JNIEnv* env,
     return {env, arr};
 }
 
-} // namespace FromJVMnamespace ToJVM
- namespace ToJVM
+} // namespace ToJVM
 
-}
- namespace slark::JNI
+} // namespace slark::JNI

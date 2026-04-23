@@ -26,8 +26,8 @@ std::string getAppPath(const std::string& methodName) noexcept {
         return {};
     }
 
-    调用 Context.methodName()->java.io.File static constexpr std::string_view kContextClass =
-        "android/content/Context";
+    // 调用 Context.methodName() -> java.io.File
+    static constexpr std::string_view kContextClass = "android/content/Context";
     static constexpr std::string_view kFileClass = "java/io/File";
     auto fileObj = JNI::JNICall::call<jobject>(env,
                                                context,
@@ -38,17 +38,14 @@ std::string getAppPath(const std::string& methodName) noexcept {
         return {};
     }
 
-    调用 File.getPath()->String auto path =
-        JNI::JNICall::call<std::string>(env, fileObj.get(), kFileClass, "getPath");
+    // 调用 File.getPath() -> String
+    auto path = JNI::JNICall::call<std::string>(env, fileObj.get(), kFileClass, "getPath");
     return path.value_or(std::string{});
 }
 
 } // namespace
 
-namespace
-
-    std::string
-    rootPath() noexcept {
+std::string rootPath() noexcept {
     static std::string path;
     static std::once_flag flag;
     std::call_once(flag, [] {
@@ -58,7 +55,7 @@ namespace
         path = getAppPath("getFilesDir");
     }
     return path;
-} // namespace std::string
+}
 
 std::string cachePath() noexcept {
     static std::string path;
@@ -99,4 +96,3 @@ std::string tmpPath() noexcept {
 }
 
 } // namespace slark::File
-namespace slark::File
