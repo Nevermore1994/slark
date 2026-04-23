@@ -35,4 +35,3 @@ IEGLContextRefPtr createGLContext() noexcept;
 IEGLContextRefPtr createMainGLContext() noexcept;
 
 } // namespace slark
-namespace slark

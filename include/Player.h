@@ -49,9 +49,9 @@ enum class PlayerErrorCode : uint32_t {
 };
 
 struct ResourceItem {
-    / play media path, local path or http url std::string path;
-    / play start offset, second double displayStart;
-    / play duration, second double displayDuration;
+    std::string path;           ///< local path or http url
+    double displayStart = 0;    ///< play start offset, seconds
+    double displayDuration = 0; ///< play duration, seconds
 };
 
 struct PlayerSetting {
@@ -61,8 +61,11 @@ struct PlayerSetting {
     bool enableVideoSoftDecode = false;
     float volume = 100.0f;
     double maxCacheTime = 30.0;
-    seconds double minCacheTime = 5.0;
-    seconds perf::PerfConfig perfConfig;
+    double minCacheTime = 5.0;
+    perf::PerfConfig perfConfig;
+    int32_t playerThreadTickMs = 10;
+    int32_t playedTimeTickMs = 200;
+    int32_t cacheTickMs = 500;
 };
 
 struct PlayerParams {
@@ -114,8 +117,6 @@ public:
 public:
     PlayerParams peek() noexcept;
 
-    PlayerSetting peekSetting() noexcept;
-
     PlayerState state() noexcept;
 
     PlayerInfo info() noexcept;
@@ -125,11 +126,8 @@ public:
     [[nodiscard]] double currentPlayedTime() noexcept;
 
 private:
-    friend class PlayerImplHelper;
     class Impl;
     std::shared_ptr<Impl> pimpl_;
 };
 
 } // namespace slark
-
-end namespace slark

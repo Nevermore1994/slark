@@ -34,6 +34,9 @@ SHOW_FULL_PATH="${SHOW_FULL_PATH:-OFF}"
 SOURCE_DIRS=(
     "${PROJECT_DIR}/src"
     "${PROJECT_DIR}/test"
+    "${PROJECT_DIR}/include"
+    "${PROJECT_DIR}/internal"
+    "${PROJECT_DIR}/demo"
 )
 
 # 排除的目录模式
@@ -41,6 +44,8 @@ EXCLUDE_PATTERNS=(
     "*/thirdParty/*"
     "*/build/*"
     "*/.fetchcontent_cache/*"
+    "*/Masonry/*"
+    "*/EXTScope/*"
 )
 
 # 颜色输出

@@ -9,12 +9,14 @@
 
 namespace slark {
 
-/ Graphics backend type enum class GraphicsBackendType : int32_t {
+// Graphics backend type
+enum class GraphicsBackendType : int32_t {
     OpenGL = 0,
     Vulkan = 1,
 };
 
-/ Abstract texture interface class ITexture {
+// Abstract texture interface
+class ITexture {
 public:
     virtual ~ITexture() = default;
 
@@ -28,7 +30,8 @@ public:
 using ITexturePtr = std::unique_ptr<ITexture>;
 using ITextureRefPtr = std::shared_ptr<ITexture>;
 
-/ Abstract frame buffer interface class IFrameBuffer {
+// Abstract frame buffer interface
+class IFrameBuffer {
 public:
     virtual ~IFrameBuffer() = default;
 
@@ -42,7 +45,8 @@ public:
 
 using IFrameBufferRefPtr = std::shared_ptr<IFrameBuffer>;
 
-/ Abstract graphics surface(offscreen / window surface abstraction) class IGraphicsSurface {
+// Abstract graphics surface (offscreen / window surface abstraction)
+class IGraphicsSurface {
 public:
     virtual ~IGraphicsSurface() = default;
 
@@ -53,7 +57,8 @@ public:
 using IGraphicsSurfacePtr = std::unique_ptr<IGraphicsSurface>;
 using IGraphicsSurfaceRefPtr = std::shared_ptr<IGraphicsSurface>;
 
-/ Abstract graphics context interface class IGraphicsContext {
+// Abstract graphics context interface
+class IGraphicsContext {
 public:
     virtual ~IGraphicsContext() = default;
 
@@ -78,4 +83,3 @@ using IGraphicsContextPtr = std::unique_ptr<IGraphicsContext>;
 using IGraphicsContextRefPtr = std::shared_ptr<IGraphicsContext>;
 
 } // namespace slark
-namespace slark

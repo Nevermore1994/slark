@@ -29,4 +29,3 @@ struct IPerfReporter {
 };
 
 } // namespace slark::perf
-namespace slark::perf

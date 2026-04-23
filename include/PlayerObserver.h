@@ -24,4 +24,3 @@ using IPlayerObserverPtr = std::weak_ptr<IPlayerObserver>;
 using IPlayerObserverRefPtr = std::shared_ptr<IPlayerObserver>;
 
 } // namespace slark
-namespace slark
