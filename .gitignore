@@ -58,3 +58,26 @@ build_*/
 .review/
 test/base/cache/
 compile_commands.json
+
+# Tools & IDE
+.codebuddy/
+.workbuddy/
+.gradle/
+demo/Android/.kotlin/
+demo/iOS/demo/demo.xcodeproj/xcuserdata/
+demo/iOS/demo/demo.xcworkspace/xcuserdata/
+
+# Build artifacts
+build-test/
+cache/
+Makefile.in
+configdata.pm
+include/openssl/
+src/platform/Android/sdk/src/main/cpp/.fetchcontent_cache/
+demo/Android/app/src/main/assets/
+
+# Temp files
+test.txt
+test_read.txt
+test/base/test1.txt
+test/base/test2.txt
