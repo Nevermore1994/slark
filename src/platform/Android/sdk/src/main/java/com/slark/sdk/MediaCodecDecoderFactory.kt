@@ -81,7 +81,8 @@ class MediaCodecDecoderFactory(
         return decoderId
     }
 
-    private fun buildAudioSpecificConfig        profile: Int, channelCount: Int,
+    private fun buildAudioSpecificConfig(
+        profile: Int, channelCount: Int,
         samplingFreqIndex: Int, extAudioType: Int, extSamplingFreqIndex: Int
     ): ByteArray {
         val config = ByteArray(4)
@@ -99,7 +100,7 @@ class MediaCodecDecoderFactory(
 
     companion object {
         const val LOG_TAG = "DecoderFactory"
-        const val kDefaultVideoMaxInputSize = 1048576 * 2 2MB
+        const val kDefaultVideoMaxInputSize = 1048576 * 2
         const val kDefaultAudioMaxInputSize = 4096
     }
 }
