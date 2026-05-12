@@ -169,8 +169,8 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
                     state == SlarkPlayerState.Ready ||
                     state == SlarkPlayerState.Completed
                 if (isRefresh) {
-                    It seems that the first refresh does not fully adapt to the surface,
-                    and it always takes the second refresh to display normally.
+                    // It seems that the first refresh does not fully adapt to the surface,
+                    // and it always takes the second refresh to display normally.
                     renderThread?.rebuildSurface()
                 }
             }
@@ -195,7 +195,6 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
 
             override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
                 renderThread?.setRenderSize(width, height)
-                SlarkLog.i(LOG_TAG, "Surface changed: width=$width, height=$height")
                 val state = state()
                 val isRefresh = state == SlarkPlayerState.Pause ||
                     state == SlarkPlayerState.Ready ||
