@@ -147,7 +147,7 @@ bool Player::Impl::setupDataProvider() noexcept {
         LogE("error, player param invalid.");
         setState(PlayerState::Error);
         notifyPlayerEvent(PlayerEvent::OnError,
-                          std::to_string(static_cast<uint32_t>(PlayerErrorCode::FileError)));
+                          std::to_string(static_cast<uint32_t>(Error::IOError)));
         return false;
     }
 
@@ -169,9 +169,8 @@ bool Player::Impl::setupDataProvider() noexcept {
             return;
         }
         self->sender_->send(buildEvent(EventType::ReadError));
-        auto errorCode = isNetwork
-                             ? std::to_string(static_cast<uint32_t>(PlayerErrorCode::NetWorkError))
-                             : std::to_string(static_cast<uint32_t>(PlayerErrorCode::FileError));
+        auto errorCode = isNetwork ? std::to_string(static_cast<uint32_t>(Error::NetworkError))
+                                   : std::to_string(static_cast<uint32_t>(Error::IOError));
         self->notifyPlayerEvent(PlayerEvent::OnError, errorCode);
     };
 
@@ -186,9 +185,8 @@ bool Player::Impl::setupDataProvider() noexcept {
         LogE("open media source failed, path:{}", path);
         setState(PlayerState::Error);
         const bool kIsNet = isNetworkLink(path);
-        auto errorCode = kIsNet
-                             ? std::to_string(static_cast<uint32_t>(PlayerErrorCode::NetWorkError))
-                             : std::to_string(static_cast<uint32_t>(PlayerErrorCode::FileError));
+        auto errorCode = kIsNet ? std::to_string(static_cast<uint32_t>(Error::NetworkError))
+                                : std::to_string(static_cast<uint32_t>(Error::IOError));
         notifyPlayerEvent(PlayerEvent::OnError, errorCode);
         return false;
     }

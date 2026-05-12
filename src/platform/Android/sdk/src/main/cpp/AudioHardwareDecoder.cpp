@@ -14,7 +14,7 @@ void AudioHardwareDecoder::flush() noexcept {
     isCompleted_ = false;
 }
 
-DecoderErrorCode AudioHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
+Error AudioHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
     assert(frame && frame->isAudio());
     NativeDecodeFlag flag = NativeDecodeFlag::None;
     if (frame->info->isEndOfStream) {
@@ -27,7 +27,7 @@ DecoderErrorCode AudioHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
         flag,
         false // false for audio
     );
-    if (res > DecoderErrorCode::Unknown) {
+    if (res == Error::Success || res == Error::CodecAgain) {
         LogI("send audio packet success, pts:{}, dts:{}, pts time:{}, dts time:{}",
              frame->pts,
              frame->dts,

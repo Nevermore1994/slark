@@ -6,6 +6,7 @@
 //
 #pragma once
 #include "AVFrame.hpp"
+#include "Error.h"
 #include "NonCopyable.h"
 #include "Reflection.hpp"
 #include "Synchronized.hpp"
@@ -22,18 +23,6 @@ enum class DecoderType {
     AACHardwareDecoder = 1002,
     AudioDecoderEnd,
     VideoHardWareDecoder = 2001,
-};
-
-enum class DecoderErrorCode : int8_t {
-    Unknown = 0,
-    Again = 1,
-    Success = 2,
-    NotProcessed = -1,
-    NotStart = -2,
-    InputDataError = -3,
-    InputDataTooLarge = -4,
-    NotFoundDecoder = -5,
-    ErrorDecoder = -6,
 };
 
 struct DecoderTypeInfo {
@@ -109,7 +98,7 @@ public:
         reset();
     }
 
-    virtual DecoderErrorCode decode(AVFrameRefPtr& frame) noexcept = 0;
+    virtual Error decode(AVFrameRefPtr& frame) noexcept = 0;
 
     void setReceiveFunc(DecoderReceiveFunc&& func) noexcept {
         receiveFunc_.reset(std::make_shared<DecoderReceiveFunc>(std::move(func)));

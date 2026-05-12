@@ -15,20 +15,20 @@ using namespace slark;
 using namespace slark::JNI;
 constexpr std::string_view kMediaCodecDecoderClass = "com/slark/sdk/MediaCodecDecoder";
 
-DecoderErrorCode Native_HardwareDecoder_sendPacket(JNIEnv* env,
-                                                   std::string_view decoderId,
-                                                   DataPtr& data,
-                                                   int64_t pts,
-                                                   NativeDecodeFlag flag,
-                                                   bool isVideo) {
+Error Native_HardwareDecoder_sendPacket(JNIEnv* env,
+                                        std::string_view decoderId,
+                                        DataPtr& data,
+                                        int64_t pts,
+                                        NativeDecodeFlag flag,
+                                        bool isVideo) {
     if ((data == nullptr || data->empty()) && flag != NativeDecodeFlag::EndOfStream) {
         LogE("data error");
-        return DecoderErrorCode::InputDataError;
+        return Error::CodecInputError;
     }
     auto decoderClass = JNICache::instance().getClass(env, kMediaCodecDecoderClass);
     if (!decoderClass) {
         LogE("create decoder failed, not found video decoder class");
-        return DecoderErrorCode::Unknown;
+        return Error::CodecError;
     }
     auto methodSignature = JNI::makeSignature(JNI::Sig::Int,
                                               JNI::Sig::String,
@@ -39,7 +39,7 @@ DecoderErrorCode Native_HardwareDecoder_sendPacket(JNIEnv* env,
         JNICache::instance().getStaticMethod(decoderClass, "sendPacket", methodSignature);
     if (!methodId) {
         LogE("create decoder failed, not found send data method");
-        return DecoderErrorCode::Unknown;
+        return Error::CodecError;
     }
     JNIReference<jbyteArray> byteArray(env, nullptr);
     if (flag != NativeDecodeFlag::EndOfStream) {
@@ -61,7 +61,7 @@ DecoderErrorCode Native_HardwareDecoder_sendPacket(JNIEnv* env,
                                        byteArray.detach(),
                                        static_cast<jlong>(pts),
                                        static_cast<jint>(flag));
-    return static_cast<DecoderErrorCode>(res);
+    return static_cast<Error>(res);
 }
 
 std::string Native_HardwareDecoder_createVideoDecoder(
@@ -272,14 +272,14 @@ std::string NativeHardwareDecoder::createAudioDecoder(
     return Native_HardwareDecoder_createAudioDecoder(envGuard.get(), decoderConfig);
 }
 
-DecoderErrorCode NativeHardwareDecoder::sendPacket(std::string_view decoderId,
-                                                   DataPtr& data,
-                                                   int64_t pts,
-                                                   NativeDecodeFlag flag,
-                                                   bool isVideo) {
+Error NativeHardwareDecoder::sendPacket(std::string_view decoderId,
+                                        DataPtr& data,
+                                        int64_t pts,
+                                        NativeDecodeFlag flag,
+                                        bool isVideo) {
     if (decoderId.empty()) {
         LogE("decoderId is empty");
-        return DecoderErrorCode::NotFoundDecoder;
+        return Error::CodecNotFound;
     }
     JNIEnvGuard envGuard(getJavaVM());
     return Native_HardwareDecoder_sendPacket(envGuard.get(), decoderId, data, pts, flag, isVideo);

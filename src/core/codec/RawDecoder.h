@@ -26,7 +26,7 @@ public:
 
     void flush() noexcept override;
 
-    DecoderErrorCode decode(AVFrameRefPtr& frame) noexcept override;
+    Error decode(AVFrameRefPtr& frame) noexcept override;
 
     inline static const DecoderTypeInfo& info() noexcept {
         static DecoderTypeInfo info = {

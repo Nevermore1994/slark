@@ -6,6 +6,7 @@
 
 #include "Data.h"
 #include "DecoderConfig.h"
+#include "Error.h"
 
 #include <string>
 
@@ -18,19 +19,17 @@ enum NativeDecodeFlag {
     EndOfStream = 4,
 };
 
-enum class DecoderErrorCode : int8_t;
-
 struct NativeHardwareDecoder {
     static std::string createVideoDecoder(const std::shared_ptr<VideoDecoderConfig>& decoderConfig,
                                           DecodeMode mode);
 
     static std::string createAudioDecoder(const std::shared_ptr<AudioDecoderConfig>& decoderConfig);
 
-    static DecoderErrorCode sendPacket(std::string_view decoderId,
-                                       DataPtr& data,
-                                       int64_t pts,
-                                       NativeDecodeFlag flag,
-                                       bool isVideo = true);
+    static Error sendPacket(std::string_view decoderId,
+                            DataPtr& data,
+                            int64_t pts,
+                            NativeDecodeFlag flag,
+                            bool isVideo = true);
 
     static void release(std::string_view decoderId);
 

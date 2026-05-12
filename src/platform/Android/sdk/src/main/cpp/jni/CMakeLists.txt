@@ -1,8 +1,8 @@
 add_library(slark_jni_common STATIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/JNICache.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/JNIFileUtil.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/JNIInit.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/JNIMarshal.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/JNICache.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/JNIFileUtil.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/JNIInit.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/JNIMarshal.cpp
 )
 
 target_include_directories(slark_jni_common PUBLIC

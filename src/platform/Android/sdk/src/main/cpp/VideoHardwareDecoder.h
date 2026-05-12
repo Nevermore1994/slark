@@ -21,7 +21,7 @@ public:
 public:
     bool open(std::shared_ptr<DecoderConfig> config) noexcept override;
 
-    DecoderErrorCode decode(AVFrameRefPtr& frame) noexcept override;
+    Error decode(AVFrameRefPtr& frame) noexcept override;
 
     inline static const DecoderTypeInfo& info() noexcept {
         static DecoderTypeInfo info = {
@@ -35,11 +35,11 @@ public:
     void flush() noexcept override;
 
 private:
-    DecoderErrorCode sendPacket(AVFrameRefPtr& frame) noexcept;
+    Error sendPacket(AVFrameRefPtr& frame) noexcept;
 
-    DecoderErrorCode decodeByteBufferMode(AVFrameRefPtr& frame) noexcept;
+    Error decodeByteBufferMode(AVFrameRefPtr& frame) noexcept;
 
-    DecoderErrorCode decodeTextureMode(AVFrameRefPtr& frame) noexcept;
+    Error decodeTextureMode(AVFrameRefPtr& frame) noexcept;
 
     void requestDecodeVideoFrame() noexcept;
 

@@ -90,9 +90,7 @@ private:
 
     void drainTaskQueue() noexcept;
 
-    void runRepeatTasks() noexcept;
-
-    [[nodiscard]] bool checkRepeatTaskDue() noexcept;
+    std::chrono::milliseconds runRepeatTasks() noexcept;
 
     TimerTask wrapOneShotTask(Task task) noexcept;
 

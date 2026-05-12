@@ -13,7 +13,7 @@ add_subdirectory(${SLARK_PROJECT_PATH} slark)
 add_subdirectory(jni)
 
 set(BUSINESS_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/AACHardwareDecoder.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/AACHardwareDecoder.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/AndroidEGLContext.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/AudioPlayerNative.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/AudioRender.cpp
@@ -28,7 +28,7 @@ set(BUSINESS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/Texture.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/TexturePool.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/VideoDecodeResource.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/VideoHardwareDecoder.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/VideoHardwareDecoder.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/VideoRender.cpp
 )
 

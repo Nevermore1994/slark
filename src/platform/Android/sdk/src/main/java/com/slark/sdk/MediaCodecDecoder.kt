@@ -9,6 +9,7 @@
 
 package com.slark.sdk
 
+import com.slark.api.SlarkPlayerErrorCode
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
@@ -46,18 +47,6 @@ class MediaCodecDecoder(
         Flush,
     }
 
-    enum class ErrorCode(i: Int) {
-        Unknown(0),
-        Again(1),
-        Success(2),
-        NotProcessed(-1),
-        NotStart(-2),
-        InputDataError(-3),
-        InputDataTooLarge(-4),
-        NotFoundDecoder(-5),
-        ErrorDecoder(-6),
-    }
-
     init {
         decoder = MediaCodecDecoderPool.acquireDecoder(mediaInfo)
         decoder?.let { decoder ->
@@ -85,13 +74,13 @@ class MediaCodecDecoder(
 
     fun sendPacket(byteBuffer: ByteArray?, presentationTimeUs: Long, flag: Int): Int {
         val mediaInfo = if (format.isVideoFormat()) "video " else "audio "
-        var errorCode: ErrorCode = ErrorCode.Unknown
+        var errorCode: SlarkPlayerErrorCode = SlarkPlayerErrorCode.CodecError
         if (!isRunning) {
-            errorCode = ErrorCode.NotStart
-            return errorCode.ordinal
+            errorCode = SlarkPlayerErrorCode.CodecNotStarted
+            return errorCode.value
         }
         if (isCompleted) {
-            errorCode = ErrorCode.InputDataError
+            errorCode = SlarkPlayerErrorCode.CodecInputError
             SlarkLog.e(LOG_TAG, "$mediaInfo coder is completed")
             return errorCode.ordinal
         }
@@ -100,7 +89,7 @@ class MediaCodecDecoder(
             val inputBufferIndex =
                 decoder?.dequeueInputBuffer(10_000) ?: return@execute
             if (inputBufferIndex == -1) {
-                errorCode = ErrorCode.NotProcessed
+            errorCode = SlarkPlayerErrorCode.CodecNotProcessed
                 return@execute
             }
             val inputBuffer = decoder!!.getInputBuffer(inputBufferIndex)!!
@@ -109,12 +98,12 @@ class MediaCodecDecoder(
                 decoder?.queueInputBuffer(inputBufferIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
             } else {
                 if (byteBuffer == null || byteBuffer.isEmpty()) {
-                    errorCode = ErrorCode.InputDataError
+                    errorCode = SlarkPlayerErrorCode.CodecInputError
                     return@execute
                 }
                 if (inputBuffer.capacity() < byteBuffer.size) {
                     SlarkLog.e(LOG_TAG, mediaInfo + "input buffer too small: ${inputBuffer.capacity()} < ${byteBuffer.size}")
-                    errorCode = ErrorCode.InputDataTooLarge
+                    errorCode = SlarkPlayerErrorCode.CodecInputTooLarge
                     return@execute
                 }
                 inputBuffer.put(byteBuffer)
@@ -130,22 +119,22 @@ class MediaCodecDecoder(
             @Suppress("DEPRECATION")
             when (outputBufferIndex) {
                 MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                    errorCode = ErrorCode.Again
+                    errorCode = SlarkPlayerErrorCode.CodecAgain
                     return@execute
                 }
                 MediaCodec.INFO_TRY_AGAIN_LATER -> {
-                    errorCode = ErrorCode.Again
+                    errorCode = SlarkPlayerErrorCode.CodecAgain
                     return@execute
                 }
                 MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED -> {
                     @Suppress("DEPRECATION")
-                    errorCode = ErrorCode.Again
+                    errorCode = SlarkPlayerErrorCode.CodecAgain
                     return@execute
                 }
                 else -> {
                     if (format.isVideoFormat() && decodeMode == DecodeMode.Texture) {
                         decoder?.releaseOutputBuffer(outputBufferIndex, true)
-                        errorCode = ErrorCode.Success
+                        errorCode = SlarkPlayerErrorCode.Success
                     } else {
                         val outputBuffer =
                             decoder?.getOutputBuffer(outputBufferIndex) ?: return@execute
@@ -155,7 +144,7 @@ class MediaCodecDecoder(
                         outputBuffer.clear()
                         processRawData(decoderId, decodeData, info.presentationTimeUs, isCompleted)
                         decoder?.releaseOutputBuffer(outputBufferIndex, false)
-                        errorCode = ErrorCode.Success
+                        errorCode = SlarkPlayerErrorCode.Success
                     }
                     return@execute
                 }
@@ -284,9 +273,9 @@ class MediaCodecDecoder(
         fun sendPacket(decoderId: String, byteBuffer: ByteArray?, presentationTimeUs: Long, flag: Int): Int {
             if (!decoders.containsKey(decoderId)) {
                 SlarkLog.e(LOG_TAG, "not found decoder")
-                return ErrorCode.NotFoundDecoder.ordinal
-            }
-            return decoders[decoderId]?.sendPacket(byteBuffer, presentationTimeUs, flag) ?: ErrorCode.NotFoundDecoder.ordinal
+            return SlarkPlayerErrorCode.CodecNotFound.value
+        }
+        return decoders[decoderId]?.sendPacket(byteBuffer, presentationTimeUs, flag) ?: SlarkPlayerErrorCode.CodecNotFound.value
         }
 
         @JvmStatic

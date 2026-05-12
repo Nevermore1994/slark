@@ -39,15 +39,6 @@ enum class PlayerEvent : uint8_t {
     OnError,
 };
 
-enum class PlayerErrorCode : uint32_t {
-    FileError = 1000,
-    NetWorkError,
-    NotSupportFormat = 2000,
-    DemuxError,
-    DecodeError,
-    RenderError,
-};
-
 struct ResourceItem {
     std::string path;           ///< local path or http url
     double displayStart = 0;    ///< play start offset, seconds

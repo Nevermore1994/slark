@@ -19,8 +19,6 @@ using namespace std::chrono_literals;
 
 std::shared_ptr<Thread> Thread::create(std::string name) {
     auto thread = std::shared_ptr<Thread>(new Thread(std::move(name)));
-    // 使用 shared_from_this() 确保 jthread 回调持有 shared_ptr，
-    // 避免调用方提前释放 Thread 导致 process 访问已析构对象
     thread->worker_ = std::jthread([weak = thread->weak_from_this()](std::stop_token stopToken) {
         if (auto self = weak.lock()) {
             self->process(stopToken);
@@ -60,11 +58,11 @@ void Thread::stop() noexcept {
 }
 
 void Thread::pause() noexcept {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (!isRunning_) {
-        return;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        isRunning_ = false;
     }
-    isRunning_ = false;
+    cond_.notify_all();
 }
 
 void Thread::start() noexcept {
@@ -98,6 +96,9 @@ TimerId Thread::schedule(Time::TimePoint timePoint, Task task) noexcept {
 }
 
 TimerId Thread::scheduleRepeat(milliseconds interval, Task task) noexcept {
+    if (worker_.get_stop_token().stop_requested()) {
+        return TimerId{};
+    }
     auto id = TimerId::next();
     std::lock_guard<std::mutex> lock(mutex_);
     repeatTasks_.push_back(RepeatTask{
@@ -128,120 +129,94 @@ void Thread::process(std::stop_token stopToken) noexcept {
             setup();
         }
 
-        // 先检查 repeat task 是否到期
-        bool hasDueRepeatTask = checkRepeatTaskDue();
-
-        // 如果 repeat task 到期，优先处理
-        if (hasDueRepeatTask) {
-            runRepeatTasks();
-        }
-
-        drainTaskQueue();
-
-        bool running;
         {
-            std::lock_guard<std::mutex> lock(mutex_);
-            running = isRunning_;
-        }
-
-        if (running) {
-            lastRunTimeStamp_ = Time::nowTimeStamp().point();
-
-            auto waitTime = std::chrono::milliseconds::max();
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                auto now = Time::nowTimeStamp();
-                for (const auto& rt : repeatTasks_) {
-                    if (rt.lastRunTime.point() == 0) {
-                        waitTime = 0ms;
-                        break;
-                    }
-                    auto elapsed = (now - rt.lastRunTime).toMilliSeconds();
-                    auto remaining = rt.interval - elapsed;
-                    if (remaining <= 0ms) {
-                        waitTime = 0ms;
-                        break;
-                    }
-                    waitTime = std::min(waitTime, remaining);
-                }
-            }
-
-            if (waitTime > 0ms && waitTime != std::chrono::milliseconds::max()) {
-                std::unique_lock<std::mutex> lock(mutex_);
-                cond_.wait_for(lock, stopToken, waitTime, [this] {
-                    return !isRunning_ || !taskQueue_.empty();
-                });
-            } else if (waitTime == std::chrono::milliseconds::max()) {
-                std::unique_lock<std::mutex> lock(mutex_);
-                cond_.wait(lock, [this, &stopToken] {
-                    return stopToken.stop_requested() || !isRunning_ || !taskQueue_.empty();
-                });
-            }
-        } else {
             std::unique_lock<std::mutex> lock(mutex_);
             cond_.wait(lock, [this, &stopToken] {
-                return stopToken.stop_requested() || isRunning_ || !taskQueue_.empty();
+                return stopToken.stop_requested() || isRunning_;
             });
-            if (!stopToken.stop_requested()) {
-                lock.unlock();
-                drainTaskQueue();
+            if (!isRunning_) {
+                continue;
             }
         }
+
+        if (stopToken.stop_requested()) {
+            break;
+        }
+
+        lastRunTimeStamp_ = Time::nowTimeStamp().point();
+
+        auto waitTime = runRepeatTasks();
+        drainTaskQueue();
+
+        if (waitTime == 0ms) {
+            continue;
+        }
+
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (waitTime == std::chrono::milliseconds::max()) {
+            cond_.wait(lock, [this, &stopToken] {
+                return stopToken.stop_requested() || !isRunning_;
+            });
+        } else {
+            cond_.wait_for(lock, stopToken, waitTime, [this] {
+                return !isRunning_;
+            });
+        }
     }
 }
 
-bool Thread::checkRepeatTaskDue() noexcept {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto now = Time::nowTimeStamp();
-    for (const auto& rt : repeatTasks_) {
-        if (rt.lastRunTime.point() == 0) {
-            return true;
-        }
-        auto elapsed = (now - rt.lastRunTime).toMilliSeconds();
-        if (elapsed >= rt.interval) {
-            return true;
-        }
-    }
-    return false;
-}
+milliseconds Thread::runRepeatTasks() noexcept {
+    // 一次加锁，收集到期任务和 taskPtr，同时计算下次最小等待时间
+    struct DueTask {
+        TimerId id;
+        std::shared_ptr<Task> taskPtr;
+    };
 
-void Thread::runRepeatTasks() noexcept {
-    // 按 TimerId 收集到期任务，避免索引在并发删除下错位
-    std::vector<TimerId> dueIds;
+    std::vector<DueTask> dueTasks;
+    auto waitTime = std::chrono::milliseconds::max();
     {
         std::lock_guard<std::mutex> lock(mutex_);
         auto now = Time::nowTimeStamp();
         for (const auto& rt : repeatTasks_) {
-            if (rt.lastRunTime.point() == 0) {
-                dueIds.push_back(rt.id);
-                continue;
+            bool due = rt.lastRunTime.point() == 0;
+            if (!due) {
+                auto elapsed = (now - rt.lastRunTime).toMilliSeconds();
+                auto remaining = rt.interval - elapsed;
+                if (remaining <= 0ms) {
+                    due = true;
+                } else {
+                    waitTime = std::min(waitTime, remaining);
+                }
             }
-            auto elapsed = (now - rt.lastRunTime).toMilliSeconds();
-            if (elapsed >= rt.interval) {
-                dueIds.push_back(rt.id);
+            if (due && rt.task && *rt.task) {
+                dueTasks.push_back({rt.id, rt.task});
             }
         }
     }
 
-    for (auto dueId : dueIds) {
-        std::shared_ptr<Task> taskPtr;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            auto it = std::ranges::find(repeatTasks_, dueId, &RepeatTask::id);
-            if (it != repeatTasks_.end() && it->task && *it->task) {
-                taskPtr = it->task; // shared_ptr 引用计数增加，避免悬空
-            }
-        }
+    if (dueTasks.empty()) {
+        return waitTime;
+    }
 
-        if (taskPtr && *taskPtr) {
-            (*taskPtr)();
-            std::lock_guard<std::mutex> lock(mutex_);
-            auto it = std::ranges::find(repeatTasks_, dueId, &RepeatTask::id);
+    for (auto& [id, taskPtr] : dueTasks) {
+        (*taskPtr)();
+    }
+
+    // 批量更新 lastRunTime
+    auto now = Time::nowTimeStamp();
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (const auto& [id, _] : dueTasks) {
+            auto it = std::ranges::find(repeatTasks_, id, &RepeatTask::id);
             if (it != repeatTasks_.end()) {
-                it->lastRunTime = Time::nowTimeStamp();
+                it->lastRunTime = now;
+                // 执行完后计算剩余时间
+                waitTime = std::min(waitTime, it->interval);
             }
         }
     }
+
+    return waitTime;
 }
 
 void Thread::drainTaskQueue() noexcept {

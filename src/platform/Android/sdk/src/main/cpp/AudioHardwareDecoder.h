@@ -13,7 +13,7 @@ public:
 
     ~AudioHardwareDecoder() override = default;
 
-    DecoderErrorCode decode(AVFrameRefPtr& frame) noexcept override;
+    Error decode(AVFrameRefPtr& frame) noexcept override;
 
     bool open(std::shared_ptr<DecoderConfig> config) noexcept override;
 
