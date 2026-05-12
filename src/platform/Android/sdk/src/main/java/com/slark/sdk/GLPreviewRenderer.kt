@@ -24,9 +24,9 @@ class GLPreviewRenderer : IPreviewRenderer {
     private var textureVBO: Int = 0
     private var surfaceSize: Size = Size(0, 0)
     @Volatile
-    override var rotation: Double = 0.0
+    var rotation: Double = 0.0
 
-    fun init() {
+    override fun init() {
         do {
             program = createGLProgram(VERTEX_SHADER, FRAGMENT_SHADER)
             if (program == 0) { SlarkLog.e(LOG_TAG, "create program failed"); break }
@@ -94,6 +94,10 @@ class GLPreviewRenderer : IPreviewRenderer {
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
         GLES20.glUseProgram(0)
         return true
+    }
+
+    override fun setRotation(rotation: Double) {
+        this.rotation = rotation
     }
 
     override fun setSurfaceSize(width: Int, height: Int) {

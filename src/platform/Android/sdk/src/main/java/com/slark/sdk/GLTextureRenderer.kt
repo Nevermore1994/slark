@@ -99,7 +99,7 @@ class GLTextureRenderer : ITextureRenderer {
     }
 
     override fun awaitFrame(waitTime: Long): Pair<Boolean, Long> {
-        frame waiting handled by GLGraphicsSurface via SurfaceTexture
+        // frame waiting handled by GLGraphicsSurface via SurfaceTexture
         return true to 0L
     }
 

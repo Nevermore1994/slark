@@ -19,7 +19,7 @@ class GLRenderThread(
     private var height: Int
 ) : Thread(), IRenderThread {
     override var playerId: String = ""
-    private val renderer: IPreviewRenderer = GLPreviewRenderer().apply { init() }
+    private val renderer: IPreviewRenderer = GLPreviewRenderer()
     @Volatile
     private var running = true
     private val lock = Object()
@@ -51,6 +51,7 @@ class GLRenderThread(
             SlarkLog.e(LOG_TAG, "createEGLContext failed")
             return
         }
+        renderer.init()
         renderer.setSurfaceSize(width, height)
         // 在 GL 线程启动后，向主线程 Choreographer 注册 VSync 回调
         android.os.Handler(android.os.Looper.getMainLooper()).post {

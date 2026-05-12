@@ -85,7 +85,6 @@ class PreviewRender(): GLSurfaceView.Renderer {
             SlarkLog.e(LOG_TAG, "textureId is invalid")
             return false
         }
-        SlarkLog.i(LOG_TAG, "draw video frame:${texture.textureId}")
         onDrawFrame(null)
         sharedTexture = RenderTexture.default()
         return true
@@ -97,7 +96,6 @@ class PreviewRender(): GLSurfaceView.Renderer {
         GLES20.glViewport(0, 0, size.width, size.height)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
 
-        val bitmap = readTextureToBitmap(sharedTexture) for debug
         val pictureSize = Size(sharedTexture.width, sharedTexture.height)
         val contentSize = makeAspectRatioSize(pictureSize, size)
         var normalizedSize = Pair(0.0f, 0.0f)
@@ -114,7 +112,6 @@ class PreviewRender(): GLSurfaceView.Renderer {
             -normalizedSize.first, normalizedSize.second,
             normalizedSize.first, normalizedSize.second
         )
-        SlarkLog.i(LOG_TAG, "normalizedSize: $normalizedSize, size: $size, pictureSize: $pictureSize")
         val vertexPosBuffer = ByteBuffer.allocateDirect(vertexPos.size * Float.SIZE_BYTES)
             .order(ByteOrder.nativeOrder())
             .asFloatBuffer().apply {
@@ -139,7 +136,6 @@ class PreviewRender(): GLSurfaceView.Renderer {
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
         GLES20.glUseProgram(0)
-        SlarkLog.i(LOG_TAG, "draw frame success")
     }
 
     fun release() {
@@ -182,7 +178,6 @@ class PreviewRender(): GLSurfaceView.Renderer {
             }
         """
 
-        fbo
         val textureData = floatArrayOf(
             0f, 0f,
             1f, 0f,

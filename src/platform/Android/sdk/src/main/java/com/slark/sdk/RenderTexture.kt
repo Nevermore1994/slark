@@ -15,6 +15,10 @@ data class RenderTexture(val textureId: Int, val width: Int, val height: Int) {
         return textureId != 0
     }
 
+    fun asBackup(): RenderTexture {
+        return copy().also { it.isBackup = true }
+    }
+
     companion object {
         fun default(): RenderTexture {
             return RenderTexture(0, 0, 0)

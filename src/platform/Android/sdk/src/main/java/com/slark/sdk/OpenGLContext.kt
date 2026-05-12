@@ -48,11 +48,11 @@ class OpenGLContext(
     }
 
     override fun swapBuffers() {
-        buffer swap handled by GLRenderThread or C++ side
+        // buffer swap handled by GLRenderThread or C++ side
     }
 
     override fun makeCurrent() {
-        EGL context attachment handled by C++ side via AndroidEGLContext
+        // EGL context attachment handled by C++ side via AndroidEGLContext
     }
 
     override fun release() {

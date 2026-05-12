@@ -16,14 +16,20 @@ import android.os.HandlerThread
 import android.util.Size
 import android.view.Surface
 
-class RenderSurface : SurfaceTexture.OnFrameAvailableListener {
+class RenderSurface : SurfaceTexture.OnFrameAvailableListener, IGraphicsSurface {
     private var render: TextureRender? = null
     private var surfaceTexture: SurfaceTexture? = null
-    private var surface: Surface? = null
+    private var _surface: Surface? = null
     private val mutex = Object()
     private var isFrameAvailable = false
     private var handlerThread: HandlerThread? = null
     private var handler: Handler? = null
+
+    override val surface: Surface?
+        get() = if (_surface?.isValid == true) _surface else null
+
+    override val isValid: Boolean
+        get() = _surface?.isValid == true && render?.isValid() == true
 
     fun init() {
         render = TextureRender()
@@ -38,7 +44,7 @@ class RenderSurface : SurfaceTexture.OnFrameAvailableListener {
         surfaceTexture = SurfaceTexture(render?.getTextureId() ?: 0).apply {
             setOnFrameAvailableListener(this@RenderSurface, handler)
         }
-        surface = Surface(surfaceTexture)
+        _surface = Surface(surfaceTexture)
     }
 
     override fun onFrameAvailable(surfaceTexture: SurfaceTexture?) {
@@ -48,24 +54,19 @@ class RenderSurface : SurfaceTexture.OnFrameAvailableListener {
         }
     }
 
-    fun surface(): Surface? {
-        if (surface?.isValid == true) {
-            return surface
-        }
-        return null
-    }
-
-    fun release() {
-        surface?.release()
+    override fun release() {
+        _surface?.release()
         surfaceTexture?.release()
         surfaceTexture?.setOnFrameAvailableListener(null)
         render?.release()
-        surface = null
+        handlerThread?.quitSafely()
+        _surface = null
         surfaceTexture = null
         render = null
+        handlerThread = null
     }
 
-    fun drawFrame(format: MediaFormat, size: Size): Boolean {
+    override fun drawFrame(format: MediaFormat, size: Size): Boolean {
         val tex = surfaceTexture
         val r = render
         if (tex == null || r == null) {
@@ -75,10 +76,10 @@ class RenderSurface : SurfaceTexture.OnFrameAvailableListener {
         return r.drawFrame(tex, format, size)
     }
 
-    fun awaitFrame(waitTime: Long): Pair<Boolean, Long> {
+    override fun awaitFrame(waitTime: Long): Pair<Boolean, Long> {
         synchronized(mutex) {
             if (!isFrameAvailable) {
-                mutex.wait(waitTime) wait some time for frame available
+                mutex.wait(waitTime)
                 if (!isFrameAvailable) {
                     SlarkLog.e(LOG_TAG, "wait frame timeout")
                     return false to 0
@@ -94,7 +95,7 @@ class RenderSurface : SurfaceTexture.OnFrameAvailableListener {
         try {
             surfaceTexture?.let {
                 it.updateTexImage()
-                timestamp = it.timestamp / 1000L to us
+                timestamp = it.timestamp / 1000L
             }
         } catch (e: Exception) {
             SlarkLog.e(LOG_TAG, "updateTexImage failed: ${e.message}")

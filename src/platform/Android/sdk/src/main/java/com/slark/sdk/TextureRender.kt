@@ -192,7 +192,6 @@ class TextureRender {
             }
         """.trimIndent()
 
-        x, y,   u, v
         private val kVertices = floatArrayOf(
             -1.0f, -1.0f,   0.0f, 1.0f,
             1.0f, -1.0f,   1.0f, 1.0f,

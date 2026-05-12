@@ -95,7 +95,6 @@ fun createGLProgram(vertexStr: String, fragmentStr: String): Int {
     return program
 }
 
-debug
 fun readTextureToBitmap(texture: RenderTexture): Bitmap? {
     val frameBuffer = IntArray(1)
     GLES20.glGenFramebuffers(1, frameBuffer, 0)
