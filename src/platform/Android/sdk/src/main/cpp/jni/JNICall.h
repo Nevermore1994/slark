@@ -34,6 +34,10 @@ struct JObjectWithSig {
     JObjectWithSig(ObjectReference ref, std::string_view s) noexcept
         : obj(ref.get()), sig(s), ownedObjRef_(std::move(ref)) {}
 
+    // 从 ByteArrayReference 构造，持有其所有权（RAII）
+    JObjectWithSig(ByteArrayReference ref, std::string_view s) noexcept
+        : obj(reinterpret_cast<jobject>(ref.get())), sig(s), ownedByteArrayRef_(std::move(ref)) {}
+
     explicit operator bool() const noexcept {
         return obj != nullptr;
     }
@@ -41,6 +45,7 @@ struct JObjectWithSig {
 private:
     StringReference ownedStrRef_;
     ObjectReference ownedObjRef_;
+    ByteArrayReference ownedByteArrayRef_;
 };
 
 // 运行时返回值签名
@@ -75,6 +80,8 @@ constexpr std::string_view sigOf() {
         return Sig::IntArray;
     } else if constexpr (std::is_same_v<D, jstring>) {
         return Sig::String;
+    } else if constexpr (std::is_same_v<D, jobject>) {
+        return "Ljava/lang/Object;";
     } else if constexpr (std::is_same_v<D, JObjectWithSig>) {
         // 运行时签名，无法在编译期返回，此分支不应被 methodSig() 调用
         // 实际签名由 methodSigRuntime() 处理
@@ -239,8 +246,6 @@ public:
             env->NewObject(c.get(), m.get(), argValue(toArg(env, std::forward<Args>(args)))...)};
     }
 
-    // 获取静态字段（基础类型返回 optional<R>，jobject / jbyteArray 等对象类型返回 ObjectReference）
-    // sig：字段的 JNI 类型签名，对象类型必须传入真实签名（如 "[B"），基础类型可省略
     template <typename R>
     static auto getStaticField(JNIEnv* env,
                                std::string_view cls,
@@ -273,8 +278,6 @@ public:
         }
     }
 
-    // 获取实例字段（基础类型返回 optional<R>，jobject / jbyteArray 等对象类型返回 ObjectReference）
-    // sig：字段的 JNI 类型签名，对象类型必须传入真实签名（如 "[B"），基础类型可省略
     template <typename R>
     static auto getField(JNIEnv* env,
                          jobject obj,
@@ -315,168 +318,197 @@ private:
         } else if constexpr (std::is_same_v<R, jobject>) {
             // callStatic<jobject> / call<jobject> 返回 ObjectReference，emptyResult 需保持一致
             return ObjectReference(nullptr, nullptr);
+        } else if constexpr (std::is_same_v<R, std::string>) {
+            return std::string{};
         } else {
             return std::optional<R>{std::nullopt};
         }
     }
 
-    template <typename R, typename... Args>
-    static auto invokeStatic(JNIEnv* env, jclass cls, jmethodID m, Args&&... args) {
+    // 基础类型分发：接受一个 lambda 提供实际 JNI 调用，消除 invokeStatic/invoke 的重复分支
+    template <typename R, typename CallFn>
+    static auto dispatchPrimitive(JNIEnv* env, CallFn&& callFn) {
+        if constexpr (std::is_same_v<R, std::string>) {
+            StringReference jstr(env, static_cast<jstring>(callFn()));
+            if (env->ExceptionCheck()) {
+                env->ExceptionClear();
+                return std::string{};
+            }
+            return jstr ? FromJVM::str(env, jstr.get()) : std::string{};
+        } else {
+            auto r = callFn();
+            if constexpr (std::is_same_v<R, bool>) {
+                return env->ExceptionCheck() ? std::optional<R>(std::nullopt)
+                                             : std::optional<R>(r != 0);
+            } else {
+                return env->ExceptionCheck() ? std::optional<R>(std::nullopt)
+                                             : std::optional<R>(static_cast<R>(r));
+            }
+        }
+    }
+
+    // 统一调用分发：voidFn/objectFn/primitiveFn 分别对应三种返回类型
+    // 调用方只需传入对应的 lambda，不再重复 if constexpr 链
+    template <typename R, typename VoidFn, typename ObjectFn, typename PrimFn>
+    static auto dispatchCall(JNIEnv* env, VoidFn&& voidFn, ObjectFn&& objectFn, PrimFn&& primFn) {
         if constexpr (std::is_same_v<R, void>) {
-            env->CallStaticVoidMethod(cls, m, argValue(toArg(env, std::forward<Args>(args)))...);
+            voidFn();
             return !env->ExceptionCheck();
         } else if constexpr (std::is_same_v<R, jobject>) {
-            auto r = env->CallStaticObjectMethod(cls,
-                                                 m,
-                                                 argValue(toArg(env, std::forward<Args>(args)))...);
+            auto r = objectFn();
             if (env->ExceptionCheck()) {
                 env->ExceptionClear();
                 return ObjectReference(env, nullptr);
             }
             return ObjectReference(env, r);
+        } else if constexpr (std::is_same_v<R, int32_t>) {
+            return dispatchPrimitive<R>(env, [&] {
+                return primFn.fn.template operator()<jint>();
+            });
+        } else if constexpr (std::is_same_v<R, int64_t>) {
+            return dispatchPrimitive<R>(env, [&] {
+                return primFn.fn.template operator()<jlong>();
+            });
+        } else if constexpr (std::is_same_v<R, bool>) {
+            return dispatchPrimitive<R>(env, [&] {
+                return primFn.fn.template operator()<jboolean>();
+            });
+        } else if constexpr (std::is_same_v<R, float>) {
+            return dispatchPrimitive<R>(env, [&] {
+                return primFn.fn.template operator()<jfloat>();
+            });
+        } else if constexpr (std::is_same_v<R, double>) {
+            return dispatchPrimitive<R>(env, [&] {
+                return primFn.fn.template operator()<jdouble>();
+            });
+        } else if constexpr (std::is_same_v<R, std::string>) {
+            return dispatchPrimitive<R>(env, [&] {
+                return primFn.fn.template operator()<jobject>();
+            });
         } else {
-            auto r = [&] {
-                if constexpr (std::is_same_v<R, int32_t>) {
-                    return env->CallStaticIntMethod(
-                        cls,
-                        m,
-                        argValue(toArg(env, std::forward<Args>(args)))...);
-                } else if constexpr (std::is_same_v<R, int64_t>) {
-                    return env->CallStaticLongMethod(
-                        cls,
-                        m,
-                        argValue(toArg(env, std::forward<Args>(args)))...);
-                } else if constexpr (std::is_same_v<R, bool>) {
-                    return env->CallStaticBooleanMethod(
-                        cls,
-                        m,
-                        argValue(toArg(env, std::forward<Args>(args)))...);
-                } else if constexpr (std::is_same_v<R, float>) {
-                    return env->CallStaticFloatMethod(
-                        cls,
-                        m,
-                        argValue(toArg(env, std::forward<Args>(args)))...);
-                } else if constexpr (std::is_same_v<R, double>) {
-                    return env->CallStaticDoubleMethod(
-                        cls,
-                        m,
-                        argValue(toArg(env, std::forward<Args>(args)))...);
-                } else if constexpr (std::is_same_v<R, std::string>) {
-                    StringReference jstr(env,
-                                         (jstring)env->CallStaticObjectMethod(
-                                             cls,
-                                             m,
-                                             argValue(toArg(env, std::forward<Args>(args)))...));
-                    if (env->ExceptionCheck()) {
-                        env->ExceptionClear();
-                        return std::string{};
-                    }
-                    return jstr ? FromJVM::str(env, jstr.get()) : std::string{};
-                } else {
-                    static_assert(!sizeof(R), "unsupported return type for callStatic");
-                }
-            }();
-            return env->ExceptionCheck() ? std::optional<R>(std::nullopt) : std::optional<R>(r);
+            static_assert(!sizeof(R), "unsupported return type");
         }
+    }
+
+    // invokeImpl<R, IsStatic>：static/instance 两路合一，零开销，消除两套 PrimCaller
+    template <typename R, bool IsStatic, typename ReceiverT, typename... JArgs>
+    static auto invokeImpl(JNIEnv* env, ReceiverT receiver, jmethodID m, JArgs... jargs) {
+        auto callVoid = [&] {
+            if constexpr (IsStatic) {
+                env->CallStaticVoidMethod(receiver, m, jargs...);
+            } else {
+                env->CallVoidMethod(receiver, m, jargs...);
+            }
+        };
+        auto callObject = [&] -> jobject {
+            if constexpr (IsStatic) {
+                return env->CallStaticObjectMethod(receiver, m, jargs...);
+            } else {
+                return env->CallObjectMethod(receiver, m, jargs...);
+            }
+        };
+        // 基础类型分发 lambda，T 决定具体 JNI 函数
+        auto callPrim = [&]<typename T>() {
+            if constexpr (IsStatic) {
+                if constexpr (std::is_same_v<T, jint>) {
+                    return env->CallStaticIntMethod(receiver, m, jargs...);
+                } else if constexpr (std::is_same_v<T, jlong>) {
+                    return env->CallStaticLongMethod(receiver, m, jargs...);
+                } else if constexpr (std::is_same_v<T, jboolean>) {
+                    return env->CallStaticBooleanMethod(receiver, m, jargs...);
+                } else if constexpr (std::is_same_v<T, jfloat>) {
+                    return env->CallStaticFloatMethod(receiver, m, jargs...);
+                } else if constexpr (std::is_same_v<T, jdouble>) {
+                    return env->CallStaticDoubleMethod(receiver, m, jargs...);
+                } else {
+                    return env->CallStaticObjectMethod(receiver, m, jargs...);
+                }
+            } else {
+                if constexpr (std::is_same_v<T, jint>) {
+                    return env->CallIntMethod(receiver, m, jargs...);
+                } else if constexpr (std::is_same_v<T, jlong>) {
+                    return env->CallLongMethod(receiver, m, jargs...);
+                } else if constexpr (std::is_same_v<T, jboolean>) {
+                    return env->CallBooleanMethod(receiver, m, jargs...);
+                } else if constexpr (std::is_same_v<T, jfloat>) {
+                    return env->CallFloatMethod(receiver, m, jargs...);
+                } else if constexpr (std::is_same_v<T, jdouble>) {
+                    return env->CallDoubleMethod(receiver, m, jargs...);
+                } else {
+                    return env->CallObjectMethod(receiver, m, jargs...);
+                }
+            }
+        };
+
+        struct PrimDispatcher {
+            decltype(callPrim)& fn;
+        } prim{callPrim};
+
+        return dispatchCall<R>(env, callVoid, callObject, prim);
+    }
+
+    template <typename R, typename... Args>
+    static auto invokeStatic(JNIEnv* env, jclass cls, jmethodID m, Args&&... args) {
+        auto jargs = std::make_tuple(toArg(env, std::forward<Args>(args))...);
+        return std::apply(
+            [&](auto&&... a) {
+                return invokeImpl<R, true>(env, cls, m, argValue(a)...);
+            },
+            jargs);
     }
 
     template <typename R, typename... Args>
     static auto invoke(JNIEnv* env, jobject obj, jmethodID m, Args&&... args) {
-        if constexpr (std::is_same_v<R, void>) {
-            env->CallVoidMethod(obj, m, argValue(toArg(env, std::forward<Args>(args)))...);
-            return !env->ExceptionCheck();
-        } else if constexpr (std::is_same_v<R, jobject>) {
-            auto r =
-                env->CallObjectMethod(obj, m, argValue(toArg(env, std::forward<Args>(args)))...);
-            if (env->ExceptionCheck()) {
-                env->ExceptionClear();
-                return ObjectReference(env, nullptr);
-            }
-            return ObjectReference(env, r);
+        auto jargs = std::make_tuple(toArg(env, std::forward<Args>(args))...);
+        return std::apply(
+            [&](auto&&... a) {
+                return invokeImpl<R, false>(env, obj, m, argValue(a)...);
+            },
+            jargs);
+    }
+
+    // 字段读取：接受 getter lambda，消除 Static/instance 两套重复分支
+    template <typename R, typename GetterFn>
+    static std::optional<R> readFieldWith(JNIEnv* env, GetterFn&& getter) {
+        if constexpr (std::is_same_v<R, std::string>) {
+            StringReference jstr(env, static_cast<jstring>(getter()));
+            return jstr ? std::optional<R>(FromJVM::str(env, jstr.get())) : std::nullopt;
+        } else if constexpr (std::is_same_v<R, bool>) {
+            return static_cast<jboolean>(getter()) == JNI_TRUE;
         } else {
-            auto r = [&] {
-                if constexpr (std::is_same_v<R, int32_t>) {
-                    return env->CallIntMethod(obj,
-                                              m,
-                                              argValue(toArg(env, std::forward<Args>(args)))...);
-                } else if constexpr (std::is_same_v<R, int64_t>) {
-                    return env->CallLongMethod(obj,
-                                               m,
-                                               argValue(toArg(env, std::forward<Args>(args)))...);
-                } else if constexpr (std::is_same_v<R, bool>) {
-                    return env->CallBooleanMethod(
-                        obj,
-                        m,
-                        argValue(toArg(env, std::forward<Args>(args)))...);
-                } else if constexpr (std::is_same_v<R, float>) {
-                    return env->CallFloatMethod(obj,
-                                                m,
-                                                argValue(toArg(env, std::forward<Args>(args)))...);
-                } else if constexpr (std::is_same_v<R, double>) {
-                    return env->CallDoubleMethod(obj,
-                                                 m,
-                                                 argValue(toArg(env, std::forward<Args>(args)))...);
-                } else if constexpr (std::is_same_v<R, std::string>) {
-                    StringReference jstr(env,
-                                         (jstring)env->CallObjectMethod(
-                                             obj,
-                                             m,
-                                             argValue(toArg(env, std::forward<Args>(args)))...));
-                    if (env->ExceptionCheck()) {
-                        env->ExceptionClear();
-                        return std::string{};
-                    }
-                    return jstr ? FromJVM::str(env, jstr.get()) : std::string{};
-                } else {
-                    static_assert(!sizeof(R), "unsupported return type for call");
-                }
-            }();
-            return env->ExceptionCheck() ? std::optional<R>(std::nullopt) : std::optional<R>(r);
+            return static_cast<R>(getter());
         }
     }
 
-    template <typename R, bool Static, typename ObjT>
+    // readField<R, IsStatic>：static/instance 合一，类型分发集中在一处
+    template <typename R, bool IsStatic, typename ObjT>
     static std::optional<R> readField(JNIEnv* env, ObjT obj, jfieldID f) {
-        if constexpr (Static) {
-            if constexpr (std::is_same_v<R, int32_t>) {
-                return env->GetStaticIntField(obj, f);
-            } else if constexpr (std::is_same_v<R, int64_t>) {
-                return env->GetStaticLongField(obj, f);
-            } else if constexpr (std::is_same_v<R, bool>) {
-                return env->GetStaticBooleanField(obj, f) == JNI_TRUE;
-            } else if constexpr (std::is_same_v<R, float>) {
-                return env->GetStaticFloatField(obj, f);
-            } else if constexpr (std::is_same_v<R, double>) {
-                return env->GetStaticDoubleField(obj, f);
-            } else if constexpr (std::is_same_v<R, std::string>) {
-                StringReference jstr(env, (jstring)env->GetStaticObjectField(obj, f));
-                if (!jstr) {
-                    return std::nullopt;
-                }
-                return FromJVM::str(env, jstr.get());
-            } else {
-                return std::nullopt;
-            }
+        if constexpr (std::is_same_v<R, int32_t>) {
+            return readFieldWith<R>(env, [&] {
+                return IsStatic ? env->GetStaticIntField(obj, f) : env->GetIntField(obj, f);
+            });
+        } else if constexpr (std::is_same_v<R, int64_t>) {
+            return readFieldWith<R>(env, [&] {
+                return IsStatic ? env->GetStaticLongField(obj, f) : env->GetLongField(obj, f);
+            });
+        } else if constexpr (std::is_same_v<R, bool>) {
+            return readFieldWith<R>(env, [&] {
+                return IsStatic ? env->GetStaticBooleanField(obj, f) : env->GetBooleanField(obj, f);
+            });
+        } else if constexpr (std::is_same_v<R, float>) {
+            return readFieldWith<R>(env, [&] {
+                return IsStatic ? env->GetStaticFloatField(obj, f) : env->GetFloatField(obj, f);
+            });
+        } else if constexpr (std::is_same_v<R, double>) {
+            return readFieldWith<R>(env, [&] {
+                return IsStatic ? env->GetStaticDoubleField(obj, f) : env->GetDoubleField(obj, f);
+            });
+        } else if constexpr (std::is_same_v<R, std::string>) {
+            return readFieldWith<R>(env, [&] {
+                return IsStatic ? env->GetStaticObjectField(obj, f) : env->GetObjectField(obj, f);
+            });
         } else {
-            if constexpr (std::is_same_v<R, int32_t>) {
-                return env->GetIntField(obj, f);
-            } else if constexpr (std::is_same_v<R, int64_t>) {
-                return env->GetLongField(obj, f);
-            } else if constexpr (std::is_same_v<R, bool>) {
-                return env->GetBooleanField(obj, f) == JNI_TRUE;
-            } else if constexpr (std::is_same_v<R, float>) {
-                return env->GetFloatField(obj, f);
-            } else if constexpr (std::is_same_v<R, double>) {
-                return env->GetDoubleField(obj, f);
-            } else if constexpr (std::is_same_v<R, std::string>) {
-                StringReference jstr(env, (jstring)env->GetObjectField(obj, f));
-                if (!jstr) {
-                    return std::nullopt;
-                }
-                return FromJVM::str(env, jstr.get());
-            } else {
-                return std::nullopt;
-            }
+            return std::nullopt;
         }
     }
 };

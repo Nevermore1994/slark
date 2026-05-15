@@ -50,8 +50,8 @@ std::unique_ptr<slark::Data> bytes(JNIEnv* env, jobject byteBuffer) noexcept {
     if (!ptr || kCapacity <= 0) {
         return nullptr;
     }
-    return std::make_unique<slark::Data>(reinterpret_cast<const Byte*>(ptr),
-                                         static_cast<uint64_t>(kCapacity));
+    return std::make_unique<slark::Data>(static_cast<uint64_t>(kCapacity),
+                                         reinterpret_cast<const Byte*>(ptr));
 }
 
 } // namespace FromJVM

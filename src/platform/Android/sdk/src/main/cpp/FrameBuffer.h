@@ -6,9 +6,6 @@
 
 #include "Texture.h"
 
-#include <thread>
-#include <unordered_set>
-
 namespace slark {
 
 class FrameBuffer {
@@ -58,7 +55,6 @@ private:
     GLint prevFrameBufferId_ = 0;
     GLuint frameBufferId_ = 0;
     TexturePtr texture_;
-    std::unordered_set<std::thread::id> activeThreads_;
 };
 
 using FrameBufferRefPtr = std::shared_ptr<FrameBuffer>;

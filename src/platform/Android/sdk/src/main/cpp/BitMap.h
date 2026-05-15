@@ -57,7 +57,7 @@ public:
 
     uint8_t* data() const noexcept {
         if (data_) {
-            return data_->rawData;
+            return data_->data();
         }
         return nullptr;
     }

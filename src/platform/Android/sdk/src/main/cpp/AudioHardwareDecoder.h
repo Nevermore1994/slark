@@ -2,6 +2,8 @@
 // Created by Nevermore on 2025/3/9.
 //
 
+#pragma once
+
 #include "NativeDecoderManager.h"
 
 namespace slark {
@@ -21,8 +23,8 @@ public:
 
     inline static const DecoderTypeInfo& info() noexcept {
         static DecoderTypeInfo info = {
-            DecoderType::RAW,
-            BaseClass::registerClass<AudioHardwareDecoder>(GetClassName(AudioHardwareDecoder))};
+            DecoderType::AACHardwareDecoder,
+            Reflection::enroll<AudioHardwareDecoder>("AudioHardwareDecoder")};
         return info;
     }
 

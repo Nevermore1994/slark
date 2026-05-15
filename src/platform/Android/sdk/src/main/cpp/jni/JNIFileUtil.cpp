@@ -40,7 +40,7 @@ std::string getAppPath(const std::string& methodName) noexcept {
 
     // 调用 File.getPath() -> String
     auto path = JNI::JNICall::call<std::string>(env, fileObj.get(), kFileClass, "getPath");
-    return path.value_or(std::string{});
+    return path;
 }
 
 } // namespace

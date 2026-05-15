@@ -25,8 +25,7 @@ Error AudioHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
         frame->data,
         int64_t(frame->ptsTime() * 1000000), // convert to microseconds
         flag,
-        false // false for audio
-    );
+        PacketType::Audio);
     if (res == Error::Success || res == Error::CodecAgain) {
         LogI("send audio packet success, pts:{}, dts:{}, pts time:{}, dts time:{}",
              frame->pts,
@@ -83,7 +82,7 @@ void AudioHardwareDecoder::receiveDecodedData(DataPtr data,
     audioFrameInfo->channels = audioConfig->channels;
     audioFrameInfo->bitsPerSample = audioConfig->bitsPerSample;
     frame->info = std::move(audioFrameInfo);
-    invokeReceiveFunc(std::move(frame));
+    invokeReceiveFunc(DecoderData{std::move(frame)});
 }
 
 } // namespace slark

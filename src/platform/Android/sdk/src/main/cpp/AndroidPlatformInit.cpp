@@ -3,8 +3,8 @@
 //
 
 #include "AACHardwareDecoder.h"
+#include "AAudioRender.h"
 #include "AndroidEGLContext.h"
-#include "AudioRender.h"
 #include "MediaDefs.h"
 #include "PlatformRegistry.h"
 #include "VideoHardwareDecoder.h"
@@ -17,9 +17,9 @@ struct AndroidPlatformRegistrar {
     AndroidPlatformRegistrar() noexcept {
         auto& registry = PlatformRegistry::instance();
 
-        // 注册音频渲染工厂
+        // 注册音频渲染工厂（AAudio callback 模式，低延迟）
         registry.registerAudioRenderFactory([](const std::shared_ptr<AudioInfo>& info) {
-            return std::make_shared<AudioRender>(info);
+            return std::make_shared<AAudioRender>(info);
         });
 
         // 注册GL上下文工厂

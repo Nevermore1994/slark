@@ -38,47 +38,45 @@ void checkAndThrow(JNIEnv* env) {
     // 必须先 clear，才能安全调用其他 JNI 方法（CheckJNI 在 pending exception 下会 abort）
     env->ExceptionClear();
 
-    // RAII 管理 exception local ref
     ObjectReference exRef(env, exception);
 
-    std::string className = "java/lang/Throwable";
-    std::string message;
-
-    // 通过 Class.getName() 获取异常类名
-    auto classClass = JNICache::instance().getClass(env, "java/lang/Class");
-    if (classClass) {
+    auto className = [&]() -> std::string {
+        auto classClass = JNICache::instance().getClass(env, "java/lang/Class");
+        if (!classClass) {
+            return "java/lang/Throwable";
+        }
         auto getNameMethod =
             JNICache::instance().getMethod(classClass, "getName", "()Ljava/lang/String;");
-        if (getNameMethod) {
-            ClassReference exceptionClass(env, env->GetObjectClass(exception));
-            if (exceptionClass) {
-                StringReference nameStr(
-                    env,
-                    static_cast<jstring>(
-                        env->CallObjectMethod(exceptionClass.get(), getNameMethod.get())));
-                if (nameStr) {
-                    className = FromJVM::str(env, nameStr.get());
-                }
-            }
+        if (!getNameMethod) {
+            return "java/lang/Throwable";
         }
-    }
+        ClassReference exceptionClass(env, env->GetObjectClass(exception));
+        if (!exceptionClass) {
+            return "java/lang/Throwable";
+        }
+        StringReference nameStr(
+            env,
+            static_cast<jstring>(env->CallObjectMethod(exceptionClass.get(), getNameMethod.get())));
+        return nameStr ? FromJVM::str(env, nameStr.get()) : "java/lang/Throwable";
+    }();
 
-    // 通过 Throwable.getMessage() 获取异常消息
-    auto throwableClass = JNICache::instance().getClass(env, "java/lang/Throwable");
-    if (throwableClass) {
+    auto message = [&]() -> std::string {
+        auto throwableClass = JNICache::instance().getClass(env, "java/lang/Throwable");
+        if (!throwableClass) {
+            return {};
+        }
         auto getMessageMethod =
             JNICache::instance().getMethod(throwableClass, "getMessage", "()Ljava/lang/String;");
-        if (getMessageMethod) {
-            StringReference msgStr(
-                env,
-                static_cast<jstring>(env->CallObjectMethod(exception, getMessageMethod.get())));
-            if (msgStr) {
-                message = FromJVM::str(env, msgStr.get());
-            }
+        if (!getMessageMethod) {
+            return {};
         }
-    }
+        StringReference msgStr(
+            env,
+            static_cast<jstring>(env->CallObjectMethod(exception, getMessageMethod.get())));
+        return msgStr ? FromJVM::str(env, msgStr.get()) : std::string{};
+    }();
 
-    LogE("JniException: %s: %s", className.c_str(), message.c_str());
+    LogE("JniException: {}: {}", className, message);
     throw JniException(std::move(className), std::move(message));
 }
 

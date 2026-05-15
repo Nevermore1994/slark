@@ -25,7 +25,7 @@ Texture::Texture(uint32_t width, uint32_t height, TextureConfig config, DataPtr 
                  0,
                  config_.format,
                  config_.type,
-                 data ? data->rawData : nullptr);
+                 data ? data->data() : nullptr);
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
@@ -49,7 +49,7 @@ void Texture::updateData(DataPtr data) const noexcept {
                  0,
                  config_.format,
                  config_.type,
-                 data->rawData);
+                 data->data());
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 

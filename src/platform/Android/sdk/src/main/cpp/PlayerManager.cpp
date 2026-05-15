@@ -3,16 +3,49 @@
 //
 #include "GLContextManager.h"
 #include "JNICache.h"
+#include "JNICall.h"
 #include "JNIEnvGuard.h"
 #include "JNIMarshal.h"
 #include "JNISignature.h"
 #include "Log.hpp"
 #include "Manager.hpp"
 #include "Player.h"
+#include "PlayerObserver.h"
 #include "VideoDecodeResource.h"
 #include "VideoRender.h"
 
 namespace slark {
+
+namespace {
+
+constexpr std::string_view kPlayerStateNames[] = {
+    "Unknown",
+    "Initializing",
+    "Prepared",
+    "Buffering",
+    "Ready",
+    "Playing",
+    "Pause",
+    "Stop",
+    "Error",
+    "Completed",
+};
+
+constexpr std::string_view kPlayerEventNames[] = {
+    "FirstFrameRendered",
+    "SeekDone",
+    "PlayEnd",
+    "UpdateCacheTime",
+    "OnError",
+};
+
+template <typename T, size_t N>
+constexpr std::string_view enumToName(const std::string_view (&names)[N], T value) noexcept {
+    auto idx = static_cast<size_t>(value);
+    return idx < N ? names[idx] : "Unknown";
+}
+
+} // namespace
 
 class PlayerObserver : public IPlayerObserver {
 public:
@@ -21,66 +54,25 @@ public:
     void notifyPlayedTime(std::string_view playerId, double time) override {
         using namespace slark::JNI;
         JNIEnvGuard jniGuard(getJavaVM());
-        auto jPlayerId = JNI::ToJVM::str(jniGuard.get(), playerId);
-        auto jTime = static_cast<jdouble>(time);
-        auto playerClass = JNICache::instance().getClass(jniGuard.get(), kPlayerManagerClass);
-        if (!playerClass) {
-            LogE("not found player manager class");
-            return;
-        }
-        auto methodSignature =
-            JNI::makeSignature(JNI::Sig::Void, JNI::Sig::String, JNI::Sig::Double);
-        auto methodId =
-            JNICache::instance().getStaticMethod(playerClass, "notifyPlayerTime", methodSignature);
-        if (!methodId) {
-            LogE("not found method");
-            return;
-        }
-        jniGuard.get()->CallStaticVoidMethod(playerClass.get(),
-                                             methodId.get(),
-                                             jPlayerId.detach(),
-                                             jTime);
+        JNI::JNICall::callStatic<void>(jniGuard.get(),
+                                       kPlayerManagerClass,
+                                       "notifyPlayerTime",
+                                       std::string(playerId),
+                                       time);
     }
 
     void notifyPlayerState(std::string_view playerId, PlayerState state) override {
         using namespace slark::JNI;
         JNIEnvGuard jniGuard(getJavaVM());
-        auto jPlayerId = JNI::ToJVM::str(jniGuard.get(), playerId);
-        auto playerClass = JNICache::instance().getClass(jniGuard.get(), kPlayerManagerClass);
-        if (!playerClass) {
-            LogE("not found player manager class");
-            return;
-        }
-
-        auto methodSignature = JNI::makeSignature(JNI::Sig::Void,
-                                                  JNI::Sig::String,
-                                                  JNI::makeObject(kPlayerStateClass));
-        auto methodId =
-            JNICache::instance().getStaticMethod(playerClass, "notifyPlayerState", methodSignature);
-        if (!methodId) {
-            LogE("not found method");
-            return;
-        }
-        std::string_view fieldView = "Unknown";
-        static std::vector<std::string_view> stateNames = {"Unknown",
-                                                           "Initializing",
-                                                           "Prepared",
-                                                           "Buffering",
-                                                           "Ready",
-                                                           "Playing",
-                                                           "Pause",
-                                                           "Stop",
-                                                           "Error",
-                                                           "Completed"};
-        if (static_cast<uint8_t>(state) < stateNames.size()) {
-            fieldView = stateNames[static_cast<uint8_t>(state)];
-        }
-        auto stateEnum =
-            JNICache::instance().getEnumField(jniGuard.get(), kPlayerStateClass, fieldView);
-        jniGuard.get()->CallStaticVoidMethod(playerClass.get(),
-                                             methodId.get(),
-                                             jPlayerId.detach(),
-                                             stateEnum.detach());
+        auto env = jniGuard.get();
+        auto fieldName = enumToName(kPlayerStateNames, state);
+        auto stateEnum = JNICache::instance().getEnumField(env, kPlayerStateClass, fieldName);
+        JNI::JNICall::callStatic<void>(
+            env,
+            kPlayerManagerClass,
+            "notifyPlayerState",
+            JNI::JObjectWithSig(ToJVM::str(env, playerId), JNI::Sig::String),
+            JNI::JObjectWithSig(std::move(stateEnum), JNI::makeObject(kPlayerStateClass)));
     }
 
     void notifyPlayerEvent(std::string_view playerId,
@@ -88,40 +80,16 @@ public:
                            std::string value) override {
         using namespace slark::JNI;
         JNIEnvGuard jniGuard(getJavaVM());
-        auto jPlayerId = JNI::ToJVM::str(jniGuard.get(), playerId);
-        auto playerClass = JNICache::instance().getClass(jniGuard.get(), kPlayerManagerClass);
-        if (!playerClass) {
-            LogE("not found player manager class");
-            return;
-        }
-
-        auto methodSignature = JNI::makeSignature(JNI::Sig::Void,
-                                                  JNI::Sig::String,
-                                                  JNI::makeObject(kPlayerEventClass),
-                                                  JNI::Sig::String);
-        auto methodId =
-            JNICache::instance().getStaticMethod(playerClass, "notifyPlayerEvent", methodSignature);
-        if (!methodId) {
-            LogE("not found method");
-            return;
-        }
-        std::string_view fieldView = "Unknown";
-        static std::vector<std::string_view> eventNames = {"FirstFrameRendered",
-                                                           "SeekDone",
-                                                           "PlayEnd",
-                                                           "UpdateCacheTime",
-                                                           "OnError"};
-        if (static_cast<uint8_t>(event) < eventNames.size()) {
-            fieldView = eventNames[static_cast<uint8_t>(event)];
-        }
-        auto eventEnum =
-            JNICache::instance().getEnumField(jniGuard.get(), kPlayerEventClass, fieldView);
-        auto jValue = JNI::ToJVM::str(jniGuard.get(), value);
-        jniGuard.get()->CallStaticVoidMethod(playerClass.get(),
-                                             methodId.get(),
-                                             jPlayerId.detach(),
-                                             eventEnum.detach(),
-                                             jValue.detach());
+        auto env = jniGuard.get();
+        auto fieldName = enumToName(kPlayerEventNames, event);
+        auto eventEnum = JNICache::instance().getEnumField(env, kPlayerEventClass, fieldName);
+        JNI::JNICall::callStatic<void>(
+            env,
+            kPlayerManagerClass,
+            "notifyPlayerEvent",
+            JNI::JObjectWithSig(ToJVM::str(env, playerId), JNI::Sig::String),
+            JNI::JObjectWithSig(std::move(eventEnum), JNI::makeObject(kPlayerEventClass)),
+            std::move(value));
     }
 
 private:
@@ -296,21 +264,7 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_state(JNIEnv* env,
     auto playerId = FromJVM::str(env, jPlayerId);
     std::string_view fieldView = "Unknown";
     if (auto player = PlayerManager::shareInstance().find(playerId)) {
-        constexpr std::string_view playerStateNames[] = {
-            "Unknown",
-            "Initializing",
-            "Prepared",
-            "Buffering",
-            "Ready",
-            "Playing",
-            "Pause",
-            "Stop",
-            "Error",
-            "Completed",
-        };
-
-        auto state = player->state();
-        fieldView = playerStateNames[static_cast<size_t>(state)];
+        fieldView = enumToName(kPlayerStateNames, player->state());
     } else {
         LogE("not found player, {}", playerId);
     }

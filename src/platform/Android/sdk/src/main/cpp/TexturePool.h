@@ -2,6 +2,8 @@
 // Created by Nevermore- on 2025/5/15.
 //
 
+#pragma once
+
 #include "Texture.h"
 
 #include <deque>

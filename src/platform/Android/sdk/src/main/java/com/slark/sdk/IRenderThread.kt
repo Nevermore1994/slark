@@ -32,5 +32,6 @@ object RenderThreadFactory {
         height: Int
     ): IRenderThread = when (backend) {
         GraphicsBackend.OpenGL -> GLRenderThread(surface, width, height)
+        GraphicsBackend.Vulkan -> VulkanRenderThread(surface, width, height)
     }
 }

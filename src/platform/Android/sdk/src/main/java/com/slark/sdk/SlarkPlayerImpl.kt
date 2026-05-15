@@ -32,9 +32,10 @@ import kotlin.math.min
 
 class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: String): SlarkPlayer {
     private var playerObserver: SlarkPlayerObserver? = null
-    private var renderThread: EGLRenderThread? = null
+    private var renderThread: IRenderThread? = null
     private var renderView: View? = null
     private var isPlayingBeforeBackground = false
+    private var graphicsBackend: GraphicsBackend = GraphicsBackend.OpenGL
 
     override var isLoop: Boolean = false
         set(value) {
@@ -104,12 +105,7 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
     }
 
     override fun setRotation(rotation: Rotation) {
-        when (rotation) {
-            Rotation.ROTATION_0 -> renderThread?.setRotation(0)
-            Rotation.ROTATION_90 -> renderThread?.setRotation(90)
-            Rotation.ROTATION_180 -> renderThread?.setRotation(180)
-            Rotation.ROTATION_270 -> renderThread?.setRotation(270)
-        }
+        renderThread?.setRotation(rotation.ordinal * 90)
     }
 
     override fun onBackground(isBackground: Boolean) {
@@ -147,12 +143,22 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
         renderThread?.render(textureRenderId, width, height)
     }
 
+    fun switchGraphicsBackend(backend: GraphicsBackend) {
+        graphicsBackend = backend
+    }
+
     private fun onSurfaceAvailable(surface: Surface, width: Int, height: Int) {
         renderThread?.shutdown()
-        renderThread = null
-        renderThread = EGLRenderThread(surface, width, height)
+        renderThread = RenderThreadFactory.create(graphicsBackend, surface, width, height)
         renderThread?.playerId = playerId
         renderThread?.start()
+    }
+
+    private fun shouldRebuildOnSizeChange(): Boolean {
+        val state = state()
+        return state == SlarkPlayerState.Pause ||
+            state == SlarkPlayerState.Ready ||
+            state == SlarkPlayerState.Completed
     }
 
     private fun setupTextureView(textureView: TextureView) {
@@ -164,15 +170,7 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
 
             override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
                 renderThread?.setRenderSize(width, height)
-                val state = state()
-                val isRefresh = state == SlarkPlayerState.Pause ||
-                    state == SlarkPlayerState.Ready ||
-                    state == SlarkPlayerState.Completed
-                if (isRefresh) {
-                    // It seems that the first refresh does not fully adapt to the surface,
-                    // and it always takes the second refresh to display normally.
-                    renderThread?.rebuildSurface()
-                }
+                if (shouldRebuildOnSizeChange()) renderThread?.rebuildSurface()
             }
 
             override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
@@ -181,8 +179,7 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
                 return true
             }
 
-            override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
-            }
+            override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
         }
     }
 
@@ -195,13 +192,7 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
 
             override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
                 renderThread?.setRenderSize(width, height)
-                val state = state()
-                val isRefresh = state == SlarkPlayerState.Pause ||
-                    state == SlarkPlayerState.Ready ||
-                    state == SlarkPlayerState.Completed
-                if (isRefresh) {
-                    renderThread?.rebuildSurface()
-                }
+                if (shouldRebuildOnSizeChange()) renderThread?.rebuildSurface()
             }
 
             override fun surfaceDestroyed(holder: SurfaceHolder) {

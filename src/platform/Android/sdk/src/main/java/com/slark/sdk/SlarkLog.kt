@@ -79,7 +79,7 @@ class SlarkLog {
             try {
                 return " " + MessageFormat.format(format, *args)
             } catch (e: Exception) {
-                If formatting fails, return the original format string
+                // If formatting fails, return the original format string
                 return " [formatting error: ${e.message}]" + ", $format"
             }
         }

@@ -1,11 +1,9 @@
-
 //
 // Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
 // This file is part of Slark.
 // Licensed under the MIT License.
 //
-
 
 package com.slark.sdk
 
@@ -17,17 +15,9 @@ import android.opengl.EGL14
 import android.util.Size
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
-
-enum class DecodeMode(val value: Int) {
-    Texture(0),
-    ByteBuffer(1);
-
-    companion object {
-        fun fromInt(value: Int): DecodeMode {
-            return entries.firstOrNull { it.value == value } ?: Texture
-        }
-    }
-}
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 class MediaCodecDecoder(
     private val mediaInfo: String,
@@ -39,9 +29,14 @@ class MediaCodecDecoder(
     var decoderId: String = hashCode().toString()
         private set
     private var decoder: MediaCodec? = null
-    private var isRunning: Boolean = false
+    private val isRunning = AtomicBoolean(false)
+    private val isCompleted = AtomicBoolean(false)
     private var surface: IGraphicsSurface? = null
-    private var isCompleted: Boolean = false
+
+    // 异步模式：空闲输入槽队列
+    private val inputBufferQueue = LinkedBlockingQueue<Int>()
+    // 异步模式：已解码输出帧队列，元素为 (bufferIndex, BufferInfo)
+    private val outputBufferQueue = LinkedBlockingQueue<Pair<Int, MediaCodec.BufferInfo>>()
 
     enum class Action {
         Flush,
@@ -49,154 +44,161 @@ class MediaCodecDecoder(
 
     init {
         decoder = MediaCodecDecoderPool.acquireDecoder(mediaInfo)
-        decoder?.let { decoder ->
-            decoder.reset()
-            if (format.isVideoFormat()) {
-                if (decodeMode == DecodeMode.Texture) {
-                    surface = graphicsSurface
-                        ?: graphicsContext?.createSurface()
-                        ?: run { val s = RenderSurface(); s.init(); s }
-                    decoder.configure(format, surface?.surface, null, 0)
-                } else {
-                    format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
-                    decoder.configure(format, null, null, 0)
-                }
-            } else {
-                decoder.configure(format, null, null, 0)
-            }
-            decoder.start()
-            isRunning = true
-        } ?: run {
+        val dec = decoder
+        if (dec != null) {
+            dec.reset()
+            configureDecoder(dec)
+            dec.setCallback(makeCodecCallback())
+            dec.start()
+            isRunning.set(true)
+        } else {
             SlarkLog.e(LOG_TAG, "create $mediaInfo decoder error")
-            isRunning = false
+        }
+    }
+
+    private fun configureDecoder(dec: MediaCodec) {
+        if (format.isVideoFormat()) {
+            if (decodeMode == DecodeMode.Texture) {
+                surface = graphicsSurface
+                    ?: graphicsContext?.createSurface()
+                    ?: GLGraphicsSurface().also { it.init() }
+                dec.configure(format, surface?.surface, null, 0)
+            } else {
+                format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
+                dec.configure(format, null, null, 0)
+            }
+        } else {
+            dec.configure(format, null, null, 0)
+        }
+    }
+
+    private fun makeCodecCallback() = object : MediaCodec.Callback() {
+        override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
+            inputBufferQueue.offer(index)
+        }
+
+        override fun onOutputBufferAvailable(codec: MediaCodec, index: Int, info: MediaCodec.BufferInfo) {
+            if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
+                isCompleted.set(true)
+            }
+            if (format.isVideoFormat() && decodeMode == DecodeMode.Texture) {
+                outputBufferQueue.offer(index to info)
+            } else {
+                consumeOutputBuffer(codec, index, info)
+            }
+        }
+
+        override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
+            SlarkLog.e(LOG_TAG, "codec error: ${e.message}")
+            isRunning.set(false)
+        }
+
+        override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {}
+    }
+
+    private fun consumeOutputBuffer(codec: MediaCodec, index: Int, info: MediaCodec.BufferInfo) {
+        try {
+            val outputBuffer = codec.getOutputBuffer(index)
+            if (outputBuffer != null && info.size > 0) {
+                outputBuffer.position(info.offset)
+                outputBuffer.limit(info.size + info.offset)
+                val decodeData = extractBytes(outputBuffer)
+                outputBuffer.clear()
+                processRawData(decoderId, decodeData, info.presentationTimeUs, isCompleted.get())
+            }
+            codec.releaseOutputBuffer(index, false)
+        } catch (e: Exception) {
+            SlarkLog.e(LOG_TAG, "output buffer consume error: ${e.message}")
         }
     }
 
     fun sendPacket(byteBuffer: ByteArray?, presentationTimeUs: Long, flag: Int): Int {
-        val mediaInfo = if (format.isVideoFormat()) "video " else "audio "
-        var errorCode: SlarkPlayerErrorCode = SlarkPlayerErrorCode.CodecError
-        if (!isRunning) {
-            errorCode = SlarkPlayerErrorCode.CodecNotStarted
-            return errorCode.value
+        if (!isRunning.get()) {
+            return SlarkPlayerErrorCode.CodecNotStarted.value
         }
-        if (isCompleted) {
-            errorCode = SlarkPlayerErrorCode.CodecInputError
-            SlarkLog.e(LOG_TAG, "$mediaInfo coder is completed")
-            return errorCode.ordinal
+        if (isCompleted.get()) {
+            SlarkLog.e(LOG_TAG, "${if (format.isVideoFormat()) "video" else "audio"} decoder is completed")
+            return SlarkPlayerErrorCode.CodecInputError.value
         }
 
-        execute {
-            val inputBufferIndex =
-                decoder?.dequeueInputBuffer(10_000) ?: return@execute
-            if (inputBufferIndex == -1) {
-            errorCode = SlarkPlayerErrorCode.CodecNotProcessed
-                return@execute
-            }
-            val inputBuffer = decoder!!.getInputBuffer(inputBufferIndex)!!
+        // 从异步回调队列取空闲输入槽，最多等 10ms
+        val inputIndex = inputBufferQueue.poll(10L, TimeUnit.MILLISECONDS)
+            ?: return SlarkPlayerErrorCode.CodecNotProcessed.value
+
+        try {
+            val inputBuffer = decoder!!.getInputBuffer(inputIndex)!!
             inputBuffer.clear()
             if (flag.hasFlag(MediaCodec.BUFFER_FLAG_END_OF_STREAM)) {
-                decoder?.queueInputBuffer(inputBufferIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                decoder!!.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
             } else {
                 if (byteBuffer == null || byteBuffer.isEmpty()) {
-                    errorCode = SlarkPlayerErrorCode.CodecInputError
-                    return@execute
+                    return SlarkPlayerErrorCode.CodecInputError.value
                 }
                 if (inputBuffer.capacity() < byteBuffer.size) {
-                    SlarkLog.e(LOG_TAG, mediaInfo + "input buffer too small: ${inputBuffer.capacity()} < ${byteBuffer.size}")
-                    errorCode = SlarkPlayerErrorCode.CodecInputTooLarge
-                    return@execute
+                    SlarkLog.e(LOG_TAG, "input buffer too small: ${inputBuffer.capacity()} < ${byteBuffer.size}")
+                    return SlarkPlayerErrorCode.CodecInputTooLarge.value
                 }
                 inputBuffer.put(byteBuffer)
-                decoder?.queueInputBuffer(inputBufferIndex, 0, byteBuffer.size, presentationTimeUs, 0)
+                decoder!!.queueInputBuffer(inputIndex, 0, byteBuffer.size, presentationTimeUs, 0)
             }
+        } catch (e: Exception) {
+            SlarkLog.e(LOG_TAG, "queueInputBuffer exception: ${e.message}")
+            return SlarkPlayerErrorCode.CodecError.value
         }
-
-        execute {
-            val info = MediaCodec.BufferInfo()
-            val outputBufferIndex =
-                decoder?.dequeueOutputBuffer(info, 10_000) ?: return@execute
-            isCompleted = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
-            @Suppress("DEPRECATION")
-            when (outputBufferIndex) {
-                MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                    errorCode = SlarkPlayerErrorCode.CodecAgain
-                    return@execute
-                }
-                MediaCodec.INFO_TRY_AGAIN_LATER -> {
-                    errorCode = SlarkPlayerErrorCode.CodecAgain
-                    return@execute
-                }
-                MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED -> {
-                    @Suppress("DEPRECATION")
-                    errorCode = SlarkPlayerErrorCode.CodecAgain
-                    return@execute
-                }
-                else -> {
-                    if (format.isVideoFormat() && decodeMode == DecodeMode.Texture) {
-                        decoder?.releaseOutputBuffer(outputBufferIndex, true)
-                        errorCode = SlarkPlayerErrorCode.Success
-                    } else {
-                        val outputBuffer =
-                            decoder?.getOutputBuffer(outputBufferIndex) ?: return@execute
-                        outputBuffer.position(info.offset)
-                        outputBuffer.limit(info.size + info.offset)
-                        val decodeData = extractBytes(outputBuffer)
-                        outputBuffer.clear()
-                        processRawData(decoderId, decodeData, info.presentationTimeUs, isCompleted)
-                        decoder?.releaseOutputBuffer(outputBufferIndex, false)
-                        errorCode = SlarkPlayerErrorCode.Success
-                    }
-                    return@execute
-                }
-            }
-        }
-        return errorCode.ordinal
+        return SlarkPlayerErrorCode.Success.value
     }
 
     fun release() {
-        isRunning = false
+        isRunning.set(false)
         flush()
-        decoder?.let { tDecoder ->
-            MediaCodecDecoderPool.releaseDecoder(mediaInfo, tDecoder)
-        }
+        decoder?.let { MediaCodecDecoderPool.releaseDecoder(mediaInfo, it) }
         decoder = null
+        surface?.release()
+        surface = null
     }
 
     fun flush() {
         decoder?.flush()
-        isCompleted = false
+        isCompleted.set(false)
+        inputBufferQueue.clear()
+        outputBufferQueue.clear()
     }
 
-    fun isValid(): Boolean {
-        return decoder != null
-    }
-
-    private fun execute(action: () -> Unit) {
-        try {
-            action.invoke()
-        } catch (e: Exception) {
-            SlarkLog.e(LOG_TAG, "catch Exception:{}", e.message)
-            throw e
-        }
-    }
+    fun isValid(): Boolean = decoder != null
 
     fun requestVideoFrame(waitTime: Long, width: Int, height: Int): Long {
         clearGLStatus()
         val context = EGL14.eglGetCurrentContext()
         if (context == EGL14.EGL_NO_CONTEXT) {
             SlarkLog.e(LOG_TAG, "EGL context is not valid")
-            return 0L
+            return packFrameResult(false, isCompleted.get(), 0L)
         }
-        surface?.let {
-            val res = it.awaitFrame(waitTime)
-            if (res.first) {
-                it.drawFrame(format, Size(width, height))
-                // 高位标记帧可用，次高位标记是否解码完成
-                val flag = (1L shl 63) or ((if (isCompleted) 1L else 0L) shl 62)
-                return flag or (res.second and 0x3FFFFFFFFFFFFFFF)
-            }
+        val startNs = System.nanoTime()
+        val output = outputBufferQueue.poll(waitTime, TimeUnit.MILLISECONDS)
+            ?: return packFrameResult(false, isCompleted.get(), 0L)
+        val (outputIndex, info) = output
+        val surfaceRef = surface ?: run {
+            // surface 无效时不渲染，直接丢弃
+            decoder?.releaseOutputBuffer(outputIndex, false)
+            return packFrameResult(false, isCompleted.get(), 0L)
         }
-        return (0L shl 63) or ((if (isCompleted) 1L else 0L) shl 62)
+        // releaseOutputBuffer(true) 触发 MediaCodec 将帧渲染到 Surface
+        decoder?.releaseOutputBuffer(outputIndex, true)
+        // 用剩余时间等 SurfaceTexture 回调，避免总等待超过 waitTime
+        val elapsedMs = (System.nanoTime() - startNs) / 1_000_000L
+        val remainMs = (waitTime - elapsedMs).coerceAtLeast(1L)
+        val (frameReady, _) = surfaceRef.awaitFrame(remainMs)
+        if (frameReady) {
+            surfaceRef.drawFrame(format, Size(width, height))
+            return packFrameResult(true, isCompleted.get(), info.presentationTimeUs)
+        }
+        return packFrameResult(false, isCompleted.get(), 0L)
+    }
+    private fun packFrameResult(isAvailable: Boolean, completed: Boolean, pts: Long): Long {
+        // 高位标记帧可用，次高位标记是否解码完成
+        val availBit = if (isAvailable) 1L shl 63 else 0L
+        val completeBit = if (completed) 1L shl 62 else 0L
+        return availBit or completeBit or (pts and 0x3FFFFFFFFFFFFFFF)
     }
 
     private external fun processRawData(decoderId: String, byteBuffer: ByteArray, presentationTimeUs: Long, isCompleted: Boolean)
@@ -205,95 +207,78 @@ class MediaCodecDecoder(
         const val LOG_TAG = "MediaCodec"
         private val decoders = ConcurrentHashMap<String, MediaCodecDecoder>()
 
-        fun createVideoFormat(mediaInfo: String, videoInfos: IntArray): MediaFormat {
-            if (videoInfos.size < 4) {
-                throw IllegalArgumentException("Invalid video info format")
-            }
-            return MediaFormat.createVideoFormat(mediaInfo, videoInfos[0].toInt(), videoInfos[1].toInt()).apply {
-                setInteger(MediaFormat.KEY_PROFILE, videoInfos[2].toInt())
-                setInteger(MediaFormat.KEY_LEVEL, videoInfos[3].toInt())
-            }
-        }
-
         @JvmStatic
-        fun createVideoDecoder(mediaInfo: String, videoInfos: IntArray): String {
-            val format = createVideoFormat(mediaInfo, videoInfos)
-            val extractorMaxSize = format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE, -1)
-            if (extractorMaxSize > 0) {
-                format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, extractorMaxSize)
-            } else {
-                format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 1048576 * 2)
+        fun createVideoDecoder(mediaInfo: String, config: VideoDecoderConfig): String {
+            val format = MediaFormat.createVideoFormat(mediaInfo, config.width, config.height).apply {
+                setInteger(MediaFormat.KEY_PROFILE, config.profile)
+                setInteger(MediaFormat.KEY_LEVEL, config.level)
+                setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 1048576 * 2)
             }
-            val decoder = MediaCodecDecoder(mediaInfo, format, DecodeMode.fromInt(if (videoInfos.size >= 5) videoInfos[4] else 0))
-            val decoderId = decoder.decoderId
-            decoders[decoderId] = decoder
-            return decoderId
-        }
-
-        @JvmStatic
-        fun createAudioDecoder(mediaInfo: String, audioInfos: IntArray): String {
-            if (audioInfos.size < 6) {
-                SlarkLog.e(LOG_TAG, "input param error")
+            val decoder = MediaCodecDecoder(mediaInfo, format, config.decodeMode)
+            if (!decoder.isValid()) {
+                SlarkLog.e(LOG_TAG, "createVideoDecoder failed for $mediaInfo")
                 return ""
             }
-            val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, audioInfos[0], audioInfos[1])
-            val channelCount = audioInfos[1]
-            val audioProfile = audioInfos[2]
-            format.setInteger(MediaFormat.KEY_AAC_PROFILE, audioProfile)
-            val extractorMaxSize = format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE, -1)
-            if (extractorMaxSize > 0) {
-                format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, extractorMaxSize)
-            } else {
-                format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 4096)
-            }
+            val id = decoder.decoderId
+            decoders[id] = decoder
+            return id
+        }
 
-            val samplingFreqIndex = audioInfos[3]
-            val extAudioType = audioInfos[4]
-            val extSamplingFreqIndex = audioInfos[5]
-            val config = ByteArray(4)
-            if (audioProfile != MediaCodecInfo.CodecProfileLevel.AACObjectHE &&
-                audioProfile != MediaCodecInfo.CodecProfileLevel.AACObjectHE_PS) {
-                config[0] = ((audioProfile shl 3) or (samplingFreqIndex shr 1)).toByte()
-                config[1] = (((samplingFreqIndex and 0x01) shl 7) or (channelCount shl 3)).toByte()
-            } else {
-                config[0] = ((audioProfile shl 3) or (samplingFreqIndex shr 1)).toByte()
-                config[1] = (((samplingFreqIndex and 0x01) shl 7) or (channelCount shl 3) or (extSamplingFreqIndex shr 1)).toByte()
-                config[2] = (((extSamplingFreqIndex and 0x01) shl 7) or (extAudioType shl 2)).toByte()
+        @JvmStatic
+        fun createAudioDecoder(mediaInfo: String, config: AudioDecoderConfig): String {
+            val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, config.sampleRate, config.channels).apply {
+                setInteger(MediaFormat.KEY_AAC_PROFILE, config.profile)
+                setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 4096)
             }
-            val csd0 = ByteBuffer.wrap(config)
-            format.setByteBuffer("csd-0", csd0)
+            val csdBytes = buildAacCsd(config)
+            format.setByteBuffer("csd-0", ByteBuffer.wrap(csdBytes))
 
             val decoder = MediaCodecDecoder(MediaFormat.MIMETYPE_AUDIO_AAC, format, DecodeMode.ByteBuffer)
-            val decoderId = decoder.decoderId
-            decoders[decoderId] = decoder
-            return decoderId
+            if (!decoder.isValid()) {
+                SlarkLog.e(LOG_TAG, "createAudioDecoder failed")
+                return ""
+            }
+            val id = decoder.decoderId
+            decoders[id] = decoder
+            return id
+        }
+
+        private fun buildAacCsd(config: AudioDecoderConfig): ByteArray {
+            val bytes = ByteArray(4)
+            val isHE = config.profile == MediaCodecInfo.CodecProfileLevel.AACObjectHE ||
+                config.profile == MediaCodecInfo.CodecProfileLevel.AACObjectHE_PS
+            if (!isHE) {
+                bytes[0] = ((config.profile shl 3) or (config.samplingFreqIndex shr 1)).toByte()
+                bytes[1] = (((config.samplingFreqIndex and 0x01) shl 7) or (config.channels shl 3)).toByte()
+            } else {
+                bytes[0] = ((config.profile shl 3) or (config.samplingFreqIndex shr 1)).toByte()
+                bytes[1] = (((config.samplingFreqIndex and 0x01) shl 7) or (config.channels shl 3) or (config.samplingFreqIndexExt shr 1)).toByte()
+                bytes[2] = (((config.samplingFreqIndexExt and 0x01) shl 7) or (config.audioObjectTypeExt shl 2)).toByte()
+            }
+            return bytes
         }
 
         @JvmStatic
         fun sendPacket(decoderId: String, byteBuffer: ByteArray?, presentationTimeUs: Long, flag: Int): Int {
-            if (!decoders.containsKey(decoderId)) {
-                SlarkLog.e(LOG_TAG, "not found decoder")
-            return SlarkPlayerErrorCode.CodecNotFound.value
-        }
-        return decoders[decoderId]?.sendPacket(byteBuffer, presentationTimeUs, flag) ?: SlarkPlayerErrorCode.CodecNotFound.value
+            val decoder = decoders[decoderId] ?: run {
+                SlarkLog.e(LOG_TAG, "not found decoder: $decoderId")
+                return SlarkPlayerErrorCode.CodecNotFound.value
+            }
+            return decoder.sendPacket(byteBuffer, presentationTimeUs, flag)
         }
 
         @JvmStatic
         fun requestVideoFrame(decoderId: String, waitTime: Long, width: Int, height: Int): Long {
-            if (!decoders.containsKey(decoderId)) {
-                SlarkLog.e(LOG_TAG, "not found decoder")
+            val decoder = decoders[decoderId] ?: run {
+                SlarkLog.e(LOG_TAG, "not found decoder: $decoderId")
                 return 0L
             }
-            return decoders[decoderId]?.requestVideoFrame(waitTime, width, height) ?: 0L
+            return decoder.requestVideoFrame(waitTime, width, height)
         }
 
         @JvmStatic
         fun releaseDecoder(decoderId: String) {
-            if (!decoders.contains(decoderId)) {
-                return
-            }
-            decoders[decoderId]?.release()
-            decoders.remove(decoderId)
+            decoders.remove(decoderId)?.release()
         }
 
         @JvmStatic @Synchronized
@@ -303,5 +288,4 @@ class MediaCodecDecoder(
             }
         }
     }
-
 }

@@ -32,9 +32,7 @@ public:
 
     void renderEnd() noexcept override;
 
-    void seek(double time) noexcept override;
-
-    Time::TimePoint playedTime() noexcept override;
+    [[nodiscard]] Time::TimeDelta getHardwareLatency() noexcept override;
 
     const std::string& playerId() const noexcept {
         return playerId_;

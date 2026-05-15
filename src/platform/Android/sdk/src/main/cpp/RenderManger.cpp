@@ -5,6 +5,7 @@
 #include "AndroidEGLContext.h"
 #include "GLContextManager.h"
 #include "JNICache.h"
+#include "JNICall.h"
 #include "JNIEnvGuard.h"
 #include "JNIMarshal.h"
 #include "JNISignature.h"
@@ -23,8 +24,6 @@ struct SharedEGLContextInfo {
 };
 
 using SharedEGLContextManager = Manager<SharedEGLContextInfo>;
-
-// ---- Internal helpers (shared by EGLRenderThread and GLRenderThread JNI entries) ----
 
 static void RenderManager_rebuildSurface(JNIEnv* env,
                                          const std::string& playerId,
@@ -130,7 +129,6 @@ static jboolean RenderManager_swapGLBuffers(const std::string& playerId, jint te
         LogE("failed to get EGL display for playerId: {}", playerId);
         return false;
     }
-    glFlush();
     auto result = eglSwapBuffers(display, contextInfo->surface);
     if (result == EGL_FALSE) {
         LogE("failed to swap buffers for playerId: {} {}", playerId, eglGetError());
@@ -157,29 +155,18 @@ static jobject RenderManager_getBackupTextureId(JNIEnv* env, const std::string& 
         LogE("failed to find player for playerId: {}", playerId);
         return nullptr;
     }
-    auto& texture = render->getBackupTexture();
-    if (!texture->isValid()) {
+    auto texture = render->getBackupTexture();
+    if (!texture || !texture->isValid()) {
         LogE("backup texture is null for playerId: {}", playerId);
         return nullptr;
     }
-    auto jTextureClass = JNI::JNICache::instance().getClass(env, kTextureClass);
-    if (!jTextureClass) {
-        LogE("failed to get RenderTexture class");
-        return nullptr;
-    }
-    auto jMethodId = JNI::JNICache::instance().getMethod(jTextureClass, "<init>", "(III)V");
-    if (!jMethodId) {
-        LogE("failed to get RenderTexture constructor method ID");
-        return nullptr;
-    }
-    return env->NewObject(jTextureClass.get(),
-                          jMethodId.get(),
-                          static_cast<jint>(texture->textureId()),
-                          static_cast<jint>(texture->width()),
-                          static_cast<jint>(texture->height()));
+    return JNI::JNICall::create(env,
+                                kTextureClass,
+                                static_cast<int32_t>(texture->textureId()),
+                                static_cast<int32_t>(texture->width()),
+                                static_cast<int32_t>(texture->height()))
+        .detach();
 }
-
-// ---- EGLRenderThread JNI entries ----
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_slark_sdk_EGLRenderThread_rebuildSurface(JNIEnv* env,
@@ -218,8 +205,6 @@ Java_com_slark_sdk_EGLRenderThread_getBackupTextureId(JNIEnv* env,
                                                       jstring player_id) {
     return RenderManager_getBackupTextureId(env, JNI::FromJVM::str(env, player_id));
 }
-
-// ---- GLRenderThread JNI entries ----
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_slark_sdk_GLRenderThread_createEGLContext(JNIEnv* env,
@@ -263,6 +248,18 @@ Java_com_slark_sdk_GLRenderThread_rebuildSurface(JNIEnv* env,
 extern "C" JNIEXPORT void JNICALL Java_com_slark_sdk_GLRenderThread_onVSync(JNIEnv* env,
                                                                             jobject /*thiz*/,
                                                                             jstring player_id) {
+    auto playerId = JNI::FromJVM::str(env, player_id);
+    auto render = VideoRenderManager::shareInstance().find(playerId);
+    if (render) {
+        render->onVSync();
+    } else {
+        LogE("onVSync: failed to find VideoRender for playerId:{}", playerId);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_slark_sdk_VulkanRenderThread_onVSync(JNIEnv* env,
+                                                                                jobject /*thiz*/,
+                                                                                jstring player_id) {
     auto playerId = JNI::FromJVM::str(env, player_id);
     auto render = VideoRenderManager::shareInstance().find(playerId);
     if (render) {

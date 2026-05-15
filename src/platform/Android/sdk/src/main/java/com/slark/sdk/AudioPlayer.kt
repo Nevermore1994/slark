@@ -59,7 +59,7 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
     private val audioTimestamp = android.media.AudioTimestamp()
     private var audioJob: Job? = null
     private var writeSize: Long = 0
-    private val bytesPerFrame = channelCount * 2 16 bit pcm
+    private val bytesPerFrame = channelCount * 2 // 16 bit pcm
     @OptIn(DelicateCoroutinesApi::class)
     private val audioDispatcher = newSingleThreadContext("AudioDataThread")
     private val audioAttribute = AudioAttributes.Builder()
@@ -145,13 +145,10 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
     fun play() {
         SlarkLog.i(LOG_TAG, "play")
         lock.withLock {
-            audioTrack?.let { track->
-                if (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
-                    return
-                }
+            audioTrack?.let { track ->
+                if (track.playState == AudioTrack.PLAYSTATE_PLAYING) return
                 track.play()
             }
-
         }
         audioJob = CoroutineScope(audioDispatcher).launch {
             while (!isCompleted && isActive) {
@@ -160,38 +157,39 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
                     SlarkLog.i(LOG_TAG, "audio track pos: ${audioTrack?.playbackHeadPosition}," +
                         " state: ${audioTrack?.playState}")
                     delay(25)
-                    continue Not enough space to write data
+                    continue
                 }
-                val buffer = ByteBuffer.allocateDirect(available)
-                buffer.order(ByteOrder.nativeOrder())
+                val buffer = ByteBuffer.allocateDirect(available).order(ByteOrder.nativeOrder())
                 val result = requestAudioData(playerId, buffer)
-                val flag = DataFlag.fromInt(result shr 24)
-                var getSize = result and 0x00FFFFFF
-                buffer.position(0)
-                buffer.limit(getSize)
-                when (flag) {
-                    DataFlag.Normal -> {
-                        val res = write(extractBytes(buffer))
-                        if (res > 0) {
-                            writeSize += res
-                            SlarkLog.i(LOG_TAG, "write audio data:$res")
-                        } else {
-                            SlarkLog.i(LOG_TAG, "write audio error:$res")
-                        }
-                    }
-                    DataFlag.EndOfStream -> {
-                        isCompleted = true
-                        SlarkLog.e(LOG_TAG, "render audio completed")
-                    }
-                    DataFlag.Silence -> {
-                        write(ByteArray(available){0})
-                    }
-                    DataFlag.Error -> {
-                        SlarkLog.e(LOG_TAG, "Error requesting audio data")
-                        isCompleted = true
-                    }
-                }
+                handleAudioData(buffer, result, available)
                 delay(10)
+            }
+        }
+    }
+
+    private fun handleAudioData(buffer: ByteBuffer, result: Int, available: Int) {
+        val flag = DataFlag.fromInt(result shr 24)
+        val getSize = result and 0x00FFFFFF
+        buffer.position(0)
+        buffer.limit(getSize)
+        when (flag) {
+            DataFlag.Normal -> {
+                val res = write(extractBytes(buffer))
+                if (res > 0) {
+                    writeSize += res
+                    SlarkLog.i(LOG_TAG, "write audio data:$res")
+                } else {
+                    SlarkLog.i(LOG_TAG, "write audio error:$res")
+                }
+            }
+            DataFlag.EndOfStream -> {
+                isCompleted = true
+                SlarkLog.e(LOG_TAG, "render audio completed")
+            }
+            DataFlag.Silence -> write(ByteArray(available) { 0 })
+            DataFlag.Error -> {
+                SlarkLog.e(LOG_TAG, "Error requesting audio data")
+                isCompleted = true
             }
         }
     }
@@ -284,8 +282,8 @@ class AudioPlayer(private val sampleRate: Int, private val channelCount: Int) {
     external fun requestAudioData(playerId: String, requestBuffer: ByteBuffer): Int
 
     companion object {
-        const val PULL_DATA_PERIOD = 50 ms
-        const val BUFFER_TIME_SIZE = 100 ms
+        const val PULL_DATA_PERIOD = 50 // ms
+        const val BUFFER_TIME_SIZE = 100 // ms
         const val LOG_TAG = "AudioPlayer"
         private val players = ConcurrentHashMap<String, AudioPlayer>()
 

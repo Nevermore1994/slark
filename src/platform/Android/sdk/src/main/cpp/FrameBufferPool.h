@@ -34,7 +34,7 @@ public:
     explicit FrameBufferPool(uint8_t maxSlotCount = kMaxFrameBufferCount)
         : maxFrameBufferCount_(maxSlotCount), texturePool_(std::make_shared<TexturePool>()) {}
 
-    ~FrameBufferPool() noexcept override;
+    ~FrameBufferPool() noexcept;
 
     FrameBufferRefPtr acquire(uint32_t width, uint32_t height) noexcept;
 

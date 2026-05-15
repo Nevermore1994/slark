@@ -24,35 +24,36 @@ class GLPreviewRenderer : IPreviewRenderer {
     private var textureVBO: Int = 0
     private var surfaceSize: Size = Size(0, 0)
     @Volatile
-    var rotation: Double = 0.0
+    private var rotationDeg: Double = 0.0
 
     override fun init() {
-        do {
-            program = createGLProgram(VERTEX_SHADER, FRAGMENT_SHADER)
-            if (program == 0) { SlarkLog.e(LOG_TAG, "create program failed"); break }
-            positionHandle = GLES20.glGetAttribLocation(program, "aPosition")
-            textureHandle = GLES20.glGetUniformLocation(program, "uTexture")
-            texCoordHandle = GLES20.glGetAttribLocation(program, "aTexCoord")
-            rotationHandle = GLES20.glGetUniformLocation(program, "uRotation")
+        program = createGLProgram(VERTEX_SHADER, FRAGMENT_SHADER)
+        if (program == 0) {
+            SlarkLog.e(LOG_TAG, "create program failed")
+            return
+        }
+        positionHandle = GLES20.glGetAttribLocation(program, "aPosition")
+        textureHandle = GLES20.glGetUniformLocation(program, "uTexture")
+        texCoordHandle = GLES20.glGetAttribLocation(program, "aTexCoord")
+        rotationHandle = GLES20.glGetUniformLocation(program, "uRotation")
 
-            val buffers = IntArray(2)
-            GLES20.glGenBuffers(2, buffers, 0)
-            vertexVBO = buffers[0]
-            GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, vertexVBO)
-            GLES20.glBufferData(GLES20.GL_ARRAY_BUFFER, 8 * Float.SIZE_BYTES, null, GLES20.GL_DYNAMIC_DRAW)
-            GLES20.glVertexAttribPointer(positionHandle, 2, GLES20.GL_FLOAT, false, 0, 0)
-            GLES20.glEnableVertexAttribArray(positionHandle)
-            GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
+        val buffers = IntArray(2)
+        GLES20.glGenBuffers(2, buffers, 0)
+        vertexVBO = buffers[0]
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, vertexVBO)
+        GLES20.glBufferData(GLES20.GL_ARRAY_BUFFER, 8 * Float.SIZE_BYTES, null, GLES20.GL_DYNAMIC_DRAW)
+        GLES20.glVertexAttribPointer(positionHandle, 2, GLES20.GL_FLOAT, false, 0, 0)
+        GLES20.glEnableVertexAttribArray(positionHandle)
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
 
-            val texBuf = ByteBuffer.allocateDirect(kTexCoords.size * Float.SIZE_BYTES)
-                .order(ByteOrder.nativeOrder()).asFloatBuffer().apply { put(kTexCoords); position(0) }
-            textureVBO = buffers[1]
-            GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, textureVBO)
-            GLES20.glBufferData(GLES20.GL_ARRAY_BUFFER, kTexCoords.size * Float.SIZE_BYTES, texBuf, GLES20.GL_STATIC_DRAW)
-            GLES20.glVertexAttribPointer(texCoordHandle, 2, GLES20.GL_FLOAT, false, 0, 0)
-            GLES20.glEnableVertexAttribArray(texCoordHandle)
-            GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
-        } while (false)
+        val texBuf = ByteBuffer.allocateDirect(kTexCoords.size * Float.SIZE_BYTES)
+            .order(ByteOrder.nativeOrder()).asFloatBuffer().apply { put(kTexCoords); position(0) }
+        textureVBO = buffers[1]
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, textureVBO)
+        GLES20.glBufferData(GLES20.GL_ARRAY_BUFFER, kTexCoords.size * Float.SIZE_BYTES, texBuf, GLES20.GL_STATIC_DRAW)
+        GLES20.glVertexAttribPointer(texCoordHandle, 2, GLES20.GL_FLOAT, false, 0, 0)
+        GLES20.glEnableVertexAttribArray(texCoordHandle)
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
     }
 
     override fun drawFrame(texture: RenderTexture): Boolean {
@@ -61,18 +62,10 @@ class GLPreviewRenderer : IPreviewRenderer {
         GLES20.glUseProgram(program)
         GLES20.glViewport(0, 0, surfaceSize.width, surfaceSize.height)
 
-        val picSize = Size(texture.width, texture.height)
-        val contentSize = makeAspectRatioSize(picSize, surfaceSize)
-        val scale = Pair(
-            contentSize.width.toFloat() / surfaceSize.width,
-            contentSize.height.toFloat() / surfaceSize.height
-        )
-        val norm = if (scale.first > scale.second) Pair(1.0f, scale.second / scale.first)
-                    else Pair(scale.first / scale.second, 1.0f)
-
+        val (normX, normY) = computeNormalizedScale(Size(texture.width, texture.height), surfaceSize)
         val verts = floatArrayOf(
-            -norm.first, -norm.second, norm.first, -norm.second,
-            -norm.first, norm.second, norm.first, norm.second
+            -normX, -normY, normX, -normY,
+            -normX,  normY, normX,  normY
         )
         val vertBuf = ByteBuffer.allocateDirect(verts.size * Float.SIZE_BYTES)
             .order(ByteOrder.nativeOrder()).asFloatBuffer().apply { put(verts); position(0) }
@@ -84,7 +77,7 @@ class GLPreviewRenderer : IPreviewRenderer {
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
         GLES20.glUniform1i(textureHandle, 0)
-        GLES20.glUniform1f(rotationHandle, Math.toRadians(rotation).toFloat())
+        GLES20.glUniform1f(rotationHandle, Math.toRadians(rotationDeg).toFloat())
 
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, vertexVBO)
         GLES20.glBufferSubData(GLES20.GL_ARRAY_BUFFER, 0, verts.size * Float.SIZE_BYTES, vertBuf)
@@ -96,8 +89,16 @@ class GLPreviewRenderer : IPreviewRenderer {
         return true
     }
 
+    private fun computeNormalizedScale(picSize: Size, surfaceSize: Size): Pair<Float, Float> {
+        val contentSize = makeAspectRatioSize(picSize, surfaceSize)
+        val scaleX = contentSize.width.toFloat() / surfaceSize.width
+        val scaleY = contentSize.height.toFloat() / surfaceSize.height
+        return if (scaleX > scaleY) Pair(1.0f, scaleY / scaleX)
+               else Pair(scaleX / scaleY, 1.0f)
+    }
+
     override fun setRotation(rotation: Double) {
-        this.rotation = rotation
+        this.rotationDeg = rotation
     }
 
     override fun setSurfaceSize(width: Int, height: Int) {

@@ -4,7 +4,7 @@
 
 #include "JNIBase.h"
 #include "JNICache.h"
-#include "utils/Log.h"
+#include "Log.hpp"
 
 namespace slark::JNI {
 
@@ -28,7 +28,7 @@ void loadClassCache(JNIEnv* env) {
 
     for (const auto* className : kClasses) {
         if (!JNICache::instance().getClass(env, className)) {
-            FLOGE("Failed to find class: {}", className);
+            LogE("Failed to find class: {}", className);
         }
     }
 }
@@ -56,10 +56,11 @@ void setApplicationContext(JNIEnv* env, jobject context) noexcept {
 } // namespace slark::JNI
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* /* reserved */) {
+    using namespace slark;
     slark::JNI::g_javaVM = vm;
     JNIEnv* env;
     if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) {
-        FLOGE("Failed to get JNI environment");
+        LogE("Failed to get JNI environment");
         return -1;
     }
     slark::JNI::loadClassCache(env);

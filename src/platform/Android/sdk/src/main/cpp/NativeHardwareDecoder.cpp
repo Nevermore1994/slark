@@ -6,6 +6,7 @@
 
 #include "AVFrame.hpp"
 #include "JNICache.h"
+#include "JNICall.h"
 #include "JNIEnvGuard.h"
 #include "JNIMarshal.h"
 #include "JNISignature.h"
@@ -20,7 +21,7 @@ Error Native_HardwareDecoder_sendPacket(JNIEnv* env,
                                         DataPtr& data,
                                         int64_t pts,
                                         NativeDecodeFlag flag,
-                                        bool isVideo) {
+                                        PacketType type) {
     if ((data == nullptr || data->empty()) && flag != NativeDecodeFlag::EndOfStream) {
         LogE("data error");
         return Error::CodecInputError;
@@ -43,25 +44,47 @@ Error Native_HardwareDecoder_sendPacket(JNIEnv* env,
     }
     JNIReference<jbyteArray> byteArray(env, nullptr);
     if (flag != NativeDecodeFlag::EndOfStream) {
-        if (isVideo) {
-            // For video, need to prepend NALU header, Annex b format
+        if (type == PacketType::Video) {
             byteArray = ToJVM::naluBytes(env, *data);
         } else {
-            // For audio, use the raw data directly
             byteArray = ToJVM::bytes(env, *data);
         }
     } else {
-        byteArray = ToJVM::bytes(env, Data());
+        // EndOfStream 时 byteArray 保持 null，Kotlin 侧 flag 检查在前，不会访问 byteArray
     }
 
-    auto jDecodeId = ToJVM::str(env, decoderId);
-    int res = env->CallStaticIntMethod(decoderClass.get(),
-                                       methodId.get(),
-                                       jDecodeId.detach(),
-                                       byteArray.detach(),
-                                       static_cast<jlong>(pts),
-                                       static_cast<jint>(flag));
+    int res = JNI::JNICall::callStatic<int32_t>(
+                  env,
+                  kMediaCodecDecoderClass,
+                  "sendPacket",
+                  JNI::JObjectWithSig(ToJVM::str(env, decoderId), JNI::Sig::String),
+                  JNI::JObjectWithSig(std::move(byteArray), JNI::Sig::ByteArray),
+                  static_cast<int64_t>(pts),
+                  static_cast<int32_t>(flag))
+                  .value_or(static_cast<int32_t>(Error::CodecError));
     return static_cast<Error>(res);
+}
+
+// 构造 Kotlin VideoDecoderConfig 对象
+static ObjectReference buildVideoDecoderConfig(JNIEnv* env,
+                                               const std::shared_ptr<VideoDecoderConfig>& cfg,
+                                               DecodeMode mode) {
+    constexpr std::string_view kConfigClass = "com/slark/sdk/VideoDecoderConfig";
+    constexpr std::string_view kDecodeModeClass = "com/slark/sdk/DecodeMode";
+    const char* modeFieldName = (mode == DecodeMode::Texture) ? "Texture" : "ByteBuffer";
+    auto modeEnum = JNICache::instance().getEnumField(env, kDecodeModeClass, modeFieldName);
+    if (!modeEnum) {
+        LogE("not found DecodeMode enum field: {}", modeFieldName);
+        return {env, nullptr};
+    }
+    return JNI::JNICall::create(
+        env,
+        kConfigClass,
+        static_cast<int32_t>(cfg->width),
+        static_cast<int32_t>(cfg->height),
+        static_cast<int32_t>(cfg->profile),
+        static_cast<int32_t>(cfg->level),
+        JNI::JObjectWithSig(std::move(modeEnum), JNI::makeObject(kDecodeModeClass)));
 }
 
 std::string Native_HardwareDecoder_createVideoDecoder(
@@ -72,49 +95,29 @@ std::string Native_HardwareDecoder_createVideoDecoder(
         LogE("config is nullptr");
         return {};
     }
-    auto decoderClass = JNICache::instance().getClass(env, kMediaCodecDecoderClass);
-    if (!decoderClass) {
-        LogE("create decoder failed, not found video decoder class");
+    constexpr std::string_view kConfigClass = "com/slark/sdk/VideoDecoderConfig";
+    auto configObj = buildVideoDecoderConfig(env, decoderConfig, mode);
+    if (!configObj) {
+        LogE("build VideoDecoderConfig failed");
         return {};
     }
-    auto methodSignature =
-        JNI::makeSignature(JNI::Sig::String, JNI::Sig::String, JNI::makeArray(JNI::Sig::Int));
-    auto createDecoderMethod =
-        JNICache::instance().getStaticMethod(decoderClass, "createVideoDecoder", methodSignature);
-    if (!createDecoderMethod) {
-        LogE("create decoder failed, not found decoder method");
-        return {};
-    }
-    auto videoInfo = ToJVM::ints(env,
-                                 {
-                                     static_cast<int>(decoderConfig->width),
-                                     static_cast<int>(decoderConfig->height),
-                                     static_cast<int>(decoderConfig->profile),
-                                     static_cast<int>(decoderConfig->level),
-                                     static_cast<int>(mode),
-                                 });
-    auto jMediaInfo = ToJVM::str(env, decoderConfig->mediaInfo);
-    auto jDecoderId =
-        reinterpret_cast<jstring>(env->CallStaticObjectMethod(decoderClass.get(),
-                                                              createDecoderMethod.get(),
-                                                              jMediaInfo.detach(),
-                                                              videoInfo.detach()));
-
-    auto decoderId = FromJVM::str(env, jDecoderId);
+    auto jDecoderId = JNI::JNICall::callStatic<jobject>(
+        env,
+        kMediaCodecDecoderClass,
+        "createVideoDecoder",
+        JNI::JObjectWithSig(ToJVM::str(env, decoderConfig->mediaInfo), JNI::Sig::String),
+        JNI::JObjectWithSig(std::move(configObj), JNI::makeObject(kConfigClass)));
+    auto decoderId =
+        jDecoderId ? FromJVM::str(env, reinterpret_cast<jstring>(jDecoderId.get())) : std::string{};
     if (decoderId.empty()) {
         LogE("create video decoder failed, decoderId is empty");
         return {};
-    } else {
-        LogI("create video decoder:{}", decoderId);
     }
+    LogI("create video decoder:{}", decoderId);
 
     auto decoderInfo = std::make_unique<Data>();
-    Data naluHeader(4);
-    naluHeader.rawData[0] = 0x00;
-    naluHeader.rawData[1] = 0x00;
-    naluHeader.rawData[2] = 0x00;
-    naluHeader.rawData[3] = 0x01;
-    naluHeader.length = 4;
+    static constexpr uint8_t kNaluStartCode[] = {0x00, 0x00, 0x00, 0x01};
+    Data naluHeader(4, kNaluStartCode);
     decoderInfo->append(naluHeader);
     decoderInfo->append(*decoderConfig->sps);
     decoderInfo->append(naluHeader);
@@ -128,73 +131,62 @@ std::string Native_HardwareDecoder_createVideoDecoder(
                                       decoderInfo,
                                       0,
                                       NativeDecodeFlag::CodecConfig,
-                                      true);
+                                      PacketType::Video);
     return decoderId;
+}
+
+static ObjectReference buildAudioDecoderConfig(JNIEnv* env,
+                                               const std::shared_ptr<AudioDecoderConfig>& cfg) {
+    constexpr std::string_view kConfigClass = "com/slark/sdk/AudioDecoderConfig";
+    return JNI::JNICall::create(env,
+                                kConfigClass,
+                                static_cast<int32_t>(cfg->sampleRate),
+                                static_cast<int32_t>(cfg->channels),
+                                static_cast<int32_t>(cfg->profile),
+                                static_cast<int32_t>(cfg->samplingFrequencyIndex),
+                                static_cast<int32_t>(cfg->audioObjectTypeExt),
+                                static_cast<int32_t>(cfg->samplingFreqIndexExt));
 }
 
 std::string Native_HardwareDecoder_createAudioDecoder(
     JNIEnv* env,
     const std::shared_ptr<AudioDecoderConfig>& decoderConfig) {
-    auto decoderClass = JNICache::instance().getClass(env, kMediaCodecDecoderClass);
-    if (!decoderClass) {
-        LogE("create decoder failed, not found audio decoder class");
-        return "";
+    constexpr std::string_view kConfigClass = "com/slark/sdk/AudioDecoderConfig";
+    auto configObj = buildAudioDecoderConfig(env, decoderConfig);
+    if (!configObj) {
+        LogE("build AudioDecoderConfig failed");
+        return {};
     }
-    auto methodSignature =
-        JNI::makeSignature(JNI::Sig::String, JNI::Sig::String, JNI::makeArray(JNI::Sig::Int));
-    auto createDecoderMethod =
-        JNICache::instance().getStaticMethod(decoderClass, "createAudioDecoder", methodSignature);
-    if (!createDecoderMethod) {
-        LogE("create decoder failed, not found decoder method");
-        return "";
-    }
-    auto jMediaInfo = ToJVM::str(env, decoderConfig->mediaInfo);
-    auto extraInfo = ToJVM::ints(env,
-                                 {static_cast<int>(decoderConfig->sampleRate),
-                                  static_cast<int>(decoderConfig->channels),
-                                  static_cast<int>(decoderConfig->profile),
-                                  static_cast<int>(decoderConfig->samplingFrequencyIndex),
-                                  static_cast<int>(decoderConfig->audioObjectTypeExt),
-                                  static_cast<int>(decoderConfig->samplingFreqIndexExt)});
-    auto jDecoderId =
-        reinterpret_cast<jstring>(env->CallStaticObjectMethod(decoderClass.get(),
-                                                              createDecoderMethod.get(),
-                                                              jMediaInfo.detach(),
-                                                              extraInfo.detach()));
-    auto decoderId = FromJVM::str(env, jDecoderId);
-    return decoderId;
+    auto jDecoderId = JNI::JNICall::callStatic<jobject>(
+        env,
+        kMediaCodecDecoderClass,
+        "createAudioDecoder",
+        JNI::JObjectWithSig(ToJVM::str(env, decoderConfig->mediaInfo), JNI::Sig::String),
+        JNI::JObjectWithSig(std::move(configObj), JNI::makeObject(kConfigClass)));
+    return jDecoderId ? FromJVM::str(env, reinterpret_cast<jstring>(jDecoderId.get()))
+                      : std::string{};
 }
 
 void Native_HardwareDecoder_releaseDecoder(JNIEnv* env, std::string_view decoderId) {
-    auto decoderClass = JNICache::instance().getClass(env, kMediaCodecDecoderClass);
-    if (!decoderClass) {
-        LogE("create decoder failed, not found video decoder class");
-        return;
-    }
-    auto methodSignature = JNI::makeSignature(JNI::Sig::Void, JNI::Sig::String);
-    auto methodId =
-        JNICache::instance().getStaticMethod(decoderClass, "releaseDecoder", methodSignature);
-    if (!methodId) {
-        LogE("create decoder failed, not found decoder method");
-        return;
-    }
-    jstring jDecodeId = env->NewStringUTF(decoderId.data());
-    env->CallStaticVoidMethod(decoderClass.get(), methodId.get(), jDecodeId);
+    JNI::JNICall::callStatic<void>(env,
+                                   kMediaCodecDecoderClass,
+                                   "releaseDecoder",
+                                   std::string(decoderId));
 }
 
 void Native_HardwareDecoder_flush(JNIEnv* env, std::string_view decoderId) {
     constexpr std::string_view kActionClass = "com/slark/sdk/MediaCodecDecoder$Action";
-    auto decoderClass = JNICache::instance().getClass(env, kMediaCodecDecoderClass);
-    if (!decoderClass) {
-        LogE("create decoder failed, not found video decoder class");
+    auto enumValue = JNICache::instance().getEnumField(env, kActionClass, "Flush");
+    if (!enumValue) {
+        LogE("not found Flush enum field");
         return;
     }
-    jstring jDecoderId = env->NewStringUTF(decoderId.data());
-    auto enumValue = JNICache::instance().getEnumField(env, kActionClass, "Flush");
-    auto methodSignature =
-        JNI::makeSignature(JNI::Sig::Void, JNI::Sig::String, JNI::makeObject(kActionClass));
-    auto methodId = JNICache::instance().getStaticMethod(decoderClass, "doAction", methodSignature);
-    env->CallStaticVoidMethod(decoderClass.get(), methodId.get(), jDecoderId, enumValue.get());
+    JNI::JNICall::callStatic<void>(
+        env,
+        kMediaCodecDecoderClass,
+        "doAction",
+        JNI::JObjectWithSig(ToJVM::str(env, decoderId), JNI::Sig::String),
+        JNI::JObjectWithSig(std::move(enumValue), JNI::makeObject(kActionClass)));
 }
 
 // only for audio decoder
@@ -218,35 +210,19 @@ Java_com_slark_sdk_MediaCodecDecoder_processRawData(JNIEnv* env,
     decoder->receiveDecodedData(std::move(dataPtr), pts, (JNI_TRUE == isCompleted));
 }
 
-/// \brief Request a video frame from the hardware decoder
 uint64_t Native_HardwareDecoder_requestVideoFrame(JNIEnv* env,
                                                   std::string_view decoderId,
                                                   uint64_t waitTime,
                                                   uint32_t width,
                                                   uint32_t height) {
-    auto decoderClass = JNICache::instance().getClass(env, kMediaCodecDecoderClass);
-    if (!decoderClass) {
-        LogE("not found video decoder class");
-        return 0;
-    }
-    auto jDecoderId = ToJVM::str(env, decoderId);
-    auto methodSignature = JNI::makeSignature(JNI::Sig::Long,
-                                              JNI::Sig::String,
-                                              JNI::Sig::Long,
-                                              JNI::Sig::Int,
-                                              JNI::Sig::Int);
-    auto methodId =
-        JNICache::instance().getStaticMethod(decoderClass, "requestVideoFrame", methodSignature);
-    if (!methodId) {
-        LogE("not found requestVideoFrame method");
-        return 0;
-    }
-    auto packed = env->CallStaticLongMethod(decoderClass.get(),
-                                            methodId.get(),
-                                            jDecoderId.detach(),
-                                            static_cast<jlong>(waitTime),
-                                            static_cast<jint>(width),
-                                            static_cast<jint>(height));
+    auto packed = JNI::JNICall::callStatic<int64_t>(env,
+                                                    kMediaCodecDecoderClass,
+                                                    "requestVideoFrame",
+                                                    std::string(decoderId),
+                                                    static_cast<int64_t>(waitTime),
+                                                    static_cast<int32_t>(width),
+                                                    static_cast<int32_t>(height))
+                      .value_or(0);
     return static_cast<uint64_t>(packed);
 }
 
@@ -276,13 +252,13 @@ Error NativeHardwareDecoder::sendPacket(std::string_view decoderId,
                                         DataPtr& data,
                                         int64_t pts,
                                         NativeDecodeFlag flag,
-                                        bool isVideo) {
+                                        PacketType type) {
     if (decoderId.empty()) {
         LogE("decoderId is empty");
         return Error::CodecNotFound;
     }
     JNIEnvGuard envGuard(getJavaVM());
-    return Native_HardwareDecoder_sendPacket(envGuard.get(), decoderId, data, pts, flag, isVideo);
+    return Native_HardwareDecoder_sendPacket(envGuard.get(), decoderId, data, pts, flag, type);
 }
 
 void NativeHardwareDecoder::release(std::string_view decoderId) {
@@ -303,20 +279,21 @@ void NativeHardwareDecoder::flush(std::string_view decoderId) {
     Native_HardwareDecoder_flush(envGuard.get(), decoderId);
 }
 
-uint64_t NativeHardwareDecoder::requestVideoFrame(std::string_view decoderId,
-                                                  uint64_t waitTime,
-                                                  uint32_t width,
-                                                  uint32_t height) {
+VideoFrameResult NativeHardwareDecoder::requestVideoFrame(std::string_view decoderId,
+                                                          uint64_t waitTime,
+                                                          uint32_t width,
+                                                          uint32_t height) {
     if (decoderId.empty()) {
         LogE("decoderId is empty");
-        return 0;
+        return {};
     }
     JNIEnvGuard envGuard(getJavaVM());
-    return Native_HardwareDecoder_requestVideoFrame(envGuard.get(),
-                                                    decoderId,
-                                                    waitTime,
-                                                    width,
-                                                    height);
+    auto packed = Native_HardwareDecoder_requestVideoFrame(envGuard.get(),
+                                                           decoderId,
+                                                           waitTime,
+                                                           width,
+                                                           height);
+    return VideoFrameResult::unpack(packed);
 }
 
 } // namespace slark

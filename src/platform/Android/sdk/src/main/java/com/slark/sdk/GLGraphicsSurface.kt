@@ -49,7 +49,16 @@ class GLGraphicsSurface : IGraphicsSurface {
     override fun awaitFrame(waitTime: Long): Pair<Boolean, Long> {
         synchronized(mutex) {
             if (!isFrameAvailable) {
-                try { mutex.wait(waitTime) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
+                try { 
+                    if (waitTime > 0L) {
+                        mutex.wait(waitTime) 
+                    } else {
+                        SlarkLog.d(LOG_TAG, "awaitFrame waitTime is 0L")
+                        return false to 0L
+                    }
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt() 
+                }
                 if (!isFrameAvailable) return false to 0L
             }
             isFrameAvailable = false

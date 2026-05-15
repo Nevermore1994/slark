@@ -6,6 +6,7 @@
 
 #include "AudioRender.h"
 #include "JNICache.h"
+#include "JNICall.h"
 #include "JNIEnvGuard.h"
 #include "JNIMarshal.h"
 #include "JNISignature.h"
@@ -17,24 +18,14 @@ using namespace slark::JNI;
 constexpr std::string_view kAudioPlayerClass = "com/slark/sdk/AudioPlayer";
 
 std::string Native_AudioPlayer_createAudioPlayer(JNIEnv* env, jint sampleRate, jint channelCount) {
-    auto audioPlayerClass = JNICache::instance().getClass(env, kAudioPlayerClass);
-    if (!audioPlayerClass) {
-        LogE("create player failed, not found class");
-        return "";
+    auto playerId = JNI::JNICall::callStatic<std::string>(env,
+                                                          kAudioPlayerClass,
+                                                          "createAudioPlayer",
+                                                          static_cast<int32_t>(sampleRate),
+                                                          static_cast<int32_t>(channelCount));
+    if (playerId.empty()) {
+        LogE("create player failed");
     }
-    auto methodSignature = JNI::makeSignature(JNI::Sig::String, JNI::Sig::Int, JNI::Sig::Int);
-    auto createMethod = JNICache::instance().getStaticMethod(audioPlayerClass,
-                                                             "createAudioPlayer",
-                                                             methodSignature);
-    if (!createMethod) {
-        LogE("create player failed, not found method");
-        return "";
-    }
-    auto jPlayerId = reinterpret_cast<jstring>(env->CallStaticObjectMethod(audioPlayerClass.get(),
-                                                                           createMethod.get(),
-                                                                           sampleRate,
-                                                                           channelCount));
-    auto playerId = JNI::FromJVM::str(env, jPlayerId);
     return playerId;
 }
 
@@ -56,21 +47,16 @@ void Native_AudioPlayer_audioPlayerAction(JNIEnv* env,
     std::string_view fieldView = kAudioPlayerAction[static_cast<size_t>(action)];
 
     auto enumValue = JNICache::instance().getEnumField(env, kActionClass, fieldView);
-    auto audioPlayerClass = JNICache::instance().getClass(env, kAudioPlayerClass);
-    if (!audioPlayerClass) {
-        LogE("create player failed, not found audio player class");
+    if (!enumValue) {
+        LogE("not found enum field: {}", fieldView);
         return;
     }
-
-    auto jPlayerId = ToJVM::str(env, playerId);
-    auto signature =
-        JNI::makeSignature(JNI::Sig::Void, JNI::Sig::String, JNI::makeObject(kActionClass));
-    auto actionMethodId =
-        JNICache::instance().getStaticMethod(audioPlayerClass, "audioPlayerAction", signature);
-    env->CallStaticVoidMethod(audioPlayerClass.get(),
-                              actionMethodId.get(),
-                              jPlayerId.detach(),
-                              enumValue.detach());
+    JNI::JNICall::callStatic<void>(
+        env,
+        kAudioPlayerClass,
+        "audioPlayerAction",
+        JNI::JObjectWithSig(ToJVM::str(env, playerId), JNI::Sig::String),
+        JNI::JObjectWithSig(std::move(enumValue), JNI::makeObject(kActionClass)));
 }
 
 void Native_AudioPlayer_setAudioConfig(JNIEnv* env,
@@ -90,47 +76,19 @@ void Native_AudioPlayer_setAudioConfig(JNIEnv* env,
         LogE("not found enum class:{}", fieldView);
         return;
     }
-    auto audioPlayerClass = JNICache::instance().getClass(env, kAudioPlayerClass);
-    if (!audioPlayerClass) {
-        LogE("create player failed, not found audio player class");
-        return;
-    }
-
-    auto jPlayerId = ToJVM::str(env, playerId);
-    auto signature = JNI::makeSignature(JNI::Sig::Void,
-                                        JNI::Sig::String,
-                                        JNI::makeObject(kConfigClass),
-                                        JNI::Sig::Float);
-    auto methodId =
-        JNICache::instance().getStaticMethod(audioPlayerClass, "audioPlayerConfig", signature);
-    if (!methodId) {
-        LogE("not found method!");
-        return;
-    }
-    env->CallStaticVoidMethod(audioPlayerClass.get(),
-                              methodId.get(),
-                              jPlayerId.detach(),
-                              enumValue.detach(),
-                              static_cast<jfloat>(value));
+    JNI::JNICall::callStatic<void>(
+        env,
+        kAudioPlayerClass,
+        "audioPlayerConfig",
+        JNI::JObjectWithSig(ToJVM::str(env, playerId), JNI::Sig::String),
+        JNI::JObjectWithSig(std::move(enumValue), JNI::makeObject(kConfigClass)),
+        value);
 }
 
 uint64_t Native_AudioPlayer_getPlayedTime(JNIEnv* env, const std::string& playerId) {
-    auto audioPlayerClass = JNICache::instance().getClass(env, kAudioPlayerClass);
-    if (!audioPlayerClass) {
-        LogE("not found audio player class");
-        return 0;
-    }
-    auto signature = JNI::makeSignature(JNI::Sig::Long, JNI::Sig::String);
-    auto method =
-        JNICache::instance().getStaticMethod(audioPlayerClass, "getPlayedTime", signature);
-    if (!method) {
-        LogE("not found audio player method");
-        return 0;
-    }
-    auto jPlayerId = ToJVM::str(env, playerId);
     auto playedTime =
-        env->CallStaticLongMethod(audioPlayerClass.get(), method.get(), jPlayerId.detach());
-    return static_cast<uint64_t>(playedTime);
+        JNI::JNICall::callStatic<int64_t>(env, kAudioPlayerClass, "getPlayedTime", playerId);
+    return static_cast<uint64_t>(playedTime.value_or(0));
 }
 
 // 返回值编码规则：高 8 位存 AudioDataFlag，低 24 位存实际填充字节数

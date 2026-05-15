@@ -60,7 +60,6 @@ void VideoRender::pause() noexcept {
 }
 
 void VideoRender::notifyVideoInfo(std::shared_ptr<VideoInfo> videoInfo) noexcept {
-    // 帧率信息由 AV Sync 模块在 onVSync() 中使用，Choreographer 负责提供节拍
     LogI("video info: fps:{}, frame duration:{}ms",
          videoInfo->fps,
          videoInfo->frameDurationMs().count());
@@ -72,7 +71,7 @@ void VideoRender::onVSync() noexcept {
 
 void VideoRender::notifyRenderInfo() noexcept {}
 
-void VideoRender::pushVideoFrameRender(AVFrameRefPtr frame) noexcept {
+void VideoRender::pushFrame(AVFrameRefPtr frame) noexcept {
     renderFrame(frame);
 }
 
@@ -87,16 +86,20 @@ void VideoRender::requestRenderFrame() noexcept {
 
 void VideoRender::renderFrame(const AVFrameRefPtr& frame) noexcept {
     if (!frame) {
+        LogD("renderFrame: frame is null, skip");
         return;
     }
     auto videoFrameInfo = std::dynamic_pointer_cast<VideoFrameInfo>(frame->info);
     if (videoFrameInfo->format == FrameFormat::MediaCodecSurface) {
-        auto texture = std::unique_ptr<Texture>(static_cast<Texture*>(frame->opaque));
-        if (texture == nullptr) {
+        auto* tex = static_cast<Texture*>(frame->opaque);
+        if (!tex) {
             LogE("texture is nullptr");
             return;
         }
         frame->opaque = nullptr;
+        TextureRefPtr texture(tex, [](Texture* t) {
+            Texture::releaseResource(TexturePtr(t));
+        });
         auto textureId = texture->textureId();
         auto width = texture->width();
         auto height = texture->height();
@@ -119,9 +122,6 @@ void VideoRender::renderFrameComplete(int32_t id) noexcept {
         renderInfos_.erase(textureId);
         auto ptsTime = info.ptsTime;
         videoClock_.setTime(Time::TimePoint::fromSeconds(ptsTime));
-        if (backupRenderInfo_.isValid()) {
-            Texture::releaseResource(std::move(backupRenderInfo_.texture));
-        }
         backupRenderInfo_ = std::move(info);
         LogI("rendered video, ptsTime:{}, texture id:{}", ptsTime, id);
     } else {

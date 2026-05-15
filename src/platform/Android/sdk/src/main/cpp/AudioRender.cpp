@@ -45,7 +45,6 @@ void AudioRender::play() noexcept {
     }
     CheckAudioPlayer();
     NativeAudioPlayer::doAction(playerId_, AudioPlayerAction::Play);
-    clock_.start();
     status_ = RenderStatus::Playing;
 }
 
@@ -55,7 +54,6 @@ void AudioRender::pause() noexcept {
     }
     CheckAudioPlayer();
     NativeAudioPlayer::doAction(playerId_, AudioPlayerAction::Pause);
-    clock_.pause();
     status_ = RenderStatus::Pause;
 }
 
@@ -65,7 +63,6 @@ void AudioRender::release() noexcept {
     }
     CheckAudioPlayer();
     NativeAudioPlayer::doAction(playerId_, AudioPlayerAction::Release);
-    clock_.pause();
     AudioRenderManager::shareInstance().remove(playerId_);
     playerId_.clear();
     status_ = RenderStatus::Stop;
@@ -75,14 +72,7 @@ void AudioRender::stop() noexcept {
     release();
 }
 
-void AudioRender::reset() noexcept {
-    clock_.reset();
-    renderedDataLength_ = 0;
-}
-
-void AudioRender::seek(double time) noexcept {
-    IAudioRender::seek(time);
-}
+void AudioRender::reset() noexcept {}
 
 void AudioRender::renderEnd() noexcept {
     if (status_ == RenderStatus::Pause) {
@@ -104,9 +94,8 @@ void AudioRender::setVolume(float volume) noexcept {
     NativeAudioPlayer::setConfig(playerId_, AudioPlayerConfig::Volume, volume);
 }
 
-Time::TimePoint AudioRender::playedTime() noexcept {
-    // 直接从 Java 层 AudioTrack.getTimestamp() 获取硬件级精确播放时间
-    return offsetTime_ + Time::TimePoint(NativeAudioPlayer::getPlayedTime(playerId_));
+Time::TimeDelta AudioRender::getHardwareLatency() noexcept {
+    return Time::TimeDelta(100'000);
 }
 
 std::shared_ptr<IAudioRender> createAudioRender(const std::shared_ptr<AudioInfo>& audioInfo) {

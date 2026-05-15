@@ -35,17 +35,17 @@ class GLTexture(
         id = ids[0]
         if (id == 0) {
             SlarkLog.e(LOG_TAG, "glGenTextures failed")
-            return
+        } else {
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, id)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, config.minFilter)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, config.magFilter)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, config.wrapS)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, config.wrapT)
+            // allocate storage
+            GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, config.internalFormat, width, height, 0, config.format, config.type, null)
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
+            checkGLStatus("GLTexture init")
         }
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, id)
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, config.minFilter)
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, config.magFilter)
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, config.wrapS)
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, config.wrapT)
-        allocate storage
-        GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, config.internalFormat, width, height, 0, config.format, config.type, null)
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
-        checkGLStatus("GLTexture init")
     }
 
     override fun bind(unit: Int) {

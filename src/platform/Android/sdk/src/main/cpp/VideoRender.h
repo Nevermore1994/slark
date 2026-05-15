@@ -13,11 +13,11 @@ namespace slark {
 
 struct RenderInfo {
     double ptsTime = 0;
-    TexturePtr texture = nullptr;
+    TextureRefPtr texture = nullptr;
 
     RenderInfo() = default;
 
-    RenderInfo(double ptsTime, TexturePtr texture)
+    RenderInfo(double ptsTime, TextureRefPtr texture)
         : ptsTime(ptsTime), texture(std::move(texture)) {}
 
     [[nodiscard]] bool isValid() const noexcept {
@@ -41,22 +41,18 @@ public:
 
     void notifyRenderInfo() noexcept override;
 
-    void pushVideoFrameRender(AVFrameRefPtr frame) noexcept override;
+    void pushFrame(AVFrameRefPtr frame) noexcept override;
 
     void renderFrameComplete(int32_t id) noexcept;
 
     /// Called from Kotlin Choreographer.doFrame() via JNI on each VSync beat.
     void onVSync() noexcept;
 
-    TexturePtr& getBackupTexture() noexcept {
+    /// 返回备份帧的 texture 信息（线程安全），无备份帧时返回 nullptr
+    TextureRefPtr getBackupTexture() noexcept {
         std::lock_guard lock(mutex_);
         return backupRenderInfo_.texture;
     }
-
-public:
-    std::mutex mutex_;
-    std::unordered_map<uint32_t, RenderInfo> renderInfos_;
-    RenderInfo backupRenderInfo_;
 
 private:
     void requestRenderFrame() noexcept;
@@ -64,6 +60,9 @@ private:
     void renderFrame(const AVFrameRefPtr& frame) noexcept;
 
     Clock videoClock_;
+    std::mutex mutex_;
+    std::unordered_map<uint32_t, RenderInfo> renderInfos_;
+    RenderInfo backupRenderInfo_;
 };
 
 using VideoRenderManager = Manager<VideoRender>;

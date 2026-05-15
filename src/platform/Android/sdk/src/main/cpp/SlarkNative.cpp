@@ -3,6 +3,7 @@
 //
 
 #include "JNICache.h"
+#include "JNICall.h"
 #include "JNIEnvGuard.h"
 #include "JNIMarshal.h"
 #include "Log.hpp"
@@ -16,23 +17,7 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_slark_sdk_SlarkNativeBridge_logout(JNIEnv* env,
                                             jobject /* this*/,
                                             const std::string& log) {
-    auto bridgeClass = JNICache::instance().getClass(env, "com/slark/sdk/SlarkNativeBridge");
-    if (!bridgeClass) {
-        LogE("Failed to find SlarkNativeBridge class");
-        return;
-    }
-    auto methodId =
-        JNICache::instance().getStaticMethod(bridgeClass, "logout", "(Ljava/lang/String;)V");
-    if (!methodId) {
-        LogE("Failed to find logout method in SlarkNativeBridge class");
-        return;
-    }
-    auto message = ToJVM::str(env, log);
-    if (!message) {
-        LogE("Failed to convert log message to jstring");
-        return;
-    }
-    env->CallStaticVoidMethod(bridgeClass.get(), methodId.get(), message.get());
+    JNI::JNICall::callStatic<void>(env, "com/slark/sdk/SlarkNativeBridge", "logout", log);
 }
 
 namespace slark {

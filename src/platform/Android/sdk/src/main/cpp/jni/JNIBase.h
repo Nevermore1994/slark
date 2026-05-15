@@ -22,6 +22,8 @@ using JNIEnvPtr = JNIEnv*;
 template <typename T>
 class JNIReference {
 public:
+    JNIReference() noexcept : env_(nullptr), ref_(nullptr) {}
+
     JNIReference(JNIEnv* env, T ref) noexcept : env_(env), ref_(ref) {}
 
     JNIReference(JNIEnv* env, T ref, std::string_view tag) noexcept

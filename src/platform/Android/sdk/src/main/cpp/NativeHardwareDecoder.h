@@ -12,11 +12,30 @@
 
 namespace slark {
 
+enum class PacketType : uint8_t {
+    Video,
+    Audio,
+};
+
 enum NativeDecodeFlag {
     None,
     KeyFrame = 1,
     CodecConfig = 2,
     EndOfStream = 4,
+};
+
+struct VideoFrameResult {
+    bool isAvailable = false;
+    bool isCompleted = false;
+    int64_t pts = 0;
+
+    static VideoFrameResult unpack(uint64_t packed) noexcept {
+        VideoFrameResult r;
+        r.isAvailable = (packed >> 63) & 1u;
+        r.isCompleted = (packed >> 62) & 1u;
+        r.pts = static_cast<int64_t>(packed & 0x3FFFFFFFFFFFFFFFull);
+        return r;
+    }
 };
 
 struct NativeHardwareDecoder {
@@ -29,16 +48,16 @@ struct NativeHardwareDecoder {
                             DataPtr& data,
                             int64_t pts,
                             NativeDecodeFlag flag,
-                            bool isVideo = true);
+                            PacketType type);
 
     static void release(std::string_view decoderId);
 
     static void flush(std::string_view decoderId);
 
-    static uint64_t requestVideoFrame(std::string_view decoderId,
-                                      uint64_t waitTime,
-                                      uint32_t width,
-                                      uint32_t height);
+    static VideoFrameResult requestVideoFrame(std::string_view decoderId,
+                                              uint64_t waitTime,
+                                              uint32_t width,
+                                              uint32_t height);
 };
 
 } // namespace slark

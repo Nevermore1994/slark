@@ -66,28 +66,25 @@ void FrameBuffer::release() noexcept {
 }
 
 bool FrameBuffer::bind(bool isRebinding) noexcept {
+    if (!frameBufferId_ || !texture_) {
+        LogE("Framebuffer is not valid");
+        return false;
+    }
     if (isRebinding) {
         glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFrameBufferId_);
     }
-    if (frameBufferId_ && texture_) {
-        if (activeThreads_.contains(std::this_thread::get_id())) {
-            return true; // Already bound in this thread
-        }
-        glFramebufferTexture2D(GL_FRAMEBUFFER,
-                               GL_COLOR_ATTACHMENT0,
-                               GL_TEXTURE_2D,
-                               texture_->textureId(),
-                               0);
-        glBindFramebuffer(GL_FRAMEBUFFER, frameBufferId_);
-        auto status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-        if (status != GL_FRAMEBUFFER_COMPLETE) {
-            LogE("Framebuffer is not complete: {}", status);
-            unbind(isRebinding);
-            return false;
-        }
-        activeThreads_.insert(std::this_thread::get_id());
-    } else {
-        LogE("Framebuffer is not valid");
+    // 必须先 bind FBO，再 attach texture，再 check status
+    glBindFramebuffer(GL_FRAMEBUFFER, frameBufferId_);
+    glFramebufferTexture2D(GL_FRAMEBUFFER,
+                           GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_2D,
+                           texture_->textureId(),
+                           0);
+    auto status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (status != GL_FRAMEBUFFER_COMPLETE) {
+        LogE("Framebuffer is not complete: {}", status);
+        unbind(isRebinding);
+        return false;
     }
     return true;
 }
@@ -98,7 +95,5 @@ void FrameBuffer::unbind(bool isRollback) noexcept {
     } else {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
-    activeThreads_.erase(std::this_thread::get_id());
 }
-
 } // namespace slark

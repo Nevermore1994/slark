@@ -17,16 +17,15 @@ void AACHardwareDecoder::flush() noexcept {
 Error AACHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
     assert(frame && frame->isAudio());
     NativeDecodeFlag flag = NativeDecodeFlag::None;
-    if (frame->isEndOfStream) {
+    if (frame->isEOS) {
         flag = NativeDecodeFlag::EndOfStream;
     }
     auto res = NativeHardwareDecoder::sendPacket(
         decoderId_,
         frame->data,
-        int64_t(frame->ptsTime() * 1000000), convert to microseconds
+        int64_t(frame->ptsTime() * 1000000), // convert to microseconds
         flag,
-        false false for audio
-    );
+        PacketType::Audio);
     if (res == Error::Success || res == Error::CodecAgain) {
         LogI("send audio packet success, pts:{}, dts:{}, pts time:{}, dts time:{}",
              frame->pts,
@@ -74,14 +73,14 @@ void AACHardwareDecoder::receiveDecodedData(DataPtr data, int64_t pts, bool isCo
     auto frame = std::make_unique<AVFrame>(AVFrameType::Audio);
     frame->pts = pts;
     frame->dts = pts;
-    frame->timeScale = 1000000;
-    us frame->data = std::move(data);
-    frame->info = AudioFrameInfo{
-        .sampleRate = static_cast<uint32_t>(audioConfig->sampleRate),
-        .channels = audioConfig->channels,
-        .bitsPerSample = audioConfig->bitsPerSample,
-    };
-    invokeReceiveFunc(std::move(frame));
+    frame->timeScale = 1000000; // us
+    frame->data = std::move(data);
+    auto audioInfo = std::make_shared<AudioFrameInfo>();
+    audioInfo->sampleRate = static_cast<uint32_t>(audioConfig->sampleRate);
+    audioInfo->channels = audioConfig->channels;
+    audioInfo->bitsPerSample = audioConfig->bitsPerSample;
+    frame->info = audioInfo;
+    invokeReceiveFunc(DecoderData{std::move(frame)});
 }
 
 } // namespace slark

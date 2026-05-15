@@ -13,7 +13,6 @@ import android.graphics.Bitmap
 import android.opengl.EGLContext
 import android.opengl.GLES20
 import android.opengl.EGL14
-import com.slark.sdk.TextureRender.Companion.LOG_TAG
 import java.nio.IntBuffer
 
 fun Long.toPointer(): EGLContext = this.toRawPtr()
@@ -59,7 +58,7 @@ fun loadShader(type: Int, shaderStr: String): Int {
     GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, status, 0)
     if (status[0] == 0) {
         checkGLStatus("compile shader:${type}")
-        SlarkLog.e(LOG_TAG, "shader source:${shaderStr}")
+        SlarkLog.e("GLUtil", "shader source:${shaderStr}")
         GLES20.glDeleteShader(shader)
         return 0
     }
@@ -68,7 +67,7 @@ fun loadShader(type: Int, shaderStr: String): Int {
 
 fun createGLProgram(vertexStr: String, fragmentStr: String): Int {
     if (!checkEGLContext()) {
-        SlarkLog.e(LOG_TAG, "EGL context is not valid")
+        SlarkLog.e("GLUtil", "EGL context is not valid")
         return 0
     }
     val vertexShader = loadShader(GLES20.GL_VERTEX_SHADER, vertexStr)
