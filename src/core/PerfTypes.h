@@ -110,7 +110,8 @@ struct ResourceStats {
 
     void record(const ResourceSnapshot& snap) noexcept {
         ++sampleCount;
-        avgCpuPercent = (avgCpuPercent * (sampleCount - 1) + snap.cpuPercent) / sampleCount;
+        avgCpuPercent = (avgCpuPercent * static_cast<double>(sampleCount - 1) + snap.cpuPercent) /
+                        static_cast<double>(sampleCount);
         if (snap.cpuPercent > peakCpuPercent) {
             peakCpuPercent = snap.cpuPercent;
         }

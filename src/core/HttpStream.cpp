@@ -202,7 +202,7 @@ void HttpStream::handleChunk(http::StreamChunk&& chunk) noexcept {
     }
 }
 
-void HttpStream::handleError(const http::ErrorInfo& error) noexcept {
+void HttpStream::handleError(const http::ErrorInfo& /*error*/) noexcept {
     if (params_.onError) {
         params_.onError(Error::NetworkError);
     }

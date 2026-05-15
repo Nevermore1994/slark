@@ -6,6 +6,7 @@
 
 #include "Base.h"
 #include "Log.hpp"
+#include "PlayerObserver.h"
 #include "Util.h"
 
 namespace slark {
@@ -40,7 +41,7 @@ void NotifyCenter::notifyPlayerEvent(PlayerEvent event, std::string value) noexc
     });
 }
 
-void NotifyCenter::notifyPlayedTime(double playedTime,
+void NotifyCenter::notifyPlayedTime(double /*playedTime*/,
                                     double duration,
                                     double audioTime,
                                     double videoTime,

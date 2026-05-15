@@ -27,7 +27,7 @@ void PlaySession::record(const std::string& stage, int64_t durationUs) {
     }
 
     std::unique_lock<std::shared_mutex> wlock(statsMutex_);
-    阶段数量上限防护
+    // 阶段数量上限防护
     if (stageStats_.size() >= kMaxStageCount) {
         LogW("[Perf] stage count limit reached ({}), ignoring: {}", kMaxStageCount, stage);
         return;
@@ -66,18 +66,14 @@ void PlaySession::printMilestones() const noexcept {
         return;
     }
 
-    std::string output("=== Player Startup Milestones ===
-");
+    std::string output("=== Player Startup Milestones ===\n");
     for (const auto& entry : snapshot) {
         auto deltaMs = static_cast<double>(entry.timestampUs - startUs_) / 1000.0;
-        output.append(std::format("  {}: {:.1f} ms
-", entry.label, deltaMs));
+        output.append(std::format("  {}: {:.1f} ms\n", entry.label, deltaMs));
     }
     auto totalMs = static_cast<double>(snapshot.back().timestampUs - startUs_) / 1000.0;
-    output.append(std::format("  Total: {:.1f} ms
-", totalMs));
-    output.append("=================================
-");
+    output.append(std::format("  Total: {:.1f} ms\n", totalMs));
+    output.append("=================================\n");
     LogI("{}", output);
 }
 
@@ -88,7 +84,7 @@ void PlaySession::markFirstFrame() noexcept {
 }
 
 void PlaySession::finish(bool success) {
-    幂等保护：仅第一次调用生效
+    // 幂等保护：仅第一次调用生效
     bool expected = false;
     if (!finished_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
         return;
@@ -97,9 +93,8 @@ void PlaySession::finish(bool success) {
     endUs_.store(static_cast<int64_t>(Time::nowTimeStamp().point()), std::memory_order_release);
     success_.store(success, std::memory_order_release);
 
-    延迟 include 避免循环依赖，通过前向声明在.cc 中引入 PerfMonitor 上报在 PerfMonitor.cc 中通过
-        reportSession 触发 此处通过全局单例调用，避免头文件循环 extern void
-        perfMonitorReportSession(PlaySession&);
+    // 通过全局单例上报，避免头文件循环依赖
+    extern void perfMonitorReportSession(PlaySession&);
     perfMonitorReportSession(*this);
 }
 
@@ -144,4 +139,3 @@ double PlaySession::firstFrameMs() const noexcept {
 }
 
 } // namespace slark::perf
-namespace slark::perf

@@ -54,7 +54,8 @@ private:
     std::mutex sessionsMutex_;
     std::vector<std::weak_ptr<PlaySession>> activeSessions_;
 
-    平台相关的 CPU 计算状态 int64_t prevProcTimeUs_{0};
+    // 平台相关的 CPU 计算状态
+    int64_t prevProcTimeUs_{0};
     int64_t prevWallTimeUs_{0};
 
 #if defined(__ANDROID__)
@@ -64,4 +65,3 @@ private:
 };
 
 } // namespace slark::perf
-namespace slark::perf

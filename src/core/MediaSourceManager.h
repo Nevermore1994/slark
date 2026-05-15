@@ -23,7 +23,7 @@ using StreamCompleteCallback = std::function<void()>;
 class MediaSourceManager : public NonCopyMovable {
 public:
     MediaSourceManager() = default;
-    ~MediaSourceManager() override = default;
+    ~MediaSourceManager() = default;
 
     bool open(const std::string& uri,
               StreamDataCallback onData,

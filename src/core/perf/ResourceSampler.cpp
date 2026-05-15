@@ -79,20 +79,18 @@ void ResourceSampler::sampleLoop() {
     while (running_.load(std::memory_order_relaxed)) {
         auto snap = sampleOnce();
 
-        先拷贝快照，释放锁后再回调，避免持锁期间执行重操作
+        // 先拷贝快照，释放锁后再回调，避免持锁期间执行重操作
         std::vector<std::shared_ptr<PlaySession>> liveSessions;
         {
             std::lock_guard<std::mutex> lock(sessionsMutex_);
-            activeSessions_.erase(std::remove_if(activeSessions_.begin(),
-                                                 activeSessions_.end(),
-                                                 [&liveSessions](auto& weak) {
-                                                     if (auto s = weak.lock()) {
-                                                         liveSessions.push_back(s);
-                                                         return false;
-                                                     }
-                                                     return true;
-                                                 }),
-                                  activeSessions_.end());
+            std::vector<std::weak_ptr<PlaySession>> alive;
+            for (auto& weak : activeSessions_) {
+                if (auto s = weak.lock()) {
+                    liveSessions.push_back(s);
+                    alive.push_back(weak);
+                }
+            }
+            activeSessions_ = std::move(alive);
         }
         for (auto& s : liveSessions) {
             s->onResourceSample(snap);
@@ -165,8 +163,8 @@ double ResourceSampler::calcCpuUsage() {
     if (prevSysTicks_ > 0 && sysTicks > prevSysTicks_) {
         int64_t deltaSys = sysTicks - prevSysTicks_;
         int64_t deltaProc = procTicks - prevProcTicks_;
-        单核归一化：进程 tick / 系统总 tick* 100，与 Apple 端口径一致 usage =
-            static_cast<double>(deltaProc) / static_cast<double>(deltaSys) * 100.0;
+        // 单核归一化：进程 tick / 系统总 tick * 100，与 Apple 端口径一致
+        usage = static_cast<double>(deltaProc) / static_cast<double>(deltaSys) * 100.0;
     }
     prevProcTicks_ = procTicks;
     prevSysTicks_ = sysTicks;
@@ -255,4 +253,3 @@ void ResourceSampler::readMemoryInfo(int64_t& rssKB, int64_t& vmSizeKB) {
 #endif
 
 } // namespace slark::perf
-namespace slark::perf

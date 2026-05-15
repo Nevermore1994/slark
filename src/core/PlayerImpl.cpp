@@ -13,6 +13,7 @@
 #include "Log.hpp"
 #include "MediaUtil.h"
 #include "PlayerStateMachine.h"
+#include "Random.hpp"
 #include "VideoInfo.h"
 
 #include <algorithm>
@@ -23,7 +24,7 @@
 namespace slark {
 
 namespace {
-constexpr double kSeekThreshold = 0.1;
+constexpr double kSeekThreshold = 0.05; // 50ms 内跳过 seek
 
 BackpressureConfig buildBackpressureConfig(StreamType type, bool isLive) {
     if (isLive || type == StreamType::HLS) {
@@ -233,6 +234,13 @@ void Player::Impl::buildPipeline() noexcept {
             }
             self->handlePipelineEvent(event, std::move(error));
         });
+    pipeline_->setWakeupCallback([weak = weak_from_this()] {
+        auto self = weak.lock();
+        if (!self || !self->ownerThread_) {
+            return;
+        }
+        self->ownerThread_->start();
+    });
     pipeline_->setStreamControl(
         [weak = weak_from_this()] {
             auto self = weak.lock();
@@ -336,8 +344,8 @@ void Player::Impl::preparePlayerInfo() noexcept {
         createVideoComponent(setting);
     }
 
-    doPause();
     setState(PlayerState::Buffering);
+    doPlay(); // 首帧快速推帧：pipeline start，不做 AV Sync，不做背压 Hold
 }
 
 void Player::Impl::process() noexcept {
@@ -406,9 +414,13 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
 
     auto seekTime = seekRequest.seekTime;
     auto playedTime = currentPlayedTime();
-    if (!seekRequest.isAccurate &&
-        (isEqual(playedTime, seekTime, kSeekThreshold) || seekRequest_.isValid())) {
-        LogI("discard seek:{}", seekTime);
+    if (isEqual(playedTime, seekTime, kSeekThreshold)) {
+        LogI("discard seek:{} (too close to current pos {:.3f})", seekTime, playedTime);
+        return;
+    }
+    // 非精确 seek：当前已有 seek 进行中，丢弃新请求（精确 seek 不可丢弃）
+    if (!seekRequest.isAccurate && seekRequest_.isValid()) {
+        LogI("discard non-accurate seek:{} (seek in progress)", seekTime);
         return;
     }
 
@@ -422,7 +434,7 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
     seekRequest_.reset(std::make_shared<PlayerSeekRequest>(seekRequest));
     LogI("do seek to:{:.3f}s, accurate:{}", seekTime, seekRequest.isAccurate);
     setState(PlayerState::Buffering);
-    pipeline_->seek(CTime::fromSeconds(seekTime));
+    pipeline_->seek(CTime(seekTime));
 }
 
 void Player::Impl::doLoop() noexcept {
@@ -430,7 +442,7 @@ void Player::Impl::doLoop() noexcept {
         return;
     }
     LogI("do loop");
-    pipeline_->seek(CTime::fromSeconds(0.0));
+    pipeline_->seek(CTime(0.0));
     mediaSourceManager_.start();
     pipeline_->start();
 }
@@ -548,6 +560,9 @@ void Player::Impl::handlePipelineEvent(PipelineEvent event,
             preparePlayerInfo();
             break;
         case PipelineEvent::PipelineReady:
+            // 解码器就绪，无需额外处理，首帧渲染后才进入 Ready
+            break;
+        case PipelineEvent::FirstFrameRendered:
             notifyPlayerEvent(PlayerEvent::FirstFrameRendered);
             resumeFromBuffering();
             break;
@@ -579,20 +594,19 @@ void Player::Impl::handlePipelineEvent(PipelineEvent event,
             break;
         case PipelineEvent::AudioDecoderFailed:
         case PipelineEvent::VideoDecoderFailed: {
-            // 解码器初始化失败，记录阶段但不一定终止播放（可降级）
-            auto stage = error.has_value() ? error->stage : PipelineStage::Unknown;
-            LogE("decoder init failed, stage:{}", static_cast<uint32_t>(stage));
-            notifyPlayerEvent(PlayerEvent::OnError, std::to_string(static_cast<uint32_t>(stage)));
+            const auto err = error.has_value() ? error->error : Error::PipelineDecodeError;
+            LogE("decoder init failed, error:{}", static_cast<uint32_t>(err));
+            notifyPlayerEvent(PlayerEvent::OnError, std::to_string(static_cast<uint32_t>(err)));
             setState(PlayerState::Error);
             break;
         }
         case PipelineEvent::ReadError:
         case PipelineEvent::DecodeError: {
-            auto stage = error.has_value() ? error->stage : PipelineStage::Unknown;
-            LogE("pipeline error, event:{}, stage:{}",
+            const auto err = error.has_value() ? error->error : Error::PipelineDecodeError;
+            LogE("pipeline error, event:{}, error:{}",
                  static_cast<uint32_t>(event),
-                 static_cast<uint32_t>(stage));
-            notifyPlayerEvent(PlayerEvent::OnError, std::to_string(static_cast<uint32_t>(stage)));
+                 static_cast<uint32_t>(err));
+            notifyPlayerEvent(PlayerEvent::OnError, std::to_string(static_cast<uint32_t>(err)));
             setState(PlayerState::Error);
             break;
         }
@@ -628,7 +642,7 @@ void Player::Impl::notifyPlayerState(PlayerState state) noexcept {
 }
 
 void Player::Impl::notifyPlayedTime(bool isEndTime) noexcept {
-    double audioTime = pipeline_ ? pipeline_->audioPlayedTime().second() : 0.0;
+    double audioTime = pipeline_ ? pipeline_->audioTime().second() : 0.0;
     double videoTime = pipeline_ ? pipeline_->currentTime().second() : 0.0;
     notifyCenter_.notifyPlayedTime(0.0,
                                    info_.duration,

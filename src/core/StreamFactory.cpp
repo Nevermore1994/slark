@@ -29,17 +29,20 @@ FactoryResult<std::shared_ptr<IStream>> StreamFactory::createStream(const std::s
     }
 }
 
-FactoryResult<std::shared_ptr<IStream>> StreamFactory::createFileStream(const std::string& uri) {
+FactoryResult<std::shared_ptr<IStream>> StreamFactory::createFileStream(
+    [[maybe_unused]] const std::string& uri) {
     auto stream = std::make_shared<FileStream>();
     return stream;
 }
 
-FactoryResult<std::shared_ptr<IStream>> StreamFactory::createHttpStream(const std::string& uri) {
+FactoryResult<std::shared_ptr<IStream>> StreamFactory::createHttpStream(
+    [[maybe_unused]] const std::string& uri) {
     auto stream = std::make_shared<HttpStream>();
     return stream;
 }
 
-FactoryResult<std::shared_ptr<IStream>> StreamFactory::createHLSStream(const std::string& uri) {
+FactoryResult<std::shared_ptr<IStream>> StreamFactory::createHLSStream(
+    [[maybe_unused]] const std::string& uri) {
     auto stream = std::make_shared<HLSStream>();
     return stream;
 }

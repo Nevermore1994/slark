@@ -19,6 +19,12 @@ extern const std::string_view MEDIA_MIMETYPE_AUDIO_AAC;
 extern const std::string_view MEDIA_MIMETYPE_AUDIO_RAW;
 extern const std::string_view MEDIA_MIMETYPE_AUDIO_AAC_ADTS;
 
+enum class TrackType {
+    Unknown = 0,
+    Audio = 1,
+    Video = 2,
+};
+
 enum class RenderStatus {
     Unknown,
     Ready,

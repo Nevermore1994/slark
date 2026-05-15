@@ -28,24 +28,21 @@ class PerfMonitor {
 public:
     static PerfMonitor& instance();
 
-    / 重新配置 perf 系统：停止旧采样器、重置统计数据，但保留已注册的 reporter void configure(
-          const PerfConfig& config);
+    void configure(const PerfConfig& config);
 
-    / 注入设备环境信息，会随每次 SessionReport 一起上报 void setDeviceEnv(const DeviceEnv& env);
+    void setDeviceEnv(const DeviceEnv& env);
 
-    / 完全停机：停止采样、清空 reporter 和所有统计数据 void shutdown();
+    void shutdown();
 
     void addReporter(std::shared_ptr<IPerfReporter> reporter);
     void removeReporter(const std::shared_ptr<IPerfReporter>& reporter);
 
-    / 注册 /
-        注销 PlaySession 到 ResourceSampler void registerSession(
-            std::shared_ptr<PlaySession> session);
+    void registerSession(std::shared_ptr<PlaySession> session);
     void unregisterSession(const std::string& sessionId);
 
-    / 分发帧跟踪快照给所有 reporter void reportFrame(std::shared_ptr<const FrameTrace> trace);
+    void reportFrame(std::shared_ptr<const FrameTrace> trace);
 
-    / 构建 SessionReport 并分发给所有 reporter void reportSession(PlaySession& session);
+    void reportSession(PlaySession& session);
 
     void recordSlowOp(const std::string& stage, double durationMs);
     void recordError(const std::string& reason);
@@ -87,4 +84,3 @@ private:
 };
 
 } // namespace slark::perf
-namespace slark::perf

@@ -7,23 +7,12 @@
 #include "AudioRenderComponent.h"
 
 #include "Log.hpp"
-#include "MediaUtil.h"
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 
 namespace slark {
-
-uint32_t calcAudioBufferSize(const std::shared_ptr<AudioInfo>& audioInfo) {
-    if (!audioInfo) {
-        LogE("audio info is nullptr");
-        return 0;
-    }
-    // Calculate buffer size based on sample rate, channels, and bits per sample
-    return static_cast<uint32_t>(kDefaultAudioBufferCacheTime *
-                                 static_cast<double>(audioInfo->sampleRate * audioInfo->channels *
-                                                     2)); // default 16bit, 2 bytes per sample
-}
 
 AudioRenderComponent::AudioRenderComponent(std::shared_ptr<AudioInfo> info)
     : audioInfo_(std::move(info)) {
@@ -36,46 +25,39 @@ AudioRenderComponent::~AudioRenderComponent() {
     }
     audioBuffer_.reset();
     pimpl_.reset();
-    isFirstFrameRendered = false;
 }
 
 void AudioRenderComponent::init() noexcept {
-    reset();
+    renderedDataLength_.store(0, std::memory_order_release);
+    offsetTime_ = {};
+    clock_.reset();
+
     if (!audioInfo_) {
         LogE("audio info is nullptr");
         return;
     }
-    auto bufferSize = calcAudioBufferSize(audioInfo_);
-    LogI("audio buffer size:{}", bufferSize);
-    audioBuffer_ = std::make_unique<SyncRingBuffer<uint8_t>>(bufferSize);
+    audioBuffer_ = std::make_unique<SPSCRingBuffer<uint8_t, 65536>>();
+
     auto pimpl = createAudioRender(audioInfo_);
-    pimpl->setProvider([this](uint8_t* data, uint32_t size, AudioDataFlag& flag) {
-        auto isSuccess = audioBuffer_->withLock([&](auto& ring) {
-            if (auto pullDataFunc = pullDataFunc_.load(); pullDataFunc && !isFull_) {
-                while (ring.length() < size) {
-                    auto frame = std::invoke(*pullDataFunc, ring.available());
-                    if (frame == nullptr) {
-                        break;
-                    }
-                    ring.writeExact(frame->data->rawData,
-                                    static_cast<uint32_t>(frame->data->length));
-                }
-            }
-            return ring.readExact(data, size);
-        });
-        if (isSuccess && !isFirstFrameRendered) {
-            isFirstFrameRendered = true;
-            if (firstFrameRenderCallBack) {
-                firstFrameRenderCallBack(Time::nowTimeStamp());
-            }
+    if (!pimpl) {
+        LogE("createAudioRender failed");
+        return;
+    }
+    pimpl->setProvider([this](uint8_t* data, uint32_t size, AudioDataFlag& /*flag*/) -> uint32_t {
+        if (!audioBuffer_->readExact(data, size)) {
+            std::fill_n(data, size, 0);
+            return 0;
         }
-        isHungry_ = !isSuccess;
-        isFull_ = false;
-        return isSuccess ? size : 0u;
+        auto rendered = renderedDataLength_.fetch_add(size, std::memory_order_relaxed) + size;
+        clock_.setTime(offsetTime_ + audioInfo_->dataLen2TimePoint(rendered));
+
+        if (auto updater = audioTimeUpdater_.load()) {
+            (*updater)(playedTime());
+        }
+        return size;
     });
     pimpl_.reset(std::move(pimpl));
     LogI("init success");
-    isFirstFrameRendered = false;
 }
 
 bool AudioRenderComponent::send(AVFrameRefPtr frame) noexcept {
@@ -87,19 +69,17 @@ bool AudioRenderComponent::process(AVFrameRefPtr frame) noexcept {
         LogE("frame data is nullptr");
         return false;
     }
-    auto res =
-        audioBuffer_->writeExact(frame->data->rawData, static_cast<uint32_t>(frame->data->length));
-    if (!res) {
-        isFull_ = true;
-    }
-    return res;
+    return audioBuffer_->writeExact(frame->data->data(),
+                                    static_cast<uint32_t>(frame->data->length()));
 }
 
 void AudioRenderComponent::reset() noexcept {
     if (audioBuffer_) {
         audioBuffer_->reset();
     }
-    isFirstFrameRendered = false;
+    renderedDataLength_.store(0, std::memory_order_release);
+    offsetTime_ = {};
+    clock_.reset();
     if (auto impl = pimpl_.load()) {
         impl->reset();
     }
@@ -111,6 +91,7 @@ std::shared_ptr<AudioInfo> AudioRenderComponent::audioInfo() const noexcept {
 }
 
 void AudioRenderComponent::start() noexcept {
+    clock_.start();
     if (auto pimpl = pimpl_.load()) {
         pimpl->play();
     } else {
@@ -119,6 +100,7 @@ void AudioRenderComponent::start() noexcept {
 }
 
 void AudioRenderComponent::pause() noexcept {
+    clock_.pause();
     if (auto pimpl = pimpl_.load()) {
         if (pimpl->status() == RenderStatus::Playing) {
             pimpl->pause();
@@ -148,7 +130,6 @@ void AudioRenderComponent::flush() noexcept {
     if (audioBuffer_) {
         audioBuffer_->reset();
     }
-    isFull_ = false;
     if (auto pimpl = pimpl_.load()) {
         pimpl->flush();
     } else {
@@ -160,20 +141,26 @@ void AudioRenderComponent::seek(double time) noexcept {
     if (audioBuffer_) {
         audioBuffer_->reset();
     }
-    isFull_ = false;
+    renderedDataLength_.store(0, std::memory_order_release);
+    offsetTime_ = Time::TimePoint::fromSeconds(time);
+    clock_.setTime(offsetTime_);
     if (auto pimpl = pimpl_.load()) {
-        pimpl->seek(time);
+        pimpl->flush();
     } else {
         LogE("audio render is nullptr.");
     }
 }
 
 Time::TimePoint AudioRenderComponent::playedTime() noexcept {
+    auto t = clock_.time();
     if (auto pimpl = pimpl_.load()) {
-        return pimpl->playedTime();
-    } else {
-        return 0;
+        auto latency = pimpl->getHardwareLatency();
+        if (static_cast<int64_t>(t.point()) < latency.point()) {
+            return Time::TimePoint{0};
+        }
+        return t - latency;
     }
+    return t;
 }
 
 void AudioRenderComponent::renderEnd() noexcept {

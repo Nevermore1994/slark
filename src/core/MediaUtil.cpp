@@ -269,6 +269,7 @@ void parseH264Sps(DataView bitstream, const std::shared_ptr<VideoInfo>& videoInf
     }
 
     uint32_t numRefFrames = Golomb::readUe(bitstream, offset);
+    videoInfo->numRefFrames = static_cast<uint8_t>(std::min(numRefFrames, 16u));
     [[maybe_unused]] auto gapsInFrameNumValueAllowedFlag = ReadUINT8(bitstream, offset, 1);
     uint32_t picWidthInMbsMinus1 = Golomb::readUe(bitstream, offset);
     uint32_t picHeightInMapUnitsMinus1 = Golomb::readUe(bitstream, offset);

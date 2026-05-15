@@ -10,22 +10,13 @@
 #include "IPipelineComponent.h"
 #include "Node.h"
 #include "NonCopyable.h"
-#include "RingBuffer.hpp"
+#include "SPSCRingBuffer.hpp"
 #include "Synchronized.hpp"
 #include "Time.hpp"
 
 #include <functional>
-#include <shared_mutex>
-
-#if defined(SLARK_IOS) || defined(SLARK_ANDROID)
-#include "AudioRender.h"
-#endif
 
 namespace slark {
-
-constexpr double kDefaultAudioBufferCacheTime = 0.2; // 200ms,
-
-using PullDataFunc = std::function<AVFrameRefPtr(uint32_t)>;
 
 class AudioRenderComponent : public IPipelineComponent,
                              public slark::NonCopyMovable,
@@ -34,7 +25,7 @@ class AudioRenderComponent : public IPipelineComponent,
 public:
     explicit AudioRenderComponent(std::shared_ptr<AudioInfo> info);
 
-    ~AudioRenderComponent() override;
+    ~AudioRenderComponent();
 
     bool send(AVFrameRefPtr frame) noexcept override;
 
@@ -56,8 +47,6 @@ public:
 
     void flush() noexcept override;
 
-    void seekStream() noexcept override {}
-
     [[nodiscard]] bool isRunning() const noexcept override;
 
     void setVolume(float volume) noexcept;
@@ -70,16 +59,13 @@ public:
         renderEndCallback_ = std::move(callback);
     }
 
-    bool isFull() noexcept {
-        if (!audioBuffer_) {
-            LogE("audio buffer is nullptr");
-            return true;
-        }
-        return isFull_ || audioBuffer_->available() == 0;
+    void setAudioTimeUpdater(std::function<void(Time::TimePoint)> updater) noexcept {
+        audioTimeUpdater_.reset(
+            std::make_shared<std::function<void(Time::TimePoint)>>(std::move(updater)));
     }
 
-    bool isHungry() noexcept {
-        return isHungry_;
+    [[nodiscard]] uint32_t available() const noexcept {
+        return audioBuffer_ ? audioBuffer_->available() : 0;
     }
 
     RenderStatus status() const {
@@ -91,24 +77,21 @@ public:
 
     void renderEnd() noexcept;
 
-    void setPullDataFunc(PullDataFunc&& pullAudioDataFunc) noexcept {
-        pullDataFunc_.reset(std::make_shared<PullDataFunc>(std::move(pullAudioDataFunc)));
-    }
-
 private:
     void init() noexcept;
 
-public:
-    std::function<void(Time::TimePoint)> firstFrameRenderCallBack;
+    static constexpr uint32_t kAudioBufferSize = 65536;
 
 private:
-    bool isFirstFrameRendered = false;
-    bool isFull_ = false;
-    std::atomic<bool> isHungry_ = false;
     std::shared_ptr<AudioInfo> audioInfo_;
-    std::unique_ptr<SyncRingBuffer<uint8_t>> audioBuffer_;
+    std::unique_ptr<SPSCRingBuffer<uint8_t, kAudioBufferSize>> audioBuffer_;
+
+    Clock clock_;
+    std::atomic<uint64_t> renderedDataLength_{0};
+    Time::TimePoint offsetTime_{};
+
     AtomicSharedPtr<IAudioRender> pimpl_;
-    AtomicSharedPtr<PullDataFunc> pullDataFunc_;
+    AtomicSharedPtr<std::function<void(Time::TimePoint)>> audioTimeUpdater_;
     std::function<void()> renderEndCallback_;
 };
 

@@ -21,13 +21,6 @@ set(CORE_FILE_LISTS
     ${CMAKE_CURRENT_SOURCE_DIR}/perf/*.h
 )
 
-if(APPLE)
-    list(APPEND CORE_FILE_LISTS
-        ${SLARK_PLATFORM_DIR}/iOS/AACHardwareDecoder.mm
-        ${SLARK_PLATFORM_DIR}/iOS/VideoHardwareDecoder.mm
-    )
-endif()
-
 file(GLOB CORE_FILES CONFIGURE_DEPENDS ${CORE_FILE_LISTS})
 
 add_library(slark_core OBJECT ${CORE_FILES})
@@ -40,7 +33,6 @@ target_include_directories(slark_core
     ${CMAKE_CURRENT_SOURCE_DIR}/codec
     ${CMAKE_CURRENT_SOURCE_DIR}/pipeline
     ${CMAKE_CURRENT_SOURCE_DIR}/perf
-    $<$<BOOL:${APPLE}>:${SLARK_PLATFORM_DIR}/iOS>
 )
 
 target_link_libraries(slark_core PUBLIC slark_base slark_internal slark_include)

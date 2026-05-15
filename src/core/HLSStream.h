@@ -6,12 +6,12 @@
 
 #include "HttpRequest.h"
 #include "IStream.h"
+#include "M3U8Parser.h"
 #include "MediaPlaylist.h"
 
 #include <atomic>
 #include <memory>
 #include <mutex>
-#include <queue>
 
 namespace slark {
 
@@ -56,14 +56,11 @@ public:
     }
 
 private:
-    StreamResult<void> parseMasterPlaylist(const std::string& content);
-    StreamResult<void> parseMediaPlaylist(const std::string& content);
     std::optional<std::string> selectVariantUri(uint32_t bandwidth);
 
     void downloadSegments();
-    void downloadSegment(const Segment& segment);
+    void downloadSegment(uint32_t segIndex);
     void refreshPlaylist();
-    StreamResult<void> parseMediaPlaylistIncremental(const std::string& content);
 
     void handlePlaylistResponse(http::HttpResponse&& response);
     void handleSegmentChunk(http::StreamChunk&& chunk, uint32_t segmentIndex);
@@ -71,13 +68,13 @@ private:
     [[nodiscard]] std::string resolveUrl(const std::string& relativeUrl) const;
 
 private:
+    std::unique_ptr<M3U8Parser> parser_;
     std::shared_ptr<MediaPlaylist> playlist_;
     std::shared_ptr<http::HttpRequest> request_;
     OpenParams params_;
 
     std::string baseUrl_;
     std::string mediaPlaylistUrl_;
-    std::atomic<uint32_t> currentVariantIndex_{0};
     std::atomic<uint32_t> currentSegmentIndex_{0};
 
     StreamInfo info_;
@@ -87,7 +84,6 @@ private:
     std::atomic<bool> isRunning_{false};
     std::atomic<bool> isCompleted_{false};
     std::atomic<bool> isPaused_{false};
-    bool isLiveRefresh_ = false; // live 刷新模式，只追加新分片
 
     MetadataCallback metadataCallback_;
     std::mutex mutex_;

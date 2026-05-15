@@ -87,7 +87,13 @@ private:
 
     void handleSettingUpdate(Event& t) noexcept;
 
+    void notifyPlayerEvent(PlayerEvent event, std::string value = {}) noexcept;
+
+    void notifyPlayerState(PlayerState state) noexcept;
+
     void notifyPlayedTime(bool isEndTime = false) noexcept;
+
+    void notifyCacheTime() noexcept;
 
     void setState(PlayerState state) noexcept;
 
@@ -132,6 +138,15 @@ private:
     std::shared_ptr<PlayPipeline> pipeline_ = nullptr;
 
     AtomicWeakPtr<IVideoRender> videoRender_;
+
+    struct PlayerStats {
+        bool resumeAfterBuffering = false;
+
+        void reset() noexcept {
+            resumeAfterBuffering = false;
+        }
+    };
+
     PlayerStats stats_;
 
     std::mutex releaseMutex_;

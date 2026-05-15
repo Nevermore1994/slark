@@ -34,23 +34,29 @@ public:
      */
     PlaySession(std::string sessionId, std::string url);
 
-    / 记录阶段耗时，超过 kMaxStageCount 时丢弃并打印警告 void record(const std::string& stage,
-                                                                     int64_t durationUs);
+    // 记录阶段耗时，超过 kMaxStageCount 时丢弃并打印警告
+    void record(const std::string& stage, int64_t durationUs);
 
-    / 累计帧渲染统计 void recordFrame(int64_t frameDurationUs) noexcept;
+    // 累计帧渲染统计
+    void recordFrame(int64_t frameDurationUs) noexcept;
 
-    / 记录生命周期事件时间点 void recordEvent(const std::string& eventName, int64_t timestampUs);
+    // 记录生命周期事件时间点
+    void recordEvent(const std::string& eventName, int64_t timestampUs);
 
-    / 打里程碑（仅记录关键节点，不重要的节点不要调用） void markMilestone(std::string_view label);
+    // 打里程碑（仅记录关键节点，不重要的节点不要调用）
+    void markMilestone(std::string_view label);
 
-    / 以日志输出所有里程碑相对会话起始时间的耗时（替代 DebugInfo::print） void printMilestones()
-            const noexcept;
+    // 以日志输出所有里程碑相对会话起始时间的耗时（替代 DebugInfo::print）
+    void printMilestones() const noexcept;
 
-    / 记录首帧渲染时刻，重复调用只有第一次生效 void markFirstFrame() noexcept;
+    // 记录首帧渲染时刻，重复调用只有第一次生效
+    void markFirstFrame() noexcept;
 
-    / 标记会话结束，触发 PerfMonitor 上报（幂等） void finish(bool success);
+    // 标记会话结束，触发 PerfMonitor 上报（幂等）
+    void finish(bool success);
 
-    / ResourceSampler 回调，推送资源采样快照 void onResourceSample(const ResourceSnapshot& snap);
+    // ResourceSampler 回调，推送资源采样快照
+    void onResourceSample(const ResourceSnapshot& snap);
 
     [[nodiscard]] std::unordered_map<std::string, PerfStats> stageStatsSnapshot() const;
     [[nodiscard]] FrameStats frameStatsSnapshot() const;
@@ -86,7 +92,8 @@ private:
     int64_t startUs_{0};
     std::atomic<int64_t> endUs_{0};
     std::atomic<int64_t> firstFrameUs_{0};
-    0 表示未到达首帧 std::atomic<bool> success_{false};
+    // 0 表示未到达首帧
+    std::atomic<bool> success_{false};
     std::atomic<bool> finished_{false};
 
     mutable std::shared_mutex statsMutex_;
@@ -102,4 +109,3 @@ private:
 };
 
 } // namespace slark::perf
-namespace slark::perf

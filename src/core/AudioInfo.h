@@ -4,7 +4,6 @@
 
 #pragma once
 #include "AVFrame.hpp"
-#include "Clock.h"
 #include "Log.hpp"
 #include "MediaDefs.h"
 #include "Synchronized.hpp"
@@ -88,10 +87,24 @@ public:
     virtual void setVolume(float volume) noexcept = 0;
     virtual void flush() noexcept = 0;
     virtual void reset() noexcept = 0;
-    virtual Time::TimePoint playedTime() noexcept = 0;
     virtual void renderEnd() noexcept = 0;
 
-    [[nodiscard]] inline RenderStatus status() const noexcept {
+    [[nodiscard]] virtual Time::TimeDelta getHardwareLatency() noexcept = 0;
+
+    void setProvider(RequestAudioDataFunc&& func) noexcept {
+        dataFunc_.reset(std::make_shared<RequestAudioDataFunc>(std::move(func)));
+    }
+
+    uint32_t requestAudioData(uint8_t* buf, uint32_t size, AudioDataFlag& flag) noexcept {
+        auto func = dataFunc_.load();
+        if (func && *func) {
+            return (*func)(buf, size, flag);
+        }
+        flag = AudioDataFlag::Error;
+        return 0;
+    }
+
+    [[nodiscard]] RenderStatus status() const noexcept {
         return status_;
     }
 
@@ -99,48 +112,19 @@ public:
         return status_ != RenderStatus::Error;
     }
 
+    [[nodiscard]] float volume() const noexcept {
+        return volume_;
+    }
+
     [[nodiscard]] const std::shared_ptr<AudioInfo>& info() const noexcept {
         SAssert(audioInfo_ != nullptr, "audio render info is nullptr");
         return audioInfo_;
     }
 
-    [[nodiscard]] inline float volume() const noexcept {
-        return volume_;
-    }
-
-    void setProvider(RequestAudioDataFunc&& func) noexcept {
-        dataFunc_.reset(std::make_shared<RequestAudioDataFunc>(func));
-    }
-
-    virtual void seek(double time) noexcept {
-        flush();
-        renderedDataLength_ = 0;
-        offsetTime_ = Time::TimePoint::fromSeconds(time);
-        clock_.setTime(offsetTime_);
-        LogI("set seek time:{}", time);
-    }
-
-    uint32_t requestAudioData(uint8_t* data, uint32_t size, AudioDataFlag& flag) noexcept {
-        if (auto func = dataFunc_.load()) {
-            auto getSize = std::invoke(*func, data, size, flag);
-            renderedDataLength_ += getSize;
-            // 即使是0也必须更新，否则延迟会导致更新不正确
-            clock_.setTime(offsetTime_ + audioInfo_->dataLen2TimePoint(renderedDataLength_));
-            return getSize;
-        } else {
-            flag = AudioDataFlag::Error;
-            LogE("request data func is null");
-        }
-        return 0;
-    }
-
 protected:
     std::atomic<float> volume_{1.0f};
-    Time::TimePoint offsetTime_{};
-    std::shared_ptr<AudioInfo> audioInfo_ = nullptr;
-    std::atomic<uint64_t> renderedDataLength_ = 0;
-    Clock clock_;
-    std::atomic<RenderStatus> status_ = RenderStatus::Unknown;
+    std::shared_ptr<AudioInfo> audioInfo_;
+    std::atomic<RenderStatus> status_{RenderStatus::Unknown};
     AtomicSharedPtr<RequestAudioDataFunc> dataFunc_;
 };
 

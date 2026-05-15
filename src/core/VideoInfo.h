@@ -19,6 +19,7 @@ struct VideoInfo {
     uint32_t timeScale{};
     uint8_t profile{};
     uint8_t level{};
+    uint8_t numRefFrames{}; // H.264 SPS num_ref_frames / H.265 sps_max_dec_pic_buffering
     std::string mediaInfo;
     DataRefPtr sps;
     DataRefPtr pps;
@@ -47,8 +48,6 @@ struct IVideoRender : public IPipelineComponent {
 
     void flush() noexcept override {}
 
-    void seekStream() noexcept override {}
-
     [[nodiscard]] bool isRunning() const noexcept override {
         return false;
     }
@@ -57,8 +56,8 @@ struct IVideoRender : public IPipelineComponent {
     virtual void notifyRenderInfo() noexcept = 0;
     virtual void renderEnd() noexcept = 0;
 
-    // 新帧入队通知，实现方应在此拉取并渲染（替代 CADisplayLink 轮询）
-    virtual void onNewFrameAvailable() noexcept {}
+    /// Push 模式：仅用于起播首帧和 seek 首帧的快速上屏，其余帧由 VSync 驱动拉取
+    virtual void pushFrame(AVFrameRefPtr frame) noexcept = 0;
 
     virtual ~IVideoRender() = default;
 

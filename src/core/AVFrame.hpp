@@ -12,10 +12,7 @@
 #include "DataView.hpp"
 #include "Log.hpp"
 
-#include <any>
 #include <cstdint>
-#include <exception>
-#include <expected>
 #include <memory>
 #include <ranges>
 
@@ -92,15 +89,17 @@ struct VideoFrameInfo : public FrameInfo {
     }
 
     [[nodiscard]] bool hasContent() const noexcept {
-        static const std::vector<VideoFrameType> kNormalFrameTypes = {VideoFrameType::IFrame,
-                                                                      VideoFrameType::PFrame,
-                                                                      VideoFrameType::BFrame};
-        return std::ranges::any_of(kNormalFrameTypes, [frameType = frameType](const auto type) {
-            return frameType == type;
-        });
+        switch (frameType) {
+            case VideoFrameType::IFrame:
+            case VideoFrameType::PFrame:
+            case VideoFrameType::BFrame:
+                return true;
+            default:
+                return false;
+        }
     }
 
-    void copy(std::shared_ptr<VideoFrameInfo>& info) const noexcept {
+    void copy(const std::shared_ptr<VideoFrameInfo>& info) const noexcept {
         if (!info || info.get() == this) {
             return;
         }
@@ -121,7 +120,8 @@ public:
 
 struct AVFrame {
     bool isDiscard = false;
-    bool isFastPush = false; // Fast push frame
+    bool isFastPush = false;
+    bool isEOS = false;
     AVFrameType frameType = AVFrameType::Unknown;
     uint32_t duration = 0; // ms
     uint64_t timeScale = 1;
@@ -129,7 +129,7 @@ struct AVFrame {
     int64_t pts = 0;
     int64_t dts = 0;
     uint64_t offset = 0;
-    std::unique_ptr<Data> data; // Undecoded
+    std::unique_ptr<Data> data;
     void* opaque = nullptr;
     std::shared_ptr<FrameInfo> info;
 
@@ -137,7 +137,7 @@ struct AVFrame {
 
     explicit AVFrame(AVFrameType type) : frameType(type) {}
 
-    inline void reset() noexcept {
+    void reset() noexcept {
         frameType = AVFrameType::Unknown;
         index = 0;
         timeScale = 1;
@@ -146,13 +146,13 @@ struct AVFrame {
         pts = 0;
         dts = 0;
         offset = 0;
-        data->reset();
+        if (data) {
+            data->reset();
+        }
     }
 
-    inline std::unique_ptr<Data> detachData() noexcept {
-        auto d = std::move(data);
-        data.reset();
-        return d;
+    std::unique_ptr<Data> detachData() noexcept {
+        return std::move(data);
     }
 
     [[nodiscard]] double dtsTime() const noexcept {
@@ -163,7 +163,7 @@ struct AVFrame {
         return std::round(static_cast<double>(pts) / static_cast<double>(timeScale) * 1000) / 1000;
     }
 
-    [[nodiscard]] inline std::unique_ptr<AVFrame> copy() const noexcept {
+    [[nodiscard]] std::unique_ptr<AVFrame> copy() const noexcept {
         auto frame = std::make_unique<AVFrame>();
         frame->frameType = frameType;
         frame->index = index;
@@ -176,18 +176,17 @@ struct AVFrame {
             frame->data = data->copy();
         }
         if (frameType == AVFrameType::Audio) {
-            auto newInfo = std::make_shared<AudioFrameInfo>();
-            if (auto audioFrameInfo = std::dynamic_pointer_cast<AudioFrameInfo>(info);
-                audioFrameInfo) {
-                audioFrameInfo->copy(newInfo);
+            if (auto audioInfo = std::dynamic_pointer_cast<AudioFrameInfo>(info)) {
+                auto newInfo = std::make_shared<AudioFrameInfo>();
+                audioInfo->copy(newInfo);
+                frame->info = newInfo;
             }
-            frame->info = newInfo;
         } else if (frameType == AVFrameType::Video) {
-            auto newInfo = std::make_shared<VideoFrameInfo>();
-            if (auto videoInfo = std::dynamic_pointer_cast<VideoFrameInfo>(info); videoInfo) {
+            if (auto videoInfo = std::dynamic_pointer_cast<VideoFrameInfo>(info)) {
+                auto newInfo = std::make_shared<VideoFrameInfo>();
                 videoInfo->copy(newInfo);
+                frame->info = newInfo;
             }
-            frame->info = newInfo;
         }
         return frame;
     }
@@ -200,11 +199,11 @@ struct AVFrame {
         return index > rhs.index;
     }
 
-    [[nodiscard]] inline bool isVideo() const noexcept {
+    [[nodiscard]] bool isVideo() const noexcept {
         return frameType == AVFrameType::Video;
     }
 
-    [[nodiscard]] inline bool isAudio() const noexcept {
+    [[nodiscard]] bool isAudio() const noexcept {
         return frameType == AVFrameType::Audio;
     }
 
@@ -215,8 +214,18 @@ struct AVFrame {
         return {};
     }
 
-    [[nodiscard]] bool isFastPushFrame() const noexcept {
-        return isDiscard || isFastPush;
+    [[nodiscard]] std::shared_ptr<VideoFrameInfo> videoInfo() const noexcept {
+        if (frameType != AVFrameType::Video || !info) {
+            return nullptr;
+        }
+        return std::dynamic_pointer_cast<VideoFrameInfo>(info);
+    }
+
+    [[nodiscard]] std::shared_ptr<AudioFrameInfo> audioInfo() const noexcept {
+        if (frameType != AVFrameType::Audio || !info) {
+            return nullptr;
+        }
+        return std::dynamic_pointer_cast<AudioFrameInfo>(info);
     }
 };
 

@@ -11,8 +11,8 @@
 
 namespace slark::perf {
 
-PlaySession::finish 通过此函数回调 PerfMonitor，避免头文件循环依赖 void perfMonitorReportSession(
-    PlaySession& session) {
+// PlaySession::finish 通过此函数回调 PerfMonitor，避免头文件循环依赖
+void perfMonitorReportSession(PlaySession& session) {
     PerfMonitor::instance().reportSession(session);
 }
 
@@ -26,7 +26,8 @@ PerfMonitor::~PerfMonitor() {
 }
 
 void PerfMonitor::configure(const PerfConfig& config) {
-    软重配：只停止采样器和重置统计，不清空 reporters_ {
+    // 软重配：只停止采样器和重置统计，不清空 reporters_
+    {
         std::lock_guard<std::mutex> lock(resourceSamplerMutex_);
         if (resourceSampler_) {
             resourceSampler_->stop();
@@ -190,9 +191,8 @@ void PerfMonitor::reportSession(PlaySession& session) {
         std::lock_guard<std::mutex> lock(reporterMutex_);
         snapshot = reporters_;
     }
-    report 为 const，所有 reporter 共享同一份只读数据，最后一个同样传 const shared_ptr
-        std::shared_ptr<const SessionReport>
-            constReport = std::move(report);
+    // report 为 const，所有 reporter 共享同一份只读数据
+    const auto constReport = std::shared_ptr<const SessionReport>(std::move(report));
     for (size_t i = 0; i < snapshot.size(); ++i) {
         try {
             snapshot[i]->onSessionComplete(constReport);
@@ -261,4 +261,3 @@ PerfConfig PerfMonitor::config() const noexcept {
 }
 
 } // namespace slark::perf
-namespace slark::perf

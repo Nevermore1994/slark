@@ -20,7 +20,7 @@ private:
     GLContextManager() = default;
 
 public:
-    ~GLContextManager() override = default;
+    ~GLContextManager() = default;
 
     void addMainContext(const std::string& id, IEGLContextRefPtr context);
 
