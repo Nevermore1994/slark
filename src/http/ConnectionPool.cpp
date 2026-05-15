@@ -1,6 +1,5 @@
 //
 // Created by Nevermore on 2025/4/1.
-// Slark ConnectionPool
 // Copyright (c) 2025 Nevermore All rights reserved.
 //
 #include "ConnectionPool.h"
@@ -381,10 +380,8 @@ void ConnectionPool::tryScheduleCleanup() {
     if (cleanupThread_ && cleanupThread_->joinable()) {
         cleanupThread_->join();
     }
-    cleanupThread_.emplace([this](std::stop_token st) {
-        if (!st.stop_requested()) {
-            cleanupIdleConnections();
-        }
+    cleanupThread_.emplace([this] {
+        cleanupIdleConnections();
         cleanupInProgress_.store(false);
     });
 }

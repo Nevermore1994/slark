@@ -1,6 +1,5 @@
 //
 // Created by Nevermore on 2026/4/2.
-// Slark CallbackBridge - Shared callback bridge for coroutine-to-callback adaptation
 // Copyright (c) 2026 Nevermore All rights reserved.
 //
 #pragma once

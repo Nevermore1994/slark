@@ -16,7 +16,7 @@ else()
     message(STATUS "HTTPS support enabled")
 endif()
 
-add_library(${MODULE_NAME} ${HTTP_SOURCES} ${HTTP_HEADERS})
+add_library(${MODULE_NAME} OBJECT ${HTTP_SOURCES} ${HTTP_HEADERS})
 
 target_include_directories(${MODULE_NAME}
     PUBLIC
@@ -29,18 +29,21 @@ target_link_libraries(${MODULE_NAME} PUBLIC slark_base Threads::Threads)
 if(ENABLE_HTTPS)
     target_compile_definitions(${MODULE_NAME} PUBLIC ENABLE_HTTPS)
 
-    find_package(OpenSSL QUIET)
-
-    if(OpenSSL_FOUND)
-        target_link_libraries(${MODULE_NAME} PUBLIC OpenSSL::SSL OpenSSL::Crypto)
-        message(STATUS "Using system OpenSSL: ${OPENSSL_VERSION}")
-    else()
+    # iOS/Android 必须从源码编译对应平台的 OpenSSL，不能使用宿主机系统库
+    # - Android: 动态库（.so），打入 AAR
+    # - iOS:     静态库（.a），静态链接进 framework
+    if(CMAKE_SYSTEM_NAME STREQUAL "iOS" OR CMAKE_SYSTEM_NAME STREQUAL "Android")
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/OpenSSL.cmake")
             include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/OpenSSL.cmake)
             target_link_openssl(${MODULE_NAME} PUBLIC)
         else()
-            message(WARNING "OpenSSL not found. HTTPS support may not work.")
+            message(FATAL_ERROR "cmake/OpenSSL.cmake not found. Required for iOS/Android HTTPS support.")
         endif()
+    else()
+        # 桌面平台使用系统 OpenSSL
+        find_package(OpenSSL REQUIRED)
+        target_link_libraries(${MODULE_NAME} PUBLIC OpenSSL::SSL OpenSSL::Crypto)
+        message(STATUS "Using system OpenSSL: ${OPENSSL_VERSION}")
     endif()
 endif()
 

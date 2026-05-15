@@ -71,7 +71,7 @@ private:
 class TLSTransport final : public ITransport {
 public:
     TLSTransport(Socket fd, const std::string& hostname);
-    ~TLSTransport() override;
+    ~TLSTransport() ;
 
     Coroutine<void> performHandshake(std::chrono::milliseconds timeout);
 
@@ -143,7 +143,7 @@ public:
 class AsyncSocket final : public IAsyncSocket, public NonCopyable {
 public:
     explicit AsyncSocket(IPVersion ipVersion, std::unique_ptr<ITransport> transport = nullptr);
-    ~AsyncSocket() override;
+    ~AsyncSocket() ;
 
     Coroutine<void> asyncConnect(
         const AddressInfoPtr& address,

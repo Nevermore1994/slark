@@ -299,15 +299,19 @@ struct StreamChunk {
     }
 
     static StreamChunk makeData(DataPtr d) {
-        return StreamChunk{.data = std::move(d), .isFinal = false};
+        return StreamChunk{.data = std::move(d), .isFinal = false, .error = {}, .headers = {}};
     }
 
     static StreamChunk makeFinal() {
-        return StreamChunk{.data = nullptr, .isFinal = true};
+        return StreamChunk{.data = nullptr, .isFinal = true, .error = {}, .headers = {}};
     }
 
     static StreamChunk makeError(ErrorInfo err) {
-        return StreamChunk{.data = nullptr, .isFinal = true, .error = std::move(err)};
+        return StreamChunk{.data = nullptr,
+                           .isFinal = true,
+                           .error = std::move(err),
+                           .statusCode = HttpStatusCode::Unknown,
+                           .headers = {}};
     }
 
     static StreamChunk makeHeader(HttpStatusCode code,

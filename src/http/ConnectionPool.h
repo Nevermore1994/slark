@@ -116,7 +116,7 @@ private:
     mutable std::mutex cleanupMutex_;
     std::atomic<bool> cleanupInProgress_{false};
     Time::TimePoint lastCleanupTime_;
-    std::optional<std::jthread> cleanupThread_;
+    std::optional<std::thread> cleanupThread_;
 };
 
 class PooledConnection {

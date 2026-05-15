@@ -46,7 +46,7 @@ private:
         (void)CoroutineScheduler::instance();
     }
 
-    ~IOContext() override {
+    ~IOContext() {
         stop();
         if (eventThread_.joinable()) {
             eventThread_.join();
