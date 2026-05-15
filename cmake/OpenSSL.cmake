@@ -21,10 +21,8 @@ set(OPENSSL_VERSION "3.0.13")
 set(OPENSSL_SOURCE_URL "https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_VERSION}/openssl-${OPENSSL_VERSION}.tar.gz")
 set(OPENSSL_MIRROR_URL "https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz")
 
-# 源码缓存目录（只解压一份，所有平台共享，不在此目录产生编译产物）
 set(OPENSSL_SOURCE_CACHE_DIR "${CMAKE_SOURCE_DIR}/.fetchcontent_cache/openssl")
 
-# 安装目录按平台隔离
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(OPENSSL_INSTALL_DIR "${CMAKE_BINARY_DIR}/deps/openssl/ios")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
@@ -100,9 +98,6 @@ endfunction()
 
 # =============================================================================
 # iOS Cross-Compilation（out-of-source build）
-#
-# 源码目录只读，所有编译产物写入独立的 build 目录，
-# 与 Android 构建完全隔离，不会互相污染。
 # =============================================================================
 function(_openssl_build_ios OPENSSL_SOURCE_DIR)
     message(STATUS "Building OpenSSL for iOS (out-of-source)...")
@@ -213,9 +208,6 @@ endfunction()
 
 # =============================================================================
 # Android Cross-Compilation（out-of-source build）
-#
-# 源码目录只读，所有编译产物写入独立的 build 目录，
-# 与 iOS 构建完全隔离，不会互相污染。
 # =============================================================================
 function(_openssl_build_android OPENSSL_SOURCE_DIR)
     message(STATUS "Building OpenSSL for Android (out-of-source)...")
