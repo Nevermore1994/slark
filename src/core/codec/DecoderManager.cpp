@@ -10,7 +10,7 @@
 #include "AACHardwareDecoder.h"
 #include "VideoHardwareDecoder.h"
 #elif SLARK_ANDROID
-#include "AACHardwareDecoder.h"
+#include "AudioHardwareDecoder.h"
 #include "VideoHardwareDecoder.h"
 #endif
 
@@ -24,7 +24,7 @@ DecoderManager& DecoderManager::shareInstance() noexcept {
     return instance;
 }
 
-DecoderManager::DecoderManager() {
+DecoderManager::DecoderManager() noexcept {
     init();
 }
 

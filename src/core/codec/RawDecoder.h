@@ -29,9 +29,8 @@ public:
     Error decode(AVFrameRefPtr& frame) noexcept override;
 
     inline static const DecoderTypeInfo& info() noexcept {
-        static DecoderTypeInfo info = {
-            DecoderType::RAW,
-            BaseClass::registerClass<RawDecoder>(GetClassName(RawDecoder))};
+        static DecoderTypeInfo info = {DecoderType::RAW,
+                                       Reflection::enroll<RawDecoder>("RawDecoder")};
         return info;
     }
 };

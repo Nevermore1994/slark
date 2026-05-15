@@ -23,14 +23,18 @@ void RawDecoder::flush() noexcept {
     isCompleted_ = false;
 }
 
+void RawDecoder::reset() noexcept {
+    isCompleted_ = false;
+}
+
 Error RawDecoder::decode(AVFrameRefPtr& frame) noexcept {
     if (!frame) {
         return Error::CodecInputError;
     }
-    if (frame->isEndOfStream) {
+    if (frame->info && frame->info->isEndOfStream) {
         isCompleted_ = true;
     } else {
-        invokeReceiveFunc(std::move(frame));
+        invokeReceiveFunc(DecoderData{std::move(frame)});
     }
     return Error::Success;
 }

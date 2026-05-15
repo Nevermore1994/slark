@@ -43,8 +43,10 @@ struct AudioDecoderConfig : public DecoderConfig {
 
 struct VideoDecoderConfig : public DecoderConfig {
     uint16_t naluHeaderLength{};
+    uint16_t fps{};
     uint32_t width{};
     uint32_t height{};
+    uint8_t numRefFrames{}; // from SPS num_ref_frames
     DataRefPtr sps;
     DataRefPtr pps;
     DataRefPtr vps;
@@ -57,6 +59,7 @@ struct VideoDecoderConfig : public DecoderConfig {
         }
         mediaInfo = videoInfo->mediaInfo;
         naluHeaderLength = videoInfo->naluHeaderLength;
+        fps = videoInfo->fps;
         width = videoInfo->width;
         height = videoInfo->height;
         sps = videoInfo->sps;
@@ -65,6 +68,7 @@ struct VideoDecoderConfig : public DecoderConfig {
         timeScale = videoInfo->timeScale;
         profile = videoInfo->profile;
         level = videoInfo->level;
+        numRefFrames = videoInfo->numRefFrames;
         return true;
     }
 };

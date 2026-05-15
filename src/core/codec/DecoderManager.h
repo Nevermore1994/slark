@@ -15,14 +15,14 @@ namespace slark {
 
 class DecoderManager : public NonCopyMovable {
 public:
-    static DecoderManager& shareInstance();
+    static DecoderManager& shareInstance() noexcept;
 
-    DecoderManager();
-    ~DecoderManager() override = default;
+    DecoderManager() noexcept;
+    ~DecoderManager() = default;
 
 public:
     void init() noexcept;
-    DecoderType getDecoderType(std::string_view mediaInfo, bool isSoftDecode) const;
+    DecoderType getDecoderType(std::string_view mediaInfo, bool isSoftDecode) const noexcept;
     bool contains(DecoderType coderType) const noexcept;
     std::shared_ptr<IDecoder> create(DecoderType type) const noexcept;
 
