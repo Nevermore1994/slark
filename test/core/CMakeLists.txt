@@ -2,35 +2,50 @@ cmake_minimum_required(VERSION 3.20)
 
 include(GoogleTest)
 
-PROJECT(Core_test)
+project(Core_test)
 
 set(CORE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/core)
+set(DEMUXER_SRC_DIR ${CORE_SRC_DIR}/demuxer)
 
 file(GLOB TEST_FILES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
 )
 
-add_executable(${PROJECT_NAME} ${TEST_FILES}
-    ${CORE_SRC_DIR}/pipeline/EpochFilter.cpp
+# 直接包含需要的源文件，避免编译整个 slark_core
+set(CORE_TEST_SOURCES
     ${CORE_SRC_DIR}/PlayerStateMachine.cpp
+    ${CORE_SRC_DIR}/MediaDefs.cpp
+    ${CORE_SRC_DIR}/MediaUtil.cpp
+    ${CORE_SRC_DIR}/MediaPlaylist.cpp
+    ${DEMUXER_SRC_DIR}/M3U8Parser.cpp
+    ${DEMUXER_SRC_DIR}/DemuxerManager.cpp
+    ${DEMUXER_SRC_DIR}/Mp4Box.cpp
+    ${DEMUXER_SRC_DIR}/Mp4Demuxer.cpp
+    ${DEMUXER_SRC_DIR}/HLSDemuxer.cpp
+    ${DEMUXER_SRC_DIR}/WavDemuxer.cpp
+)
+
+add_executable(${PROJECT_NAME} ${TEST_FILES}
+    ${CORE_TEST_SOURCES}
 )
 
 target_include_directories(${PROJECT_NAME}
     PRIVATE
     ${CORE_SRC_DIR}
-    ${CORE_SRC_DIR}/pipeline
     ${CORE_SRC_DIR}/demuxer
+    ${CORE_SRC_DIR}/pipeline
     ${CORE_SRC_DIR}/audio
     ${CORE_SRC_DIR}/codec
     ${CORE_SRC_DIR}/perf
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/http
     ${CMAKE_CURRENT_SOURCE_DIR}/../../internal
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include
-    $<$<BOOL:${APPLE}>:${CMAKE_CURRENT_SOURCE_DIR}/../../src/platform/iOS>
 )
 
 target_link_libraries(${PROJECT_NAME}
     slark_base
     slark_internal
+    slark_http
     gtest_main
     pthread)
 

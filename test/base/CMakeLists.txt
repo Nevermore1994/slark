@@ -14,7 +14,6 @@ add_executable(${PROJECT_NAME} ${TEST_FILES})
 
 target_link_libraries(${PROJECT_NAME}
         slark_base
-        slark_core
         gtest_main
         pthread)
 

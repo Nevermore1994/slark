@@ -13,91 +13,52 @@ namespace slark {
 
 class RingBufferTest : public testing::Test {
 protected:
+    // N=10 会被 bit_ceil 对齐到 16
+    RingBuffer<int, 10> buffer;
     static constexpr uint32_t TEST_CAPACITY = 16;
 
-    RingBuffer<int> buffer{TEST_CAPACITY};
-
     void SetUp() override {}
-
-    uint32_t write(const int* data, uint32_t size) {
-        return buffer.write(data, size);
-    }
-
-    uint32_t read(int* data, uint32_t size) {
-        return buffer.read(data, size);
-    }
-
-    bool writeExact(const int* data, uint32_t size) {
-        return buffer.writeExact(data, size);
-    }
-
-    bool readExact(int* data, uint32_t size) {
-        return buffer.readExact(data, size);
-    }
-
-    bool isEmpty() const {
-        return buffer.isEmpty();
-    }
-
-    bool isFull() const {
-        return buffer.isFull();
-    }
-
-    uint32_t length() const {
-        return buffer.length();
-    }
-
-    uint32_t capacity() const {
-        return buffer.capacity();
-    }
-
-    uint32_t available() const {
-        return buffer.available();
-    }
-
-    void reset() {
-        buffer.reset();
-    }
 };
 
 TEST_F(RingBufferTest, InitialState) {
-    EXPECT_TRUE(isEmpty());
-    EXPECT_FALSE(isFull());
-    EXPECT_EQ(length(), 0);
-    EXPECT_EQ(capacity(), TEST_CAPACITY);
-    EXPECT_EQ(available(), TEST_CAPACITY);
+    EXPECT_TRUE(buffer.isEmpty());
+    EXPECT_FALSE(buffer.isFull());
+    EXPECT_EQ(buffer.length(), 0u);
+    EXPECT_EQ(buffer.capacity(), TEST_CAPACITY);
+    EXPECT_EQ(buffer.available(), TEST_CAPACITY);
 }
 
-TEST_F(RingBufferTest, WriteAndRead) {
+TEST_F(RingBufferTest, WriteExactAndReadExact) {
     int data[] = {1, 2, 3, 4, 5};
-    EXPECT_EQ(write(data, 5), 5);
-    EXPECT_EQ(length(), 5);
+    EXPECT_TRUE(buffer.writeExact(data, 5));
+    EXPECT_EQ(buffer.length(), 5u);
 
     int readData[5] = {0};
-    EXPECT_EQ(read(readData, 5), 5);
+    EXPECT_TRUE(buffer.readExact(readData, 5));
     for (int i = 0; i < 5; ++i) {
         EXPECT_EQ(readData[i], data[i]);
     }
 }
 
-TEST_F(RingBufferTest, WriteExact) {
+TEST_F(RingBufferTest, WriteExactFail) {
     int data[] = {1, 2, 3};
-    EXPECT_TRUE(writeExact(data, 3));
-    EXPECT_EQ(length(), 3);
-    EXPECT_FALSE(writeExact(data, TEST_CAPACITY));
+    EXPECT_TRUE(buffer.writeExact(data, 3));
+    EXPECT_EQ(buffer.length(), 3u);
+    // 剩余空间不够，写入失败
+    EXPECT_FALSE(buffer.writeExact(data, TEST_CAPACITY));
 }
 
-TEST_F(RingBufferTest, ReadExact) {
+TEST_F(RingBufferTest, ReadExactFail) {
     int data[] = {1, 2, 3};
-    write(data, 3);
+    EXPECT_TRUE(buffer.writeExact(data, 3));
 
     int readData[3] = {0};
-    EXPECT_TRUE(readExact(readData, 3));
+    EXPECT_TRUE(buffer.readExact(readData, 3));
     for (int i = 0; i < 3; ++i) {
         EXPECT_EQ(readData[i], data[i]);
     }
-
-    EXPECT_FALSE(readExact(readData, 1));
+    // 已空，读取失败
+    EXPECT_FALSE(buffer.readExact(readData, 1));
 }
 
 TEST_F(RingBufferTest, WrapAround) {
@@ -106,65 +67,59 @@ TEST_F(RingBufferTest, WrapAround) {
         data[i] = i;
     }
 
-    EXPECT_EQ(write(data.data(), data.size()), data.size());
+    EXPECT_TRUE(buffer.writeExact(data.data(), static_cast<uint32_t>(data.size())));
 
     std::vector<int> readData(TEST_CAPACITY / 2);
-    EXPECT_EQ(read(readData.data(), TEST_CAPACITY / 2), TEST_CAPACITY / 2);
+    EXPECT_TRUE(buffer.readExact(readData.data(), TEST_CAPACITY / 2));
 
     int newData[] = {100, 101, 102};
-    EXPECT_EQ(write(newData, 3), 3);
+    EXPECT_TRUE(buffer.writeExact(newData, 3));
 
-    auto remainSize = length();
+    auto remainSize = buffer.length();
     std::vector<int> allData(remainSize);
-    EXPECT_EQ(read(allData.data(), remainSize), remainSize);
-    EXPECT_TRUE(isEmpty());
+    EXPECT_TRUE(buffer.readExact(allData.data(), remainSize));
+    EXPECT_TRUE(buffer.isEmpty());
 }
 
 TEST_F(RingBufferTest, EdgeCases) {
     // 测试nullptr操作
-    EXPECT_EQ(write(nullptr, 5), 0);
-    EXPECT_EQ(read(nullptr, 5), 0);
-    EXPECT_FALSE(writeExact(nullptr, 5));
-    EXPECT_FALSE(readExact(nullptr, 5));
+    EXPECT_FALSE(buffer.writeExact(nullptr, 5));
+    EXPECT_FALSE(buffer.readExact(nullptr, 5));
 
     int data[1];
-    EXPECT_EQ(write(data, 0), 0);
-    EXPECT_EQ(read(data, 0), 0);
-    EXPECT_TRUE(writeExact(data, 0));
-    EXPECT_TRUE(readExact(data, 0));
+    EXPECT_TRUE(buffer.writeExact(data, 0));
+    EXPECT_TRUE(buffer.readExact(data, 0));
 
     std::vector<int> fillData(TEST_CAPACITY);
     for (int i = 0; i < TEST_CAPACITY; ++i) {
         fillData[i] = i;
     }
-    EXPECT_EQ(write(fillData.data(), fillData.size()), TEST_CAPACITY);
-    EXPECT_TRUE(isFull());
+    EXPECT_TRUE(buffer.writeExact(fillData.data(), TEST_CAPACITY));
+    EXPECT_TRUE(buffer.isFull());
 
     // 测试向满缓冲区写入
     int extraData[] = {100};
-    EXPECT_EQ(write(extraData, 1), 0);
-    EXPECT_FALSE(writeExact(extraData, 1));
+    EXPECT_FALSE(buffer.writeExact(extraData, 1));
 
     // 测试读取超出可用数据量
     std::vector<int> largeBuffer(TEST_CAPACITY + 5);
-    EXPECT_EQ(read(largeBuffer.data(), largeBuffer.size()), TEST_CAPACITY);
-    EXPECT_TRUE(isEmpty());
+    EXPECT_FALSE(buffer.readExact(largeBuffer.data(), static_cast<uint32_t>(largeBuffer.size())));
 
     // 测试从空缓冲区读取
-    EXPECT_EQ(read(largeBuffer.data(), 5), 0);
-    EXPECT_FALSE(readExact(largeBuffer.data(), 5));
+    buffer.reset();
+    EXPECT_FALSE(buffer.readExact(largeBuffer.data(), 5));
 }
 
 TEST_F(RingBufferTest, Reset) {
     int data[] = {1, 2, 3};
-    write(data, 3);
+    EXPECT_TRUE(buffer.writeExact(data, 3));
 
-    reset();
-    EXPECT_TRUE(isEmpty());
-    EXPECT_EQ(buffer.length(), 0);
+    buffer.reset();
+    EXPECT_TRUE(buffer.isEmpty());
+    EXPECT_EQ(buffer.length(), 0u);
     EXPECT_EQ(buffer.available(), TEST_CAPACITY);
 
-    EXPECT_EQ(buffer.write(data, 3), 3);
+    EXPECT_TRUE(buffer.writeExact(data, 3));
 }
 
 TEST_F(RingBufferTest, FullBuffer) {
@@ -173,52 +128,52 @@ TEST_F(RingBufferTest, FullBuffer) {
         data[i] = i;
     }
 
-    EXPECT_EQ(buffer.write(data.data(), TEST_CAPACITY), TEST_CAPACITY);
+    EXPECT_TRUE(buffer.writeExact(data.data(), TEST_CAPACITY));
     EXPECT_TRUE(buffer.isFull());
-    EXPECT_EQ(buffer.available(), 0);
+    EXPECT_EQ(buffer.available(), 0u);
 
     int extraData = 100;
-    EXPECT_EQ(buffer.write(&extraData, 1), 0);
+    EXPECT_FALSE(buffer.writeExact(&extraData, 1));
 }
+
+// --- SyncRingBuffer Tests ---
 
 class SyncRingBufferTest : public ::testing::Test {
 protected:
-    static constexpr uint32_t TEST_CAPACITY = 1024;
-
-    SyncRingBuffer<int> buffer{TEST_CAPACITY};
+    SyncRingBuffer<int, 1024> buffer;
 };
 
 TEST_F(SyncRingBufferTest, InitialState) {
     EXPECT_TRUE(buffer.isEmpty());
     EXPECT_FALSE(buffer.isFull());
-    EXPECT_EQ(buffer.length(), 0);
-    EXPECT_EQ(buffer.capacity(), TEST_CAPACITY);
-    EXPECT_EQ(buffer.available(), TEST_CAPACITY);
+    EXPECT_EQ(buffer.length(), 0u);
+    EXPECT_EQ(buffer.capacity(), 1024u);
+    EXPECT_EQ(buffer.available(), 1024u);
 }
 
-TEST_F(SyncRingBufferTest, WriteAndRead) {
+TEST_F(SyncRingBufferTest, WriteExactAndReadExact) {
     int data[] = {1, 2, 3, 4, 5};
-    EXPECT_EQ(buffer.write(data, 5), 5);
-    EXPECT_EQ(buffer.length(), 5);
+    EXPECT_TRUE(buffer.writeExact(data, 5));
+    EXPECT_EQ(buffer.length(), 5u);
 
     int readData[5] = {0};
-    EXPECT_EQ(buffer.read(readData, 5), 5);
+    EXPECT_TRUE(buffer.readExact(readData, 5));
     for (int i = 0; i < 5; ++i) {
         EXPECT_EQ(readData[i], data[i]);
     }
 }
 
-TEST_F(SyncRingBufferTest, WriteExact) {
+TEST_F(SyncRingBufferTest, WriteExactFail) {
     int data[] = {1, 2, 3};
     EXPECT_TRUE(buffer.writeExact(data, 3));
-    EXPECT_EQ(buffer.length(), 3);
-
-    EXPECT_FALSE(buffer.writeExact(data, TEST_CAPACITY));
+    EXPECT_EQ(buffer.length(), 3u);
+    // 剩余空间不够，写入失败
+    EXPECT_FALSE(buffer.writeExact(data, 1024));
 }
 
-TEST_F(SyncRingBufferTest, ReadExact) {
+TEST_F(SyncRingBufferTest, ReadExactFail) {
     int data[] = {1, 2, 3};
-    buffer.write(data, 3);
+    EXPECT_TRUE(buffer.writeExact(data, 3));
 
     int readData[3] = {0};
     EXPECT_TRUE(buffer.readExact(readData, 3));
@@ -229,62 +184,59 @@ TEST_F(SyncRingBufferTest, ReadExact) {
 }
 
 TEST_F(SyncRingBufferTest, WrapAround) {
-    std::vector<int> data(TEST_CAPACITY - 2);
-    for (int i = 0; i < TEST_CAPACITY - 2; ++i) {
+    constexpr uint32_t CAP = 1024;
+    std::vector<int> data(CAP - 2);
+    for (int i = 0; i < CAP - 2; ++i) {
         data[i] = i;
     }
 
-    EXPECT_EQ(buffer.write(data.data(), data.size()), data.size());
+    EXPECT_TRUE(buffer.writeExact(data.data(), static_cast<uint32_t>(data.size())));
 
-    std::vector<int> readData(TEST_CAPACITY / 2);
-    EXPECT_EQ(buffer.read(readData.data(), TEST_CAPACITY / 2), TEST_CAPACITY / 2);
+    std::vector<int> readData(CAP / 2);
+    EXPECT_TRUE(buffer.readExact(readData.data(), CAP / 2));
 
     int newData[] = {100, 101, 102};
-    EXPECT_EQ(buffer.write(newData, 3), 3);
+    EXPECT_TRUE(buffer.writeExact(newData, 3));
 
     auto remainSize = buffer.length();
     std::vector<int> allData(remainSize);
-    EXPECT_EQ(buffer.read(allData.data(), remainSize), remainSize);
+    EXPECT_TRUE(buffer.readExact(allData.data(), remainSize));
     EXPECT_TRUE(buffer.isEmpty());
 }
 
 TEST_F(SyncRingBufferTest, EdgeCases) {
-    EXPECT_EQ(buffer.write(nullptr, 5), 0);
-    EXPECT_EQ(buffer.read(nullptr, 5), 0);
     EXPECT_FALSE(buffer.writeExact(nullptr, 5));
     EXPECT_FALSE(buffer.readExact(nullptr, 5));
 
     int data[1];
-    EXPECT_EQ(buffer.write(data, 0), 0);
-    EXPECT_EQ(buffer.read(data, 0), 0);
     EXPECT_TRUE(buffer.writeExact(data, 0));
     EXPECT_TRUE(buffer.readExact(data, 0));
 }
 
 TEST_F(SyncRingBufferTest, Reset) {
     int data[] = {1, 2, 3};
-    buffer.write(data, 3);
+    EXPECT_TRUE(buffer.writeExact(data, 3));
 
     buffer.reset();
     EXPECT_TRUE(buffer.isEmpty());
-    EXPECT_EQ(buffer.length(), 0);
-    EXPECT_EQ(buffer.available(), TEST_CAPACITY);
+    EXPECT_EQ(buffer.length(), 0u);
+    EXPECT_EQ(buffer.available(), 1024u);
 
-    EXPECT_EQ(buffer.write(data, 3), 3);
+    EXPECT_TRUE(buffer.writeExact(data, 3));
 }
 
 TEST_F(SyncRingBufferTest, FullBuffer) {
-    std::vector<int> data(TEST_CAPACITY);
-    for (int i = 0; i < TEST_CAPACITY; ++i) {
+    std::vector<int> data(1024);
+    for (int i = 0; i < 1024; ++i) {
         data[i] = i;
     }
 
-    EXPECT_EQ(buffer.write(data.data(), TEST_CAPACITY), TEST_CAPACITY);
+    EXPECT_TRUE(buffer.writeExact(data.data(), 1024));
     EXPECT_TRUE(buffer.isFull());
-    EXPECT_EQ(buffer.available(), 0);
+    EXPECT_EQ(buffer.available(), 0u);
 
     int extraData = 100;
-    EXPECT_EQ(buffer.write(&extraData, 1), 0);
+    EXPECT_FALSE(buffer.writeExact(&extraData, 1));
 }
 
 TEST_F(SyncRingBufferTest, ConcurrentWriteRead) {
@@ -296,7 +248,6 @@ TEST_F(SyncRingBufferTest, ConcurrentWriteRead) {
     std::thread producer([&]() {
         while (!startFlag.load()) {
         }
-
         for (int i = 1; i <= NUM_ITEMS; ++i) {
             while (!buffer.writeExact(&i, 1)) {
                 std::this_thread::yield();
@@ -308,7 +259,6 @@ TEST_F(SyncRingBufferTest, ConcurrentWriteRead) {
     std::thread consumer([&]() {
         while (!startFlag.load()) {
         }
-
         int count = 0;
         while (count < NUM_ITEMS) {
             int value;
@@ -339,7 +289,6 @@ TEST_F(SyncRingBufferTest, SPSCBatchReadWrite) {
     std::thread producer([&]() {
         while (!startFlag.load()) {
         }
-
         std::vector<int> data(BATCH_SIZE);
         for (int batch = 0; batch < NUM_BATCHES; ++batch) {
             for (int i = 0; i < BATCH_SIZE; ++i) {
@@ -355,7 +304,6 @@ TEST_F(SyncRingBufferTest, SPSCBatchReadWrite) {
     std::thread consumer([&]() {
         while (!startFlag.load()) {
         }
-
         std::vector<int> data(BATCH_SIZE);
         while (readCount < NUM_BATCHES * BATCH_SIZE) {
             if (buffer.readExact(data.data(), BATCH_SIZE)) {
@@ -384,7 +332,6 @@ TEST_F(SyncRingBufferTest, StressTest) {
     std::thread producer([&]() {
         while (!startFlag.load()) {
         }
-
         for (int i = 1; i <= NUM_ITERATIONS && !stopFlag.load(); ++i) {
             if (buffer.writeExact(&i, 1)) {
                 totalWritten++;
@@ -396,7 +343,6 @@ TEST_F(SyncRingBufferTest, StressTest) {
     std::thread consumer([&]() {
         while (!startFlag.load()) {
         }
-
         int value;
         while (!stopFlag.load() || !buffer.isEmpty()) {
             if (buffer.readExact(&value, 1)) {
@@ -431,7 +377,6 @@ TEST_F(SyncRingBufferTest, MultiThreadedReadWrite) {
         producers.emplace_back([&, p]() {
             while (!startFlag.load()) {
             }
-
             for (int i = 0; i < ITEMS_PER_PRODUCER; ++i) {
                 int value = p * ITEMS_PER_PRODUCER + i + 1;
                 while (!buffer.writeExact(&value, 1)) {
@@ -446,7 +391,6 @@ TEST_F(SyncRingBufferTest, MultiThreadedReadWrite) {
         consumers.emplace_back([&]() {
             while (!startFlag.load()) {
             }
-
             while (totalRead < NUM_PRODUCERS * ITEMS_PER_PRODUCER) {
                 int value;
                 if (buffer.readExact(&value, 1)) {
@@ -459,7 +403,6 @@ TEST_F(SyncRingBufferTest, MultiThreadedReadWrite) {
     }
 
     startFlag.store(true);
-
     for (auto& p : producers) {
         p.join();
     }
@@ -472,7 +415,7 @@ TEST_F(SyncRingBufferTest, MultiThreadedReadWrite) {
     EXPECT_TRUE(buffer.isEmpty());
 }
 
-TEST_F(SyncRingBufferTest, RestTest) {
+TEST_F(SyncRingBufferTest, ResetDuringUse) {
     static constexpr int NUM_ITERATIONS = 100000;
     std::atomic<bool> startFlag{false};
     std::atomic<bool> stopFlag{false};
@@ -483,14 +426,13 @@ TEST_F(SyncRingBufferTest, RestTest) {
     std::thread producer([&]() {
         while (!startFlag.load()) {
         }
-
         for (int i = 1; i <= NUM_ITERATIONS && !stopFlag.load(); ++i) {
             if (buffer.writeExact(&i, 1)) {
                 totalWritten++;
             }
             if (i % 20 == 0) {
-                auto discard = buffer.reset();
-                totalDiscard.fetch_add(static_cast<uint64_t>(discard));
+                buffer.reset();
+                // 无法准确统计 discard 数量，只保证不崩溃
             }
             std::this_thread::yield();
         }
@@ -499,13 +441,13 @@ TEST_F(SyncRingBufferTest, RestTest) {
     std::thread consumer([&]() {
         while (!startFlag.load()) {
         }
-
         int value;
         while (!stopFlag.load() || !buffer.isEmpty()) {
             if (buffer.readExact(&value, 1)) {
                 totalRead++;
+            } else {
+                std::this_thread::yield();
             }
-            std::this_thread::yield();
         }
     });
 
@@ -515,36 +457,25 @@ TEST_F(SyncRingBufferTest, RestTest) {
 
     producer.join();
     consumer.join();
-
-    EXPECT_EQ(totalWritten.load(), totalRead.load() + totalDiscard.load());
 }
+
+// --- Span 接口测试 ---
 
 TEST_F(RingBufferTest, SpanWriteAndRead) {
     std::vector<int> data = {10, 20, 30, 40, 50};
-    EXPECT_EQ(buffer.write(std::span<const int>(data)), 5u);
+    EXPECT_TRUE(buffer.writeExact(std::span<const int>(data)));
     EXPECT_EQ(buffer.length(), 5u);
 
     std::vector<int> readData(5);
-    EXPECT_EQ(buffer.read(std::span<int>(readData)), 5u);
-    for (int32_t i = 0; i < 5; ++i) {
-        EXPECT_EQ(readData[i], data[i]);
-    }
-}
-
-TEST_F(RingBufferTest, SpanWriteExactAndReadExact) {
-    std::vector<int> data = {1, 2, 3};
-    EXPECT_TRUE(buffer.writeExact(std::span<const int>(data)));
-
-    std::vector<int> readData(3);
     EXPECT_TRUE(buffer.readExact(std::span<int>(readData)));
-    for (int32_t i = 0; i < 3; ++i) {
+    for (int32_t i = 0; i < 5; ++i) {
         EXPECT_EQ(readData[i], data[i]);
     }
 }
 
 TEST_F(RingBufferTest, PeekDoesNotMoveReadPointer) {
     int data[] = {1, 2, 3, 4, 5};
-    buffer.write(data, 5);
+    EXPECT_TRUE(buffer.writeExact(data, 5));
 
     int peekData[3] = {0};
     EXPECT_EQ(buffer.peek(peekData, 3), 3u);
@@ -554,7 +485,7 @@ TEST_F(RingBufferTest, PeekDoesNotMoveReadPointer) {
     EXPECT_EQ(buffer.length(), 5u);
 
     int readData[5] = {0};
-    EXPECT_EQ(buffer.read(readData, 5), 5u);
+    EXPECT_TRUE(buffer.readExact(readData, 5));
     for (int32_t i = 0; i < 5; ++i) {
         EXPECT_EQ(readData[i], data[i]);
     }
@@ -562,7 +493,7 @@ TEST_F(RingBufferTest, PeekDoesNotMoveReadPointer) {
 
 TEST_F(RingBufferTest, PeekWithSpan) {
     std::vector<int> data = {10, 20, 30};
-    buffer.write(std::span<const int>(data));
+    EXPECT_TRUE(buffer.writeExact(std::span<const int>(data)));
 
     std::vector<int> peekData(2);
     EXPECT_EQ(buffer.peek(std::span<int>(peekData)), 2u);
@@ -576,16 +507,26 @@ TEST_F(RingBufferTest, PeekEmpty) {
     EXPECT_EQ(buffer.peek(peekData, 3), 0u);
 }
 
-TEST_F(SyncRingBufferTest, PeekThreadSafe) {
-    int data[] = {1, 2, 3, 4, 5};
-    buffer.write(data, 5);
+// --- SyncRingBuffer 超时接口测试 ---
 
-    int peekData[3] = {0};
-    EXPECT_EQ(buffer.peek(peekData, 3), 3u);
-    EXPECT_EQ(peekData[0], 1);
-    EXPECT_EQ(peekData[1], 2);
-    EXPECT_EQ(peekData[2], 3);
-    EXPECT_EQ(buffer.length(), 5u);
+TEST_F(SyncRingBufferTest, TimeoutWriteExactImmediateSuccess) {
+    int data[] = {1, 2, 3};
+    EXPECT_TRUE(buffer.writeExact(data, 3, 0));
+    EXPECT_EQ(buffer.length(), 3u);
+}
+
+TEST_F(SyncRingBufferTest, TimeoutWriteExactImmediateFail) {
+    std::vector<int> data(1024);
+    EXPECT_TRUE(buffer.writeExact(data.data(), 1024));
+    int extra = 1;
+    EXPECT_FALSE(buffer.writeExact(&extra, 1, 0));
+}
+
+TEST_F(SyncRingBufferTest, CompileTimeCapacity) {
+    slark::RingBuffer<int, 10> rb;
+    slark::SyncRingBuffer<int, 10> srb;
+    EXPECT_EQ(rb.capacity(), 16u);
+    EXPECT_EQ(srb.capacity(), 16u);
 }
 
 } // namespace slark

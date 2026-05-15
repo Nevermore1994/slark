@@ -105,7 +105,7 @@ TEST(Util, GetWeakPtrAddressExpired) {
     }
     auto result = Util::getWeakPtrAddress(weak);
     EXPECT_FALSE(result.has_value());
-    EXPECT_EQ(result.error(), DataError::NullPointer);
+    EXPECT_EQ(result.error(), Error::NullPointer);
 }
 
 TEST(Util, GetWeakPtrAddressEmpty) {

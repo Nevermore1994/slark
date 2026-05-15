@@ -210,14 +210,14 @@ TEST(DataView, numberOperations) {
     ASSERT_EQ(*numBE, 0x12345678u);
 }
 
-TEST(DataError, errorHandling) {
-    auto error = DataError::OutOfMemory;
+TEST(ErrorTest, errorHandling) {
+    auto error = Error::OutOfMemory;
     auto str = toString(error);
     ASSERT_EQ(str, "Out of memory");
 
-    Expected<int> result = std::unexpected(DataError::InvalidArgument);
+    Expected<int> result = std::unexpected(Error::InvalidArgument);
     ASSERT_FALSE(result.has_value());
-    ASSERT_EQ(result.error(), DataError::InvalidArgument);
+    ASSERT_EQ(result.error(), Error::InvalidArgument);
 
     auto success = isSuccess(result);
     ASSERT_FALSE(success);

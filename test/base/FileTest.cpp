@@ -4,12 +4,12 @@
 // Copyright (c) 2024 Nevermore All rights reserved.
 //
 
-#include "IReader.h"
-#include "Reader.h"
+#include "File.h"
+
+#include "FileUtil.h"
 #include "Writer.h"
 
 #include <gtest/gtest.h>
-#include <utility>
 
 using namespace slark;
 
@@ -28,64 +28,6 @@ TEST(Writer, getPath) {
     auto path = writer.path();
     ASSERT_EQ(path, std::string_view("test1.txt"));
     writer.close();
-}
-
-TEST(Reader, getPath) {
-    Reader reader;
-    auto task = std::make_unique<ReaderTask>([](IReader*, DataPacket, IOState) {
-
-    });
-    task->path = "test1.txt";
-    reader.open(std::move(task));
-    auto path = reader.path();
-    ASSERT_EQ(path, std::string_view("test1.txt"));
-    reader.close();
-}
-
-TEST(Reader, open) {
-    using namespace std::chrono_literals;
-    using namespace std::string_literals;
-    File::deleteFile("test_read.txt");
-    auto writer = std::make_unique<Writer>();
-    writer->open("test_read.txt");
-    ASSERT_EQ(writer->isOpen(), true);
-    auto str = "This section provides definitions for the specific terminology and the concepts "
-               "used when describing the C++ programming language.\n"
-               "A C++ program is a sequence of text files (typically header and source files) that "
-               "contain declarations. They undergo translation to become an executable program, "
-               "which is executed when the C++ implementation calls its main function.\n"
-               "Certain words in a C++ program have special meaning, and these are known as "
-               "keywords. Others can be used as identifiers. Comments are ignored during "
-               "translation. C++ programs also contain literals, the values of characters inside "
-               "them are determined by character sets and encodings. Certain characters in the "
-               "program have to be represented with escape sequences.\n"
-               ""s;
-    writer->write(str);
-    std::this_thread::sleep_for(100ms);
-    std::cout << "dispose 1" << std::endl;
-    writer->dispose();
-    std::cout << "dispose 2" << std::endl;
-    writer.reset();
-
-    Reader reader;
-    ReaderDataCallBack callback = [&str](IReader*, DataPacket data, IOState state) {
-        std::cout << data.data->toStringView() << std::endl;
-        ASSERT_EQ(data.offset, 0);
-        ASSERT_EQ(state, IOState::EndOfFile);
-        ASSERT_EQ(data.data->toStringView(), std::string_view(str));
-    };
-    auto task = std::make_unique<ReaderTask>(std::move(callback));
-    task->path = "test_read.txt";
-    reader.open(std::move(task));
-    reader.start();
-    IOState state;
-    do {
-        std::this_thread::sleep_for(100ms);
-        state = reader.state();
-        std::cout << static_cast<int>(state) << std::endl;
-    } while (state != IOState::EndOfFile);
-    reader.close();
-    ASSERT_EQ(reader.state(), IOState::Closed);
 }
 
 TEST(File, isExist) {
@@ -112,36 +54,171 @@ TEST(FileUtil, create) {
     ASSERT_EQ(File::removeDir(testRootPath), true);
 }
 
-TEST(File, BackFillByteBoundary) {
-    // 测试 backFillByte 边界情况，不应下溢
-    const std::string kTestFile = "test_backfill.txt";
+TEST(FileUtil, RenameFile) {
+    const std::string kSrc = "rename_src.txt";
+    const std::string kDst = "rename_dst.txt";
+    File::deleteFile(kSrc);
+    File::deleteFile(kDst);
+
     {
-        File::WriteFile writer(kTestFile);
-        ASSERT_TRUE(writer.isOpen());
-        writer.write("A");
-        writer.flush();
+        File::WriteFile wf(kSrc);
+        ASSERT_TRUE(wf.open().has_value());
+        wf.write(std::string_view("hello"));
+        wf.flush();
+    }
+    ASSERT_TRUE(File::isFileExist(kSrc));
+    ASSERT_TRUE(File::renameFile(kSrc, kDst));
+    EXPECT_FALSE(File::isFileExist(kSrc));
+    EXPECT_TRUE(File::isFileExist(kDst));
+    File::deleteFile(kDst);
+}
+
+TEST(FileUtil, FileSize) {
+    const std::string kPath = "filesize_test.txt";
+    File::deleteFile(kPath);
+
+    {
+        File::WriteFile wf(kPath);
+        ASSERT_TRUE(wf.open().has_value());
+        wf.write(std::string_view("12345"));
+        wf.flush();
+    }
+    EXPECT_EQ(File::fileSize(kPath), 5u);
+    File::deleteFile(kPath);
+}
+
+TEST(FileUtil, CopyFile) {
+    const std::string kSrc = "copy_src.txt";
+    const std::string kDst = "copy_dst.txt";
+    File::deleteFile(kSrc);
+    File::deleteFile(kDst);
+
+    {
+        File::WriteFile wf(kSrc);
+        ASSERT_TRUE(wf.open().has_value());
+        wf.write(std::string_view("copy content"));
+        wf.flush();
+    }
+    ASSERT_TRUE(File::copyFile(kSrc, kDst));
+    EXPECT_TRUE(File::isFileExist(kDst));
+    EXPECT_EQ(File::fileSize(kDst), File::fileSize(kSrc));
+    File::deleteFile(kSrc);
+    File::deleteFile(kDst);
+}
+
+TEST(File, WriteAndRead) {
+    using namespace std::chrono_literals;
+    const std::string kPath = "write_read_test.txt";
+    File::deleteFile(kPath);
+
+    const std::string kContent = "hello slark file test";
+    {
+        File::WriteFile wf(kPath);
+        ASSERT_TRUE(wf.open().has_value());
+        auto result = wf.write(std::string_view(kContent));
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(*result, kContent.size());
+        wf.flush();
     }
 
-    File::ReadFile reader(kTestFile);
-    ASSERT_TRUE(reader.isOpen());
+    File::ReadFile rf(kPath);
+    ASSERT_TRUE(rf.open().has_value());
+    auto data = rf.read(kContent.size());
+    ASSERT_TRUE(data.has_value());
+    EXPECT_EQ(data->toStringView(), std::string_view(kContent));
+    EXPECT_TRUE(rf.readOver());
 
-    // 读取一个字节
-    auto data = reader.read(1);
-    ASSERT_TRUE(data);
-    EXPECT_EQ(data->size(), 1u);
+    File::deleteFile(kPath);
+}
 
-    // backFillByte
-    reader.backFillByte('A');
+TEST(File, ReadByte) {
+    const std::string kPath = "readbyte_test.txt";
+    File::deleteFile(kPath);
 
-    // 再读取
-    data = reader.read(1);
-    ASSERT_TRUE(data);
-    EXPECT_EQ(data->size(), 1u);
+    {
+        File::WriteFile wf(kPath);
+        ASSERT_TRUE(wf.open().has_value());
+        wf.write(std::string_view("ABC"));
+        wf.flush();
+    }
 
-    // 此时 readSize_ 应该是 0，再 backFillByte 不应下溢
-    reader.backFillByte('B');
-    // 验证不会崩溃
-    SUCCEED();
+    File::ReadFile rf(kPath);
+    ASSERT_TRUE(rf.open().has_value());
 
-    File::deleteFile(kTestFile);
+    auto b1 = rf.readByte();
+    ASSERT_TRUE(b1.has_value());
+    EXPECT_EQ(*b1, static_cast<Byte>('A'));
+
+    auto b2 = rf.readByte();
+    ASSERT_TRUE(b2.has_value());
+    EXPECT_EQ(*b2, static_cast<Byte>('B'));
+
+    File::deleteFile(kPath);
+}
+
+TEST(File, BackFillByte) {
+    const std::string kPath = "backfill_test.txt";
+    File::deleteFile(kPath);
+
+    {
+        File::WriteFile wf(kPath);
+        ASSERT_TRUE(wf.open().has_value());
+        wf.write(std::string_view("XY"));
+        wf.flush();
+    }
+
+    File::ReadFile rf(kPath);
+    ASSERT_TRUE(rf.open().has_value());
+
+    auto b = rf.readByte();
+    ASSERT_TRUE(b.has_value());
+    EXPECT_EQ(*b, static_cast<Byte>('X'));
+
+    // 回填一个字节，下次读应该读到回填的字节
+    rf.backFillByte(static_cast<Byte>('Z'));
+    auto b2 = rf.readByte();
+    ASSERT_TRUE(b2.has_value());
+    EXPECT_EQ(*b2, static_cast<Byte>('Z'));
+
+    File::deleteFile(kPath);
+}
+
+TEST(File, SeekAndRead) {
+    const std::string kPath = "seek_test.txt";
+    File::deleteFile(kPath);
+
+    {
+        File::WriteFile wf(kPath);
+        ASSERT_TRUE(wf.open().has_value());
+        wf.write(std::string_view("0123456789"));
+        wf.flush();
+    }
+
+    File::ReadFile rf(kPath);
+    ASSERT_TRUE(rf.open().has_value());
+
+    // seek 到第 5 个字节
+    ASSERT_TRUE(rf.seek(5).has_value());
+    auto data = rf.read(3);
+    ASSERT_TRUE(data.has_value());
+    EXPECT_EQ(data->toStringView(), std::string_view("567"));
+
+    File::deleteFile(kPath);
+}
+
+TEST(File, WriteCount) {
+    const std::string kPath = "writecount_test.txt";
+    File::deleteFile(kPath);
+
+    File::WriteFile wf(kPath);
+    ASSERT_TRUE(wf.open().has_value());
+    wf.write(std::string_view("a"));
+    wf.write(std::string_view("b"));
+    wf.write(std::string_view("c"));
+    wf.flush();
+
+    EXPECT_EQ(wf.writeCount(), 3u);
+    EXPECT_EQ(wf.writeSize(), 3u);
+
+    File::deleteFile(kPath);
 }
