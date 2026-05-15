@@ -76,10 +76,10 @@ class BoxMvhd : public Box {
 public:
     uint8_t version{};
     uint32_t flags{};
-    uint32_t creationTime{};
-    uint32_t modificationTime{};
+    uint64_t creationTime{};
+    uint64_t modificationTime{};
     uint32_t timeScale{};
-    uint32_t duration{};
+    uint64_t duration{};
     float preferredRate{};
     float preferredVolume{};
     std::string reserved{};
@@ -157,6 +157,10 @@ public:
 
 public:
     bool decode(Buffer&) noexcept override;
+
+private:
+    void decodeAudioEntry(Buffer& buffer, std::string_view symbol) noexcept;
+    void decodeVideoEntry(Buffer& buffer, std::string_view symbol) noexcept;
 };
 
 struct StscEntry {
@@ -202,6 +206,20 @@ public:
     BoxStco(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxStco() override = default;
+
+public:
+    bool decode(Buffer&) noexcept override;
+};
+
+// 64-bit Chunk Offset (for files > 4GB)
+class BoxCo64 : public Box {
+public:
+    std::vector<uint64_t> chunkOffsets;
+
+public:
+    BoxCo64(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
+
+    ~BoxCo64() override = default;
 
 public:
     bool decode(Buffer&) noexcept override;
@@ -333,7 +351,7 @@ public:
     uint32_t profileCompatibility{};
     uint8_t levelIdc{};
     uint16_t avgFrameRate{};
-    uint16_t naluByteSize{};
+    uint8_t naluByteSize{};
 
     std::vector<DataRefPtr> sps;
     std::vector<DataRefPtr> pps;

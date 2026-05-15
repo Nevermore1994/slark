@@ -73,8 +73,8 @@ void DemuxerComponent::demuxData() noexcept {
         // 队列为空，直接返回；等待 pushData() 或 setInputCompleted() 通过 schedule 再次触发
         return;
     }
-    flushed_ = false;
-    if (auto demuxer = demuxer_.load(); !demuxer || !demuxer->isOpened()) {
+    auto demuxer = demuxer_.load();
+    if (!demuxer || !demuxer->isOpened()) {
         openDemuxer(packet);
     } else {
 #ifdef SLARK_PERF_ENABLED
@@ -109,49 +109,30 @@ bool DemuxerComponent::open() noexcept {
     if (demuxer->isOpened()) {
         return true;
     }
-    demuxer->open(probeBuffer_);
-    auto openResult = demuxer->onOpened();
-
-    if (!openResult.success) {
+    if (!demuxer->open(probeBuffer_)) {
         // open 失败，可能需要继续探测（如 MP4 moov box 在文件末尾）
-        if (openResult.seekRange) {
-            auto pos = openResult.seekRange->start();
+        if (auto headerInfo = demuxer->headerInfo(); headerInfo && headerInfo->headerLength > 0) {
+            auto pos = headerInfo->headerLength;
             seekToPos(pos);
             probeBuffer_->reset();
             probeBuffer_->setOffset(pos);
-            invokeSeekFunc(*openResult.seekRange);
+            invokeSeekFunc(Range(pos, 0));
         }
         return false;
     }
 
-    // open 成功后处理
-    if (openResult.seekRange) {
-        // MP4: seek 到 mdat 数据起始
-        demuxer->seekPos(openResult.seekRange->start());
-        invokeSeekFunc(*openResult.seekRange);
+    if (auto headerInfo = demuxer->headerInfo(); headerInfo && headerInfo->headerLength > 0) {
+        demuxer->seekPos(headerInfo->headerLength);
+        invokeSeekFunc(Range(headerInfo->headerLength, 0));
         clearData();
-        LogI("demuxer seek to:{}", openResult.seekRange->start());
-    }
-
-    if (openResult.requeueProbeData && probeBuffer_) {
-        // WAV: 将 probeBuffer 剩余数据重新入队
-        probeBuffer_->shrink();
-        DataPacket remaining;
-        remaining.offset = probeBuffer_->offset();
-        remaining.data = probeBuffer_->detachData();
-        dataList_.withLock([remaining = std::move(remaining)](auto& list) mutable {
-            list.push_front(std::move(remaining));
-        });
-        probeBuffer_.reset();
+        LogI("demuxer seek to:{}", headerInfo->headerLength);
     }
 
     DemuxerResult result;
     result.resultCode = DemuxerResultCode::ParsedHeader;
     invokeHandleResultFunc(std::move(result));
 
-    if (openResult.seekRange || !openResult.requeueProbeData) {
-        probeBuffer_.reset();
-    }
+    probeBuffer_.reset();
 
 #ifdef SLARK_PERF_ENABLED
     auto session = session_.lock();
@@ -176,11 +157,9 @@ bool DemuxerComponent::openDemuxer(DataPacket& packet) noexcept {
         LogE("append data error:{}", packet.offset);
         return false;
     }
-    if (auto demuxer = demuxer_.load(); !demuxer) {
-        if (!createDemuxer()) {
-            LogE("create demuxer failed.");
-            return false;
-        }
+    if (!demuxer_.isValid() && !createDemuxer()) {
+        LogE("create demuxer failed.");
+        return false;
     }
     return open();
 }

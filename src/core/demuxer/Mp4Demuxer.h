@@ -8,15 +8,12 @@
 #pragma once
 
 #include "IDemuxer.h"
+#include "MediaDefs.h"
 #include "Mp4Box.h"
 
-namespace slark {
+#include <optional>
 
-enum class TrackType {
-    Unknown = 0,
-    Audio = 1,
-    Video = 2,
-};
+namespace slark {
 
 class TrackContext {
 public:
@@ -53,9 +50,9 @@ public:
     uint16_t naluByteSize = 0;
 
 public:
-    bool isInRange(Buffer& buffer) const noexcept;
-
-    bool isInRange(Buffer& buffer, uint64_t& offset) const noexcept;
+    /// @return true if current sample is fully within buffer; optionally outputs sample start
+    /// offset
+    bool isInRange(Buffer& buffer, uint64_t* outOffset = nullptr) const noexcept;
 
     void reset() noexcept;
 
@@ -72,9 +69,30 @@ public:
     AVFramePtrArray parseH265FrameData(AVFramePtr frame,
                                        DataPtr data,
                                        std::shared_ptr<VideoFrameInfo> frameInfo);
+
     void calcIndex() noexcept;
 
     void init() noexcept;
+
+private:
+    using NaluClassifier = std::function<std::pair<bool, VideoFrameType>(uint8_t naluType)>;
+
+    AVFramePtrArray parseNaluFrames(AVFramePtr frame,
+                                    DataPtr data,
+                                    std::shared_ptr<VideoFrameInfo> frameInfo,
+                                    const NaluClassifier& classifier);
+
+    uint32_t findSampleIndexByTime(double targetTime) const noexcept;
+
+    std::optional<std::pair<uint32_t, uint32_t>> findChunkBySampleIndex(
+        uint32_t seekSampleIndex) const noexcept;
+
+    void seekToSample(uint32_t targetSampleIndex) noexcept;
+
+    /// calcIndex 的三个独立状态机推进
+    void advanceStscState() noexcept;
+    void advanceSttsState() noexcept;
+    void advanceCttsState() noexcept;
 };
 
 class Mp4Demuxer : public IDemuxer {
@@ -98,7 +116,8 @@ public:
     inline static const DemuxerInfo& info() noexcept {
         static DemuxerInfo info = {DemuxerType::MP4,
                                    "ftyp",
-                                   BaseClass::registerClass<Mp4Demuxer>(GetClassName(Mp4Demuxer))};
+                                   Reflection::enroll<Mp4Demuxer>("Mp4Demuxer"),
+                                   4};
         return info;
     }
 
@@ -112,7 +131,20 @@ private:
 
     void initData() noexcept;
 
+    void initAudioTrack(const std::shared_ptr<TrackContext>& track) noexcept;
+
+    void initVideoTrack(const std::shared_ptr<TrackContext>& track) noexcept;
+
     bool isCompleted() const noexcept;
+
+    std::shared_ptr<AudioFrameInfo> makeAudioFrameInfo() const noexcept;
+
+    std::shared_ptr<VideoFrameInfo> makeVideoFrameInfo() const noexcept;
+
+    /// 解析 moov 时处理单个 box 的状态更新
+    void handleBoxInMoov(const BoxRefPtr& box,
+                         std::shared_ptr<BoxMdhd>& mdhdBox,
+                         std::stack<BoxRefPtr>& parentBox) noexcept;
 
 private:
     BoxRefPtr rootBox_;

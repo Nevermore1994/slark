@@ -10,65 +10,10 @@
 #include "Buffer.hpp"
 #include "IDemuxer.h"
 #include "IOBase.h"
-#include "Range.h"
+#include "M3U8Parser.h"
+#include "MediaPlaylist.h"
 
 namespace slark {
-
-struct TSInfo {
-    bool isDiscontinuity = false;
-    bool isSupportByteRange = false;
-    uint32_t sequence = 0;
-    double duration = 0.0;
-    double startTime = 0.0;
-    std::string url;
-    Range range;
-
-    double endTime() const noexcept {
-        return startTime + duration;
-    }
-};
-
-struct PlayListInfo {
-    uint32_t codeRate;
-    std::string m3u8Url;
-    std::string name;
-};
-
-struct M3U8Parser : public NonCopyMovable {
-    M3U8Parser(std::string baseUrl);
-    ~M3U8Parser() = default;
-    void reset() noexcept;
-    bool parse(Buffer& buffer) noexcept;
-
-    const std::vector<PlayListInfo>& playListInfos() const noexcept {
-        return playListInfos_;
-    }
-
-    const std::vector<TSInfo>& TSInfos() const noexcept {
-        return infos_;
-    }
-
-    bool isPlayList() const noexcept {
-        return isPlayList_;
-    }
-
-    bool isCompleted() const noexcept {
-        return isCompleted_;
-    }
-
-    double totalDuration() const noexcept {
-        return totalDuration_;
-    }
-
-private:
-    bool isPlayList_ = false;
-    bool isCompleted_ = false;
-    uint32_t index = 0;
-    double totalDuration_ = 0.0;
-    std::string baseUrl_;
-    std::vector<TSInfo> infos_;
-    std::vector<PlayListInfo> playListInfos_;
-};
 
 struct TSHeader {
     uint8_t syncbyte = 0;               // 8 bit
@@ -139,6 +84,8 @@ struct TSParseInfo {
     }
 
     void reset() noexcept {
+        isNotifiedHeader = false;
+        calculatedFps = 0;
         audioInfo.reset();
         videoInfo.reset();
     }
@@ -191,6 +138,19 @@ private:
 
     static void writeVideoData(AVFramePtr& frame, DataView view) noexcept;
 
+    std::vector<Range> collectNaluRanges(DataView view) noexcept;
+
+    void updateH264HeaderInfo(uint8_t naluType, DataView dataView) noexcept;
+
+    std::shared_ptr<VideoFrameInfo> makeVideoFrameInfo(uint8_t naluType,
+                                                       uint8_t sliceType) noexcept;
+
+    void updateStreamInfo(uint8_t streamType, uint16_t pid) noexcept;
+
+    void applyTimestamp(AVFrame& frame, TSParseInfo::Info& info, bool isAudio) noexcept;
+
+    void initAudioInfoIfNeeded(const AACAdtsHeader& header, uint64_t sampleRate) noexcept;
+
     bool packAudioPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexcept;
 
     void recalculatePtsDts(int64_t& pts, int64_t& dts, bool isAudio) noexcept;
@@ -210,9 +170,11 @@ private:
 
 class HLSDemuxer : public IDemuxer {
 public:
-    HLSDemuxer() = default;
+    HLSDemuxer() {
+        type_ = DemuxerType::HLS;
+    }
 
-    ~HLSDemuxer() override = default;
+    ~HLSDemuxer() = default;
 
     void init(DemuxerConfig config) noexcept override;
 
@@ -227,21 +189,21 @@ public:
     /// In HLS, this function obtains the ts index, not the offset of the file
     uint64_t getSeekToPos(double) noexcept override;
 
-    const std::vector<TSInfo>& getTSInfos() const noexcept;
+    const std::vector<Segment>& getTSInfos() const noexcept;
 
     inline static const DemuxerInfo& info() noexcept {
         static DemuxerInfo info = {DemuxerType::HLS,
                                    "#EXTM3U",
-                                   BaseClass::registerClass<HLSDemuxer>(GetClassName(HLSDemuxer))};
+                                   Reflection::enroll<HLSDemuxer>("HLSDemuxer")};
         return info;
     }
 
     bool isPlayList() const noexcept {
-        return mainParser_ ? mainParser_->isPlayList() : false;
+        return mainParser_ ? mainParser_->isMasterPlaylist() : false;
     }
 
-    const std::vector<PlayListInfo>& playListInfos() const noexcept {
-        return mainParser_->playListInfos();
+    const std::vector<Variant>& playListInfos() const noexcept {
+        return mainParser_->playlist()->variants();
     }
 
 private:

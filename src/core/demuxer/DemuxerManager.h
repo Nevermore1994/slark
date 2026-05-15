@@ -22,7 +22,7 @@ public:
 
     DemuxerManager();
 
-    ~DemuxerManager() override = default;
+    ~DemuxerManager() = default;
 
 public:
     void init() noexcept;

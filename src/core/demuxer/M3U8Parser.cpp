@@ -4,168 +4,160 @@
 
 #include "M3U8Parser.h"
 
-#include "DataView.hpp"
-#include "Log.hpp"
+#include "HttpUtil.hpp"
 
+#include <regex>
 #include <utility>
 
 namespace slark {
 
-M3U8Parser::M3U8Parser(std::string baseUrl) : baseUrl_(std::move(baseUrl)) {}
+static const std::regex kVariantRegex(
+    R"(#EXT-X-STREAM-INF:.*BANDWIDTH=(\d+).*?(?:,RESOLUTION=(\d+)x(\d+))?\s*\n([^\n]+))");
+static const std::regex kExtinfRegex(R"(#EXTINF:([\d.]+)\s*(?:,([^\n]+))?\s*\n([^\n]+))");
+static const std::regex kEndListRegex(R"(#EXT-X-ENDLIST)");
+static const std::regex kDiscontinuityRegex(R"(#EXT-X-DISCONTINUITY)");
+static const std::regex kByteRangeRegex(R"(#EXT-X-BYTERANGE:(\d+)@(\d+))");
 
-void M3U8Parser::reset() noexcept {
-    isPlayList_ = false;
-    isCompleted_ = false;
-    index_ = 0;
-    totalDuration_ = 0.0;
-    infos_.clear();
-    playListInfos_.clear();
+M3U8Parser::M3U8Parser(std::string baseUrl) : baseUrl_(std::move(baseUrl)) {
+    playlist_ = std::make_shared<MediaPlaylist>();
 }
 
-namespace {
+void M3U8Parser::reset() noexcept {
+    isMasterPlaylist_ = false;
+    isCompleted_ = false;
+    playlist_ = std::make_shared<MediaPlaylist>();
+}
 
-std::string spliceUrl(const std::string& baseUrl, std::string_view view) {
-    if (view.starts_with("http")) {
-        return std::string(view);
+bool M3U8Parser::parse(const std::string& content) noexcept {
+    if (content.find("#EXT-X-STREAM-INF") != std::string::npos) {
+        return parseMasterPlaylist(content);
+    } else {
+        return parseMediaPlaylist(content);
     }
-    auto normalizeRelativePath = [](std::string base, std::string_view& v) {
-        if (base.back() == '/') {
-            base.pop_back();
+}
+
+bool M3U8Parser::parseMasterPlaylist(const std::string& content) noexcept {
+    isMasterPlaylist_ = true;
+    std::smatch match;
+    std::string::const_iterator searchStart(content.cbegin());
+
+    while (std::regex_search(searchStart, content.cend(), match, kVariantRegex)) {
+        Variant variant;
+        auto bwStr = match[1].str();
+        auto bwResult = StringUtil::fromChars<uint32_t>(bwStr);
+        if (!bwResult) {
+            searchStart = match.suffix().first;
+            continue;
         }
-        while (v.starts_with("../")) {
-            v.remove_prefix(3);
+        variant.bandwidth = *bwResult;
+        variant.uri = resolveUrl(match[4].str());
+
+        if (match[2].matched && match[3].matched) {
+            auto wStr = match[2].str();
+            auto hStr = match[3].str();
+            auto wResult = StringUtil::fromChars<uint32_t>(wStr);
+            auto hResult = StringUtil::fromChars<uint32_t>(hStr);
+            if (wResult && hResult) {
+                variant.width = *wResult;
+                variant.height = *hResult;
+            }
+        }
+
+        playlist_->addVariant(std::move(variant));
+        searchStart = match.suffix().first;
+    }
+
+    isCompleted_ = true;
+    return !playlist_->variants().empty();
+}
+
+bool M3U8Parser::parseMediaPlaylist(const std::string& content) noexcept {
+    if (!std::regex_search(content, kEndListRegex)) {
+        playlist_->setLive(true);
+    }
+
+    std::smatch match;
+    std::string::const_iterator searchStart(content.cbegin());
+    double currentTime = 0.0;
+    bool hasDiscontinuity = false;
+    std::optional<Range> pendingByteRange;
+
+    while (std::regex_search(searchStart, content.cend(), match, kExtinfRegex)) {
+        Segment segment;
+        auto durStr = match[1].str();
+        auto durResult = StringUtil::fromChars<double>(durStr);
+        if (!durResult) {
+            searchStart = match.suffix().first;
+            continue;
+        }
+        segment.duration = *durResult;
+        segment.startTime = currentTime;
+        segment.uri = resolveUrl(match[3].str());
+        segment.isDiscontinuity = hasDiscontinuity;
+        hasDiscontinuity = false;
+
+        if (pendingByteRange.has_value()) {
+            segment.byteRange = pendingByteRange;
+            pendingByteRange.reset();
+        }
+
+        playlist_->addSegment(std::move(segment));
+        currentTime += segment.duration;
+
+        searchStart = match.suffix().first;
+    }
+
+    playlist_->setTotalDuration(currentTime);
+    isCompleted_ = std::regex_search(content, kEndListRegex);
+
+    return !playlist_->segments().empty();
+}
+
+std::string M3U8Parser::resolveUrl(const std::string& relativeUrl) const noexcept {
+    if (relativeUrl.find("://") != std::string::npos) {
+        return relativeUrl;
+    }
+
+    auto url = relativeUrl;
+    std::string base = baseUrl_;
+
+    if (url.starts_with("../")) {
+        while (url.starts_with("../")) {
+            url.erase(0, 3);
             auto pos = base.rfind('/');
             if (pos != std::string::npos) {
                 base = base.substr(0, pos);
             } else {
-                base.clear();
                 break;
             }
         }
-        return base;
-    };
-
-    if (view.starts_with("../")) {
-        auto url = normalizeRelativePath(baseUrl, view);
-        return url + '/' + std::string(view);
+        return base + "/" + url;
     }
-    if (view.starts_with('/')) {
-        auto protocolEnd = baseUrl.find("://");
-        if (protocolEnd == std::string::npos) {
-            return std::string(view);
+
+    if (url.starts_with('/')) {
+        auto protocolEnd = base.find("://");
+        if (protocolEnd != std::string::npos) {
+            protocolEnd += 3;
+            auto hostEnd = base.find('/', protocolEnd);
+            if (hostEnd != std::string::npos) {
+                return base.substr(0, hostEnd) + url;
+            }
         }
-        protocolEnd += 2;
-        auto hostEnd = baseUrl.find('/', protocolEnd);
-        return baseUrl.substr(0, hostEnd) + std::string(view);
+        return url;
     }
-    while (view.starts_with("./")) {
-        view.remove_prefix(2);
+
+    while (url.starts_with("./")) {
+        url.erase(0, 2);
     }
-    return baseUrl + "/" + std::string(view);
-}
 
-} // namespace
-
-bool M3U8Parser::parse(Buffer& buffer) noexcept {
-    DataView line;
-    while (buffer.readLine(line)) {
-        auto content = line.removeSpace();
-        if (content.empty()) {
-            continue;
-        }
-        auto view = std::string_view(content);
-        if (view.starts_with("#EXTINF:")) {
-            view = view.substr(8);
-            view = view.substr(0, view.find(','));
-            TSInfo info;
-            info.sequence = index_++;
-            auto durResult = StringUtil::fromChars<double>(view);
-            double dur = durResult.value_or(0.0);
-            if (!durResult) {
-                LogE("invalid EXTINF duration: {}", view);
-            }
-            info.duration = dur;
-            info.startTime = totalDuration_;
-            infos_.push_back(info);
-            totalDuration_ += info.duration;
-        } else if (view.starts_with("#EXT-X-BYTERANGE:")) {
-            view = view.substr(17);
-            if (infos_.empty()) {
-                LogE("parse byte range error: info array is empty!");
-                break;
-            }
-            auto& info = infos_.back();
-            info.isSupportByteRange = true;
-            auto pos = view.find('@');
-            if (pos == std::string_view::npos) {
-                LogE("parse byte range error");
-                break;
-            }
-            info.range.pos = static_cast<uint64_t>(
-                std::strtol(std::string(view.substr(pos + 1)).c_str(), nullptr, 10));
-            info.range.size = std::strtol(std::string(view.substr(0, pos)).c_str(), nullptr, 10);
-        } else if (view.starts_with("#EXT-X-DISCONTINUITY")) {
-            if (!infos_.empty()) {
-                infos_.back().isDiscontinuity = true;
-            }
-        } else if (view.starts_with("#EXT-X-STREAM-INF:")) {
-            isPlayList_ = true;
-            view = view.substr(18);
-            PlayListInfo info;
-            // 按 key=value 查找 BANDWIDTH，不依赖属性顺序
-            auto findAttr = [](std::string_view attrs, std::string_view key) -> std::string_view {
-                auto pos = attrs.find(key);
-                if (pos == std::string_view::npos) {
-                    return {};
-                }
-                auto valStart = pos + key.size() + 1; // skip '='
-                if (valStart >= attrs.size()) {
-                    return {};
-                }
-                auto valEnd = attrs.find(',', valStart);
-                return attrs.substr(valStart,
-                                    valEnd == std::string_view::npos ? valEnd : valEnd - valStart);
-            };
-            auto bandwidth = findAttr(view, "BANDWIDTH");
-            if (!bandwidth.empty()) {
-                info.codeRate =
-                    static_cast<uint32_t>(std::strtol(std::string(bandwidth).c_str(), nullptr, 10));
-            }
-            playListInfos_.push_back(info);
-        } else if (view.starts_with("#EXT-X-ENDLIST")) {
-            isCompleted_ = true;
-            LogI("parse m3u8 completed.");
-        } else if (!view.starts_with("#")) {
-            if (isPlayList_) {
-                if (playListInfos_.empty()) {
-                    LogE("parse play list: info array is empty!");
-                    break;
-                }
-                playListInfos_.back().m3u8Url = spliceUrl(baseUrl_, view);
-                auto pos = view.find('.');
-                playListInfos_.back().name = (pos == std::string_view::npos)
-                                                 ? std::string(view)
-                                                 : std::string(view.substr(0, pos));
-            } else {
-                if (infos_.empty()) {
-                    LogE("parse url: info array is empty!");
-                    break;
-                }
-                infos_.back().url = spliceUrl(baseUrl_, view);
-            }
+    if (base.back() != '/') {
+        auto pos = base.rfind('/');
+        if (pos != std::string::npos) {
+            base = base.substr(0, pos + 1);
         }
     }
 
-    if (!line.empty()) {
-        line = DataView();
-        buffer.shrink();
-    }
-    auto view = buffer.view();
-    if (view.startWith("#EXT-X-ENDLIST")) {
-        isCompleted_ = true;
-        LogI("parse m3u8 completed.");
-    }
-    return isCompleted_;
+    return base + url;
 }
 
 } // namespace slark

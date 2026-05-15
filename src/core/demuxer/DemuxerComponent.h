@@ -16,10 +16,20 @@ using HandleDemuxResultFunc =
     std::function<void(const std::shared_ptr<IDemuxer>&, DemuxerResult&&)>;
 
 class DemuxerComponent : public IPipelineComponent, public slark::NonCopyMovable {
+private:
+    template <typename Func, typename Default>
+    auto withDemuxer(Func&& func, Default&& defaultVal) const noexcept {
+        if (auto demuxer = demuxer_.load()) {
+            return func(*demuxer);
+        }
+        LogE("demuxer is nullptr.");
+        return std::forward<Default>(defaultVal);
+    }
+
 public:
     explicit DemuxerComponent(DemuxerConfig config);
 
-    ~DemuxerComponent() override;
+    ~DemuxerComponent();
 
     void reset() noexcept;
 
@@ -33,10 +43,6 @@ public:
 
     void flush() noexcept override {
         flushed_ = true;
-    }
-
-    void seekStream() noexcept override {
-        pause();
     }
 
     [[nodiscard]] bool isRunning() const noexcept override {
@@ -59,75 +65,67 @@ public:
     }
 
     [[nodiscard]] bool isOpen() const noexcept {
-        if (auto demuxer = demuxer_.load()) {
-            return demuxer->isOpened();
-        } else {
-            LogE("demuxer is nullptr.");
-        }
-        return false;
+        return withDemuxer(
+            [](auto& d) {
+                return d.isOpened();
+            },
+            false);
     }
 
     [[nodiscard]] bool isCompleted() const noexcept {
-        if (auto demuxer = demuxer_.load()) {
-            return demuxer->isCompleted();
-        } else {
-            LogE("demuxer is nullptr.");
-        }
-        return false;
+        return withDemuxer(
+            [](auto& d) {
+                return d.isCompleted();
+            },
+            false);
     }
 
     [[nodiscard]] bool hasVideo() const noexcept {
-        if (auto demuxer = demuxer_.load()) {
-            return demuxer->hasVideo();
-        } else {
-            LogE("demuxer is nullptr.");
-        }
-        return false;
+        return withDemuxer(
+            [](auto& d) {
+                return d.hasVideo();
+            },
+            false);
     }
 
     [[nodiscard]] bool hasAudio() const noexcept {
-        if (auto demuxer = demuxer_.load()) {
-            return demuxer->hasAudio();
-        } else {
-            LogE("demuxer is nullptr.");
-        }
-        return false;
+        return withDemuxer(
+            [](auto& d) {
+                return d.hasAudio();
+            },
+            false);
     }
 
     [[nodiscard]] std::shared_ptr<VideoInfo> videoInfo() noexcept {
-        if (auto demuxer = demuxer_.load()) {
-            return demuxer->videoInfo();
-        } else {
-            LogE("demuxer is nullptr.");
-        }
-        return nullptr;
+        return withDemuxer(
+            [](auto& d) {
+                return d.videoInfo();
+            },
+            std::shared_ptr<VideoInfo>{});
     }
 
     [[nodiscard]] std::shared_ptr<AudioInfo> audioInfo() noexcept {
-        if (auto demuxer = demuxer_.load()) {
-            return demuxer->audioInfo();
-        } else {
-            LogE("demuxer is nullptr.");
-        }
-        return nullptr;
+        return withDemuxer(
+            [](auto& d) {
+                return d.audioInfo();
+            },
+            std::shared_ptr<AudioInfo>{});
     }
 
     [[nodiscard]] std::shared_ptr<DemuxerHeaderInfo> headerInfo() noexcept {
-        if (auto demuxer = demuxer_.load()) {
-            return demuxer->headerInfo();
-        } else {
-            LogE("demuxer is nullptr.");
-        }
-        return nullptr;
+        return withDemuxer(
+            [](auto& d) {
+                return d.headerInfo();
+            },
+            std::shared_ptr<DemuxerHeaderInfo>{});
     }
 
     [[nodiscard]] CTime totalDuration() const noexcept {
-        if (auto demuxer = demuxer_.load()) {
-            return demuxer->totalDuration();
-        } else {
-            LogE("demuxer is nullptr.");
-        }
-        return {};
+        return withDemuxer(
+            [](auto& d) {
+                return d.totalDuration();
+            },
+            CTime{});
     }
 
     [[nodiscard]] std::shared_ptr<IDemuxer> demuxer() const noexcept {
@@ -143,20 +141,15 @@ public:
     }
 
     [[nodiscard]] DemuxerType type() const noexcept {
-        if (auto demuxer = demuxer_.load()) {
-            return demuxer->type();
-        } else {
-            LogE("demuxer is nullptr.");
-        }
-        return DemuxerType::Unknown;
+        return withDemuxer(
+            [](auto& d) {
+                return d.type();
+            },
+            DemuxerType::Unknown);
     }
 
 private:
     void demuxData() noexcept;
-
-    void handleOpenMp4DemuxerResult(bool isSuccess) noexcept;
-
-    void handleOpenWavDemuxerResult(bool isSuccess) noexcept;
 
     void invokeHandleResultFunc(DemuxerResult&& result) noexcept {
         auto func = handleResultFunc_.load();

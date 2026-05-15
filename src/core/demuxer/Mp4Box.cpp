@@ -7,6 +7,7 @@
 
 #include "Mp4Box.h"
 
+#include "Log.hpp"
 #include "Util.h"
 
 #include <format>
@@ -40,7 +41,7 @@ std::expected<BoxInfo, bool> Box::tryParseBoxInfo(Buffer& buffer) noexcept {
     } else if (info.size == 0) {
         info.size = buffer.totalSize() - buffer.pos() + info.headerSize;
     }
-    info.symbol = Util::uint32ToStringBE(info.type);
+    info.symbol = Util::toStringBE<uint32_t>(info.type);
     return info;
 }
 
@@ -75,7 +76,7 @@ BoxRefPtr Box::createBox(Buffer& buffer) {
         return nullptr;
     }
     auto boxInfo = info.value();
-    static const std::unordered_map<std::string, std::function<Box*(BoxInfo&&)>> boxFactory = {
+    static const std::unordered_map<std::string, std::function<Box*(BoxInfo&&)>> kBoxFactory = {
         {"ftyp",
          [](BoxInfo&& info) {
              return new BoxFtyp(std::move(info));
@@ -128,11 +129,15 @@ BoxRefPtr Box::createBox(Buffer& buffer) {
          [](BoxInfo&& info) {
              return new BoxHvcc(std::move(info));
          }},
+        {"co64",
+         [](BoxInfo&& info) {
+             return new BoxCo64(std::move(info));
+         }},
         {"mdhd", [](BoxInfo&& info) {
              return new BoxMdhd(std::move(info));
          }}};
-    if (boxFactory.contains(boxInfo.symbol)) {
-        auto box = boxFactory.at(boxInfo.symbol)(std::move(boxInfo));
+    if (kBoxFactory.contains(boxInfo.symbol)) {
+        auto box = kBoxFactory.at(boxInfo.symbol)(std::move(boxInfo));
         return std::shared_ptr<Box>(box);
     }
 
@@ -141,58 +146,49 @@ BoxRefPtr Box::createBox(Buffer& buffer) {
 
 std::string BoxFtyp::description(const std::string& prefix) const noexcept {
     auto desc = Box::description(prefix);
-    desc.append(std::format("{1}  major brand: {1}\n"
-                            "{1}  minor version: {2}\n"
-                            "{1}  compatible brands: {3}\n",
+    desc.append(std::format("{}  major brand: {}\n"
+                            "{}  minor version: {}\n"
+                            "{}  compatible brands: {}\n",
                             prefix,
                             majorBrand,
+                            prefix,
                             minorVersion,
+                            prefix,
                             compatibleBrands));
     return desc;
 }
 
 bool BoxFtyp::decode(Buffer& buffer) noexcept {
-    int32_t offset = 0;
-    bool res = false;
-    do {
-        if (!buffer.readString(4, majorBrand)) {
-            break;
-        } else {
-            offset += 4;
-        }
-
-        if (!buffer.readString(4, majorBrand)) {
-            break;
-        } else {
-            offset += 4;
-        }
-
-        auto size = info.size - buffer.pos() - info.start;
-        if (!buffer.readString(size, compatibleBrands)) {
-            break;
-        } else {
-            res = true;
-        }
-    } while (false);
-    if (!res) {
-        buffer.skip(-offset);
+    if (!buffer.require(8)) {
+        return false;
     }
-    return res;
+    if (!buffer.readString(4, majorBrand)) {
+        return false;
+    }
+    if (!buffer.read4ByteBE(minorVersion)) {
+        return false;
+    }
+    const auto kRemaining =
+        info.size > info.headerSize + 8 ? info.size - info.headerSize - 8 : uint64_t{0};
+    if (kRemaining > 0) {
+        buffer.readString(static_cast<uint32_t>(kRemaining), compatibleBrands);
+    }
+    return true;
 }
 
 std::string BoxMvhd::matrixString(const std::string& prefix) const noexcept {
     std::string res;
-    static const std::vector<std::string> matrixNames = {"a, b, u", "c, d, v", "x, y, w"};
+    static const std::vector<std::string> kMatrixNames = {"a, b, u", "c, d, v", "x, y, w"};
 
-    for (size_t i = 0; i < matrixNames.size(); ++i) {
+    for (size_t i = 0; i < kMatrixNames.size(); ++i) {
         res += std::format("{}| {} |{}| {}, {}, {} |{}",
                            prefix,
-                           matrixNames[i],
+                           kMatrixNames[i],
                            (i != 1 ? "   " : " = "),
                            matrix[i * 3],
                            matrix[i * 3 + 1],
                            matrix[i * 3 + 2],
-                           (i != matrixNames.size() - 1 ? "\n" : ""));
+                           (i != kMatrixNames.size() - 1 ? "\n" : ""));
     }
 
     return res;
@@ -227,15 +223,26 @@ std::string BoxMvhd::description(const std::string& prefix) const noexcept {
 }
 
 bool BoxMvhd::decode(Buffer& buffer) noexcept {
-    if (!buffer.require(100)) {
+    if (!buffer.require(4)) {
         return false;
     }
     buffer.readByte(version);
     buffer.read3ByteBE(flags);
-    buffer.read4ByteBE(creationTime);
-    buffer.read4ByteBE(modificationTime);
-    buffer.read4ByteBE(timeScale);
-    buffer.read4ByteBE(duration);
+    if (version == 1) {
+        buffer.read8ByteBE(creationTime);
+        buffer.read8ByteBE(modificationTime);
+        buffer.read4ByteBE(timeScale);
+        buffer.read8ByteBE(duration);
+    } else {
+        uint32_t tmp = 0;
+        buffer.read4ByteBE(tmp);
+        creationTime = tmp;
+        buffer.read4ByteBE(tmp);
+        modificationTime = tmp;
+        buffer.read4ByteBE(timeScale);
+        buffer.read4ByteBE(tmp);
+        duration = tmp;
+    }
     uint16_t hRate = 0, lRate = 0;
     buffer.read2ByteBE(hRate);
     buffer.read2ByteBE(lRate);
@@ -369,8 +376,34 @@ std::tuple<CodecId, std::string> BoxStsd::getCodecId() {
 //   │       ├── depth: 24
 //   │       └── pre_defined: 0
 
+void BoxStsd::decodeAudioEntry(Buffer& buffer, std::string_view /*symbol*/) noexcept {
+    buffer.skip(6);
+    buffer.read2ByteBE(dataReferenceIndex);
+    buffer.skip(2 + 2 + 4);
+    buffer.read2ByteBE(channelCount);
+    buffer.read2ByteBE(sampleSize);
+    buffer.read2ByteBE(audioCompressionId);
+    buffer.read2ByteBE(packetSize);
+    uint32_t tSampleRate = 0;
+    buffer.read4ByteBE(tSampleRate);
+    sampleRate = static_cast<uint16_t>(tSampleRate >> 16);
+    isAudio = true;
+}
+
+void BoxStsd::decodeVideoEntry(Buffer& buffer, std::string_view /*symbol*/) noexcept {
+    buffer.skip(6);
+    buffer.read2ByteBE(dataReferenceIndex);
+    buffer.skip(2 + 2 + 3 * 4);
+    buffer.read2ByteBE(width);
+    buffer.read2ByteBE(height);
+    buffer.skip(12);
+    buffer.read2ByteBE(frameCount);
+    buffer.skip(32 + 2 + 2);
+    isVideo = true;
+}
+
 bool BoxStsd::decode(Buffer& buffer) noexcept {
-    if (!buffer.require(110)) {
+    if (!buffer.require(8)) {
         return false;
     }
     buffer.readByte(version);
@@ -379,156 +412,149 @@ bool BoxStsd::decode(Buffer& buffer) noexcept {
 
     for (uint32_t i = 0; i < entryCount; i++) {
         auto box = Box::createBox(buffer);
-        append(box);
-        auto endPos = box->info.start + box->info.size;
-        if (box->info.symbol == "mp4a" || box->info.symbol == "Opus") {
-            buffer.skip(6);
-            buffer.read2ByteBE(dataReferenceIndex);
-            buffer.skip(2 + 2 + 4);
-            buffer.read2ByteBE(channelCount);
-            buffer.read2ByteBE(sampleSize);
-            buffer.read2ByteBE(audioCompressionId);
-            buffer.read2ByteBE(packetSize);
-            uint32_t tSampleRate;
-            buffer.read4ByteBE(tSampleRate);
-            sampleRate = static_cast<uint16_t>(tSampleRate >> 16);
-            isAudio = true;
-        } else if (box->info.symbol == "avc1" || box->info.symbol == "avc3" ||
-                   box->info.symbol == "hvc1" || box->info.symbol == "hev1") {
-            buffer.skip(6);
-            buffer.read2ByteBE(dataReferenceIndex);
-            buffer.skip(2 + 2 + 3 * 4);
-            buffer.read2ByteBE(width);
-            buffer.read2ByteBE(height);
-            buffer.skip(12);
-            buffer.read2ByteBE(frameCount);
-            buffer.skip(32 + 2 + 2);
-            isVideo = true;
+        if (!box) {
+            LogE("BoxStsd::decode: createBox failed at entry {}", i);
+            return false;
         }
-        BoxRefPtr subBox;
-        do {
-            subBox = Box::createBox(buffer);
+        append(box);
+        const auto kEndPos = box->info.start + box->info.size;
+        const auto& sym = box->info.symbol;
+
+        if (sym == "mp4a" || sym == "Opus") {
+            decodeAudioEntry(buffer, sym);
+        } else if (sym == "avc1" || sym == "avc3" || sym == "hvc1" || sym == "hev1") {
+            decodeVideoEntry(buffer, sym);
+        }
+
+        while (buffer.pos() < kEndPos) {
+            auto subBox = Box::createBox(buffer);
+            if (!subBox) {
+                break;
+            }
             box->append(subBox);
             subBox->decode(buffer);
             buffer.skipTo(static_cast<int64_t>(subBox->info.end()));
-        } while (subBox->info.end() < endPos);
-        buffer.skip(static_cast<int64_t>(endPos - buffer.pos()));
+            if (subBox->info.end() >= kEndPos) {
+                break;
+            }
+        }
+        buffer.skipTo(static_cast<int64_t>(kEndPos));
     }
     return true;
 }
 
 bool BoxStsc::decode(Buffer& buffer) noexcept {
-    if (!buffer.require(1 + 3 + 4 + 3 * 4)) {
+    if (!buffer.require(8)) {
         return false;
     }
-    int32_t offset = 0;
-    buffer.skip(1 + 3);
-    offset += 4;
+    buffer.skip(1 + 3); // version + flags
 
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
-    offset += 4;
 
-    bool res = true;
+    entrys.reserve(entryCount);
     for (uint32_t i = 0; i < entryCount; i++) {
         if (!buffer.require(12)) {
-            res = false;
-            break;
+            return false;
         }
         StscEntry entry;
         buffer.read4ByteBE(entry.firstChunk);
         buffer.read4ByteBE(entry.samplesPerChunk);
         buffer.read4ByteBE(entry.sampleDescriptionIndex);
-        offset += 12;
         entrys.push_back(entry);
     }
-    if (!res) {
-        buffer.skip(-offset);
-    }
-    return res;
+    return true;
 }
 
 bool BoxStsz::decode(Buffer& buffer) noexcept {
     if (!buffer.require(12)) {
         return false;
     }
-
-    int32_t offset = 0;
     buffer.skip(1 + 3); // version + flags
-    offset += 4;
 
-    uint32_t sampleSize = 0;
-    buffer.read4ByteBE(sampleSize);
-    offset += 4;
+    uint32_t defaultSampleSize = 0;
+    buffer.read4ByteBE(defaultSampleSize);
 
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
-    offset += 4;
 
-    if (sampleSize != 0) {
-        sampleSizes = std::vector<uint64_t>(entryCount, sampleSize);
-    } else {
-        bool res = true;
-        for (uint32_t i = 0; i < entryCount; i++) {
-            uint32_t size = 0;
-            if (!buffer.read4ByteBE(size)) {
-                res = false;
-                break;
-            }
-            offset += 4;
-            sampleSizes.push_back(size);
+    if (defaultSampleSize != 0) {
+        sampleSizes.assign(entryCount, defaultSampleSize);
+        return true;
+    }
+    sampleSizes.reserve(entryCount);
+    for (uint32_t i = 0; i < entryCount; i++) {
+        if (!buffer.require(4)) {
+            return false;
         }
-        if (!res) {
-            buffer.skip(-offset);
-        }
-        return res;
+        uint32_t size = 0;
+        buffer.read4ByteBE(size);
+        sampleSizes.push_back(size);
     }
     return true;
 }
 
 bool BoxStco::decode(Buffer& buffer) noexcept {
-    if (!buffer.require(12)) {
+    if (!buffer.require(8)) {
         return false;
     }
-
-    int32_t offset = 0;
     buffer.skip(1 + 3); // version + flags
-    offset += 4;
 
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
-    offset += 4;
 
-    bool res = true;
+    chunkOffsets.reserve(entryCount);
     for (uint32_t i = 0; i < entryCount; i++) {
-        uint32_t size = 0;
-        if (!buffer.read4ByteBE(size)) {
-            res = false;
-            break;
+        if (!buffer.require(4)) {
+            return false;
         }
-        offset += 4;
-        chunkOffsets.push_back(size);
+        uint32_t offset = 0;
+        buffer.read4ByteBE(offset);
+        chunkOffsets.push_back(offset);
     }
-    if (!res) {
-        buffer.skip(-offset);
+    return true;
+}
+
+bool BoxCo64::decode(Buffer& buffer) noexcept {
+    if (!buffer.require(8)) {
+        return false;
     }
-    return res;
+    buffer.skip(1 + 3); // version + flags
+
+    uint32_t entryCount = 0;
+    buffer.read4ByteBE(entryCount);
+
+    chunkOffsets.reserve(entryCount);
+    for (uint32_t i = 0; i < entryCount; i++) {
+        if (!buffer.require(8)) {
+            return false;
+        }
+        uint64_t offset = 0;
+        buffer.read8ByteBE(offset);
+        chunkOffsets.push_back(offset);
+    }
+    return true;
 }
 
 bool BoxStts::decode(Buffer& buffer) noexcept {
+    if (!buffer.require(8)) {
+        return false;
+    }
     buffer.skip(1 + 3); // version + flags
 
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
 
-    bool res = true;
     for (uint32_t i = 0; i < entryCount; i++) {
+        if (!buffer.require(8)) {
+            return false;
+        }
         SttsEntry entry;
         buffer.read4ByteBE(entry.sampleCount);
         buffer.read4ByteBE(entry.sampleDelta);
         entrys.push_back(entry);
     }
-    return res;
+    return true;
 }
 
 uint32_t BoxStts::sampleSize() const noexcept {
@@ -540,6 +566,9 @@ uint32_t BoxStts::sampleSize() const noexcept {
 }
 
 bool BoxCtts::decode(Buffer& buffer) noexcept {
+    if (!buffer.require(8)) {
+        return false;
+    }
     buffer.readByte(version);
     buffer.skip(3); // flags
 
@@ -547,6 +576,9 @@ bool BoxCtts::decode(Buffer& buffer) noexcept {
     buffer.read4ByteBE(entryCount);
 
     for (size_t i = 0; i < entryCount; i++) {
+        if (!buffer.require(8)) {
+            return false;
+        }
         CttsEntry entry;
         buffer.read4ByteBE(entry.sampleCount);
         uint32_t sampleOffset = 0;
@@ -558,10 +590,16 @@ bool BoxCtts::decode(Buffer& buffer) noexcept {
 }
 
 bool BoxStss::decode(Buffer& buffer) noexcept {
+    if (!buffer.require(8)) {
+        return false;
+    }
     buffer.skip(1 + 3); // version + flags
-    uint32_t size = 0;
-    buffer.read4ByteBE(size);
-    for (size_t i = 0; i < size; i++) {
+    uint32_t entryCount = 0;
+    buffer.read4ByteBE(entryCount);
+    for (uint32_t i = 0; i < entryCount; i++) {
+        if (!buffer.require(4)) {
+            return false;
+        }
         uint32_t index = 0;
         buffer.read4ByteBE(index);
         keyIndexs.push_back(index);
@@ -576,36 +614,29 @@ std::string BoxEsds::description(const std::string& prefix) const noexcept {
 }
 
 bool BoxEsds::decode(Buffer& buffer) noexcept {
-    if (!buffer.require(256)) {
+    if (!buffer.require(static_cast<uint32_t>(info.size - info.headerSize))) {
         return false;
     }
-    auto size = info.size - info.headerSize;
     buffer.skip(1 + 3); // version + flags
-    size -= 4;
 
     uint8_t esDescTag = 0;
     buffer.readByte(esDescTag);
-    size -= 1;
-
     [[maybe_unused]] auto descLen = getDescrLen(buffer);
-    size -= descLen;
 
     if (esDescTag == 0x03) {
-        buffer.skip(2);
+        buffer.skip(2); // ES_ID
 
-        uint8_t flags = 0;
-        buffer.readByte(flags);
-        if (flags & 0x80) {
+        uint8_t esFlags = 0;
+        buffer.readByte(esFlags);
+        if (esFlags & 0x01) { // streamDependenceFlag
             buffer.skip(2);
         }
-
-        if (flags & 0x40) {
+        if (esFlags & 0x02) { // URL_Flag
             uint8_t len = 0;
             buffer.readByte(len);
             buffer.skip(len);
         }
-
-        if (flags & 0x20) {
+        if (esFlags & 0x04) { // OCRstreamFlag
             buffer.skip(2);
         }
     } else {
@@ -760,7 +791,7 @@ std::string BoxHvcc::description(const std::string& prefix) const noexcept {
 //        |--- Array 2: (like Array 1)
 //        |--- ...
 bool BoxHvcc::decode(Buffer& buffer) noexcept {
-    auto endPos = info.size + info.start;
+    const auto kEndPos = info.size + info.start;
     buffer.readByte(version);
 
     uint8_t tmp = 0;
@@ -803,7 +834,7 @@ bool BoxHvcc::decode(Buffer& buffer) noexcept {
             pps = std::move(vec);
         }
     }
-    auto skip = static_cast<int64_t>(endPos - buffer.readPos());
+    auto skip = static_cast<int64_t>(kEndPos - buffer.readPos());
     if (skip > 0) {
         buffer.skip(skip);
     }

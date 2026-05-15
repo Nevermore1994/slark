@@ -36,6 +36,7 @@ struct DemuxerInfo {
     DemuxerType type = DemuxerType::Unknown;
     std::string symbol;
     std::string demuxerName;
+    uint64_t symbolOffset = 0;
 };
 
 struct DemuxerHeaderInfo {
@@ -61,7 +62,7 @@ struct DemuxerResult {
 
 class IDemuxer : public NonCopyMovable {
 public:
-    ~IDemuxer() override = default;
+    virtual ~IDemuxer() = default;
 
 public:
     virtual bool open(std::unique_ptr<Buffer>&) noexcept = 0;
