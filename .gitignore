@@ -57,6 +57,7 @@ config.json
 build_*/
 .review/
 test/base/cache/
+test/**/cmake_test_discovery_*.json
 compile_commands.json
 
 # Tools & IDE
@@ -82,3 +83,4 @@ test_read.txt
 test/base/test1.txt
 test/base/test2.txt
 .temp
+.plan
