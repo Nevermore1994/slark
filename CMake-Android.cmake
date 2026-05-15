@@ -7,6 +7,7 @@ macro(add_android_sources TARGET_NAME)
     find_library(ANDROID_EGL_LIB EGL)
 
     set(ANDROID_SOURCE_FILES
+        src/platform/Android/sdk/src/main/cpp/AAudioRender.cpp
         src/platform/Android/sdk/src/main/cpp/AACHardwareDecoder.cc
         src/platform/Android/sdk/src/main/cpp/AndroidEGLContext.cpp
         src/platform/Android/sdk/src/main/cpp/AudioPlayerNative.cpp
@@ -44,5 +45,6 @@ macro(add_android_sources TARGET_NAME)
         ${ANDROID_LIB}
         ${ANDROID_GLESv3_LIB}
         ${ANDROID_EGL_LIB}
+        aaudio
     )
 endmacro()

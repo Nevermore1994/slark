@@ -1,11 +1,9 @@
 #!/bin/bash
 # Android 平台构建配置脚本
 
-set -e
-
-# Android 配置常量
-readonly ANDROID_ABI="arm64-v8a"
-readonly ANDROID_PLATFORM_VERSION="29"
+# Android 配置常量（用变量而非 readonly，避免 source 时重复声明报错）
+ANDROID_ABI="arm64-v8a"
+ANDROID_PLATFORM_VERSION="29"
 
 # 生成 Android 项目
 generate_android_project() {
@@ -48,21 +46,84 @@ generate_android_project() {
     fi
 }
 
-# 检查 Android 依赖
+# 编译 AAR（含 C++ libslark.so）
+# 使用 Gradle :sdk:assemble<Variant> 驱动，C++ 由 externalNativeBuild 自动编译
+build_aar() {
+    local script_dir="$1"
+    local build_type="$2"   # Debug | Release
+    local output_dir="$3"   # 可选，AAR 拷贝目标目录
+
+    local android_dir="${script_dir}/src/platform/Android"
+    local gradlew="${android_dir}/gradlew"
+
+    if [[ ! -x "$gradlew" ]]; then
+        print_error "未找到可执行的 gradlew: $gradlew"
+        exit 1
+    fi
+
+    local build_type_lower
+    build_type_lower=$(echo "$build_type" | tr '[:upper:]' '[:lower:]')
+    local variant
+    if [[ "$build_type_lower" == "release" ]]; then
+        variant="Release"
+    else
+        variant="Debug"
+    fi
+
+    print_info "编译 AAR (variant=${variant})，C++ 将同步编译..."
+    "${gradlew}" -p "${android_dir}" ":sdk:assemble${variant}" --no-daemon
+    print_success "AAR 编译完成"
+
+    local aar_dir="${android_dir}/sdk/build/outputs/aar"
+    local aar_file
+    local variant_lower
+    variant_lower=$(echo "$variant" | tr '[:upper:]' '[:lower:]')
+    aar_file=$(find "$aar_dir" -name "*-${variant_lower}.aar" 2>/dev/null | head -1)
+    if [[ -z "$aar_file" ]]; then
+        aar_file=$(find "$aar_dir" -name "*.aar" 2>/dev/null | head -1)
+    fi
+
+    if [[ -n "$aar_file" ]]; then
+        print_success "AAR 产物: $aar_file"
+        if [[ -n "$output_dir" ]]; then
+            mkdir -p "$output_dir"
+            cp "$aar_file" "$output_dir/"
+            print_success "已拷贝到: ${output_dir}/$(basename "$aar_file")"
+        fi
+    else
+        print_warning "未在 $aar_dir 找到 AAR 产物，请检查构建日志"
+    fi
+}
+
+# 检查生成 CMake Ninja 工程所需依赖（需要 ninja + ANDROID_NDK_ROOT）
 check_android_dependencies() {
     if ! command -v ninja &> /dev/null; then
         print_error "未找到 ninja 命令，请先安装 Ninja"
         exit 1
     fi
-    
+
     if [[ -z "$ANDROID_NDK_ROOT" ]]; then
         print_error "未设置 ANDROID_NDK_ROOT 环境变量"
         print_error "请设置 Android NDK 路径，例如："
         print_error "  export ANDROID_NDK_ROOT=/path/to/android-ndk"
         exit 1
     fi
-    
+
     print_success "Android 依赖检查通过"
+}
+
+# 检查编译 AAR 所需依赖（只需要 gradlew，NDK 由 Gradle/local.properties 管理）
+check_aar_dependencies() {
+    local script_dir="$1"
+    local android_dir="${script_dir}/src/platform/Android"
+    local gradlew="${android_dir}/gradlew"
+
+    if [[ ! -x "$gradlew" ]]; then
+        print_error "未找到可执行的 gradlew: $gradlew"
+        exit 1
+    fi
+
+    print_success "AAR 编译依赖检查通过"
 }
 
 # 如果直接执行此脚本
@@ -74,6 +135,8 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     DISABLE_HTTP=false
     DISABLE_TEST=false
     DEMO=false
+    BUILD_AAR=false
+    AAR_OUTPUT_DIR=""
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -81,12 +144,23 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
             --disable_http) DISABLE_HTTP=true; shift ;;
             --disable_test) DISABLE_TEST=true; shift ;;
             --demo) DEMO=true; shift ;;
-            -h|--help) echo "用法: $(basename "$0") [-t Debug|Release] [--demo]"; exit 0 ;;
+            --aar) BUILD_AAR=true; shift ;;
+            --aar-output)
+                [[ -z "$2" ]] && { print_error "选项 $1 需要参数"; exit 1; }
+                AAR_OUTPUT_DIR="$2"; shift 2 ;;
+            -h|--help)
+                echo "用法: $(basename "$0") [-t Debug|Release] [--aar] [--aar-output <dir>] [--demo]"
+                exit 0 ;;
             *) shift ;;
         esac
     done
     
-    check_android_dependencies
-    clean_build_cache "$SCRIPT_DIR"
-    generate_android_project "$SCRIPT_DIR" "$BUILD_TYPE" "$DISABLE_HTTP" "$DISABLE_TEST" "$DEMO"
+    if [[ "$BUILD_AAR" == true ]]; then
+        check_aar_dependencies "$SCRIPT_DIR"
+        build_aar "$SCRIPT_DIR" "$BUILD_TYPE" "$AAR_OUTPUT_DIR"
+    else
+        check_android_dependencies
+        clean_build_cache "$SCRIPT_DIR"
+        generate_android_project "$SCRIPT_DIR" "$BUILD_TYPE" "$DISABLE_HTTP" "$DISABLE_TEST" "$DEMO"
+    fi
 fi

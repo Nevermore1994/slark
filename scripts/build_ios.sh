@@ -1,12 +1,10 @@
 #!/bin/bash
 # iOS 平台构建配置脚本
 
-set -e
-
-# iOS 配置常量
-readonly IOS_DEPLOYMENT_TARGET="16.5"
-readonly IOS_PLATFORM="OS64"
-readonly IOS_ENABLE_BITCODE="FALSE"
+# iOS 配置常量（用变量而非 readonly，避免 source 时重复声明报错）
+IOS_DEPLOYMENT_TARGET="16.5"
+IOS_PLATFORM="OS64"
+IOS_ENABLE_BITCODE="FALSE"
 
 # 生成 iOS 项目
 generate_ios_project() {
@@ -26,7 +24,8 @@ generate_ios_project() {
         exit 1
     fi
     
-    local cmake_options=$(build_cmake_options "$disable_http" "$disable_test" false)
+    # iOS 不支持运行可执行文件，强制禁用测试
+    local cmake_options=$(build_cmake_options "$disable_http" true false)
     
     cmake -B "$output_dir" -G Xcode \
         -DCMAKE_TOOLCHAIN_FILE="$toolchain_file" \
