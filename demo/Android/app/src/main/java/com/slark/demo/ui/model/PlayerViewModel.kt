@@ -1,5 +1,3 @@
-
-//
 // Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
 // This file is part of Slark.
@@ -12,29 +10,33 @@ import android.view.Surface
 import android.view.SurfaceView
 import android.view.TextureView
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Size
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import com.slark.api.PlayerErrorCode
 import com.slark.api.SlarkPlayer
 import com.slark.api.SlarkPlayerEvent
 import com.slark.api.SlarkPlayerObserver
 import com.slark.api.SlarkPlayerState
 import com.slark.api.SlarkRenderTarget
+import com.slark.sdk.GraphicsBackend
 import com.slark.sdk.SlarkLog
+import com.slark.sdk.SlarkPlayerImpl
 
 class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
     var isPlaying by mutableStateOf(false)
-
     var currentTime by mutableStateOf(0.0)
-
     var totalTime by mutableStateOf(0.0)
-
     var cacheTime by mutableStateOf(0.0)
-
     var isLoading by mutableStateOf(false)
+    var isLoop by mutableStateOf(false)
+    var isMute by mutableStateOf(false)
+    var speed by mutableStateOf(1.0f)
+    var errorMessage by mutableStateOf<String?>(null)
+    var rotationDegrees by mutableIntStateOf(0)
+    var graphicsBackend by mutableStateOf(GraphicsBackend.OpenGL)
 
     private var _volume = mutableStateOf(100.0f)
     var volume: Float
@@ -44,20 +46,12 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
             _volume.value = value
         }
 
-    var isLoop by mutableStateOf(false)
-
-    var isMute by mutableStateOf(false)
-
-    var speed by mutableStateOf(1.0f)
-
-    var errorMessage by mutableStateOf<String?>(null)
-
     private fun setPlayState(isPlaying: Boolean, isLoading: Boolean) {
         this.isPlaying = isPlaying
         this.isLoading = isLoading
     }
 
-    private val observer = object: SlarkPlayerObserver {
+    private val observer = object : SlarkPlayerObserver {
         override fun notifyTime(playerId: String, time: Double) {
             currentTime = time
         }
@@ -65,38 +59,21 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
         override fun notifyState(playerId: String, state: SlarkPlayerState) {
             SlarkLog.d("PlayerViewModel", "Player state changed: $state")
             when (state) {
-                SlarkPlayerState.Playing -> {
-                    setPlayState(isPlaying = true, isLoading = false)
-                }
-                SlarkPlayerState.Buffering -> {
-                    setPlayState(isPlaying = false, isLoading = true)
-                }
+                SlarkPlayerState.Playing -> setPlayState(isPlaying = true, isLoading = false)
+                SlarkPlayerState.Buffering -> setPlayState(isPlaying = false, isLoading = true)
                 SlarkPlayerState.Pause,
                 SlarkPlayerState.Stop,
-                SlarkPlayerState.Completed -> {
-                    setPlayState(isPlaying = false, isLoading = false)
-                }
-                SlarkPlayerState.Prepared -> {
-                    totalTime = player?.totalDuration() ?: 0.0
-                }
-                SlarkPlayerState.Error -> {
-                    SlarkLog.e("PlayerViewModel", "Player error occurred")
-                }
+                SlarkPlayerState.Completed -> setPlayState(isPlaying = false, isLoading = false)
+                SlarkPlayerState.Prepared -> totalTime = player?.totalDuration() ?: 0.0
+                SlarkPlayerState.Error -> SlarkLog.e("PlayerViewModel", "Player error occurred")
                 else -> {}
             }
         }
 
         override fun notifyEvent(playerId: String, event: SlarkPlayerEvent, value: String) {
-            SlarkLog.d("notifyEvent","$event $value")
+            SlarkLog.d("notifyEvent", "$event $value")
             when (event) {
-                SlarkPlayerEvent.FirstFrameRendered -> {
-                }
-                SlarkPlayerEvent.SeekDone -> {
-
-                }
-                SlarkPlayerEvent.UpdateCacheTime -> {
-                    cacheTime = value.toDouble()
-                }
+                SlarkPlayerEvent.UpdateCacheTime -> cacheTime = value.toDouble()
                 SlarkPlayerEvent.OnError -> {
                     SlarkLog.e("PlayerViewModel", "Player error: $value")
                     errorMessage = when (PlayerErrorCode.fromString(value)) {
@@ -108,7 +85,8 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
                         PlayerErrorCode.RenderError -> "Rendering error"
                         else -> "Unknown error"
                     }
-                } else -> {}
+                }
+                else -> {}
             }
         }
     }
@@ -126,7 +104,7 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
     fun skipNext() {}
 
     fun setSpeed(speed: Float) {
-        player?.speed = speed
+        // TODO: SlarkPlayer SDK 暂未暴露 speed 属性，待支持后在此设置
         this.speed = speed
     }
 
@@ -148,11 +126,24 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
         this.isMute = isMute
     }
 
+    fun rotate() {
+        rotationDegrees = (rotationDegrees + 90) % 360
+    }
+
+    fun switchRenderBackend() {
+        val next = if (graphicsBackend == GraphicsBackend.OpenGL) GraphicsBackend.Vulkan
+                   else GraphicsBackend.OpenGL
+        (player as? SlarkPlayerImpl)?.switchGraphicsBackend(next)
+        graphicsBackend = next
+        // 重新触发 Surface 绑定，让新后端的 RenderThread 接管
+        currentRenderTarget?.let { setRenderTarget(it) }
+    }
+
     fun prepare() {
         player?.prepare()
     }
 
-    fun play(playing : Boolean) {
+    fun play(playing: Boolean) {
         if (playing && !isPlaying) {
             player?.play()
         } else if (!playing && isPlaying) {
@@ -160,16 +151,25 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
         }
     }
 
+    private var currentRenderTarget: SlarkRenderTarget? = null
+
+    fun setRenderTarget(target: SlarkRenderTarget) {
+        currentRenderTarget = target
+        player?.setRenderTarget(target)
+    }
+
     fun setRenderTarget(textureView: TextureView) {
-        player?.setRenderTarget(SlarkRenderTarget.FromTextureView(textureView))
+        setRenderTarget(SlarkRenderTarget.FromTextureView(textureView))
     }
 
     fun setRenderTarget(surfaceView: SurfaceView) {
-        player?.setRenderTarget(SlarkRenderTarget.FromSurfaceView(surfaceView))
+        setRenderTarget(SlarkRenderTarget.FromSurfaceView(surfaceView))
     }
 
     fun setRenderTarget(surface: Surface, size: Size) {
-        player?.setRenderTarget(SlarkRenderTarget.FromSurface(surface, size.width.toInt(), size.height.toInt()))
+        setRenderTarget(
+            SlarkRenderTarget.FromSurface(surface, size.width.toInt(), size.height.toInt())
+        )
     }
 
     fun release() {

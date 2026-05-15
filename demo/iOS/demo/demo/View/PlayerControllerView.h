@@ -1,30 +1,36 @@
+// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
-//  PlayerControllerView.h
-//  demo
+// This file is part of Slark.
+// Licensed under the MIT License.
 //
 
 #import <UIKit/UIKit.h>
+
 #ifndef PlayerControlView_h
 #define PlayerControlView_h
 
 @interface PlayerControllerView : UIView
 
-@property (nonatomic, copy) void (^onPlayClick)(BOOL);
-@property (nonatomic, copy) void (^onSeekClick)(double);
-@property (nonatomic, copy) void (^onSeekDone)(double);
+@property (nonatomic, copy) void (^onPlayClick)(BOOL isPlaying);
+@property (nonatomic, copy) void (^onSeekClick)(double time);
+@property (nonatomic, copy) void (^onSeekDone)(double time);
 @property (nonatomic, copy) void (^onPrevClick)(void);
 @property (nonatomic, copy) void (^onNextClick)(void);
-@property (nonatomic, copy) void (^onSetLoopClick)(BOOL);
-@property (nonatomic, copy) void (^onSetMute)(BOOL);
-@property (nonatomic, copy) void (^onSpeedChange)(float);
+@property (nonatomic, copy) void (^onSetLoopClick)(BOOL loop);
+@property (nonatomic, copy) void (^onSetMute)(BOOL mute);
+@property (nonatomic, copy) void (^onSpeedChange)(float speed);
 @property (nonatomic, copy) void (^onBackClick)(void);
+@property (nonatomic, copy) void (^onRotateClick)(void);
+@property (nonatomic, copy) void (^onRenderBackendChange)(BOOL useMetal);
+@property (nonatomic, copy) void (^onVolumeChange)(float volume);
 @property (nonatomic, readonly) BOOL isPause;
 
 - (void)setIsPause:(BOOL)pause;
 - (void)updateCurrentTime:(NSTimeInterval)value;
 - (void)updateTotalTime:(NSTimeInterval)value;
 - (void)updateCacheTime:(NSTimeInterval)value;
+- (void)updateVolume:(float)volume;
 
 @end
 
-#endif /* PlayerControlViewController_h */
+#endif /* PlayerControlView_h */

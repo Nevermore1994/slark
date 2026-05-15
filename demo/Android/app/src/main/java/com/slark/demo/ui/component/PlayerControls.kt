@@ -25,12 +25,13 @@ import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.constraintlayout.compose.Dimension
 import com.slark.demo.R
 import com.slark.demo.ui.model.PlayerViewModel
+import com.slark.sdk.GraphicsBackend
 import kotlin.math.round
 
 private val kSpeedOptions = listOf(0.5f, 1.0f, 1.5f, 2.0f)
 
-private fun formatTime(ms: Int): String {
-    val totalSeconds = round(ms / 1000.0).toInt()
+private fun formatTime(ms: Long): String {
+    val totalSeconds = ((ms + 500) / 1000).toInt()
     val hours = totalSeconds / 3600
     val minutes = (totalSeconds % 3600) / 60
     val seconds = totalSeconds % 60
@@ -48,12 +49,57 @@ fun PlayerControls(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Bottom
     ) {
+        PlayerTopBar(viewModel)
+        Spacer(modifier = Modifier.height(8.dp))
         PlayerProgressBar(viewModel)
         Spacer(modifier = Modifier.height(4.dp))
         PlayerControlBar(viewModel)
     }
-    LaunchedEffect(Unit) {
-        viewModel.prepare()
+}
+
+@Composable
+fun PlayerTopBar(viewModel: PlayerViewModel) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Spacer(modifier = Modifier.weight(1f))
+
+        IconButton(
+            onClick = { viewModel.rotate() },
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                painterResource(id = R.drawable.ic_rotate),
+                contentDescription = "Rotate",
+                tint = Color(0xFFE6E6E6),
+                modifier = Modifier.size(22.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        RenderBackendButton(
+            backend = viewModel.graphicsBackend,
+            onClick = { viewModel.switchRenderBackend() }
+        )
+    }
+}
+
+@Composable
+fun RenderBackendButton(backend: GraphicsBackend, onClick: () -> Unit) {
+    val label = if (backend == GraphicsBackend.OpenGL) "OpenGL" else "Vulkan"
+    Box(
+        modifier = Modifier
+            .border(1.dp, Color(0xFFE6E6E6), RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text = label, color = Color(0xFFE6E6E6), fontSize = 12.sp)
     }
 }
 
@@ -64,13 +110,13 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
             .fillMaxWidth()
             .padding(horizontal = 8.dp)
     ) {
-        val (volumeIcon, volumeSlider, prevBtn, playBtn, nextBtn, loopBtn, speedBtn) = createRefs()
+        val (muteIcon, volumeSlider, prevBtn, playBtn, nextBtn, loopBtn, speedBtn) = createRefs()
 
         IconButton(
             onClick = { viewModel.mute(!viewModel.isMute) },
             modifier = Modifier
                 .size(28.dp)
-                .constrainAs(volumeIcon) {
+                .constrainAs(muteIcon) {
                     start.linkTo(parent.start)
                     centerVerticallyTo(parent)
                 }
@@ -91,7 +137,7 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
             trackColor = Color.LightGray,
             activeColor = Color(0xFFE6E6E6),
             modifier = Modifier.constrainAs(volumeSlider) {
-                start.linkTo(volumeIcon.end, margin = 4.dp)
+                start.linkTo(muteIcon.end, margin = 4.dp)
                 centerVerticallyTo(parent)
                 width = Dimension.percent(0.18f)
             }
@@ -106,7 +152,11 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
                     centerVerticallyTo(parent)
                 }
         ) {
-            Icon(painterResource(id = R.drawable.prev), contentDescription = null, tint = Color(0xFFE6E6E6))
+            Icon(
+                painterResource(id = R.drawable.prev),
+                contentDescription = null,
+                tint = Color(0xFFE6E6E6)
+            )
         }
 
         IconButton(
@@ -134,7 +184,11 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
                     centerVerticallyTo(parent)
                 }
         ) {
-            Icon(painterResource(id = R.drawable.next), contentDescription = null, tint = Color(0xFFE6E6E6))
+            Icon(
+                painterResource(id = R.drawable.next),
+                contentDescription = null,
+                tint = Color(0xFFE6E6E6)
+            )
         }
 
         IconButton(
@@ -186,9 +240,9 @@ fun SpeedButton(speed: Float, onSpeedChange: (Float) -> Unit, modifier: Modifier
 
 @Composable
 fun PlayerProgressBar(viewModel: PlayerViewModel) {
-    val currentTime = viewModel.currentTime * 1000
-    val totalTime = viewModel.totalTime * 1000
-    val cacheTime = viewModel.cacheTime * 1000
+    val currentTime = (viewModel.currentTime * 1000).toLong()
+    val totalTime = (viewModel.totalTime * 1000).toLong()
+    val cacheTime = (viewModel.cacheTime * 1000).toLong()
 
     ConstraintLayout(
         modifier = Modifier
@@ -198,14 +252,14 @@ fun PlayerProgressBar(viewModel: PlayerViewModel) {
         val (startTime, endTime, slider) = createRefs()
 
         CustomSlider(
-            value = if (totalTime > 0) (currentTime / totalTime).toFloat() else 0f,
+            value = if (totalTime > 0) (currentTime.toFloat() / totalTime.toFloat()) else 0f,
             onValueChange = { t, b ->
                 if (!b) viewModel.currentTime = (t * totalTime) / 1000.0
-                viewModel.seekTo(viewModel.currentTime, b)
+                viewModel.seekTo(viewModel.currentTime, !b)
             },
             valueRange = 0f..1f,
             bufferedColor = Color.Gray,
-            bufferedValue = if (totalTime > 0) (cacheTime / totalTime).toFloat() else 0f,
+            bufferedValue = if (totalTime > 0) (cacheTime.toFloat() / totalTime.toFloat()) else 0f,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(24.dp)
@@ -220,7 +274,7 @@ fun PlayerProgressBar(viewModel: PlayerViewModel) {
             shadow = Shadow(color = Color.Black, offset = Offset(1f, 1f), blurRadius = 2f)
         )
         Text(
-            text = formatTime(currentTime.toInt()),
+            text = formatTime(currentTime),
             color = Color.LightGray,
             style = timeStyle,
             modifier = Modifier.constrainAs(startTime) {
@@ -229,7 +283,7 @@ fun PlayerProgressBar(viewModel: PlayerViewModel) {
             }
         )
         Text(
-            text = formatTime(totalTime.toInt()),
+            text = formatTime(totalTime),
             color = Color.LightGray,
             style = timeStyle,
             modifier = Modifier.constrainAs(endTime) {
@@ -238,15 +292,4 @@ fun PlayerProgressBar(viewModel: PlayerViewModel) {
             }
         )
     }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun PlayerControlsPreview() {
-    val viewModel = PlayerViewModel(null)
-    viewModel.currentTime = 123456.0
-    viewModel.totalTime = 654321.0
-    viewModel.isPlaying = true
-
-    PlayerControls(viewModel)
 }

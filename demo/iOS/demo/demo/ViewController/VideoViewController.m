@@ -9,6 +9,7 @@
 #import "EXTScope.h"
 #import "Masonry.h"
 #import "PlayerControllerView.h"
+#import "SlarkGraphicsConfig.h"
 #import "SlarkViewController.h"
 #import "iOSUtil.h"
 
@@ -19,18 +20,42 @@
 @property (nonatomic, strong) SlarkViewController* playerController;
 @property (nonatomic, strong) UIImageView* loadingView;
 @property (nonatomic, strong) NSTimer* hideControllerTimer;
+@property (nonatomic, assign) NSInteger rotationAngle;
 @end
 
 @implementation VideoViewController
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    _rotationAngle = 0;
     [self initData];
     [self initSubviews];
     UITapGestureRecognizer* tap =
         [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTap:)];
     [self.view addGestureRecognizer:tap];
     [self resetHideControllerTimer];
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    self.navigationController.interactivePopGestureRecognizer.delegate = self;
+    [self setupAudioSession];
+}
+
+- (void)dealloc {
+    [self.hideControllerTimer invalidate];
+    [self.playerController removeFromParentViewController];
+}
+
+- (void)setupAudioSession {
+    AVAudioSession* session = [AVAudioSession sharedInstance];
+    NSError* error = nil;
+    [session setCategory:AVAudioSessionCategoryPlayback error:&error];
+    [session setActive:YES error:&error];
+}
+
+- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer*)gestureRecognizer {
+    return NO;
 }
 
 - (void)handleTap:(UITapGestureRecognizer*)gesture {
@@ -50,26 +75,8 @@
                                         repeats:NO];
 }
 
-- (void)viewDidAppear:(BOOL)animated {
-    [super viewDidAppear:animated];
-    self.navigationController.interactivePopGestureRecognizer.delegate = self;
-    [self setupAudioSession];
-}
-
-- (void)setupAudioSession {
-    AVAudioSession* session = [AVAudioSession sharedInstance];
-    NSError* error = nil;
-    [session setCategory:AVAudioSessionCategoryPlayback error:&error];
-    [session setActive:YES error:&error];
-}
-
-- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer*)gestureRecognizer {
-    return NO;
-}
-
-- (void)dealloc {
-    [self.hideControllerTimer invalidate];
-    [self.playerController removeFromParentViewController];
+- (void)dismissControllerView {
+    self.controllerView.hidden = YES;
 }
 
 - (void)initSubviews {
@@ -91,7 +98,7 @@
         make.left.mas_equalTo(16);
         make.right.mas_equalTo(-16);
         make.bottom.mas_equalTo(-SafeBottomHeight - 16);
-        make.height.mas_equalTo(140);
+        make.height.mas_equalTo(160);
     }];
 }
 
@@ -110,7 +117,7 @@
 }
 
 - (void)initData {
-    SlarkPlayer* player = [[SlarkPlayer alloc] initWithPath:self.path];
+    SlarkPlayer* player = [[SlarkPlayer alloc] init:self.path];
     player.delegate = self;
     self.playerController = [[SlarkViewController alloc] initWithPlayer:self.view.bounds
                                                                  player:player];
@@ -122,6 +129,7 @@
     if (_controllerView == nil) {
         _controllerView = [[PlayerControllerView alloc] initWithFrame:CGRectZero];
         @weakify(self);
+
         _controllerView.onBackClick = ^{
             @strongify(self);
             [self.hideControllerTimer invalidate];
@@ -129,6 +137,7 @@
             [self.navigationController popViewControllerAnimated:YES];
             self.navigationController.navigationBar.hidden = NO;
         };
+
         _controllerView.onPlayClick = ^(BOOL isPlay) {
             @strongify(self);
             if (isPlay) {
@@ -137,33 +146,58 @@
                 [self.playerController.player pause];
             }
         };
+
         _controllerView.onSeekClick = ^(double time) {
             @strongify(self);
             [self.playerController.player seek:time];
         };
+
         _controllerView.onSeekDone = ^(double time) {
             @strongify(self);
             [self.playerController.player seek:time isAccurate:YES];
         };
+
         _controllerView.onSetLoopClick = ^(BOOL loop) {
             @strongify(self);
             self.playerController.player.isLoop = loop;
         };
+
         _controllerView.onSetMute = ^(BOOL isMute) {
             @strongify(self);
             self.playerController.player.isMute = isMute;
         };
+
         _controllerView.onSpeedChange = ^(float speed) {
             @strongify(self);
-            self.playerController.player.speed = speed;
+            // TODO: SlarkPlayer 暂未暴露 speed 属性，待 SDK 支持后在此设置
+            (void)self;
+        };
+
+        _controllerView.onVolumeChange = ^(float volume) {
+            @strongify(self);
+            self.playerController.player.volume = volume;
+        };
+
+        _controllerView.onRotateClick = ^{
+            @strongify(self);
+            self.rotationAngle = (self.rotationAngle + 1) % 4;
+            SlarkPlayerRotation rotations[] = {SlarkPlayerRotation_0,
+                                               SlarkPlayerRotation_90,
+                                               SlarkPlayerRotation_180,
+                                               SlarkPlayerRotation_270};
+            self.playerController.player.rotation = rotations[self.rotationAngle];
+        };
+        _controllerView.onRenderBackendChange = ^(BOOL useMetal) {
+            @strongify(self);
+            SlarkGraphicsBackend backend =
+                useMetal ? SlarkGraphicsBackendMetal : SlarkGraphicsBackendOpenGLES;
+            [self.playerController switchGraphicsBackend:backend];
         };
     }
     return _controllerView;
 }
 
-- (void)dismissControllerView {
-    self.controllerView.hidden = YES;
-}
+#pragma mark - ISlarkPlayerObserver
 
 - (void)notifyTime:(NSString*)playerId time:(double)time {
     [self.controllerView updateCurrentTime:time];
@@ -200,9 +234,10 @@
         self.loadingView.hidden = YES;
         SlarkPlayerErrorCode code = (SlarkPlayerErrorCode)[value intValue];
         NSString* msg = @"error";
-        if (code == SlarkPlayerErrorFileError) {
+        if (code == SlarkPlayerErrorMediaOpenFailed || code == SlarkPlayerErrorPipelineOpenFailed) {
             msg = @"file error";
-        } else if (code == SlarkPlayerErrorNetWorkError) {
+        } else if (code == SlarkPlayerErrorNetworkError ||
+                   code == SlarkPlayerErrorConnectionFailed) {
             msg = @"network error";
         }
         [self showToast:msg duration:2.0];

@@ -8,6 +8,9 @@ package com.slark.demo.ui.component
 
 import android.view.TextureView
 import android.view.ViewGroup
+import android.widget.Toast
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -18,27 +21,25 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import android.widget.Toast
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.slark.demo.R
 import com.slark.demo.ui.model.PlayerViewModel
-import kotlinx.coroutines.*
+import kotlinx.coroutines.delay
 
 @Composable
 fun PlayerScreen(
     viewModel: PlayerViewModel,
     onBackClick: () -> Unit,
-    onPickClick: () -> Unit
+    onPickClick: (() -> Unit)? = null
 ) {
     var controlsVisible by remember { mutableStateOf(true) }
+    val scope = rememberCoroutineScope()
     var hideJob by remember { mutableStateOf<Job?>(null) }
     val context = LocalContext.current
     val errorMessage = viewModel.errorMessage
@@ -53,13 +54,16 @@ fun PlayerScreen(
     fun showControls() {
         controlsVisible = true
         hideJob?.cancel()
-        hideJob = CoroutineScope(Dispatchers.Main).launch {
+        hideJob = scope.launch {
             delay(5000)
             controlsVisible = false
         }
     }
 
-    LaunchedEffect(Unit) { showControls() }
+    LaunchedEffect(Unit) {
+        viewModel.prepare()
+        showControls()
+    }
 
     Box(
         modifier = Modifier
@@ -68,6 +72,9 @@ fun PlayerScreen(
                 detectTapGestures { showControls() }
             }
     ) {
+        val rotationDegrees = viewModel.rotationDegrees.toFloat()
+
+        // 渲染视图固定使用 TextureView，切换后端由 SlarkPlayerImpl.switchGraphicsBackend 无缝处理
         AndroidView(
             factory = { ctx ->
                 TextureView(ctx).apply {
@@ -78,7 +85,9 @@ fun PlayerScreen(
                     viewModel.setRenderTarget(this)
                 }
             },
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { rotationZ = rotationDegrees }
         )
 
         if (viewModel.isLoading) {
@@ -128,6 +137,8 @@ fun RotatingImage() {
         painter = painterResource(id = R.drawable.loading),
         contentDescription = null,
         colorFilter = ColorFilter.tint(Color.LightGray),
-        modifier = Modifier.size(75.dp).graphicsLayer { rotationZ = angle }
+        modifier = Modifier
+            .size(75.dp)
+            .graphicsLayer { rotationZ = angle }
     )
 }
