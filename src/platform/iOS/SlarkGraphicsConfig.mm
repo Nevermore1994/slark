@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
-#import "SlarkGraphicsConfig.h"
+#import "interface/SlarkGraphicsConfig.h"
 
 #import <UIKit/UIKit.h>
 

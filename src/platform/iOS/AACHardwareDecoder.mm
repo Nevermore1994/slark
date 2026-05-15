@@ -94,7 +94,7 @@ void AACHardwareDecoder::flush() noexcept {
 }
 
 Error AACHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
-    if (frame->isEndOfStream) {
+    if (frame->info && frame->info->isEndOfStream) {
         isCompleted_ = true;
         return Error::Success;
     }
@@ -131,7 +131,7 @@ Error AACHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
     outputData_->mBuffers[0].mData = outputBuffer_->data();
     // 被 move 走的 buffer 在 frame 消费完后回收为下一帧的备用 buffer
     spareBuffer_ = Data::create(bufferCapacity);
-    invokeReceiveFunc(std::move(decodingFrame_));
+    invokeReceiveFunc(DecoderData{std::move(decodingFrame_)});
     return Error::Success;
 }
 

@@ -67,7 +67,7 @@ namespace slark {
 
 iOSEGLContext::iOSEGLContext() {
     @autoreleasepool {
-        context_ = (void*)(CFBridgingRetain([EGLContext new]));
+        context_ = const_cast<void*>(CFBridgingRetain([EGLContext new]));
     }
 }
 

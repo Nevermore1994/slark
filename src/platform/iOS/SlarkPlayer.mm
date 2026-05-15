@@ -1,4 +1,3 @@
-
 //
 // Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
 //
@@ -6,11 +5,11 @@
 // Licensed under the MIT License.
 //
 
-#import "SlarkPlayer.h"
+#import "interface/SlarkPlayer.h"
 
 #import "GLContextManager.h"
 #import "Player.h"
-#import "RenderGLViewDelegate.h"
+#import "PlayerObserver.h"
 #import "iOSBase.h"
 
 #define STATE_ENUM_TO_CASE(value)   \
@@ -81,9 +80,9 @@ struct PlayerObserver final : public slark::IPlayerObserver {
 @interface SlarkPlayer () {
     std::unique_ptr<slark::Player> _player;
     std::shared_ptr<PlayerObserver> _observer;
+    void (^rotationCallback_)(double);
 }
 
-@property (nonatomic, weak) id<RenderGLViewDelegate> renderDelegate;
 @end
 
 @implementation SlarkPlayer
@@ -105,7 +104,7 @@ struct PlayerObserver final : public slark::IPlayerObserver {
         params->mainGLContext = std::shared_ptr<slark::IEGLContext>(std::move(context));
         _player = std::make_unique<slark::Player>(std::move(params));
         _observer = std::make_shared<PlayerObserver>();
-        _player->addObserver(_observer);
+        _player->addObserver(std::weak_ptr<PlayerObserver>(_observer));
         __weak __typeof(self) weakSelf = self;
         _observer->notifyTimeFunc = [weakSelf](NSString* playerId, long double time) {
             dispatch_async(dispatch_get_main_queue(), ^{
@@ -179,9 +178,10 @@ struct PlayerObserver final : public slark::IPlayerObserver {
     }
 }
 
-- (void)setVolume:(float)volume {
+- (void)setVolume:(CGFloat)volume {
+    _volume = volume;
     if (_player) {
-        _player->setVolume(volume);
+        _player->setVolume(static_cast<float>(volume));
     }
 }
 
@@ -220,6 +220,7 @@ struct PlayerObserver final : public slark::IPlayerObserver {
 }
 
 - (void)setRotation:(SlarkPlayerRotation)rotation {
+    _rotation = rotation;
     double t = 0;
     switch (rotation) {
         case SlarkPlayerRotation_0:
@@ -237,14 +238,18 @@ struct PlayerObserver final : public slark::IPlayerObserver {
         default:
             return;
     }
-    if ([self.renderDelegate respondsToSelector:@selector(setRotation:)]) {
-        [self.renderDelegate setRotation:t];
+    if (rotationCallback_) {
+        rotationCallback_(t);
     }
 }
 
-- (void)setRenderImpl:(std::weak_ptr<slark::IVideoRender>)ptr {
+- (void)setRotationCallback:(void (^)(double))callback {
+    rotationCallback_ = callback;
+}
+
+- (void)setRenderImpl:(void*)ptr {
     if (_player) {
-        _player->setRenderImpl(ptr);
+        _player->setRenderImpl(*static_cast<std::weak_ptr<slark::IVideoRender>*>(ptr));
     }
 }
 

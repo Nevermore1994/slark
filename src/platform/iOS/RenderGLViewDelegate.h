@@ -8,6 +8,8 @@
 #ifndef RenderGLViewDelegate_h
 #define RenderGLViewDelegate_h
 
+#import <Foundation/Foundation.h>
+
 @protocol RenderGLViewDelegate <NSObject>
 - (void)setRotation:(double)rotation;
 @end

@@ -6,8 +6,6 @@
 // Licensed under the MIT License.
 //
 
-Copyright(c) 2022 - 2026 Nevermore1994.All rights reserved.This file is part of Slark
-                        .Licensed under the MIT License.
 #include "FileUtil.h"
 #include "Log.hpp"
 
@@ -15,16 +13,16 @@ Copyright(c) 2022 - 2026 Nevermore1994.All rights reserved.This file is part of 
 #import <Foundation/NSPathUtilities.h>
 #import <Foundation/NSString.h>
 
-                    namespace slark {
+namespace slark {
 
-    void printLog(const std::string& log) {
-        @autoreleasepool {
-            NSString* str = [NSString stringWithUTF8String:log.data()];
-            NSLog(@"%@", str);
-            str = nil;
-        }
+void printLog(const std::string& log) {
+    @autoreleasepool {
+        NSString* str = [NSString stringWithUTF8String:log.data()];
+        NSLog(@"%@", str);
+        str = nil;
     }
 }
+} // namespace slark
 
 NSString* stringViewToNSString(std::string_view view) {
     return [[NSString alloc] initWithBytes:view.data()

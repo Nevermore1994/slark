@@ -24,7 +24,12 @@ public:
     void flush() noexcept override;
     Error decode(AVFrameRefPtr& frame) noexcept override;
 
-    SLARK_DECODER_INFO(AACHardwareDecoder, DecoderType::AACHardwareDecoder)
+    inline static const DecoderTypeInfo& info() noexcept {
+        static DecoderTypeInfo info = {
+            DecoderType::AACHardwareDecoder,
+            Reflection::enroll<AACHardwareDecoder>("AACHardwareDecoder")};
+        return info;
+    }
 
 private:
     friend OSStatus AACDecodeInputDataProc(AudioConverterRef,

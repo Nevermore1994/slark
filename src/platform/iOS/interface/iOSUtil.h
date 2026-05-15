@@ -4,34 +4,29 @@
 //
 //  Created by Nevermore
 //
-#ifndef slark_iOS_Util_h
-#define slark_iOS_Util_h
+#ifndef SLARK_IOS_UTIL_H
+#define SLARK_IOS_UTIL_H
 
-#define Screen_Width CGRectGetWidth([UIScreen mainScreen].bounds)
-#define Screen_Height CGRectGetHeight([UIScreen mainScreen].bounds)
+#import <UIKit/UIKit.h>
 
-#define iPhoneXNavigationHeight 88.0f
-#define iPhoneXStatusBarHeight 44.0f
-#define iPhoneXStatusHomeIndicatorHeight 34.0f
-#define iPhoneNavigationHeight 64.0f
-#define iPhoneStatusBarHeight 20.0f
+#define SCREEN_WIDTH CGRectGetWidth([UIScreen mainScreen].bounds)
+#define SCREEN_HEIGHT CGRectGetHeight([UIScreen mainScreen].bounds)
 
-#define iPhoneNavigationBarHeight 44.0f // Same for all iPhone models
+#define IS_IPHONE_X_SERIES      \
+    (@available(iOS 11.0, *) && \
+     [[UIApplication sharedApplication] delegate].window.safeAreaInsets.bottom > 0.0)
 
-#define NavigationHeight (isIphoneXSeries() ? iPhoneXNavigationHeight : iPhoneNavigationHeight)
+#define IPHONE_X_NAVIGATION_HEIGHT 88.0f
+#define IPHONE_X_STATUS_BAR_HEIGHT 44.0f
+#define IPHONE_X_HOME_INDICATOR_HEIGHT 34.0f
+#define IPHONE_NAVIGATION_HEIGHT 64.0f
+#define IPHONE_STATUS_BAR_HEIGHT 20.0f
+#define IPHONE_NAVIGATION_BAR_HEIGHT 44.0f
 
-#define StatusBarHeight (isIphoneXSeries() ? iPhoneXStatusBarHeight : iPhoneStatusBarHeight)
+#define NAVIGATION_HEIGHT \
+    (IS_IPHONE_X_SERIES ? IPHONE_X_NAVIGATION_HEIGHT : IPHONE_NAVIGATION_HEIGHT)
+#define STATUS_BAR_HEIGHT \
+    (IS_IPHONE_X_SERIES ? IPHONE_X_STATUS_BAR_HEIGHT : IPHONE_STATUS_BAR_HEIGHT)
+#define SAFE_BOTTOM_HEIGHT (IS_IPHONE_X_SERIES ? IPHONE_X_HOME_INDICATOR_HEIGHT : 0.0f)
 
-#define SafeBottomHeight (isIphoneXSeries() ? iPhoneXStatusHomeIndicatorHeight : 0)
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-BOOL isIphoneXSeries(void);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* slark_iOS_Util_h */
+#endif /* SLARK_IOS_UTIL_H */

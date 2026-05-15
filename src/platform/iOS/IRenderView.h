@@ -26,6 +26,7 @@ using IVideoRenderWeakPtr = std::weak_ptr<IVideoRender>;
 
 - (void)start;
 - (void)stop;
-- (slark::IVideoRenderWeakPtr)renderImpl;
+/// Returns a heap-allocated weak_ptr<IVideoRender>; caller takes ownership.
+- (void*)renderImpl;
 
 @end

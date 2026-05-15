@@ -19,13 +19,9 @@
 #define VOLUME_UNIT_INPUT_BUS0 0
 
 static constexpr AudioUnitElement kAudioRemoteIOUnitOutputBus = 0;
-static constexpr AudioUnitElement kAudioRemoteIOUnitInputBus = 1;
 
 static constexpr AudioUnitElement kMixerInputBus = 0;
 static constexpr AudioUnitElement kMixerOutputBus = 0;
-
-static constexpr AudioUnitElement kEffectInputBus = 0;
-static constexpr AudioUnitElement kEffectOutputBus = 0;
 
 namespace slark {
 
@@ -84,8 +80,8 @@ static OSStatus AudioRenderCallback(void* inRefCon,
                 continue;
             }
             AudioDataFlag flag = AudioDataFlag::Normal;
-            auto size = render->requestAudioData(dataPtr, needSize, flag);
-            if (size < ioData->mBuffers[i].mDataByteSize) {
+            uint32_t size = render->requestAudioData(dataPtr, needSize, flag);
+            if (size < needSize) {
                 std::fill_n(dataPtr + size, needSize - size, 0);
             }
         }
@@ -93,23 +89,8 @@ static OSStatus AudioRenderCallback(void* inRefCon,
     }
 }
 
-Time::TimeDelta AudioRender::getLatency() noexcept {
-    Float64 volumelLatency = 0.0;
-    Float64 renderLatency = 0.0;
-    UInt32 size = sizeof(Float64);
-    AudioUnitGetProperty(renderUnit_,
-                         kAudioUnitProperty_Latency,
-                         kAudioUnitScope_Global,
-                         0,
-                         &renderLatency,
-                         &size);
-    AudioUnitGetProperty(volumeUnit_,
-                         kAudioUnitProperty_Latency,
-                         kAudioUnitScope_Global,
-                         0,
-                         &volumelLatency,
-                         &size);
-    return Time::TimeDelta::fromSeconds(volumelLatency + renderLatency);
+Time::TimeDelta AudioRender::getHardwareLatency() noexcept {
+    return Time::TimeDelta(latencyUs_.load(std::memory_order_acquire));
 }
 
 AudioRender::AudioRender(std::shared_ptr<AudioInfo> audioInfo) : IAudioRender(audioInfo) {
@@ -118,12 +99,26 @@ AudioRender::AudioRender(std::shared_ptr<AudioInfo> audioInfo) : IAudioRender(au
         setupAudioComponent();
     }
     using namespace std::chrono_literals;
-    timerId_ = TimerManager::shareInstance().runLoop(3000ms, [this]() {
+    timerId_ = TimerManager::shareInstance().runLoop(1000ms, [this]() {
         if (status_ != RenderStatus::Playing) {
             return;
         }
-        latency_ = getLatency();
-        LogI("audio render latency: {}", latency_.toMilliSeconds());
+        Float64 volLatency = 0.0, renderLatency = 0.0;
+        UInt32 size = sizeof(Float64);
+        AudioUnitGetProperty(renderUnit_,
+                             kAudioUnitProperty_Latency,
+                             kAudioUnitScope_Global,
+                             0,
+                             &renderLatency,
+                             &size);
+        AudioUnitGetProperty(volumeUnit_,
+                             kAudioUnitProperty_Latency,
+                             kAudioUnitScope_Global,
+                             0,
+                             &volLatency,
+                             &size);
+        auto us = static_cast<int64_t>((volLatency + renderLatency) * 1'000'000.0);
+        latencyUs_.store(us, std::memory_order_release);
     });
     status_ = isSuccess ? RenderStatus::Ready : RenderStatus::Error;
 }
@@ -139,7 +134,7 @@ void AudioRender::play() noexcept {
         return;
     }
     if (status_ == RenderStatus::Playing || status_ == RenderStatus::Stop) {
-        LogI("[audio render] start play return:{}", static_cast<uint32_t>(status_));
+        LogI("[audio render] start play return:{}", static_cast<uint32_t>(status_.load()));
         return;
     }
     AudioOutputUnitStart(volumeUnit_);
@@ -154,7 +149,7 @@ void AudioRender::pause() noexcept {
         return;
     }
     if (status_ == RenderStatus::Pause || status_ == RenderStatus::Stop) {
-        LogI("[audio render] pause return:{}", static_cast<uint32_t>(status_));
+        LogI("[audio render] pause return:{}", static_cast<uint32_t>(status_.load()));
         return;
     }
     AudioOutputUnitStop(volumeUnit_);
@@ -169,7 +164,7 @@ void AudioRender::flush() noexcept {
         return;
     }
     if (status_ == RenderStatus::Stop) {
-        LogI("[audio render] flush return:{}", static_cast<uint32_t>(status_));
+        LogI("[audio render] flush return:{}", static_cast<uint32_t>(status_.load()));
         return;
     }
     checkOSStatus(AudioUnitReset(volumeUnit_, kAudioUnitScope_Global, kMixerOutputBus),
@@ -203,12 +198,11 @@ void AudioRender::stop() noexcept {
 }
 
 void AudioRender::reset() noexcept {
-    clock_.reset();
-    renderedDataLength_ = 0;
+    // 平台层无需重置时钟，时钟由 AudioRenderComponent 管理
 }
 
 void AudioRender::setVolume(float volume) noexcept {
-    if (isEqual(volume, volume_)) {
+    if (std::fabs(volume - volume_) < std::numeric_limits<float>::epsilon()) {
         return;
     }
     volume_ = volume;
@@ -241,14 +235,6 @@ bool AudioRender::checkFormat() const noexcept {
         return false;
     }
     return true;
-}
-
-Time::TimePoint AudioRender::playedTime() noexcept {
-    auto time = clock_.time();
-    if (time.point() < latency_.point()) {
-        return 0.0;
-    }
-    return time - latency_;
 }
 
 bool AudioRender::setupAudioComponent() noexcept {

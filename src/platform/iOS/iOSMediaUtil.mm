@@ -58,7 +58,8 @@ UIImage* imageFromPixelBuffer(CVPixelBufferRef pixelBuffer) {
     size_t bytesPerRow = 4 * width;
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
 
-    CGBitmapInfo info = kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little;
+    CGBitmapInfo info =
+        static_cast<CGBitmapInfo>(kCGImageAlphaPremultipliedFirst) | kCGBitmapByteOrder32Little;
     CGContextRef context =
         CGBitmapContextCreate(baseAddress, width, height, 8, bytesPerRow, colorSpace, info);
 

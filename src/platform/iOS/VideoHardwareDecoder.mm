@@ -73,8 +73,8 @@ static void decompressionOutputCallback(void* decompressionOutputRefCon,
             return;
         }
         auto frame = std::shared_ptr<AVFrame>(new AVFrame(AVFrameType::Video), [](AVFrame* f) {
-            if (auto* vi = f->videoInfo();
-                vi && vi->format == FrameFormat::VideoToolBox && f->opaque) {
+            auto vi = f->videoInfo();
+            if (vi && vi->format == FrameFormat::VideoToolBox && f->opaque) {
                 auto* pb = reinterpret_cast<CVPixelBufferRef>(f->opaque);
                 f->opaque = nullptr;
                 CVPixelBufferRelease(pb);
@@ -84,8 +84,10 @@ static void decompressionOutputCallback(void* decompressionOutputRefCon,
         frame->opaque = opaque;
         frame->pts = pts;
         frame->timeScale = timeScale;
-        frame->info = VideoFrameInfo{.format = FrameFormat::VideoToolBox};
-        decoder->invokeReceiveFunc(std::move(frame));
+        auto videoInfo = std::make_shared<VideoFrameInfo>();
+        videoInfo->format = FrameFormat::VideoToolBox;
+        frame->info = videoInfo;
+        decoder->invokeReceiveFunc(DecoderData{std::move(frame)});
     }
 }
 
@@ -137,7 +139,7 @@ void VideoHardwareDecoder::flush() noexcept {
 }
 
 Error VideoHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
-    if (frame->isEndOfStream) {
+    if (frame->info && frame->info->isEndOfStream) {
         flush();
         isCompleted_ = true;
         return Error::Success;

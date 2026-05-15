@@ -155,12 +155,6 @@ struct MetalVideoRender : public IVideoRender {
         return nil;
     }
 
-    void onFirstFrameRendered() noexcept {
-        if (!hasRenderedFirstFrame_.exchange(true, std::memory_order_acq_rel)) {
-            notifyFirstFrameRendered();
-        }
-    }
-
     void pushFrame(AVFrameRefPtr frame) noexcept override {
         if (!frame || !pushFrameFunc) {
             return;
@@ -180,7 +174,6 @@ struct MetalVideoRender : public IVideoRender {
     std::function<void()> pauseFunc;
     std::function<void()> notifyRenderInfoFunc;
     Clock videoClock_;
-    std::atomic<bool> hasRenderedFirstFrame_{false};
 };
 
 @interface RenderMetalView () {
@@ -307,7 +300,6 @@ struct MetalVideoRender : public IVideoRender {
             if (s) {
                 [s displayPixelBuffer:pixelBuffer];
                 [s saveAsPreRenderBuffer:pixelBuffer];
-                s->_videoRenderImpl->onFirstFrameRendered();
             }
             CVPixelBufferRelease(pixelBuffer);
         });
@@ -468,8 +460,10 @@ struct MetalVideoRender : public IVideoRender {
     }
 }
 
-- (std::weak_ptr<IVideoRender>)renderImpl {
-    return std::weak_ptr<IVideoRender>(_videoRenderImpl);
+- (void*)renderImpl {
+    auto ptr = std::make_shared<std::weak_ptr<IVideoRender>>(
+        std::weak_ptr<IVideoRender>(_videoRenderImpl));
+    return static_cast<void*>(new std::weak_ptr<IVideoRender>(*ptr));
 }
 
 - (void)setRotation:(double)rotation {
@@ -527,7 +521,6 @@ struct MetalVideoRender : public IVideoRender {
     if (buffer) {
         [self displayPixelBuffer:buffer];
         [self saveAsPreRenderBuffer:buffer];
-        _videoRenderImpl->onFirstFrameRendered();
         CVPixelBufferRelease(buffer);
     }
 }

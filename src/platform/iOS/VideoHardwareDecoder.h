@@ -7,7 +7,7 @@
 #include "IDecoder.h"
 #include "MediaDefs.h"
 
-#import <VideoToolbox/VideoToolbox.h>
+#include <VideoToolbox/VideoToolbox.h>
 
 namespace slark {
 
@@ -23,7 +23,12 @@ public:
     void flush() noexcept override;
     Error decode(AVFrameRefPtr& frame) noexcept override;
 
-    SLARK_DECODER_INFO(VideoHardwareDecoder, DecoderType::VideoHardwareDecoder)
+    inline static const DecoderTypeInfo& info() noexcept {
+        static DecoderTypeInfo info = {
+            DecoderType::VideoHardwareDecoder,
+            Reflection::enroll<VideoHardwareDecoder>("VideoHardwareDecoder")};
+        return info;
+    }
 
 private:
     bool createDecodeSession() noexcept;

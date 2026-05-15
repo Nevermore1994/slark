@@ -8,9 +8,11 @@
 
 #import "RenderGLView.h"
 
+#include "Clock.h"
 #include "GLProgram.h"
 #include "GLShader.h"
 #include "VideoInfo.h"
+#include "iOSEGLContext.h"
 
 #import <AVFoundation/AVUtilities.h>
 #import <OpenGLES/ES2/gl.h>
@@ -20,7 +22,7 @@
 #import <memory>
 
 namespace slark {
-class IVideoRender;
+struct IVideoRender;
 struct VideoInfo;
 struct AVFrame;
 using AVFrameRefPtr = std::shared_ptr<AVFrame>;
@@ -58,18 +60,27 @@ struct VideoRender : public IVideoRender {
         }
     }
 
-    void pushVideoFrameRender(AVFrameRefPtr /*frame*/) noexcept override {
-        // pull 模式下由 CADisplayLink 主动拉取，不使用 push 路径
-    }
-
     void renderEnd() noexcept override {
         pause();
     }
 
+    void pushFrame(AVFrameRefPtr frame) noexcept override {
+        if (!frame || !pushFrameFunc) {
+            return;
+        }
+        auto* opaque = frame->opaque;
+        frame->opaque = nullptr;
+        auto* pixelBuffer = static_cast<CVPixelBufferRef>(opaque);
+        if (pixelBuffer) {
+            pushFrameFunc(pixelBuffer);
+            CVPixelBufferRelease(pixelBuffer);
+        }
+    }
+
     CVPixelBufferRef requestRender() noexcept {
-        if (auto requestRenderFunc = requestRenderFunc_.load()) {
+        if (auto fn = requestRenderFunc_.load()) {
             try {
-                auto frame = std::invoke(*requestRenderFunc);
+                auto frame = std::invoke(*fn);
                 if (frame) {
                     auto* opaque = frame->opaque;
                     frame->opaque = nullptr;
@@ -82,10 +93,12 @@ struct VideoRender : public IVideoRender {
         return nil;
     }
 
+    std::function<void(CVPixelBufferRef)> pushFrameFunc;
     std::function<void(std::shared_ptr<VideoInfo>)> notifyVideoInfoFunc;
     std::function<void(void)> startFunc;
     std::function<void(void)> pauseFunc;
     std::function<void(void)> notifyRenderInfoFunc;
+    Clock videoClock_;
 };
 
 // Uniform and attribute indices
@@ -164,6 +177,10 @@ static const GLfloat kColorConversion709VideoRange[] = {
     return [CAEAGLLayer class];
 }
 
+- (BOOL)supportsHDR {
+    return NO;
+}
+
 - (instancetype)initWithFrame:(CGRect)frame {
     if (self = [super initWithFrame:frame]) {
         [self setupDefaults];
@@ -210,8 +227,8 @@ static const GLfloat kColorConversion709VideoRange[] = {
     _isDestructing.store(false);
 
     CGFloat scale = [[UIScreen mainScreen] scale];
-    _width = self.bounds.size.width * scale;
-    _height = self.bounds.size.height * scale;
+    _width = static_cast<GLint>(self.bounds.size.width * scale);
+    _height = static_cast<GLint>(self.bounds.size.height * scale);
 
     _preRenderBuffer = NULL;
     _lumaTexture = NULL;
@@ -232,7 +249,7 @@ static const GLfloat kColorConversion709VideoRange[] = {
     __weak __typeof(self) weakSelf = self;
 
     _videoRenderImpl->notifyVideoInfoFunc = [weakSelf](std::shared_ptr<VideoInfo> info) {
-        dispatch_sync(dispatch_get_main_queue(), ^{
+        dispatch_async(dispatch_get_main_queue(), ^{
             __strong __typeof(weakSelf) strongSelf = weakSelf;
             if (strongSelf && info && info->fps > 0) {
                 strongSelf.renderInterval = info->fps;
@@ -254,11 +271,25 @@ static const GLfloat kColorConversion709VideoRange[] = {
         }
     };
 
-    // pull 模式：由 CADisplayLink 回调主动调用 requestRender() 拉取帧，无需注册 push 回调
+    _videoRenderImpl->pushFrameFunc = [weakSelf](CVPixelBufferRef pixelBuffer) {
+        __strong __typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf || !pixelBuffer) {
+            return;
+        }
+        CVPixelBufferRetain(pixelBuffer);
+        dispatch_async(strongSelf->_renderQueue, ^{
+            __strong __typeof(weakSelf) s = weakSelf;
+            if (s) {
+                [s displayPixelBuffer:pixelBuffer];
+                [s saveAsPreRenderBuffer:pixelBuffer];
+            }
+            CVPixelBufferRelease(pixelBuffer);
+        });
+    };
 }
 
 - (void)setupLayer {
-    CAEAGLLayer* layer = (CAEAGLLayer*)self.layer;
+    CAEAGLLayer* layer = static_cast<CAEAGLLayer*>(self.layer);
     layer.opaque = YES;
     layer.contentsScale = [[UIScreen mainScreen] scale];
     layer.drawableProperties = @{
@@ -294,8 +325,10 @@ static const GLfloat kColorConversion709VideoRange[] = {
     }
 }
 
-- (std::weak_ptr<IVideoRender>)renderImpl {
-    return std::weak_ptr<IVideoRender>(_videoRenderImpl);
+- (void*)renderImpl {
+    auto ptr = std::make_shared<std::weak_ptr<IVideoRender>>(
+        std::weak_ptr<IVideoRender>(_videoRenderImpl));
+    return static_cast<void*>(new std::weak_ptr<IVideoRender>(*ptr));
 }
 
 - (void)setRotation:(double)rotation {
@@ -314,8 +347,8 @@ static const GLfloat kColorConversion709VideoRange[] = {
     [super layoutSubviews];
 
     CGFloat scale = [[UIScreen mainScreen] scale];
-    GLint newWidth = self.bounds.size.width * scale;
-    GLint newHeight = self.bounds.size.height * scale;
+    GLint newWidth = static_cast<GLint>(self.bounds.size.width * scale);
+    GLint newHeight = static_cast<GLint>(self.bounds.size.height * scale);
 
     if (newWidth != _width || newHeight != _height) {
         _width = newWidth;
@@ -395,8 +428,8 @@ static const GLfloat kColorConversion709VideoRange[] = {
 
     // Get locations
     auto program = _program->program();
-    attributes[ATTRIB_VERTEX] = glGetAttribLocation(program, "position");
-    attributes[ATTRIB_TEXCOORD] = glGetAttribLocation(program, "texCoord");
+    attributes[ATTRIB_VERTEX] = static_cast<GLuint>(glGetAttribLocation(program, "position"));
+    attributes[ATTRIB_TEXCOORD] = static_cast<GLuint>(glGetAttribLocation(program, "texCoord"));
     uniforms[UNIFORM_Y] = glGetUniformLocation(program, "SamplerY");
     uniforms[UNIFORM_UV] = glGetUniformLocation(program, "SamplerUV");
     uniforms[UNIFORM_ROTATION_ANGLE] = glGetUniformLocation(program, "preferredRotation");
@@ -406,14 +439,24 @@ static const GLfloat kColorConversion709VideoRange[] = {
     glGenBuffers(1, &_vertexCoordinateBuffer);
     glBindBuffer(GL_ARRAY_BUFFER, _vertexCoordinateBuffer);
     glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 8, NULL, GL_DYNAMIC_DRAW);
-    glVertexAttribPointer(attributes[ATTRIB_VERTEX], 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+    glVertexAttribPointer(attributes[ATTRIB_VERTEX],
+                          2,
+                          GL_FLOAT,
+                          GL_FALSE,
+                          0,
+                          static_cast<void*>(nullptr));
     glEnableVertexAttribArray(attributes[ATTRIB_VERTEX]);
 
     static const GLfloat texCoords[] = {0.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f};
     glGenBuffers(1, &_textureCoordinateBuffer);
     glBindBuffer(GL_ARRAY_BUFFER, _textureCoordinateBuffer);
     glBufferData(GL_ARRAY_BUFFER, sizeof(texCoords), texCoords, GL_STATIC_DRAW);
-    glVertexAttribPointer(attributes[ATTRIB_TEXCOORD], 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+    glVertexAttribPointer(attributes[ATTRIB_TEXCOORD],
+                          2,
+                          GL_FLOAT,
+                          GL_FALSE,
+                          0,
+                          static_cast<void*>(nullptr));
     glEnableVertexAttribArray(attributes[ATTRIB_TEXCOORD]);
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -460,7 +503,7 @@ static const GLfloat kColorConversion709VideoRange[] = {
     // Access layer on main thread
     __block BOOL success = NO;
     dispatch_sync(dispatch_get_main_queue(), ^{
-        CAEAGLLayer* layer = (CAEAGLLayer*)self.layer;
+        CAEAGLLayer* layer = static_cast<CAEAGLLayer*>(self.layer);
         success = [nativeContext renderbufferStorage:GL_RENDERBUFFER fromDrawable:layer];
     });
 
@@ -538,8 +581,8 @@ static const GLfloat kColorConversion709VideoRange[] = {
     _program->attach();
 
     auto formatType = CVPixelBufferGetPixelFormatType(pixelBuffer);
-    auto frameWidth = static_cast<GLint>(CVPixelBufferGetWidth(pixelBuffer));
-    auto frameHeight = static_cast<GLint>(CVPixelBufferGetHeight(pixelBuffer));
+    auto frameWidth = static_cast<GLsizei>(CVPixelBufferGetWidth(pixelBuffer));
+    auto frameHeight = static_cast<GLsizei>(CVPixelBufferGetHeight(pixelBuffer));
 
     BOOL success = NO;
     if (formatType == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange ||
@@ -559,8 +602,8 @@ static const GLfloat kColorConversion709VideoRange[] = {
 }
 
 - (BOOL)uploadYUVTexture:(CVPixelBufferRef)pixelBuffer {
-    auto frameWidth = CVPixelBufferGetWidth(pixelBuffer);
-    auto frameHeight = CVPixelBufferGetHeight(pixelBuffer);
+    auto frameWidth = static_cast<GLsizei>(CVPixelBufferGetWidth(pixelBuffer));
+    auto frameHeight = static_cast<GLsizei>(CVPixelBufferGetHeight(pixelBuffer));
 
     // Determine color conversion matrix
     CFTypeRef colorAttachments =
@@ -611,8 +654,8 @@ static const GLfloat kColorConversion709VideoRange[] = {
                                                        NULL,
                                                        GL_TEXTURE_2D,
                                                        GL_RG_EXT,
-                                                       frameWidth / 2,
-                                                       frameHeight / 2,
+                                                       frameWidth / 2,  // NOLINT
+                                                       frameHeight / 2, // NOLINT
                                                        GL_RG_EXT,
                                                        GL_UNSIGNED_BYTE,
                                                        1,
@@ -642,8 +685,8 @@ static const GLfloat kColorConversion709VideoRange[] = {
 }
 
 - (BOOL)uploadRGBATexture:(CVPixelBufferRef)pixelBuffer {
-    auto frameWidth = CVPixelBufferGetWidth(pixelBuffer);
-    auto frameHeight = CVPixelBufferGetHeight(pixelBuffer);
+    auto frameWidth = static_cast<GLsizei>(CVPixelBufferGetWidth(pixelBuffer));
+    auto frameHeight = static_cast<GLsizei>(CVPixelBufferGetHeight(pixelBuffer));
 
     glActiveTexture(GL_TEXTURE0);
     CVReturn err = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault,
@@ -699,18 +742,18 @@ static const GLfloat kColorConversion709VideoRange[] = {
     }
 
     // Vertex data for quad with aspect ratio
-    GLfloat vertices[] = {(GLfloat)(-1 * normalizedSamplingSize.width),
-                          (GLfloat)(-1 * normalizedSamplingSize.height),
-                          (GLfloat)(normalizedSamplingSize.width),
-                          (GLfloat)(-1 * normalizedSamplingSize.height),
-                          (GLfloat)(-1 * normalizedSamplingSize.width),
-                          (GLfloat)(normalizedSamplingSize.height),
-                          (GLfloat)(normalizedSamplingSize.width),
-                          (GLfloat)(normalizedSamplingSize.height)};
+    GLfloat vertices[] = {static_cast<GLfloat>(-1 * normalizedSamplingSize.width),
+                          static_cast<GLfloat>(-1 * normalizedSamplingSize.height),
+                          static_cast<GLfloat>(normalizedSamplingSize.width),
+                          static_cast<GLfloat>(-1 * normalizedSamplingSize.height),
+                          static_cast<GLfloat>(-1 * normalizedSamplingSize.width),
+                          static_cast<GLfloat>(normalizedSamplingSize.height),
+                          static_cast<GLfloat>(normalizedSamplingSize.width),
+                          static_cast<GLfloat>(normalizedSamplingSize.height)};
 
     glBindBuffer(GL_ARRAY_BUFFER, _vertexCoordinateBuffer);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float) * 8, vertices);
-    glUniform1f(uniforms[UNIFORM_ROTATION_ANGLE], _rotation);
+    glUniform1f(uniforms[UNIFORM_ROTATION_ANGLE], static_cast<GLfloat>(_rotation));
 
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
