@@ -26,6 +26,10 @@ struct IBufferMonitorDelegate {
     [[nodiscard]] virtual double demuxedDuration() const noexcept = 0;
     virtual void pauseStream() noexcept = 0;
     virtual void resumeStream() noexcept = 0;
+    [[nodiscard]] virtual int32_t audioDecodedFrameCount() const noexcept = 0;
+    [[nodiscard]] virtual int32_t videoDecodedFrameCount() const noexcept = 0;
+    virtual void pauseDecoder() noexcept = 0;
+    virtual void resumeDecoder() noexcept = 0;
     virtual void onPrebufferComplete() noexcept = 0;
     virtual void onDropOldest() noexcept = 0;
     virtual void onBufferEvent(PipelineEvent event,
@@ -42,7 +46,11 @@ class BufferMonitor {
 public:
     BufferMonitor(const BackpressureConfig& config, IBufferMonitorDelegate& delegate) noexcept;
 
-    void onDataEnqueued() noexcept;
+    // demux 侧：有新的已解封装数据入队时调用
+    void onDemuxedDataEnqueued() noexcept;
+
+    // decoder 侧：有新的已解码帧入队时调用
+    void onDecodedDataEnqueued() noexcept;
 
     void onHeartbeat() noexcept;
 
@@ -51,6 +59,27 @@ public:
 
     // seek 后重置状态
     void reset() noexcept;
+
+    // 快速推帧期间暂停背压（demux 侧不受水位线限制）
+    void pauseBackpressure() noexcept {
+        backpressurePaused_ = true;
+        resumeStream();
+    }
+
+    // 快速推帧结束后恢复背压
+    void resumeBackpressure() noexcept {
+        backpressurePaused_ = false;
+    }
+
+    // 文件读取到结尾时通知，停止 IO/demux 背压
+    void setDemuxEof() noexcept {
+        demuxEof_ = true;
+    }
+
+    // 解码器输入耗尽时通知，停止 decoder 背压
+    void setDecoderEof() noexcept {
+        decoderEof_ = true;
+    }
 
     void onStarvation(bool isLocalSource) noexcept;
 
@@ -68,6 +97,7 @@ public:
 
 private:
     void regulateDataFlow() noexcept;
+    void regulateDecoderFlow() noexcept;
     void checkPrebufferComplete() noexcept;
     void checkRebufferComplete() noexcept;
 
@@ -79,7 +109,6 @@ private:
         if (!streamPaused_) {
             delegate_.pauseStream();
             streamPaused_ = true;
-            pauseTime_ = Clock::now();
             pauseFailCount_ = 0;
         }
     }
@@ -88,8 +117,34 @@ private:
         if (streamPaused_) {
             delegate_.resumeStream();
             streamPaused_ = false;
-            resumeTime_ = Clock::now();
-            pauseTime_.reset();
+        }
+    }
+
+    void pauseAudioDecoder() noexcept {
+        if (!audioDecoderPaused_) {
+            delegate_.pauseDecoder();
+            audioDecoderPaused_ = true;
+        }
+    }
+
+    void resumeAudioDecoder() noexcept {
+        if (audioDecoderPaused_) {
+            delegate_.resumeDecoder();
+            audioDecoderPaused_ = false;
+        }
+    }
+
+    void pauseVideoDecoder() noexcept {
+        if (!videoDecoderPaused_) {
+            delegate_.pauseDecoder();
+            videoDecoderPaused_ = true;
+        }
+    }
+
+    void resumeVideoDecoder() noexcept {
+        if (videoDecoderPaused_) {
+            delegate_.resumeDecoder();
+            videoDecoderPaused_ = false;
         }
     }
 
@@ -108,7 +163,15 @@ private:
     BackpressureConfig config_;
     IBufferMonitorDelegate& delegate_;
 
+    // demux 侧状态
     bool streamPaused_ = false;
+    bool demuxEof_ = false;
+    bool backpressurePaused_ = false; // 快速推帧期间跳过背压控制
+
+    bool audioDecoderPaused_ = false;
+    bool videoDecoderPaused_ = false;
+    bool decoderEof_ = false;
+
     bool isPrebuffering_ = false;
     bool isRebuffering_ = false;
     bool readyFired_ = false;
@@ -116,9 +179,8 @@ private:
     int32_t pauseFailCount_ = 0;
     int32_t starvationCount_ = 0;
 
-    std::optional<TimePoint> pauseTime_;
-    std::optional<TimePoint> resumeTime_;
     std::optional<TimePoint> lastCheckTime_;
+    std::optional<TimePoint> lastDecoderCheckTime_;
 };
 
 } // namespace slark

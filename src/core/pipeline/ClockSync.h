@@ -23,11 +23,11 @@ public:
     struct Metrics {
         int32_t dropCount = 0;       // 追帧循环中累计丢帧数
         int32_t chaseRoundCount = 0; // 追帧循环累计轮数
-        int64_t vsyncDurationUs = 0; // 最近一次 vsync 回调耗时（微秒）
+        int64_t vsyncDurationUs = 0; // 最近两次 vsync 回调间隔（微秒）
     };
 
     ClockSync() = default;
-    ~ClockSync() override = default;
+    ~ClockSync() = default;
 
     void setAudioTime(Time::TimePoint t) noexcept {
         audioTime_.store(t.point(), std::memory_order_release);
@@ -104,22 +104,20 @@ public:
     static constexpr double kEarlyTolerance = 0.002; // 2ms
 
     // diff = audioTime - videoTime；正数表示视频落后，负数表示视频超前
-    // earlyToleranceSec：VSync 边界容忍窗口，视频超前但在容忍范围内仍 Render，消除边界抖动
     [[nodiscard]] static AVSyncAction evaluateAVSync(double diffSec,
                                                      double playbackRate = 1.0,
                                                      double earlyToleranceSec = 0.0) noexcept {
-        double scaledMinThreshold = kMinThreshold * playbackRate;
-        double scaledMaxThreshold = kMaxThreshold * playbackRate;
+        const double scaledMinThreshold = kMinThreshold * playbackRate;
 
-        // 视频落后音频 → 追帧，无论落后多少都不放弃追帧
+        // 视频落后音频 → 追帧
         if (diffSec > scaledMinThreshold) {
             return AVSyncAction::Drop;
         }
 
-        // 视频超前音频：在容忍窗口内（VSync 边界抖动）仍 Render，超出才 Hold
-        // 超前异常（> kMaxThreshold）视为时钟跳变，强制 Render 避免长时间 Hold
+        // 视频超前音频：在容忍窗口内仍 Render，超出才 Hold
+        // 超前异常（≥ kMaxThreshold）视为时钟跳变，强制 Render 避免长时间 Hold
         if (diffSec < -(scaledMinThreshold + earlyToleranceSec)) {
-            if (-diffSec >= scaledMaxThreshold) {
+            if (-diffSec >= kMaxThreshold) {
                 return AVSyncAction::Render;
             }
             return AVSyncAction::Hold;

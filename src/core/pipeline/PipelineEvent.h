@@ -4,18 +4,14 @@
 
 #pragma once
 
-#include "PipelineStage.h"
-
 #include <cstdint>
 
 namespace slark {
 
-// Pipeline 对外事件枚举
-// 事件载荷规则：AudioDecoderFailed / VideoDecoderFailed / ReadError 必须携带 PipelineError；
-// 其余事件必须传 std::nullopt。
 enum class PipelineEvent : uint8_t {
     DemuxHeaderParsed,  // demux 头部解析完成
     PipelineReady,      // 解码器就绪，可以开始渲染
+    FirstFrameRendered, // 首帧已渲染，Buffering -> Ready
     AudioDecoderFailed, // 音频解码器打开失败（PipelineError 必填）
     VideoDecoderFailed, // 视频解码器打开失败（PipelineError 必填）
     BufferingStart,     // 开始缓冲

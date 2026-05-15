@@ -12,15 +12,12 @@ BufferMonitor::BufferMonitor(const BackpressureConfig& config,
                              IBufferMonitorDelegate& delegate) noexcept
     : config_(config), delegate_(delegate) {}
 
-void BufferMonitor::onDataEnqueued() noexcept {
-    auto throttleMs = config_.isLiveSource ? 50 : (config_.startBufferDuration == 0.0 ? 100 : 50);
+void BufferMonitor::onDemuxedDataEnqueued() noexcept {
+    using Ms = std::chrono::milliseconds;
+    const auto throttle = config_.isLiveSource ? Ms(50) : Ms(100);
     auto now = Clock::now();
-    if (lastCheckTime_.has_value()) {
-        auto elapsed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(now - *lastCheckTime_).count();
-        if (elapsed < throttleMs) {
-            return;
-        }
+    if (lastCheckTime_.has_value() && (now - *lastCheckTime_) < throttle) {
+        return;
     }
     lastCheckTime_ = now;
 
@@ -31,21 +28,26 @@ void BufferMonitor::onDataEnqueued() noexcept {
     regulateDataFlow();
 }
 
-void BufferMonitor::onHeartbeat() noexcept {
-    if (!streamPaused_) {
+void BufferMonitor::onDecodedDataEnqueued() noexcept {
+    constexpr auto kThrottle = std::chrono::milliseconds(50);
+    auto now = Clock::now();
+    if (lastDecoderCheckTime_.has_value() && (now - *lastDecoderCheckTime_) < kThrottle) {
         return;
     }
-    double duration = demuxedDuration();
-    auto now = Clock::now();
-    bool canResume =
-        pauseTime_.has_value() &&
-        std::chrono::duration_cast<std::chrono::milliseconds>(now - *pauseTime_).count() >=
-            config_.minPauseHoldMs;
-    if (duration <= config_.lowWatermarkDuration && canResume) {
-        resumeStream();
-        if (isRebuffering_) {
-            checkRebufferComplete();
+    lastDecoderCheckTime_ = now;
+    regulateDecoderFlow();
+}
+
+void BufferMonitor::onHeartbeat() noexcept {
+    if (!demuxEof_) {
+        if (isPrebuffering_) {
+            checkPrebufferComplete();
+        } else {
+            regulateDataFlow();
         }
+    }
+    if (!decoderEof_) {
+        regulateDecoderFlow();
     }
 }
 
@@ -61,24 +63,57 @@ void BufferMonitor::startPrebuffering() noexcept {
 
 void BufferMonitor::reset() noexcept {
     streamPaused_ = false;
+    demuxEof_ = false;
+    audioDecoderPaused_ = false;
+    videoDecoderPaused_ = false;
+    decoderEof_ = false;
     isPrebuffering_ = false;
     isRebuffering_ = false;
     readyFired_ = false;
     pauseFailCount_ = 0;
     starvationCount_ = 0;
-    pauseTime_.reset();
-    resumeTime_.reset();
     lastCheckTime_.reset();
+    lastDecoderCheckTime_.reset();
+}
+
+void BufferMonitor::regulateDecoderFlow() noexcept {
+    if (decoderEof_) {
+        return;
+    }
+
+    {
+        int32_t frames = delegate_.audioDecodedFrameCount();
+        if (frames >= config_.audioDecoderHighWatermarkFrames) {
+            pauseAudioDecoder();
+        } else if (frames <= config_.audioDecoderLowWatermarkFrames) {
+            resumeAudioDecoder();
+        }
+    }
+
+    {
+        int32_t frames = delegate_.videoDecodedFrameCount();
+        if (frames >= config_.videoDecoderHighWatermarkFrames) {
+            pauseVideoDecoder();
+        } else if (frames <= config_.videoDecoderLowWatermarkFrames) {
+            resumeVideoDecoder();
+        }
+    }
 }
 
 void BufferMonitor::regulateDataFlow() noexcept {
+    // 快速推帧期间跳过背压控制，保证 demuxer 不被水位线阻塞
+    if (backpressurePaused_) {
+        return;
+    }
     double duration = demuxedDuration();
-    auto now = Clock::now();
+
+    if (demuxEof_) {
+        return;
+    }
 
     if (duration > config_.hardCapDuration) {
         pauseStream();
         delegate_.onDropOldest();
-        // hard-cap 收敛期间通知上层进入缓冲态
         if (!isRebuffering_ && readyFired_) {
             isRebuffering_ = true;
             fireEvent(PipelineEvent::BufferingStart);
@@ -86,46 +121,25 @@ void BufferMonitor::regulateDataFlow() noexcept {
         return;
     }
 
-    bool canPause =
-        !streamPaused_ &&
-        (!resumeTime_.has_value() ||
-         std::chrono::duration_cast<std::chrono::milliseconds>(now - *resumeTime_).count() >=
-             config_.minResumeHoldMs);
-    bool canResume =
-        streamPaused_ && pauseTime_.has_value() &&
-        std::chrono::duration_cast<std::chrono::milliseconds>(now - *pauseTime_).count() >=
-            config_.minPauseHoldMs;
-
-    if (duration >= config_.highWatermarkDuration && canPause) {
+    if (duration >= config_.demuxHighWatermarkDuration) {
         pauseStream();
-    } else if (duration <= config_.lowWatermarkDuration) {
+    } else if (duration <= config_.demuxLowWatermarkDuration) {
         if (!streamPaused_ && !isRebuffering_ && readyFired_) {
             isRebuffering_ = true;
             fireEvent(PipelineEvent::BufferingStart);
         }
-        if (canResume) {
+        if (streamPaused_) {
             resumeStream();
             checkRebufferComplete();
         }
     }
 
-    // pause 失效兜底：连续多次超时后上报错误
-    if (streamPaused_ && pauseTime_.has_value() && duration > config_.highWatermarkDuration) {
-        auto elapsed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(now - *pauseTime_).count();
-        if (elapsed > 500) {
-            ++pauseFailCount_;
-            pauseTime_ = now;
-            if (pauseFailCount_ >= kPauseFailThreshold) {
-                fireEvent(PipelineEvent::ReadError,
-                          PipelineError{
-                              .event = PipelineEvent::ReadError,
-                              .stage = PipelineStage::BackPressure,
-                              .code = static_cast<int32_t>(Error::InvalidOperation),
-                              .message = "stream pause not effective after retries",
-                          });
-                pauseFailCount_ = 0;
-            }
+    // pause 失效屌底：连续多次超限后上报错误
+    if (streamPaused_ && duration > config_.demuxHighWatermarkDuration) {
+        ++pauseFailCount_;
+        if (pauseFailCount_ >= kPauseFailThreshold) {
+            fireEvent(PipelineEvent::ReadError, PipelineError{.error = Error::InvalidOperation});
+            pauseFailCount_ = 0;
         }
     }
 }

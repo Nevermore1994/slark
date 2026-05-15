@@ -11,12 +11,14 @@
 #include "Data.h"
 #include "DecoderComponent.h"
 #include "DecoderConfig.h"
+#include "IDemuxer.h"
 #include "IPipelineComponent.h"
+#include "MediaDefs.h"
 #include "NonCopyable.h"
 #include "PipelineConfig.h"
 #include "PipelineError.h"
 #include "PipelineEvent.h"
-#include "SeekCoordinator.h"
+#include "SeekContext.h"
 #include "Synchronized.hpp"
 #include "Time.hpp"
 #include "perf/PlaySession.h"
@@ -28,41 +30,47 @@
 #include <memory>
 #include <optional>
 #include <thread>
-#include <vector>
 
 namespace slark {
+
+using StreamControlFunc = std::function<void()>;
 
 class DemuxerComponent;
 class DecoderComponent;
 class AudioRenderComponent;
-struct IDemuxer;
+class IDemuxer;
 struct IVideoRender;
 
 struct MediaInfo {
     bool hasAudio = false;
     bool hasVideo = false;
-    double fps = 0.0;
     CTime totalDuration;
 };
 
-/**
- * @brief 播放管线核心协调器。
- *
- * 线程安全约定：所有公开 API 必须在 ownerThread 调用，onEvent 回调保证在 ownerThread 触发。
- */
 enum class PipelineState : uint8_t {
     Idle,
     Built,
     Playing,
     Paused,
-    Faulted,
+    TearingDown, // teardown 已发起，等待组件退出
+    Ended,       // 正常播放结束（RenderEnd 已触发）
+    Faulted,     // 不可恢复错误，终态
+};
+
+struct ReadinessTracker {
+    int32_t expectedDecoders = 0;
+    int32_t readyDecoders = 0;
+    bool liveVideoKeyframeSeen = false;
+    bool liveAudioPacketSeen = false;
+    bool readyFired = false;
+    std::atomic<bool> firstFrameRendered{false}; ///< 首帧已渲染，之后才启用 AV Sync 和背压 Hold
 };
 
 class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 public:
     explicit PlayPipeline(BackpressureConfig config) noexcept;
 
-    ~PlayPipeline() override;
+    ~PlayPipeline();
 
     void build() noexcept;
 
@@ -74,35 +82,23 @@ public:
 
     void teardown() noexcept;
 
-    void seek(CTime target) noexcept;
+    void seek(CTime target, bool isAccurate = true) noexcept;
 
     void applyLiveConfig() noexcept;
 
     [[nodiscard]] Time::TimePoint currentTime() noexcept;
 
+    [[nodiscard]] Time::TimePoint audioTime() noexcept;
+
+    [[nodiscard]] double cachedDuration() const noexcept;
+
     [[nodiscard]] AVFrameRefPtr requestVideoFrame() noexcept;
 
     [[nodiscard]] AVFrameRefPtr requestAudioFrame() noexcept;
 
-    [[nodiscard]] double cachedDuration() const noexcept {
-        return demuxedDuration();
-    }
-
     void drainPendingTasks() noexcept;
 
     void onHeartbeat() noexcept;
-
-    [[nodiscard]] double demuxedDuration() const noexcept override;
-
-    void pauseStream() noexcept override;
-
-    void resumeStream() noexcept override;
-
-    void onPrebufferComplete() noexcept override;
-
-    void onDropOldest() noexcept override;
-
-    void onBufferEvent(PipelineEvent event, std::optional<PipelineError> error) noexcept override;
 
     void setStreamControl(StreamControlFunc pauseStream, StreamControlFunc resumeStream) noexcept;
 
@@ -114,16 +110,21 @@ public:
         onEvent_ = std::move(callback);
     }
 
+    void setWakeupCallback(std::function<void()> callback) noexcept {
+        wakeupCallback_ = std::move(callback);
+    }
+
     [[nodiscard]] const MediaInfo& mediaInfo() const noexcept {
         return mediaInfo_;
     }
 
     [[nodiscard]] bool isFaulted() const noexcept {
-        return isolated_.load(std::memory_order_acquire);
+        return pipelineState_.load(std::memory_order_acquire) == PipelineState::Faulted;
     }
 
     [[nodiscard]] bool isBuilt() const noexcept {
-        return ownerThreadId_ != std::thread::id{};
+        const auto s = pipelineState_.load(std::memory_order_acquire);
+        return s != PipelineState::Idle;
     }
 
     [[nodiscard]] bool isOnOwnerThread() const noexcept;
@@ -140,10 +141,6 @@ public:
         return videoRender_.load();
     }
 
-    /**
-     * @brief header 解析完成后调用，pipeline 内部创建 audio decoder + audio render。
-     * @param volume 初始音量 [0.0, 1.0]
-     */
     void setupAudioTrack(DecoderType type,
                          std::shared_ptr<AudioDecoderConfig> config,
                          std::shared_ptr<AudioInfo> audioInfo,
@@ -158,9 +155,27 @@ public:
 
     void setVolume(float volume) noexcept;
 
-    [[nodiscard]] Time::TimePoint audioPlayedTime() noexcept;
-
 private:
+    [[nodiscard]] double demuxedDuration() const noexcept override;
+
+    void pauseStream() noexcept override;
+
+    void resumeStream() noexcept override;
+
+    [[nodiscard]] int32_t audioDecodedFrameCount() const noexcept override;
+
+    [[nodiscard]] int32_t videoDecodedFrameCount() const noexcept override;
+
+    void pauseDecoder() noexcept override;
+
+    void resumeDecoder() noexcept override;
+
+    void onPrebufferComplete() noexcept override;
+
+    void onDropOldest() noexcept override;
+
+    void onBufferEvent(PipelineEvent event, std::optional<PipelineError> error) noexcept override;
+
     void postToOwnerThread(std::function<void()> task) noexcept;
 
     void fireEvent(PipelineEvent event, std::optional<PipelineError> error = std::nullopt) noexcept;
@@ -168,8 +183,6 @@ private:
     void firePipelineReady() noexcept;
 
     void checkAndFirePipelineReady() noexcept;
-
-    void initBufferMonitor() noexcept;
 
     [[nodiscard]] bool checkLiveReadyCondition() const noexcept;
 
@@ -179,9 +192,13 @@ private:
 
     void dispatchFrames(DemuxerResult&& result, uint64_t epoch) noexcept;
 
-    void notifyDataEnqueued() noexcept;
+    bool dispatchAudioFrames(AVFramePtrArray& frames, uint64_t epoch) noexcept;
 
-    void registerComponents() noexcept;
+    bool dispatchVideoFrames(AVFramePtrArray& frames, uint64_t epoch) noexcept;
+
+    void injectEosFrames() noexcept;
+
+    void notifyDataEnqueued() noexcept;
 
     void stopComponents() noexcept;
 
@@ -189,21 +206,47 @@ private:
 
     void enterFaultedState() noexcept;
 
-    void reportFaultedError() noexcept;
-
     void openDecoderInternal(std::shared_ptr<DecoderComponent> decoder,
                              DecoderType type,
-                             const std::shared_ptr<DecoderConfig>& config,
-                             bool isVideo) noexcept;
+                             const std::shared_ptr<DecoderConfig>& config) noexcept;
 
-    void onSeekFrameConsumed(bool isVideo) noexcept;
+    void onAudioDecoded(DecoderData data) noexcept;
+
+    void onVideoDecoded(DecoderData data) noexcept;
+
+    [[nodiscard]] SeekStrategy resolveSeekStrategy(double targetSec) const noexcept;
+
+    void onSeekFrameConsumed(TrackType track) noexcept;
+
+    void exitFastForwardMode() noexcept;
+
+    [[nodiscard]] AVFrameRefPtr seekPreviewFrame() noexcept;
 
     [[nodiscard]] AVFrameRefPtr popVideoFrame() noexcept;
 
     void dropOldestFrames() noexcept;
 
-    // 返回音频主时钟：有音频时用硬件实际播出时间，无音频时用视频时钟
-    [[nodiscard]] Time::TimePoint audioMasterTime() const noexcept;
+    void pushAudioFrames() noexcept;
+
+    struct QueueBounds {
+        double audioOldestPts = -1.0;
+        double videoOldestPts = -1.0;
+        double maxPts = 0.0;
+    };
+
+    [[nodiscard]] QueueBounds snapshotQueueBounds() noexcept;
+
+    int32_t dropFramesUpTo(double cutoffPts) noexcept;
+
+    void recordVsyncInterval() noexcept;
+
+    [[nodiscard]] bool shouldHoldVideoFrame(double diff, double playbackRate) const noexcept;
+
+    void chaseVideoFrames(AVFrameRefPtr& frame, double diff, double playbackRate) noexcept;
+
+    void updateLiveReadyFlags(const DemuxerResult& result) noexcept;
+
+    void registerComponents() noexcept;
 
 private:
     BackpressureConfig config_;
@@ -212,8 +255,10 @@ private:
     MediaInfo mediaInfo_;
 
     Synchronized<std::deque<std::function<void()>>> pendingTasks_;
-    Synchronized<std::deque<AVFrameRefPtr>> audioFrames_;
     Synchronized<std::map<int64_t, AVFrameRefPtr>> videoFrames_;
+    Synchronized<std::deque<AVFrameRefPtr>> audioFrames_;
+    Synchronized<std::deque<AVFrameRefPtr>> pendingDecodeAudioQueue_;
+    Synchronized<std::deque<AVFrameRefPtr>> pendingDecodeVideoQueue_;
 
     std::shared_ptr<DemuxerComponent> demuxer_;
     std::shared_ptr<DecoderComponent> audioDecoder_;
@@ -221,28 +266,25 @@ private:
     std::shared_ptr<AudioRenderComponent> audioRender_;
     AtomicWeakPtr<IVideoRender> videoRender_;
 
-    std::vector<std::shared_ptr<IPipelineComponent>> components_;
-
     std::unique_ptr<ClockSync> clockSync_;
-    std::unique_ptr<SeekCoordinator> seekCoordinator_;
+    std::unique_ptr<SeekContext> seekContext_;
     std::unique_ptr<BufferMonitor> bufferMonitor_;
 
     StreamControlFunc pauseStreamFunc_;
     StreamControlFunc resumeStreamFunc_;
+    std::function<void()> wakeupCallback_;
 
     std::weak_ptr<perf::PlaySession> playSession_;
 
-    PipelineState pipelineState_{PipelineState::Idle};
-    std::atomic<bool> teardownFlag_{false};
-    std::atomic<bool> isolated_{false};
-    std::atomic<bool> readyFired_{false};
-    std::atomic<int32_t> decoderReadyCount_{0};
+    std::atomic<PipelineState> pipelineState_{PipelineState::Idle};
 
-    std::atomic<bool> liveHasFirstVideoKeyframe_{false};
-    std::atomic<bool> liveHasFirstAudioPacket_{false};
-    std::atomic<bool> renderEndFired_{false};
+    ReadinessTracker readiness_;
+
+    // dataEnqueued 去抖标志，仅 ownerThread 消费，decoder 线程写
     std::atomic<bool> dataEnqueuedPending_{false};
-    std::atomic<int32_t> consecutiveTryLockFailures_{0};
+
+    std::vector<std::shared_ptr<IPipelineComponent>> components_;
+
     std::chrono::steady_clock::time_point lastVsyncTime_{};
 };
 
