@@ -19,9 +19,9 @@ using namespace std::chrono_literals;
 
 std::shared_ptr<Thread> Thread::create(std::string name) {
     auto thread = std::shared_ptr<Thread>(new Thread(std::move(name)));
-    thread->worker_ = std::jthread([weak = thread->weak_from_this()](std::stop_token stopToken) {
+    thread->worker_ = std::thread([weak = thread->weak_from_this()]() {
         if (auto self = weak.lock()) {
-            self->process(stopToken);
+            self->process();
         }
     });
     return thread;
@@ -42,10 +42,10 @@ void Thread::stop() noexcept {
     std::vector<TimerId> timersToCancel;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (worker_.get_stop_token().stop_requested()) {
+        if (stopRequested_.load(std::memory_order_acquire)) {
             return;
         }
-        worker_.request_stop();
+        stopRequested_.store(true, std::memory_order_release);
         isRunning_ = false;
         timersToCancel = std::move(timerIds_);
         repeatTasks_.clear();
@@ -68,7 +68,7 @@ void Thread::pause() noexcept {
 void Thread::start() noexcept {
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (isRunning_ || worker_.get_stop_token().stop_requested()) {
+        if (isRunning_ || stopRequested_.load(std::memory_order_acquire)) {
             return;
         }
         isRunning_ = true;
@@ -77,7 +77,7 @@ void Thread::start() noexcept {
 }
 
 Expected<void> Thread::schedule(Task task) noexcept {
-    if (worker_.get_stop_token().stop_requested()) {
+    if (stopRequested_.load(std::memory_order_acquire)) {
         return std::unexpected(Error::InvalidOperation);
     }
     taskQueue_.push(std::move(task));
@@ -96,7 +96,7 @@ TimerId Thread::schedule(Time::TimePoint timePoint, Task task) noexcept {
 }
 
 TimerId Thread::scheduleRepeat(milliseconds interval, Task task) noexcept {
-    if (worker_.get_stop_token().stop_requested()) {
+    if (stopRequested_.load(std::memory_order_acquire)) {
         return TimerId{};
     }
     auto id = TimerId::next();
@@ -123,23 +123,23 @@ void Thread::cancelSchedule(TimerId id) noexcept {
     TimerManager::shareInstance().cancel(id);
 }
 
-void Thread::process(std::stop_token stopToken) noexcept {
-    while (!stopToken.stop_requested()) {
+void Thread::process() noexcept {
+    while (!stopRequested_.load(std::memory_order_acquire)) {
         if (!isInit_) {
             setup();
         }
 
         {
             std::unique_lock<std::mutex> lock(mutex_);
-            cond_.wait(lock, [this, &stopToken] {
-                return stopToken.stop_requested() || isRunning_;
+            cond_.wait(lock, [this] {
+                return stopRequested_.load(std::memory_order_acquire) || isRunning_;
             });
             if (!isRunning_) {
                 continue;
             }
         }
 
-        if (stopToken.stop_requested()) {
+        if (stopRequested_.load(std::memory_order_acquire)) {
             break;
         }
 
@@ -154,12 +154,12 @@ void Thread::process(std::stop_token stopToken) noexcept {
 
         std::unique_lock<std::mutex> lock(mutex_);
         if (waitTime == std::chrono::milliseconds::max()) {
-            cond_.wait(lock, [this, &stopToken] {
-                return stopToken.stop_requested() || !isRunning_;
+            cond_.wait(lock, [this] {
+                return stopRequested_.load(std::memory_order_acquire) || !isRunning_;
             });
         } else {
-            cond_.wait_for(lock, stopToken, waitTime, [this] {
-                return !isRunning_;
+            cond_.wait_for(lock, waitTime, [this] {
+                return stopRequested_.load(std::memory_order_acquire) || !isRunning_;
             });
         }
     }

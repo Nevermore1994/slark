@@ -20,7 +20,7 @@ public:
         return *instance_;
     }
 
-    ~Manager() override = default;
+    ~Manager() = default;
 
 public:
     RefPtr find(const std::string& itemId) noexcept {

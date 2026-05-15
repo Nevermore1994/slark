@@ -57,7 +57,7 @@ concept IsTimeUntilMutex =
 template <typename Container, typename Mutex = std::mutex>
 class Synchronized : public NonCopyMovable {
 public:
-    ~Synchronized() override = default;
+    ~Synchronized() = default;
 
     // C++23 deducing this: unified withLock for const and non-const
     template <typename Self, typename F>
@@ -106,8 +106,8 @@ public:
         }
     }
 
-    template <typename F, typename G>
-    auto withTryLock(F&& lockFunc, G&& failedFunc)
+    template <typename F>
+    auto withTryLock(F&& lockFunc, std::function<void()> failedFunc = nullptr)
         requires IsMutex<Mutex>
     {
         if (mutex_.try_lock()) {
@@ -119,10 +119,10 @@ public:
                 return std::optional{lockFunc(container_)};
             }
         } else {
-            if constexpr (std::is_void_v<std::invoke_result_t<G>>) {
+            if (failedFunc) {
                 failedFunc();
-                return;
-            } else {
+            }
+            if constexpr (!std::is_void_v<std::invoke_result_t<F, Container&>>) {
                 return std::optional<std::invoke_result_t<F, Container&>>{};
             }
         }
@@ -210,7 +210,7 @@ template <typename T>
 class AtomicWeakPtr : public NonCopyMovable {
 public:
     AtomicWeakPtr() = default;
-    ~AtomicWeakPtr() override = default;
+    ~AtomicWeakPtr() = default;
 
     explicit AtomicWeakPtr(std::weak_ptr<T> ptr) : ptr_(std::move(ptr)) {}
 
@@ -241,7 +241,7 @@ template <typename T>
 class AtomicSharedPtr : public NonCopyMovable {
 public:
     AtomicSharedPtr() = default;
-    ~AtomicSharedPtr() override = default;
+    ~AtomicSharedPtr() = default;
 
     explicit AtomicSharedPtr(std::shared_ptr<T> ptr) : ptr_(std::move(ptr)) {}
 

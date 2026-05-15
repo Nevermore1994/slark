@@ -17,11 +17,11 @@ inline constexpr ConstByteSpan makeSafeView(const Byte* data, std::size_t size) 
     return ConstByteSpan(data, size);
 }
 
-inline constexpr ConstByteSpan toByteSpan(std::string_view str) noexcept {
+inline ConstByteSpan toByteSpan(std::string_view str) noexcept {
     return ConstByteSpan(reinterpret_cast<const Byte*>(str.data()), str.size());
 }
 
-inline constexpr std::string_view toStringView(ConstByteSpan span) noexcept {
+inline std::string_view toStringView(ConstByteSpan span) noexcept {
     return std::string_view(reinterpret_cast<const char*>(span.data()), span.size());
 }
 

@@ -14,7 +14,7 @@ namespace slark {
 class Writer : public NonCopyMovable {
 public:
     Writer();
-    ~Writer() override;
+    ~Writer();
 
     bool open(std::string_view path, bool isAppend = false) noexcept;
     void close() noexcept;

@@ -29,7 +29,7 @@ public:
 public:
     ThreadManager();
 
-    ~ThreadManager() final;
+    ~ThreadManager();
 
     void add(const std::shared_ptr<Thread>& thread) noexcept;
 
@@ -43,15 +43,16 @@ public:
     void setBlockCallback(BlockCallback callback) noexcept;
 
 private:
-    void monitorLoop(std::stop_token stopToken);
+    void monitorLoop();
 
     void reportRunInfo() noexcept;
 
 private:
     std::unordered_map<std::thread::id, std::weak_ptr<Thread>> threadInfos_;
     std::mutex mutex_;
-    std::condition_variable_any cond_;
-    std::jthread monitorThread_;
+    std::condition_variable cond_;
+    std::thread monitorThread_;
+    std::atomic<bool> stopRequested_{false};
     BlockCallback blockCallback_;
 };
 

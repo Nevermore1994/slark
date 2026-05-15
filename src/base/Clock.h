@@ -6,9 +6,7 @@
 #pragma once
 #include "Time.hpp"
 
-#include <chrono>
-#include <mutex>
-#include <shared_mutex>
+#include <atomic>
 
 namespace slark {
 
@@ -29,28 +27,22 @@ public:
 
     void reset() noexcept;
 
-    void setSpeed(double speed) noexcept {
-        std::lock_guard<std::shared_mutex> lock(mutex_);
-        speed_ = speed;
-    }
+    void setSpeed(double speed) noexcept;
 
     [[nodiscard]] double speed() const noexcept {
-        std::shared_lock<std::shared_mutex> lock(mutex_);
-        return speed_;
+        return speed_.load(std::memory_order_relaxed);
     }
 
     [[nodiscard]] bool isPaused() const noexcept {
-        std::shared_lock<std::shared_mutex> lock(mutex_);
-        return isPause_;
+        return isPaused_.load(std::memory_order_relaxed);
     }
 
 private:
-    bool isInited_ = false;
-    bool isPause_ = true;
-    mutable std::shared_mutex mutex_;
-    double speed_ = 1.0;
-    Time::TimePoint lastUpdated_ = 0;
-    Time::TimePoint pts_ = 0;
+    std::atomic<uint64_t> pts_{0};
+    std::atomic<uint64_t> lastUpdated_{0};
+    std::atomic<double> speed_{1.0};
+    std::atomic<bool> isPaused_{true};
+    std::atomic<bool> isInited_{false};
 };
 
 } // namespace slark

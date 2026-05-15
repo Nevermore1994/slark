@@ -1,6 +1,5 @@
 //
 // Created by Nevermore on 2023/11/3.
-// Slark Channel
 // Copyright (c) 2023 Nevermore All rights reserved.
 //
 

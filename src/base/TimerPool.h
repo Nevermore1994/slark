@@ -19,7 +19,7 @@ namespace slark {
 class TimerPool : public NonCopyMovable {
 public:
     TimerPool() = default;
-    ~TimerPool() override;
+    ~TimerPool();
 
     TimerId addTimer(TimerEntry entry) noexcept;
     void reinsert(TimerEntry entry) noexcept;

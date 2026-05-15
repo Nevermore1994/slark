@@ -52,7 +52,7 @@ private:
 
 private:
     std::unique_ptr<File::ReadFile> file_;
-    std::unique_ptr<std::jthread> thread_;
+    std::unique_ptr<std::thread> thread_;
     std::mutex mutex_;
     std::condition_variable cv_;
 

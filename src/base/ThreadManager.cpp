@@ -12,30 +12,31 @@ namespace slark {
 using namespace std::chrono_literals;
 
 ThreadManager::ThreadManager()
-    : monitorThread_([this](std::stop_token token) {
-          monitorLoop(token);
+    : monitorThread_([this] {
+          monitorLoop();
       }) {}
 
 ThreadManager::~ThreadManager() {
-    monitorThread_.request_stop();
+    stopRequested_.store(true);
     cond_.notify_all();
-    // jthread 析构时自动 join
+    if (monitorThread_.joinable()) {
+        monitorThread_.join();
+    }
     {
         std::unique_lock<std::mutex> lock(mutex_);
         threadInfos_.clear();
     }
 }
 
-void ThreadManager::monitorLoop(std::stop_token stopToken) {
-    while (!stopToken.stop_requested()) {
+void ThreadManager::monitorLoop() {
+    while (!stopRequested_.load()) {
         {
             std::unique_lock lock(mutex_);
-            // 等待变化通知（由 notify_one 唤醒）或 10s 超时
-            cond_.wait_for(lock, stopToken, 10s, [] {
-                return false;
+            cond_.wait_for(lock, 10s, [this] {
+                return stopRequested_.load();
             });
         }
-        if (stopToken.stop_requested()) {
+        if (stopRequested_.load()) {
             break;
         }
         reportRunInfo();

@@ -5,6 +5,8 @@
 #pragma once
 #include <algorithm>
 #include <charconv>
+#include <cstdlib>
+#include <cstring>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -49,12 +51,32 @@ struct StringUtil {
 
     template <typename T>
     [[nodiscard]] static std::optional<T> fromChars(std::string_view sv, int base = 10) noexcept {
-        T value{};
-        auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), value, base);
-        if (ec != std::errc()) {
-            return std::nullopt;
+        if constexpr (std::is_floating_point_v<T>) {
+            char buf[64];
+            if (sv.size() >= sizeof(buf)) {
+                return std::nullopt;
+            }
+            std::memcpy(buf, sv.data(), sv.size());
+            buf[sv.size()] = '\0';
+            char* end = nullptr;
+            T value;
+            if constexpr (std::is_same_v<T, float>) {
+                value = std::strtof(buf, &end);
+            } else {
+                value = static_cast<T>(std::strtod(buf, &end));
+            }
+            if (end == buf) {
+                return std::nullopt;
+            }
+            return value;
+        } else {
+            T value{};
+            auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), value, base);
+            if (ec != std::errc()) {
+                return std::nullopt;
+            }
+            return value;
         }
-        return value;
     }
 
     template <typename T>

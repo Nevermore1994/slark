@@ -1,6 +1,5 @@
 //
 // Created by Nevermore on 2025/4/2.
-// Slark AsyncIOOperation - Generic async IO awaiter base
 // Copyright (c) 2025 Nevermore All rights reserved.
 //
 #pragma once

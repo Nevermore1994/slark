@@ -1,6 +1,5 @@
 //
 // Created by Nevermore on 2025/4/2.
-// Slark EventLoop
 // Copyright (c) 2025 Nevermore All rights reserved.
 //
 #include "EventLoop.h"
@@ -10,6 +9,9 @@
 
 #include <cassert>
 #include <fcntl.h>
+#ifdef __linux__
+#include <sys/eventfd.h>
+#endif
 #include <unistd.h>
 
 namespace slark {

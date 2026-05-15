@@ -29,7 +29,7 @@ class Thread : public NonCopyMovable, public std::enable_shared_from_this<Thread
 public:
     [[nodiscard]] static std::shared_ptr<Thread> create(std::string name);
 
-    ~Thread() noexcept override;
+    ~Thread() noexcept;
 
     void start() noexcept;
 
@@ -59,7 +59,7 @@ public:
     }
 
     [[nodiscard]] inline bool isExit() const noexcept {
-        return worker_.get_stop_token().stop_requested();
+        return stopRequested_.load(std::memory_order_acquire);
     }
 
     [[nodiscard]] inline Time::TimePoint getLastRunTimeStamp() const noexcept {
@@ -84,7 +84,7 @@ public:
 private:
     explicit Thread(std::string name);
 
-    void process(std::stop_token stopToken) noexcept;
+    void process() noexcept;
 
     void setup() noexcept;
 
@@ -106,6 +106,7 @@ private:
 
     bool isRunning_ = false;
     std::atomic<bool> isInit_ = false;
+    std::atomic<bool> stopRequested_ = false;
     std::string name_;
     mutable std::mutex mutex_;
     std::condition_variable_any cond_;
@@ -113,7 +114,7 @@ private:
     MPSCQueue<Task> taskQueue_;
     std::vector<TimerId> timerIds_; // guarded by mutex_
     std::vector<RepeatTask> repeatTasks_;
-    std::jthread worker_;
+    std::thread worker_;
 };
 
 } // end namespace slark

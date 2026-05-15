@@ -31,7 +31,7 @@ class ThreadPool : public NonCopyMovable {
 public:
     explicit ThreadPool(const ThreadPoolConfig& config = ThreadPoolConfig{});
 
-    ~ThreadPool() override {
+    ~ThreadPool() {
         {
             std::unique_lock<std::mutex> lock(mutex_);
             shutdown_ = true;
@@ -135,9 +135,9 @@ private:
         requires std::is_invocable_v<F, Args...>
     Expected<void> postJobWithPriority(JobPriority priority, F&& f, Args&&... args);
 
-    void workThread(std::stop_token stopToken);
+    void workThread();
 
-    std::vector<std::jthread> workers_;
+    std::vector<std::thread> workers_;
     std::vector<Job> jobs_;
     mutable std::mutex mutex_;
     std::condition_variable notEmpty_;
@@ -149,26 +149,25 @@ private:
 
 inline ThreadPool::ThreadPool(const ThreadPoolConfig& config) {
     for (uint32_t i = 0; i < config.threadCount; ++i) {
-        workers_.emplace_back([this](std::stop_token token) {
-            workThread(token);
+        workers_.emplace_back([this] {
+            workThread();
         });
     }
 }
 
-inline void ThreadPool::workThread(std::stop_token stopToken) {
+inline void ThreadPool::workThread() {
     while (true) {
         MoveOnlyFunction<void()> job;
 
         {
             std::unique_lock<std::mutex> lock(mutex_);
-            notEmpty_.wait(lock, [this, &stopToken] {
-                return !jobs_.empty() || shutdown_ || stopToken.stop_requested();
+            notEmpty_.wait(lock, [this] {
+                return !jobs_.empty() || shutdown_.load();
             });
 
-            if ((shutdown_ || stopToken.stop_requested()) && jobs_.empty()) {
+            if (shutdown_.load() && jobs_.empty()) {
                 return;
             }
-
             std::pop_heap(jobs_.begin(), jobs_.end(), std::greater<>{});
             job = std::move(jobs_.back().func);
             jobs_.pop_back();

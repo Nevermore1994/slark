@@ -68,8 +68,7 @@ struct StreamInfo {
 
 using DataCallback = std::function<void(DataChunk)>;
 
-class MediaPlaylist;
-using MetadataCallback = std::function<void(const MediaPlaylist&)>;
+using MetadataCallback = std::function<void(std::shared_ptr<void>)>;
 
 using ErrorCallback = std::function<void(Error)>;
 

@@ -1,20 +1,16 @@
 //
 // Created by Nevermore on 2025/4/7.
-// Slark AsyncGenerator - Asynchronous Generator (like C# IAsyncEnumerable)
 // Copyright (c) 2025 Nevermore All rights reserved.
 //
 #pragma once
 
 #include "Coroutine.hpp"
-#include "CoroutineScheduler.hpp"
 #include "NonCopyable.h"
 
 #include <coroutine>
 #include <exception>
-#include <functional>
-#include <memory>
 #include <optional>
-#include <stdexcept>
+#include <set>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -31,6 +27,28 @@ class AsyncGeneratorPromise;
 
 enum class ConsumerState : uint8_t { None, Waiting, Resumed };
 
+template <typename Promise>
+class AsyncGeneratorYieldAwaiter {
+public:
+    explicit AsyncGeneratorYieldAwaiter(Promise& promise) noexcept : promise_(promise) {}
+
+    bool await_ready() const noexcept {
+        return false;
+    }
+
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<>) noexcept {
+        if (auto consumer = promise_.waitingConsumer(); consumer) {
+            return consumer;
+        }
+        return std::noop_coroutine();
+    }
+
+    void await_resume() noexcept {}
+
+private:
+    Promise& promise_;
+};
+
 template <typename T>
 class AsyncGeneratorFinalAwaiter {
 public:
@@ -42,7 +60,6 @@ public:
     std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> h) noexcept {
         auto& promise = h.promise();
         promise.setCompleted();
-
         if (auto consumer = promise.waitingConsumer(); consumer) {
             return consumer;
         }
@@ -60,12 +77,6 @@ public:
 
     AsyncGeneratorPromise() noexcept = default;
 
-    ~AsyncGeneratorPromise() {
-        if (value_.has_value()) {
-            value_.reset();
-        }
-    }
-
     std::suspend_always initial_suspend() noexcept {
         return {};
     }
@@ -77,18 +88,16 @@ public:
     void unhandled_exception() noexcept {
         exception_ = std::current_exception();
         completed_ = true;
-        resumeConsumer();
     }
 
     void return_void() noexcept {
         completed_ = true;
-        resumeConsumer();
     }
 
-    std::suspend_always yield_value(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
+    AsyncGeneratorYieldAwaiter<AsyncGeneratorPromise<T>> yield_value(T value) noexcept(
+        std::is_nothrow_move_constructible_v<T>) {
         value_.emplace(std::move(value));
-        resumeConsumer();
-        return {};
+        return AsyncGeneratorYieldAwaiter<AsyncGeneratorPromise<T>>{*this};
     }
 
     slark::AsyncGenerator<T> get_return_object() noexcept;
@@ -134,14 +143,6 @@ public:
             return std::exchange(consumerHandle_, nullptr);
         }
         return nullptr;
-    }
-
-    void resumeConsumer() noexcept {
-        if (consumerState_ == ConsumerState::Waiting && consumerHandle_) {
-            auto consumer = std::exchange(consumerHandle_, nullptr);
-            consumerState_ = ConsumerState::Resumed;
-            CoroutineScheduler::instance().schedule(consumer);
-        }
     }
 
     template <typename Awaitable>
@@ -208,27 +209,16 @@ public:
                 if (!generatorHandle) {
                     return true;
                 }
-                auto& promise = generatorHandle.promise();
-                if (promise.hasValue()) {
-                    return true;
-                }
-                if (promise.isCompleted()) {
-                    return true;
-                }
-                return false;
+                auto& p = generatorHandle.promise();
+                return p.hasValue() || p.isCompleted();
             }
 
             std::coroutine_handle<> await_suspend(std::coroutine_handle<> consumer) noexcept {
-                if (!generatorHandle) {
-                    return std::noop_coroutine();
-                }
-
-                auto& promise = generatorHandle.promise();
-                if (promise.hasValue() || promise.isCompleted()) {
+                auto& p = generatorHandle.promise();
+                if (p.hasValue() || p.isCompleted()) {
                     return consumer;
                 }
-
-                promise.setWaitingConsumer(consumer);
+                p.setWaitingConsumer(consumer);
                 return generatorHandle;
             }
 
@@ -236,22 +226,15 @@ public:
                 if (!generatorHandle) {
                     return std::nullopt;
                 }
-
-                auto& promise = generatorHandle.promise();
-                if (promise.hasException()) {
-                    promise.rethrowIfException();
+                auto& p = generatorHandle.promise();
+                if (p.hasException()) {
+                    p.rethrowIfException();
                 }
-
-                if (promise.isCompleted() && !promise.hasValue()) {
-                    return std::nullopt;
-                }
-
-                if (promise.hasValue()) {
-                    auto value = std::move(promise.value());
-                    promise.clearValue();
+                if (p.hasValue()) {
+                    auto value = std::move(p.value());
+                    p.clearValue();
                     return value;
                 }
-
                 return std::nullopt;
             }
         };
@@ -266,7 +249,6 @@ public:
     AsyncGenerator<T> filter(Pred pred);
 
     AsyncGenerator<T> take(int64_t count);
-
     AsyncGenerator<T> drop(int64_t count);
 
     template <typename Pred>
@@ -304,116 +286,9 @@ private:
 namespace detail {
 
 template <typename T, typename Func>
-class TransformAsyncGeneratorPromise {
-public:
-    using input_type = T;
-    using output_type = std::invoke_result_t<Func, T>;
-
-    TransformAsyncGeneratorPromise(AsyncGenerator<T>&& gen, Func func)
-        : gen_(std::move(gen)), func_(std::move(func)) {}
-
-    std::suspend_always initial_suspend() noexcept {
-        return {};
-    }
-
-    auto final_suspend() noexcept {
-        return AsyncGeneratorFinalAwaiter<output_type>{};
-    }
-
-    void unhandled_exception() noexcept {
-        exception_ = std::current_exception();
-        completed_ = true;
-        resumeConsumer();
-    }
-
-    void return_void() noexcept {
-        completed_ = true;
-        resumeConsumer();
-    }
-
-    std::suspend_always yield_value(output_type value) noexcept(
-        std::is_nothrow_move_constructible_v<output_type>) {
-        value_.emplace(std::move(value));
-        resumeConsumer();
-        return {};
-    }
-
-    AsyncGenerator<output_type> get_return_object() noexcept;
-
-    output_type& value() noexcept {
-        return *value_;
-    }
-
-    bool hasValue() const noexcept {
-        return value_.has_value();
-    }
-
-    void clearValue() noexcept {
-        value_.reset();
-    }
-
-    void rethrowIfException() {
-        if (exception_) {
-            std::rethrow_exception(exception_);
-        }
-    }
-
-    bool hasException() const noexcept {
-        return exception_ != nullptr;
-    }
-
-    bool isCompleted() const noexcept {
-        return completed_;
-    }
-
-    void setCompleted() noexcept {
-        completed_ = true;
-    }
-
-    void setWaitingConsumer(std::coroutine_handle<> consumer) noexcept {
-        consumerHandle_ = consumer;
-        consumerState_ = ConsumerState::Waiting;
-    }
-
-    std::coroutine_handle<> waitingConsumer() noexcept {
-        if (consumerState_ == ConsumerState::Waiting && consumerHandle_) {
-            consumerState_ = ConsumerState::Resumed;
-            return std::exchange(consumerHandle_, nullptr);
-        }
-        return nullptr;
-    }
-
-    void resumeConsumer() noexcept {
-        if (consumerState_ == ConsumerState::Waiting && consumerHandle_) {
-            auto consumer = std::exchange(consumerHandle_, nullptr);
-            consumerState_ = ConsumerState::Resumed;
-            CoroutineScheduler::instance().schedule(consumer);
-        }
-    }
-
-    template <typename Awaitable>
-    auto await_transform(Awaitable&& awaitable) noexcept(
-        noexcept(std::forward<Awaitable>(awaitable))) {
-        return std::forward<Awaitable>(awaitable);
-    }
-
-    // 成员变量
-    AsyncGenerator<T> gen_;
-    Func func_;
-    std::optional<output_type> value_;
-    std::exception_ptr exception_;
-    bool completed_ = false;
-    std::coroutine_handle<> consumerHandle_;
-    ConsumerState consumerState_ = ConsumerState::None;
-};
-
-} // namespace detail
-
-template <typename T>
-template <typename Func>
-AsyncGenerator<std::invoke_result_t<Func, T>> AsyncGenerator<T>::transform(Func func) {
+AsyncGenerator<std::invoke_result_t<Func, T>> transformImpl(AsyncGenerator<T> gen, Func func) {
     while (true) {
-        auto value = co_await next();
+        auto value = co_await gen.next();
         if (!value.has_value()) {
             break;
         }
@@ -421,11 +296,10 @@ AsyncGenerator<std::invoke_result_t<Func, T>> AsyncGenerator<T>::transform(Func 
     }
 }
 
-template <typename T>
-template <typename Pred>
-AsyncGenerator<T> AsyncGenerator<T>::filter(Pred pred) {
+template <typename T, typename Pred>
+AsyncGenerator<T> filterImpl(AsyncGenerator<T> gen, Pred pred) {
     while (true) {
-        auto value = co_await next();
+        auto value = co_await gen.next();
         if (!value.has_value()) {
             break;
         }
@@ -436,10 +310,10 @@ AsyncGenerator<T> AsyncGenerator<T>::filter(Pred pred) {
 }
 
 template <typename T>
-AsyncGenerator<T> AsyncGenerator<T>::take(int64_t count) {
+AsyncGenerator<T> takeImpl(AsyncGenerator<T> gen, int64_t count) {
     int64_t taken = 0;
     while (taken < count) {
-        auto value = co_await next();
+        auto value = co_await gen.next();
         if (!value.has_value()) {
             break;
         }
@@ -449,10 +323,10 @@ AsyncGenerator<T> AsyncGenerator<T>::take(int64_t count) {
 }
 
 template <typename T>
-AsyncGenerator<T> AsyncGenerator<T>::drop(int64_t count) {
+AsyncGenerator<T> dropImpl(AsyncGenerator<T> gen, int64_t count) {
     int64_t dropped = 0;
     while (true) {
-        auto value = co_await next();
+        auto value = co_await gen.next();
         if (!value.has_value()) {
             break;
         }
@@ -464,11 +338,10 @@ AsyncGenerator<T> AsyncGenerator<T>::drop(int64_t count) {
     }
 }
 
-template <typename T>
-template <typename Pred>
-AsyncGenerator<T> AsyncGenerator<T>::takeWhile(Pred pred) {
+template <typename T, typename Pred>
+AsyncGenerator<T> takeWhileImpl(AsyncGenerator<T> gen, Pred pred) {
     while (true) {
-        auto value = co_await next();
+        auto value = co_await gen.next();
         if (!value.has_value()) {
             break;
         }
@@ -479,12 +352,11 @@ AsyncGenerator<T> AsyncGenerator<T>::takeWhile(Pred pred) {
     }
 }
 
-template <typename T>
-template <typename Pred>
-AsyncGenerator<T> AsyncGenerator<T>::dropWhile(Pred pred) {
+template <typename T, typename Pred>
+AsyncGenerator<T> dropWhileImpl(AsyncGenerator<T> gen, Pred pred) {
     bool dropping = true;
     while (true) {
-        auto value = co_await next();
+        auto value = co_await gen.next();
         if (!value.has_value()) {
             break;
         }
@@ -497,10 +369,10 @@ AsyncGenerator<T> AsyncGenerator<T>::dropWhile(Pred pred) {
 }
 
 template <typename T>
-AsyncGenerator<std::pair<int64_t, T>> AsyncGenerator<T>::enumerate() {
+AsyncGenerator<std::pair<int64_t, T>> enumerateImpl(AsyncGenerator<T> gen) {
     int64_t index = 0;
     while (true) {
-        auto value = co_await next();
+        auto value = co_await gen.next();
         if (!value.has_value()) {
             break;
         }
@@ -508,11 +380,10 @@ AsyncGenerator<std::pair<int64_t, T>> AsyncGenerator<T>::enumerate() {
     }
 }
 
-template <typename T>
-template <typename Init, typename BinaryOp>
-Coroutine<Init> AsyncGenerator<T>::fold(Init init, BinaryOp op) {
+template <typename T, typename Init, typename BinaryOp>
+Coroutine<Init> foldImpl(AsyncGenerator<T> gen, Init init, BinaryOp op) {
     while (true) {
-        auto value = co_await next();
+        auto value = co_await gen.next();
         if (!value.has_value()) {
             break;
         }
@@ -522,24 +393,22 @@ Coroutine<Init> AsyncGenerator<T>::fold(Init init, BinaryOp op) {
 }
 
 template <typename T>
-Coroutine<int64_t> AsyncGenerator<T>::count() {
+Coroutine<int64_t> countImpl(AsyncGenerator<T> gen) {
     int64_t n = 0;
     while (true) {
-        auto value = co_await next();
+        auto value = co_await gen.next();
         if (!value.has_value()) {
             break;
         }
-        (void)value;
         ++n;
     }
     co_return n;
 }
 
-template <typename T>
-template <typename Pred>
-Coroutine<std::optional<T>> AsyncGenerator<T>::find(Pred pred) {
+template <typename T, typename Pred>
+Coroutine<std::optional<T>> findImpl(AsyncGenerator<T> gen, Pred pred) {
     while (true) {
-        auto value = co_await next();
+        auto value = co_await gen.next();
         if (!value.has_value()) {
             break;
         }
@@ -550,11 +419,10 @@ Coroutine<std::optional<T>> AsyncGenerator<T>::find(Pred pred) {
     co_return std::nullopt;
 }
 
-template <typename T>
-template <typename Pred>
-Coroutine<bool> AsyncGenerator<T>::any(Pred pred) {
+template <typename T, typename Pred>
+Coroutine<bool> anyImpl(AsyncGenerator<T> gen, Pred pred) {
     while (true) {
-        auto value = co_await next();
+        auto value = co_await gen.next();
         if (!value.has_value()) {
             break;
         }
@@ -565,11 +433,10 @@ Coroutine<bool> AsyncGenerator<T>::any(Pred pred) {
     co_return false;
 }
 
-template <typename T>
-template <typename Pred>
-Coroutine<bool> AsyncGenerator<T>::all(Pred pred) {
+template <typename T, typename Pred>
+Coroutine<bool> allImpl(AsyncGenerator<T> gen, Pred pred) {
     while (true) {
-        auto value = co_await next();
+        auto value = co_await gen.next();
         if (!value.has_value()) {
             break;
         }
@@ -580,11 +447,10 @@ Coroutine<bool> AsyncGenerator<T>::all(Pred pred) {
     co_return true;
 }
 
-template <typename T>
-template <typename Func>
-Coroutine<void> AsyncGenerator<T>::forEach(Func func) {
+template <typename T, typename Func>
+Coroutine<void> forEachImpl(AsyncGenerator<T> gen, Func func) {
     while (true) {
-        auto value = co_await next();
+        auto value = co_await gen.next();
         if (!value.has_value()) {
             break;
         }
@@ -592,12 +458,11 @@ Coroutine<void> AsyncGenerator<T>::forEach(Func func) {
     }
 }
 
-template <typename T>
-template <template <typename...> class Container>
-Coroutine<Container<T>> AsyncGenerator<T>::collect() {
+template <typename T, template <typename...> class Container>
+Coroutine<Container<T>> collectImpl(AsyncGenerator<T> gen) {
     Container<T> result;
     while (true) {
-        auto value = co_await next();
+        auto value = co_await gen.next();
         if (!value.has_value()) {
             break;
         }
@@ -608,6 +473,88 @@ Coroutine<Container<T>> AsyncGenerator<T>::collect() {
         }
     }
     co_return result;
+}
+
+} // namespace detail
+
+template <typename T>
+template <typename Func>
+AsyncGenerator<std::invoke_result_t<Func, T>> AsyncGenerator<T>::transform(Func func) {
+    return detail::transformImpl(std::move(*this), std::move(func));
+}
+
+template <typename T>
+template <typename Pred>
+AsyncGenerator<T> AsyncGenerator<T>::filter(Pred pred) {
+    return detail::filterImpl(std::move(*this), std::move(pred));
+}
+
+template <typename T>
+AsyncGenerator<T> AsyncGenerator<T>::take(int64_t count) {
+    return detail::takeImpl(std::move(*this), count);
+}
+
+template <typename T>
+AsyncGenerator<T> AsyncGenerator<T>::drop(int64_t count) {
+    return detail::dropImpl(std::move(*this), count);
+}
+
+template <typename T>
+template <typename Pred>
+AsyncGenerator<T> AsyncGenerator<T>::takeWhile(Pred pred) {
+    return detail::takeWhileImpl(std::move(*this), std::move(pred));
+}
+
+template <typename T>
+template <typename Pred>
+AsyncGenerator<T> AsyncGenerator<T>::dropWhile(Pred pred) {
+    return detail::dropWhileImpl(std::move(*this), std::move(pred));
+}
+
+template <typename T>
+AsyncGenerator<std::pair<int64_t, T>> AsyncGenerator<T>::enumerate() {
+    return detail::enumerateImpl(std::move(*this));
+}
+
+template <typename T>
+template <typename Init, typename BinaryOp>
+Coroutine<Init> AsyncGenerator<T>::fold(Init init, BinaryOp op) {
+    return detail::foldImpl(std::move(*this), std::move(init), std::move(op));
+}
+
+template <typename T>
+Coroutine<int64_t> AsyncGenerator<T>::count() {
+    return detail::countImpl(std::move(*this));
+}
+
+template <typename T>
+template <typename Pred>
+Coroutine<std::optional<T>> AsyncGenerator<T>::find(Pred pred) {
+    return detail::findImpl(std::move(*this), std::move(pred));
+}
+
+template <typename T>
+template <typename Pred>
+Coroutine<bool> AsyncGenerator<T>::any(Pred pred) {
+    return detail::anyImpl(std::move(*this), std::move(pred));
+}
+
+template <typename T>
+template <typename Pred>
+Coroutine<bool> AsyncGenerator<T>::all(Pred pred) {
+    return detail::allImpl(std::move(*this), std::move(pred));
+}
+
+template <typename T>
+template <typename Func>
+Coroutine<void> AsyncGenerator<T>::forEach(Func func) {
+    return detail::forEachImpl(std::move(*this), std::move(func));
+}
+
+template <typename T>
+template <template <typename...> class Container>
+Coroutine<Container<T>> AsyncGenerator<T>::collect() {
+    return detail::collectImpl<T, Container>(std::move(*this));
 }
 
 namespace detail {
@@ -646,37 +593,37 @@ struct EnumerateAdapter {};
 
 template <typename T, typename Func>
 auto operator|(AsyncGenerator<T>&& gen, detail::TransformAdapter<Func> adapter) {
-    return std::move(gen).transform(std::move(adapter.func));
+    return detail::transformImpl(std::move(gen), std::move(adapter.func));
 }
 
 template <typename T, typename Pred>
 auto operator|(AsyncGenerator<T>&& gen, detail::FilterAdapter<Pred> adapter) {
-    return std::move(gen).filter(std::move(adapter.pred));
+    return detail::filterImpl(std::move(gen), std::move(adapter.pred));
 }
 
 template <typename T>
 auto operator|(AsyncGenerator<T>&& gen, detail::TakeAdapter adapter) {
-    return std::move(gen).take(adapter.count);
+    return detail::takeImpl(std::move(gen), adapter.count);
 }
 
 template <typename T>
 auto operator|(AsyncGenerator<T>&& gen, detail::DropAdapter adapter) {
-    return std::move(gen).drop(adapter.count);
+    return detail::dropImpl(std::move(gen), adapter.count);
 }
 
 template <typename T, typename Pred>
 auto operator|(AsyncGenerator<T>&& gen, detail::TakeWhileAdapter<Pred> adapter) {
-    return std::move(gen).takeWhile(std::move(adapter.pred));
+    return detail::takeWhileImpl(std::move(gen), std::move(adapter.pred));
 }
 
 template <typename T, typename Pred>
 auto operator|(AsyncGenerator<T>&& gen, detail::DropWhileAdapter<Pred> adapter) {
-    return std::move(gen).dropWhile(std::move(adapter.pred));
+    return detail::dropWhileImpl(std::move(gen), std::move(adapter.pred));
 }
 
 template <typename T>
 auto operator|(AsyncGenerator<T>&& gen, detail::EnumerateAdapter) {
-    return std::move(gen).enumerate();
+    return detail::enumerateImpl(std::move(gen));
 }
 
 template <typename Func>

@@ -22,7 +22,7 @@ class TimerManager final : public NonCopyMovable {
 public:
     static TimerManager& shareInstance();
 
-    ~TimerManager() final;
+    ~TimerManager();
 
     TimerId runAt(Time::TimePoint timePoint, TimerTask func) noexcept;
 
@@ -37,7 +37,7 @@ public:
 private:
     TimerManager();
 
-    void tickLoop(std::stop_token stopToken);
+    void tickLoop();
 
     void processLoopTask(TimerEntry& entry);
 
@@ -59,10 +59,11 @@ private:
     };
 
     std::mutex mutex_;
-    std::condition_variable_any cond_;
+    std::condition_variable cond_;
     bool hasNewTimer_ = false;
     TimerPool timerPool_;
-    std::jthread tickThread_;
+    std::thread tickThread_;
+    std::atomic<bool> stopRequested_{false};
     // 循环任务存储：shared_ptr 支持多次执行
     std::unordered_map<uint64_t, std::shared_ptr<LoopTaskWrapper>> loopTasks_;
 };

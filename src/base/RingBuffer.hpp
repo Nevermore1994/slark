@@ -1,30 +1,38 @@
-//
-// Created by Nevermore on 2025/4/21.
-// slark RingBuffer
-// Copyright (c) 2025 Nevermore All rights reserved.
-//
 #pragma once
 
+#include "RingBufferUtil.hpp"
+
 #include <algorithm>
+#include <array>
+#include <bit>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <mutex>
 #include <span>
-#include <vector>
+#include <type_traits>
 
 namespace slark {
 
-constexpr uint32_t kDefaultRingBufferCapacity = 1024 * 4;
+namespace detail {
 
 template <typename T>
-class RingBuffer {
-public:
-    explicit RingBuffer(uint32_t capacity = kDefaultRingBufferCapacity)
-        : capacity_(capacity), data_(capacity) {}
+constexpr size_t calcCapacity(size_t n) noexcept {
+    return std::bit_ceil(n);
+}
 
+} // namespace detail
+
+template <typename T, size_t N>
+    requires std::is_trivially_copyable_v<T>
+class RingBuffer {
+    static constexpr size_t kCapacity = std::bit_ceil(N);
+    static constexpr size_t kMask = kCapacity - 1;
+
+public:
+    RingBuffer() = default;
     RingBuffer(const RingBuffer&) = delete;
     RingBuffer& operator=(const RingBuffer&) = delete;
-    RingBuffer(RingBuffer&&) = delete;
-    RingBuffer& operator=(RingBuffer&&) = delete;
     ~RingBuffer() = default;
 
     uint32_t write(const T* src, uint32_t count) noexcept {
@@ -32,7 +40,8 @@ public:
             return 0;
         }
         count = std::min(count, available());
-        copyToRing(src, count);
+        detail::wrapCopy(src, data_.data(), kCapacity, writePos_, count);
+        writePos_ = (writePos_ + count) & kMask;
         size_ += count;
         return count;
     }
@@ -45,8 +54,9 @@ public:
         if (dst == nullptr || count == 0 || isEmpty()) {
             return 0;
         }
-        count = std::min(count, size_);
-        copyFromRing(dst, count);
+        count = std::min(count, length());
+        detail::wrapCopyFrom(data_.data(), kCapacity, readPos_, dst, count);
+        readPos_ = (readPos_ + count) & kMask;
         size_ -= count;
         return count;
     }
@@ -59,8 +69,8 @@ public:
         if (dst == nullptr || count == 0 || isEmpty()) {
             return 0;
         }
-        count = std::min(count, size_);
-        copyFromRingAt(readPos_, dst, count);
+        count = std::min(count, length());
+        detail::wrapCopyFrom(data_.data(), kCapacity, readPos_, dst, count);
         return count;
     }
 
@@ -75,7 +85,8 @@ public:
         if (src == nullptr || available() < count) {
             return false;
         }
-        copyToRing(src, count);
+        detail::wrapCopy(src, data_.data(), kCapacity, writePos_, count);
+        writePos_ = (writePos_ + count) & kMask;
         size_ += count;
         return true;
     }
@@ -88,10 +99,11 @@ public:
         if (count == 0) {
             return true;
         }
-        if (dst == nullptr || size_ < count) {
+        if (dst == nullptr || length() < count) {
             return false;
         }
-        copyFromRing(dst, count);
+        detail::wrapCopyFrom(data_.data(), kCapacity, readPos_, dst, count);
+        readPos_ = (readPos_ + count) & kMask;
         size_ -= count;
         return true;
     }
@@ -100,20 +112,10 @@ public:
         return readExact(dst.data(), static_cast<uint32_t>(dst.size()));
     }
 
-    uint32_t skip(uint32_t count) noexcept {
-        count = std::min(count, size_);
-        readPos_ = (readPos_ + count) % capacity_;
-        size_ -= count;
-        return count;
-    }
-
-    /// @return discarded element count
-    uint32_t reset() noexcept {
-        auto discarded = size_;
+    void reset() noexcept {
         readPos_ = 0;
         writePos_ = 0;
         size_ = 0;
-        return discarded;
     }
 
     [[nodiscard]] bool isEmpty() const noexcept {
@@ -121,165 +123,205 @@ public:
     }
 
     [[nodiscard]] bool isFull() const noexcept {
-        return size_ == capacity_;
+        return size_ == kCapacity;
     }
 
     [[nodiscard]] uint32_t length() const noexcept {
-        return size_;
+        return static_cast<uint32_t>(size_);
     }
 
     [[nodiscard]] uint32_t available() const noexcept {
-        return capacity_ - size_;
+        return static_cast<uint32_t>(kCapacity) - static_cast<uint32_t>(size_);
     }
 
-    [[nodiscard]] uint32_t capacity() const noexcept {
-        return capacity_;
-    }
-
-private:
-    void copyToRing(const T* src, uint32_t count) noexcept {
-        auto firstPart = std::min(count, capacity_ - writePos_);
-        std::copy_n(src, firstPart, data_.data() + writePos_);
-        if (firstPart < count) {
-            std::copy_n(src + firstPart, count - firstPart, data_.data());
-        }
-        writePos_ = (writePos_ + count) % capacity_;
-    }
-
-    void copyFromRing(T* dst, uint32_t count) noexcept {
-        copyFromRingAt(readPos_, dst, count);
-        readPos_ = (readPos_ + count) % capacity_;
-    }
-
-    void copyFromRingAt(uint32_t pos, T* dst, uint32_t count) const noexcept {
-        auto firstPart = std::min(count, capacity_ - pos);
-        std::copy_n(data_.data() + pos, firstPart, dst);
-        if (firstPart < count) {
-            std::copy_n(data_.data(), count - firstPart, dst + firstPart);
-        }
+    static constexpr uint32_t capacity() noexcept {
+        return static_cast<uint32_t>(kCapacity);
     }
 
 private:
-    uint32_t capacity_;
-    std::vector<T> data_;
-    uint32_t readPos_ = 0;
-    uint32_t writePos_ = 0;
-    uint32_t size_ = 0;
+    std::array<T, kCapacity> data_;
+    size_t readPos_ = 0;
+    size_t writePos_ = 0;
+    size_t size_ = 0; // 追踪实际数据量，正确区分空/满
 };
 
-/// 线程安全的 RingBuffer，通过组合 + mutex 实现
-template <typename T>
+template <typename T, size_t N>
+    requires std::is_trivially_copyable_v<T>
 class SyncRingBuffer {
-public:
-    explicit SyncRingBuffer(uint32_t capacity = kDefaultRingBufferCapacity) : ring_(capacity) {}
+    static constexpr size_t kCapacity = std::bit_ceil(N);
+    static constexpr size_t kMask = kCapacity - 1;
 
+public:
+    SyncRingBuffer() = default;
     SyncRingBuffer(const SyncRingBuffer&) = delete;
     SyncRingBuffer& operator=(const SyncRingBuffer&) = delete;
-    SyncRingBuffer(SyncRingBuffer&&) = delete;
-    SyncRingBuffer& operator=(SyncRingBuffer&&) = delete;
     ~SyncRingBuffer() = default;
-
-    uint32_t write(const T* src, uint32_t count) noexcept {
-        std::lock_guard lock(mutex_);
-        return ring_.write(src, count);
-    }
-
-    uint32_t write(std::span<const T> src) noexcept {
-        std::lock_guard lock(mutex_);
-        return ring_.write(src);
-    }
-
-    uint32_t read(T* dst, uint32_t count) noexcept {
-        std::lock_guard lock(mutex_);
-        return ring_.read(dst, count);
-    }
-
-    uint32_t read(std::span<T> dst) noexcept {
-        std::lock_guard lock(mutex_);
-        return ring_.read(dst);
-    }
-
-    uint32_t peek(T* dst, uint32_t count) const noexcept {
-        std::lock_guard lock(mutex_);
-        return ring_.peek(dst, count);
-    }
-
-    uint32_t peek(std::span<T> dst) const noexcept {
-        std::lock_guard lock(mutex_);
-        return ring_.peek(dst);
-    }
 
     bool writeExact(const T* src, uint32_t count) noexcept {
         std::lock_guard lock(mutex_);
-        return ring_.writeExact(src, count);
+        if (count == 0) {
+            return true;
+        }
+        if (src == nullptr || availableUnsafe() < count) {
+            return false;
+        }
+        detail::wrapCopy(src, data_.data(), kCapacity, writePos_, count);
+        size_ += count;
+        writePos_ = (writePos_ + count) & kMask;
+        cv_.notify_one();
+        return true;
     }
 
     bool writeExact(std::span<const T> src) noexcept {
-        std::lock_guard lock(mutex_);
-        return ring_.writeExact(src);
+        return writeExact(src.data(), static_cast<uint32_t>(src.size()));
+    }
+
+    bool writeExact(const T* src, uint32_t count, int64_t timeoutMs) noexcept {
+        if (count == 0) {
+            return true;
+        }
+        if (src == nullptr) {
+            return false;
+        }
+        std::unique_lock lock(mutex_);
+        if (timeoutMs == 0) {
+            if (availableUnsafe() < count) {
+                return false;
+            }
+        } else {
+            auto pred = [&] {
+                return availableUnsafe() >= count;
+            };
+            if (timeoutMs < 0) {
+                cv_.wait(lock, pred);
+            } else if (!cv_.wait_for(lock, std::chrono::milliseconds(timeoutMs), pred)) {
+                return false;
+            }
+        }
+        detail::wrapCopy(src, data_.data(), kCapacity, writePos_, count);
+        size_ += count;
+        writePos_ = (writePos_ + count) & kMask;
+        cv_.notify_one();
+        return true;
     }
 
     bool readExact(T* dst, uint32_t count) noexcept {
         std::lock_guard lock(mutex_);
-        return ring_.readExact(dst, count);
+        if (count == 0) {
+            return true;
+        }
+        if (dst == nullptr || size_ < count) {
+            return false;
+        }
+        detail::wrapCopyFrom(data_.data(), kCapacity, readPos_, dst, count);
+        size_ -= count;
+        readPos_ = (readPos_ + count) & kMask;
+        cv_.notify_one();
+        return true;
     }
 
     bool readExact(std::span<T> dst) noexcept {
-        std::lock_guard lock(mutex_);
-        return ring_.readExact(dst);
+        return readExact(dst.data(), static_cast<uint32_t>(dst.size()));
     }
 
-    uint32_t skip(uint32_t count) noexcept {
-        std::lock_guard lock(mutex_);
-        return ring_.skip(count);
+    bool readExact(T* dst, uint32_t count, int64_t timeoutMs) noexcept {
+        if (count == 0) {
+            return true;
+        }
+        if (dst == nullptr) {
+            return false;
+        }
+        std::unique_lock lock(mutex_);
+        if (timeoutMs == 0) {
+            if (size_ < count) {
+                return false;
+            }
+        } else {
+            auto pred = [&] {
+                return size_ >= count;
+            };
+            if (timeoutMs < 0) {
+                cv_.wait(lock, pred);
+            } else if (!cv_.wait_for(lock, std::chrono::milliseconds(timeoutMs), pred)) {
+                return false;
+            }
+        }
+        detail::wrapCopyFrom(data_.data(), kCapacity, readPos_, dst, count);
+        size_ -= count;
+        readPos_ = (readPos_ + count) & kMask;
+        cv_.notify_one();
+        return true;
     }
 
-    uint32_t reset() noexcept {
+    uint32_t peek(T* dst, uint32_t count) const noexcept {
         std::lock_guard lock(mutex_);
-        return ring_.reset();
+        if (dst == nullptr || count == 0 || size_ == 0) {
+            return 0;
+        }
+        count = std::min(count, size_);
+        detail::wrapCopyFrom(data_.data(), kCapacity, readPos_, dst, count);
+        return count;
+    }
+
+    uint32_t peek(std::span<T> dst) const noexcept {
+        return peek(dst.data(), static_cast<uint32_t>(dst.size()));
+    }
+
+    void reset() noexcept {
+        std::lock_guard lock(mutex_);
+        readPos_ = 0;
+        writePos_ = 0;
+        size_ = 0;
+        cv_.notify_all();
     }
 
     [[nodiscard]] bool isEmpty() const noexcept {
         std::lock_guard lock(mutex_);
-        return ring_.isEmpty();
+        return size_ == 0;
     }
 
     [[nodiscard]] bool isFull() const noexcept {
         std::lock_guard lock(mutex_);
-        return ring_.isFull();
+        return size_ == kCapacity;
     }
 
     [[nodiscard]] uint32_t length() const noexcept {
         std::lock_guard lock(mutex_);
-        return ring_.length();
+        return size_;
     }
 
     [[nodiscard]] uint32_t available() const noexcept {
         std::lock_guard lock(mutex_);
-        return ring_.available();
+        return static_cast<uint32_t>(kCapacity) - size_;
     }
 
-    [[nodiscard]] uint32_t capacity() const noexcept {
-        return ring_.capacity();
-    }
-
-    template <typename F>
-    auto withLock(F&& func) noexcept(noexcept(func(std::declval<RingBuffer<T>&>())))
-        -> decltype(func(std::declval<RingBuffer<T>&>())) {
-        std::lock_guard lock(mutex_);
-        return std::forward<F>(func)(ring_);
+    static constexpr uint32_t capacity() noexcept {
+        return static_cast<uint32_t>(kCapacity);
     }
 
     template <typename F>
-    auto withLock(F&& func) const noexcept(noexcept(func(std::declval<const RingBuffer<T>&>())))
-        -> decltype(func(std::declval<const RingBuffer<T>&>())) {
+    auto withLock(F&& func) noexcept(noexcept(func(*this))) -> decltype(func(*this)) {
         std::lock_guard lock(mutex_);
-        return std::forward<F>(func)(ring_);
+        return std::forward<F>(func)(*this);
+    }
+
+    template <typename F>
+    auto withLock(F&& func) const noexcept(noexcept(func(*this))) -> decltype(func(*this)) {
+        std::lock_guard lock(mutex_);
+        return std::forward<F>(func)(*this);
     }
 
 private:
-    RingBuffer<T> ring_;
+    uint32_t availableUnsafe() const noexcept {
+        return static_cast<uint32_t>(kCapacity) - size_;
+    }
+
+    std::array<T, kCapacity> data_;
     mutable std::mutex mutex_;
+    std::condition_variable cv_;
+    size_t readPos_ = 0;
+    size_t writePos_ = 0;
+    uint32_t size_ = 0;
 };
 
 } // namespace slark

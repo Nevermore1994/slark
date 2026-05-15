@@ -1,6 +1,5 @@
 //
 // Created by Nevermore on 2025/4/1.
-// Slark Awaitable
 // Copyright (c) 2025 Nevermore All rights reserved.
 //
 #pragma once

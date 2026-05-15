@@ -20,7 +20,7 @@ public:
     static LogOutput& shareInstance();
 
     LogOutput();
-    ~LogOutput() override;
+    ~LogOutput();
 
     void write(std::string_view str) noexcept;
 

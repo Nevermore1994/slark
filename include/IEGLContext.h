@@ -6,6 +6,10 @@
 #include <cstdint>
 #include <memory>
 
+#if defined(__ANDROID__)
+#include <EGL/egl.h>
+#endif
+
 namespace slark {
 
 class IEGLContext {
@@ -18,10 +22,10 @@ public:
 
 #if SLARK_IOS
     virtual void attachContext() = 0;
-#elif SLARK_ANDROID
-    virtual void attachContext(void* surface) = 0;
+#elif defined(__ANDROID__)
+    virtual void attachContext(EGLSurface surface) = 0;
 
-    virtual void attachContext(void* drawSurface, void* readSurface) = 0;
+    virtual void attachContext(EGLSurface drawSurface, EGLSurface readSurface) = 0;
 #endif
     virtual void detachContext() = 0;
 

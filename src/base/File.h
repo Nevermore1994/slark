@@ -27,7 +27,7 @@ class FileBase : public NonCopyMovable {
 public:
     explicit FileBase(std::filesystem::path path, FileMode mode);
 
-    ~FileBase() override;
+    virtual ~FileBase();
 
     virtual Expected<void> open() noexcept;
 

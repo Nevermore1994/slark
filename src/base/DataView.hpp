@@ -41,7 +41,7 @@ public:
 
     constexpr explicit DataView(ConstByteSpan span) noexcept : span_(span) {}
 
-    constexpr explicit DataView(std::string_view str) noexcept
+    explicit DataView(std::string_view str) noexcept
         : span_(reinterpret_cast<const Byte*>(str.data()), str.size()) {}
 
     constexpr DataView(const DataView&) noexcept = default;
@@ -50,11 +50,11 @@ public:
     constexpr DataView& operator=(DataView&&) noexcept = default;
     ~DataView() = default;
 
-    [[nodiscard]] static constexpr DataView fromString(std::string_view str) noexcept {
+    [[nodiscard]] static DataView fromString(std::string_view str) noexcept {
         return DataView(str);
     }
 
-    [[nodiscard]] static constexpr DataView fromSpan(ConstByteSpan span) noexcept {
+    [[nodiscard]] static DataView fromSpan(ConstByteSpan span) noexcept {
         return DataView(span);
     }
 
@@ -117,7 +117,7 @@ public:
         return DataView(span_.last(std::min(count, span_.size())));
     }
 
-    [[nodiscard]] constexpr std::string_view toStringView() const noexcept {
+    [[nodiscard]] std::string_view toStringView() const noexcept {
         return std::string_view(reinterpret_cast<const char*>(span_.data()), span_.size());
     }
 
@@ -339,7 +339,7 @@ private:
     }
 };
 
-inline constexpr DataView operator""_view(const char* str, std::size_t size) noexcept {
+inline DataView operator""_view(const char* str, std::size_t size) noexcept {
     return DataView(reinterpret_cast<const Byte*>(str), size);
 }
 

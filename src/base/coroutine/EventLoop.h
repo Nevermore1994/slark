@@ -35,7 +35,7 @@ public:
     using FdCallback = std::function<void(int32_t fd, bool readable, bool writable, bool error)>;
 
     EventLoop();
-    ~EventLoop() override;
+    ~EventLoop() ;
 
     void run() noexcept;
     void stop() noexcept;

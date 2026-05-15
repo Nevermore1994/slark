@@ -40,30 +40,33 @@ TimerManager& TimerManager::shareInstance() {
 }
 
 TimerManager::TimerManager()
-    : tickThread_([this](std::stop_token token) {
-          tickLoop(token);
+    : tickThread_([this] {
+          tickLoop();
       }) {}
 
 TimerManager::~TimerManager() {
-    tickThread_.request_stop();
+    stopRequested_.store(true);
     cond_.notify_all();
+    if (tickThread_.joinable()) {
+        tickThread_.join();
+    }
     std::lock_guard lock(mutex_);
     timerPool_.clear();
     loopTasks_.clear();
 }
 
-void TimerManager::tickLoop(std::stop_token stopToken) {
-    while (!stopToken.stop_requested()) {
+void TimerManager::tickLoop() {
+    while (!stopRequested_.load()) {
         {
             std::unique_lock lock(mutex_);
             auto waitTime = timerPool_.peekWaitTime();
-            cond_.wait_for(lock, stopToken, waitTime, [this] {
-                return hasNewTimer_;
+            cond_.wait_for(lock, waitTime, [this] {
+                return hasNewTimer_ || stopRequested_.load();
             });
             hasNewTimer_ = false;
         }
 
-        if (stopToken.stop_requested()) {
+        if (stopRequested_.load()) {
             break;
         }
 

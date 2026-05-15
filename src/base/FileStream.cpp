@@ -46,7 +46,6 @@ void FileStream::close() noexcept {
     notifyThread();
 
     if (thread_ && thread_->joinable()) {
-        thread_->request_stop();
         thread_->join();
     }
 
@@ -81,7 +80,7 @@ void FileStream::start() noexcept {
         return;
     }
 
-    thread_ = std::make_unique<std::jthread>([this] {
+    thread_ = std::make_unique<std::thread>([this] {
         readLoop();
     });
 }
