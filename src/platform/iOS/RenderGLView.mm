@@ -6,6 +6,8 @@
 // Licensed under the MIT License.
 //
 
+#if !TARGET_IPHONE_SIMULATOR
+
 #import "RenderGLView.h"
 
 #include "Clock.h"
@@ -780,3 +782,5 @@ static const GLfloat kColorConversion709VideoRange[] = {
 }
 
 @end
+
+#endif // !TARGET_IPHONE_SIMULATOR

@@ -18,7 +18,7 @@ using namespace slark;
 
 TEST(Thread, state) {
     auto thread = Thread::create(Util::genRandomName("thread"));
-    thread->scheduleRepeat(std::chrono::milliseconds(1), []() {
+    thread->postRepeatTask(std::chrono::milliseconds(1), []() {
     });
     thread->start();
     ASSERT_EQ(thread->isRunning(), true);
@@ -40,25 +40,12 @@ TEST(Thread, state) {
     ASSERT_EQ(thread->isExit(), true);
 }
 
-TEST(Thread, timer) {
-    using namespace std::chrono;
-    auto thread = Thread::create(Util::genRandomName("thread"));
-    thread->start();
-    auto t = Time::nowTimeStamp();
-    thread->schedule(10ms, [&t] {
-        auto time = Time::nowTimeStamp() - t;
-        ASSERT_GT(time, 5 * 1000);
-        std::println("delay us: {}", time.point());
-    });
-    std::this_thread::sleep_for(50ms);
-}
-
-TEST(Thread, schedule) {
+TEST(Thread, postTask) {
     std::atomic<int32_t> counter{0};
     auto thread = Thread::create(Util::genRandomName("thread"));
     thread->start();
 
-    auto result = thread->schedule([&counter]() {
+    auto result = thread->postTask([&counter]() {
         counter.fetch_add(1);
     });
     ASSERT_TRUE(result.has_value());
@@ -68,7 +55,7 @@ TEST(Thread, schedule) {
 }
 
 // pause 期间投递的任务不执行，start 后才执行
-TEST(Thread, scheduleWhenPaused) {
+TEST(Thread, postTaskWhenPaused) {
     std::atomic<int32_t> counter{0};
     auto thread = Thread::create(Util::genRandomName("thread"));
     thread->start();
@@ -76,7 +63,7 @@ TEST(Thread, scheduleWhenPaused) {
     thread->pause();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
-    auto result = thread->schedule([&counter]() {
+    auto result = thread->postTask([&counter]() {
         counter.fetch_add(1);
     });
     ASSERT_TRUE(result.has_value());
@@ -93,7 +80,7 @@ TEST(Thread, scheduleWhenPaused) {
 TEST(Thread, pauseBlocksRepeatTask) {
     std::atomic<int32_t> counter{0};
     auto thread = Thread::create(Util::genRandomName("thread"));
-    thread->scheduleRepeat(std::chrono::milliseconds(10), [&counter]() {
+    thread->postRepeatTask(std::chrono::milliseconds(10), [&counter]() {
         counter.fetch_add(1);
     });
     thread->start();
@@ -106,17 +93,17 @@ TEST(Thread, pauseBlocksRepeatTask) {
     ASSERT_EQ(counter.load(), countBeforePause); // pause 期间不增加
 }
 
-TEST(Thread, scheduleAfterStop) {
+TEST(Thread, postTaskAfterStop) {
     auto thread = Thread::create(Util::genRandomName("thread"));
     thread->start();
     thread->stop();
 
-    auto result = thread->schedule([]() {
+    auto result = thread->postTask([]() {
     });
     ASSERT_FALSE(result.has_value());
 }
 
-TEST(Thread, scheduleMultiProducer) {
+TEST(Thread, postTaskMultiProducer) {
     constexpr int32_t kThreads = 4;
     constexpr int32_t kTasksPerThread = 100;
     std::atomic<int32_t> counter{0};
@@ -128,7 +115,7 @@ TEST(Thread, scheduleMultiProducer) {
     for (int32_t t = 0; t < kThreads; ++t) {
         producers.emplace_back([&]() {
             for (int32_t i = 0; i < kTasksPerThread; ++i) {
-                thread->schedule([&counter]() {
+                thread->postTask([&counter]() {
                     counter.fetch_add(1);
                 });
             }
@@ -142,36 +129,17 @@ TEST(Thread, scheduleMultiProducer) {
     ASSERT_EQ(counter.load(), kThreads * kTasksPerThread);
 }
 
-TEST(Thread, scheduleDelayed) {
-    using namespace std::chrono;
-    std::atomic<bool> executed{false};
-
-    auto thread = Thread::create(Util::genRandomName("thread"));
-    thread->start();
-
-    auto timerId = thread->schedule(50ms, [&]() {
-        executed.store(true);
-    });
-    ASSERT_TRUE(timerId.isValid());
-
-    std::this_thread::sleep_for(20ms);
-    ASSERT_FALSE(executed.load());
-
-    std::this_thread::sleep_for(300ms);
-    ASSERT_TRUE(executed.load());
-}
-
-TEST(Thread, schedulePriorityOverRepeat) {
+TEST(Thread, postRepeatTask) {
     std::vector<int32_t> order;
     std::mutex orderMutex;
 
     auto thread = Thread::create(Util::genRandomName("thread"));
-    thread->scheduleRepeat(std::chrono::milliseconds(50), [&]() {
+    thread->postRepeatTask(std::chrono::milliseconds(50), [&]() {
         std::lock_guard lock(orderMutex);
         order.push_back(2);
     });
 
-    thread->schedule([&]() {
+    thread->postTask([&]() {
         std::lock_guard lock(orderMutex);
         order.push_back(1);
     });
@@ -185,12 +153,12 @@ TEST(Thread, schedulePriorityOverRepeat) {
     ASSERT_EQ(order[0], 1);
 }
 
-TEST(Thread, scheduleRepeat) {
+TEST(Thread, postRepeatTask) {
     using namespace std::chrono;
     std::atomic<int32_t> counter{0};
 
     auto thread = Thread::create(Util::genRandomName("thread"));
-    thread->scheduleRepeat(10ms, [&counter]() {
+    thread->postRepeatTask(10ms, [&counter]() {
         counter.fetch_add(1);
     });
     thread->start();
@@ -202,19 +170,19 @@ TEST(Thread, scheduleRepeat) {
     ASSERT_LE(counter.load(), 8);
 }
 
-TEST(Thread, cancelSchedule) {
+TEST(Thread, cancelTask) {
     using namespace std::chrono;
     std::atomic<int32_t> counter{0};
 
     auto thread = Thread::create(Util::genRandomName("thread"));
-    auto id = thread->scheduleRepeat(10ms, [&counter]() {
+    auto id = thread->postRepeatTask(10ms, [&counter]() {
         counter.fetch_add(1);
     });
     thread->start();
 
     std::this_thread::sleep_for(35ms);
     auto countBeforeCancel = counter.load();
-    thread->cancelSchedule(id);
+    thread->cancelTask(id);
 
     std::this_thread::sleep_for(50ms);
     ASSERT_LE(counter.load(), countBeforeCancel + 1);
@@ -229,7 +197,7 @@ TEST(Thread, repeatTaskNoDanglingPointer) {
     std::vector<TimerId> timerIds;
 
     for (int i = 0; i < 10; ++i) {
-        timerIds.push_back(thread->scheduleRepeat(5ms, [&counter, &stopFlag]() {
+        timerIds.push_back(thread->postRepeatTask(5ms, [&counter, &stopFlag]() {
             if (!stopFlag.load()) {
                 counter.fetch_add(1);
                 std::this_thread::sleep_for(1ms);
@@ -243,7 +211,7 @@ TEST(Thread, repeatTaskNoDanglingPointer) {
     std::vector<std::jthread> cancelThreads;
     for (auto id : timerIds) {
         cancelThreads.emplace_back([thread, id]() {
-            thread->cancelSchedule(id);
+            thread->cancelTask(id);
         });
     }
     for (auto& t : cancelThreads) {
@@ -256,7 +224,7 @@ TEST(Thread, repeatTaskNoDanglingPointer) {
 }
 
 // pause 期间投递大量任务不会触发唤醒，start 后全部执行
-TEST(Thread, pauseDoesNotWakeOnSchedule) {
+TEST(Thread, pauseDoesNotWakeOnPostTask) {
     using namespace std::chrono;
     constexpr int32_t kTaskCount = 20;
     std::atomic<int32_t> counter{0};
@@ -269,7 +237,7 @@ TEST(Thread, pauseDoesNotWakeOnSchedule) {
     std::this_thread::sleep_for(10ms);
 
     for (int32_t i = 0; i < kTaskCount; ++i) {
-        thread->schedule([&counter, &allDone]() {
+        thread->postTask([&counter, &allDone]() {
             counter.fetch_add(1);
             allDone.count_down();
         });
@@ -290,7 +258,7 @@ TEST(Thread, repeatTaskResumesAfterStart) {
     std::atomic<int32_t> counter{0};
 
     auto thread = Thread::create(Util::genRandomName("thread"));
-    thread->scheduleRepeat(10ms, [&counter]() {
+    thread->postRepeatTask(10ms, [&counter]() {
         counter.fetch_add(1);
     });
     thread->start();
@@ -308,50 +276,30 @@ TEST(Thread, repeatTaskResumesAfterStart) {
     ASSERT_GT(counter.load(), countAtPause); // start 后继续增加
 }
 
-// cancelSchedule 取消一次性延迟任务
-TEST(Thread, cancelDelayedTask) {
-    using namespace std::chrono;
-    std::atomic<bool> executed{false};
+TEST(Thread, repeatTaskNoDanglingPointer) {
+    TEST(Thread, startAfterStopIsNoop) {
+        auto thread = Thread::create(Util::genRandomName("thread"));
+        thread->start();
+        thread->stop();
+        ASSERT_TRUE(thread->isExit());
 
-    auto thread = Thread::create(Util::genRandomName("thread"));
-    thread->start();
+        thread->start();
+        ASSERT_FALSE(thread->isRunning());
+        ASSERT_TRUE(thread->isExit());
+    }
 
-    auto id = thread->schedule(100ms, [&executed]() {
-        executed.store(true);
-    });
-    ASSERT_TRUE(id.isValid());
+    // setThreadName 不影响线程正常执行
+    TEST(Thread, setThreadName) {
+        std::atomic<int32_t> counter{0};
+        auto thread = Thread::create("initial-name");
+        thread->start();
 
-    std::this_thread::sleep_for(20ms);
-    thread->cancelSchedule(id);
+        thread->setThreadName("renamed-thread");
+        ASSERT_EQ(thread->getName(), "renamed-thread");
 
-    std::this_thread::sleep_for(200ms);
-    ASSERT_FALSE(executed.load());
-}
-
-// stop 后调用 start 无效，线程保持退出状态
-TEST(Thread, startAfterStopIsNoop) {
-    auto thread = Thread::create(Util::genRandomName("thread"));
-    thread->start();
-    thread->stop();
-    ASSERT_TRUE(thread->isExit());
-
-    thread->start();
-    ASSERT_FALSE(thread->isRunning());
-    ASSERT_TRUE(thread->isExit());
-}
-
-// setThreadName 不影响线程正常执行
-TEST(Thread, setThreadName) {
-    std::atomic<int32_t> counter{0};
-    auto thread = Thread::create("initial-name");
-    thread->start();
-
-    thread->setThreadName("renamed-thread");
-    ASSERT_EQ(thread->getName(), "renamed-thread");
-
-    thread->schedule([&counter]() {
-        counter.fetch_add(1);
-    });
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    ASSERT_EQ(counter.load(), 1);
-}
+        thread->postTask([&counter]() {
+            counter.fetch_add(1);
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        ASSERT_EQ(counter.load(), 1);
+    }

@@ -34,9 +34,13 @@
 - (instancetype)initWithPlayer:(CGRect)frame player:(SlarkPlayer*)player {
     if (self = [self init]) {
         self.player = player;
+#if TARGET_IPHONE_SIMULATOR
+        self.currentBackend = SlarkGraphicsBackendMetal;
+#else
         self.currentBackend = SlarkGraphicsBackendOpenGLES;
+#endif
         self.renderView = [self createRenderViewWithFrame:frame
-                                                  backend:SlarkGraphicsBackendOpenGLES
+                                                  backend:self.currentBackend
                                                hdrEnabled:NO];
         [self.player setRenderImpl:[self.renderView renderImpl]];
         __weak __typeof(self) weakSelf = self;
@@ -55,6 +59,11 @@
 - (UIView<IRenderView>*)createRenderViewWithFrame:(CGRect)frame
                                           backend:(SlarkGraphicsBackend)backend
                                        hdrEnabled:(BOOL)hdrEnabled {
+#if TARGET_IPHONE_SIMULATOR
+    // 模拟器不支持 OpenGLES，直接使用 Metal
+    (void)backend;
+    return [[RenderMetalView alloc] initWithFrame:frame hdrEnabled:hdrEnabled];
+#else
     switch (backend) {
         case SlarkGraphicsBackendMetal:
             return [[RenderMetalView alloc] initWithFrame:frame hdrEnabled:hdrEnabled];
@@ -62,6 +71,7 @@
         default:
             return [[RenderGLView alloc] initWithFrame:frame];
     }
+#endif
 }
 
 - (void)setupNotifications {
