@@ -115,15 +115,15 @@ void Player::Impl::init() noexcept {
     });
 
     ownerThread_ = Thread::create("playerThread");
-    ownerThread_->scheduleRepeat(std::chrono::milliseconds(setting.playerThreadTickMs), [this]() {
+    ownerThread_->postRepeatTask(std::chrono::milliseconds(setting.playerThreadTickMs), [this]() {
         process();
     });
-    ownerThread_->scheduleRepeat(std::chrono::milliseconds(setting.playedTimeTickMs), [this]() {
+    ownerThread_->postRepeatTask(std::chrono::milliseconds(setting.playedTimeTickMs), [this]() {
         if (state() == PlayerState::Playing) {
             notifyPlayedTime();
         }
     });
-    ownerThread_->scheduleRepeat(std::chrono::milliseconds(setting.cacheTickMs), [this]() {
+    ownerThread_->postRepeatTask(std::chrono::milliseconds(setting.cacheTickMs), [this]() {
         if (isStopped_) {
             return;
         }
@@ -156,12 +156,10 @@ bool Player::Impl::setupDataProvider() noexcept {
 
     auto onData = [weak](DataPacket data) {
         auto self = weak.lock();
-        if (!self || self->isStopped_ || !self->demuxerComponent_) {
+        if (!self || self->isStopped_ || !self->dataPacketSender_) {
             return;
         }
-        std::list<DataPacket> packets;
-        packets.emplace_back(std::move(data));
-        self->demuxerComponent_->pushData(std::move(packets));
+        (void)self->dataPacketSender_->send(std::move(data));
     };
 
     auto onError = [weak](bool isNetwork) {
@@ -207,7 +205,12 @@ bool Player::Impl::createDemuxerComponent() noexcept {
     }
 
     config.fileSize = mediaSourceManager_.streamInfo().totalSize;
-    demuxerComponent_ = std::make_shared<DemuxerComponent>(std::move(config));
+
+    // 创建 Channel，持有 sender，将 receiver 传给 DemuxerComponent
+    auto [sender, receiver] = Channel<DataPacket>::create();
+    dataPacketSender_ = std::move(sender);
+
+    demuxerComponent_ = std::make_shared<DemuxerComponent>(std::move(receiver), std::move(config));
     demuxerComponent_->setHandleSeekFunc([weak = weak_from_this()](Range range) {
         auto self = weak.lock();
         if (!self || self->isStopped_) {
@@ -384,6 +387,8 @@ void Player::Impl::doPause() noexcept {
 void Player::Impl::doStop() noexcept {
     LogI("do stop start");
     mediaSourceManager_.close();
+    // 先关闭 Channel，触发 DemuxerComponent worker 收到 Closed 自然退出
+    dataPacketSender_.reset();
 
     if (pipeline_) {
         pipeline_->teardown();

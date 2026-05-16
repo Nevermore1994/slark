@@ -15,11 +15,6 @@
 
 namespace slark {
 
-/**
- * @brief BufferMonitor 的委托接口，由 PlayPipeline 实现。
- *
- * 所有方法均在 ownerThread 调用。
- */
 struct IBufferMonitorDelegate {
     virtual ~IBufferMonitorDelegate() = default;
 
@@ -28,20 +23,16 @@ struct IBufferMonitorDelegate {
     virtual void resumeStream() noexcept = 0;
     [[nodiscard]] virtual int32_t audioDecodedFrameCount() const noexcept = 0;
     [[nodiscard]] virtual int32_t videoDecodedFrameCount() const noexcept = 0;
-    virtual void pauseDecoder() noexcept = 0;
-    virtual void resumeDecoder() noexcept = 0;
+    virtual void pauseAudioDecoder() noexcept = 0;
+    virtual void resumeAudioDecoder() noexcept = 0;
+    virtual void pauseVideoDecoder() noexcept = 0;
+    virtual void resumeVideoDecoder() noexcept = 0;
     virtual void onPrebufferComplete() noexcept = 0;
     virtual void onDropOldest() noexcept = 0;
     virtual void onBufferEvent(PipelineEvent event,
                                std::optional<PipelineError> error) noexcept = 0;
 };
 
-/**
- * @brief 背压与缓冲监控器。
- *
- * 线程安全约定：所有方法必须在 ownerThread 调用。
- * 通过 IBufferMonitorDelegate 控制 IStream 数据流速并上报事件。
- */
 class BufferMonitor {
 public:
     BufferMonitor(const BackpressureConfig& config, IBufferMonitorDelegate& delegate) noexcept;
@@ -122,28 +113,28 @@ private:
 
     void pauseAudioDecoder() noexcept {
         if (!audioDecoderPaused_) {
-            delegate_.pauseDecoder();
+            delegate_.pauseAudioDecoder();
             audioDecoderPaused_ = true;
         }
     }
 
     void resumeAudioDecoder() noexcept {
         if (audioDecoderPaused_) {
-            delegate_.resumeDecoder();
+            delegate_.resumeAudioDecoder();
             audioDecoderPaused_ = false;
         }
     }
 
     void pauseVideoDecoder() noexcept {
         if (!videoDecoderPaused_) {
-            delegate_.pauseDecoder();
+            delegate_.pauseVideoDecoder();
             videoDecoderPaused_ = true;
         }
     }
 
     void resumeVideoDecoder() noexcept {
         if (videoDecoderPaused_) {
-            delegate_.resumeDecoder();
+            delegate_.resumeVideoDecoder();
             videoDecoderPaused_ = false;
         }
     }

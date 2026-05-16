@@ -4,29 +4,31 @@
 // Copyright (c) 2023 Nevermore All rights reserved.
 //
 #pragma once
+#include "Channel.hpp"
 #include "DecoderManager.h"
 #include "Error.h"
 #include "IPipelineComponent.h"
-#include "Synchronized.hpp"
 #include "Thread.h"
+#include "ThreadManager.h"
 
+#include <atomic>
+#include <condition_variable>
 #include <functional>
+#include <mutex>
 
 namespace slark {
-
-using DataProviderResult = std::pair<AVFrameRefPtr, Error>;
 
 struct DecoderComponentConfig {
     DecoderReceiveFunc onData;
     std::function<void()> onReady;
     std::function<void(Error)> onError;
-    std::function<DataProviderResult()> dataProvider;
+    bool isAudio = false;
 };
 
 class DecoderComponent : public IPipelineComponent,
                          public std::enable_shared_from_this<DecoderComponent> {
 public:
-    explicit DecoderComponent(DecoderComponentConfig config);
+    explicit DecoderComponent(ReceiverPtr<AVFrameRefPtr> receiver, DecoderComponentConfig config);
 
     ~DecoderComponent() override;
 
@@ -40,18 +42,26 @@ public:
 
     void pause() noexcept override;
 
-    void scheduleDecoding() noexcept;
+    void resume() noexcept;
+
+    void stop() noexcept;
 
     [[nodiscard]] bool isRunning() const noexcept override;
 
 private:
-    void pushFrameDecode();
+    void runLoop() noexcept;
 
 private:
-    std::atomic_bool isOpened_ = false;
+    std::atomic<bool> stopRequested_{false};
+    std::atomic<bool> flushed_{false};
+    bool paused_ = false;
+    std::mutex pauseMutex_;
+    std::condition_variable pauseCv_;
+
     DecoderComponentConfig config_;
-    Synchronized<std::shared_ptr<IDecoder>> decoder_;
+    std::shared_ptr<IDecoder> decoder_;
     std::shared_ptr<Thread> decodeWorker_;
+    ReceiverPtr<AVFrameRefPtr> receiver_;
 };
 
 } // namespace slark

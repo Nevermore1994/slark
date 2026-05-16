@@ -78,6 +78,11 @@ public:
         audioInfo_.reset();
     }
 
+    /// 刷新 demuxer 内部状态，清除缓冲区中的残留数据
+    virtual void flush() noexcept {
+        reset();
+    }
+
     virtual void seekPos(uint64_t pos) noexcept {
         isCompleted_ = false;
         if (buffer_) {

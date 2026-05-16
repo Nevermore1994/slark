@@ -136,6 +136,7 @@ private:
     MediaSourceManager mediaSourceManager_;
     std::shared_ptr<DemuxerComponent> demuxerComponent_ = nullptr;
     std::shared_ptr<PlayPipeline> pipeline_ = nullptr;
+    SenderPtr<DataPacket> dataPacketSender_;
 
     AtomicWeakPtr<IVideoRender> videoRender_;
 

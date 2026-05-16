@@ -12,20 +12,25 @@
 
 namespace slark {
 
-DemuxerComponent::DemuxerComponent(DemuxerConfig config)
-    : worker_(Thread::create("DemuxerWorker")), config_(std::move(config)) {}
+DemuxerComponent::DemuxerComponent(ReceiverPtr<DataPacket> receiver, DemuxerConfig config)
+    : receiver_(std::move(receiver)), config_(std::move(config)) {}
 
 DemuxerComponent::~DemuxerComponent() {
-    close();
-    worker_->stop();
+    stopRequested_.store(true, std::memory_order_release);
+    if (receiver_) {
+        receiver_->wakeup();
+    }
+    if (worker_) {
+        ThreadManager::shareInstance().remove(worker_);
+        worker_.reset();
+    }
 }
 
 void DemuxerComponent::reset() noexcept {
-    worker_->pause();
     if (auto demuxer = demuxer_.load()) {
         demuxer->close();
     }
-    clearData();
+    flushed_ = false;
     demuxer_.reset();
     probeBuffer_.reset();
 }
@@ -36,47 +41,60 @@ void DemuxerComponent::close() noexcept {
 }
 
 void DemuxerComponent::start() noexcept {
-    worker_->start();
-}
-
-void DemuxerComponent::pause() noexcept {
-    worker_->pause();
-}
-
-bool DemuxerComponent::pushData(std::list<DataPacket>&& dataList) noexcept {
-    dataList_.withLock([dataList = std::move(dataList)](auto& list) mutable {
-        list.insert(list.end(),
-                    std::make_move_iterator(dataList.begin()),
-                    std::make_move_iterator(dataList.end()));
-    });
-    worker_->schedule([this]() {
-        demuxData();
-    });
-    return true;
-}
-
-void DemuxerComponent::demuxData() noexcept {
-    if (flushed_) {
-        LogI("demuxer is flushed, clear data.");
-        clearData();
+    if (worker_) {
         return;
     }
-    DataPacket packet;
-    dataList_.withLock([&packet](auto& list) {
-        if (list.empty()) {
-            return;
+    worker_ = Thread::createWithRunLoop("DemuxerWorker", [this] {
+        runLoop();
+    });
+    ThreadManager::shareInstance().add(worker_);
+}
+
+void DemuxerComponent::flush() noexcept {
+    flushed_.store(true, std::memory_order_release);
+    // 主调线程先清一次 Channel 残留 packet
+    if (receiver_) {
+        (void)receiver_->tryReceiveAll();
+    }
+    if (auto demuxer = demuxer_.load()) {
+        demuxer->flush();
+    }
+    // 唤醒可能在 receive() 阻塞的 worker
+    if (receiver_) {
+        receiver_->wakeup();
+    }
+}
+
+void DemuxerComponent::runLoop() noexcept {
+    while (!stopRequested_.load(std::memory_order_acquire)) {
+        // flush 信号优先处理：清空 Channel 残留数据
+        if (flushed_.exchange(false, std::memory_order_acq_rel)) {
+            (void)receiver_->tryReceiveAll();
         }
-        packet = std::move(list.front());
-        list.pop_front();
-    });
-    if (packet.empty()) {
-        // 队列为空，直接返回；等待 pushData() 或 setInputCompleted() 通过 schedule 再次触发
-        return;
-    }
-    auto demuxer = demuxer_.load();
-    if (!demuxer || !demuxer->isOpened()) {
-        openDemuxer(packet);
-    } else {
+
+        auto exp = receiver_->receive();
+
+        if (!exp.has_value()) {
+            if (exp.error() == ChannelEventType::Awakened) {
+                // flush 主动唤醒，回到顶部重新检查 flushed_/stopRequested_
+                continue;
+            }
+            // Closed：上游 sender 已释放，正常退出
+            break;
+        }
+        DataPacket packet = std::move(*exp);
+
+        // flush 期间到来的旧数据丢弃
+        if (flushed_.load(std::memory_order_acquire)) {
+            continue;
+        }
+
+        auto demuxer = demuxer_.load();
+        if (!demuxer || !demuxer->isOpened()) {
+            openDemuxer(packet);
+            continue;
+        }
+
 #ifdef SLARK_PERF_ENABLED
         auto session = session_.lock();
         auto t0 = Time::nowTimeStamp().point();
@@ -87,16 +105,6 @@ void DemuxerComponent::demuxData() noexcept {
         SLARK_TRACE_RECORD(session.get(), "demux", durationUs);
 #endif
         invokeHandleResultFunc(std::move(result));
-    }
-
-    // 队列仍有数据时继续调度，避免等待下次 pushData
-    bool hasMore = dataList_.withLock([](auto& list) {
-        return !list.empty();
-    });
-    if (hasMore) {
-        worker_->schedule([this]() {
-            demuxData();
-        });
     }
 }
 
@@ -124,7 +132,7 @@ bool DemuxerComponent::open() noexcept {
     if (auto headerInfo = demuxer->headerInfo(); headerInfo && headerInfo->headerLength > 0) {
         demuxer->seekPos(headerInfo->headerLength);
         invokeSeekFunc(Range(headerInfo->headerLength, 0));
-        clearData();
+        flushed_ = false;
         LogI("demuxer seek to:{}", headerInfo->headerLength);
     }
 
@@ -176,7 +184,6 @@ bool DemuxerComponent::createDemuxer() noexcept {
         return false;
     }
     demuxer->init(config_);
-    // 拷贝而非 move，保证 reset 后可复用
     demuxer_.reset(demuxer);
     return true;
 }

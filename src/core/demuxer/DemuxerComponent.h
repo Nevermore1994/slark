@@ -2,12 +2,13 @@
 // Created by Nevermore- on 2025/7/6.
 //
 #pragma once
+#include "Channel.hpp"
 #include "DemuxerManager.h"
 #include "IPipelineComponent.h"
 #include "NonCopyable.h"
 #include "Thread.h"
-
-#include <list>
+#include "ThreadManager.h"
+#include "perf/PlaySession.h"
 
 namespace slark {
 
@@ -27,7 +28,7 @@ private:
     }
 
 public:
-    explicit DemuxerComponent(DemuxerConfig config);
+    explicit DemuxerComponent(ReceiverPtr<DataPacket> receiver, DemuxerConfig config);
 
     ~DemuxerComponent();
 
@@ -37,24 +38,22 @@ public:
 
     void close() noexcept override;
 
+    /// 启动 worker 线程（生命周期接口，构造后调一次）
     void start() noexcept override;
 
-    void pause() noexcept override;
+    /// IO 侧 pause 由 MediaSourceManager 完成，本组件无需感知，空实现
+    void pause() noexcept override {}
 
-    void flush() noexcept override {
-        flushed_ = true;
-    }
+    void flush() noexcept override;
 
     [[nodiscard]] bool isRunning() const noexcept override {
-        return worker_->isRunning();
+        return worker_ && worker_->isRunning();
     }
 
     void seekToPos(uint64_t pos) noexcept;
 
     /// In HLS, what you get is the TS index, while in other cases, it's the file offset.
     [[nodiscard]] uint64_t getSeekToPos(double time) noexcept;
-
-    bool pushData(std::list<DataPacket>&& data) noexcept;
 
     void setHandleResultFunc(HandleDemuxResultFunc&& func) noexcept {
         handleResultFunc_.reset(std::make_shared<HandleDemuxResultFunc>(std::move(func)));
@@ -149,7 +148,7 @@ public:
     }
 
 private:
-    void demuxData() noexcept;
+    void runLoop() noexcept;
 
     void invokeHandleResultFunc(DemuxerResult&& result) noexcept {
         auto func = handleResultFunc_.load();
@@ -169,23 +168,18 @@ private:
 
     bool openDemuxer(DataPacket& packet) noexcept;
 
-    void clearData() noexcept {
-        dataList_.withLock([](auto& list) {
-            list.clear();
-        });
-        flushed_ = false;
-    }
-
 private:
     std::shared_ptr<Thread> worker_;
+    ReceiverPtr<DataPacket> receiver_;
     DemuxerConfig config_;
     AtomicSharedPtr<HandleDemuxResultFunc> handleResultFunc_;
     AtomicSharedPtr<HandleSeekFunc> handleSeekFunc_;
-    Synchronized<std::list<DataPacket>> dataList_;
     std::unique_ptr<Buffer> probeBuffer_;
     AtomicSharedPtr<IDemuxer> demuxer_;
     std::atomic_bool flushed_ = false;
     std::atomic_bool isClosed_ = false;
+    std::atomic_bool stopRequested_ = false;
+    std::weak_ptr<perf::PlaySession> session_;
 };
 
 } // namespace slark

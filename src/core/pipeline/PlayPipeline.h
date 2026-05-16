@@ -166,9 +166,13 @@ private:
 
     [[nodiscard]] int32_t videoDecodedFrameCount() const noexcept override;
 
-    void pauseDecoder() noexcept override;
+    void pauseAudioDecoder() noexcept override;
 
-    void resumeDecoder() noexcept override;
+    void resumeAudioDecoder() noexcept override;
+
+    void pauseVideoDecoder() noexcept override;
+
+    void resumeVideoDecoder() noexcept override;
 
     void onPrebufferComplete() noexcept override;
 
@@ -257,8 +261,14 @@ private:
     Synchronized<std::deque<std::function<void()>>> pendingTasks_;
     Synchronized<std::map<int64_t, AVFrameRefPtr>> videoFrames_;
     Synchronized<std::deque<AVFrameRefPtr>> audioFrames_;
-    Synchronized<std::deque<AVFrameRefPtr>> pendingDecodeAudioQueue_;
-    Synchronized<std::deque<AVFrameRefPtr>> pendingDecodeVideoQueue_;
+
+    // Channel senders：替代旧的 pendingDecodeXxxQueue_
+    SenderPtr<AVFrameRefPtr> audioFrameSender_;
+    SenderPtr<AVFrameRefPtr> videoFrameSender_;
+
+    // 累加器：记录最后入队帧的 pts，用于 demuxedDuration 统计
+    std::atomic<double> lastEnqueuedAudioPts_{0.0};
+    std::atomic<double> lastEnqueuedVideoPts_{0.0};
 
     std::shared_ptr<DemuxerComponent> demuxer_;
     std::shared_ptr<DecoderComponent> audioDecoder_;

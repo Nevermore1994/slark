@@ -30,6 +30,11 @@ PlayPipeline::PlayPipeline(BackpressureConfig config) noexcept : config_(std::mo
     assert(config_.isValid() && "BackpressureConfig is invalid");
     clockSync_ = std::make_unique<ClockSync>();
     seekContext_ = std::make_unique<SeekContext>();
+    ownerThreadId_ = std::this_thread::get_id();
+    bufferMonitor_ = std::make_unique<BufferMonitor>(config_, *this);
+    connectComponents();
+    pipelineState_.store(PipelineState::Built, std::memory_order_release);
+    LogI("PlayPipeline built");
 }
 
 PlayPipeline::~PlayPipeline() {
@@ -40,14 +45,8 @@ PlayPipeline::~PlayPipeline() {
 }
 
 void PlayPipeline::build() noexcept {
-    if (pipelineState_.load(std::memory_order_acquire) != PipelineState::Idle) {
-        return;
-    }
-    ownerThreadId_ = std::this_thread::get_id();
-    bufferMonitor_ = std::make_unique<BufferMonitor>(config_, *this);
-    connectComponents();
-    pipelineState_.store(PipelineState::Built, std::memory_order_release);
-    LogI("PlayPipeline built");
+    // 构造时已完成所有初始化（bufferMonitor_、connectComponents 等）
+    // 此处仅为兼容 PlayerImpl 调用占位，实际逻辑已在构造函数中完成
 }
 
 void PlayPipeline::start() noexcept {
@@ -61,12 +60,6 @@ void PlayPipeline::start() noexcept {
     }
     if (demuxer_) {
         demuxer_->start();
-    }
-    if (audioDecoder_) {
-        audioDecoder_->start();
-    }
-    if (videoDecoder_) {
-        videoDecoder_->start();
     }
     if (audioRender_) {
         audioRender_->start();
@@ -90,12 +83,6 @@ void PlayPipeline::pause() noexcept {
     if (demuxer_) {
         demuxer_->pause();
     }
-    if (audioDecoder_) {
-        audioDecoder_->pause();
-    }
-    if (videoDecoder_) {
-        videoDecoder_->pause();
-    }
     if (audioRender_) {
         audioRender_->pause();
     }
@@ -118,20 +105,18 @@ void PlayPipeline::flush() noexcept {
     audioFrames_.withLock([](auto& q) {
         q.clear();
     });
-    pendingDecodeAudioQueue_.withLock([](auto& q) {
-        q.clear();
-    });
-    pendingDecodeVideoQueue_.withLock([](auto& q) {
-        q.clear();
-    });
 
-    // seek/flush 后重置直播首帧标志；readyFired 保持不变（不重复触发 Ready）
+    // seek/flush 后重置直播首帧标志； readyFired 保持不变（不重复触发 Ready）    //
     // firstFrameRendered 也重置，seek 后需要重新走首帧快速推帧路径
     readiness_.liveVideoKeyframeSeen = false;
     readiness_.liveAudioPacketSeen = false;
     readiness_.firstFrameRendered.store(false, std::memory_order_release);
     // flush 后 GOP 范围失效，重置
     seekContext_->updateGOPRange(-1.0, -1.0);
+
+    // flush 后重置累加器，避免旧帧 pts 污染下一次背压判断
+    lastEnqueuedAudioPts_.store(0.0, std::memory_order_release);
+    lastEnqueuedVideoPts_.store(0.0, std::memory_order_release);
 
     if (bufferMonitor_) {
         bufferMonitor_->reset();
@@ -240,6 +225,14 @@ void PlayPipeline::seek(CTime target, bool isAccurate) noexcept {
             demuxer_->seekToPos(pos);
         }
         start();
+        // seek 后显式恢复解码 worker：不能依赖水位线触发（flush 后水位为 0，再没有事件去触发
+        // resume）
+        if (audioDecoder_) {
+            audioDecoder_->resume();
+        }
+        if (videoDecoder_) {
+            videoDecoder_->resume();
+        }
         LogI("seek to keyframe for {:.3f}s (strategy={}), epoch={}",
              targetSec,
              static_cast<int32_t>(strategy),
@@ -402,15 +395,10 @@ AVFrameRefPtr PlayPipeline::requestAudioFrame() noexcept {
 
 double PlayPipeline::demuxedDuration() const noexcept {
     double maxPts = 0.0;
+    // 已解码帧队列取 max pts
     videoFrames_.withLock([&maxPts](const auto& m) {
         if (!m.empty()) {
             maxPts = std::max(maxPts, m.rbegin()->second->ptsTime());
-        }
-    });
-    // 纳入待解码队列中最新帧的 pts，确保背压水位覆盖 demux → decode 这一层缓冲
-    pendingDecodeAudioQueue_.withLock([&maxPts](const auto& q) {
-        if (!q.empty()) {
-            maxPts = std::max(maxPts, q.back()->ptsTime());
         }
     });
     audioFrames_.withLock([&maxPts](const auto& q) {
@@ -418,11 +406,9 @@ double PlayPipeline::demuxedDuration() const noexcept {
             maxPts = std::max(maxPts, q.back()->ptsTime());
         }
     });
-    pendingDecodeVideoQueue_.withLock([&maxPts](const auto& q) {
-        if (!q.empty()) {
-            maxPts = std::max(maxPts, q.back()->ptsTime());
-        }
-    });
+    // 累加器记录的最后入队帧 pts（覆盖 Channel 中尚未解码的帧）
+    maxPts = std::max(maxPts, lastEnqueuedAudioPts_.load(std::memory_order_acquire));
+    maxPts = std::max(maxPts, lastEnqueuedVideoPts_.load(std::memory_order_acquire));
     const double kCurrentSec = clockSync_->masterTime(mediaInfo_.hasAudio).second();
     return std::max(0.0, maxPts - kCurrentSec);
 }
@@ -451,21 +437,27 @@ int32_t PlayPipeline::videoDecodedFrameCount() const noexcept {
     });
 }
 
-void PlayPipeline::pauseDecoder() noexcept {
+void PlayPipeline::pauseAudioDecoder() noexcept {
     if (audioDecoder_) {
         audioDecoder_->pause();
     }
+}
+
+void PlayPipeline::resumeAudioDecoder() noexcept {
+    if (audioDecoder_) {
+        audioDecoder_->resume();
+    }
+}
+
+void PlayPipeline::pauseVideoDecoder() noexcept {
     if (videoDecoder_) {
         videoDecoder_->pause();
     }
 }
 
-void PlayPipeline::resumeDecoder() noexcept {
-    if (audioDecoder_) {
-        audioDecoder_->start();
-    }
+void PlayPipeline::resumeVideoDecoder() noexcept {
     if (videoDecoder_) {
-        videoDecoder_->start();
+        videoDecoder_->resume();
     }
 }
 
@@ -615,36 +607,33 @@ void PlayPipeline::setupAudioTrack(DecoderType type,
         });
     });
 
-    audioDecoder_ = std::make_shared<DecoderComponent>(DecoderComponentConfig{
-        .onData =
-            [this](DecoderData data) {
-                onAudioDecoded(std::move(data));
-            },
-        .onReady =
-            [this] {
-                postToOwnerThread([this] {
-                    ++readiness_.readyDecoders;
-                    SLARK_TRACE_MILESTONE(playSession_.lock().get(), "audio_decoder_ready");
-                    checkAndFirePipelineReady();
-                });
-            },
-        .onError =
-            [this](Error err) {
-                postToOwnerThread([this, err] {
-                    fireEvent(PipelineEvent::AudioDecoderFailed, PipelineError{.error = err});
-                });
-            },
-        .dataProvider = [this]() -> DataProviderResult {
-            return pendingDecodeAudioQueue_.withLock([](auto& q) -> DataProviderResult {
-                if (q.empty()) {
-                    return {nullptr, Error::Success};
-                }
-                auto frame = std::move(q.front());
-                q.pop_front();
-                return {std::move(frame), Error::Success};
-            });
-        },
-    });
+    audioDecoder_ = std::make_shared<DecoderComponent>(
+        [this]() -> ReceiverPtr<AVFrameRefPtr> {
+            auto [sender, receiver] = Channel<AVFrameRefPtr>::create();
+            audioFrameSender_ = std::move(sender);
+            return std::move(receiver);
+        }(),
+        DecoderComponentConfig{
+            .onData =
+                [this](DecoderData data) {
+                    onAudioDecoded(std::move(data));
+                },
+            .onReady =
+                [this] {
+                    postToOwnerThread([this] {
+                        ++readiness_.readyDecoders;
+                        SLARK_TRACE_MILESTONE(playSession_.lock().get(), "audio_decoder_ready");
+                        checkAndFirePipelineReady();
+                    });
+                },
+            .onError =
+                [this](Error err) {
+                    postToOwnerThread([this, err] {
+                        fireEvent(PipelineEvent::AudioDecoderFailed, PipelineError{.error = err});
+                    });
+                },
+            .isAudio = true,
+        });
 
     openDecoderInternal(audioDecoder_, type, config);
     ++readiness_.expectedDecoders;
@@ -721,36 +710,33 @@ void PlayPipeline::setupVideoTrack(DecoderType type,
         config_.videoDecoderHighWatermarkFrames = std::max(refFrames * 2, refFrames + 4);
     }
 
-    videoDecoder_ = std::make_shared<DecoderComponent>(DecoderComponentConfig{
-        .onData =
-            [this](DecoderData data) {
-                onVideoDecoded(std::move(data));
-            },
-        .onReady =
-            [this] {
-                postToOwnerThread([this] {
-                    ++readiness_.readyDecoders;
-                    SLARK_TRACE_MILESTONE(playSession_.lock().get(), "video_decoder_ready");
-                    checkAndFirePipelineReady();
-                });
-            },
-        .onError =
-            [this](Error err) {
-                postToOwnerThread([this, err] {
-                    fireEvent(PipelineEvent::VideoDecoderFailed, PipelineError{.error = err});
-                });
-            },
-        .dataProvider = [this]() -> DataProviderResult {
-            return pendingDecodeVideoQueue_.withLock([](auto& q) -> DataProviderResult {
-                if (q.empty()) {
-                    return {nullptr, Error::Success};
-                }
-                auto frame = std::move(q.front());
-                q.pop_front();
-                return {std::move(frame), Error::Success};
-            });
-        },
-    });
+    videoDecoder_ = std::make_shared<DecoderComponent>(
+        [this]() -> ReceiverPtr<AVFrameRefPtr> {
+            auto [sender, receiver] = Channel<AVFrameRefPtr>::create();
+            videoFrameSender_ = std::move(sender);
+            return std::move(receiver);
+        }(),
+        DecoderComponentConfig{
+            .onData =
+                [this](DecoderData data) {
+                    onVideoDecoded(std::move(data));
+                },
+            .onReady =
+                [this] {
+                    postToOwnerThread([this] {
+                        ++readiness_.readyDecoders;
+                        SLARK_TRACE_MILESTONE(playSession_.lock().get(), "video_decoder_ready");
+                        checkAndFirePipelineReady();
+                    });
+                },
+            .onError =
+                [this](Error err) {
+                    postToOwnerThread([this, err] {
+                        fireEvent(PipelineEvent::VideoDecoderFailed, PipelineError{.error = err});
+                    });
+                },
+            .isAudio = false,
+        });
 
     openDecoderInternal(videoDecoder_, type, config);
     ++readiness_.expectedDecoders;
@@ -888,7 +874,7 @@ void PlayPipeline::updateLiveReadyFlags(const DemuxerResult& result) noexcept {
 }
 
 bool PlayPipeline::dispatchAudioFrames(AVFramePtrArray& frames, uint64_t epoch) noexcept {
-    if (!audioDecoder_) {
+    if (!audioDecoder_ || !audioFrameSender_) {
         return false;
     }
     const auto seekTarget = seekContext_->targetSeekTime();
@@ -901,16 +887,20 @@ bool PlayPipeline::dispatchAudioFrames(AVFramePtrArray& frames, uint64_t epoch) 
         if (seekTarget && frame->ptsTime() < *seekTarget) {
             continue;
         }
-        pendingDecodeAudioQueue_.withLock([&frame](auto& q) {
-            q.emplace_back(std::shared_ptr<AVFrame>(std::move(frame)));
-        });
+        // 更新累加器（取 max，避免乱序回退）
+        const double pts = frame->ptsTime();
+        double prev = lastEnqueuedAudioPts_.load(std::memory_order_acquire);
+        while (pts > prev &&
+               !lastEnqueuedAudioPts_.compare_exchange_weak(prev, pts, std::memory_order_acq_rel)) {
+        }
+        (void)audioFrameSender_->send(std::shared_ptr<AVFrame>(std::move(frame)));
         enqueued = true;
     }
     return enqueued;
 }
 
 bool PlayPipeline::dispatchVideoFrames(AVFramePtrArray& frames, uint64_t epoch) noexcept {
-    if (!videoDecoder_) {
+    if (!videoDecoder_ || !videoFrameSender_) {
         return false;
     }
     bool enqueued = false;
@@ -931,28 +921,29 @@ bool PlayPipeline::dispatchVideoFrames(AVFramePtrArray& frames, uint64_t epoch) 
         if (seekTarget && framePts < *seekTarget) {
             frame->isDiscard = true;
         }
-        pendingDecodeVideoQueue_.withLock([&frame](auto& q) {
-            q.emplace_back(std::shared_ptr<AVFrame>(std::move(frame)));
-        });
+        // 更新累加器（取 max，避免乱序回退）
+        double prev = lastEnqueuedVideoPts_.load(std::memory_order_acquire);
+        while (framePts > prev &&
+               !lastEnqueuedVideoPts_.compare_exchange_weak(prev,
+                                                            framePts,
+                                                            std::memory_order_acq_rel)) {
+        }
+        (void)videoFrameSender_->send(std::shared_ptr<AVFrame>(std::move(frame)));
         enqueued = true;
     }
     return enqueued;
 }
 
 void PlayPipeline::injectEosFrames() noexcept {
-    if (audioDecoder_) {
+    if (audioDecoder_ && audioFrameSender_) {
         auto eos = std::make_shared<AVFrame>(AVFrameType::Audio);
         eos->isEOS = true;
-        pendingDecodeAudioQueue_.withLock([&eos](auto& q) {
-            q.emplace_back(std::move(eos));
-        });
+        (void)audioFrameSender_->send(std::move(eos));
     }
-    if (videoDecoder_) {
+    if (videoDecoder_ && videoFrameSender_) {
         auto eos = std::make_shared<AVFrame>(AVFrameType::Video);
         eos->isEOS = true;
-        pendingDecodeVideoQueue_.withLock([&eos](auto& q) {
-            q.emplace_back(std::move(eos));
-        });
+        (void)videoFrameSender_->send(std::move(eos));
     }
 }
 
@@ -968,12 +959,6 @@ void PlayPipeline::dispatchFrames(DemuxerResult&& result, uint64_t epoch) noexce
         hasVideo = hasVideo || videoDecoder_ != nullptr;
     }
 
-    if (hasAudio && audioDecoder_) {
-        audioDecoder_->scheduleDecoding();
-    }
-    if (hasVideo && videoDecoder_) {
-        videoDecoder_->scheduleDecoding();
-    }
     if (hasAudio || hasVideo) {
         notifyDataEnqueued();
     }
@@ -998,11 +983,33 @@ void PlayPipeline::openDecoderInternal(std::shared_ptr<DecoderComponent> decoder
         return;
     }
     decoder->open(type, config);
+    // open 同步完成后立即启动 worker 线程（独占 runLoop 模式）
+    if (decoder->isRunning()) {
+        return;
+    }
+    decoder->start();
 }
 
 void PlayPipeline::stopComponents() noexcept {
-    for (auto& comp : components_) {
-        comp->close();
+    // 先关闭 Channel sender，触发 decoder worker 收到 Closed 自然退出
+    audioFrameSender_.reset();
+    videoFrameSender_.reset();
+    // 再 stop decoder（反序兜底：若 worker 还在 pauseCv_.wait，强制唤醒）
+    if (audioDecoder_) {
+        audioDecoder_->stop();
+    }
+    if (videoDecoder_) {
+        videoDecoder_->stop();
+    }
+    // 其他组件正常 close
+    if (demuxer_) {
+        demuxer_->close();
+    }
+    if (audioRender_) {
+        audioRender_->close();
+    }
+    if (auto render = videoRender_.load()) {
+        render->close();
     }
 }
 
@@ -1123,13 +1130,13 @@ void PlayPipeline::pushAudioFrames() noexcept {
 }
 
 void PlayPipeline::exitFastForwardMode() noexcept {
-    // 恢复背压控制需回到 ownerThread，audioDecoder_->start() 非线程安全
+    // 恢复背压控制需回到 ownerThread
     postToOwnerThread([this] {
         if (bufferMonitor_) {
             bufferMonitor_->resumeBackpressure();
         }
         if (audioDecoder_) {
-            audioDecoder_->start();
+            audioDecoder_->resume();
         }
         LogI("fast-forward mode exited");
     });
