@@ -13,7 +13,7 @@ static const std::string kWriterPrefixName = "Writer_";
 
 Writer::Writer() : worker_(Thread::create(Util::genRandomName(kWriterPrefixName))) {
     using namespace std::chrono_literals;
-    worker_->scheduleRepeat(0ms, [this]() {
+    worker_->postRepeatTask(0ms, [this]() {
         process();
     });
 }

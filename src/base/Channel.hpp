@@ -15,6 +15,14 @@
 
 namespace slark {
 
+// 前向声明，避免与 Thread.h 循环依赖
+class Thread;
+
+namespace _channel_detail {
+// 将当前 Thread（若存在）标记为活跃/非活跃，由 Thread.cpp 实现
+void setCurrentThreadActive(bool active) noexcept;
+} // namespace _channel_detail
+
 template <typename T>
 struct IsSTLStringImpl : public std::false_type {};
 
@@ -111,6 +119,7 @@ enum class ChannelEventType {
     Success [[maybe_unused]],
     Closed,
     None,
+    Awakened, // 被 wakeup() 主动唤醒（用于 flush 等场景）
 };
 
 template <typename T, typename = std::enable_if_t<!std::is_reference_v<T>>>
@@ -141,6 +150,13 @@ public:
         return isClosed_;
     }
 
+    // 不关闭 channel，仅唤醒一次 receive（用于 flush 等场景）
+    inline auto wakeup() noexcept -> void {
+        std::lock_guard<std::mutex> lock(mutex_);
+        awakened_ = true;
+        cond_.notify_all();
+    }
+
     Channel(const Channel&) = delete;
 
     Channel(Channel&&) = delete;
@@ -156,6 +172,7 @@ private:
 
 private:
     bool isClosed_ = false;
+    bool awakened_ = false; // 旁路标志，被 receive 消费一次后清零
     std::list<T> messages_;
     std::mutex mutex_;
     std::condition_variable cond_;
@@ -357,15 +374,25 @@ private:
             requires std::movable<T>
         {
             std::unique_lock<std::mutex> lock(channel_->mutex_);
+            // 进入 wait 前自动置 inactive；返回时恢复 active 并刷新 lastRunTimeStamp_
+            // 非 Thread 上下文调用无副作用
+            _channel_detail::setCurrentThreadActive(false);
             channel_->cond_.wait(lock, [this] {
-                return !channel_->messages_.empty() || channel_->isClosed_;
+                return !channel_->messages_.empty() || channel_->isClosed_ || channel_->awakened_;
             });
-            if (channel_->isClosed_ && channel_->messages_.empty()) {
-                return std::unexpected(ChannelEventType::Closed);
+            _channel_detail::setCurrentThreadActive(true);
+            if (!channel_->messages_.empty()) {
+                auto value = std::move(channel_->messages_.front());
+                channel_->messages_.pop_front();
+                return value;
             }
-            auto value = std::move(channel_->messages_.front());
-            channel_->messages_.pop_front();
-            return value;
+            // Awakened 优先于 Closed：让 flush 在 stop 期间也能完整生效
+            // 代价：worker 退出会晚一轮（先收到 Awakened 走一圈循环，下一次 receive 才看到 Closed）
+            if (channel_->awakened_) {
+                channel_->awakened_ = false;
+                return std::unexpected(ChannelEventType::Awakened);
+            }
+            return std::unexpected(ChannelEventType::Closed);
         }
 
         inline auto tryReceive() noexcept -> std::expected<T, ChannelEventType> {
@@ -400,6 +427,10 @@ private:
                 result = static_cast<uint32_t>(channel_->messages_.size());
             }
             return result;
+        }
+
+        inline auto wakeup() noexcept -> void {
+            channel_->wakeup();
         }
 
     private:
@@ -458,6 +489,10 @@ public:
 
     inline auto empty() noexcept -> bool {
         return impl_->size() == 0;
+    }
+
+    inline auto wakeup() noexcept -> void {
+        impl_->wakeup();
     }
 }; // end of class Receiver
 

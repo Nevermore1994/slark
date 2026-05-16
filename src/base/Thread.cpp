@@ -17,12 +17,70 @@ namespace slark {
 using std::chrono::milliseconds;
 using namespace std::chrono_literals;
 
+namespace {
+thread_local Thread* tlsCurrentThread = nullptr;
+} // namespace
+
+Thread* Thread::current() noexcept {
+    return tlsCurrentThread;
+}
+
+void Thread::setCurrentActive(bool active) noexcept {
+    if (tlsCurrentThread) {
+        tlsCurrentThread->setActive(active);
+    }
+}
+
+namespace _channel_detail {
+void setCurrentThreadActive(bool active) noexcept {
+    Thread::setCurrentActive(active);
+}
+} // namespace _channel_detail
+
+Thread::ScopedInactive::ScopedInactive() noexcept : thread_(Thread::current()) {
+    if (thread_) {
+        thread_->setActive(false);
+    }
+}
+
+Thread::ScopedInactive::~ScopedInactive() noexcept {
+    if (thread_) {
+        thread_->setActive(true);
+    }
+}
+
 std::shared_ptr<Thread> Thread::create(std::string name) {
     auto thread = std::shared_ptr<Thread>(new Thread(std::move(name)));
     thread->worker_ = std::thread([weak = thread->weak_from_this()]() {
         if (auto self = weak.lock()) {
             self->process();
         }
+    });
+    return thread;
+}
+
+std::shared_ptr<Thread> Thread::createWithRunLoop(std::string name, std::function<void()> runLoop) {
+    auto thread = std::shared_ptr<Thread>(new Thread(std::move(name)));
+    thread->customRunLoop_ = std::move(runLoop);
+    {
+        std::lock_guard<std::mutex> lock(thread->mutex_);
+        thread->isRunning_ = true;
+    }
+    thread->worker_ = std::thread([weak = thread->weak_from_this()]() {
+        auto self = weak.lock();
+        if (!self) {
+            return;
+        }
+        self->setup();
+        tlsCurrentThread = self.get();
+        self->setActive(true);
+        if (self->customRunLoop_) {
+            self->customRunLoop_();
+        }
+        self->setActive(false);
+        tlsCurrentThread = nullptr;
+        std::lock_guard<std::mutex> lock(self->mutex_);
+        self->isRunning_ = false;
     });
     return thread;
 }
@@ -58,6 +116,9 @@ void Thread::stop() noexcept {
 }
 
 void Thread::pause() noexcept {
+    if (customRunLoop_) {
+        return; // 独占 runLoop 模式下 no-op
+    }
     {
         std::lock_guard<std::mutex> lock(mutex_);
         isRunning_ = false;
@@ -66,6 +127,9 @@ void Thread::pause() noexcept {
 }
 
 void Thread::start() noexcept {
+    if (customRunLoop_) {
+        return; // 独占 runLoop 模式下 no-op
+    }
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (isRunning_ || stopRequested_.load(std::memory_order_acquire)) {
@@ -76,7 +140,7 @@ void Thread::start() noexcept {
     cond_.notify_all();
 }
 
-Expected<void> Thread::schedule(Task task) noexcept {
+Expected<void> Thread::postTask(Task task) noexcept {
     if (stopRequested_.load(std::memory_order_acquire)) {
         return std::unexpected(Error::InvalidOperation);
     }
@@ -85,17 +149,17 @@ Expected<void> Thread::schedule(Task task) noexcept {
     return {};
 }
 
-TimerId Thread::schedule(milliseconds delay, Task task) noexcept {
+TimerId Thread::postTask(milliseconds delay, Task task) noexcept {
     return registerTimer(
         TimerManager::shareInstance().runAfter(delay, wrapOneShotTask(std::move(task))));
 }
 
-TimerId Thread::schedule(Time::TimePoint timePoint, Task task) noexcept {
+TimerId Thread::postTask(Time::TimePoint timePoint, Task task) noexcept {
     return registerTimer(
         TimerManager::shareInstance().runAt(timePoint, wrapOneShotTask(std::move(task))));
 }
 
-TimerId Thread::scheduleRepeat(milliseconds interval, Task task) noexcept {
+TimerId Thread::postRepeatTask(milliseconds interval, Task task) noexcept {
     if (stopRequested_.load(std::memory_order_acquire)) {
         return TimerId{};
     }
@@ -110,7 +174,7 @@ TimerId Thread::scheduleRepeat(milliseconds interval, Task task) noexcept {
     return id;
 }
 
-void Thread::cancelSchedule(TimerId id) noexcept {
+void Thread::cancelRepeatTask(TimerId id) noexcept {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = std::ranges::find(repeatTasks_, id, &RepeatTask::id);
@@ -124,6 +188,8 @@ void Thread::cancelSchedule(TimerId id) noexcept {
 }
 
 void Thread::process() noexcept {
+    tlsCurrentThread = this;
+    setActive(true);
     while (!stopRequested_.load(std::memory_order_acquire)) {
         if (!isInit_) {
             setup();
@@ -131,9 +197,12 @@ void Thread::process() noexcept {
 
         {
             std::unique_lock<std::mutex> lock(mutex_);
-            cond_.wait(lock, [this] {
-                return stopRequested_.load(std::memory_order_acquire) || isRunning_;
-            });
+            if (!isRunning_ && !stopRequested_.load(std::memory_order_acquire)) {
+                ScopedInactive guard;
+                cond_.wait(lock, [this] {
+                    return stopRequested_.load(std::memory_order_acquire) || isRunning_;
+                });
+            }
             if (!isRunning_) {
                 continue;
             }
@@ -143,7 +212,7 @@ void Thread::process() noexcept {
             break;
         }
 
-        lastRunTimeStamp_ = Time::nowTimeStamp().point();
+        setActive(true);
 
         auto waitTime = runRepeatTasks();
         drainTaskQueue();
@@ -154,15 +223,19 @@ void Thread::process() noexcept {
 
         std::unique_lock<std::mutex> lock(mutex_);
         if (waitTime == std::chrono::milliseconds::max()) {
+            ScopedInactive guard;
             cond_.wait(lock, [this] {
                 return stopRequested_.load(std::memory_order_acquire) || !isRunning_;
             });
         } else {
+            ScopedInactive guard;
             cond_.wait_for(lock, waitTime, [this] {
                 return stopRequested_.load(std::memory_order_acquire) || !isRunning_;
             });
         }
     }
+    setActive(false);
+    tlsCurrentThread = nullptr;
 }
 
 milliseconds Thread::runRepeatTasks() noexcept {
@@ -253,7 +326,7 @@ void Thread::setup() noexcept {
 TimerTask Thread::wrapOneShotTask(Task task) noexcept {
     return [weak = weak_from_this(), task = std::move(task)]() mutable {
         if (auto self = weak.lock()) {
-            self->schedule(std::move(task));
+            self->postTask(std::move(task));
         }
     };
 }

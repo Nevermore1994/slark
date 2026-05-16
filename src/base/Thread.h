@@ -14,6 +14,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <expected>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <print>
@@ -29,6 +30,9 @@ class Thread : public NonCopyMovable, public std::enable_shared_from_this<Thread
 public:
     [[nodiscard]] static std::shared_ptr<Thread> create(std::string name);
 
+    [[nodiscard]] static std::shared_ptr<Thread> createWithRunLoop(std::string name,
+                                                                   std::function<void()> runLoop);
+
     ~Thread() noexcept;
 
     void start() noexcept;
@@ -37,20 +41,28 @@ public:
 
     void stop() noexcept;
 
-    /// 立即投递任务到线程队列
-    Expected<void> schedule(Task task) noexcept;
+    Expected<void> postTask(Task task) noexcept;
+    TimerId postTask(std::chrono::milliseconds delay, Task task) noexcept;
+    TimerId postTask(Time::TimePoint timePoint, Task task) noexcept;
+    TimerId postRepeatTask(std::chrono::milliseconds interval, Task task) noexcept;
+    void cancelRepeatTask(TimerId id) noexcept;
 
-    /// 延迟投递一次性任务
-    TimerId schedule(std::chrono::milliseconds delay, Task task) noexcept;
+    [[nodiscard]] inline bool isActive() const noexcept {
+        return isActive_.load(std::memory_order_acquire);
+    }
 
-    /// 指定时间点投递一次性任务
-    TimerId schedule(Time::TimePoint timePoint, Task task) noexcept;
+    class ScopedInactive {
+    public:
+        ScopedInactive() noexcept;
+        ~ScopedInactive() noexcept;
+        ScopedInactive(const ScopedInactive&) = delete;
+        ScopedInactive& operator=(const ScopedInactive&) = delete;
 
-    /// 循环执行任务（执行完后再等待 interval，非固定间隔触发）
-    TimerId scheduleRepeat(std::chrono::milliseconds interval, Task task) noexcept;
+    private:
+        Thread* thread_;
+    };
 
-    /// 取消定时任务
-    void cancelSchedule(TimerId id) noexcept;
+    static void setCurrentActive(bool active) noexcept;
 
 public:
     [[nodiscard]] inline bool isRunning() const noexcept {
@@ -96,24 +108,37 @@ private:
 
     TimerId registerTimer(TimerId id) noexcept;
 
+    [[nodiscard]] static Thread* current() noexcept;
+
+    void setActive(bool active) noexcept {
+        if (active) {
+            lastRunTimeStamp_.store(Time::nowTimeStamp().point());
+        }
+        isActive_.store(active, std::memory_order_release);
+    }
+
+    friend class ScopedInactive;
+
 private:
     struct RepeatTask {
         TimerId id;
         std::chrono::milliseconds interval;
-        std::shared_ptr<Task> task; // 使用 shared_ptr 避免悬空指针
+        std::shared_ptr<Task> task;
         Time::TimePoint lastRunTime;
     };
 
     bool isRunning_ = false;
     std::atomic<bool> isInit_ = false;
     std::atomic<bool> stopRequested_ = false;
+    std::atomic<bool> isActive_{false};
     std::string name_;
     mutable std::mutex mutex_;
     std::condition_variable_any cond_;
     std::atomic<uint64_t> lastRunTimeStamp_;
     MPSCQueue<Task> taskQueue_;
-    std::vector<TimerId> timerIds_; // guarded by mutex_
+    std::vector<TimerId> timerIds_;
     std::vector<RepeatTask> repeatTasks_;
+    std::function<void()> customRunLoop_;
     std::thread worker_;
 };
 

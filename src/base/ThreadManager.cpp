@@ -88,27 +88,29 @@ void ThreadManager::reportRunInfo() noexcept {
     BlockCallback callback;
     {
         std::unique_lock<std::mutex> lock(mutex_);
-        LogI("ThreadManager report now:{}, now live size :{}", now.point(), threadInfos_.size());
         std::erase_if(threadInfos_, [now, &blockedThreads](auto& pair) {
-            auto& [id, ptr] = pair;
-            auto isExpired = ptr.expired();
-            if (!isExpired) {
-                auto thread = ptr.lock();
+            auto thread = pair.second.lock();
+            if (!thread) {
+                return true;
+            }
+            // 仅对活跃中线程做卡死判定，阻塞等待期间 active=false 自然跳过
+            if (thread->isRunning() && thread->isActive()) {
                 auto interval = now - thread->getLastRunTimeStamp();
-                if (thread->isRunning() && interval >= kMaxThreadBlockTimeInterval) {
-                    LogE("ThreadManager report [{}] is blocking.", std::string(thread->getName()));
+                if (interval >= kMaxThreadBlockTimeInterval) {
                     blockedThreads.emplace_back(thread->getName(), interval);
                 }
             }
-            return isExpired;
+            return false;
         });
         callback = blockCallback_;
     }
-    // 在锁外执行回调，避免死锁
+    LogI("ThreadManager report now:{}, live size:{}", now.point(), threadInfos_.size());
+    if (!callback) {
+        return;
+    }
     for (auto& [name, duration] : blockedThreads) {
-        if (callback) {
-            callback(name, duration);
-        }
+        LogE("ThreadManager report [{}] is blocking.", name);
+        callback(name, duration);
     }
 }
 
