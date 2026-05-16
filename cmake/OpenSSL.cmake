@@ -24,7 +24,13 @@ set(OPENSSL_MIRROR_URL "https://www.openssl.org/source/openssl-${OPENSSL_VERSION
 set(OPENSSL_SOURCE_CACHE_DIR "${CMAKE_SOURCE_DIR}/.fetchcontent_cache/openssl")
 
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-    set(OPENSSL_INSTALL_DIR "${CMAKE_BINARY_DIR}/deps/openssl/ios")
+    # iOS 不支持 fat library（真机 arm64 和模拟器 arm64 架构名相同但二进制不兼容）
+    # 根据当前 SDK 选择对应的 OpenSSL 安装目录
+    if(CMAKE_OSX_SYSROOT MATCHES "iphonesimulator")
+        set(OPENSSL_INSTALL_DIR "${CMAKE_BINARY_DIR}/deps/openssl/iphonesimulator")
+    else()
+        set(OPENSSL_INSTALL_DIR "${CMAKE_BINARY_DIR}/deps/openssl/iphoneos")
+    endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
     set(OPENSSL_INSTALL_DIR "${CMAKE_BINARY_DIR}/deps/openssl/android")
 else()
@@ -98,112 +104,206 @@ endfunction()
 
 # =============================================================================
 # iOS Cross-Compilation（out-of-source build）
+# Note: Cannot create fat library because device arm64 and simulator arm64
+# have the same arch name but incompatible binaries.
+# We build separately for iphoneos and iphonesimulator.
 # =============================================================================
 function(_openssl_build_ios OPENSSL_SOURCE_DIR)
     message(STATUS "Building OpenSSL for iOS (out-of-source)...")
-
-    if(NOT DEFINED CMAKE_OSX_ARCHITECTURES)
-        set(IOS_ARCH "arm64")
-    else()
-        list(GET CMAKE_OSX_ARCHITECTURES 0 IOS_ARCH)
-    endif()
-
-    if(IOS_ARCH STREQUAL "arm64")
-        set(OPENSSL_TARGET "ios64-xcrun")
-    elseif(IOS_ARCH STREQUAL "x86_64")
-        set(OPENSSL_TARGET "iossimulator-xcrun")
-    elseif(IOS_ARCH STREQUAL "arm64-sim")
-        set(OPENSSL_TARGET "iossimulator-xcrun")
-    else()
-        message(FATAL_ERROR "Unsupported iOS architecture: ${IOS_ARCH}")
-    endif()
 
     if(NOT DEFINED IOS_DEPLOYMENT_TARGET)
         set(IOS_DEPLOYMENT_TARGET "16.5")
     endif()
 
-    # 独立 build 目录，与源码树和 Android build 目录完全隔离
-    set(OPENSSL_BUILD_DIR "${CMAKE_BINARY_DIR}/deps/openssl/build-ios-${IOS_ARCH}")
-    file(MAKE_DIRECTORY "${OPENSSL_BUILD_DIR}")
+    # Determine which SDK we're building for
+    if(CMAKE_OSX_SYSROOT MATCHES "iphonesimulator")
+        set(IOS_SDK_NAME "iphonesimulator")
 
-    # OpenSSL Configure 不支持真正的 out-of-source，需要先把源码复制到 build 目录
-    # 用 rsync 只同步源文件（排除 .o/.a/.so 等产物），保持源码缓存干净
-    execute_process(
-        COMMAND sh -c "rsync -a --exclude='*.o' --exclude='*.a' --exclude='*.so' \
-            --exclude='*.dylib' --exclude='Makefile' --exclude='configdata.pm' \
-            '${OPENSSL_SOURCE_DIR}/' '${OPENSSL_BUILD_DIR}/'"
-        RESULT_VARIABLE RSYNC_RESULT
-    )
-
-    if(NOT RSYNC_RESULT EQUAL 0)
-        message(FATAL_ERROR "Failed to copy OpenSSL source to build directory")
+        # 模拟器始终构建 x86_64（Intel Mac / Rosetta）和 arm64（Apple Silicon）两个架构
+        set(IOS_ARCHS "x86_64;arm64")
+    else()
+        set(IOS_SDK_NAME "iphoneos")
+        set(IOS_ARCHS "arm64")
     endif()
 
-    # no-shared: 静态库  no-tests: 跳过测试  no-legacy/no-module: iOS 不允许动态 provider
-    execute_process(
-        COMMAND sh -c
-        "CC=clang CFLAGS='-target ${IOS_ARCH}-apple-ios${IOS_DEPLOYMENT_TARGET}' \
-             ./Configure ${OPENSSL_TARGET} \
-             --prefix=${OPENSSL_INSTALL_DIR} \
-             --openssldir=${OPENSSL_INSTALL_DIR}/ssl \
-             no-shared no-tests no-legacy no-module"
-        WORKING_DIRECTORY "${OPENSSL_BUILD_DIR}"
-        RESULT_VARIABLE CONFIGURE_RESULT
-    )
+    message(STATUS "Building OpenSSL for iOS SDK: ${IOS_SDK_NAME}")
+    message(STATUS "Architectures: ${IOS_ARCHS}")
 
-    if(NOT CONFIGURE_RESULT EQUAL 0)
-        message(FATAL_ERROR "OpenSSL configure failed for iOS")
-    endif()
+    # Build each architecture for this SDK
+    set(BUILT_SSL_LIBS "")
+    set(BUILT_CRYPTO_LIBS "")
 
-    include(ProcessorCount)
-    ProcessorCount(NPROC)
-
-    # 只构建库，跳过 apps/openssl 可执行文件（iOS 上无法链接）
-    execute_process(
-        COMMAND make -j${NPROC} build_libs
-        WORKING_DIRECTORY "${OPENSSL_BUILD_DIR}"
-        RESULT_VARIABLE BUILD_RESULT
-    )
-
-    if(NOT BUILD_RESULT EQUAL 0)
-        message(FATAL_ERROR "OpenSSL build failed for iOS")
-    endif()
-
-    # install_dev 只安装头文件和静态库
-    execute_process(
-        COMMAND make install_dev
-        WORKING_DIRECTORY "${OPENSSL_BUILD_DIR}"
-        RESULT_VARIABLE INSTALL_RESULT
-    )
-
-    if(NOT INSTALL_RESULT EQUAL 0)
-        message(FATAL_ERROR "OpenSSL install failed for iOS")
-    endif()
-
-    # Apple 链接器要求 libtool 格式（ar archive random library）
-    # OpenSSL 的 install_dev 使用 GNU ranlib，产出 GNU ar 格式，需要重新打包：
-    # 先用 ar -x 提取所有 .o，再用 Apple libtool 重新打包（libtool 不能直接处理 GNU ar 格式）
-    foreach(_lib ssl crypto)
-        set(_lib_path "${OPENSSL_INSTALL_DIR}/lib/lib${_lib}.a")
-
-        if(EXISTS "${_lib_path}")
-            set(_repack_dir "${OPENSSL_BUILD_DIR}/repack_${_lib}")
-            execute_process(
-                COMMAND sh -c "rm -rf '${_repack_dir}' && mkdir -p '${_repack_dir}' \
-                    && cd '${_repack_dir}' && ar -x '${_lib_path}' \
-                    && libtool -static -o '${_lib_path}' *.o"
-                RESULT_VARIABLE LIBTOOL_RESULT
-            )
-
-            if(NOT LIBTOOL_RESULT EQUAL 0)
-                message(WARNING "libtool repack failed for lib${_lib}.a")
-            else()
-                message(STATUS "Repacked lib${_lib}.a with Apple libtool")
-            endif()
+    foreach(IOS_ARCH IN LISTS IOS_ARCHS)
+        # Set OpenSSL target and SDK based on architecture and current SDK
+        if(IOS_ARCH STREQUAL "arm64" AND IOS_SDK_NAME STREQUAL "iphonesimulator")
+            # Simulator arm64 (M1/M2 Mac)
+            set(OPENSSL_TARGET "iossimulator-xcrun")
+            set(SDK_NAME "iphonesimulator")
+        elseif(IOS_ARCH STREQUAL "arm64")
+            # Device arm64
+            set(OPENSSL_TARGET "ios64-xcrun")
+            set(SDK_NAME "iphoneos")
+        elseif(IOS_ARCH STREQUAL "x86_64")
+            set(OPENSSL_TARGET "iossimulator-xcrun")
+            set(SDK_NAME "iphonesimulator")
+        else()
+            message(WARNING "Unsupported iOS architecture: ${IOS_ARCH}, skipping")
+            continue()
         endif()
+
+        message(STATUS "Building OpenSSL for iOS architecture: ${IOS_ARCH} (${SDK_NAME})")
+
+        # Architecture-specific build directory and install directory
+        # Each arch installs to its own directory to avoid overwriting each other
+        set(OPENSSL_BUILD_DIR "${CMAKE_BINARY_DIR}/deps/openssl/build-${IOS_SDK_NAME}-${IOS_ARCH}")
+        set(OPENSSL_ARCH_INSTALL_DIR "${CMAKE_BINARY_DIR}/deps/openssl/${IOS_SDK_NAME}-${IOS_ARCH}")
+        file(MAKE_DIRECTORY "${OPENSSL_BUILD_DIR}")
+        file(MAKE_DIRECTORY "${OPENSSL_ARCH_INSTALL_DIR}")
+
+        # Copy source to build directory
+        execute_process(
+            COMMAND sh -c "rsync -a --exclude='*.o' --exclude='*.a' --exclude='*.so' \
+                --exclude='*.dylib' --exclude='Makefile' --exclude='configdata.pm' \
+                --exclude='*.obj' --exclude='*.lib' \
+                '${OPENSSL_SOURCE_DIR}/' '${OPENSSL_BUILD_DIR}/'"
+            RESULT_VARIABLE RSYNC_RESULT
+        )
+
+        if(NOT RSYNC_RESULT EQUAL 0)
+            message(FATAL_ERROR "Failed to copy OpenSSL source to build directory for ${IOS_ARCH}")
+        endif()
+
+        # 模拟器必须加 -simulator 后缀，否则 clang 会引用 macOS 的 $INODE64 符号
+        if(IOS_SDK_NAME STREQUAL "iphonesimulator")
+            set(_target_triple "${IOS_ARCH}-apple-ios${IOS_DEPLOYMENT_TARGET}-simulator")
+        else()
+            set(_target_triple "${IOS_ARCH}-apple-ios${IOS_DEPLOYMENT_TARGET}")
+        endif()
+
+        # Configure for this architecture
+        execute_process(
+            COMMAND sh -c
+            "./Configure ${OPENSSL_TARGET} \
+                 --prefix=${OPENSSL_ARCH_INSTALL_DIR} \
+                 --openssldir=${OPENSSL_ARCH_INSTALL_DIR}/ssl \
+                 no-shared no-tests no-legacy no-module"
+            WORKING_DIRECTORY "${OPENSSL_BUILD_DIR}"
+            RESULT_VARIABLE CONFIGURE_RESULT
+        )
+
+        if(NOT CONFIGURE_RESULT EQUAL 0)
+            message(FATAL_ERROR "OpenSSL configure failed for iOS ${IOS_ARCH}")
+        endif()
+
+        include(ProcessorCount)
+        ProcessorCount(NPROC)
+
+        # Build only libraries
+        # 通过 CFLAGS 追加 -target 覆盖 OpenSSL xcrun wrapper 的默认设置，确保模拟器使用正确的 ABI
+        execute_process(
+            COMMAND make -j${NPROC} build_libs "CFLAGS=-target ${_target_triple}"
+            WORKING_DIRECTORY "${OPENSSL_BUILD_DIR}"
+            RESULT_VARIABLE BUILD_RESULT
+        )
+
+        if(NOT BUILD_RESULT EQUAL 0)
+            message(FATAL_ERROR "OpenSSL build failed for iOS ${IOS_ARCH}")
+        endif()
+
+        # Install only headers and libraries
+        execute_process(
+            COMMAND make install_dev
+            WORKING_DIRECTORY "${OPENSSL_BUILD_DIR}"
+            RESULT_VARIABLE INSTALL_RESULT
+        )
+
+        if(NOT INSTALL_RESULT EQUAL 0)
+            message(FATAL_ERROR "OpenSSL install failed for iOS ${IOS_ARCH}")
+        endif()
+
+        # Repack with Apple libtool
+        foreach(_lib ssl crypto)
+            set(_lib_path "${OPENSSL_ARCH_INSTALL_DIR}/lib/lib${_lib}.a")
+
+            if(EXISTS "${_lib_path}")
+                set(_repack_dir "${OPENSSL_BUILD_DIR}/repack_${_lib}")
+                execute_process(
+                    COMMAND sh -c "rm -rf '${_repack_dir}' && mkdir -p '${_repack_dir}' \
+                        && cd '${_repack_dir}' && ar -x '${_lib_path}' \
+                        && libtool -static -o '${_lib_path}' *.o"
+                    RESULT_VARIABLE LIBTOOL_RESULT
+                )
+
+                if(NOT LIBTOOL_RESULT EQUAL 0)
+                    message(WARNING "libtool repack failed for lib${_lib}.a (${IOS_ARCH})")
+                else()
+                    message(STATUS "Repacked lib${_lib}.a (${IOS_ARCH}) with Apple libtool")
+                endif()
+
+                # Collect library paths for fat library creation
+                if(_lib STREQUAL "ssl")
+                    list(APPEND BUILT_SSL_LIBS "${_lib_path}")
+                else()
+                    list(APPEND BUILT_CRYPTO_LIBS "${_lib_path}")
+                endif()
+            endif()
+        endforeach()
     endforeach()
 
-    message(STATUS "OpenSSL for iOS built and installed to: ${OPENSSL_INSTALL_DIR}")
+    # Merge all per-arch libraries into the final SDK-specific install directory
+    file(MAKE_DIRECTORY "${OPENSSL_INSTALL_DIR}/lib")
+    file(MAKE_DIRECTORY "${OPENSSL_INSTALL_DIR}/include")
+
+    # Copy headers from the last built arch (same for all archs)
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${OPENSSL_ARCH_INSTALL_DIR}/include"
+        "${OPENSSL_INSTALL_DIR}/include"
+    )
+
+    foreach(_lib ssl crypto)
+        if(_lib STREQUAL "ssl")
+            set(LIB_PATHS "${BUILT_SSL_LIBS}")
+        else()
+            set(LIB_PATHS "${BUILT_CRYPTO_LIBS}")
+        endif()
+
+        set(TARGET_LIB "${OPENSSL_INSTALL_DIR}/lib/lib${_lib}.a")
+
+        if(NOT LIB_PATHS)
+            message(WARNING "No ${_lib} libraries built")
+            continue()
+        endif()
+
+        list(LENGTH LIB_PATHS LIB_COUNT)
+
+        if(LIB_COUNT EQUAL 1)
+            execute_process(
+                COMMAND ${CMAKE_COMMAND} -E copy "${LIB_PATHS}" "${TARGET_LIB}"
+            )
+        else()
+            # lipo 合并同 SDK 下多架构（如模拟器 x86_64 + arm64）
+            execute_process(
+                COMMAND lipo -create ${LIB_PATHS} -output "${TARGET_LIB}"
+                RESULT_VARIABLE LIPO_RESULT
+            )
+
+            if(NOT LIPO_RESULT EQUAL 0)
+                message(FATAL_ERROR "lipo failed to create fat library for lib${_lib}.a")
+            endif()
+
+            message(STATUS "Created fat library: ${TARGET_LIB}")
+        endif()
+
+        execute_process(
+            COMMAND lipo -info "${TARGET_LIB}"
+            OUTPUT_VARIABLE LIPO_INFO
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+        message(STATUS "lib${_lib}.a: ${LIPO_INFO}")
+    endforeach()
+
+    message(STATUS "OpenSSL for iOS (${IOS_SDK_NAME}) built and installed to: ${OPENSSL_INSTALL_DIR}")
 endfunction()
 
 # =============================================================================
@@ -274,7 +374,6 @@ function(_openssl_build_android OPENSSL_SOURCE_DIR)
              /usr/bin/perl ./Configure ${OPENSSL_TARGET} \
              --prefix=${OPENSSL_INSTALL_DIR} \
              --openssldir=${OPENSSL_INSTALL_DIR}/ssl \
-             -D__ANDROID_API__=${ANDROID_API_LEVEL} \
              shared no-tests"
         WORKING_DIRECTORY "${OPENSSL_BUILD_DIR}"
         RESULT_VARIABLE CONFIGURE_RESULT
@@ -318,44 +417,43 @@ function(build_openssl)
 
     _openssl_download_source()
 
-    # Android 用动态库，iOS 用静态库
     if(OPENSSL_TARGET_PLATFORM STREQUAL "android")
         if(EXISTS "${OPENSSL_INSTALL_DIR}/lib/libssl.so" OR EXISTS "${OPENSSL_INSTALL_DIR}/lib64/libssl.so")
             message(STATUS "OpenSSL already built at: ${OPENSSL_INSTALL_DIR}")
             return()
         endif()
-    else()
-        # iOS 静态库：必须是 Apple libtool 格式（ar archive random library）
-        # GNU ar 格式（current ar archive）会导致链接器报 "archive member '/' not a mach-o file"
-        set(_ssl_lib "")
 
-        if(EXISTS "${OPENSSL_INSTALL_DIR}/lib/libssl.a")
-            set(_ssl_lib "${OPENSSL_INSTALL_DIR}/lib/libssl.a")
-        elseif(EXISTS "${OPENSSL_INSTALL_DIR}/lib64/libssl.a")
-            set(_ssl_lib "${OPENSSL_INSTALL_DIR}/lib64/libssl.a")
-        endif()
-
-        if(_ssl_lib)
-            execute_process(
-                COMMAND file "${_ssl_lib}"
-                OUTPUT_VARIABLE _file_output
-                OUTPUT_STRIP_TRAILING_WHITESPACE
-            )
-
-            if(_file_output MATCHES "ar archive random library")
-                message(STATUS "OpenSSL already built at: ${OPENSSL_INSTALL_DIR}")
-                return()
-            else()
-                message(STATUS "OpenSSL cache is GNU ar format, rebuilding with Apple libtool...")
-                file(REMOVE_RECURSE "${OPENSSL_INSTALL_DIR}")
-            endif()
-        endif()
-    endif()
-
-    if(OPENSSL_TARGET_PLATFORM STREQUAL "ios")
-        _openssl_build_ios("${OPENSSL_SOURCE_DIR}")
-    elseif(OPENSSL_TARGET_PLATFORM STREQUAL "android")
         _openssl_build_android("${OPENSSL_SOURCE_DIR}")
+    else()
+        # iOS：configure 阶段同时构建 iphoneos 和 iphonesimulator 两套，
+        # 确保 xcodebuild 编译真机和模拟器时都能找到对应的库。
+        set(_base_dir "${CMAKE_BINARY_DIR}/deps/openssl")
+
+        foreach(_sdk iphoneos iphonesimulator)
+            if(EXISTS "${_base_dir}/${_sdk}/lib/libssl.a")
+                execute_process(
+                    COMMAND lipo -info "${_base_dir}/${_sdk}/lib/libssl.a"
+                    OUTPUT_VARIABLE _lipo_output
+                    OUTPUT_STRIP_TRAILING_WHITESPACE
+                    ERROR_QUIET
+                )
+                message(STATUS "OpenSSL ${_sdk} already built: ${_lipo_output}")
+            else()
+                message(STATUS "Building OpenSSL for ${_sdk}...")
+
+                # 临时覆盖 OPENSSL_INSTALL_DIR 和 CMAKE_OSX_SYSROOT 以复用 _openssl_build_ios
+                set(OPENSSL_INSTALL_DIR "${_base_dir}/${_sdk}")
+                set(CMAKE_OSX_SYSROOT "${_sdk}")
+                _openssl_build_ios("${OPENSSL_SOURCE_DIR}")
+            endif()
+        endforeach()
+
+        # 恢复为当前 SDK 对应的路径
+        set(OPENSSL_INSTALL_DIR "${_base_dir}/iphoneos" PARENT_SCOPE)
+
+        if(CMAKE_OSX_SYSROOT MATCHES "iphonesimulator")
+            set(OPENSSL_INSTALL_DIR "${_base_dir}/iphonesimulator" PARENT_SCOPE)
+        endif()
     endif()
 endfunction()
 
@@ -364,6 +462,20 @@ endfunction()
 # =============================================================================
 function(create_openssl_target)
     build_openssl()
+
+    # iOS 平台：只传 -lssl -lcrypto，不硬编码 -L 路径。
+    # 库搜索路径由 xcodebuild 的 LIBRARY_SEARCH_PATHS 参数按 SDK 动态注入，
+    # 确保真机用 iphoneos/lib，模拟器用 iphonesimulator/lib。
+    if(IOS)
+        add_library(slark::openssl INTERFACE IMPORTED GLOBAL)
+        set_target_properties(slark::openssl PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${OPENSSL_INSTALL_DIR}/include"
+            INTERFACE_LINK_LIBRARIES "-lssl -lcrypto"
+        )
+        message(STATUS "OpenSSL for iOS: -lssl -lcrypto (path resolved by xcodebuild LIBRARY_SEARCH_PATHS)")
+        message(STATUS "  Include Dir: ${OPENSSL_INSTALL_DIR}/include")
+        return()
+    endif()
 
     if(CMAKE_SYSTEM_NAME STREQUAL "Android")
         if(EXISTS "${OPENSSL_INSTALL_DIR}/lib/libssl.so")
@@ -409,7 +521,7 @@ function(create_openssl_target)
             INTERFACE_LINK_LIBRARIES "slark::openssl_crypto"
         )
     else()
-        # iOS 静态库
+        # 其他平台（如 macOS）
         add_library(slark::openssl STATIC IMPORTED GLOBAL)
         set_target_properties(slark::openssl PROPERTIES
             IMPORTED_LOCATION "${SSL_LIBRARY}"

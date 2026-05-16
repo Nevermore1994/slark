@@ -28,6 +28,10 @@ Slark 构建脚本 - 生成 iOS/Android 平台项目或本地 Makefile 项目
   --demo                     构建 Demo 项目
   --aar                      编译 Android AAR（含 C++ libslark.so），需配合 -p Android
   --aar-output <dir>         AAR 产物拷贝目标目录（可选，配合 --aar 使用）
+  --framework                编译 iOS framework（含真机+模拟器 XCFramework），需配合 -p iOS
+  --framework-output <dir>   framework 产物拷贝目标目录（可选，配合 --framework 使用）
+  --clean-build              编译前清理缓存（强制全量编译，适用于 --framework / --aar）
+  --open                     生成项目后打开 IDE（Android Studio 或 Xcode）
   --clean                    仅清理构建缓存，不生成项目
   -h, --help                 显示此帮助信息
 
@@ -53,6 +57,15 @@ Slark 构建脚本 - 生成 iOS/Android 平台项目或本地 Makefile 项目
   # 编译 AAR 并拷贝到指定目录
   $(basename "$0") -p Android -t Release --aar --aar-output ./dist
 
+  # 编译 iOS framework（含真机+模拟器 XCFramework）
+  $(basename "$0") -p iOS -t Release --framework
+
+  # 清理缓存后全量编译 iOS framework
+  $(basename "$0") -p iOS -t Release --framework --clean-build
+
+  # 编译 framework 并拷贝到指定目录
+  $(basename "$0") -p iOS -t Release --framework --framework-output ./dist
+
   # 仅清理构建缓存
   $(basename "$0") --clean
 
@@ -69,6 +82,10 @@ DEMO=false
 CLEAN_ONLY=false
 BUILD_AAR=false
 AAR_OUTPUT_DIR=""
+BUILD_FRAMEWORK=false
+FRAMEWORK_OUTPUT_DIR=""
+OPEN_IDE=false
+CLEAN_BUILD=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -90,6 +107,12 @@ while [[ $# -gt 0 ]]; do
         --aar-output)
             [[ -z "$2" ]] && { print_error "选项 $1 需要参数"; show_help; exit 1; }
             AAR_OUTPUT_DIR="$2"; shift 2 ;;
+        --framework) BUILD_FRAMEWORK=true; shift ;;
+        --clean-build) CLEAN_BUILD=true; shift ;;
+        --framework-output)
+            [[ -z "$2" ]] && { print_error "选项 $1 需要参数"; show_help; exit 1; }
+            FRAMEWORK_OUTPUT_DIR="$2"; shift 2 ;;
+        --open) OPEN_IDE=true; shift ;;
         --clean) CLEAN_ONLY=true; shift ;;
         -h|--help) show_help; exit 0 ;;
         *) print_error "未知选项: $1"; show_help; exit 1 ;;
@@ -105,22 +128,49 @@ print_info "项目根目录: $SCRIPT_DIR"
 # 根据平台生成项目
 case "$PLATFORM" in
     iOS)
-        clean_build_cache "$SCRIPT_DIR"
-        check_cmake_dependency
         source "${SCRIPT_DIR}/scripts/build_ios.sh"
-        check_ios_dependencies
-        generate_ios_project "$SCRIPT_DIR" "$BUILD_TYPE" "$DISABLE_HTTP" "$DISABLE_TEST" "$DEMO"
+        if [[ "$BUILD_FRAMEWORK" == true ]]; then
+            check_framework_dependencies "$SCRIPT_DIR"
+            build_framework "$SCRIPT_DIR" "$BUILD_TYPE" "$FRAMEWORK_OUTPUT_DIR" "$CLEAN_BUILD"
+        else
+            clean_build_cache "$SCRIPT_DIR"
+            check_cmake_dependency
+            check_ios_dependencies
+            generate_ios_project "$SCRIPT_DIR" "$BUILD_TYPE" "$DISABLE_HTTP" "$DISABLE_TEST" "$DEMO"
+        fi
+        
+        # 打开 Xcode
+        if [[ "$OPEN_IDE" == true ]]; then
+            xcode_project="${SCRIPT_DIR}/cmake-build-${BUILD_TYPE}/iOS/slark.xcodeproj"
+            if [[ -d "$xcode_project" ]]; then
+                print_info "打开 Xcode..."
+                open "$xcode_project"
+            else
+                print_warning "未找到 Xcode 项目: $xcode_project"
+            fi
+        fi
         ;;
     Android)
         source "${SCRIPT_DIR}/scripts/build_android.sh"
         if [[ "$BUILD_AAR" == true ]]; then
             check_aar_dependencies "$SCRIPT_DIR"
-            build_aar "$SCRIPT_DIR" "$BUILD_TYPE" "$AAR_OUTPUT_DIR"
+            build_aar "$SCRIPT_DIR" "$BUILD_TYPE" "$AAR_OUTPUT_DIR" "$CLEAN_BUILD"
         else
             clean_build_cache "$SCRIPT_DIR"
             check_cmake_dependency
             check_android_dependencies
             generate_android_project "$SCRIPT_DIR" "$BUILD_TYPE" "$DISABLE_HTTP" "$DISABLE_TEST" "$DEMO"
+        fi
+        
+        # 打开 Android Studio
+        if [[ "$OPEN_IDE" == true ]]; then
+            android_dir="${SCRIPT_DIR}/src/platform/Android"
+            if [[ -d "$android_dir" ]]; then
+                print_info "打开 Android Studio..."
+                open -a "Android Studio" "$android_dir"
+            else
+                print_warning "未找到 Android 项目: $android_dir"
+            fi
         fi
         ;;
     *)

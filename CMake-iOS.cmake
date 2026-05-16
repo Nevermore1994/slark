@@ -1,16 +1,7 @@
 macro(add_framework FRAME_WORK_NAME TARGET_NAME)
-    find_library(FRAMEWORK_${FRAME_WORK_NAME}
-        NAMES ${FRAME_WORK_NAME}
-        PATHS ${CMAKE_OSX_SYSROOT}/System/Library
-        PATH_SUFFIXES Frameworks
-        NO_DEFAULT_PATH)
-
-    if(${FRAMEWORK_${FRAME_WORK_NAME}} STREQUAL FRAMEWORK_${FRAME_WORK_NAME}-NOTFOUND)
-        message(ERROR ": Framework ${FRAME_WORK_NAME} not found")
-    else()
-        target_link_libraries(${TARGET_NAME} PUBLIC ${FRAMEWORK_${FRAME_WORK_NAME}})
-        message(STATUS "Framework ${FRAME_WORK_NAME} found at ${FRAMEWORK_${FRAME_WORK_NAME}}")
-    endif()
+    # 使用 Xcode 的 -framework 链接方式，让 Xcode 根据当前 SDK 自动找到 framework
+    target_link_libraries(${TARGET_NAME} PUBLIC "-framework ${FRAME_WORK_NAME}")
+    message(STATUS "Framework ${FRAME_WORK_NAME} linked (Xcode will resolve path per-sdk)")
 endmacro()
 
 # iOS 唯一入口：创建 slark.framework，不产生任何中间 target
@@ -156,13 +147,19 @@ macro(add_ios_framework)
     target_compile_definitions(slark PUBLIC SLARK_IOS)
 
     add_framework(Foundation slark)
+    add_framework(CoreFoundation slark)
     add_framework(AVFoundation slark)
     add_framework(VideoToolBox slark)
     add_framework(AudioToolBox slark)
     add_framework(CoreMedia slark)
     add_framework(CoreVideo slark)
-    add_framework(OpenGLES slark)
-    add_framework(GLKit slark)
+
+    # OpenGLES/GLKit 在模拟器上不可用，仅真机链接
+    if(NOT CMAKE_OSX_SYSROOT MATCHES "iphonesimulator")
+        add_framework(OpenGLES slark)
+        add_framework(GLKit slark)
+    endif()
+
     add_framework(CoreGraphics slark)
     add_framework(Metal slark)
     add_framework(QuartzCore slark)

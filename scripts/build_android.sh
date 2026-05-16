@@ -52,6 +52,7 @@ build_aar() {
     local script_dir="$1"
     local build_type="$2"   # Debug | Release
     local output_dir="$3"   # 可选，AAR 拷贝目标目录
+    local clean_build="$4"  # true = 清理缓存后重新编译
 
     local android_dir="${script_dir}/src/platform/Android"
     local gradlew="${android_dir}/gradlew"
@@ -68,6 +69,11 @@ build_aar() {
         variant="Release"
     else
         variant="Debug"
+    fi
+
+    if [[ "$clean_build" == true ]]; then
+        print_info "清理 Android 构建缓存..."
+        "${gradlew}" -p "${android_dir}" ":sdk:clean" --no-daemon
     fi
 
     print_info "编译 AAR (variant=${variant})，C++ 将同步编译..."
@@ -137,6 +143,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     DEMO=false
     BUILD_AAR=false
     AAR_OUTPUT_DIR=""
+    CLEAN_BUILD=false
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -145,6 +152,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
             --disable_test) DISABLE_TEST=true; shift ;;
             --demo) DEMO=true; shift ;;
             --aar) BUILD_AAR=true; shift ;;
+            --clean-build) CLEAN_BUILD=true; shift ;;
             --aar-output)
                 [[ -z "$2" ]] && { print_error "选项 $1 需要参数"; exit 1; }
                 AAR_OUTPUT_DIR="$2"; shift 2 ;;
@@ -157,7 +165,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     
     if [[ "$BUILD_AAR" == true ]]; then
         check_aar_dependencies "$SCRIPT_DIR"
-        build_aar "$SCRIPT_DIR" "$BUILD_TYPE" "$AAR_OUTPUT_DIR"
+        build_aar "$SCRIPT_DIR" "$BUILD_TYPE" "$AAR_OUTPUT_DIR" "$CLEAN_BUILD"
     else
         check_android_dependencies
         clean_build_cache "$SCRIPT_DIR"
