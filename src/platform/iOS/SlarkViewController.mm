@@ -12,6 +12,7 @@
 #import "RenderMetalView.h"
 #import "interface/SlarkGraphicsConfig.h"
 
+#import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
 
 @interface SlarkPlayer (Render)
@@ -84,6 +85,14 @@
                                              selector:@selector(applicationDidBecomeActive)
                                                  name:UIApplicationDidBecomeActiveNotification
                                                object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(audioSessionInterruption:)
+                                                 name:AVAudioSessionInterruptionNotification
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(audioSessionRouteChange:)
+                                                 name:AVAudioSessionRouteChangeNotification
+                                               object:nil];
 }
 
 - (void)viewDidLayoutSubviews {
@@ -91,12 +100,7 @@
 }
 
 - (void)deviceOrientationDidChange:(NSNotification*)notification {
-    UIDeviceOrientation orientation = [UIDevice currentDevice].orientation;
-    if (orientation == UIDeviceOrientationPortrait ||
-        orientation == UIDeviceOrientationPortraitUpsideDown) {
-    } else if (orientation == UIDeviceOrientationLandscapeLeft ||
-               orientation == UIDeviceOrientationLandscapeRight) {
-    }
+    // 屏幕旋转由 layoutSubviews 驱动 framebuffer 重建，此处无需额外处理
 }
 
 - (void)applicationWillResignActive {
@@ -113,6 +117,36 @@
         [self.player play];
     }
     _isActive = NO;
+}
+
+- (void)audioSessionInterruption:(NSNotification*)notification {
+    NSDictionary* info = notification.userInfo;
+    AVAudioSessionInterruptionType type = static_cast<AVAudioSessionInterruptionType>(
+        [info[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue]);
+    if (type == AVAudioSessionInterruptionTypeBegan) {
+        // 来电、VoIP 等中断开始，暂停播放
+        if (self.renderView.isActive) {
+            [self.player pause];
+            _isActive = YES;
+        }
+    } else if (type == AVAudioSessionInterruptionTypeEnded) {
+        // 中断结束，检查是否应该恢复播放
+        NSUInteger options = [info[AVAudioSessionInterruptionOptionKey] unsignedIntegerValue];
+        if ((options & AVAudioSessionInterruptionOptionShouldResume) && _isActive) {
+            [self.player play];
+        }
+        _isActive = NO;
+    }
+}
+
+- (void)audioSessionRouteChange:(NSNotification*)notification {
+    NSDictionary* info = notification.userInfo;
+    AVAudioSessionRouteChangeReason reason = static_cast<AVAudioSessionRouteChangeReason>(
+        [info[AVAudioSessionRouteChangeReasonKey] unsignedIntegerValue]);
+    // 耳机拔出时暂停，防止音频外漏
+    if (reason == AVAudioSessionRouteChangeReasonOldDeviceUnavailable) {
+        [self.player pause];
+    }
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -153,6 +187,7 @@
 }
 
 - (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
     [self.player stop];
     [self.renderView stop];
 }
