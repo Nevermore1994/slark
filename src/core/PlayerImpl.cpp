@@ -117,6 +117,9 @@ void Player::Impl::init() noexcept {
     ownerThread_ = Thread::create("playerThread");
     ownerThread_->postRepeatTask(std::chrono::milliseconds(setting.playerThreadTickMs), [this]() {
         process();
+        if (pipeline_ && pipeline_->isBuilt()) {
+            pipeline_->onFastTick();
+        }
     });
     ownerThread_->postRepeatTask(std::chrono::milliseconds(setting.playedTimeTickMs), [this]() {
         if (state() == PlayerState::Playing) {
@@ -423,7 +426,6 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
         LogI("discard seek:{} (too close to current pos {:.3f})", seekTime, playedTime);
         return;
     }
-    // 非精确 seek：当前已有 seek 进行中，丢弃新请求（精确 seek 不可丢弃）
     if (!seekRequest.isAccurate && seekRequest_.isValid()) {
         LogI("discard non-accurate seek:{} (seek in progress)", seekTime);
         return;
@@ -436,6 +438,7 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
     }
 
     seekRequest.startTime = Time::nowTimeStamp();
+    seekRequest.seekEpoch = pipeline_->nextSeekEpoch();
     seekRequest_.reset(std::make_shared<PlayerSeekRequest>(seekRequest));
     LogI("do seek to:{:.3f}s, accurate:{}", seekTime, seekRequest.isAccurate);
     setState(PlayerState::Buffering);
@@ -552,8 +555,8 @@ void Player::Impl::resumeFromBuffering() noexcept {
         LogI("resume from buffering -> playing");
         setState(PlayerState::Playing);
     } else {
-        LogI("resume from buffering -> ready");
-        setState(PlayerState::Ready);
+        LogI("resume from buffering -> pause");
+        setState(PlayerState::Pause);
     }
 }
 
@@ -584,6 +587,9 @@ void Player::Impl::handlePipelineEvent(PipelineEvent event,
             break;
         case PipelineEvent::SeekCompleted:
             if (auto seekRequest = seekRequest_.load()) {
+                if (seekRequest->seekEpoch != pipeline_->currentSeekEpoch()) {
+                    break;
+                }
                 LogI("seek done, cost time:{}",
                      (Time::nowTimeStamp() - seekRequest->startTime).toMilliSeconds());
                 seekRequest_.reset();

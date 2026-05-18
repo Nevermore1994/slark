@@ -98,6 +98,10 @@ public:
 
     void drainPendingTasks() noexcept;
 
+    // 高频 tick（playerThreadTickMs）：背压调节 + 音频推帧
+    void onFastTick() noexcept;
+
+    // 低频 tick（cacheTickMs）：seek 超时检测
     void onHeartbeat() noexcept;
 
     void setStreamControl(StreamControlFunc pauseStream, StreamControlFunc resumeStream) noexcept;
@@ -154,6 +158,16 @@ public:
     }
 
     void setVolume(float volume) noexcept;
+
+    /// 返回下一次 seek 将使用的 epoch（beginSeek 后递增），用于绑定 seekRequest
+    [[nodiscard]] uint64_t nextSeekEpoch() const noexcept {
+        return seekContext_->currentEpoch() + 1;
+    }
+
+    /// 返回当前 seek 的 epoch
+    [[nodiscard]] uint64_t currentSeekEpoch() const noexcept {
+        return seekContext_->currentEpoch();
+    }
 
 private:
     [[nodiscard]] double demuxedDuration() const noexcept override;

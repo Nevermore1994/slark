@@ -26,6 +26,7 @@ struct PlayerSeekRequest {
     bool isAccurate = false;
     double seekTime{0};
     Time::TimePoint startTime;
+    uint64_t seekEpoch{0};
 };
 
 class Player::Impl : public std::enable_shared_from_this<Player::Impl> {

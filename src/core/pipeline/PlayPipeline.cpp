@@ -208,6 +208,9 @@ void PlayPipeline::seek(CTime target, bool isAccurate) noexcept {
     }
 
     if (strategy == SeekStrategy::FastForwardInGOP) {
+        videoFrames_.withLock([](auto& m) {
+            m.clear();
+        });
         clockSync_->reset();
         LogI("seek fast-forward in GOP to {:.3f}s, epoch={}",
              targetSec,
@@ -483,13 +486,16 @@ void PlayPipeline::onBufferEvent(PipelineEvent event, std::optional<PipelineErro
     fireEvent(event, std::move(error));
 }
 
-void PlayPipeline::onHeartbeat() noexcept {
+void PlayPipeline::onFastTick() noexcept {
     assert(isOnOwnerThread());
     if (bufferMonitor_) {
         bufferMonitor_->onHeartbeat();
     }
     pushAudioFrames();
-    // seek 超时检测：5s 未完成则触发 SeekTimeout
+}
+
+void PlayPipeline::onHeartbeat() noexcept {
+    assert(isOnOwnerThread());
     constexpr auto kSeekTimeout = std::chrono::milliseconds(5000);
     if (seekContext_->isSeekTimedOut(kSeekTimeout)) {
         std::ignore = seekContext_->completeSeek();
