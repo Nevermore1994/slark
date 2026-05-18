@@ -51,6 +51,8 @@ GLProgram::GLProgram(std::string_view vertexShaderString, std::string_view fragm
         return;
     }
     if (!fragmentShader->compile() || !vertexShader->compile()) {
+        glDeleteProgram(program_);
+        program_ = 0;
         return;
     }
     glAttachShader(program_, vertexShader->shader());
