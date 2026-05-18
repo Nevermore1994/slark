@@ -106,14 +106,11 @@ enum {
     UNIFORM_UV,
     UNIFORM_ROTATION_ANGLE,
     UNIFORM_COLOR_CONVERSION_MATRIX,
+    UNIFORM_Y_OFFSET,
     NUM_UNIFORMS
 };
 
-GLint uniforms[NUM_UNIFORMS];
-
 enum { ATTRIB_VERTEX, ATTRIB_TEXCOORD, NUM_ATTRIBUTES };
-
-GLuint attributes[NUM_ATTRIBUTES];
 
 // Color conversion matrices
 static const GLfloat kColorConversion601VideoRange[] = {
@@ -127,6 +124,17 @@ static const GLfloat kColorConversion601VideoRange[] = {
     -0.813f,
     0.0f,
 };
+static const GLfloat kColorConversion601FullRange[] = {
+    1.0f,
+    1.0f,
+    1.0f,
+    0.0f,
+    -0.344136f,
+    1.772f,
+    1.402f,
+    -0.714136f,
+    0.0f,
+};
 static const GLfloat kColorConversion709VideoRange[] = {
     1.164f,
     1.164f,
@@ -138,13 +146,30 @@ static const GLfloat kColorConversion709VideoRange[] = {
     -0.533f,
     0.0f,
 };
+static const GLfloat kColorConversion709FullRange[] = {
+    1.0f,
+    1.0f,
+    1.0f,
+    0.0f,
+    -0.187324f,
+    1.8556f,
+    1.5748f,
+    -0.468124f,
+    0.0f,
+};
 
 @interface RenderGLView () {
     IEGLContextRefPtr _context;
     std::unique_ptr<GLProgram> _program;
     std::shared_ptr<VideoRender> _videoRenderImpl;
     const GLfloat* _preferredConversion;
+    GLfloat _yOffset;
     CVOpenGLESTextureCacheRef _videoTextureCache;
+    CAEAGLLayer* _eaglLayer; // 主线程 cache，避免 renderQueue→main 的 sync 调用
+
+    // 实例级 uniform/attribute 位置，避免多实例并存时全局数组互相覆盖
+    GLint _uniforms[NUM_UNIFORMS];
+    GLuint _attributes[NUM_ATTRIBUTES];
 
     // Simple state management
     std::atomic<bool> _setupComplete;
@@ -195,23 +220,25 @@ static const GLfloat kColorConversion709VideoRange[] = {
     [self stop];
 
     if (_renderQueue) {
-        dispatch_sync(_renderQueue, ^{
-            [self cleanupOpenGL];
+        // 用 async + 强引用自持有，避免主线程 sync(renderQueue) ↔ renderQueue sync(main) 死锁
+        // GL 资源和 preRenderBuffer 必须在 renderQueue 上统一清理
+        dispatch_queue_t q = _renderQueue;
+        __strong RenderGLView* strongSelf = self;
+        dispatch_async(q, ^{
+            [strongSelf cleanupOpenGL];
+            if (strongSelf->_vertexCoordinateBuffer) {
+                glDeleteBuffers(1, &strongSelf->_vertexCoordinateBuffer);
+                strongSelf->_vertexCoordinateBuffer = 0;
+            }
+            if (strongSelf->_textureCoordinateBuffer) {
+                glDeleteBuffers(1, &strongSelf->_textureCoordinateBuffer);
+                strongSelf->_textureCoordinateBuffer = 0;
+            }
+            if (strongSelf->_preRenderBuffer) {
+                CVPixelBufferRelease(strongSelf->_preRenderBuffer);
+                strongSelf->_preRenderBuffer = NULL;
+            }
         });
-    }
-
-    // Clean up pixel buffers
-    if (_preRenderBuffer) {
-        CVPixelBufferRelease(_preRenderBuffer);
-        _preRenderBuffer = NULL;
-    }
-    if (_vertexCoordinateBuffer) {
-        glDeleteBuffers(1, &_vertexCoordinateBuffer);
-        _vertexCoordinateBuffer = 0;
-    }
-    if (_textureCoordinateBuffer) {
-        glDeleteBuffers(1, &_textureCoordinateBuffer);
-        _textureCoordinateBuffer = 0;
     }
 }
 
@@ -222,6 +249,7 @@ static const GLfloat kColorConversion709VideoRange[] = {
     _renderInterval = 30;
     _isActive = YES;
     _preferredConversion = kColorConversion709VideoRange;
+    _yOffset = 16.0f / 255.0f;
     _setupComplete.store(false);
     _isDestructing.store(false);
 
@@ -235,6 +263,7 @@ static const GLfloat kColorConversion709VideoRange[] = {
     _renderTexture = NULL;
     _vertexCoordinateBuffer = 0;
     _textureCoordinateBuffer = 0;
+    _eaglLayer = nil;
 }
 
 - (void)setupRenderQueue {
@@ -313,7 +342,13 @@ static const GLfloat kColorConversion709VideoRange[] = {
 
     _displayLink = [CADisplayLink displayLinkWithTarget:self
                                                selector:@selector(displayLinkCallback)];
-    _displayLink.preferredFramesPerSecond = _renderInterval;
+    if (@available(iOS 15.0, *)) {
+        _displayLink.preferredFrameRateRange = CAFrameRateRangeMake(MIN(_renderInterval, 24),
+                                                                    MAX(_renderInterval, 60),
+                                                                    _renderInterval);
+    } else {
+        _displayLink.preferredFramesPerSecond = _renderInterval;
+    }
     [_displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
 }
 
@@ -331,19 +366,30 @@ static const GLfloat kColorConversion709VideoRange[] = {
 }
 
 - (void)setRotation:(double)rotation {
-    static double DEGREES_TO_RADIANS = 0.017453292519943295;
-    _rotation = rotation * DEGREES_TO_RADIANS;
+    static constexpr double kDegreesToRadians = M_PI / 180.0;
+    _rotation = rotation * kDegreesToRadians;
 }
 
 - (void)setRenderInterval:(NSInteger)renderInterval {
     if (_renderInterval != renderInterval) {
         _renderInterval = renderInterval;
-        _displayLink.preferredFramesPerSecond = renderInterval;
+        if (@available(iOS 15.0, *)) {
+            _displayLink.preferredFrameRateRange = CAFrameRateRangeMake(MIN(renderInterval, 24),
+                                                                        MAX(renderInterval, 60),
+                                                                        renderInterval);
+        } else {
+            _displayLink.preferredFramesPerSecond = renderInterval;
+        }
     }
 }
 
 - (void)layoutSubviews {
     [super layoutSubviews];
+
+    // 主线程写 _eaglLayer，renderQueue 读，加锁保护竞态
+    @synchronized(self) {
+        _eaglLayer = static_cast<CAEAGLLayer*>(self.layer);
+    }
 
     CGFloat scale = [[UIScreen mainScreen] scale];
     GLint newWidth = static_cast<GLint>(self.bounds.size.width * scale);
@@ -427,36 +473,36 @@ static const GLfloat kColorConversion709VideoRange[] = {
 
     // Get locations
     auto program = _program->program();
-    attributes[ATTRIB_VERTEX] = static_cast<GLuint>(glGetAttribLocation(program, "position"));
-    attributes[ATTRIB_TEXCOORD] = static_cast<GLuint>(glGetAttribLocation(program, "texCoord"));
-    uniforms[UNIFORM_Y] = glGetUniformLocation(program, "SamplerY");
-    uniforms[UNIFORM_UV] = glGetUniformLocation(program, "SamplerUV");
-    uniforms[UNIFORM_ROTATION_ANGLE] = glGetUniformLocation(program, "preferredRotation");
-    uniforms[UNIFORM_COLOR_CONVERSION_MATRIX] =
+    _attributes[ATTRIB_VERTEX] = static_cast<GLuint>(glGetAttribLocation(program, "position"));
+    _attributes[ATTRIB_TEXCOORD] = static_cast<GLuint>(glGetAttribLocation(program, "texCoord"));
+    _uniforms[UNIFORM_Y] = glGetUniformLocation(program, "SamplerY");
+    _uniforms[UNIFORM_UV] = glGetUniformLocation(program, "SamplerUV");
+    _uniforms[UNIFORM_ROTATION_ANGLE] = glGetUniformLocation(program, "preferredRotation");
+    _uniforms[UNIFORM_COLOR_CONVERSION_MATRIX] =
         glGetUniformLocation(program, "colorConversionMatrix");
 
     glGenBuffers(1, &_vertexCoordinateBuffer);
     glBindBuffer(GL_ARRAY_BUFFER, _vertexCoordinateBuffer);
     glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 8, NULL, GL_DYNAMIC_DRAW);
-    glVertexAttribPointer(attributes[ATTRIB_VERTEX],
+    glVertexAttribPointer(_attributes[ATTRIB_VERTEX],
                           2,
                           GL_FLOAT,
                           GL_FALSE,
                           0,
                           static_cast<void*>(nullptr));
-    glEnableVertexAttribArray(attributes[ATTRIB_VERTEX]);
+    glEnableVertexAttribArray(_attributes[ATTRIB_VERTEX]);
 
     static const GLfloat texCoords[] = {0.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f};
     glGenBuffers(1, &_textureCoordinateBuffer);
     glBindBuffer(GL_ARRAY_BUFFER, _textureCoordinateBuffer);
     glBufferData(GL_ARRAY_BUFFER, sizeof(texCoords), texCoords, GL_STATIC_DRAW);
-    glVertexAttribPointer(attributes[ATTRIB_TEXCOORD],
+    glVertexAttribPointer(_attributes[ATTRIB_TEXCOORD],
                           2,
                           GL_FLOAT,
                           GL_FALSE,
                           0,
                           static_cast<void*>(nullptr));
-    glEnableVertexAttribArray(attributes[ATTRIB_TEXCOORD]);
+    glEnableVertexAttribArray(_attributes[ATTRIB_TEXCOORD]);
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
@@ -468,23 +514,16 @@ static const GLfloat kColorConversion709VideoRange[] = {
     glDisable(GL_DEPTH_TEST);
 
     [self createFramebuffer];
-    if (!_videoTextureCache) {
-        CVReturn err = CVOpenGLESTextureCacheCreate(kCFAllocatorDefault,
-                                                    NULL,
-                                                    nativeContext,
-                                                    NULL,
-                                                    &_videoTextureCache);
-        if (err != noErr) {
-            LogE("Error at CVOpenGLESTextureCacheCreate {}", err);
-        }
-    }
+
+    _uniforms[UNIFORM_Y_OFFSET] = glGetUniformLocation(_program->program(), "yOffset");
 
     _program->attach();
 
-    glUniformMatrix3fv(uniforms[UNIFORM_COLOR_CONVERSION_MATRIX],
+    glUniformMatrix3fv(_uniforms[UNIFORM_COLOR_CONVERSION_MATRIX],
                        1,
                        GL_FALSE,
                        _preferredConversion);
+    glUniform1f(_uniforms[UNIFORM_Y_OFFSET], _yOffset);
     _program->detach();
     _context->detachContext();
     _setupComplete.store(true);
@@ -499,12 +538,13 @@ static const GLfloat kColorConversion709VideoRange[] = {
     glGenRenderbuffers(1, &_renderBuffer);
     glBindRenderbuffer(GL_RENDERBUFFER, _renderBuffer);
 
-    // Access layer on main thread
-    __block BOOL success = NO;
-    dispatch_sync(dispatch_get_main_queue(), ^{
-        CAEAGLLayer* layer = static_cast<CAEAGLLayer*>(self.layer);
-        success = [nativeContext renderbufferStorage:GL_RENDERBUFFER fromDrawable:layer];
-    });
+    // 使用主线程 cache 的 layer，renderbufferStorage 要求 context 为 current，
+    // 此处已在 renderQueue 上 attachContext，直接调用无需切回主线程
+    CAEAGLLayer* layer = nil;
+    @synchronized(self) {
+        layer = _eaglLayer ?: static_cast<CAEAGLLayer*>(self.layer);
+    }
+    BOOL success = [nativeContext renderbufferStorage:GL_RENDERBUFFER fromDrawable:layer];
 
     if (success) {
         glFramebufferRenderbuffer(GL_FRAMEBUFFER,
@@ -512,12 +552,17 @@ static const GLfloat kColorConversion709VideoRange[] = {
                                   GL_RENDERBUFFER,
                                   _renderBuffer);
 
-        // Create texture cache
-        CVOpenGLESTextureCacheCreate(kCFAllocatorDefault,
-                                     NULL,
-                                     nativeContext,
-                                     NULL,
-                                     &_videoTextureCache);
+        // 创建 texture cache（仅在未创建时创建，避免重复创建泄漏）
+        if (!_videoTextureCache) {
+            CVReturn err = CVOpenGLESTextureCacheCreate(kCFAllocatorDefault,
+                                                        NULL,
+                                                        nativeContext,
+                                                        NULL,
+                                                        &_videoTextureCache);
+            if (err != noErr) {
+                LogE("Error at CVOpenGLESTextureCacheCreate {}", err);
+            }
+        }
     }
 }
 
@@ -596,26 +641,33 @@ static const GLfloat kColorConversion709VideoRange[] = {
     }
 
     [self cleanupTextures];
+    _program->detach(); // 先 detach program，再 detach context
     _context->detachContext();
-    _program->detach();
 }
 
 - (BOOL)uploadYUVTexture:(CVPixelBufferRef)pixelBuffer {
     auto frameWidth = static_cast<GLsizei>(CVPixelBufferGetWidth(pixelBuffer));
     auto frameHeight = static_cast<GLsizei>(CVPixelBufferGetHeight(pixelBuffer));
 
-    // Determine color conversion matrix
+    // 根据 format type 和 YCbCrMatrix 选择正确的颜色矩阵与 yOffset
+    bool isFullRange = (CVPixelBufferGetPixelFormatType(pixelBuffer) ==
+                        kCVPixelFormatType_420YpCbCr8BiPlanarFullRange);
+    _yOffset = isFullRange ? 0.0f : (16.0f / 255.0f);
+
     CFTypeRef colorAttachments =
         CVBufferCopyAttachment(pixelBuffer, kCVImageBufferYCbCrMatrixKey, NULL);
+    bool is601 = colorAttachments && CFStringCompare(static_cast<CFStringRef>(colorAttachments),
+                                                     kCVImageBufferYCbCrMatrix_ITU_R_601_4,
+                                                     0) == kCFCompareEqualTo;
     if (colorAttachments) {
-        if (CFStringCompare(static_cast<CFStringRef>(colorAttachments),
-                            kCVImageBufferYCbCrMatrix_ITU_R_601_4,
-                            0) == kCFCompareEqualTo) {
-            _preferredConversion = kColorConversion601VideoRange;
-        } else {
-            _preferredConversion = kColorConversion709VideoRange;
-        }
         CFRelease(colorAttachments);
+    }
+    if (is601) {
+        _preferredConversion =
+            isFullRange ? kColorConversion601FullRange : kColorConversion601VideoRange;
+    } else {
+        _preferredConversion =
+            isFullRange ? kColorConversion709FullRange : kColorConversion709VideoRange;
     }
 
     // Y texture
@@ -643,7 +695,7 @@ static const GLfloat kColorConversion709VideoRange[] = {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glUniform1i(uniforms[UNIFORM_Y], 0);
+    glUniform1i(_uniforms[UNIFORM_Y], 0);
 
     // UV texture
     glActiveTexture(GL_TEXTURE1);
@@ -674,11 +726,12 @@ static const GLfloat kColorConversion709VideoRange[] = {
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    glUniform1i(uniforms[UNIFORM_UV], 1);
-    glUniformMatrix3fv(uniforms[UNIFORM_COLOR_CONVERSION_MATRIX],
+    glUniform1i(_uniforms[UNIFORM_UV], 1);
+    glUniformMatrix3fv(_uniforms[UNIFORM_COLOR_CONVERSION_MATRIX],
                        1,
                        GL_FALSE,
                        _preferredConversion);
+    glUniform1f(_uniforms[UNIFORM_Y_OFFSET], _yOffset);
 
     return YES;
 }
@@ -752,7 +805,7 @@ static const GLfloat kColorConversion709VideoRange[] = {
 
     glBindBuffer(GL_ARRAY_BUFFER, _vertexCoordinateBuffer);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float) * 8, vertices);
-    glUniform1f(uniforms[UNIFORM_ROTATION_ANGLE], static_cast<GLfloat>(_rotation));
+    glUniform1f(_uniforms[UNIFORM_ROTATION_ANGLE], static_cast<GLfloat>(_rotation));
 
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
