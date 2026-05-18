@@ -80,7 +80,7 @@ public:
 private:
     void init() noexcept;
 
-    static constexpr uint32_t kAudioBufferSize = 65536;
+    static constexpr uint32_t kAudioBufferSize = 262144;
 
 private:
     std::shared_ptr<AudioInfo> audioInfo_;

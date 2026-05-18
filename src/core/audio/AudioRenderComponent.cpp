@@ -36,7 +36,7 @@ void AudioRenderComponent::init() noexcept {
         LogE("audio info is nullptr");
         return;
     }
-    audioBuffer_ = std::make_unique<SPSCRingBuffer<uint8_t, 65536>>();
+    audioBuffer_ = std::make_unique<SPSCRingBuffer<uint8_t, kAudioBufferSize>>();
 
     auto pimpl = createAudioRender(audioInfo_);
     if (!pimpl) {
