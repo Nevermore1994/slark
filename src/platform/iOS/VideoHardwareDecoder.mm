@@ -163,30 +163,30 @@ Error VideoHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
                                                     reinterpret_cast<void*>(decodeInfo),
                                                     nullptr);
     // Apple 文档：decode 返回错误时 callback 不保证被调用，需主动释放 decodeInfo
-    if (status == kVTInvalidSessionErr || status == kVTVideoDecoderMalfunctionErr) {
-        delete decodeInfo;
-        decodeInfo = nullptr;
-        LogE("decode session error:{}, recreating", getVTErrorStr(status));
-        if (createDecodeSession()) {
-            auto* retryInfo =
-                new (std::nothrow) DecodeInfo{frame->pts, frame->timeScale, frame->isDiscard};
-            if (retryInfo) {
-                status = VTDecompressionSessionDecodeFrame(
-                    decodeSession_,
-                    sampleBuffer,
-                    kVTDecodeFrame_EnableAsynchronousDecompression,
-                    reinterpret_cast<void*>(retryInfo),
-                    nullptr);
-                if (status != noErr) {
-                    delete retryInfo;
-                }
-            } else {
-                status = kVTVideoDecoderMalfunctionErr;
-            }
+    if (status != kVTInvalidSessionErr && status != kVTVideoDecoderMalfunctionErr) {
+        if (status != noErr) {
+            delete decodeInfo;
         }
+        return status == noErr ? Error::Success : Error::CodecError;
     }
-    if (status != noErr && decodeInfo) {
-        delete decodeInfo;
+
+    // session 异常，释放旧 decodeInfo 并尝试重建 session 后重试
+    delete decodeInfo;
+    LogE("decode session error:{}, recreating", getVTErrorStr(status));
+    if (!createDecodeSession()) {
+        return Error::CodecError;
+    }
+    auto* retryInfo = new (std::nothrow) DecodeInfo{frame->pts, frame->timeScale, frame->isDiscard};
+    if (!retryInfo) {
+        return Error::CodecError;
+    }
+    status = VTDecompressionSessionDecodeFrame(decodeSession_,
+                                               sampleBuffer,
+                                               kVTDecodeFrame_EnableAsynchronousDecompression,
+                                               reinterpret_cast<void*>(retryInfo),
+                                               nullptr);
+    if (status != noErr) {
+        delete retryInfo;
     }
     // sampleBuffer 由 ScopeGuard 统一释放，无需手动 CFRelease
     return status == noErr ? Error::Success : Error::CodecError;
