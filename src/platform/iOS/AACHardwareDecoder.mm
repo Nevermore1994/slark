@@ -45,7 +45,7 @@ OSStatus AACDecodeInputDataProc(AudioConverterRef,
     ioData->mBuffers[0].mData = dataPtr->data();
     decoder->retainInputData(std::move(dataPtr));
     *ioNumberDataPackets = 1;
-    if (outDataPacketDescription) {
+    if (outDataPacketDescription && *outDataPacketDescription) {
         (*outDataPacketDescription)[0].mStartOffset = 0;
         (*outDataPacketDescription)[0].mVariableFramesInPacket = 0;
         (*outDataPacketDescription)[0].mDataByteSize =
@@ -143,8 +143,10 @@ Error AACHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
         outputBuffer_ = Data::create(bufferCapacity);
     }
     outputData_->mBuffers[0].mData = outputBuffer_->data();
-    // 被 move 走的 buffer 在 frame 消费完后回收为下一帧的备用 buffer
-    spareBuffer_ = Data::create(bufferCapacity);
+    // 备用 buffer 延迟创建，在 frame 消费完成后回收为下一帧的备用 buffer
+    if (!spareBuffer_ || spareBuffer_->capacity() < bufferCapacity) {
+        spareBuffer_ = Data::create(bufferCapacity);
+    }
     invokeReceiveFunc(DecoderData{std::move(decodingFrame_)});
     return Error::Success;
 }
