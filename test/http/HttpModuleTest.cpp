@@ -1,7 +1,5 @@
 //
-// Created by Nevermore on 2026/4/2.
-// Slark HTTP Module Tests
-// Copyright (c) 2026 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #include "CancellationToken.h"
 #include "HttpRequest.h"

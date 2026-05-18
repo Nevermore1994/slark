@@ -1,7 +1,5 @@
 //
-// Created by Nevermore on 2025/4/21.
-// test TestLockfreeRingBuffer
-// Copyright (c) 2025 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #include "RingBuffer.hpp"
 

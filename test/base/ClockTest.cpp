@@ -1,7 +1,5 @@
 //
-// Created by Nevermore on 2024/9/15.
-// slark ClockTest
-// Copyright (c) 2024 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #include "Clock.h" // Replace with the correct header for the Clock class
 

@@ -1,7 +1,5 @@
 //
-// Created by Nevermore on 2024/12/6.
-// slark RequestTest - Real HTTP request integration tests
-// Copyright (c) 2024 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #include "CancellationToken.h"
 #include "CoroutineScheduler.hpp"

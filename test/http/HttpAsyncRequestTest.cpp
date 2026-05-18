@@ -1,7 +1,5 @@
 //
-// Created by Nevermore on 2026/4/7.
-// Slark HTTP Async Request Tests
-// Copyright (c) 2026 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #include "AsyncGenerator.hpp"
 #include "CancellationToken.h"

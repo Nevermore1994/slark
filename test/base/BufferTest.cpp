@@ -1,7 +1,5 @@
 //
-// Created by Nevermore on 2024/9/29.
-// slark BufferTest
-// Copyright (c) 2024 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #include "Buffer.hpp"
