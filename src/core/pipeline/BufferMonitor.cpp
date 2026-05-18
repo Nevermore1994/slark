@@ -29,6 +29,9 @@ void BufferMonitor::onDemuxedDataEnqueued() noexcept {
 }
 
 void BufferMonitor::onDecodedDataEnqueued() noexcept {
+    if (decoderEof_) {
+        return;
+    }
     constexpr auto kThrottle = std::chrono::milliseconds(50);
     auto now = Clock::now();
     if (lastDecoderCheckTime_.has_value() && (now - *lastDecoderCheckTime_) < kThrottle) {

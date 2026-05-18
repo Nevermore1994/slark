@@ -108,6 +108,7 @@ private:
         if (streamPaused_) {
             delegate_.resumeStream();
             streamPaused_ = false;
+            pauseFailCount_ = 0;
         }
     }
 
