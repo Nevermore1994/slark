@@ -233,12 +233,16 @@ struct MetalVideoRender : public IVideoRender {
     _isDestructing.store(true);
     [self stop];
     if (_renderQueue) {
-        dispatch_sync(_renderQueue, ^{
-            [self cleanupMetal];
-            if (_preRenderBuffer) {
-                CVPixelBufferRelease(_preRenderBuffer);
-                _preRenderBuffer = NULL;
+        // 用 async + 强引用自持有，避免主线程 sync(renderQueue) ↔ renderQueue sync(main) 死锁
+        dispatch_queue_t q = _renderQueue;
+        __block RenderMetalView* strongSelf = self;
+        dispatch_async(q, ^{
+            [strongSelf cleanupMetal];
+            if (strongSelf->_preRenderBuffer) {
+                CVPixelBufferRelease(strongSelf->_preRenderBuffer);
+                strongSelf->_preRenderBuffer = NULL;
             }
+            strongSelf = nil;
         });
     }
 }
@@ -353,9 +357,12 @@ struct MetalVideoRender : public IVideoRender {
         LogE("Metal is not supported on this device");
         return NO;
     }
-    dispatch_sync(dispatch_get_main_queue(), ^{
+    // layer.device 必须在主线程设置，但 setupMetal 在 renderQueue 上执行，用 dispatch_async
+    // 避免死锁
+    id<MTLDevice> device = _device;
+    dispatch_async(dispatch_get_main_queue(), ^{
         CAMetalLayer* layer = static_cast<CAMetalLayer*>(self.layer);
-        layer.device = _device;
+        layer.device = device;
     });
     _commandQueue = [_device newCommandQueue];
     return YES;
@@ -449,7 +456,13 @@ struct MetalVideoRender : public IVideoRender {
     }
     _displayLink = [CADisplayLink displayLinkWithTarget:self
                                                selector:@selector(displayLinkCallback)];
-    _displayLink.preferredFramesPerSecond = _renderInterval;
+    if (@available(iOS 15.0, *)) {
+        _displayLink.preferredFrameRateRange = CAFrameRateRangeMake(MIN(_renderInterval, 24),
+                                                                    MAX(_renderInterval, 60),
+                                                                    _renderInterval);
+    } else {
+        _displayLink.preferredFramesPerSecond = _renderInterval;
+    }
     [_displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
 }
 
@@ -468,15 +481,19 @@ struct MetalVideoRender : public IVideoRender {
 
 - (void)setRotation:(double)rotation {
     static constexpr double kDegreesToRadians = M_PI / 180.0;
-    @synchronized(self) {
-        _rotation = rotation * kDegreesToRadians;
-    }
+    _rotation = rotation * kDegreesToRadians;
 }
 
 - (void)setRenderInterval:(NSInteger)renderInterval {
     if (_renderInterval != renderInterval) {
         _renderInterval = renderInterval;
-        _displayLink.preferredFramesPerSecond = renderInterval;
+        if (@available(iOS 15.0, *)) {
+            _displayLink.preferredFrameRateRange = CAFrameRateRangeMake(MIN(renderInterval, 24),
+                                                                        MAX(renderInterval, 60),
+                                                                        renderInterval);
+        } else {
+            _displayLink.preferredFramesPerSecond = renderInterval;
+        }
     }
 }
 
@@ -587,9 +604,7 @@ struct MetalVideoRender : public IVideoRender {
     id<MTLRenderCommandEncoder> enc = [self beginRenderPassWithCommandBuffer:cmdBuf
                                                                     drawable:drawable];
     MetalUniforms uniforms{};
-    @synchronized(self) {
-        uniforms.rotation = static_cast<float>(_rotation);
-    }
+    uniforms.rotation = static_cast<float>(_rotation);
 
     if (formatType == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange ||
         formatType == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange) {
