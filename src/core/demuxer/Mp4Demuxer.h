@@ -31,6 +31,9 @@ public:
     std::shared_ptr<BoxCtts> ctts;
     std::shared_ptr<BoxStss> stss;
 
+    std::shared_ptr<BoxElst> elst;
+    int64_t elstMediaTimeOffset = 0;
+
     uint32_t stszSampleSizeIndex = 0;
     uint32_t stscEntryIndex = 0;
     uint32_t entrySampleIndex = 0;
@@ -48,6 +51,32 @@ public:
     uint64_t index = 0;
     uint64_t keyIndex = 0;
     uint16_t naluByteSize = 0;
+
+    bool isFragmented = false;
+    std::shared_ptr<BoxTrex> trex;
+    uint32_t trackId = 0;
+
+    struct FragSample {
+        uint64_t offset{};
+        uint32_t size{};
+        uint32_t duration{};
+        uint32_t flags{};
+        int32_t compositionTimeOffset{};
+        int64_t dts{};
+        int64_t pts{};
+        bool isKeyFrame{};
+    };
+
+    std::vector<FragSample> fragSamples;
+    uint32_t fragSampleIndex = 0;
+
+    struct SidxSegment {
+        uint64_t offset{};
+        uint64_t duration{};
+        uint64_t startTime{};
+    };
+
+    std::vector<SidxSegment> sidxSegments;
 
 public:
     /// @return true if current sample is fully within buffer; optionally outputs sample start
@@ -73,6 +102,8 @@ public:
     void calcIndex() noexcept;
 
     void init() noexcept;
+
+    void appendFragmentSamples(const BoxRefPtr& moofBox, uint64_t moofOffset) noexcept;
 
 private:
     using NaluClassifier = std::function<std::pair<bool, VideoFrameType>(uint8_t naluType)>;
@@ -129,6 +160,10 @@ public:
 private:
     bool parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept;
 
+    bool parseMoofBox(Buffer& buffer, const BoxRefPtr& moofBox) noexcept;
+
+    void parseMoofChildren(Buffer& buffer, const BoxRefPtr& moofBox) noexcept;
+
     void initData() noexcept;
 
     void initAudioTrack(const std::shared_ptr<TrackContext>& track) noexcept;
@@ -149,6 +184,7 @@ private:
 private:
     BoxRefPtr rootBox_;
     std::unordered_map<CodecId, std::shared_ptr<TrackContext>> tracks_;
+    bool isFragmented_ = false;
 };
 
 } // namespace slark

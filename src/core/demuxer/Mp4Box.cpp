@@ -133,8 +133,48 @@ BoxRefPtr Box::createBox(Buffer& buffer) {
          [](BoxInfo&& info) {
              return new BoxCo64(std::move(info));
          }},
-        {"mdhd", [](BoxInfo&& info) {
+        {"mdhd",
+         [](BoxInfo&& info) {
              return new BoxMdhd(std::move(info));
+         }},
+        {"elst",
+         [](BoxInfo&& info) {
+             return new BoxElst(std::move(info));
+         }},
+        {"mvex",
+         [](BoxInfo&& info) {
+             return new BoxMvex(std::move(info));
+         }},
+        {"trex",
+         [](BoxInfo&& info) {
+             return new BoxTrex(std::move(info));
+         }},
+        {"moof",
+         [](BoxInfo&& info) {
+             return new BoxMoof(std::move(info));
+         }},
+        {"mfhd",
+         [](BoxInfo&& info) {
+             return new BoxMfhd(std::move(info));
+         }},
+        {"traf",
+         [](BoxInfo&& info) {
+             return new BoxTraf(std::move(info));
+         }},
+        {"tfhd",
+         [](BoxInfo&& info) {
+             return new BoxTfhd(std::move(info));
+         }},
+        {"tfdt",
+         [](BoxInfo&& info) {
+             return new BoxTfdt(std::move(info));
+         }},
+        {"trun",
+         [](BoxInfo&& info) {
+             return new BoxTrun(std::move(info));
+         }},
+        {"sidx", [](BoxInfo&& info) {
+             return new BoxSidx(std::move(info));
          }}};
     if (kBoxFactory.contains(boxInfo.symbol)) {
         auto box = kBoxFactory.at(boxInfo.symbol)(std::move(boxInfo));
@@ -342,39 +382,6 @@ std::tuple<CodecId, std::string> BoxStsd::getCodecId() {
     }
     return {CodecId::Unknown, ""};
 }
-
-// stsd
-//   ├── size: 56
-//   ├── type: 'stsd'
-//   ├── version_and_flags: 0x000000
-//   ├── entry_count: 2
-//   ├── sample_entries:
-//   │   ├── [0]: mp4a (audio description)
-//   │   │   ├── size: 32
-//   │   │   ├── type: 'mp4a'
-//   │   │   ├── version_and_flags: 0x000000
-//   │   │   ├── data_reference_index: 0
-//   │   │   ├── version: 0
-//   │   │   ├── channels: 2
-//   │   │   ├── sample_size: 16
-//   │   │   ├── sample_rate: 44100
-//   │   │   ├── reserved: 0
-//   │   │   ├── avg_bytes_per_second: 128000
-//   │   │   ├── extra_data_size: 6
-//   │   │   └── extra_data: { 0x13, 0x10, 0x00, 0x00, 0x02, 0x00 }
-//   │   └── [1]: avc1 (video description)
-//   │       ├── size: 40
-//   │       ├── type: 'avc1'
-//   │       ├── version_and_flags: 0x000000
-//   │       ├── data_reference_index: 0
-//   │       ├── width: 1920
-//   │       ├── height: 1080
-//   │       ├── horizresolution: 72
-//   │       ├── vertresolution: 72
-//   │       ├── frame_count: 1
-//   │       ├── compressorname: 'AVC Coding'
-//   │       ├── depth: 24
-//   │       └── pre_defined: 0
 
 void BoxStsd::decodeAudioEntry(Buffer& buffer, std::string_view /*symbol*/) noexcept {
     buffer.skip(6);
@@ -837,6 +844,213 @@ bool BoxHvcc::decode(Buffer& buffer) noexcept {
     auto skip = static_cast<int64_t>(kEndPos - buffer.readPos());
     if (skip > 0) {
         buffer.skip(skip);
+    }
+    return true;
+}
+
+bool BoxElst::decode(Buffer& buffer) noexcept {
+    if (!buffer.require(8)) {
+        return false;
+    }
+    buffer.readByte(version);
+    buffer.skip(3);
+    uint32_t entryCount = 0;
+    buffer.read4ByteBE(entryCount);
+    entries.reserve(entryCount);
+    for (uint32_t i = 0; i < entryCount; ++i) {
+        ElstEntry e;
+        if (version == 1) {
+            if (!buffer.require(20)) {
+                return false;
+            }
+            buffer.read8ByteBE(e.segmentDuration);
+            uint64_t mt = 0;
+            buffer.read8ByteBE(mt);
+            e.mediaTime = static_cast<int64_t>(mt);
+        } else {
+            if (!buffer.require(12)) {
+                return false;
+            }
+            uint32_t sd = 0;
+            buffer.read4ByteBE(sd);
+            e.segmentDuration = sd;
+            uint32_t mt = 0;
+            buffer.read4ByteBE(mt);
+            e.mediaTime = static_cast<int32_t>(mt);
+        }
+        buffer.read2ByteBE(reinterpret_cast<uint16_t&>(e.mediaRateInteger));
+        buffer.read2ByteBE(reinterpret_cast<uint16_t&>(e.mediaRateFraction));
+        entries.push_back(e);
+    }
+    return true;
+}
+
+int64_t BoxElst::mediaTimeOffset() const noexcept {
+    for (const auto& e : entries) {
+        if (e.mediaTime >= 0) {
+            return e.mediaTime;
+        }
+    }
+    return 0;
+}
+
+bool BoxElst::hasEmptyEdit() const noexcept {
+    return !entries.empty() && entries.front().mediaTime == -1;
+}
+
+bool BoxTrex::decode(Buffer& buffer) noexcept {
+    if (!buffer.require(24)) {
+        return false;
+    }
+    buffer.readByte(version);
+    buffer.skip(3);
+    buffer.read4ByteBE(trackId);
+    buffer.read4ByteBE(defaultSampleDescriptionIndex);
+    buffer.read4ByteBE(defaultSampleDuration);
+    buffer.read4ByteBE(defaultSampleSize);
+    buffer.read4ByteBE(defaultSampleFlags);
+    return true;
+}
+
+bool BoxMfhd::decode(Buffer& buffer) noexcept {
+    if (!buffer.require(8)) {
+        return false;
+    }
+    buffer.readByte(version);
+    buffer.skip(3);
+    buffer.read4ByteBE(sequenceNumber);
+    return true;
+}
+
+bool BoxTfhd::decode(Buffer& buffer) noexcept {
+    if (!buffer.require(8)) {
+        return false;
+    }
+    buffer.readByte(version);
+    buffer.read3ByteBE(flags);
+    buffer.read4ByteBE(trackId);
+    if (flags & kBaseDataOffsetPresent) {
+        buffer.read8ByteBE(baseDataOffset);
+    }
+    if (flags & kSampleDescriptionIndexPresent) {
+        buffer.read4ByteBE(sampleDescriptionIndex);
+    }
+    if (flags & kDefaultSampleDurationPresent) {
+        buffer.read4ByteBE(defaultSampleDuration);
+    }
+    if (flags & kDefaultSampleSizePresent) {
+        buffer.read4ByteBE(defaultSampleSize);
+    }
+    if (flags & kDefaultSampleFlagsPresent) {
+        buffer.read4ByteBE(defaultSampleFlags);
+    }
+    return true;
+}
+
+bool BoxTfdt::decode(Buffer& buffer) noexcept {
+    if (!buffer.require(4)) {
+        return false;
+    }
+    buffer.readByte(version);
+    buffer.skip(3);
+    if (version == 1) {
+        if (!buffer.require(8)) {
+            return false;
+        }
+        buffer.read8ByteBE(baseMediaDecodeTime);
+    } else {
+        if (!buffer.require(4)) {
+            return false;
+        }
+        uint32_t t = 0;
+        buffer.read4ByteBE(t);
+        baseMediaDecodeTime = t;
+    }
+    return true;
+}
+
+bool BoxTrun::decode(Buffer& buffer) noexcept {
+    if (!buffer.require(8)) {
+        return false;
+    }
+    buffer.readByte(version);
+    buffer.read3ByteBE(flags);
+    uint32_t sampleCount = 0;
+    buffer.read4ByteBE(sampleCount);
+    if (flags & kDataOffsetPresent) {
+        uint32_t tmp = 0;
+        buffer.read4ByteBE(tmp);
+        dataOffset = static_cast<int32_t>(tmp);
+    }
+    if (flags & kFirstSampleFlagsPresent) {
+        buffer.read4ByteBE(firstSampleFlags);
+    }
+    samples.reserve(sampleCount);
+    for (uint32_t i = 0; i < sampleCount; ++i) {
+        TrunSample s;
+        if (flags & kSampleDurationPresent) {
+            buffer.read4ByteBE(s.duration);
+        }
+        if (flags & kSampleSizePresent) {
+            buffer.read4ByteBE(s.size);
+        }
+        if (flags & kSampleFlagsPresent) {
+            buffer.read4ByteBE(s.flags);
+        }
+        if (flags & kSampleCompositionTimeOffsetPresent) {
+            uint32_t tmp = 0;
+            buffer.read4ByteBE(tmp);
+            s.compositionTimeOffset = static_cast<int32_t>(tmp);
+        }
+        samples.push_back(s);
+    }
+    return true;
+}
+
+bool BoxSidx::decode(Buffer& buffer) noexcept {
+    if (!buffer.require(12)) {
+        return false;
+    }
+    buffer.readByte(version);
+    buffer.skip(3);
+    buffer.read4ByteBE(referenceId);
+    buffer.read4ByteBE(timeScale);
+    if (version == 0) {
+        if (!buffer.require(8)) {
+            return false;
+        }
+        uint32_t ept = 0, fo = 0;
+        buffer.read4ByteBE(ept);
+        buffer.read4ByteBE(fo);
+        earliestPresentationTime = ept;
+        firstOffset = fo;
+    } else {
+        if (!buffer.require(16)) {
+            return false;
+        }
+        buffer.read8ByteBE(earliestPresentationTime);
+        buffer.read8ByteBE(firstOffset);
+    }
+    uint16_t reserved = 0, entryCount = 0;
+    buffer.read2ByteBE(reserved);
+    buffer.read2ByteBE(entryCount);
+    entries.reserve(entryCount);
+    for (uint16_t i = 0; i < entryCount; ++i) {
+        if (!buffer.require(12)) {
+            return false;
+        }
+        SidxEntry e;
+        uint32_t refField = 0, durField = 0, sapField = 0;
+        buffer.read4ByteBE(refField);
+        buffer.read4ByteBE(durField);
+        buffer.read4ByteBE(sapField);
+        e.referenceType = (refField >> 31) & 0x1;
+        e.referencedSize = refField & 0x7fffffff;
+        e.subsegmentDuration = durField;
+        e.startsWithSap = (sapField >> 31) & 0x1;
+        e.sapType = static_cast<uint8_t>((sapField >> 28) & 0x7);
+        e.sapDeltaTime = sapField & 0x0fffffff;
+        entries.push_back(e);
     }
     return true;
 }

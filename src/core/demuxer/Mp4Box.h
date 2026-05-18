@@ -367,4 +367,181 @@ public:
     std::string description(const std::string&) const noexcept override;
 };
 
+struct ElstEntry {
+    uint64_t segmentDuration{};
+    int64_t mediaTime{};
+    int16_t mediaRateInteger{1};
+    int16_t mediaRateFraction{0};
+};
+
+class BoxElst : public Box {
+public:
+    uint8_t version{};
+    std::vector<ElstEntry> entries;
+
+public:
+    BoxElst(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
+
+    ~BoxElst() override = default;
+
+public:
+    bool decode(Buffer&) noexcept override;
+    [[nodiscard]] int64_t mediaTimeOffset() const noexcept;
+    [[nodiscard]] bool hasEmptyEdit() const noexcept;
+};
+
+class BoxMvex : public Box {
+public:
+    BoxMvex(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
+
+    ~BoxMvex() override = default;
+};
+
+class BoxTrex : public Box {
+public:
+    uint8_t version{};
+    uint32_t trackId{};
+    uint32_t defaultSampleDescriptionIndex{1};
+    uint32_t defaultSampleDuration{};
+    uint32_t defaultSampleSize{};
+    uint32_t defaultSampleFlags{};
+
+public:
+    BoxTrex(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
+
+    ~BoxTrex() override = default;
+
+public:
+    bool decode(Buffer&) noexcept override;
+};
+
+class BoxMoof : public Box {
+public:
+    BoxMoof(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
+
+    ~BoxMoof() override = default;
+};
+
+class BoxMfhd : public Box {
+public:
+    uint8_t version{};
+    uint32_t sequenceNumber{};
+
+public:
+    BoxMfhd(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
+
+    ~BoxMfhd() override = default;
+
+public:
+    bool decode(Buffer&) noexcept override;
+};
+
+class BoxTraf : public Box {
+public:
+    BoxTraf(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
+
+    ~BoxTraf() override = default;
+};
+
+class BoxTfhd : public Box {
+public:
+    static constexpr uint32_t kBaseDataOffsetPresent = 0x000001;
+    static constexpr uint32_t kSampleDescriptionIndexPresent = 0x000002;
+    static constexpr uint32_t kDefaultSampleDurationPresent = 0x000008;
+    static constexpr uint32_t kDefaultSampleSizePresent = 0x000010;
+    static constexpr uint32_t kDefaultSampleFlagsPresent = 0x000020;
+    static constexpr uint32_t kDurationIsEmpty = 0x010000;
+    static constexpr uint32_t kDefaultBaseIsMoof = 0x020000;
+
+    uint8_t version{};
+    uint32_t flags{};
+    uint32_t trackId{};
+    uint64_t baseDataOffset{};
+    uint32_t sampleDescriptionIndex{1};
+    uint32_t defaultSampleDuration{};
+    uint32_t defaultSampleSize{};
+    uint32_t defaultSampleFlags{};
+
+public:
+    BoxTfhd(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
+
+    ~BoxTfhd() override = default;
+
+public:
+    bool decode(Buffer&) noexcept override;
+};
+
+class BoxTfdt : public Box {
+public:
+    uint8_t version{};
+    uint64_t baseMediaDecodeTime{};
+
+public:
+    BoxTfdt(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
+
+    ~BoxTfdt() override = default;
+
+public:
+    bool decode(Buffer&) noexcept override;
+};
+
+struct TrunSample {
+    uint32_t duration{};
+    uint32_t size{};
+    uint32_t flags{};
+    int32_t compositionTimeOffset{};
+};
+
+class BoxTrun : public Box {
+public:
+    static constexpr uint32_t kDataOffsetPresent = 0x000001;
+    static constexpr uint32_t kFirstSampleFlagsPresent = 0x000004;
+    static constexpr uint32_t kSampleDurationPresent = 0x000100;
+    static constexpr uint32_t kSampleSizePresent = 0x000200;
+    static constexpr uint32_t kSampleFlagsPresent = 0x000400;
+    static constexpr uint32_t kSampleCompositionTimeOffsetPresent = 0x000800;
+    static constexpr uint32_t kSampleIsNonSync = 0x00010000;
+
+    uint8_t version{};
+    uint32_t flags{};
+    int32_t dataOffset{};
+    uint32_t firstSampleFlags{};
+    std::vector<TrunSample> samples;
+
+public:
+    BoxTrun(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
+
+    ~BoxTrun() override = default;
+
+public:
+    bool decode(Buffer&) noexcept override;
+};
+
+struct SidxEntry {
+    bool referenceType{};
+    uint32_t referencedSize{};
+    uint32_t subsegmentDuration{};
+    bool startsWithSap{};
+    uint8_t sapType{};
+    uint32_t sapDeltaTime{};
+};
+
+class BoxSidx : public Box {
+public:
+    uint8_t version{};
+    uint32_t referenceId{};
+    uint32_t timeScale{};
+    uint64_t earliestPresentationTime{};
+    uint64_t firstOffset{};
+    std::vector<SidxEntry> entries;
+
+public:
+    BoxSidx(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
+
+    ~BoxSidx() override = default;
+
+public:
+    bool decode(Buffer&) noexcept override;
+};
+
 } // namespace slark

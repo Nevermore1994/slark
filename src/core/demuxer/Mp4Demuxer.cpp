@@ -28,6 +28,9 @@ bool isContainerBox(std::string_view symbol) noexcept {
         "stbl"sv,
         "dinf"sv,
         "udta"sv,
+        "mvex"sv,
+        "moof"sv,
+        "traf"sv,
     };
     return std::any_of(kContainerBox.begin(), kContainerBox.end(), [symbol](const auto& view) {
         return view == symbol;
@@ -35,10 +38,17 @@ bool isContainerBox(std::string_view symbol) noexcept {
 }
 
 void TrackContext::init() noexcept {
-    if (type == TrackType::Video && ctts) {
+    if (elst) {
+        elstMediaTimeOffset = elst->mediaTimeOffset();
+    }
+    if (type == TrackType::Video && ctts && !ctts->entrys.empty()) {
         // Set pts to 0 and calculate the initial value of dts, which may be a negative number.
         dts = pts - ctts->entrys[0].sampleOffset;
         cttsEntrySampleIndex = 0;
+    }
+    if (elstMediaTimeOffset > 0) {
+        dts -= elstMediaTimeOffset;
+        pts -= elstMediaTimeOffset;
     }
 }
 
@@ -72,7 +82,12 @@ uint64_t TrackContext::getSeekPos(double targetTime) const noexcept {
     const uint64_t kChunkOffset = stco->chunkOffsets[chunkIndex];
     uint64_t sampleOffsetInChunk = 0;
     for (uint32_t i = 0; i < seekSampleIndex - firstSampleInChunk; ++i) {
-        sampleOffsetInChunk += stsz->sampleSizes[firstSampleInChunk - 1 + i];
+        const uint32_t kIdx = firstSampleInChunk - 1 + i;
+        if (kIdx >= stsz->sampleSizes.size()) {
+            LogE("sampleSizes index out of range: {}", kIdx);
+            break;
+        }
+        sampleOffsetInChunk += stsz->sampleSizes[kIdx];
     }
     const auto kPos = kChunkOffset + sampleOffsetInChunk;
     LogI("[seek info] {} keySampleIndex:{}, time:{}, pos:{}",
@@ -86,13 +101,15 @@ uint64_t TrackContext::getSeekPos(double targetTime) const noexcept {
 uint32_t TrackContext::findSampleIndexByTime(double targetTime) const noexcept {
     uint32_t sampleIndex = 0;
     const auto kTimeScale = static_cast<double>(mdhd->timeScale);
+    const double mediaTargetTime =
+        targetTime + static_cast<double>(elstMediaTimeOffset) / kTimeScale;
     double currentTime = 0.0;
     for (const auto& entry : stts->entrys) {
         const auto kEntryDuration =
             static_cast<double>(entry.sampleCount * entry.sampleDelta) / kTimeScale;
-        if (currentTime + kEntryDuration > targetTime) {
-            const auto kOffset =
-                static_cast<uint32_t>((targetTime - currentTime) * kTimeScale / entry.sampleDelta);
+        if (currentTime + kEntryDuration > mediaTargetTime) {
+            const auto kOffset = static_cast<uint32_t>((mediaTargetTime - currentTime) *
+                                                       kTimeScale / entry.sampleDelta);
             sampleIndex += std::min(kOffset, entry.sampleCount - 1);
             break;
         }
@@ -283,6 +300,7 @@ void TrackContext::reset() noexcept {
     pts = 0;
     index = 0;
     isCompleted = false;
+    fragSampleIndex = 0;
     init();
 }
 
@@ -343,6 +361,21 @@ void TrackContext::calcIndex() noexcept {
 }
 
 bool TrackContext::isInRange(Buffer& buffer, uint64_t* outOffset) const noexcept {
+    if (isFragmented) {
+        if (fragSampleIndex >= fragSamples.size()) {
+            return false;
+        }
+        const auto& s = fragSamples[fragSampleIndex];
+        const auto bufferStart = buffer.offset();
+        const auto bufferEnd = bufferStart + buffer.totalLength();
+        if (bufferStart <= s.offset && s.offset + s.size <= bufferEnd) {
+            if (outOffset) {
+                *outOffset = s.offset;
+            }
+            return true;
+        }
+        return false;
+    }
     if (stszSampleSizeIndex >= stsz->sampleSizes.size() || stscEntryIndex >= stsc->entrys.size()) {
         return false;
     }
@@ -364,10 +397,12 @@ AVFramePtrArray TrackContext::parseNaluFrames(AVFramePtr frame,
                                               std::shared_ptr<VideoFrameInfo> frameInfo,
                                               const NaluClassifier& classifier) {
     AVFramePtrArray frames;
-    const auto& sttsEntry = stts->entrys[sttsEntryIndex];
-    const uint32_t kDuration =
-        static_cast<uint32_t>(static_cast<double>(sttsEntry.sampleDelta) /
-                              static_cast<double>(frame->timeScale) * 1000.0);
+    uint32_t kDuration = frame->duration;
+    if (kDuration == 0 && stts && sttsEntryIndex < stts->entrys.size()) {
+        const auto& sttsEntry = stts->entrys[sttsEntryIndex];
+        kDuration = static_cast<uint32_t>(static_cast<double>(sttsEntry.sampleDelta) /
+                                          static_cast<double>(frame->timeScale) * 1000.0);
+    }
 
     const uint32_t kHeaderSize = naluByteSize + 1;
     const auto kRawView = data->view();
@@ -486,6 +521,55 @@ void TrackContext::parseData(Buffer& buffer,
     if (!isInRange(buffer, &start)) {
         return;
     }
+
+    if (isFragmented) {
+        if (fragSampleIndex >= fragSamples.size()) {
+            isCompleted = true;
+            return;
+        }
+        const auto& s = fragSamples[fragSampleIndex];
+        if (!buffer.skipTo(static_cast<int64_t>(s.offset))) {
+            return;
+        }
+        auto frame = std::make_unique<AVFrame>();
+        frame->index = index++;
+        frame->dts = s.dts;
+        frame->pts = s.pts;
+        frame->offset = s.offset;
+        frame->timeScale = mdhd->timeScale;
+        if (type == TrackType::Audio) {
+            frame->frameType = AVFrameType::Audio;
+            auto info = std::dynamic_pointer_cast<AudioFrameInfo>(frameInfo);
+            frame->duration = static_cast<uint32_t>(info->duration(s.size) * 1000.0);
+            frame->info = frameInfo;
+            frame->data = buffer.readData(s.size);
+            packets.push_back(std::move(frame));
+        } else if (type == TrackType::Video) {
+            frame->frameType = AVFrameType::Video;
+            if (s.duration > 0 && mdhd->timeScale > 0) {
+                frame->duration =
+                    static_cast<uint32_t>(static_cast<double>(s.duration) /
+                                          static_cast<double>(mdhd->timeScale) * 1000.0);
+            }
+            auto data = buffer.readData(s.size);
+            auto videoInfo = std::dynamic_pointer_cast<VideoFrameInfo>(frameInfo);
+            AVFramePtrArray frames;
+            if (codecId == CodecId::AVC) {
+                frames = parseH264FrameData(std::move(frame), std::move(data), videoInfo);
+            } else if (codecId == CodecId::HEVC) {
+                frames = parseH265FrameData(std::move(frame), std::move(data), videoInfo);
+            }
+            packets.insert(packets.end(),
+                           std::make_move_iterator(frames.begin()),
+                           std::make_move_iterator(frames.end()));
+        }
+        ++fragSampleIndex;
+        if (fragSampleIndex >= fragSamples.size()) {
+            isCompleted = true;
+        }
+        return;
+    }
+
     auto size = stsz->sampleSizes[stszSampleSizeIndex];
     if (!buffer.skipTo(static_cast<int64_t>(start))) {
         return;
@@ -527,7 +611,7 @@ bool Mp4Demuxer::probeMoovBox(Buffer& buffer, int64_t& start, uint32_t& size) no
         return false;
     }
     auto boxStart = pos - 4;
-    start = static_cast<int64_t>(boxStart + buffer.offset()); // size start pos
+    start = static_cast<int64_t>(boxStart + buffer.offset());
     if (start < 0) {
         return false;
     }
@@ -555,6 +639,18 @@ void Mp4Demuxer::handleBoxInMoov(const BoxRefPtr& box,
         }
     } else if (box->info.symbol == "mdhd") {
         mdhdBox = std::dynamic_pointer_cast<BoxMdhd>(box);
+    } else if (box->info.symbol == "trex") {
+        auto trexBox = std::dynamic_pointer_cast<BoxTrex>(box);
+        if (trexBox) {
+            isFragmented_ = true;
+            for (auto& [codecId, track] : tracks_) {
+                if (track->trackId == trexBox->trackId) {
+                    track->trex = trexBox;
+                    track->isFragmented = true;
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -568,6 +664,8 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
     }
     [[maybe_unused]] bool res = true;
     std::shared_ptr<BoxMdhd> mdhdBox;
+    uint32_t currentTrackId = 0;
+    std::unordered_map<uint32_t, std::shared_ptr<BoxElst>> pendingElst; // trackId -> elst
     while ((buffer.pos() - moovBox->info.start) < moovBox->info.size) {
         auto box = Box::createBox(buffer);
         if (!box) {
@@ -576,7 +674,43 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
             break;
         }
         box->decode(buffer);
+
+        if (box->info.symbol == "tkhd") {
+            const auto dataStart = static_cast<int64_t>(box->info.start + box->info.headerSize);
+            const auto savedPos = static_cast<int64_t>(buffer.pos());
+            buffer.skipTo(dataStart);
+            uint8_t tkhdVersion = 0;
+            buffer.readByte(tkhdVersion);
+            buffer.skip(3);
+            if (tkhdVersion == 1) {
+                buffer.skip(8 + 8);
+            } else {
+                buffer.skip(4 + 4);
+            }
+            buffer.read4ByteBE(currentTrackId);
+            buffer.skipTo(savedPos);
+        }
+
         handleBoxInMoov(box, mdhdBox, parentBox);
+
+        if (box->info.symbol == "elst") {
+            // elst 在 mdhd/stsd 之前，暂存等 track 创建后关联
+            if (currentTrackId > 0) {
+                pendingElst[currentTrackId] = std::dynamic_pointer_cast<BoxElst>(box);
+            }
+        }
+
+        if (box->info.symbol == "stsd") {
+            for (auto& [codecId, track] : tracks_) {
+                if (track->trackId == 0) {
+                    track->trackId = currentTrackId;
+                    if (auto it = pendingElst.find(currentTrackId); it != pendingElst.end()) {
+                        track->elst = it->second;
+                    }
+                }
+            }
+        }
+
         parentBox.top()->append(box);
         if (isContainerBox(box->info.symbol)) {
             parentBox.push(box);
@@ -626,6 +760,34 @@ bool Mp4Demuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
             headerInfo_->headerLength = box->info.start;
             headerInfo_->dataSize = box->info.size;
             rootBox_->append(box);
+        } else if (box->info.symbol == "sidx") {
+            auto sidxBox = std::dynamic_pointer_cast<BoxSidx>(box);
+            if (sidxBox) {
+                sidxBox->decode(*buffer);
+                uint64_t segOffset = box->info.end() + sidxBox->firstOffset;
+                uint64_t segTime = sidxBox->earliestPresentationTime;
+                for (auto& [codecId, track] : tracks_) {
+                    track->sidxSegments.clear();
+                }
+                for (const auto& entry : sidxBox->entries) {
+                    if (!entry.referenceType) {
+                        for (auto& [codecId, track] : tracks_) {
+                            TrackContext::SidxSegment seg;
+                            seg.offset = segOffset;
+                            seg.duration = entry.subsegmentDuration;
+                            seg.startTime = segTime;
+                            track->sidxSegments.push_back(seg);
+                        }
+                        segOffset += entry.referencedSize;
+                        segTime += entry.subsegmentDuration;
+                    }
+                }
+            }
+            rootBox_->append(box);
+        } else if (box->info.symbol == "moof") {
+            parseMoofChildren(*buffer, box);
+            parseMoofBox(*buffer, box);
+            rootBox_->append(box);
         } else {
             rootBox_->append(box);
         }
@@ -671,7 +833,6 @@ void initTrack(std::shared_ptr<TrackContext>& track) {
          }},
         {"co64",
          [](const BoxRefPtr& b, TrackContext& t) {
-             // co64 用于大文件（>4GB），将其 offsets 桥接到 stco 兼容结构
              auto co64 = std::dynamic_pointer_cast<BoxCo64>(b);
              if (co64) {
                  auto stco = std::make_shared<BoxStco>(BoxInfo{});
@@ -692,9 +853,11 @@ void initTrack(std::shared_ptr<TrackContext>& track) {
              t.stss = std::dynamic_pointer_cast<BoxStss>(b);
          }},
     };
-    for (auto& child : track->stbl->childs) {
-        if (auto it = kBoxSetters.find(child->info.symbol); it != kBoxSetters.end()) {
-            it->second(child, *track);
+    if (track->stbl) {
+        for (auto& child : track->stbl->childs) {
+            if (auto it = kBoxSetters.find(child->info.symbol); it != kBoxSetters.end()) {
+                it->second(child, *track);
+            }
         }
     }
     track->init();
@@ -739,12 +902,19 @@ void Mp4Demuxer::initVideoTrack(const std::shared_ptr<TrackContext>& track) noex
     videoInfo_->timeScale = track->mdhd->timeScale;
 
     auto sttsBox = track->stts;
-    const auto kDelta = sttsBox->entrys.front().sampleDelta;
-    if (kDelta > 0) {
-        videoInfo_->fps = static_cast<uint16_t>(videoInfo_->timeScale / kDelta);
-    } else {
-        const auto kSampleSize = static_cast<double>(sttsBox->sampleSize());
-        videoInfo_->fps = static_cast<uint16_t>(ceil(kSampleSize / totalDuration_.second()));
+    if (sttsBox && !sttsBox->entrys.empty()) {
+        const auto kDelta = sttsBox->entrys.front().sampleDelta;
+        if (kDelta > 0) {
+            videoInfo_->fps = static_cast<uint16_t>(videoInfo_->timeScale / kDelta);
+        } else {
+            const auto kSampleSize = static_cast<double>(sttsBox->sampleSize());
+            videoInfo_->fps = static_cast<uint16_t>(ceil(kSampleSize / totalDuration_.second()));
+        }
+    } else if (!track->fragSamples.empty()) {
+        const auto& s = track->fragSamples.front();
+        if (s.duration > 0) {
+            videoInfo_->fps = static_cast<uint16_t>(videoInfo_->timeScale / s.duration);
+        }
     }
 
     if (track->codecId == CodecId::AVC) {
@@ -812,9 +982,10 @@ void Mp4Demuxer::initData() noexcept {
     }
     isOpened_ = true;
     buffer_ = std::make_unique<Buffer>(rootBox_->info.size);
-    LogI("initData: duration:{:.3f}s, tracks:{}",
+    LogI("initData: duration:{:.3f}s, tracks:{}, fragmented:{}",
          totalDuration_.second(),
-         static_cast<int32_t>(tracks_.size()));
+         static_cast<int32_t>(tracks_.size()),
+         isFragmented_);
 }
 
 void Mp4Demuxer::close() noexcept {
@@ -913,7 +1084,7 @@ bool Mp4Demuxer::isCompleted() const noexcept {
             isCompleted = false;
         }
     }
-    if (!isCompleted) {
+    if (!isCompleted && !isFragmented_) {
         auto mediaDataBox = rootBox_->getChild("mdat");
         if (mediaDataBox &&
             buffer_->pos() >= (mediaDataBox->info.size + mediaDataBox->info.start)) {
@@ -925,13 +1096,49 @@ bool Mp4Demuxer::isCompleted() const noexcept {
 
 uint64_t Mp4Demuxer::getSeekToPos(double time) noexcept {
     LogI("getSeekToPos: time:{:.3f}s", time);
-    // fallback: mdat 数据起始位置（跳过 box header）
     uint64_t fallbackOffset = 0;
     if (headerInfo_) {
         auto mdatBox = rootBox_ ? rootBox_->getChild("mdat") : nullptr;
         const uint64_t kHeaderSize = mdatBox ? mdatBox->info.headerSize : 8;
         fallbackOffset = headerInfo_->headerLength + kHeaderSize;
     }
+
+    if (isFragmented_) {
+        uint64_t minOffset = UINT64_MAX;
+        for (const auto& track : std::views::values(tracks_)) {
+            if (!track->sidxSegments.empty()) {
+                const auto timeScale = static_cast<double>(track->mdhd->timeScale);
+                const uint64_t targetTicks = static_cast<uint64_t>(time * timeScale);
+                uint64_t segOffset = 0;
+                for (const auto& seg : track->sidxSegments) {
+                    if (seg.startTime + seg.duration > targetTicks) {
+                        segOffset = seg.offset;
+                        break;
+                    }
+                }
+                if (segOffset == 0 && !track->sidxSegments.empty()) {
+                    segOffset = track->sidxSegments.back().offset;
+                }
+                minOffset = std::min(minOffset, segOffset);
+            } else if (!track->fragSamples.empty()) {
+                const auto timeScale = static_cast<double>(track->mdhd->timeScale);
+                const int64_t targetTicks = static_cast<int64_t>(time * timeScale);
+                uint64_t bestOffset = track->fragSamples.front().offset;
+                for (const auto& s : track->fragSamples) {
+                    if (s.dts >= targetTicks) {
+                        if (track->type == TrackType::Video && !s.isKeyFrame) {
+                            continue;
+                        }
+                        bestOffset = s.offset;
+                        break;
+                    }
+                }
+                minOffset = std::min(minOffset, bestOffset);
+            }
+        }
+        return minOffset == UINT64_MAX ? fallbackOffset : minOffset;
+    }
+
     uint64_t videoOffset = fallbackOffset;
     uint64_t audioOffset = fallbackOffset;
     for (const auto& track : std::views::values(tracks_)) {
@@ -949,7 +1156,165 @@ void Mp4Demuxer::seekPos(uint64_t pos) noexcept {
     LogI("seekPos: pos:{}", pos);
     IDemuxer::seekPos(pos);
     for (auto& track : std::views::values(tracks_)) {
-        track->seek(pos);
+        if (track->isFragmented) {
+            track->isCompleted = false;
+            if (track->fragSamples.empty()) {
+                track->fragSampleIndex = 0;
+                continue;
+            }
+            auto it = std::lower_bound(track->fragSamples.begin(),
+                                       track->fragSamples.end(),
+                                       pos,
+                                       [](const TrackContext::FragSample& s, uint64_t p) {
+                                           return s.offset < p;
+                                       });
+            if (it != track->fragSamples.begin()) {
+                --it;
+            }
+            if (track->type == TrackType::Video) {
+                while (it != track->fragSamples.end() && !it->isKeyFrame) {
+                    ++it;
+                }
+            }
+            track->fragSampleIndex =
+                static_cast<uint32_t>(std::distance(track->fragSamples.begin(), it));
+        } else {
+            track->seek(pos);
+        }
+    }
+}
+
+void TrackContext::appendFragmentSamples(const BoxRefPtr& moofBox, uint64_t moofOffset) noexcept {
+    for (const auto& trafChild : moofBox->childs) {
+        if (trafChild->info.symbol != "traf") {
+            continue;
+        }
+        auto tfhdBox = std::dynamic_pointer_cast<BoxTfhd>(trafChild->getChild("tfhd"));
+        if (!tfhdBox || tfhdBox->trackId != trackId) {
+            continue;
+        }
+
+        uint64_t baseOffset = moofOffset;
+        if (tfhdBox->flags & BoxTfhd::kBaseDataOffsetPresent) {
+            baseOffset = tfhdBox->baseDataOffset;
+        }
+
+        int64_t baseDecodeTime = 0;
+        if (auto tfdtBox = std::dynamic_pointer_cast<BoxTfdt>(trafChild->getChild("tfdt"))) {
+            baseDecodeTime = static_cast<int64_t>(tfdtBox->baseMediaDecodeTime);
+        } else if (!fragSamples.empty()) {
+            const auto& last = fragSamples.back();
+            baseDecodeTime = last.dts + static_cast<int64_t>(last.duration);
+        }
+        baseDecodeTime -= elstMediaTimeOffset;
+
+        for (const auto& trafChild2 : trafChild->childs) {
+            if (trafChild2->info.symbol != "trun") {
+                continue;
+            }
+            auto trunBox = std::dynamic_pointer_cast<BoxTrun>(trafChild2);
+            if (!trunBox) {
+                continue;
+            }
+
+            uint64_t dataOffset = baseOffset;
+            if (trunBox->flags & BoxTrun::kDataOffsetPresent) {
+                dataOffset =
+                    baseOffset + static_cast<uint64_t>(static_cast<int64_t>(trunBox->dataOffset));
+            }
+
+            int64_t currentDts = baseDecodeTime;
+            for (uint32_t i = 0; i < trunBox->samples.size(); ++i) {
+                const auto& s = trunBox->samples[i];
+
+                uint32_t dur = s.duration;
+                if (!(trunBox->flags & BoxTrun::kSampleDurationPresent)) {
+                    dur = (tfhdBox->flags & BoxTfhd::kDefaultSampleDurationPresent)
+                              ? tfhdBox->defaultSampleDuration
+                              : (trex ? trex->defaultSampleDuration : 0);
+                }
+
+                uint32_t sz = s.size;
+                if (!(trunBox->flags & BoxTrun::kSampleSizePresent)) {
+                    sz = (tfhdBox->flags & BoxTfhd::kDefaultSampleSizePresent)
+                             ? tfhdBox->defaultSampleSize
+                             : (trex ? trex->defaultSampleSize : 0);
+                }
+
+                uint32_t sampleFlags = s.flags;
+                if (!(trunBox->flags & BoxTrun::kSampleFlagsPresent)) {
+                    if (i == 0 && (trunBox->flags & BoxTrun::kFirstSampleFlagsPresent)) {
+                        sampleFlags = trunBox->firstSampleFlags;
+                    } else {
+                        sampleFlags = (tfhdBox->flags & BoxTfhd::kDefaultSampleFlagsPresent)
+                                          ? tfhdBox->defaultSampleFlags
+                                          : (trex ? trex->defaultSampleFlags : 0);
+                    }
+                }
+
+                int32_t cto = 0;
+                if (trunBox->flags & BoxTrun::kSampleCompositionTimeOffsetPresent) {
+                    cto = s.compositionTimeOffset;
+                }
+
+                FragSample fs;
+                fs.offset = dataOffset;
+                fs.size = sz;
+                fs.duration = dur;
+                fs.flags = sampleFlags;
+                fs.compositionTimeOffset = cto;
+                fs.dts = currentDts;
+                fs.pts = currentDts + static_cast<int64_t>(cto);
+                fs.isKeyFrame = !(sampleFlags & BoxTrun::kSampleIsNonSync);
+                fragSamples.push_back(fs);
+
+                dataOffset += sz;
+                currentDts += static_cast<int64_t>(dur);
+            }
+            baseDecodeTime = currentDts;
+        }
+    }
+    isCompleted = fragSamples.empty();
+}
+
+bool Mp4Demuxer::parseMoofBox(Buffer& /*buffer*/, const BoxRefPtr& moofBox) noexcept {
+    const uint64_t moofOffset = moofBox->info.start;
+    for (auto& [codecId, track] : tracks_) {
+        if (track->isFragmented) {
+            track->appendFragmentSamples(moofBox, moofOffset);
+            track->isCompleted = false;
+        }
+    }
+    return true;
+}
+
+void Mp4Demuxer::parseMoofChildren(Buffer& buffer, const BoxRefPtr& moofBox) noexcept {
+    std::stack<BoxRefPtr> parentStack;
+    parentStack.push(moofBox);
+    while ((buffer.pos() - moofBox->info.start) < moofBox->info.size) {
+        auto box = Box::createBox(buffer);
+        if (!box) {
+            break;
+        }
+        box->decode(buffer);
+        parentStack.top()->append(box);
+        if (isContainerBox(box->info.symbol)) {
+            parentStack.push(box);
+            continue;
+        }
+        const auto skipOffset =
+            static_cast<int64_t>(box->info.start + box->info.size - buffer.pos());
+        if (!buffer.skip(skipOffset)) {
+            break;
+        }
+        const auto kEndPos = box->info.size + box->info.start;
+        while (!parentStack.empty()) {
+            if (kEndPos >= (parentStack.top()->info.start + parentStack.top()->info.size)) {
+                parentStack.pop();
+            } else {
+                break;
+            }
+        }
     }
 }
 

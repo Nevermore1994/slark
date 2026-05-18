@@ -489,3 +489,83 @@ TEST_F(WavDemuxerFileTest, SeekToMidpointWorks) {
     demuxer_->seekPos(seekPos);
     EXPECT_FALSE(demuxer_->isCompleted());
 }
+
+// ─── fMP4 integration tests ──────────────────────────────────────────────────
+
+namespace {
+constexpr const char* kFmp4Path = "../../test_sample/Sample_fmp4.mp4";
+} // namespace
+
+class Fmp4DemuxerFileTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        probeBuffer_ = loadFile(kFmp4Path, fileSize_);
+        if (!probeBuffer_) {
+            GTEST_SKIP() << "Sample_fmp4.mp4 not found, skipping";
+        }
+        demuxer_ = DemuxerManager::shareInstance().create(DemuxerType::MP4);
+        ASSERT_NE(demuxer_, nullptr);
+        DemuxerConfig config;
+        config.filePath = kFmp4Path;
+        config.fileSize = fileSize_;
+        demuxer_->init(config);
+    }
+
+    std::unique_ptr<Buffer> probeBuffer_;
+    std::shared_ptr<IDemuxer> demuxer_;
+    uint64_t fileSize_ = 0;
+};
+
+TEST_F(Fmp4DemuxerFileTest, OpenSucceeds) {
+    ASSERT_TRUE(demuxer_->open(probeBuffer_));
+    EXPECT_TRUE(demuxer_->isOpened());
+}
+
+TEST_F(Fmp4DemuxerFileTest, HasVideoAndAudio) {
+    ASSERT_TRUE(demuxer_->open(probeBuffer_));
+    EXPECT_TRUE(demuxer_->hasVideo());
+    EXPECT_TRUE(demuxer_->hasAudio());
+}
+
+TEST_F(Fmp4DemuxerFileTest, VideoInfoIsValid) {
+    ASSERT_TRUE(demuxer_->open(probeBuffer_));
+    auto videoInfo = demuxer_->videoInfo();
+    ASSERT_NE(videoInfo, nullptr);
+    EXPECT_GT(videoInfo->width, 0u);
+    EXPECT_GT(videoInfo->height, 0u);
+    EXPECT_GT(videoInfo->timeScale, 0u);
+}
+
+TEST_F(Fmp4DemuxerFileTest, AudioInfoIsValid) {
+    ASSERT_TRUE(demuxer_->open(probeBuffer_));
+    auto audioInfo = demuxer_->audioInfo();
+    ASSERT_NE(audioInfo, nullptr);
+    EXPECT_GT(audioInfo->sampleRate, 0u);
+    EXPECT_GT(audioInfo->channels, 0u);
+}
+
+TEST_F(Fmp4DemuxerFileTest, TotalDurationIsPositive) {
+    ASSERT_TRUE(demuxer_->open(probeBuffer_));
+    EXPECT_GT(demuxer_->totalDuration().second(), 0.0);
+}
+
+TEST_F(Fmp4DemuxerFileTest, ParseDataProducesFrames) {
+    ASSERT_TRUE(demuxer_->open(probeBuffer_));
+    auto result = feedAllData(*demuxer_, kFmp4Path, fileSize_, 0);
+    EXPECT_GT(result.videoFrames, 0u) << "no video frames from fMP4";
+    EXPECT_GT(result.audioFrames, 0u) << "no audio frames from fMP4";
+    EXPECT_GT(result.keyFrames, 0u) << "no key frames from fMP4";
+}
+
+TEST_F(Fmp4DemuxerFileTest, SeekToMidpointProducesKeyFrame) {
+    ASSERT_TRUE(demuxer_->open(probeBuffer_));
+    double duration = demuxer_->totalDuration().second();
+    ASSERT_GT(duration, 0.0);
+
+    uint64_t seekPos = demuxer_->getSeekToPos(duration / 2.0);
+    EXPECT_GT(seekPos, 0u);
+    demuxer_->seekPos(seekPos);
+
+    auto result = feedAllData(*demuxer_, kFmp4Path, fileSize_, seekPos);
+    EXPECT_GT(result.keyFrames, 0u) << "seek to midpoint should produce a key frame";
+}
