@@ -203,6 +203,12 @@ bool VideoHardwareDecoder::createDecodeSession() noexcept {
     }
     OSStatus status = noErr;
     if (config->mediaInfo == MEDIA_MIMETYPE_VIDEO_AVC) {
+        // naluHeaderLength 合法值为 1/2/4，VideoToolbox 不接受 3
+        if (config->naluHeaderLength != 1 && config->naluHeaderLength != 2 &&
+            config->naluHeaderLength != 4) {
+            LogE("invalid naluHeaderLength:{}", config->naluHeaderLength);
+            return false;
+        }
         const uint8_t* const paramPtrs[2] = {config->sps->data(), config->pps->data()};
         const size_t paramSizes[2] = {static_cast<size_t>(config->sps->length()),
                                       static_cast<size_t>(config->pps->length())};

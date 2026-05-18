@@ -64,8 +64,25 @@ static MPEG4ObjectID getAACProfile(uint8_t profile) {
             return kMPEG4Object_AAC_SSR;
         case static_cast<uint8_t>(AudioProfile::AAC_LTP):
             return kMPEG4Object_AAC_LTP;
+        case static_cast<uint8_t>(AudioProfile::AAC_HE):
+            return kMPEG4Object_AAC_SBR;
+        case static_cast<uint8_t>(AudioProfile::AAC_HE_SP):
+            // HE-AAC v2 (PS) 通过 mFormatID=kAudioFormatMPEG4AAC_HE_V2 区分，
+            // mFormatFlags 同样填 SBR，iOS SDK 无独立的 PS 枚举值
+            return kMPEG4Object_AAC_SBR;
         default:
             return kMPEG4Object_AAC_LC;
+    }
+}
+
+static AudioFormatID getAACFormatID(uint8_t profile) {
+    switch (static_cast<AudioProfile>(profile)) {
+        case AudioProfile::AAC_HE:
+            return kAudioFormatMPEG4AAC_HE;
+        case AudioProfile::AAC_HE_SP:
+            return kAudioFormatMPEG4AAC_HE_V2;
+        default:
+            return kAudioFormatMPEG4AAC;
     }
 }
 
@@ -142,7 +159,7 @@ bool AACHardwareDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept {
     }
 
     AudioStreamBasicDescription inputFormat{};
-    inputFormat.mFormatID = kAudioFormatMPEG4AAC;
+    inputFormat.mFormatID = getAACFormatID(audioConfig->profile);
     inputFormat.mSampleRate = static_cast<Float64>(audioConfig->sampleRate);
     inputFormat.mChannelsPerFrame = audioConfig->channels;
     inputFormat.mFormatFlags = static_cast<AudioFormatFlags>(getAACProfile(audioConfig->profile));
