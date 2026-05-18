@@ -39,6 +39,8 @@ public:
 
     void receiveDecodedData(DataPtr data, int64_t pts, bool isCompleted) noexcept override;
 
+    void onVideoSizeChanged(uint32_t width, uint32_t height) noexcept override;
+
     void flush() noexcept override;
 
 private:

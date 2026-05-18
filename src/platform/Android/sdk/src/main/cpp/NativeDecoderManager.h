@@ -23,6 +23,12 @@ public:
 
     virtual void receiveDecodedData(DataPtr data, int64_t pts, bool isCompleted) noexcept = 0;
 
+    virtual void onError(Error error) noexcept {
+        invokeReceiveFunc(DecoderData{nullptr, error});
+    }
+
+    virtual void onVideoSizeChanged(uint32_t /*width*/, uint32_t /*height*/) noexcept {}
+
 protected:
     std::string decoderId_;
 };

@@ -97,6 +97,22 @@ Error VideoHardwareDecoder::decodeTextureMode(AVFrameRefPtr& frame) noexcept {
     return res;
 }
 
+void VideoHardwareDecoder::onVideoSizeChanged(uint32_t width, uint32_t height) noexcept {
+    auto videoConfig = std::dynamic_pointer_cast<VideoDecoderConfig>(config_);
+    if (!videoConfig) {
+        return;
+    }
+    LogI("video size changed: {}x{} -> {}x{}",
+         videoConfig->width,
+         videoConfig->height,
+         width,
+         height);
+    // frameWorkerLoop 持续读取 width/height，加锁保证可见性
+    std::lock_guard lock(frameReadyMutex_);
+    videoConfig->width = width;
+    videoConfig->height = height;
+}
+
 void VideoHardwareDecoder::flush() noexcept {
     NativeDecoder::flush();
     discardPackets_.clear();
@@ -163,12 +179,17 @@ void VideoHardwareDecoder::frameWorkerLoop() noexcept {
     resource_->attachContext(surface_);
 
     while (frameWorkerRunning_.load(std::memory_order_acquire)) {
+        uint32_t curWidth = 0;
+        uint32_t curHeight = 0;
         {
             std::unique_lock lock(frameReadyMutex_);
             frameReadyCv_.wait(lock, [this] {
                 return !frameWorkerRunning_.load(std::memory_order_acquire) ||
                        pendingFrameCount_.load(std::memory_order_acquire) > 0;
             });
+            // 在锁内快照，避免与 onVideoSizeChanged 的数据竞争
+            curWidth = videoConfig->width;
+            curHeight = videoConfig->height;
         }
         if (!frameWorkerRunning_.load(std::memory_order_acquire)) {
             break;
@@ -179,20 +200,15 @@ void VideoHardwareDecoder::frameWorkerLoop() noexcept {
         }
         pendingFrameCount_.fetch_sub(1, std::memory_order_acq_rel);
 
-        auto frameBuffer = resource_->acquire(videoConfig->width, videoConfig->height);
-        glViewport(0,
-                   0,
-                   static_cast<int32_t>(videoConfig->width),
-                   static_cast<int32_t>(videoConfig->height));
+        auto frameBuffer = resource_->acquire(curWidth, curHeight);
+        glViewport(0, 0, static_cast<int32_t>(curWidth), static_cast<int32_t>(curHeight));
         if (!frameBuffer->bind(true)) {
             LogE("frame buffer bind failed");
             continue;
         }
 
-        auto result = NativeHardwareDecoder::requestVideoFrame(decoderId_,
-                                                               waitTime,
-                                                               videoConfig->width,
-                                                               videoConfig->height);
+        auto result =
+            NativeHardwareDecoder::requestVideoFrame(decoderId_, waitTime, curWidth, curHeight);
         frameBuffer->unbind(true);
 
         if (result.isCompleted) {
@@ -212,8 +228,7 @@ void VideoHardwareDecoder::frameWorkerLoop() noexcept {
             continue;
         }
 
-        auto outputFrame =
-            buildOutputFrame(glFb, result.pts, videoConfig->width, videoConfig->height);
+        auto outputFrame = buildOutputFrame(glFb, result.pts, curWidth, curHeight);
         if (!outputFrame) {
             LogE("buildOutputFrame failed, pts:{}", result.pts);
             continue;

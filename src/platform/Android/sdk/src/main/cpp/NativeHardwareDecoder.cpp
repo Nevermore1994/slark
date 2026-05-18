@@ -45,7 +45,7 @@ Error Native_HardwareDecoder_sendPacket(JNIEnv* env,
     JNIReference<jbyteArray> byteArray(env, nullptr);
     if (flag != NativeDecodeFlag::EndOfStream) {
         if (type == PacketType::Video) {
-            byteArray = ToJVM::naluBytes(env, *data);
+            byteArray = ToJVM::naluBytes(env, *data, /*skipExistingHeader=*/true);
         } else {
             byteArray = ToJVM::bytes(env, *data);
         }
@@ -208,6 +208,38 @@ Java_com_slark_sdk_MediaCodecDecoder_processRawData(JNIEnv* env,
     }
     auto dataPtr = FromJVM::bytes(env, byteBuffer);
     decoder->receiveDecodedData(std::move(dataPtr), pts, (JNI_TRUE == isCompleted));
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_slark_sdk_MediaCodecDecoder_processCodecError(JNIEnv* env,
+                                                       jobject /* thiz */,
+                                                       jstring jDecoderId,
+                                                       jint errorCode) {
+    using namespace slark;
+    auto decoderId = FromJVM::str(env, jDecoderId);
+    auto decoder = NativeDecoderManager::shareInstance().find(decoderId);
+    if (!decoder) {
+        LogE("processCodecError: not found decoder:{}", decoderId);
+        return;
+    }
+    LogE("codec error, decoderId:{} errorCode:{}", decoderId, errorCode);
+    decoder->onError(Error::CodecError);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_slark_sdk_MediaCodecDecoder_onVideoSizeChanged(JNIEnv* env,
+                                                        jobject /* thiz */,
+                                                        jstring jDecoderId,
+                                                        jint width,
+                                                        jint height) {
+    using namespace slark;
+    auto decoderId = FromJVM::str(env, jDecoderId);
+    auto decoder = NativeDecoderManager::shareInstance().find(decoderId);
+    if (!decoder) {
+        LogE("onVideoSizeChanged: not found decoder:{}", decoderId);
+        return;
+    }
+    decoder->onVideoSizeChanged(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 }
 
 uint64_t Native_HardwareDecoder_requestVideoFrame(JNIEnv* env,

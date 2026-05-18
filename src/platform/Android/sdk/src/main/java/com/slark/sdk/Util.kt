@@ -64,6 +64,14 @@ fun isAudioMime(mime: String): Boolean {
     return mime.startsWith("audio/") == true
 }
 
+fun MediaFormat.getIntegerOrNull(key: String): Int? {
+    return try {
+        getInteger(key)
+    } catch (_: Exception) {
+        null
+    }
+}
+
 fun getChannelConfig(channelCount: Int): Int {
     return when (channelCount) {
         1 -> AudioFormat.CHANNEL_OUT_MONO

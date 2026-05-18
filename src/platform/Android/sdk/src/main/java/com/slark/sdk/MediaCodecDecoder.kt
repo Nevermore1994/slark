@@ -88,9 +88,17 @@ class MediaCodecDecoder(
         override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
             SlarkLog.e(LOG_TAG, "codec error: ${e.message}")
             isRunning.set(false)
+            // 唤醒可能阻塞在 outputBufferQueue 的 requestVideoFrame
+            outputBufferQueue.offer(-1 to MediaCodec.BufferInfo())
+            processCodecError(decoderId, e.errorCode)
         }
 
-        override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {}
+        override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {
+            if (!format.isVideoFormat()) return
+            val newWidth = format.getIntegerOrNull(MediaFormat.KEY_WIDTH) ?: return
+            val newHeight = format.getIntegerOrNull(MediaFormat.KEY_HEIGHT) ?: return
+            onVideoSizeChanged(decoderId, newWidth, newHeight)
+        }
     }
 
     private fun consumeOutputBuffer(codec: MediaCodec, index: Int, info: MediaCodec.BufferInfo) {
@@ -118,8 +126,7 @@ class MediaCodecDecoder(
             return SlarkPlayerErrorCode.CodecInputError.value
         }
 
-        // 从异步回调队列取空闲输入槽，最多等 10ms
-        val inputIndex = inputBufferQueue.poll(10L, TimeUnit.MILLISECONDS)
+        val inputIndex = inputBufferQueue.poll()
             ?: return SlarkPlayerErrorCode.CodecNotProcessed.value
 
         try {
@@ -174,6 +181,10 @@ class MediaCodecDecoder(
         val output = outputBufferQueue.poll(waitTime, TimeUnit.MILLISECONDS)
             ?: return packFrameResult(false, isCompleted.get(), 0L)
         val (outputIndex, info) = output
+        // onError 注入的哨兵值，表示解码器已出错
+        if (outputIndex < 0) {
+            return packFrameResult(false, isCompleted.get(), 0L)
+        }
         val surfaceRef = surface ?: run {
             // surface 无效时不渲染，直接丢弃
             decoder?.releaseOutputBuffer(outputIndex, false)
@@ -199,6 +210,8 @@ class MediaCodecDecoder(
     }
 
     private external fun processRawData(decoderId: String, byteBuffer: ByteArray, presentationTimeUs: Long, isCompleted: Boolean)
+    private external fun processCodecError(decoderId: String, errorCode: Int)
+    private external fun onVideoSizeChanged(decoderId: String, width: Int, height: Int)
 
     companion object {
         const val LOG_TAG = "MediaCodec"
