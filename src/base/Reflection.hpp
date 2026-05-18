@@ -1,7 +1,5 @@
 //
-// Created by Nevermore on 2022/5/13.
-// slark Reflection — lightweight factory registry
-// Copyright (c) 2022 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #pragma once

@@ -157,7 +157,7 @@ std::shared_ptr<AVFrame> VideoHardwareDecoder::buildOutputFrame(FrameBuffer* glF
 void VideoHardwareDecoder::frameWorkerLoop() noexcept {
     auto videoConfig = std::dynamic_pointer_cast<VideoDecoderConfig>(config_);
     // 等待时间 = 1.5 倍帧时长，fps 未知时用 100ms 保守上界
-    const int64_t kWaitTime =
+    const int64_t waitTime =
         videoConfig->fps > 0 ? static_cast<int64_t>(1500.0 / videoConfig->fps) : 100;
 
     resource_->attachContext(surface_);
@@ -190,7 +190,7 @@ void VideoHardwareDecoder::frameWorkerLoop() noexcept {
         }
 
         auto result = NativeHardwareDecoder::requestVideoFrame(decoderId_,
-                                                               kWaitTime,
+                                                               waitTime,
                                                                videoConfig->width,
                                                                videoConfig->height);
         frameBuffer->unbind(true);

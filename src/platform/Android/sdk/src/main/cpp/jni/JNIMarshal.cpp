@@ -46,11 +46,11 @@ std::unique_ptr<slark::Data> bytes(JNIEnv* env, jobject byteBuffer) noexcept {
         return nullptr;
     }
     auto* ptr = env->GetDirectBufferAddress(byteBuffer);
-    const auto kCapacity = env->GetDirectBufferCapacity(byteBuffer);
-    if (!ptr || kCapacity <= 0) {
+    const auto capacity = env->GetDirectBufferCapacity(byteBuffer);
+    if (!ptr || capacity <= 0) {
         return nullptr;
     }
-    return std::make_unique<slark::Data>(static_cast<uint64_t>(kCapacity),
+    return std::make_unique<slark::Data>(static_cast<uint64_t>(capacity),
                                          reinterpret_cast<const Byte*>(ptr));
 }
 
@@ -106,28 +106,28 @@ ByteArrayReference naluBytes(JNIEnv* env,
     }
 
     // 计算跳过已有 header 后的偏移和大小
-    const uint32_t kHeaderSize = 4;
+    const uint32_t headerSize = 4;
     uint32_t offset = 0;
     uint32_t size = static_cast<uint32_t>(data.size());
 
-    if (skipExistingHeader && size > kHeaderSize) {
-        offset = kHeaderSize;
-        size -= kHeaderSize;
+    if (skipExistingHeader && size > headerSize) {
+        offset = headerSize;
+        size -= headerSize;
     }
 
     // 创建包含起始码的 NALU 数据
-    jbyteArray arr = env->NewByteArray(static_cast<jsize>(size + kHeaderSize));
+    jbyteArray arr = env->NewByteArray(static_cast<jsize>(size + headerSize));
     if (!arr) {
         return {env, nullptr};
     }
 
     // NALU 起始码
     constexpr jbyte kNaluHeader[4] = {0x00, 0x00, 0x00, 0x01};
-    env->SetByteArrayRegion(arr, 0, kHeaderSize, kNaluHeader);
+    env->SetByteArrayRegion(arr, 0, headerSize, kNaluHeader);
 
     if (size > 0) {
         env->SetByteArrayRegion(arr,
-                                kHeaderSize,
+                                headerSize,
                                 static_cast<jsize>(size),
                                 reinterpret_cast<const jbyte*>(data.data() + offset));
     }

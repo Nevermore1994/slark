@@ -1,7 +1,5 @@
 //
-// Created by Nevermore on 2021/10/24.
-// slark log
-// Copyright (c) 2021 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #pragma once
 

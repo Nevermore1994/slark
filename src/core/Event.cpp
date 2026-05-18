@@ -1,7 +1,5 @@
 //
-// Created by Nevermore
-// slark Event
-// Copyright (c) 2024 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #include "Event.h"

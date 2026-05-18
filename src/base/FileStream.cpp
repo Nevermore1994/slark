@@ -68,13 +68,13 @@ void FileStream::start() noexcept {
         return;
     }
 
-    const bool kWasPaused = (state_ == StreamState::Paused);
+    const bool wasPaused = (state_ == StreamState::Paused);
     shouldStop_ = false;
     shouldPause_ = false;
     isRunning_ = true;
     state_ = StreamState::Reading;
 
-    if (kWasPaused && thread_ && thread_->joinable()) {
+    if (wasPaused && thread_ && thread_->joinable()) {
         // Paused 状态：旧线程仍在 cv_.wait，直接唤醒，不新建线程
         notifyThread();
         return;

@@ -412,8 +412,8 @@ double PlayPipeline::demuxedDuration() const noexcept {
     // 累加器记录的最后入队帧 pts（覆盖 Channel 中尚未解码的帧）
     maxPts = std::max(maxPts, lastEnqueuedAudioPts_.load(std::memory_order_acquire));
     maxPts = std::max(maxPts, lastEnqueuedVideoPts_.load(std::memory_order_acquire));
-    const double kCurrentSec = clockSync_->masterTime(mediaInfo_.hasAudio).second();
-    return std::max(0.0, maxPts - kCurrentSec);
+    const double currentSec = clockSync_->masterTime(mediaInfo_.hasAudio).second();
+    return std::max(0.0, maxPts - currentSec);
 }
 
 void PlayPipeline::pauseStream() noexcept {
@@ -579,8 +579,8 @@ void PlayPipeline::onAudioDecoded(DecoderData data) noexcept {
     if (data.frame->isEOS) {
         return;
     }
-    const uint64_t kFrameEpoch = seekContext_->currentEpoch();
-    if (seekContext_->isEpochStale(kFrameEpoch)) {
+    const uint64_t frameEpoch = seekContext_->currentEpoch();
+    if (seekContext_->isEpochStale(frameEpoch)) {
         return;
     }
     audioFrames_.withLock([&data](auto& q) {
@@ -653,8 +653,8 @@ void PlayPipeline::onVideoDecoded(DecoderData data) noexcept {
     if (data.frame->isEOS) {
         return;
     }
-    const uint64_t kFrameEpoch = seekContext_->currentEpoch();
-    if (seekContext_->isEpochStale(kFrameEpoch)) {
+    const uint64_t frameEpoch = seekContext_->currentEpoch();
+    if (seekContext_->isEpochStale(frameEpoch)) {
         return;
     }
     if (data.frame->isDiscard) {
@@ -841,8 +841,8 @@ void PlayPipeline::connectComponents() noexcept {
                 return;
             }
             handleDemuxHeader(demuxer);
-            const uint64_t kCurrentEpoch = seekContext_->currentEpoch();
-            dispatchFrames(std::move(result), kCurrentEpoch);
+            const uint64_t currentEpoch = seekContext_->currentEpoch();
+            dispatchFrames(std::move(result), currentEpoch);
         });
 }
 
@@ -1066,13 +1066,13 @@ int32_t PlayPipeline::dropFramesUpTo(double cutoffPts) noexcept {
 }
 
 void PlayPipeline::dropOldestFrames() noexcept {
-    const double kTarget = config_.demuxHighWatermarkDuration;
-    const double kCurrentSec = clockSync_->masterTime(mediaInfo_.hasAudio).second();
+    const double target = config_.demuxHighWatermarkDuration;
+    const double currentSec = clockSync_->masterTime(mediaInfo_.hasAudio).second();
     int32_t droppedTotal = 0;
 
     while (true) {
         const auto bounds = snapshotQueueBounds();
-        if (std::max(0.0, bounds.maxPts - kCurrentSec) <= kTarget) {
+        if (std::max(0.0, bounds.maxPts - currentSec) <= target) {
             break;
         }
         // 截断点取两端最老帧的较大值，保证音视频 pts 对齐丢弃

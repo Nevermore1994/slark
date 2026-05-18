@@ -208,10 +208,10 @@ bool BoxFtyp::decode(Buffer& buffer) noexcept {
     if (!buffer.read4ByteBE(minorVersion)) {
         return false;
     }
-    const auto kRemaining =
+    const auto remaining =
         info.size > info.headerSize + 8 ? info.size - info.headerSize - 8 : uint64_t{0};
-    if (kRemaining > 0) {
-        buffer.readString(static_cast<uint32_t>(kRemaining), compatibleBrands);
+    if (remaining > 0) {
+        buffer.readString(static_cast<uint32_t>(remaining), compatibleBrands);
     }
     return true;
 }
@@ -424,7 +424,7 @@ bool BoxStsd::decode(Buffer& buffer) noexcept {
             return false;
         }
         append(box);
-        const auto kEndPos = box->info.start + box->info.size;
+        const auto endPos = box->info.start + box->info.size;
         const auto& sym = box->info.symbol;
 
         if (sym == "mp4a" || sym == "Opus") {
@@ -433,7 +433,7 @@ bool BoxStsd::decode(Buffer& buffer) noexcept {
             decodeVideoEntry(buffer, sym);
         }
 
-        while (buffer.pos() < kEndPos) {
+        while (buffer.pos() < endPos) {
             auto subBox = Box::createBox(buffer);
             if (!subBox) {
                 break;
@@ -441,11 +441,11 @@ bool BoxStsd::decode(Buffer& buffer) noexcept {
             box->append(subBox);
             subBox->decode(buffer);
             buffer.skipTo(static_cast<int64_t>(subBox->info.end()));
-            if (subBox->info.end() >= kEndPos) {
+            if (subBox->info.end() >= endPos) {
                 break;
             }
         }
-        buffer.skipTo(static_cast<int64_t>(kEndPos));
+        buffer.skipTo(static_cast<int64_t>(endPos));
     }
     return true;
 }
@@ -798,7 +798,7 @@ std::string BoxHvcc::description(const std::string& prefix) const noexcept {
 //        |--- Array 2: (like Array 1)
 //        |--- ...
 bool BoxHvcc::decode(Buffer& buffer) noexcept {
-    const auto kEndPos = info.size + info.start;
+    const auto endPos = info.size + info.start;
     buffer.readByte(version);
 
     uint8_t tmp = 0;
@@ -841,7 +841,7 @@ bool BoxHvcc::decode(Buffer& buffer) noexcept {
             pps = std::move(vec);
         }
     }
-    auto skip = static_cast<int64_t>(kEndPos - buffer.readPos());
+    auto skip = static_cast<int64_t>(endPos - buffer.readPos());
     if (skip > 0) {
         buffer.skip(skip);
     }

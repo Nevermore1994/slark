@@ -1,7 +1,5 @@
 //
-// Created by Nevermore on 2025/4/1.
-// slark MoveOnlyFunction — polyfill for std::move_only_function (C++23)
-// Copyright (c) 2025 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #pragma once
 

@@ -1,7 +1,5 @@
 //
-// Created by Nevermore on 2022/5/30.
-// slark FlowEvent
-// Copyright (c) 2022 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #pragma once
 

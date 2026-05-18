@@ -1,7 +1,5 @@
 //
-// Created by Nevermore on 2026/4/7.
-// slark Type Implementation
-// Copyright (c) 2026 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #include "Type.h"

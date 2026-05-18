@@ -1,7 +1,5 @@
 //
-// Created by Nevermore on 2024/7/28.
-// slark DecoderConfig
-// Copyright (c) 2024 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #pragma once
 

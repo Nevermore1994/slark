@@ -1,8 +1,5 @@
 //
-// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
-//
-// This file is part of Slark.
-// Licensed under the MIT License.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #import "interface/SlarkPlayer.h"

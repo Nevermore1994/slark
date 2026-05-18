@@ -199,12 +199,12 @@ bool TSDemuxer::parseTSPes(DataView data, uint8_t payloadIndicator, TSPESFrame& 
          (data[4] << 8) | data[5]);
 
     static const std::array<uint8_t, 6> kSpecialStreamArray = {0xbc, 0xbe, 0xbf, 0xf0, 0xf1, 0xff};
-    const bool kIsSpecialStream =
+    const bool isSpecialStream =
         std::any_of(kSpecialStreamArray.begin(), kSpecialStreamArray.end(), [streamId](uint8_t s) {
             return s == streamId;
         });
     uint32_t dataOffset = 0;
-    if (!kIsSpecialStream) {
+    if (!isSpecialStream) {
         if (data.length() < 20) {
             LogE("data length is too short");
             return false;

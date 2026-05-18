@@ -1,9 +1,6 @@
 //
-//  AVFrame.hpp
-//  slark
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-//  Created by Nevermore on 2022/4/29.
-//  Copyright (c) 2023 Nevermore All rights reserved.
 
 #pragma once
 

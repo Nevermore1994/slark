@@ -79,41 +79,41 @@ uint64_t TrackContext::getSeekPos(double targetTime) const noexcept {
         LogE("chunkIndex out of range");
         return 0;
     }
-    const uint64_t kChunkOffset = stco->chunkOffsets[chunkIndex];
+    const uint64_t chunkOffset = stco->chunkOffsets[chunkIndex];
     uint64_t sampleOffsetInChunk = 0;
     for (uint32_t i = 0; i < seekSampleIndex - firstSampleInChunk; ++i) {
-        const uint32_t kIdx = firstSampleInChunk - 1 + i;
-        if (kIdx >= stsz->sampleSizes.size()) {
-            LogE("sampleSizes index out of range: {}", kIdx);
+        const uint32_t idx = firstSampleInChunk - 1 + i;
+        if (idx >= stsz->sampleSizes.size()) {
+            LogE("sampleSizes index out of range: {}", idx);
             break;
         }
-        sampleOffsetInChunk += stsz->sampleSizes[kIdx];
+        sampleOffsetInChunk += stsz->sampleSizes[idx];
     }
-    const auto kPos = kChunkOffset + sampleOffsetInChunk;
+    const auto pos = chunkOffset + sampleOffsetInChunk;
     LogI("[seek info] {} keySampleIndex:{}, time:{}, pos:{}",
          type == TrackType::Video ? "video" : "audio",
          seekSampleIndex,
          targetTime,
-         kPos);
-    return kPos;
+         pos);
+    return pos;
 }
 
 uint32_t TrackContext::findSampleIndexByTime(double targetTime) const noexcept {
     uint32_t sampleIndex = 0;
-    const auto kTimeScale = static_cast<double>(mdhd->timeScale);
+    const auto timeScale = static_cast<double>(mdhd->timeScale);
     const double mediaTargetTime =
-        targetTime + static_cast<double>(elstMediaTimeOffset) / kTimeScale;
+        targetTime + static_cast<double>(elstMediaTimeOffset) / timeScale;
     double currentTime = 0.0;
     for (const auto& entry : stts->entrys) {
-        const auto kEntryDuration =
-            static_cast<double>(entry.sampleCount * entry.sampleDelta) / kTimeScale;
-        if (currentTime + kEntryDuration > mediaTargetTime) {
-            const auto kOffset = static_cast<uint32_t>((mediaTargetTime - currentTime) *
-                                                       kTimeScale / entry.sampleDelta);
-            sampleIndex += std::min(kOffset, entry.sampleCount - 1);
+        const auto entryDuration =
+            static_cast<double>(entry.sampleCount * entry.sampleDelta) / timeScale;
+        if (currentTime + entryDuration > mediaTargetTime) {
+            const auto offset = static_cast<uint32_t>((mediaTargetTime - currentTime) * timeScale /
+                                                      entry.sampleDelta);
+            sampleIndex += std::min(offset, entry.sampleCount - 1);
             break;
         }
-        currentTime += kEntryDuration;
+        currentTime += entryDuration;
         sampleIndex += entry.sampleCount;
     }
     return sampleIndex == 0 ? 1 : sampleIndex;
@@ -124,15 +124,15 @@ std::optional<std::pair<uint32_t, uint32_t>> TrackContext::findChunkBySampleInde
     uint32_t sampleCount = 0;
     for (size_t i = 0; i < stsc->entrys.size(); ++i) {
         const auto& entry = stsc->entrys[i];
-        const uint32_t kNextFirstChunk = (i + 1 < stsc->entrys.size())
-                                             ? stsc->entrys[i + 1].firstChunk
-                                             : static_cast<uint32_t>(stco->chunkOffsets.size()) + 1;
-        for (uint32_t chunk = entry.firstChunk; chunk < kNextFirstChunk; ++chunk) {
-            const uint32_t kChunkSampleCount = entry.samplesPerChunk;
-            if (seekSampleIndex <= sampleCount + kChunkSampleCount) {
+        const uint32_t nextFirstChunk = (i + 1 < stsc->entrys.size())
+                                            ? stsc->entrys[i + 1].firstChunk
+                                            : static_cast<uint32_t>(stco->chunkOffsets.size()) + 1;
+        for (uint32_t chunk = entry.firstChunk; chunk < nextFirstChunk; ++chunk) {
+            const uint32_t chunkSampleCount = entry.samplesPerChunk;
+            if (seekSampleIndex <= sampleCount + chunkSampleCount) {
                 return std::make_pair(chunk - 1, sampleCount + 1);
             }
-            sampleCount += kChunkSampleCount;
+            sampleCount += chunkSampleCount;
         }
     }
     LogE("not found chunkIndex");
@@ -150,38 +150,38 @@ void TrackContext::seek(uint64_t pos) noexcept {
     if (it != chunks.begin()) {
         --it;
     }
-    const auto kChunkIndex = static_cast<uint32_t>(std::distance(chunks.begin(), it));
+    const auto chunkIndex = static_cast<uint32_t>(std::distance(chunks.begin(), it));
 
     // 通过 stsc 表直接计算 chunk 前的累计 sample 数，O(stsc entries) 通常极小
     uint32_t sampleBeforeChunk = 0;
     uint32_t samplesPerChunk = 1;
     const auto& entries = stsc->entrys;
     for (size_t i = 0; i < entries.size(); ++i) {
-        const uint32_t kFirstChunk = entries[i].firstChunk - 1;
-        const uint32_t kNextFirstChunk = (i + 1 < entries.size())
-                                             ? entries[i + 1].firstChunk - 1
-                                             : static_cast<uint32_t>(chunks.size());
-        if (kChunkIndex < kNextFirstChunk) {
-            sampleBeforeChunk += (kChunkIndex - kFirstChunk) * entries[i].samplesPerChunk;
+        const uint32_t firstChunk = entries[i].firstChunk - 1;
+        const uint32_t nextFirstChunk = (i + 1 < entries.size())
+                                            ? entries[i + 1].firstChunk - 1
+                                            : static_cast<uint32_t>(chunks.size());
+        if (chunkIndex < nextFirstChunk) {
+            sampleBeforeChunk += (chunkIndex - firstChunk) * entries[i].samplesPerChunk;
             samplesPerChunk = entries[i].samplesPerChunk;
             break;
         }
-        sampleBeforeChunk += (kNextFirstChunk - kFirstChunk) * entries[i].samplesPerChunk;
+        sampleBeforeChunk += (nextFirstChunk - firstChunk) * entries[i].samplesPerChunk;
     }
 
     // 在 chunk 内线性扫描找到精确 sample（samplesPerChunk 通常很小）
     uint32_t sampleInChunk = 0;
-    uint64_t sampleStart = chunks[kChunkIndex];
+    uint64_t sampleStart = chunks[chunkIndex];
     while (sampleInChunk < samplesPerChunk) {
-        const uint32_t kSampleIdx = sampleBeforeChunk + sampleInChunk;
-        if (kSampleIdx >= stsz->sampleSizes.size()) {
+        const uint32_t sampleIdx = sampleBeforeChunk + sampleInChunk;
+        if (sampleIdx >= stsz->sampleSizes.size()) {
             break;
         }
-        const uint64_t kSampleEnd = sampleStart + stsz->sampleSizes[kSampleIdx];
-        if (kSampleEnd > pos) {
+        const uint64_t sampleEnd = sampleStart + stsz->sampleSizes[sampleIdx];
+        if (sampleEnd > pos) {
             break;
         }
-        sampleStart = kSampleEnd;
+        sampleStart = sampleEnd;
         ++sampleInChunk;
     }
 
@@ -196,13 +196,12 @@ void TrackContext::seek(uint64_t pos) noexcept {
     reset();
     seekToSample(sampleIndex);
 
-    const auto kFinalPos =
-        stco->chunkOffsets[chunkLogicIndex] + static_cast<uint64_t>(sampleOffset);
+    const auto finalPos = stco->chunkOffsets[chunkLogicIndex] + static_cast<uint64_t>(sampleOffset);
     LogI("[seek info] {} sampleIndex:{}, dts:{}, pos:{}",
          type == TrackType::Video ? "video" : "audio",
          index,
          dts,
-         kFinalPos);
+         finalPos);
 }
 
 namespace {
@@ -214,11 +213,11 @@ std::optional<std::pair<uint32_t, uint32_t>> seekInRle(const std::vector<Entry>&
                                                        CountFn countFn) noexcept {
     uint32_t accumulated = 0;
     for (size_t i = 0; i < entries.size(); ++i) {
-        const uint32_t kCount = countFn(entries[i]);
-        if (accumulated + kCount > targetIndex) {
+        const uint32_t count = countFn(entries[i]);
+        if (accumulated + count > targetIndex) {
             return std::make_pair(static_cast<uint32_t>(i), targetIndex - accumulated);
         }
-        accumulated += kCount;
+        accumulated += count;
     }
     return std::nullopt;
 }
@@ -226,37 +225,37 @@ std::optional<std::pair<uint32_t, uint32_t>> seekInRle(const std::vector<Entry>&
 } // namespace
 
 void TrackContext::seekToSample(uint32_t targetSampleIndex) noexcept {
-    const uint32_t kIdx = targetSampleIndex > 0 ? targetSampleIndex - 1 : 0;
+    const uint32_t idx = targetSampleIndex > 0 ? targetSampleIndex - 1 : 0;
 
     // stsc: 定位 chunk 和 chunk 内偏移
     uint32_t stscAccumulated = 0;
     for (size_t i = 0; i < stsc->entrys.size(); ++i) {
         const auto& entry = stsc->entrys[i];
-        const uint32_t kFirstChunk = entry.firstChunk - 1;
-        const uint32_t kNextFirstChunk = (i + 1 < stsc->entrys.size())
-                                             ? stsc->entrys[i + 1].firstChunk - 1
-                                             : static_cast<uint32_t>(stco->chunkOffsets.size());
-        const uint32_t kEntryTotal = (kNextFirstChunk - kFirstChunk) * entry.samplesPerChunk;
-        if (stscAccumulated + kEntryTotal > kIdx) {
-            const uint32_t kRemaining = kIdx - stscAccumulated;
-            chunkLogicIndex = kFirstChunk + kRemaining / entry.samplesPerChunk;
-            entrySampleIndex = kRemaining % entry.samplesPerChunk;
+        const uint32_t firstChunk = entry.firstChunk - 1;
+        const uint32_t nextFirstChunk = (i + 1 < stsc->entrys.size())
+                                            ? stsc->entrys[i + 1].firstChunk - 1
+                                            : static_cast<uint32_t>(stco->chunkOffsets.size());
+        const uint32_t entryTotal = (nextFirstChunk - firstChunk) * entry.samplesPerChunk;
+        if (stscAccumulated + entryTotal > idx) {
+            const uint32_t remaining = idx - stscAccumulated;
+            chunkLogicIndex = firstChunk + remaining / entry.samplesPerChunk;
+            entrySampleIndex = remaining % entry.samplesPerChunk;
             stscEntryIndex = static_cast<uint32_t>(i);
             sampleOffset = 0;
             for (uint32_t s = 0; s < entrySampleIndex; ++s) {
                 sampleOffset +=
                     stsz->sampleSizes[stscAccumulated +
-                                      (chunkLogicIndex - kFirstChunk) * entry.samplesPerChunk + s];
+                                      (chunkLogicIndex - firstChunk) * entry.samplesPerChunk + s];
             }
-            stszSampleSizeIndex = kIdx;
+            stszSampleSizeIndex = idx;
             break;
         }
-        stscAccumulated += kEntryTotal;
+        stscAccumulated += entryTotal;
     }
 
     // stts: 定位 dts
     dts = 0;
-    if (auto r = seekInRle(stts->entrys, kIdx, [](const auto& e) {
+    if (auto r = seekInRle(stts->entrys, idx, [](const auto& e) {
             return e.sampleCount;
         })) {
         sttsEntryIndex = r->first;
@@ -271,7 +270,7 @@ void TrackContext::seekToSample(uint32_t targetSampleIndex) noexcept {
     // ctts: 定位 pts
     if (!ctts) {
         pts = dts;
-    } else if (auto r = seekInRle(ctts->entrys, kIdx, [](const auto& e) {
+    } else if (auto r = seekInRle(ctts->entrys, idx, [](const auto& e) {
                    return e.sampleCount;
                })) {
         cttsEntryIndex = r->first;
@@ -328,7 +327,7 @@ void TrackContext::advanceStscState() noexcept {
 
 void TrackContext::advanceSttsState() noexcept {
     // 先取当前 entry 的 delta，再推进 entry index，避免引用失效后取到错误值
-    const auto kDelta = stts->entrys[sttsEntryIndex].sampleDelta;
+    const auto delta = stts->entrys[sttsEntryIndex].sampleDelta;
     sttsEntrySampleIndex++;
     if (sttsEntrySampleIndex >= stts->entrys[sttsEntryIndex].sampleCount) {
         sttsEntrySampleIndex = 0;
@@ -336,7 +335,7 @@ void TrackContext::advanceSttsState() noexcept {
             sttsEntryIndex++;
         }
     }
-    dts += kDelta;
+    dts += delta;
 }
 
 void TrackContext::advanceCttsState() noexcept {
@@ -397,33 +396,33 @@ AVFramePtrArray TrackContext::parseNaluFrames(AVFramePtr frame,
                                               std::shared_ptr<VideoFrameInfo> frameInfo,
                                               const NaluClassifier& classifier) {
     AVFramePtrArray frames;
-    uint32_t kDuration = frame->duration;
-    if (kDuration == 0 && stts && sttsEntryIndex < stts->entrys.size()) {
+    uint32_t duration = frame->duration;
+    if (duration == 0 && stts && sttsEntryIndex < stts->entrys.size()) {
         const auto& sttsEntry = stts->entrys[sttsEntryIndex];
-        kDuration = static_cast<uint32_t>(static_cast<double>(sttsEntry.sampleDelta) /
-                                          static_cast<double>(frame->timeScale) * 1000.0);
+        duration = static_cast<uint32_t>(static_cast<double>(sttsEntry.sampleDelta) /
+                                         static_cast<double>(frame->timeScale) * 1000.0);
     }
 
-    const uint32_t kHeaderSize = naluByteSize + 1;
-    const auto kRawView = data->view();
+    const uint32_t headerSize = naluByteSize + 1;
+    const auto rawView = data->view();
     uint32_t pos = 0;
 
-    while (pos + kHeaderSize <= kRawView.length()) {
+    while (pos + headerSize <= rawView.length()) {
         uint32_t naluSize = 0;
-        auto sizeView = kRawView.substr(pos, 4);
-        sizeView.readNumberBE(naluSize, kHeaderSize);
-        const uint32_t kTotalSize = naluSize + kHeaderSize;
-        if (pos + kTotalSize > kRawView.length()) {
+        auto sizeView = rawView.substr(pos, 4);
+        sizeView.readNumberBE(naluSize, headerSize);
+        const uint32_t totalSize = naluSize + headerSize;
+        if (pos + totalSize > rawView.length()) {
             break; // 防止越界
         }
 
         uint8_t naluHeader = 0;
-        auto naluHeaderView = kRawView.substr(pos + 4, 1);
+        auto naluHeaderView = rawView.substr(pos + 4, 1);
         naluHeaderView.readNumberLE(naluHeader, 1);
 
         const auto [shouldProcess, frameType] = classifier(naluHeader);
         if (!shouldProcess) {
-            pos += kTotalSize;
+            pos += totalSize;
             continue;
         }
 
@@ -436,14 +435,14 @@ AVFramePtrArray TrackContext::parseNaluFrames(AVFramePtr frame,
         }
         info->keyIndex = keyIndex;
 
-        pos += kTotalSize;
-        const bool kIsLast = (pos >= kRawView.length());
+        pos += totalSize;
+        const bool isLast = (pos >= rawView.length());
 
         // 最后一个 NALU 直接 move frame，其余 copy；data 统一切片
-        auto newFrame = kIsLast ? std::move(frame) : frame->copy();
-        newFrame->duration = kDuration;
+        auto newFrame = isLast ? std::move(frame) : frame->copy();
+        newFrame->duration = duration;
         newFrame->info = std::move(info);
-        newFrame->data = std::make_unique<Data>(kRawView.substr(pos - kTotalSize, kTotalSize));
+        newFrame->data = std::make_unique<Data>(rawView.substr(pos - totalSize, totalSize));
         frames.push_back(std::move(newFrame));
     }
     return frames;
@@ -468,11 +467,11 @@ AVFramePtrArray TrackContext::parseH264FrameData(AVFramePtr frame,
                            std::move(data),
                            std::move(frameInfo),
                            [](uint8_t naluHeader) -> std::pair<bool, VideoFrameType> {
-                               const uint8_t kNaluType = naluHeader & 0x1f;
-                               if (kNaluType != 5 && kNaluType != 1) {
+                               const uint8_t naluType = naluHeader & 0x1f;
+                               if (naluType != 5 && naluType != 1) {
                                    return {false, VideoFrameType::IFrame};
                                }
-                               if (kNaluType == 5) {
+                               if (naluType == 5) {
                                    return {true, VideoFrameType::IFrame};
                                }
                                // naluType == 1: parse slice type
@@ -503,11 +502,11 @@ AVFramePtrArray TrackContext::parseH265FrameData(AVFramePtr frame,
                            std::move(data),
                            std::move(frameInfo),
                            [](uint8_t naluHeader) -> std::pair<bool, VideoFrameType> {
-                               const uint8_t kNaluType = (naluHeader >> 1) & 0x3f;
-                               if (kNaluType > 21) {
+                               const uint8_t naluType = (naluHeader >> 1) & 0x3f;
+                               if (naluType > 21) {
                                    return {false, VideoFrameType::IFrame};
                                }
-                               if (kNaluType >= 16 && kNaluType <= 21) {
+                               if (naluType >= 16 && naluType <= 21) {
                                    return {true, VideoFrameType::IFrame};
                                }
                                return {true, VideoFrameType::PFrame};
@@ -722,9 +721,9 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
             res = false;
             break;
         }
-        const auto kEndPos = box->info.size + box->info.start;
+        const auto endPos = box->info.size + box->info.start;
         while (!parentBox.empty()) {
-            if (kEndPos >= (parentBox.top()->info.start + parentBox.top()->info.size)) {
+            if (endPos >= (parentBox.top()->info.start + parentBox.top()->info.size)) {
                 parentBox.pop();
             } else {
                 break;
@@ -792,9 +791,9 @@ bool Mp4Demuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
             rootBox_->append(box);
         }
 
-        const auto kEndPos = box->info.size + box->info.start;
-        const auto kSkipOffset = kEndPos - buffer->pos();
-        if (!buffer->skip(static_cast<int64_t>(kSkipOffset))) {
+        const auto endPos = box->info.size + box->info.start;
+        const auto skipOffset = endPos - buffer->pos();
+        if (!buffer->skip(static_cast<int64_t>(skipOffset))) {
             if (box->info.symbol != "mdat") {
                 res = false;
             }
@@ -903,12 +902,12 @@ void Mp4Demuxer::initVideoTrack(const std::shared_ptr<TrackContext>& track) noex
 
     auto sttsBox = track->stts;
     if (sttsBox && !sttsBox->entrys.empty()) {
-        const auto kDelta = sttsBox->entrys.front().sampleDelta;
-        if (kDelta > 0) {
-            videoInfo_->fps = static_cast<uint16_t>(videoInfo_->timeScale / kDelta);
+        const auto delta = sttsBox->entrys.front().sampleDelta;
+        if (delta > 0) {
+            videoInfo_->fps = static_cast<uint16_t>(videoInfo_->timeScale / delta);
         } else {
-            const auto kSampleSize = static_cast<double>(sttsBox->sampleSize());
-            videoInfo_->fps = static_cast<uint16_t>(ceil(kSampleSize / totalDuration_.second()));
+            const auto sampleSize = static_cast<double>(sttsBox->sampleSize());
+            videoInfo_->fps = static_cast<uint16_t>(ceil(sampleSize / totalDuration_.second()));
         }
     } else if (!track->fragSamples.empty()) {
         const auto& s = track->fragSamples.front();
@@ -1099,8 +1098,8 @@ uint64_t Mp4Demuxer::getSeekToPos(double time) noexcept {
     uint64_t fallbackOffset = 0;
     if (headerInfo_) {
         auto mdatBox = rootBox_ ? rootBox_->getChild("mdat") : nullptr;
-        const uint64_t kHeaderSize = mdatBox ? mdatBox->info.headerSize : 8;
-        fallbackOffset = headerInfo_->headerLength + kHeaderSize;
+        const uint64_t headerSize = mdatBox ? mdatBox->info.headerSize : 8;
+        fallbackOffset = headerInfo_->headerLength + headerSize;
     }
 
     if (isFragmented_) {
@@ -1307,9 +1306,9 @@ void Mp4Demuxer::parseMoofChildren(Buffer& buffer, const BoxRefPtr& moofBox) noe
         if (!buffer.skip(skipOffset)) {
             break;
         }
-        const auto kEndPos = box->info.size + box->info.start;
+        const auto endPos = box->info.size + box->info.start;
         while (!parentStack.empty()) {
-            if (kEndPos >= (parentStack.top()->info.start + parentStack.top()->info.size)) {
+            if (endPos >= (parentStack.top()->info.start + parentStack.top()->info.size)) {
                 parentStack.pop();
             } else {
                 break;

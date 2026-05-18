@@ -64,9 +64,9 @@ inline AsyncGenerator<StreamChunk> channelToGenerator(ReceiverPtr<StreamChunk> r
             co_return;
         }
         auto chunk = std::move(result.value());
-        const bool kIsFinal = chunk.isFinal || chunk.hasError();
+        const bool isFinal = chunk.isFinal || chunk.hasError();
         co_yield std::move(chunk);
-        if (kIsFinal) {
+        if (isFinal) {
             co_return;
         }
     }

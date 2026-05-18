@@ -1,7 +1,5 @@
 //
-// Created by Nevermore.
-// slark MediaDefs
-// Copyright (c) 2024 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #pragma once
 #include <string_view>

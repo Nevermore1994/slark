@@ -1,7 +1,5 @@
 //
-// Created by Nevermore on 2023/6/14.
-// slark Random
-// Copyright (c) 2021 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #pragma once

@@ -186,9 +186,9 @@ bool Player::Impl::setupDataProvider() noexcept {
                                   std::move(onComplete))) {
         LogE("open media source failed, path:{}", path);
         setState(PlayerState::Error);
-        const bool kIsNet = isNetworkLink(path);
-        auto errorCode = kIsNet ? std::to_string(static_cast<uint32_t>(Error::NetworkError))
-                                : std::to_string(static_cast<uint32_t>(Error::IOError));
+        const bool isNet = isNetworkLink(path);
+        auto errorCode = isNet ? std::to_string(static_cast<uint32_t>(Error::NetworkError))
+                               : std::to_string(static_cast<uint32_t>(Error::IOError));
         notifyPlayerEvent(PlayerEvent::OnError, errorCode);
         return false;
     }

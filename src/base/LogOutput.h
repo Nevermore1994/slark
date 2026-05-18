@@ -1,7 +1,5 @@
 //
-// Created by Nevermore on 2023/7/1.
-// slark LogOutput
-// Copyright (c) 2023 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #pragma once
 #include "Writer.h"

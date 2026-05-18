@@ -27,7 +27,7 @@ bool MediaSourceManager::open(const std::string& uri,
     stream_ = std::move(result.value());
 
     // 提前判断是否网络流，open 后 streamInfo_ 才填充
-    const bool kIsNetworkStream = StreamFactory::isHttp(uri) || StreamFactory::isHLS(uri);
+    const bool isNetworkStream = StreamFactory::isHttp(uri) || StreamFactory::isHLS(uri);
 
     OpenParams params;
     params.uri = uri;
@@ -43,9 +43,9 @@ bool MediaSourceManager::open(const std::string& uri,
         onData(std::move(packet));
     };
 
-    params.onError = [onError = std::move(onError), kIsNetworkStream](const Error&) {
+    params.onError = [onError = std::move(onError), isNetworkStream](const Error&) {
         if (onError) {
-            onError(kIsNetworkStream);
+            onError(isNetworkStream);
         }
     };
 

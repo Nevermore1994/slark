@@ -1,7 +1,5 @@
 //
-// Created by Nevermore on 2021/12/22.
-// slark Time
-// Copyright (c) 2021 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #include "Time.hpp"

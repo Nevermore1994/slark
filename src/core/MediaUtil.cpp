@@ -1,7 +1,5 @@
 //
-// Created by Nevermore on 2022/5/27.
-// slark MediaBase
-// Copyright (c) 2022 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #include "MediaUtil.h"
@@ -297,8 +295,8 @@ void parseH264Sps(DataView bitstream, const std::shared_ptr<VideoInfo>& videoInf
         auto topOffset = Golomb::readUe(bitstream, offset);
         auto bottomOffset = Golomb::readUe(bitstream, offset);
 
-        unsigned int subWidth = 2;
-        unsigned int subHeight = 2;
+        uint32_t subWidth = 2;
+        uint32_t subHeight = 2;
         // default 420
         if (0 == chromaFormatIdc) // monochrome
         {

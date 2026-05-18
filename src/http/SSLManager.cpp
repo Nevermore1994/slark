@@ -1,7 +1,5 @@
 //
-// Created by Nevermore on 2024/6/15.
-// slark SSLManager
-// Copyright (c) 2024 Nevermore All rights reserved.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #if ENABLE_HTTPS
 

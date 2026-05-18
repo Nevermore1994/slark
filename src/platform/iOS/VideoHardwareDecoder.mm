@@ -1,9 +1,6 @@
 
 //
-// Copyright (c) 2022-2026 Nevermore1994. All rights reserved.
-//
-// This file is part of Slark.
-// Licensed under the MIT License.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 // slark
@@ -206,14 +203,14 @@ bool VideoHardwareDecoder::createDecodeSession() noexcept {
     }
     OSStatus status = noErr;
     if (config->mediaInfo == MEDIA_MIMETYPE_VIDEO_AVC) {
-        const uint8_t* const kParamPtrs[2] = {config->sps->data(), config->pps->data()};
-        const size_t kParamSizes[2] = {static_cast<size_t>(config->sps->length()),
-                                       static_cast<size_t>(config->pps->length())};
+        const uint8_t* const paramPtrs[2] = {config->sps->data(), config->pps->data()};
+        const size_t paramSizes[2] = {static_cast<size_t>(config->sps->length()),
+                                      static_cast<size_t>(config->pps->length())};
         status = CMVideoFormatDescriptionCreateFromH264ParameterSets(
             kCFAllocatorDefault,
             2,
-            kParamPtrs,
-            kParamSizes,
+            paramPtrs,
+            paramSizes,
             static_cast<int32_t>(config->naluHeaderLength),
             &videoFormatDescription_);
     } else if (config->mediaInfo == MEDIA_MIMETYPE_VIDEO_HEVC) {
@@ -221,16 +218,16 @@ bool VideoHardwareDecoder::createDecodeSession() noexcept {
             LogE("HEVC hardware decode not supported");
             return false;
         }
-        const uint8_t* const kParamPtrs[3] = {config->vps->data(),
-                                              config->sps->data(),
-                                              config->pps->data()};
-        const size_t kParamSizes[3] = {static_cast<size_t>(config->vps->length()),
-                                       static_cast<size_t>(config->sps->length()),
-                                       static_cast<size_t>(config->pps->length())};
+        const uint8_t* const paramPtrs[3] = {config->vps->data(),
+                                             config->sps->data(),
+                                             config->pps->data()};
+        const size_t paramSizes[3] = {static_cast<size_t>(config->vps->length()),
+                                      static_cast<size_t>(config->sps->length()),
+                                      static_cast<size_t>(config->pps->length())};
         status = CMVideoFormatDescriptionCreateFromHEVCParameterSets(kCFAllocatorDefault,
                                                                      3,
-                                                                     kParamPtrs,
-                                                                     kParamSizes,
+                                                                     paramPtrs,
+                                                                     paramSizes,
                                                                      config->naluHeaderLength,
                                                                      nullptr,
                                                                      &videoFormatDescription_);
