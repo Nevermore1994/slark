@@ -76,6 +76,7 @@ configdata.pm
 include/openssl/
 src/platform/Android/sdk/src/main/cpp/.fetchcontent_cache/
 demo/Android/app/src/main/assets/
+cmake-build-Release/
 
 # Temp files
 test.txt
