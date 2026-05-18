@@ -52,7 +52,7 @@ UIImage* imageFromPixelBuffer(CVPixelBufferRef pixelBuffer) {
 
     size_t width = CVPixelBufferGetWidth(pixelBuffer);
     size_t height = CVPixelBufferGetHeight(pixelBuffer);
-    size_t bytesPerRow = 4 * width;
+    size_t bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer);
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
 
     CGBitmapInfo info =
