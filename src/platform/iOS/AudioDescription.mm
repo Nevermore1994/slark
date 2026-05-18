@@ -12,7 +12,7 @@ namespace slark {
 AudioStreamBasicDescription convertInfo2Description(const AudioInfo& info) {
     AudioStreamBasicDescription description;
     description.mFormatID = kAudioFormatLinearPCM;
-    description.mSampleRate = info.sampleRate;
+    description.mSampleRate = static_cast<Float64>(info.sampleRate);
     description.mChannelsPerFrame = info.channels;
     description.mFramesPerPacket = 1;
     description.mFormatFlags = kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagIsPacked;

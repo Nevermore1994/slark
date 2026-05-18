@@ -134,7 +134,7 @@ void AudioRender::play() noexcept {
         LogI("[audio render] start play return:{}", static_cast<uint32_t>(status_.load()));
         return;
     }
-    AudioOutputUnitStart(volumeUnit_);
+    // MultiChannelMixer 由 RemoteIO 驱动，只需 start RemoteIO
     AudioOutputUnitStart(renderUnit_);
     status_ = RenderStatus::Playing;
     LogI("[audio render] play.");
@@ -149,7 +149,7 @@ void AudioRender::pause() noexcept {
         LogI("[audio render] pause return:{}", static_cast<uint32_t>(status_.load()));
         return;
     }
-    AudioOutputUnitStop(volumeUnit_);
+    // MultiChannelMixer 由 RemoteIO 驱动，只需 stop RemoteIO
     AudioOutputUnitStop(renderUnit_);
     status_ = RenderStatus::Pause;
     LogI("[audio render] pause.");
@@ -180,6 +180,7 @@ void AudioRender::stop() noexcept {
     }
     status_ = RenderStatus::Stop;
 
+    // 先停止 RemoteIO，再按 renderUnit -> volumeUnit 顺序 dispose
     if (renderUnit_) {
         AudioOutputUnitStop(renderUnit_);
         AudioComponentInstanceDispose(renderUnit_);
@@ -187,7 +188,7 @@ void AudioRender::stop() noexcept {
     }
 
     if (volumeUnit_) {
-        AudioOutputUnitStop(volumeUnit_);
+        AudioUnitUninitialize(volumeUnit_);
         AudioComponentInstanceDispose(volumeUnit_);
         volumeUnit_ = nullptr;
     }
