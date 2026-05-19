@@ -6,6 +6,7 @@
 #include "Log.hpp"
 
 #include <algorithm>
+#include <thread>
 
 namespace slark {
 
@@ -86,13 +87,14 @@ void AAudioRender::errorCallback(AAudioStream* /*stream*/,
                                  aaudio_result_t error) noexcept {
     auto* render = static_cast<AAudioRender*>(userData);
     LogE("AAudio stream error: {}", AAudio_convertResultToText(error));
-    // stream 断开（拔耳机、蓝牙切换等），重建 stream
     const auto prevStatus = render->status_.load();
-    render->releaseStream();
-    render->initStream();
-    if (prevStatus == RenderStatus::Playing) {
-        render->play();
-    }
+    std::thread([self = render->shared_from_this(), prevStatus] {
+        self->releaseStream();
+        self->initStream();
+        if (prevStatus == RenderStatus::Playing) {
+            self->play();
+        }
+    }).detach();
 }
 
 void AAudioRender::play() noexcept {
@@ -127,6 +129,12 @@ void AAudioRender::pause() noexcept {
                                         500'000'000LL);
     }
     AAudioStream_requestPause(stream_);
+    // 等待 Pausing → Paused，确保后续 flush/seek 操作在合法状态下执行
+    aaudio_stream_state_t pausedState = AAUDIO_STREAM_STATE_UNINITIALIZED;
+    AAudioStream_waitForStateChange(stream_,
+                                    AAUDIO_STREAM_STATE_PAUSING,
+                                    &pausedState,
+                                    500'000'000LL);
     status_ = RenderStatus::Pause;
 }
 
@@ -152,6 +160,7 @@ void AAudioRender::flush() noexcept {
                                         AAUDIO_STREAM_STATE_PAUSING,
                                         &nextState,
                                         500'000'000LL);
+        status_ = RenderStatus::Pause;
     }
     AAudioStream_requestFlush(stream_);
 }

@@ -6,10 +6,11 @@
 
 #include <aaudio/AAudio.h>
 #include <atomic>
+#include <memory>
 
 namespace slark {
 
-class AAudioRender : public IAudioRender {
+class AAudioRender : public IAudioRender, public std::enable_shared_from_this<AAudioRender> {
 public:
     explicit AAudioRender(std::shared_ptr<AudioInfo> audioInfo);
     ~AAudioRender() override;
