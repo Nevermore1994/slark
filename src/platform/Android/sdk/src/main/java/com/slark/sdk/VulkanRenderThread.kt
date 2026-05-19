@@ -20,6 +20,10 @@ class VulkanRenderThread(
     private var pendingTexture: RenderTexture = RenderTexture.default()
     @Volatile
     private var hasRenderRequest = false
+    @Volatile
+    private var isRebuildingSurface = false
+    @Volatile
+    private var pendingSurface: Surface? = null
 
     private val vsyncCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
@@ -53,6 +57,11 @@ class VulkanRenderThread(
                 hasRenderRequest = false
             }
             if (!running) break
+            if (isRebuildingSurface) {
+                pendingSurface?.let { s -> rebuildVulkanSurface(playerId, s) }
+                isRebuildingSurface = false
+                pendingSurface = null
+            }
             val tex = pendingTexture
             if (tex.isValid()) {
                 drawFrame(playerId, tex.textureId, tex.width, tex.height)
@@ -111,10 +120,15 @@ class VulkanRenderThread(
     }
 
     override fun rebuildSurface() {
-        rebuildVulkanSurface(playerId, surface)
         val backupTexture = getBackupTextureId(playerId)
-        if (backupTexture != null && backupTexture.isValid()) {
-            render(backupTexture.asBackup())
+        synchronized(lock) {
+            pendingSurface = surface
+            isRebuildingSurface = true
+            if (backupTexture != null && backupTexture.isValid()) {
+                pendingTexture = backupTexture.asBackup()
+            }
+            hasRenderRequest = true
+            lock.notify()
         }
     }
 

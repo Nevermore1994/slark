@@ -132,8 +132,12 @@ class GLRenderThread(
         val backupTexture = getBackupTextureId(playerId)
         if (backupTexture != null && backupTexture.isValid()) {
             val backup = backupTexture.asBackup()
-            isRebuildingSurface = true
-            render(backup)
+            synchronized(lock) {
+                isRebuildingSurface = true
+                pendingTexture = backup
+                hasRenderRequest = true
+                lock.notify()
+            }
         } else {
             SlarkLog.w(LOG_TAG, "No valid backup texture available")
         }

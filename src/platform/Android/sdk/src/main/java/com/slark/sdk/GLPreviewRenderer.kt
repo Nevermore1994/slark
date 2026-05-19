@@ -22,6 +22,12 @@ class GLPreviewRenderer : IPreviewRenderer {
     private var surfaceSize: Size = Size(0, 0)
     @Volatile
     private var rotationDeg: Double = 0.0
+    private val vertexBuffer: java.nio.FloatBuffer = ByteBuffer
+        .allocateDirect(8 * Float.SIZE_BYTES)
+        .order(ByteOrder.nativeOrder())
+        .asFloatBuffer()
+
+    private var lastBoundTextureId: Int = 0
 
     override fun init() {
         program = createGLProgram(VERTEX_SHADER, FRAGMENT_SHADER)
@@ -55,6 +61,7 @@ class GLPreviewRenderer : IPreviewRenderer {
 
     override fun drawFrame(texture: RenderTexture): Boolean {
         if (program == 0 || !texture.isValid()) return false
+        if (surfaceSize.width == 0 || surfaceSize.height == 0) return false
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
         GLES20.glUseProgram(program)
         GLES20.glViewport(0, 0, surfaceSize.width, surfaceSize.height)
@@ -64,20 +71,25 @@ class GLPreviewRenderer : IPreviewRenderer {
             -normX, -normY, normX, -normY,
             -normX,  normY, normX,  normY
         )
-        val vertBuf = ByteBuffer.allocateDirect(verts.size * Float.SIZE_BYTES)
-            .order(ByteOrder.nativeOrder()).asFloatBuffer().apply { put(verts); position(0) }
+        vertexBuffer.rewind()
+        vertexBuffer.put(verts)
+        vertexBuffer.rewind()
 
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture.textureId)
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        // 纹理参数只在 textureId 变化时设置一次
+        if (texture.textureId != lastBoundTextureId) {
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+            lastBoundTextureId = texture.textureId
+        }
         GLES20.glUniform1i(textureHandle, 0)
         GLES20.glUniform1f(rotationHandle, Math.toRadians(rotationDeg).toFloat())
 
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, vertexVBO)
-        GLES20.glBufferSubData(GLES20.GL_ARRAY_BUFFER, 0, verts.size * Float.SIZE_BYTES, vertBuf)
+        GLES20.glBufferSubData(GLES20.GL_ARRAY_BUFFER, 0, verts.size * Float.SIZE_BYTES, vertexBuffer)
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
 
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
@@ -110,6 +122,7 @@ class GLPreviewRenderer : IPreviewRenderer {
             GLES20.glDeleteBuffers(2, intArrayOf(vertexVBO, textureVBO), 0)
             vertexVBO = 0; textureVBO = 0
         }
+        lastBoundTextureId = 0
     }
 
     companion object {

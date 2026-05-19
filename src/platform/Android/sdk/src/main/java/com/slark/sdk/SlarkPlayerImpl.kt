@@ -33,6 +33,9 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
     private var renderView: View? = null
     private var isPlayingBeforeBackground = false
     private var graphicsBackend: GraphicsBackend = GraphicsBackend.OpenGL
+    private var currentSurface: Surface? = null
+    private var currentSurfaceWidth: Int = 0
+    private var currentSurfaceHeight: Int = 0
 
     override var isLoop: Boolean = false
         set(value) {
@@ -141,11 +144,19 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
     }
 
     fun switchGraphicsBackend(backend: GraphicsBackend) {
+        if (graphicsBackend == backend) return
         graphicsBackend = backend
+        val surface = currentSurface ?: return
+        onSurfaceAvailable(surface, currentSurfaceWidth, currentSurfaceHeight)
     }
 
     private fun onSurfaceAvailable(surface: Surface, width: Int, height: Int) {
-        renderThread?.shutdown()
+        currentSurface = surface
+        currentSurfaceWidth = width
+        currentSurfaceHeight = height
+        val old = renderThread
+        old?.shutdown()
+        old?.join()
         renderThread = RenderThreadFactory.create(graphicsBackend, surface, width, height)
         renderThread?.playerId = playerId
         renderThread?.start()
