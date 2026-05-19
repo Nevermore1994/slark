@@ -31,6 +31,8 @@ private:
                                                       void* audioData,
                                                       int32_t numFrames);
 
+    static void errorCallback(AAudioStream* stream, void* userData, aaudio_result_t error) noexcept;
+
     void initStream() noexcept;
     void releaseStream() noexcept;
 

@@ -11,6 +11,7 @@
 #include "MediaDefs.h"
 #include "TimerManager.h"
 
+#import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
 
 #define VOLUME_UNIT_INPUT_BUS0 0
@@ -96,7 +97,7 @@ AudioRender::AudioRender(std::shared_ptr<AudioInfo> audioInfo) : IAudioRender(au
         setupAudioComponent();
     }
     using namespace std::chrono_literals;
-    timerId_ = TimerManager::shareInstance().runLoop(1000ms, [this]() {
+    timerId_ = TimerManager::shareInstance().runLoop(200ms, [this]() {
         if (status_ != RenderStatus::Playing) {
             return;
         }
@@ -114,7 +115,10 @@ AudioRender::AudioRender(std::shared_ptr<AudioInfo> audioInfo) : IAudioRender(au
                              0,
                              &volLatency,
                              &size);
-        auto us = static_cast<int64_t>((volLatency + renderLatency) * 1'000'000.0);
+        // 补充 AVAudioSession 硬件 I/O buffer 延迟，获取完整 pipeline 延迟
+        AVAudioSession* session = [AVAudioSession sharedInstance];
+        const Float64 hwLatency = session.outputLatency + session.ioBufferDuration;
+        auto us = static_cast<int64_t>((volLatency + renderLatency + hwLatency) * 1'000'000.0);
         latencyUs_.store(us, std::memory_order_release);
     });
     status_ = isSuccess ? RenderStatus::Ready : RenderStatus::Error;

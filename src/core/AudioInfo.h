@@ -47,9 +47,12 @@ struct AudioInfo {
     }
 
     [[nodiscard]] Time::TimePoint dataLen2TimePoint(uint64_t dataLen) const {
-        auto t = static_cast<uint64_t>(static_cast<double>(dataLen) /
-                                       static_cast<double>(bytePerSample() * sampleRate) * 1000000);
-        return t;
+        // 整数运算：dataLen * 1_000_000 / (bytePerSample * sampleRate)，避免浮点精度损失
+        const uint64_t divisor = bytePerSample() * sampleRate;
+        if (divisor == 0) {
+            return Time::TimePoint{0};
+        }
+        return Time::TimePoint{dataLen * 1'000'000ULL / divisor};
     }
 
     [[nodiscard]] uint64_t timePoint2DataLen(Time::TimePoint point) const {

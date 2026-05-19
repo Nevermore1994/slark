@@ -153,7 +153,8 @@ Time::TimePoint AudioRenderComponent::playedTime() noexcept {
     auto t = clock_.time();
     if (auto pimpl = pimpl_.load()) {
         auto latency = pimpl->getHardwareLatency();
-        if (static_cast<int64_t>(t.point()) < latency.point()) {
+        // latency 为负或超过当前时间时，返回 0 防止下溢
+        if (latency.point() <= 0 || t.point() < static_cast<uint64_t>(latency.point())) {
             return Time::TimePoint{0};
         }
         return t - latency;
