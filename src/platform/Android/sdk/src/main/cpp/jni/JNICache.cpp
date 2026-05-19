@@ -187,10 +187,13 @@ ObjectReference JNICache::getEnumField(JNIEnv* env,
         return {env, nullptr, fieldName};
     }
 
-    // 写入缓存（weak global ref）
+    // 写入缓存（weak global ref），失效条目直接替换
     {
         std::unique_lock lock(enumFieldCacheMutex_);
-        if (auto it = enumFieldCache_.find(key); it == enumFieldCache_.end()) {
+        if (auto it = enumFieldCache_.find(key); it != enumFieldCache_.end()) {
+            env->DeleteWeakGlobalRef(it->second.fieldRef);
+            it->second.fieldRef = env->NewWeakGlobalRef(field);
+        } else {
             enumFieldCache_.emplace(key, EnumFieldInfo{env->NewWeakGlobalRef(field)});
         }
     }

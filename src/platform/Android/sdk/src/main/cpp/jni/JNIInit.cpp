@@ -20,9 +20,6 @@ void loadClassCache(JNIEnv* env) {
         "com/slark/api/SlarkPlayerEvent",
         "com/slark/sdk/MediaCodecDecoder$Action",
         "com/slark/sdk/MediaCodecDecoder",
-        "com/slark/sdk/AudioPlayer",
-        "com/slark/sdk/AudioPlayer$Action",
-        "com/slark/sdk/AudioPlayer$Config",
         "com/slark/sdk/RenderTexture",
     };
 

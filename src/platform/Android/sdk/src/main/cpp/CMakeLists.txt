@@ -19,8 +19,7 @@ add_subdirectory(jni)
 set(BUSINESS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/AACHardwareDecoder.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/AndroidEGLContext.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/AudioPlayerNative.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/AudioRender.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/AndroidVulkanContext.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/FrameBuffer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/FrameBufferPool.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/NativeDecoderManager.cpp
@@ -64,4 +63,5 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     EGL
     GLESv2
     GLESv3
+    vulkan
 )

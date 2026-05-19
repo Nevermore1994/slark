@@ -3,6 +3,7 @@
 //
 
 #include "AndroidEGLContext.h"
+#include "AndroidVulkanContext.h"
 #include "GLContextManager.h"
 #include "JNICache.h"
 #include "JNICall.h"
@@ -24,6 +25,8 @@ struct SharedEGLContextInfo {
 };
 
 using SharedEGLContextManager = Manager<SharedEGLContextInfo>;
+
+using VulkanContextManager = Manager<AndroidVulkanContext>;
 
 static void RenderManager_rebuildSurface(JNIEnv* env,
                                          const std::string& playerId,
@@ -131,11 +134,7 @@ static jboolean RenderManager_swapGLBuffers(const std::string& playerId, jint te
     }
     auto result = eglSwapBuffers(display, contextInfo->surface);
     if (result == EGL_FALSE) {
-        LogE("failed to swap buffers for playerId: {} {}", playerId, eglGetError());
-    }
-    auto error = eglGetError();
-    if (error != EGL_SUCCESS) {
-        LogE("EGL error after swapBuffers: {}", error);
+        LogE("failed to swap buffers for playerId: {} error: {}", playerId, eglGetError());
     }
     if (textureId != 0) {
         auto render = VideoRenderManager::shareInstance().find(playerId);
@@ -267,6 +266,113 @@ extern "C" JNIEXPORT void JNICALL Java_com_slark_sdk_VulkanRenderThread_onVSync(
     } else {
         LogE("onVSync: failed to find VideoRender for playerId:{}", playerId);
     }
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_slark_sdk_VulkanRenderThread_createVulkanContext(JNIEnv* env,
+                                                          jobject /*thiz*/,
+                                                          jstring player_id,
+                                                          jobject surface,
+                                                          jint width,
+                                                          jint height) {
+    auto playerId = JNI::FromJVM::str(env, player_id);
+    auto* window = ANativeWindow_fromSurface(env, surface);
+    if (!window) {
+        LogE("createVulkanContext: failed to get ANativeWindow for playerId:{}", playerId);
+        return false;
+    }
+    auto ctx = std::make_shared<AndroidVulkanContext>();
+    bool ok = ctx->init(window, width, height);
+    ANativeWindow_release(window);
+    if (!ok) {
+        LogE("createVulkanContext: init failed for playerId:{}", playerId);
+        return false;
+    }
+    VulkanContextManager::shareInstance().add(playerId, std::move(ctx));
+    return true;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_slark_sdk_VulkanRenderThread_destroyVulkanContext(JNIEnv* env,
+                                                           jobject /*thiz*/,
+                                                           jstring player_id) {
+    auto playerId = JNI::FromJVM::str(env, player_id);
+    auto ctx = VulkanContextManager::shareInstance().find(playerId);
+    if (ctx) {
+        ctx->release();
+    }
+    VulkanContextManager::shareInstance().remove(playerId);
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_slark_sdk_VulkanRenderThread_drawFrame(JNIEnv* env,
+                                                                                  jobject /*thiz*/,
+                                                                                  jstring player_id,
+                                                                                  jint textureId,
+                                                                                  jint width,
+                                                                                  jint height) {
+    auto ctx = VulkanContextManager::shareInstance().find(JNI::FromJVM::str(env, player_id));
+    if (ctx) {
+        ctx->drawFrame(textureId, width, height);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_slark_sdk_VulkanRenderThread_renderFrameComplete(JNIEnv* env,
+                                                          jobject /*thiz*/,
+                                                          jstring player_id,
+                                                          jint textureId) {
+    auto render = VideoRenderManager::shareInstance().find(JNI::FromJVM::str(env, player_id));
+    if (render) {
+        render->renderFrameComplete(textureId);
+    }
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_slark_sdk_VulkanRenderThread_getBackupTextureId(JNIEnv* env,
+                                                         jobject /*thiz*/,
+                                                         jstring player_id) {
+    return RenderManager_getBackupTextureId(env, JNI::FromJVM::str(env, player_id));
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_slark_sdk_VulkanRenderThread_setVulkanRotation(JNIEnv* env,
+                                                        jobject /*thiz*/,
+                                                        jstring player_id,
+                                                        jint rotation) {
+    auto ctx = VulkanContextManager::shareInstance().find(JNI::FromJVM::str(env, player_id));
+    if (ctx) {
+        ctx->setRotation(rotation);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_slark_sdk_VulkanRenderThread_resizeVulkanSurface(JNIEnv* env,
+                                                          jobject /*thiz*/,
+                                                          jstring player_id,
+                                                          jint width,
+                                                          jint height) {
+    auto ctx = VulkanContextManager::shareInstance().find(JNI::FromJVM::str(env, player_id));
+    if (ctx) {
+        ctx->recreateSwapchain(nullptr, width, height);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_slark_sdk_VulkanRenderThread_rebuildVulkanSurface(JNIEnv* env,
+                                                           jobject /*thiz*/,
+                                                           jstring player_id,
+                                                           jobject surface) {
+    auto playerId = JNI::FromJVM::str(env, player_id);
+    auto ctx = VulkanContextManager::shareInstance().find(playerId);
+    if (!ctx) {
+        return;
+    }
+    auto* window = ANativeWindow_fromSurface(env, surface);
+    if (!window) {
+        return;
+    }
+    ctx->recreateSwapchain(window, 0, 0);
+    ANativeWindow_release(window);
 }
 
 } // namespace slark
