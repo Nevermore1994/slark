@@ -442,7 +442,7 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
     seekRequest_.reset(std::make_shared<PlayerSeekRequest>(seekRequest));
     LogI("do seek to:{:.3f}s, accurate:{}", seekTime, seekRequest.isAccurate);
     setState(PlayerState::Buffering);
-    pipeline_->seek(CTime(seekTime));
+    pipeline_->seek(CTime(seekTime), seekRequest.isAccurate);
 }
 
 void Player::Impl::doLoop() noexcept {

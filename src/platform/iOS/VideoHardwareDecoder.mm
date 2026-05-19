@@ -39,10 +39,11 @@ static void decompressionOutputCallback(void* decompressionOutputRefCon,
             delete decodeInfo;
             return;
         }
+        const bool isDiscardFrame = decodeInfo->isDiscard;
         CVPixelBufferRef opaque = nullptr;
         do {
-            if (decodeInfo->isDiscard) {
-                LogE("discard video frame:{}", decodeInfo->ptsTime());
+            if (isDiscardFrame) {
+                // isDiscard 帧仍需回调给 pipeline，用于 seek 预览和 seek 完成判断
                 break;
             }
             if (status != noErr) {
@@ -66,7 +67,7 @@ static void decompressionOutputCallback(void* decompressionOutputRefCon,
         auto timeScale = decodeInfo->timeScale;
         delete decodeInfo;
 
-        if (opaque == nullptr) {
+        if (opaque == nullptr && !isDiscardFrame) {
             return;
         }
         auto frame = std::shared_ptr<AVFrame>(new AVFrame(AVFrameType::Video), [](AVFrame* f) {
@@ -81,6 +82,7 @@ static void decompressionOutputCallback(void* decompressionOutputRefCon,
         frame->opaque = opaque;
         frame->pts = pts;
         frame->timeScale = timeScale;
+        frame->isDiscard = isDiscardFrame;
         auto videoInfo = std::make_shared<VideoFrameInfo>();
         videoInfo->format = FrameFormat::VideoToolBox;
         frame->info = videoInfo;

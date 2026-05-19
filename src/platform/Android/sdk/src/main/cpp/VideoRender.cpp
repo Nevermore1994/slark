@@ -90,6 +90,10 @@ void VideoRender::renderFrame(const AVFrameRefPtr& frame) noexcept {
         return;
     }
     auto videoFrameInfo = std::dynamic_pointer_cast<VideoFrameInfo>(frame->info);
+    if (!videoFrameInfo) {
+        LogE("videoFrameInfo is null");
+        return;
+    }
     if (videoFrameInfo->format == FrameFormat::MediaCodecSurface) {
         auto* tex = static_cast<Texture*>(frame->opaque);
         if (!tex) {
