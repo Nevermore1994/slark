@@ -9,4 +9,5 @@ sealed class Screen(val route: String) {
     object LocalPlayerScreen : Screen("local_player")
     object SelectUrlScreen : Screen("select_url")
     object NetworkPlayerScreen : Screen("network_player")
+    object AudioPlayerScreen : Screen("audio_player")
 }

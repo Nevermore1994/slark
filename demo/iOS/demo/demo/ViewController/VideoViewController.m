@@ -40,9 +40,12 @@
     [self setupAudioSession];
 }
 
-- (void)dealloc {
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
     [self.hideControllerTimer invalidate];
+    self.hideControllerTimer = nil;
     [self.playerController removeFromParentViewController];
+    self.playerController = nil;
 }
 
 - (void)setupAudioSession {
@@ -239,12 +242,21 @@
             msg = @"network error";
         }
         [self showToast:msg duration:2.0];
+        __weak typeof(self) weakSelf = self;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(),
                        ^{
-                           [self.playerController.player stop];
-                           [self.navigationController popViewControllerAnimated:YES];
-                           self.navigationController.navigationBar.hidden = NO;
+                           __strong typeof(weakSelf) strongSelf = weakSelf;
+                           // 若用户已手动返回，self 已释放，跳过二次 pop
+                           if (!strongSelf || !strongSelf.navigationController) {
+                               return;
+                           }
+                           if (strongSelf.navigationController.topViewController != strongSelf) {
+                               return;
+                           }
+                           [strongSelf.playerController.player stop];
+                           [strongSelf.navigationController popViewControllerAnimated:YES];
+                           strongSelf.navigationController.navigationBar.hidden = NO;
                        });
     }
 }

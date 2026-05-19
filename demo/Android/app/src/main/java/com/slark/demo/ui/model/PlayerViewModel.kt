@@ -126,6 +126,13 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
 
     fun rotate() {
         rotationDegrees = (rotationDegrees + 90) % 360
+        val rotation = when (rotationDegrees) {
+            90  -> SlarkPlayer.Rotation.ROTATION_90
+            180 -> SlarkPlayer.Rotation.ROTATION_180
+            270 -> SlarkPlayer.Rotation.ROTATION_270
+            else -> SlarkPlayer.Rotation.ROTATION_0
+        }
+        player?.setRotation(rotation)
     }
 
     fun switchRenderBackend() {

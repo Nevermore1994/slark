@@ -143,6 +143,7 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
 
         IconButton(
             onClick = { viewModel.skipPrev() },
+            enabled = false,
             modifier = Modifier
                 .size(40.dp)
                 .constrainAs(prevBtn) {
@@ -153,7 +154,7 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
             Icon(
                 painterResource(id = R.drawable.prev),
                 contentDescription = null,
-                tint = Color(0xFFE6E6E6)
+                tint = Color(0xFFE6E6E6).copy(alpha = 0.3f)
             )
         }
 
@@ -175,6 +176,7 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
 
         IconButton(
             onClick = { viewModel.skipNext() },
+            enabled = false,
             modifier = Modifier
                 .size(40.dp)
                 .constrainAs(nextBtn) {
@@ -185,7 +187,7 @@ fun PlayerControlBar(viewModel: PlayerViewModel) {
             Icon(
                 painterResource(id = R.drawable.next),
                 contentDescription = null,
-                tint = Color(0xFFE6E6E6)
+                tint = Color(0xFFE6E6E6).copy(alpha = 0.3f)
             )
         }
 

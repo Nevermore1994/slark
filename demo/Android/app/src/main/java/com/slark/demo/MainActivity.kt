@@ -45,7 +45,8 @@ fun MainScreen(navController: NavHostController) {
 
     val showBottomBar = currentRoute in listOf(
         Screen.SelectUrlScreen.route,
-        Screen.VideoPickerScreen.route
+        Screen.VideoPickerScreen.route,
+        Screen.AudioPlayerScreen.route
     )
 
     Scaffold(
@@ -68,13 +69,25 @@ fun MainScreen(navController: NavHostController) {
                         selected = currentRoute == Screen.VideoPickerScreen.route,
                         onClick = {
                             navController.navigate(Screen.VideoPickerScreen.route) {
-                                popUpTo(Screen.VideoPickerScreen.route) { inclusive = true }
+                                popUpTo(Screen.SelectUrlScreen.route) { inclusive = false }
                             }
                         },
                         icon = {
                             Icon(painterResource(R.drawable.music_file), contentDescription = null)
                         },
                         label = { Text("Local") }
+                    )
+                    NavigationBarItem(
+                        selected = currentRoute == Screen.AudioPlayerScreen.route,
+                        onClick = {
+                            navController.navigate(Screen.AudioPlayerScreen.route) {
+                                popUpTo(Screen.SelectUrlScreen.route) { inclusive = false }
+                            }
+                        },
+                        icon = {
+                            Icon(painterResource(R.drawable.music), contentDescription = null)
+                        },
+                        label = { Text("Audio") }
                     )
                 }
             }

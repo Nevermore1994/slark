@@ -39,7 +39,13 @@
                                       image:[UIImage systemImageNamed:@"folder"]
                               selectedImage:[UIImage systemImageNamed:@"folder.fill"]];
 
-    tabBar.viewControllers = @[networkNav, localNav];
+    UINavigationController* audioNav = [self makeAudioNav];
+    audioNav.tabBarItem =
+        [[UITabBarItem alloc] initWithTitle:@"Audio"
+                                      image:[UIImage systemImageNamed:@"music.note"]
+                              selectedImage:[UIImage systemImageNamed:@"music.note"]];
+
+    tabBar.viewControllers = @[networkNav, localNav, audioNav];
     tabBar.tabBar.tintColor = [UIColor systemBlueColor];
 
     [self addChildViewController:tabBar];
@@ -115,6 +121,11 @@
                      }];
     };
     return [[UINavigationController alloc] initWithRootViewController:pickerVC];
+}
+
+- (UINavigationController*)makeAudioNav {
+    AudioViewController* audioVC = [AudioViewController new];
+    return [[UINavigationController alloc] initWithRootViewController:audioVC];
 }
 
 @end

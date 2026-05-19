@@ -17,6 +17,7 @@ import androidx.navigation.navigation
 import com.slark.demo.ui.screen.LocalPlayer.*
 import com.slark.demo.ui.screen.NetworkPlayer.*
 import com.slark.demo.ui.screen.VideoPicker.*
+import com.slark.demo.ui.screen.AudioPlayer.AudioPlayerScreenRoute
 
 @Composable
 fun NavBackStackEntry.rememberParentEntry(navController: NavController, parentRoute: String): NavBackStackEntry {
@@ -77,6 +78,10 @@ fun AppNavHost(navController: NavHostController, innerPadding: PaddingValues) {
                     sharedViewModel = flowViewModel
                 )
             }
+        }
+
+        composable(Screen.AudioPlayerScreen.route) {
+            AudioPlayerScreenRoute(navController = navController)
         }
     }
 }
