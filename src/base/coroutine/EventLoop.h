@@ -35,7 +35,7 @@ public:
     using FdCallback = std::function<void(int32_t fd, bool readable, bool writable, bool error)>;
 
     EventLoop();
-    ~EventLoop() ;
+    ~EventLoop();
 
     void run() noexcept;
     void stop() noexcept;
@@ -113,12 +113,11 @@ private:
 
 #ifdef __linux__
     int32_t epollFd_{-1};
+    // Linux 使用 eventfd 唤醒 epoll
+    int32_t wakeupFd_{-1};
 #elif defined(__APPLE__)
     int32_t kqueueFd_{-1};
 #endif
-
-    // 用于唤醒 poll 的 fd（eventfd 或 pipe）
-    int32_t wakeupFd_{-1};
     std::atomic<bool> running_{false};
     mutable std::mutex continuationMutex_;
     std::unordered_map<int32_t, FdWaiters> continuations_;

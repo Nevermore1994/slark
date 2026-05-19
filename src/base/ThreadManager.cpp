@@ -86,6 +86,7 @@ void ThreadManager::reportRunInfo() noexcept {
     Time::TimePoint now = Time::nowTimeStamp();
     std::vector<std::pair<std::string, Time::TimeDelta>> blockedThreads;
     BlockCallback callback;
+    size_t liveSize = 0;
     {
         std::unique_lock<std::mutex> lock(mutex_);
         std::erase_if(threadInfos_, [now, &blockedThreads](auto& pair) {
@@ -103,8 +104,9 @@ void ThreadManager::reportRunInfo() noexcept {
             return false;
         });
         callback = blockCallback_;
+        liveSize = threadInfos_.size();
     }
-    LogI("ThreadManager report now:{}, live size:{}", now.point(), threadInfos_.size());
+    LogI("ThreadManager report now:{}, live size:{}", now.point(), liveSize);
     if (!callback) {
         return;
     }

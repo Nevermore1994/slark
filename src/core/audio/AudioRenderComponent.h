@@ -84,7 +84,7 @@ private:
     std::shared_ptr<AudioInfo> audioInfo_;
     std::unique_ptr<SPSCRingBuffer<uint8_t, kAudioBufferSize>> audioBuffer_;
 
-    Clock clock_;
+    ThreadSafeClock clock_;
     std::atomic<uint64_t> renderedDataLength_{0};
     Time::TimePoint offsetTime_{};
 

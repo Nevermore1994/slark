@@ -34,16 +34,7 @@ EventLoop::EventLoop() {
     if (kqueueFd_ < 0) {
         LogE("Failed to create kqueue fd");
     }
-    // 使用 pipe 作为 macOS 的唤醒机制
-    int32_t pipeFds[2];
-    if (::pipe(pipeFds) == 0) {
-        wakeupFd_ = pipeFds[0]; // read end
-        // write end 不需要保存，通过 kevent 的 EVFILT_USER 触发
-        ::close(pipeFds[1]);
-        // 设置非阻塞
-        int32_t flags = fcntl(wakeupFd_, F_GETFL, 0);
-        fcntl(wakeupFd_, F_SETFL, flags | O_NONBLOCK);
-    }
+    // macOS 使用 EVFILT_USER 唤醒，无需 pipe
 #endif
 }
 
@@ -57,9 +48,6 @@ EventLoop::~EventLoop() {
         ::close(epollFd_);
     }
 #elif defined(__APPLE__)
-    if (wakeupFd_ >= 0) {
-        ::close(wakeupFd_);
-    }
     if (kqueueFd_ >= 0) {
         ::close(kqueueFd_);
     }

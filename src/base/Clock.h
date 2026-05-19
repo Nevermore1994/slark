@@ -5,6 +5,7 @@
 #include "Time.hpp"
 
 #include <atomic>
+#include <mutex>
 
 namespace slark {
 
@@ -41,6 +42,61 @@ private:
     std::atomic<double> speed_{1.0};
     std::atomic<bool> isPaused_{true};
     std::atomic<bool> isInited_{false};
+};
+
+class ThreadSafeClock {
+public:
+    ThreadSafeClock() = default;
+    ~ThreadSafeClock() = default;
+
+    void setTime(Time::TimePoint t) noexcept {
+        std::lock_guard lock(mutex_);
+        clock_.setTime(t);
+    }
+
+    void keep() noexcept {
+        std::lock_guard lock(mutex_);
+        clock_.keep();
+    }
+
+    [[nodiscard]] Time::TimePoint time() noexcept {
+        std::lock_guard lock(mutex_);
+        return clock_.time();
+    }
+
+    void start() noexcept {
+        std::lock_guard lock(mutex_);
+        clock_.start();
+    }
+
+    void pause() noexcept {
+        std::lock_guard lock(mutex_);
+        clock_.pause();
+    }
+
+    void reset() noexcept {
+        std::lock_guard lock(mutex_);
+        clock_.reset();
+    }
+
+    void setSpeed(double speed) noexcept {
+        std::lock_guard lock(mutex_);
+        clock_.setSpeed(speed);
+    }
+
+    [[nodiscard]] double speed() noexcept {
+        std::lock_guard lock(mutex_);
+        return clock_.speed();
+    }
+
+    [[nodiscard]] bool isPaused() noexcept {
+        std::lock_guard lock(mutex_);
+        return clock_.isPaused();
+    }
+
+private:
+    mutable std::mutex mutex_;
+    Clock clock_;
 };
 
 } // namespace slark

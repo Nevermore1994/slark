@@ -179,11 +179,13 @@ inline void ThreadPool::workThread() {
         } catch (...) {
             LogE("error in executing job");
         }
-        --activeCount_;
 
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (jobs_.empty() && activeCount_ == 0) {
-            allJobsDone_.notify_all();
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            --activeCount_;
+            if (jobs_.empty() && activeCount_ == 0) {
+                allJobsDone_.notify_all();
+            }
         }
     }
 }
@@ -193,12 +195,10 @@ auto ThreadPool::submitWithPriority(JobPriority priority, F&& f, Args&&... args)
     -> Expected<std::future<std::invoke_result_t<F, Args...>>> {
     using ReturnType = std::invoke_result_t<F, Args...>;
 
-    auto packagedJob = std::make_shared<std::packaged_task<ReturnType()>>(
-        [fn = std::forward<F>(f), ... capturedArgs = std::forward<Args>(args)]() mutable {
-            return fn(std::move(capturedArgs)...);
-        });
+    // 用 promise 持有 shared state，cancel 时可直接设置异常而不影响 future 绑定
+    auto promise = std::make_shared<std::promise<ReturnType>>();
+    std::future<ReturnType> future = promise->get_future();
 
-    std::future<ReturnType> future = packagedJob->get_future();
     {
         std::unique_lock<std::mutex> lock(mutex_);
         if (shutdown_) {
@@ -206,22 +206,30 @@ auto ThreadPool::submitWithPriority(JobPriority priority, F&& f, Args&&... args)
             return std::unexpected(Error::InvalidOperation);
         }
 
+        auto fn = [f = std::forward<F>(f), ... capturedArgs = std::forward<Args>(args)]() mutable {
+            return f(std::move(capturedArgs)...);
+        };
+
         jobs_.push_back(Job{
             .priority = priority,
             .sequence = sequenceCounter_.fetch_add(1, std::memory_order_relaxed),
             .func =
-                [packagedJob]() {
-                    (*packagedJob)();
+                [task = std::move(fn), promise]() mutable {
+                    try {
+                        if constexpr (std::is_void_v<ReturnType>) {
+                            task();
+                            promise->set_value();
+                        } else {
+                            promise->set_value(task());
+                        }
+                    } catch (...) {
+                        promise->set_exception(std::current_exception());
+                    }
                 },
             .cancel =
-                [packagedJob]() {
-                    // 设置异常状态，让 future.get() 抛出异常而非执行任务
-                    auto placeholder =
-                        std::make_shared<std::packaged_task<ReturnType()>>([]() -> ReturnType {
-                            throw std::runtime_error("Job cancelled");
-                        });
-                    *packagedJob = std::move(*placeholder);
-                    (*packagedJob)();
+                [promise]() {
+                    promise->set_exception(
+                        std::make_exception_ptr(std::runtime_error("Job cancelled")));
                 },
         });
         std::push_heap(jobs_.begin(), jobs_.end(), std::greater<>{});

@@ -185,9 +185,7 @@ public:
     explicit Sender(std::shared_ptr<Channel<T>> channel) : channel_(channel) {}
 
     ~Sender() {
-        if (!channel_->isClosed_) {
-            done();
-        }
+        done();
         channel_.reset();
     }
 
@@ -195,9 +193,10 @@ public:
     inline auto emplace(Args&&... args) -> bool
         requires std::constructible_from<T, Args...>
     {
+        std::lock_guard<std::mutex> lock(channel_->mutex_);
         if (!channel_->isClosed_) {
-            std::lock_guard<std::mutex> lock(channel_->mutex_);
             channel_->messages_.emplace_back(std::forward<Args>(args)...);
+            channel_->cond_.notify_one();
             return true;
         }
         return false;
@@ -283,7 +282,7 @@ private:
 };
 
 namespace _detail {
-auto closedHandler = [] {
+inline auto closedHandler = [] {
     throw std::runtime_error("can't send message to closed channel.");
 };
 } // namespace _detail
