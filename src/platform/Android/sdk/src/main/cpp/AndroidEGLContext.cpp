@@ -38,11 +38,11 @@ bool AndroidEGLContext::init(void* context) noexcept {
         return false;
     }
 
-    auto config = getConfig(2);
-    int openGLESAttrib2[] = {EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
-    context_ = eglCreateContext(display_, config, context, openGLESAttrib2);
+    auto config = getConfig(3);
+    int openGLESAttrib3[] = {EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE};
+    context_ = eglCreateContext(display_, config, context, openGLESAttrib3);
     if (eglGetError() == EGL_SUCCESS) {
-        LogI("create opengl es 2.0 success");
+        LogI("create opengl es 3.0 success");
         isInit_ = true;
         config_ = config;
         return true;
@@ -125,7 +125,7 @@ EGLSurface AndroidEGLContext::createOffscreenSurface(uint32_t width, uint32_t he
 }
 
 EGLConfig AndroidEGLContext::getConfig(int version) noexcept {
-    int renderableType = EGL_OPENGL_ES2_BIT;
+    int renderableType = (version >= 3) ? EGL_OPENGL_ES3_BIT : EGL_OPENGL_ES2_BIT;
     int attribList[] = {
         EGL_RED_SIZE,
         8,
@@ -144,8 +144,13 @@ EGLConfig AndroidEGLContext::getConfig(int version) noexcept {
         EGL_NONE,
     };
     EGLConfig configs = nullptr;
-    int numConfigs;
+    int numConfigs = 0;
     if (!eglChooseConfig(display_, attribList, &configs, 1, &numConfigs)) {
+        LogE("eglChooseConfig failed, version:{}", version);
+        return nullptr;
+    }
+    if (numConfigs == 0) {
+        LogE("eglChooseConfig returned 0 configs, version:{}", version);
         return nullptr;
     }
     return configs;
@@ -159,8 +164,8 @@ void AndroidEGLContext::destroy() noexcept {
     if (display_ != EGL_NO_DISPLAY) {
         eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         eglDestroyContext(display_, context_);
+        // 不调 eglTerminate，display 是 process-wide 资源，多 player 共用时不能单方面终止
         eglReleaseThread();
-        eglTerminate(display_);
     }
 
     display_ = EGL_NO_DISPLAY;

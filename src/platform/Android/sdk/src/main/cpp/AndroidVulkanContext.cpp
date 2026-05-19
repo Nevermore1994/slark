@@ -15,6 +15,7 @@
 #include <array>
 #include <cmath>
 #include <functional>
+#include <set>
 #include <vector>
 
 namespace slark {
@@ -94,8 +95,20 @@ bool AndroidVulkanContext::recreateSwapchain(ANativeWindow* window,
         return false;
     }
 
-    // 若帧尺寸变化，重建 AHardwareBuffer
-    if (hardwareBuffer_) {
+    // 重建时同步清理 EGL 侧资源（fbo/fboTexture/eglImage 绑定了旧 hardwareBuffer）
+    if (hardwareBuffer_ || fbo_ || eglImage_ != EGL_NO_IMAGE_KHR) {
+        if (fbo_) {
+            glDeleteFramebuffers(1, &fbo_);
+            fbo_ = 0;
+        }
+        if (fboTexture_) {
+            glDeleteTextures(1, &fboTexture_);
+            fboTexture_ = 0;
+        }
+        if (eglImage_ != EGL_NO_IMAGE_KHR && fnEGLDestroyImage_ && eglContext_) {
+            fnEGLDestroyImage_(eglContext_->getDisplay(), eglImage_);
+            eglImage_ = EGL_NO_IMAGE_KHR;
+        }
         destroyHardwareBufferResources();
     }
 
@@ -171,13 +184,11 @@ bool AndroidVulkanContext::selectPhysicalDevice() noexcept {
     std::vector<VkPhysicalDevice> devices(count);
     vkEnumeratePhysicalDevices(instance_, &count, devices.data());
 
-    for (auto& dev : devices) {
+    auto findQueues = [&](VkPhysicalDevice dev, uint32_t& gfx, uint32_t& pres) {
         uint32_t qCount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(dev, &qCount, nullptr);
         std::vector<VkQueueFamilyProperties> qProps(qCount);
         vkGetPhysicalDeviceQueueFamilyProperties(dev, &qCount, qProps.data());
-
-        uint32_t gfx = UINT32_MAX, pres = UINT32_MAX;
         for (uint32_t i = 0; i < qCount; ++i) {
             if (qProps[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
                 gfx = i;
@@ -188,9 +199,14 @@ bool AndroidVulkanContext::selectPhysicalDevice() noexcept {
                 pres = i;
             }
             if (gfx != UINT32_MAX && pres != UINT32_MAX) {
-                break;
+                return;
             }
         }
+    };
+
+    for (auto& dev : devices) {
+        uint32_t gfx = UINT32_MAX, pres = UINT32_MAX;
+        findQueues(dev, gfx, pres);
         if (gfx != UINT32_MAX && pres != UINT32_MAX) {
             physicalDevice_ = dev;
             graphicsQueueFamily_ = gfx;
@@ -204,18 +220,11 @@ bool AndroidVulkanContext::selectPhysicalDevice() noexcept {
 
 bool AndroidVulkanContext::createLogicalDevice() noexcept {
     const float priority = 1.0f;
+    // 用 set 去重，避免为同一 family 创建重复的 QueueCreateInfo
+    const std::set<uint32_t> uniqueFamilies = {graphicsQueueFamily_, presentQueueFamily_};
     std::vector<VkDeviceQueueCreateInfo> queueCIs;
-    for (uint32_t family : {graphicsQueueFamily_, presentQueueFamily_}) {
-        bool dup = false;
-        for (auto& q : queueCIs) {
-            if (q.queueFamilyIndex == family) {
-                dup = true;
-                break;
-            }
-        }
-        if (dup) {
-            continue;
-        }
+    queueCIs.reserve(uniqueFamilies.size());
+    for (uint32_t family : uniqueFamilies) {
         VkDeviceQueueCreateInfo qi{};
         qi.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         qi.queueFamilyIndex = family;
@@ -252,6 +261,10 @@ bool AndroidVulkanContext::createSwapchain(int32_t width, int32_t height) noexce
 
     uint32_t fmtCount = 0;
     vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice_, surface_, &fmtCount, nullptr);
+    if (fmtCount == 0) {
+        LogE("no surface formats available");
+        return false;
+    }
     std::vector<VkSurfaceFormatKHR> formats(fmtCount);
     vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice_, surface_, &fmtCount, formats.data());
 
@@ -621,6 +634,7 @@ bool AndroidVulkanContext::initEGLInterop() noexcept {
     eglPbuffer_ = pbuffer;
     // 绑定到当前线程以便后续 loadEGLExtensions 和 GL 初始化
     eglContext_->attachContext(eglPbuffer_);
+    eglContextBound_ = true;
     if (!loadEGLExtensions()) {
         return false;
     }
@@ -763,8 +777,13 @@ bool AndroidVulkanContext::bindHWBMemory() noexcept {
     memAI.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     memAI.pNext = &dedicatedInfo;
     memAI.allocationSize = hwbAllocationSize_;
-    memAI.memoryTypeIndex = findMemoryType(static_cast<uint32_t>(hwbMemoryTypeBits_),
-                                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    const uint32_t memTypeIndex = findMemoryType(static_cast<uint32_t>(hwbMemoryTypeBits_),
+                                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (memTypeIndex == UINT32_MAX) {
+        LogE("bindHWBMemory: no suitable memory type");
+        return false;
+    }
+    memAI.memoryTypeIndex = memTypeIndex;
 
     if (vkAllocateMemory(device_, &memAI, nullptr, &hwbMemory_) != VK_SUCCESS) {
         LogE("vkAllocateMemory for AHardwareBuffer failed");
@@ -791,6 +810,19 @@ bool AndroidVulkanContext::bindHWBMemory() noexcept {
 }
 
 void AndroidVulkanContext::updateHWBDescriptor() noexcept {
+    // clearHWBDescriptor 重置 pool 后需要重新分配 descriptor set
+    if (descriptorSet_ == VK_NULL_HANDLE) {
+        VkDescriptorSetAllocateInfo ai{};
+        ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        ai.descriptorPool = descriptorPool_;
+        ai.descriptorSetCount = 1;
+        ai.pSetLayouts = &descriptorSetLayout_;
+        if (vkAllocateDescriptorSets(device_, &ai, &descriptorSet_) != VK_SUCCESS) {
+            LogE("updateHWBDescriptor: vkAllocateDescriptorSets failed");
+            return;
+        }
+    }
+
     VkDescriptorImageInfo imgInfo{};
     imgInfo.sampler = sampler_;
     imgInfo.imageView = hwbImageView_;
@@ -806,92 +838,67 @@ void AndroidVulkanContext::updateHWBDescriptor() noexcept {
     vkUpdateDescriptorSets(device_, 1, &write, 0, nullptr);
 }
 
-void AndroidVulkanContext::blitOESToHardwareBuffer(int32_t textureId,
-                                                   int32_t width,
-                                                   int32_t height) noexcept {
-    // 尺寸变化时销毁旧资源重建
-    if (hardwareBuffer_) {
-        AHardwareBuffer_Desc desc{};
-        AHardwareBuffer_describe(hardwareBuffer_, &desc);
-        if (static_cast<int32_t>(desc.width) != width ||
-            static_cast<int32_t>(desc.height) != height) {
-            destroyHardwareBufferResources();
-        }
-    }
-    if (!hardwareBuffer_) {
-        if (!allocateHardwareBuffer(width, height)) {
-            return;
-        }
-        if (!createEGLImageFromHWB()) {
-            return;
-        }
-        if (!createFBOForEGLImage()) {
-            return;
-        }
-        if (!createHWBVkImage()) {
-            return;
-        }
-        if (!bindHWBMemory()) {
-            return;
-        }
-        updateHWBDescriptor();
-    }
+void AndroidVulkanContext::doBlitOES(int32_t textureId, int32_t width, int32_t height) noexcept {
+    static const float kVerts[] = {-1, -1, 1, -1, -1, 1, 1, 1};
+    static const float kUVs[] = {0, 0, 1, 0, 0, 1, 1, 1};
 
     glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
     glViewport(0, 0, width, height);
     glClear(GL_COLOR_BUFFER_BIT);
-
     glUseProgram(oesProgram_);
-
-    static const float kVerts[] = {-1, -1, 1, -1, -1, 1, 1, 1};
-    static const float kUVs[] = {0, 0, 1, 0, 0, 1, 1, 1};
-
     glVertexAttribPointer(static_cast<GLuint>(oesPosAttr_), 2, GL_FLOAT, GL_FALSE, 0, kVerts);
     glEnableVertexAttribArray(static_cast<GLuint>(oesPosAttr_));
     glVertexAttribPointer(static_cast<GLuint>(oesTexCoordAttr_), 2, GL_FLOAT, GL_FALSE, 0, kUVs);
     glEnableVertexAttribArray(static_cast<GLuint>(oesTexCoordAttr_));
-
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(textureId));
+    glBindTexture(GL_TEXTURE_EXTERNAL_OES, static_cast<GLuint>(textureId));
     glUniform1i(oesTexUniform_, 0);
-
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-
-    glBindTexture(GL_TEXTURE_2D, 0);
+    glDisableVertexAttribArray(static_cast<GLuint>(oesPosAttr_));
+    glDisableVertexAttribArray(static_cast<GLuint>(oesTexCoordAttr_));
+    glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glFlush();
+}
 
-    // 检测 GL 错误时销毁 HardwareBuffer 资源并立即重建重试
+bool AndroidVulkanContext::rebuildHWBResources(int32_t width, int32_t height) noexcept {
+    destroyHardwareBufferResources();
+    if (!allocateHardwareBuffer(width, height) || !createEGLImageFromHWB() ||
+        !createFBOForEGLImage() || !createHWBVkImage() || !bindHWBMemory()) {
+        return false;
+    }
+    updateHWBDescriptor();
+    return true;
+}
+
+void AndroidVulkanContext::blitOESToHardwareBuffer(int32_t textureId,
+                                                   int32_t width,
+                                                   int32_t height) noexcept {
+    // 尺寸变化或 Vulkan 侧资源已销毁时重建（hwbImage_ 可能被 destroyHardwareBufferResources
+    // 单独清理）
+    bool needRebuild = !hardwareBuffer_ || hwbImage_ == VK_NULL_HANDLE;
+    if (!needRebuild) {
+        AHardwareBuffer_Desc desc{};
+        AHardwareBuffer_describe(hardwareBuffer_, &desc);
+        needRebuild = (static_cast<int32_t>(desc.width) != width ||
+                       static_cast<int32_t>(desc.height) != height);
+    }
+    if (needRebuild && !rebuildHWBResources(width, height)) {
+        return;
+    }
+
+    doBlitOES(textureId, width, height);
+    // EGL/GL 写入后 Vulkan 侧 layout 失效，重置为 UNDEFINED 确保下帧 barrier 做完整 transition
+    hwbImageLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    // GL 错误时销毁重建后重试一次
     if (glGetError() != GL_NO_ERROR) {
-        LogW("blitOESToHardwareBuffer: GL error detected, rebuilding HardwareBuffer resources and "
-             "retrying blit");
-        destroyHardwareBufferResources();
-        if (!allocateHardwareBuffer(width, height) || !createEGLImageFromHWB() ||
-            !createFBOForEGLImage() || !createHWBVkImage() || !bindHWBMemory()) {
+        LogW("blitOESToHardwareBuffer: GL error, rebuilding and retrying");
+        if (!rebuildHWBResources(width, height)) {
             return;
         }
-        updateHWBDescriptor();
-
-        glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
-        glViewport(0, 0, width, height);
-        glClear(GL_COLOR_BUFFER_BIT);
-        glUseProgram(oesProgram_);
-        glVertexAttribPointer(static_cast<GLuint>(oesPosAttr_), 2, GL_FLOAT, GL_FALSE, 0, kVerts);
-        glEnableVertexAttribArray(static_cast<GLuint>(oesPosAttr_));
-        glVertexAttribPointer(static_cast<GLuint>(oesTexCoordAttr_),
-                              2,
-                              GL_FLOAT,
-                              GL_FALSE,
-                              0,
-                              kUVs);
-        glEnableVertexAttribArray(static_cast<GLuint>(oesTexCoordAttr_));
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(textureId));
-        glUniform1i(oesTexUniform_, 0);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        glBindTexture(GL_TEXTURE_2D, 0);
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glFlush();
+        doBlitOES(textureId, width, height);
+        hwbImageLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
     }
 }
 
@@ -900,12 +907,17 @@ void AndroidVulkanContext::drawFrame(int32_t textureId, int32_t width, int32_t h
         return;
     }
 
-    // 确保 EGL context 绑定到当前渲染线程（EGL context 是线程绑定的）
-    if (eglContext_) {
+    // EGL context 是线程绑定的，只在首次或 context 丢失时重新绑定，避免每帧 eglMakeCurrent 开销
+    if (eglContext_ && !eglContextBound_) {
         eglContext_->attachContext(eglPbuffer_);
+        eglContextBound_ = true;
     }
 
     blitOESToHardwareBuffer(textureId, width, height);
+    // blit 失败（hwbImage_ 无效）时跳过本帧渲染，避免向 Vulkan 提交非法 image barrier
+    if (hwbImage_ == VK_NULL_HANDLE) {
+        return;
+    }
 
     vkWaitForFences(device_, 1, &inFlightFences_[currentFrame_], VK_TRUE, UINT64_MAX);
 
@@ -943,6 +955,12 @@ void AndroidVulkanContext::drawFrame(int32_t textureId, int32_t width, int32_t h
     if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, inFlightFences_[currentFrame_]) !=
         VK_SUCCESS) {
         LogE("vkQueueSubmit failed");
+        // fence 已 reset 但 submit 失败不会 signal，提交空 submit signal fence 防止下帧
+        // WaitForFences 死锁
+        vkQueueWaitIdle(graphicsQueue_);
+        VkSubmitInfo emptySubmit{};
+        emptySubmit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        vkQueueSubmit(graphicsQueue_, 1, &emptySubmit, inFlightFences_[currentFrame_]);
         return;
     }
 
@@ -957,7 +975,9 @@ void AndroidVulkanContext::drawFrame(int32_t textureId, int32_t width, int32_t h
     result = vkQueuePresentKHR(presentQueue_, &presentInfo);
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         recreateSwapchain(nullptr, frameWidth_, frameHeight_);
-    } else if (result != VK_SUCCESS) {
+        return;
+    }
+    if (result != VK_SUCCESS) {
         LogE("vkQueuePresentKHR failed: {}", static_cast<int32_t>(result));
     }
 
@@ -1016,7 +1036,6 @@ void AndroidVulkanContext::renderHardwareBufferToSwapchain(uint32_t imageIndex) 
     vkCmdDraw(cmd, 6, 1, 0, 0); // 全屏两个三角形
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
-    hwbImageLayout_ = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
 
 uint32_t AndroidVulkanContext::findMemoryType(uint32_t typeFilter,
@@ -1030,7 +1049,7 @@ uint32_t AndroidVulkanContext::findMemoryType(uint32_t typeFilter,
         }
     }
     LogE("findMemoryType: no suitable memory type found");
-    return 0;
+    return UINT32_MAX;
 }
 
 void AndroidVulkanContext::destroySwapchainResources() noexcept {
@@ -1080,11 +1099,22 @@ void AndroidVulkanContext::destroyEGLInterop() noexcept {
         eglImage_ = EGL_NO_IMAGE_KHR;
     }
     eglContext_->detachContext();
+    eglContextBound_ = false;
     if (eglPbuffer_ != EGL_NO_SURFACE) {
         eglContext_->releaseSurface(eglPbuffer_);
         eglPbuffer_ = EGL_NO_SURFACE;
     }
     eglContext_.reset();
+}
+
+void AndroidVulkanContext::clearHWBDescriptor() noexcept {
+    if (descriptorPool_ == VK_NULL_HANDLE) {
+        return;
+    }
+    // hwbImageView_ 已销毁，reset pool 使 descriptor set 回到未绑定状态，避免悬空引用
+    // vkUpdateDescriptorSets 写入 VK_NULL_HANDLE imageView 违反 Vulkan spec
+    vkResetDescriptorPool(device_, descriptorPool_, 0);
+    descriptorSet_ = VK_NULL_HANDLE;
 }
 
 void AndroidVulkanContext::destroyHardwareBufferResources() noexcept {
@@ -1101,6 +1131,7 @@ void AndroidVulkanContext::destroyHardwareBufferResources() noexcept {
             vkFreeMemory(device_, hwbMemory_, nullptr);
             hwbMemory_ = VK_NULL_HANDLE;
         }
+        clearHWBDescriptor();
     }
     if (hardwareBuffer_) {
         AHardwareBuffer_release(hardwareBuffer_);

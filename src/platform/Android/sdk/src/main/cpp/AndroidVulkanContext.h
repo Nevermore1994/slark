@@ -72,6 +72,9 @@ private:
     void updateHWBDescriptor() noexcept;
 
     void blitOESToHardwareBuffer(int32_t textureId, int32_t width, int32_t height) noexcept;
+    void doBlitOES(int32_t textureId, int32_t width, int32_t height) noexcept;
+    bool rebuildHWBResources(int32_t width, int32_t height) noexcept;
+    void clearHWBDescriptor() noexcept;
     void renderHardwareBufferToSwapchain(uint32_t imageIndex) noexcept;
 
     void destroyEGLInterop() noexcept;
@@ -132,6 +135,7 @@ private:
     std::shared_ptr<AndroidEGLContext> eglContext_;
     EGLSurface eglPbuffer_ = EGL_NO_SURFACE;
     EGLImageKHR eglImage_ = EGL_NO_IMAGE_KHR;
+    bool eglContextBound_ = false;
     GLuint fbo_ = 0;
     GLuint fboTexture_ = 0;
     GLuint oesProgram_ = 0;
