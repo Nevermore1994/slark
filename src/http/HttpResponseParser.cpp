@@ -15,6 +15,15 @@ void HttpResponseParser::feed(const Byte* data, size_t size) {
 
     auto parseStart = Time::nowTimeStamp();
 
+    // 防止恶意服务端发送超大 header 耗尽内存
+    constexpr size_t kMaxHeaderBufferSize = 64 * 1024;
+    if (state_ == State::StatusLine || state_ == State::Headers) {
+        if (buffer_.size() + size > kMaxHeaderBufferSize) {
+            fail(ResultCode::Failed);
+            return;
+        }
+    }
+
     buffer_.append(reinterpret_cast<const char*>(data), size);
 
     // 循环驱动状态机，直到数据不足或终态

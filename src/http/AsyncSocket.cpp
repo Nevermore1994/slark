@@ -483,7 +483,8 @@ Coroutine<void> TLSTransport::performHandshake(std::chrono::milliseconds timeout
 }
 
 ssize_t TLSTransport::write(const void* data, size_t size) noexcept {
-    int32_t result = SSL_write(sslPtr_.get(), data, static_cast<int32_t>(size));
+    auto writeSize = static_cast<int32_t>(std::min(size, static_cast<size_t>(INT32_MAX)));
+    int32_t result = SSL_write(sslPtr_.get(), data, writeSize);
     if (result <= 0) {
         lastSslError_ = SSL_get_error(sslPtr_.get(), result);
     }
@@ -491,7 +492,8 @@ ssize_t TLSTransport::write(const void* data, size_t size) noexcept {
 }
 
 ssize_t TLSTransport::read(void* buffer, size_t size) noexcept {
-    int32_t result = SSL_read(sslPtr_.get(), buffer, static_cast<int32_t>(size));
+    auto readSize = static_cast<int32_t>(std::min(size, static_cast<size_t>(INT32_MAX)));
+    int32_t result = SSL_read(sslPtr_.get(), buffer, readSize);
     if (result <= 0) {
         lastSslError_ = SSL_get_error(sslPtr_.get(), result);
     }
@@ -509,7 +511,11 @@ FdReadyAwaiter::Interest TLSTransport::retryInterest(ssize_t) const noexcept {
 
 void TLSTransport::shutdown() noexcept {
     if (sslPtr_) {
-        SSL_shutdown(sslPtr_.get());
+        int32_t ret = SSL_shutdown(sslPtr_.get());
+        if (ret == 0) {
+            // 已发送 close_notify，等待对端回复（非阻塞，忽略错误）
+            SSL_shutdown(sslPtr_.get());
+        }
         sslPtr_.reset();
     }
 }

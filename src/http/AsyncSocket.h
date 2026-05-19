@@ -43,7 +43,7 @@ public:
 
     ssize_t write(const void* data, size_t size) noexcept override {
         lastInterest_ = FdReadyAwaiter::Interest::Write;
-        return ::write(fd_, data, size);
+        return ::send(fd_, data, size, kNoSignal);
     }
 
     ssize_t read(void* buffer, size_t size) noexcept override {
@@ -52,7 +52,7 @@ public:
     }
 
     bool needsRetry(ssize_t result) const noexcept override {
-        return result < 0 && (errno == EAGAIN || errno == EWOULDBLOCK);
+        return result < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR);
     }
 
     FdReadyAwaiter::Interest retryInterest(ssize_t) const noexcept override {
@@ -71,7 +71,7 @@ private:
 class TLSTransport final : public ITransport {
 public:
     TLSTransport(Socket fd, const std::string& hostname);
-    ~TLSTransport() ;
+    ~TLSTransport();
 
     Coroutine<void> performHandshake(std::chrono::milliseconds timeout);
 
@@ -143,7 +143,7 @@ public:
 class AsyncSocket final : public IAsyncSocket, public NonCopyable {
 public:
     explicit AsyncSocket(IPVersion ipVersion, std::unique_ptr<ITransport> transport = nullptr);
-    ~AsyncSocket() ;
+    ~AsyncSocket();
 
     Coroutine<void> asyncConnect(
         const AddressInfoPtr& address,

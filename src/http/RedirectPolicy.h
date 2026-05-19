@@ -47,6 +47,15 @@ public:
         RequestInfo redirectRequest = original;
         redirectRequest.url = std::move(*resolvedUrl);
 
+        // 跨域重定向时剥离敏感请求头，防止凭证泄露到第三方域名
+        Url origUrl(original.url);
+        Url newUrl(redirectRequest.url);
+        if (origUrl.host != newUrl.host) {
+            for (const auto& key : {"Authorization", "Cookie", "Proxy-Authorization"}) {
+                redirectRequest.headers.erase(key);
+            }
+        }
+
         // RFC 7231：根据重定向状态码处理方法
         switch (redirectCode) {
             case HttpStatusCode::SeeOther:

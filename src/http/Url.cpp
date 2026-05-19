@@ -46,6 +46,9 @@ void Url::parse(std::string_view url) noexcept {
     }
 
     scheme = schemeView;
+    std::transform(scheme.begin(), scheme.end(), scheme.begin(), [](unsigned char c) {
+        return std::tolower(c);
+    });
     auto view = url.substr(flagPos + kSchemeFlag.size());
 
     if (view.empty()) {

@@ -3,7 +3,7 @@
 //
 #include "ConnectionPool.h"
 
-#include "HttpUtil.hpp"
+#include "DnsResolver.h"
 #include "IOContext.h"
 #include "Log.hpp"
 
@@ -103,13 +103,21 @@ std::unique_ptr<IAsyncSocket> ConnectionPool::tryReuse(const std::string& key, R
         while (!deque.empty()) {
             auto connInfo = std::move(deque.back());
             deque.pop_back();
-            if (connInfo->isValid && connInfo->socket && connInfo->socket->isValid()) {
-                if (perf) {
-                    perf->connection.reuseAttempted = true;
-                    perf->connection.reuseSucceeded = true;
-                }
-                return std::move(connInfo->socket);
+            if (!connInfo->isValid || !connInfo->socket || !connInfo->socket->isValid()) {
+                continue;
             }
+            // 非阻塞 peek 检测对端是否已发 FIN
+            char buf;
+            ssize_t n = ::recv(connInfo->socket->getFd(), &buf, 1, MSG_PEEK | MSG_DONTWAIT);
+            if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
+                connInfo->socket->close();
+                continue;
+            }
+            if (perf) {
+                perf->connection.reuseAttempted = true;
+                perf->connection.reuseSucceeded = true;
+            }
+            return std::move(connInfo->socket);
         }
     }
     if (perf) {
@@ -130,7 +138,8 @@ Coroutine<std::unique_ptr<IAsyncSocket>> ConnectionPool::connectNew(
         co_return nullptr;
     }
 
-    auto addrInfo = Util::resolveAddress(host, std::to_string(port), ipVersion);
+    auto addrInfo =
+        co_await DnsResolver::instance().resolveAsync(host, std::to_string(port), ipVersion);
     if (!addrInfo) {
         LogW("DNS resolution failed for {}", host);
         co_return nullptr;
@@ -148,6 +157,7 @@ Coroutine<std::unique_ptr<IAsyncSocket>> ConnectionPool::connectNew(
         co_return nullptr;
     } catch (const std::exception& e) {
         LogW("Connect failed: {}", e.what());
+        DnsResolver::instance().invalidate(host);
         co_return nullptr;
     }
 }
@@ -375,8 +385,12 @@ void ConnectionPool::tryScheduleCleanup() {
         return; // 另一个线程正在执行清理
     }
 
-    // 复用 cleanupThread_ 管理 jthread，避免 detach 导致 UAF
     if (cleanupThread_ && cleanupThread_->joinable()) {
+        // 上次清理仍在进行中，跳过本次，避免 join 阻塞 acquire 路径
+        if (cleanupInProgress_.load()) {
+            cleanupInProgress_.store(false);
+            return;
+        }
         cleanupThread_->join();
     }
     cleanupThread_.emplace([this] {

@@ -53,6 +53,10 @@ SSLContextPtr& SSLManager::shareContext() {
         // 开启证书链验证
         SSL_CTX_set_verify(context, SSL_VERIFY_PEER, nullptr);
 
+        // 声明支持 HTTP/1.1（为未来 HTTP/2 预留扩展点）
+        static constexpr uint8_t kAlpnProtos[] = "\x08http/1.1";
+        SSL_CTX_set_alpn_protos(context, kAlpnProtos, sizeof(kAlpnProtos) - 1);
+
         if (HttpsHelper::configContext) {
             // 平台层负责加载 CA bundle（如 Android/iOS 系统证书）
             HttpsHelper::configContext(contextPtr);

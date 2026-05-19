@@ -277,7 +277,11 @@ std::string buildRequestString(const RequestInfo& info, const Url& url, bool kee
     }
     result.append(" HTTP/1.1\r\n");
 
-    result.append("Host: ").append(url.host).append(kCRLF);
+    result.append("Host: ").append(url.host);
+    if ((url.isHttp() && url.port != "80") || (url.isHttps() && url.port != "443")) {
+        result.append(":").append(url.port);
+    }
+    result.append(kCRLF);
     for (const auto& [key, value] : info.headers) {
         // 过滤 CRLF，防止 header injection
         if (key.find('\r') != std::string::npos || key.find('\n') != std::string::npos ||
