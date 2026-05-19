@@ -49,8 +49,16 @@ SSLContextPtr& SSLManager::shareContext() {
             throw std::runtime_error("Failed to create SSL context");
         }
         contextPtr.reset(context);
+
+        // 开启证书链验证
+        SSL_CTX_set_verify(context, SSL_VERIFY_PEER, nullptr);
+
         if (HttpsHelper::configContext) {
+            // 平台层负责加载 CA bundle（如 Android/iOS 系统证书）
             HttpsHelper::configContext(contextPtr);
+        } else {
+            // 回退：加载系统默认 CA
+            SSL_CTX_set_default_verify_paths(context);
         }
     });
 
@@ -66,7 +74,10 @@ SSLPtr SSLManager::create(Socket socket, const std::string& hostname) noexcept {
 
     SSL_set_fd(ssl, socket);
     if (!hostname.empty()) {
+        // SNI：告知服务端期望的域名
         SSL_set_tlsext_host_name(ssl, hostname.c_str());
+        // hostname 验证：握手后校验证书中的 CN/SAN 是否匹配
+        SSL_set1_host(ssl, hostname.c_str());
     }
 
     res.reset(ssl);

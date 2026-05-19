@@ -36,11 +36,16 @@ public:
         return std::nullopt;
     }
 
-    [[nodiscard]] static RequestInfo buildRedirectRequest(const RequestInfo& original,
-                                                          HttpStatusCode redirectCode,
-                                                          std::string_view location) {
+    [[nodiscard]] static std::optional<RequestInfo> buildRedirectRequest(
+        const RequestInfo& original,
+        HttpStatusCode redirectCode,
+        std::string_view location) {
+        auto resolvedUrl = resolveRedirectUrl(original.url, location);
+        if (!resolvedUrl.has_value()) {
+            return std::nullopt;
+        }
         RequestInfo redirectRequest = original;
-        redirectRequest.url = resolveRedirectUrl(original.url, location);
+        redirectRequest.url = std::move(*resolvedUrl);
 
         // RFC 7231：根据重定向状态码处理方法
         switch (redirectCode) {
@@ -66,17 +71,24 @@ public:
     }
 
     // 兼容旧接口的重载
-    [[nodiscard]] static RequestInfo buildRedirectRequest(const RequestInfo& original,
-                                                          std::string_view location) {
+    [[nodiscard]] static std::optional<RequestInfo> buildRedirectRequest(
+        const RequestInfo& original,
+        std::string_view location) {
         return buildRedirectRequest(original, HttpStatusCode::Found, location);
     }
 
 private:
-    // 解析重定向URL，处理相对路径
-    [[nodiscard]] static std::string resolveRedirectUrl(std::string_view originalUrl,
-                                                        std::string_view location) {
+    // 解析重定向URL，处理相对路径；https→http 降级时返回 nullopt
+    [[nodiscard]] static std::optional<std::string> resolveRedirectUrl(std::string_view originalUrl,
+                                                                       std::string_view location) {
         // 绝对URL（包含scheme）
         if (location.starts_with("http:") || location.starts_with("https:")) {
+            // 拒绝 https → http 降级重定向，防止中间人攻击
+            Url origUrl(originalUrl);
+            if (origUrl.isHttps() && location.starts_with("http:") &&
+                !location.starts_with("https:")) {
+                return std::nullopt;
+            }
             return std::string(location);
         }
 

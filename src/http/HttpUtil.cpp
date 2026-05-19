@@ -279,6 +279,11 @@ std::string buildRequestString(const RequestInfo& info, const Url& url, bool kee
 
     result.append("Host: ").append(url.host).append(kCRLF);
     for (const auto& [key, value] : info.headers) {
+        // 过滤 CRLF，防止 header injection
+        if (key.find('\r') != std::string::npos || key.find('\n') != std::string::npos ||
+            value.find('\r') != std::string::npos || value.find('\n') != std::string::npos) {
+            continue;
+        }
         result.append(key).append(": ").append(value).append(kCRLF);
     }
 

@@ -58,6 +58,16 @@ Socket createAndConfigureSocket(int32_t addressFamily) {
     setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &optval, sizeof(optval));
     setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &optval, sizeof(optval));
 
+#if defined(TCP_KEEPIDLE)
+    // 60s 无数据后开始发送 keepalive 探测，适配移动网络 NAT 超时
+    int32_t keepIdle = 60;
+    int32_t keepIntvl = 10;
+    int32_t keepCnt = 3;
+    setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(keepIdle));
+    setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &keepIntvl, sizeof(keepIntvl));
+    setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &keepCnt, sizeof(keepCnt));
+#endif
+
 #if defined(__APPLE__)
     setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, &optval, sizeof(optval));
 #endif

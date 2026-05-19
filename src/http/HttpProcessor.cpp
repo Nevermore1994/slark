@@ -92,7 +92,11 @@ Coroutine<ResponseResult> HttpProcessor::doRequest(const RequestInfo& requestInf
                 RedirectPolicy::buildRedirectRequest(requestInfo,
                                                      response.statusCode,
                                                      std::move(location.value()));
-            co_return co_await doRequest(redirectRequest, redirectCount + 1, token);
+            if (!redirectRequest.has_value()) {
+                // scheme downgrade 被拒绝
+                co_return std::unexpected(ErrorInfo{ResultCode::SchemeDowngradeBlocked, 0});
+            }
+            co_return co_await doRequest(*redirectRequest, redirectCount + 1, token);
         }
     }
 

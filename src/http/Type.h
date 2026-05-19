@@ -140,6 +140,7 @@ enum class ResultCode {
     Completed,
     RedirectError,
     RedirectReachMaxCount,
+    SchemeDowngradeBlocked,
     ChunkSizeError,
 };
 
