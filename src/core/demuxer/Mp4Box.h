@@ -304,6 +304,7 @@ public:
     std::string description(const std::string&) const noexcept override;
 
 private:
+    void decodeAudioSpecificConfig(Buffer&) noexcept;
     int32_t getDescrLen(Buffer&) noexcept;
 };
 

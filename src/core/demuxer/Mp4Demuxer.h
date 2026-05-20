@@ -120,6 +120,15 @@ private:
 
     void seekToSample(uint32_t targetSampleIndex) noexcept;
 
+    void parseFragmentedData(Buffer& buffer,
+                             std::shared_ptr<FrameInfo> frameInfo,
+                             AVFramePtrArray& packets);
+
+    void parseNormalData(Buffer& buffer,
+                         uint64_t start,
+                         std::shared_ptr<FrameInfo> frameInfo,
+                         AVFramePtrArray& packets);
+
     /// calcIndex 的三个独立状态机推进
     void advanceStscState() noexcept;
     void advanceSttsState() noexcept;

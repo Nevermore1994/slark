@@ -646,6 +646,28 @@ void PlayPipeline::setupAudioTrack(DecoderType type,
     registerComponents();
 }
 
+void PlayPipeline::handleSeekFirstFrame(const AVFrameRefPtr& frame,
+                                        bool isSeekFirstFrame) noexcept {
+    if (auto render = videoRender_.load()) {
+        render->pushFrame(frame);
+    }
+    clockSync_->setVideoTime(Time::TimePoint::fromSeconds(frame->ptsTime()));
+    const bool needFirstFrame = !readiness_.firstFrameRendered.load(std::memory_order_acquire);
+    postToOwnerThread([this, needFirstFrame, isSeekFirstFrame] {
+        if (needFirstFrame && !readiness_.firstFrameRendered.load(std::memory_order_acquire)) {
+            readiness_.firstFrameRendered.store(true, std::memory_order_release);
+            if (auto session = playSession_.lock()) {
+                session->markFirstFrame();
+                SLARK_TRACE_MILESTONE(session.get(), "first_video_frame");
+            }
+            fireEvent(PipelineEvent::FirstFrameRendered);
+        }
+        if (isSeekFirstFrame) {
+            onSeekFrameConsumed(TrackType::Video);
+        }
+    });
+}
+
 void PlayPipeline::onVideoDecoded(DecoderData data) noexcept {
     if (pipelineState_.load(std::memory_order_acquire) >= PipelineState::TearingDown) {
         return;
@@ -670,33 +692,11 @@ void PlayPipeline::onVideoDecoded(DecoderData data) noexcept {
         exitFastForwardMode();
     }
 
-    // seek 首帧：pts >= target 的第一帧通过 push 模式快速上屏，无需等待下一个 VSync
-    // tryMarkVideoSeeked CAS 保证多线程下只有第一帧能进入 push 路径，后续帧直接入队走 VSync
+    // seek 首帧或播放首帧：通过 push 模式快速上屏，无需等待下一个 VSync
     const bool isSeekFirstFrame =
         seekContext_->isSeekPending() && seekContext_->tryMarkVideoSeeked();
     if (isSeekFirstFrame || !readiness_.firstFrameRendered.load(std::memory_order_acquire)) {
-        // push 模式：直接推帧渲染，不入队
-        if (auto render = videoRender_.load()) {
-            render->pushFrame(data.frame);
-        }
-        // 更新 video clock（原子操作，线程安全）
-        clockSync_->setVideoTime(Time::TimePoint::fromSeconds(data.frame->ptsTime()));
-        // 状态更新回到 ownerThread 处理，避免竞争
-        const bool needFirstFrame = !readiness_.firstFrameRendered.load(std::memory_order_acquire);
-        postToOwnerThread([this, needFirstFrame, isSeekFirstFrame] {
-            if (needFirstFrame && !readiness_.firstFrameRendered.load(std::memory_order_acquire)) {
-                readiness_.firstFrameRendered.store(true, std::memory_order_release);
-                if (auto session = playSession_.lock()) {
-                    session->markFirstFrame();
-                    SLARK_TRACE_MILESTONE(session.get(), "first_video_frame");
-                }
-                fireEvent(PipelineEvent::FirstFrameRendered);
-            }
-            if (isSeekFirstFrame) {
-                // isVideoSeeked 已在解码线程 CAS 标记，此处只做 completeSeek 判断
-                onSeekFrameConsumed(TrackType::Video);
-            }
-        });
+        handleSeekFirstFrame(data.frame, isSeekFirstFrame);
         return;
     }
 

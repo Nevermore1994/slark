@@ -234,8 +234,16 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
     RequestPerf perf;
     perf.host = requestInfo.url;
 
-    if (token.isCancelled()) {
-        co_yield StreamChunk::makeError(ErrorInfo{ResultCode::Cancelled, 0});
+    // 统一取消检查：避免重复的 isCancelled + co_yield + co_return 模式
+    auto checkCancelled = [&token]() -> std::optional<StreamChunk> {
+        if (token.isCancelled()) {
+            return StreamChunk::makeError(ErrorInfo{ResultCode::Cancelled, 0});
+        }
+        return std::nullopt;
+    };
+
+    if (auto c = checkCancelled()) {
+        co_yield std::move(*c);
         co_return;
     }
 
@@ -245,8 +253,8 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
         co_return;
     }
 
-    if (token.isCancelled()) {
-        co_yield StreamChunk::makeError(ErrorInfo{ResultCode::Cancelled, 0});
+    if (auto c = checkCancelled()) {
+        co_yield std::move(*c);
         co_return;
     }
 
@@ -271,8 +279,8 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
 
     conn->setPerf(&perf);
 
-    if (token.isCancelled()) {
-        co_yield StreamChunk::makeError(ErrorInfo{ResultCode::Cancelled, 0});
+    if (auto c = checkCancelled()) {
+        co_yield std::move(*c);
         co_return;
     }
 
@@ -281,8 +289,8 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
     auto requestStr = Util::buildRequestString(requestInfo, *parsed.url, keepAlive);
     auto sendResult = co_await conn->asyncSend(requestStr, requestInfo.writeTimeout, token);
     if (!sendResult) {
-        if (token.isCancelled()) {
-            co_yield StreamChunk::makeError(ErrorInfo{ResultCode::Cancelled, 0});
+        if (auto c = checkCancelled()) {
+            co_yield std::move(*c);
             co_return;
         }
         co_yield StreamChunk::makeError(ErrorInfo{mapErrorToResultCode(sendResult.error()), 0});
@@ -291,16 +299,16 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
 
     // 发送 body
     if (!requestInfo.bodyEmpty()) {
-        if (token.isCancelled()) {
-            co_yield StreamChunk::makeError(ErrorInfo{ResultCode::Cancelled, 0});
+        if (auto c = checkCancelled()) {
+            co_yield std::move(*c);
             co_return;
         }
         std::string_view bodyView(reinterpret_cast<const char*>(requestInfo.body->data()),
                                   requestInfo.body->size());
         auto bodyResult = co_await conn->asyncSend(bodyView, requestInfo.writeTimeout, token);
         if (!bodyResult) {
-            if (token.isCancelled()) {
-                co_yield StreamChunk::makeError(ErrorInfo{ResultCode::Cancelled, 0});
+            if (auto c = checkCancelled()) {
+                co_yield std::move(*c);
                 co_return;
             }
             co_yield StreamChunk::makeError(ErrorInfo{mapErrorToResultCode(bodyResult.error()), 0});
@@ -308,8 +316,8 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
         }
     }
 
-    if (token.isCancelled()) {
-        co_yield StreamChunk::makeError(ErrorInfo{ResultCode::Cancelled, 0});
+    if (auto c = checkCancelled()) {
+        co_yield std::move(*c);
         co_return;
     }
 
@@ -358,8 +366,8 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
     Time::Deadline overallDeadline(requestInfo.readTimeout);
 
     while (!parser.isCompleted() && !parser.hasError()) {
-        if (token.isCancelled()) {
-            co_yield StreamChunk::makeError(ErrorInfo{ResultCode::Cancelled, 0});
+        if (auto c = checkCancelled()) {
+            co_yield std::move(*c);
             co_return;
         }
 
@@ -383,8 +391,8 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
                                                         requestInfo.readIdleTimeout,
                                                         token);
         if (!readResult.has_value()) {
-            if (token.isCancelled()) {
-                co_yield StreamChunk::makeError(ErrorInfo{ResultCode::Cancelled, 0});
+            if (auto c = checkCancelled()) {
+                co_yield std::move(*c);
                 co_return;
             }
             // 区分超时和其他错误：超时不应被当作 EOF

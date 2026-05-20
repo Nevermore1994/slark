@@ -513,63 +513,59 @@ AVFramePtrArray TrackContext::parseH265FrameData(AVFramePtr frame,
                            });
 }
 
-void TrackContext::parseData(Buffer& buffer,
-                             std::shared_ptr<FrameInfo> frameInfo,
-                             AVFramePtrArray& packets) {
-    uint64_t start = 0;
-    if (!isInRange(buffer, &start)) {
+void TrackContext::parseFragmentedData(Buffer& buffer,
+                                       std::shared_ptr<FrameInfo> frameInfo,
+                                       AVFramePtrArray& packets) {
+    if (fragSampleIndex >= fragSamples.size()) {
+        isCompleted = true;
         return;
     }
-
-    if (isFragmented) {
-        if (fragSampleIndex >= fragSamples.size()) {
-            isCompleted = true;
-            return;
-        }
-        const auto& s = fragSamples[fragSampleIndex];
-        if (!buffer.skipTo(static_cast<int64_t>(s.offset))) {
-            return;
-        }
-        auto frame = std::make_unique<AVFrame>();
-        frame->index = index++;
-        frame->dts = s.dts;
-        frame->pts = s.pts;
-        frame->offset = s.offset;
-        frame->timeScale = mdhd->timeScale;
-        if (type == TrackType::Audio) {
-            frame->frameType = AVFrameType::Audio;
-            auto info = std::dynamic_pointer_cast<AudioFrameInfo>(frameInfo);
-            frame->duration = static_cast<uint32_t>(info->duration(s.size) * 1000.0);
-            frame->info = frameInfo;
-            frame->data = buffer.readData(s.size);
-            packets.push_back(std::move(frame));
-        } else if (type == TrackType::Video) {
-            frame->frameType = AVFrameType::Video;
-            if (s.duration > 0 && mdhd->timeScale > 0) {
-                frame->duration =
-                    static_cast<uint32_t>(static_cast<double>(s.duration) /
-                                          static_cast<double>(mdhd->timeScale) * 1000.0);
-            }
-            auto data = buffer.readData(s.size);
-            auto videoInfo = std::dynamic_pointer_cast<VideoFrameInfo>(frameInfo);
-            AVFramePtrArray frames;
-            if (codecId == CodecId::AVC) {
-                frames = parseH264FrameData(std::move(frame), std::move(data), videoInfo);
-            } else if (codecId == CodecId::HEVC) {
-                frames = parseH265FrameData(std::move(frame), std::move(data), videoInfo);
-            }
-            packets.insert(packets.end(),
-                           std::make_move_iterator(frames.begin()),
-                           std::make_move_iterator(frames.end()));
-        }
-        ++fragSampleIndex;
-        if (fragSampleIndex >= fragSamples.size()) {
-            isCompleted = true;
-        }
+    const auto& s = fragSamples[fragSampleIndex];
+    if (!buffer.skipTo(static_cast<int64_t>(s.offset))) {
         return;
     }
+    auto frame = std::make_unique<AVFrame>();
+    frame->index = index++;
+    frame->dts = s.dts;
+    frame->pts = s.pts;
+    frame->offset = s.offset;
+    frame->timeScale = mdhd->timeScale;
+    if (type == TrackType::Audio) {
+        frame->frameType = AVFrameType::Audio;
+        auto info = std::dynamic_pointer_cast<AudioFrameInfo>(frameInfo);
+        frame->duration = static_cast<uint32_t>(info->duration(s.size) * 1000.0);
+        frame->info = frameInfo;
+        frame->data = buffer.readData(s.size);
+        packets.push_back(std::move(frame));
+    } else if (type == TrackType::Video) {
+        frame->frameType = AVFrameType::Video;
+        if (s.duration > 0 && mdhd->timeScale > 0) {
+            frame->duration = static_cast<uint32_t>(static_cast<double>(s.duration) /
+                                                    static_cast<double>(mdhd->timeScale) * 1000.0);
+        }
+        auto data = buffer.readData(s.size);
+        auto videoInfo = std::dynamic_pointer_cast<VideoFrameInfo>(frameInfo);
+        AVFramePtrArray frames;
+        if (codecId == CodecId::AVC) {
+            frames = parseH264FrameData(std::move(frame), std::move(data), videoInfo);
+        } else if (codecId == CodecId::HEVC) {
+            frames = parseH265FrameData(std::move(frame), std::move(data), videoInfo);
+        }
+        packets.insert(packets.end(),
+                       std::make_move_iterator(frames.begin()),
+                       std::make_move_iterator(frames.end()));
+    }
+    ++fragSampleIndex;
+    if (fragSampleIndex >= fragSamples.size()) {
+        isCompleted = true;
+    }
+}
 
-    auto size = stsz->sampleSizes[stszSampleSizeIndex];
+void TrackContext::parseNormalData(Buffer& buffer,
+                                   uint64_t start,
+                                   std::shared_ptr<FrameInfo> frameInfo,
+                                   AVFramePtrArray& packets) {
+    const auto size = stsz->sampleSizes[stszSampleSizeIndex];
     if (!buffer.skipTo(static_cast<int64_t>(start))) {
         return;
     }
@@ -601,6 +597,20 @@ void TrackContext::parseData(Buffer& buffer,
                        std::make_move_iterator(frames.end()));
     }
     calcIndex();
+}
+
+void TrackContext::parseData(Buffer& buffer,
+                             std::shared_ptr<FrameInfo> frameInfo,
+                             AVFramePtrArray& packets) {
+    uint64_t start = 0;
+    if (!isInRange(buffer, &start)) {
+        return;
+    }
+    if (isFragmented) {
+        parseFragmentedData(buffer, std::move(frameInfo), packets);
+    } else {
+        parseNormalData(buffer, start, std::move(frameInfo), packets);
+    }
 }
 
 bool Mp4Demuxer::probeMoovBox(Buffer& buffer, int64_t& start, uint32_t& size) noexcept {
@@ -1183,6 +1193,54 @@ void Mp4Demuxer::seekPos(uint64_t pos) noexcept {
     }
 }
 
+namespace {
+
+uint32_t resolveSampleDuration(const TrunSample& s,
+                               uint32_t trunFlags,
+                               const std::shared_ptr<BoxTfhd>& tfhd,
+                               const std::shared_ptr<BoxTrex>& trex) noexcept {
+    if (trunFlags & BoxTrun::kSampleDurationPresent) {
+        return s.duration;
+    }
+    if (tfhd->flags & BoxTfhd::kDefaultSampleDurationPresent) {
+        return tfhd->defaultSampleDuration;
+    }
+    return trex ? trex->defaultSampleDuration : 0;
+}
+
+uint32_t resolveSampleSize(const TrunSample& s,
+                           uint32_t trunFlags,
+                           const std::shared_ptr<BoxTfhd>& tfhd,
+                           const std::shared_ptr<BoxTrex>& trex) noexcept {
+    if (trunFlags & BoxTrun::kSampleSizePresent) {
+        return s.size;
+    }
+    if (tfhd->flags & BoxTfhd::kDefaultSampleSizePresent) {
+        return tfhd->defaultSampleSize;
+    }
+    return trex ? trex->defaultSampleSize : 0;
+}
+
+uint32_t resolveSampleFlags(const TrunSample& s,
+                            uint32_t i,
+                            uint32_t trunFlags,
+                            const std::shared_ptr<BoxTrun>& trun,
+                            const std::shared_ptr<BoxTfhd>& tfhd,
+                            const std::shared_ptr<BoxTrex>& trex) noexcept {
+    if (trunFlags & BoxTrun::kSampleFlagsPresent) {
+        return s.flags;
+    }
+    if (i == 0 && (trunFlags & BoxTrun::kFirstSampleFlagsPresent)) {
+        return trun->firstSampleFlags;
+    }
+    if (tfhd->flags & BoxTfhd::kDefaultSampleFlagsPresent) {
+        return tfhd->defaultSampleFlags;
+    }
+    return trex ? trex->defaultSampleFlags : 0;
+}
+
+} // namespace
+
 void TrackContext::appendFragmentSamples(const BoxRefPtr& moofBox, uint64_t moofOffset) noexcept {
     for (const auto& trafChild : moofBox->childs) {
         if (trafChild->info.symbol != "traf") {
@@ -1225,36 +1283,13 @@ void TrackContext::appendFragmentSamples(const BoxRefPtr& moofBox, uint64_t moof
             int64_t currentDts = baseDecodeTime;
             for (uint32_t i = 0; i < trunBox->samples.size(); ++i) {
                 const auto& s = trunBox->samples[i];
-
-                uint32_t dur = s.duration;
-                if (!(trunBox->flags & BoxTrun::kSampleDurationPresent)) {
-                    dur = (tfhdBox->flags & BoxTfhd::kDefaultSampleDurationPresent)
-                              ? tfhdBox->defaultSampleDuration
-                              : (trex ? trex->defaultSampleDuration : 0);
-                }
-
-                uint32_t sz = s.size;
-                if (!(trunBox->flags & BoxTrun::kSampleSizePresent)) {
-                    sz = (tfhdBox->flags & BoxTfhd::kDefaultSampleSizePresent)
-                             ? tfhdBox->defaultSampleSize
-                             : (trex ? trex->defaultSampleSize : 0);
-                }
-
-                uint32_t sampleFlags = s.flags;
-                if (!(trunBox->flags & BoxTrun::kSampleFlagsPresent)) {
-                    if (i == 0 && (trunBox->flags & BoxTrun::kFirstSampleFlagsPresent)) {
-                        sampleFlags = trunBox->firstSampleFlags;
-                    } else {
-                        sampleFlags = (tfhdBox->flags & BoxTfhd::kDefaultSampleFlagsPresent)
-                                          ? tfhdBox->defaultSampleFlags
-                                          : (trex ? trex->defaultSampleFlags : 0);
-                    }
-                }
-
-                int32_t cto = 0;
-                if (trunBox->flags & BoxTrun::kSampleCompositionTimeOffsetPresent) {
-                    cto = s.compositionTimeOffset;
-                }
+                const uint32_t dur = resolveSampleDuration(s, trunBox->flags, tfhdBox, trex);
+                const uint32_t sz = resolveSampleSize(s, trunBox->flags, tfhdBox, trex);
+                const uint32_t sampleFlags =
+                    resolveSampleFlags(s, i, trunBox->flags, trunBox, tfhdBox, trex);
+                const int32_t cto = (trunBox->flags & BoxTrun::kSampleCompositionTimeOffsetPresent)
+                                        ? s.compositionTimeOffset
+                                        : 0;
 
                 FragSample fs;
                 fs.offset = dataOffset;

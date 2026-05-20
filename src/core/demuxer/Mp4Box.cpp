@@ -459,6 +459,11 @@ bool BoxStsc::decode(Buffer& buffer) noexcept {
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
 
+    constexpr uint32_t kMaxEntryCount = 10'000'000;
+    if (entryCount > kMaxEntryCount) {
+        LogE("BoxStsc: entryCount {} exceeds limit", entryCount);
+        return false;
+    }
     entrys.reserve(entryCount);
     for (uint32_t i = 0; i < entryCount; i++) {
         if (!buffer.require(12)) {
@@ -485,6 +490,11 @@ bool BoxStsz::decode(Buffer& buffer) noexcept {
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
 
+    constexpr uint32_t kMaxEntryCount = 10'000'000;
+    if (entryCount > kMaxEntryCount) {
+        LogE("BoxStsz: entryCount {} exceeds limit", entryCount);
+        return false;
+    }
     if (defaultSampleSize != 0) {
         sampleSizes.assign(entryCount, defaultSampleSize);
         return true;
@@ -510,6 +520,11 @@ bool BoxStco::decode(Buffer& buffer) noexcept {
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
 
+    constexpr uint32_t kMaxEntryCount = 10'000'000;
+    if (entryCount > kMaxEntryCount) {
+        LogE("BoxStco: entryCount {} exceeds limit", entryCount);
+        return false;
+    }
     chunkOffsets.reserve(entryCount);
     for (uint32_t i = 0; i < entryCount; i++) {
         if (!buffer.require(4)) {
@@ -531,6 +546,11 @@ bool BoxCo64::decode(Buffer& buffer) noexcept {
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
 
+    constexpr uint32_t kMaxEntryCount = 10'000'000;
+    if (entryCount > kMaxEntryCount) {
+        LogE("BoxCo64: entryCount {} exceeds limit", entryCount);
+        return false;
+    }
     chunkOffsets.reserve(entryCount);
     for (uint32_t i = 0; i < entryCount; i++) {
         if (!buffer.require(8)) {
@@ -665,26 +685,30 @@ bool BoxEsds::decode(Buffer& buffer) noexcept {
         if (objectTypeId == 0x40) {
             codecId = CodecId::AAC;
             if (esDescTag == 0x05) {
-                BitReadView view(buffer);
-                audioSpecConfig.audioObjectType = uint8_t(view.readBits(5));
-                audioSpecConfig.samplingFrequencyIndex = view.readBits(4);
-                if (audioSpecConfig.samplingFrequencyIndex == 0x0f) {
-                    audioSpecConfig.samplingFrequencyIndex = view.readBits(24);
-                }
-                audioSpecConfig.channelConfiguration = uint8_t(view.readBits(4));
-                if (audioSpecConfig.audioObjectType == 5 || audioSpecConfig.audioObjectType == 29) {
-                    audioSpecConfig.samplingFreqIndexExt = view.readBits(4);
-                    if (audioSpecConfig.samplingFreqIndexExt == 0x0f) {
-                        audioSpecConfig.samplingFreqIndexExt = view.readBits(24);
-                    }
-                    audioSpecConfig.audioObjectTypeExt = uint8_t(view.readBits(5));
-                }
+                decodeAudioSpecificConfig(buffer);
             }
         } else if (objectTypeId == 0x6b) {
             codecId = CodecId::MP3;
         }
     }
     return true;
+}
+
+void BoxEsds::decodeAudioSpecificConfig(Buffer& buffer) noexcept {
+    BitReadView view(buffer);
+    audioSpecConfig.audioObjectType = uint8_t(view.readBits(5));
+    audioSpecConfig.samplingFrequencyIndex = view.readBits(4);
+    if (audioSpecConfig.samplingFrequencyIndex == 0x0f) {
+        audioSpecConfig.samplingFrequencyIndex = view.readBits(24);
+    }
+    audioSpecConfig.channelConfiguration = uint8_t(view.readBits(4));
+    if (audioSpecConfig.audioObjectType == 5 || audioSpecConfig.audioObjectType == 29) {
+        audioSpecConfig.samplingFreqIndexExt = view.readBits(4);
+        if (audioSpecConfig.samplingFreqIndexExt == 0x0f) {
+            audioSpecConfig.samplingFreqIndexExt = view.readBits(24);
+        }
+        audioSpecConfig.audioObjectTypeExt = uint8_t(view.readBits(5));
+    }
 }
 
 int32_t BoxEsds::getDescrLen(Buffer& buffer) noexcept {
@@ -736,6 +760,11 @@ std::string BoxAvcc::description(const std::string& prefix) const noexcept {
 //   |--- (size) 2byte: PPS length
 //   |--- (size) Nbyte: PPS data
 bool BoxAvcc::decode(Buffer& buffer) noexcept {
+    // version(1) + profileIdc(1) + profileCompatibility(1) + levelIdc(1) + naluByteSize(1) +
+    // spsCount(1)
+    if (!buffer.require(6)) {
+        return false;
+    }
     buffer.readByte(version);
     buffer.readByte(profileIdc);
     buffer.readByte(profileCompatibility);

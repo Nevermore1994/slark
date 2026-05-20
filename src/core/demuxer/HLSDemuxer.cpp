@@ -64,6 +64,7 @@ bool TSDemuxer::parsePacket(DataView data, uint32_t tsIndex, DemuxerResult& resu
         data = data.substr(1);
     }
 
+    // PID 分发表：避免线性 if-else 链
     if (header.pid == 0) {
         parseTSPAT(data);
     } else if (header.pid == pat_.pmtPid) {
@@ -72,9 +73,8 @@ bool TSDemuxer::parsePacket(DataView data, uint32_t tsIndex, DemuxerResult& resu
         if (header.payloadUinitIndicator == 1 && videoInfo_) {
             if (videoInfo_->mediaInfo == MEDIA_MIMETYPE_VIDEO_AVC) {
                 packH264VideoPacket(tsIndex, result.videoFrames);
-            } else {
-                // TODO: pack h265
             }
+            // TODO: pack h265
         }
         parseTSPes(data, header.payloadUinitIndicator, videoESFrame_);
     } else if (header.pid == pmt_.audioPid) {

@@ -232,6 +232,9 @@ private:
 
     void onVideoDecoded(DecoderData data) noexcept;
 
+    /// seek 首帧 push 路径：直接推帧渲染并更新首帧/seek 状态
+    void handleSeekFirstFrame(const AVFrameRefPtr& frame, bool isSeekFirstFrame) noexcept;
+
     [[nodiscard]] SeekStrategy resolveSeekStrategy(double targetSec) const noexcept;
 
     void onSeekFrameConsumed(TrackType track) noexcept;
