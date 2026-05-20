@@ -51,9 +51,12 @@ Player::Impl::~Impl() {
     if (ownerThread_) {
         updateState(PlayerState::Stop);
         std::unique_lock<std::mutex> lock(releaseMutex_);
-        cond_.wait(lock, [this] {
-            return isReleased_.load();
-        });
+        // 超时保护：防止 ownerThread_ 卡死导致析构永久阻塞
+        if (!cond_.wait_for(lock, std::chrono::seconds(5), [this] {
+                return isReleased_.load();
+            })) {
+            LogE("PlayerImpl destructor: wait for release timeout");
+        }
     }
 }
 
@@ -655,8 +658,7 @@ void Player::Impl::notifyPlayerState(PlayerState state) noexcept {
 void Player::Impl::notifyPlayedTime(bool isEndTime) noexcept {
     double audioTime = pipeline_ ? pipeline_->audioTime().second() : 0.0;
     double videoTime = pipeline_ ? pipeline_->currentTime().second() : 0.0;
-    notifyCenter_.notifyPlayedTime(0.0,
-                                   info_.duration,
+    notifyCenter_.notifyPlayedTime(info_.duration,
                                    audioTime,
                                    videoTime,
                                    info_.hasAudio,

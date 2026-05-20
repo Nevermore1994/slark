@@ -59,6 +59,8 @@ public:
     void setRenderImpl(std::weak_ptr<IVideoRender> render) noexcept;
 
 public:
+    /// @note info_ 仅在 ownerThread 的 preparePlayerInfo() 中写入，调用方应在收到 Prepared
+    /// 回调后再访问
     [[nodiscard]] inline PlayerInfo info() const noexcept {
         return info_;
     }

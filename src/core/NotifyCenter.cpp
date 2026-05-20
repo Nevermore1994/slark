@@ -41,32 +41,43 @@ void NotifyCenter::notifyPlayerEvent(PlayerEvent event, std::string value) noexc
     });
 }
 
-void NotifyCenter::notifyPlayedTime(double /*playedTime*/,
-                                    double duration,
+double NotifyCenter::resolveCurrentTime(double duration,
+                                        double audioTime,
+                                        double videoTime,
+                                        bool hasAudio,
+                                        bool hasVideo) noexcept {
+    if (hasAudio && hasVideo) {
+        const double time = std::min({videoTime, audioTime, duration});
+        LogI("notifyTime:{}, video time:{}, audio time:{}", time, videoTime, audioTime);
+        return time;
+    }
+    if (hasAudio) {
+        const double time = std::min(audioTime, duration);
+        LogI("notifyTime:{} (audio)", time);
+        return time;
+    }
+    if (hasVideo) {
+        const double time = std::min(videoTime, duration);
+        LogI("notifyTime:{} (video)", time);
+        return time;
+    }
+    return 0.0;
+}
+
+void NotifyCenter::notifyPlayedTime(double duration,
                                     double audioTime,
                                     double videoTime,
                                     bool hasAudio,
                                     bool hasVideo,
                                     bool isEndTime) noexcept {
-    double time = 0.0;
-    if (!isEndTime) {
-        if (hasAudio && hasVideo) {
-            time = std::min(videoTime, audioTime);
-            time = std::min(time, duration);
-            LogI("notifyTime:{}, video time:{}, audio time:{}", time, videoTime, audioTime);
-        } else if (hasAudio) {
-            time = std::min(audioTime, duration);
-            LogI("notifyTime:{} (audio)", time);
-        } else if (hasVideo) {
-            time = std::min(videoTime, duration);
-            LogI("notifyTime:{} (video)", time);
-        }
-        if (lastNotifyPlayedTime_ > 0 && isEqual(lastNotifyPlayedTime_, time, 0.1)) {
-            return;
-        }
-    } else {
-        time = duration;
+    const double time =
+        isEndTime ? duration
+                  : resolveCurrentTime(duration, audioTime, videoTime, hasAudio, hasVideo);
+
+    if (!isEndTime && lastNotifyPlayedTime_ > 0 && isEqual(lastNotifyPlayedTime_, time, 0.1)) {
+        return;
     }
+
     lastNotifyPlayedTime_ = time;
     observer_.withReadLock([this, time](auto& observer) {
         if (auto ptr = observer.lock(); ptr) {
