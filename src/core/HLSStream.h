@@ -60,6 +60,7 @@ private:
 
     void downloadSegments();
     void downloadSegment(uint32_t segIndex);
+    void downloadSegmentWithRetry(uint32_t segIndex, int32_t retryLeft);
     void refreshPlaylist();
 
     void handlePlaylistResponse(http::HttpResponse&& response);

@@ -20,6 +20,9 @@ public:
     void reset() noexcept;
     bool parse(const std::string& content) noexcept;
 
+    [[nodiscard]] static std::string resolveUrl(const std::string& baseUrl,
+                                                const std::string& relativeUrl) noexcept;
+
     [[nodiscard]] std::shared_ptr<MediaPlaylist> playlist() const noexcept {
         return playlist_;
     }
@@ -35,7 +38,6 @@ public:
 private:
     bool parseMasterPlaylist(const std::string& content) noexcept;
     bool parseMediaPlaylist(const std::string& content) noexcept;
-    std::string resolveUrl(const std::string& relativeUrl) const noexcept;
 
     bool isMasterPlaylist_ = false;
     bool isCompleted_ = false;

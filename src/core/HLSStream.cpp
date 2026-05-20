@@ -1,4 +1,3 @@
-//
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
@@ -7,6 +6,7 @@
 #include "Coroutine.hpp"
 #include "DataView.hpp"
 #include "HttpUtil.hpp"
+#include "Log.hpp"
 #include "M3U8Parser.h"
 
 #include <algorithm>
@@ -249,6 +249,11 @@ void HLSStream::downloadSegments() {
 }
 
 void HLSStream::downloadSegment(uint32_t segIndex) {
+    constexpr int32_t kMaxRetry = 3;
+    downloadSegmentWithRetry(segIndex, kMaxRetry);
+}
+
+void HLSStream::downloadSegmentWithRetry(uint32_t segIndex, int32_t retryLeft) {
     if (!playlist_ || segIndex >= playlist_->segments().size()) {
         return;
     }
@@ -256,20 +261,19 @@ void HLSStream::downloadSegment(uint32_t segIndex) {
     const auto& segment = playlist_->segments()[segIndex];
     request_ = std::make_shared<http::HttpRequest>();
 
-    auto segmentUrl = resolveUrl(segment.uri);
-
     http::RequestInfo requestInfo;
-    requestInfo.url = segmentUrl;
+    requestInfo.url = resolveUrl(segment.uri);
     requestInfo.methodType = http::HttpMethodType::Get;
 
     auto self = shared_from_this();
-    auto segmentIndex = segIndex;
 
     auto downloadTask = [](std::shared_ptr<http::HttpRequest> req,
                            http::RequestInfo info,
                            std::shared_ptr<HLSStream> stream,
-                           uint32_t segIndex) -> Coroutine<void> {
+                           uint32_t segIdx,
+                           int32_t left) -> Coroutine<void> {
         auto gen = req->streamingExecute(info);
+        bool hasError = false;
 
         while (true) {
             auto chunk = co_await gen.next();
@@ -281,25 +285,36 @@ void HLSStream::downloadSegment(uint32_t segIndex) {
                 co_return;
             }
 
-            stream->handleSegmentChunk(std::move(chunk.value()), segIndex);
+            if (chunk->hasError()) {
+                hasError = true;
+                break;
+            }
+
+            stream->handleSegmentChunk(std::move(chunk.value()), segIdx);
+        }
+
+        if (hasError) {
+            if (left > 0) {
+                LogW("HLSStream: segment {} download failed, retrying ({} left)", segIdx, left);
+                stream->downloadSegmentWithRetry(segIdx, left - 1);
+            } else {
+                LogE("HLSStream: segment {} download failed after all retries", segIdx);
+                if (stream->params_.onError) {
+                    stream->params_.onError(Error::NetworkError);
+                }
+                stream->state_ = StreamState::Error;
+            }
+            co_return;
         }
 
         stream->currentSegmentIndex_.fetch_add(1, std::memory_order_relaxed);
         stream->downloadSegments();
     };
 
-    (void)downloadTask(request_, requestInfo, self, segmentIndex);
+    (void)downloadTask(request_, requestInfo, self, segIndex, retryLeft);
 }
 
 void HLSStream::handleSegmentChunk(http::StreamChunk&& chunk, uint32_t segmentIndex) {
-    if (chunk.hasError()) {
-        if (params_.onError) {
-            params_.onError(Error::NetworkError);
-        }
-        state_ = StreamState::Error;
-        return;
-    }
-
     if (chunk.hasData()) {
         auto chunkSize = chunk.data->length();
         auto buffer = std::shared_ptr<Data>(chunk.data.release());
@@ -319,11 +334,7 @@ void HLSStream::handleSegmentChunk(http::StreamChunk&& chunk, uint32_t segmentIn
 }
 
 std::string HLSStream::resolveUrl(const std::string& relativeUrl) const {
-    if (relativeUrl.find("://") != std::string::npos) {
-        return relativeUrl;
-    }
-
-    return baseUrl_ + relativeUrl;
+    return M3U8Parser::resolveUrl(baseUrl_, relativeUrl);
 }
 
 void HLSStream::refreshPlaylist() {

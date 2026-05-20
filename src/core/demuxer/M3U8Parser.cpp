@@ -5,6 +5,7 @@
 #include "M3U8Parser.h"
 
 #include "HttpUtil.hpp"
+#include "Log.hpp"
 
 #include <regex>
 #include <utility>
@@ -29,6 +30,11 @@ void M3U8Parser::reset() noexcept {
 }
 
 bool M3U8Parser::parse(const std::string& content) noexcept {
+    constexpr size_t kMaxM3U8Size = 1 * 1024 * 1024; // 1MB
+    if (content.size() > kMaxM3U8Size) {
+        LogE("M3U8Parser: content too large: {} bytes", content.size());
+        return false;
+    }
     if (content.find("#EXT-X-STREAM-INF") != std::string::npos) {
         return parseMasterPlaylist(content);
     } else {
@@ -50,7 +56,7 @@ bool M3U8Parser::parseMasterPlaylist(const std::string& content) noexcept {
             continue;
         }
         variant.bandwidth = *bwResult;
-        variant.uri = resolveUrl(match[4].str());
+        variant.uri = resolveUrl(baseUrl_, match[4].str());
 
         if (match[2].matched && match[3].matched) {
             auto wStr = match[2].str();
@@ -86,13 +92,13 @@ bool M3U8Parser::parseMediaPlaylist(const std::string& content) noexcept {
         Segment segment;
         auto durStr = match[1].str();
         auto durResult = StringUtil::fromChars<double>(durStr);
-        if (!durResult) {
+        if (!durResult || *durResult < 0.0 || *durResult > 86400.0) {
             searchStart = match.suffix().first;
             continue;
         }
         segment.duration = *durResult;
         segment.startTime = currentTime;
-        segment.uri = resolveUrl(match[3].str());
+        segment.uri = resolveUrl(baseUrl_, match[3].str());
         segment.isDiscontinuity = hasDiscontinuity;
         hasDiscontinuity = false;
 
@@ -113,13 +119,14 @@ bool M3U8Parser::parseMediaPlaylist(const std::string& content) noexcept {
     return !playlist_->segments().empty();
 }
 
-std::string M3U8Parser::resolveUrl(const std::string& relativeUrl) const noexcept {
+std::string M3U8Parser::resolveUrl(const std::string& baseUrl,
+                                   const std::string& relativeUrl) noexcept {
     if (relativeUrl.find("://") != std::string::npos) {
         return relativeUrl;
     }
 
     auto url = relativeUrl;
-    std::string base = baseUrl_;
+    std::string base = baseUrl;
 
     if (url.starts_with("../")) {
         while (url.starts_with("../")) {
