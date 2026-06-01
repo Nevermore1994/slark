@@ -54,8 +54,9 @@ void Player::stop() noexcept {
         LogI("Not inited.");
         return;
     }
-    if (pimpl_->state() == PlayerState::Stop) {
-        LogI("already stopped.");
+    auto s = pimpl_->state();
+    if (s == PlayerState::Stop || s == PlayerState::Error) {
+        LogI("already stopped or error, state:{}", static_cast<int>(s));
         return;
     }
     LogI("stop playing.");

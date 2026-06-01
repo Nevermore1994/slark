@@ -88,11 +88,14 @@ std::shared_ptr<Thread> Thread::createWithRunLoop(std::string name, std::functio
 Thread::Thread(std::string name) : name_(std::move(name)), lastRunTimeStamp_(0) {}
 
 Thread::~Thread() noexcept {
-    SAssert(worker_.get_id() != std::this_thread::get_id(),
-            "error, release itself in the current thread");
     stop();
+    bool isCurrentThread = worker_.get_id() == std::this_thread::get_id();
     if (worker_.joinable()) {
-        worker_.join();
+        if (isCurrentThread) {
+            worker_.detach();
+        } else {
+            worker_.join();
+        }
     }
 }
 

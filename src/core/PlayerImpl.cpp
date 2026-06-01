@@ -57,6 +57,9 @@ Player::Impl::~Impl() {
             })) {
             LogE("PlayerImpl destructor: wait for release timeout");
         }
+        // doStop 内部不 join ownerThread_，由此处在外部线程安全地 stop + join
+        ownerThread_->stop();
+        ownerThread_.reset();
     }
 }
 
@@ -173,10 +176,9 @@ bool Player::Impl::setupDataProvider() noexcept {
         if (!self || self->isStopped_) {
             return;
         }
-        self->sender_->send(buildEvent(EventType::ReadError));
-        auto errorCode = isNetwork ? std::to_string(static_cast<uint32_t>(Error::NetworkError))
-                                   : std::to_string(static_cast<uint32_t>(Error::IOError));
-        self->notifyPlayerEvent(PlayerEvent::OnError, errorCode);
+        const auto err = isNetwork ? Error::NetworkError : Error::IOError;
+        self->notifyPlayerEvent(PlayerEvent::OnError, std::to_string(static_cast<uint32_t>(err)));
+        self->setState(PlayerState::Error);
     };
 
     auto onComplete = [weak]() {
@@ -224,8 +226,14 @@ bool Player::Impl::createDemuxerComponent() noexcept {
         }
         self->demuxerComponent_->flush();
         // 取消当前 HTTP 请求并重新发起指定 Range 的请求，确保 moov box 在文件末尾时能正确重定位
-        self->mediaSourceManager_.seek(range.start());
-        LogI("demuxer seek to pos:{}", range.toString());
+        auto res = self->mediaSourceManager_.seek(range.start());
+        if (!res.has_value()) {
+            // 数据源拒绝 seek（如不支持 Range），立即上报错误，避免 UI 卡在 Buffering
+            self->notifyPlayerEvent(PlayerEvent::OnError,
+                                    std::to_string(static_cast<uint32_t>(res.error())));
+            self->setState(PlayerState::Error);
+        }
+        LogI("demuxer seek to pos:{}, ok:{}", range.toString(), res.has_value());
     });
     demuxerComponent_->start();
     LogI("demuxer component created, uri:{}", config.filePath);
@@ -265,6 +273,16 @@ void Player::Impl::buildPipeline() noexcept {
             }
             self->mediaSourceManager_.start();
         });
+    // 注入 HLS 时间 seek 回调，PlayPipeline 检测到 HLS 时走此路径
+    pipeline_->setSeekByTimeFunc([weak = weak_from_this()](double timeSec) -> StreamResult<void> {
+        auto self = weak.lock();
+        if (!self) {
+            return std::unexpected(Error::InvalidOperation);
+        }
+        return self->mediaSourceManager_.seekByTime(timeSec);
+    });
+    // 传递 stream 类型，供 PlayPipeline::seek 区分 HLS/HTTP/File 路径
+    pipeline_->setStreamType(mediaSourceManager_.streamType());
     pipeline_->setDemuxerComponent(demuxerComponent_);
     if (auto render = videoRender_.load()) {
         pipeline_->setVideoRender(render);
@@ -404,10 +422,7 @@ void Player::Impl::doStop() noexcept {
     notifyCenter_.resetNotifyState();
     stats_.reset();
 
-    if (ownerThread_) {
-        ownerThread_->stop();
-    }
-
+    // ownerThread_ 的 stop/join 由 ~Impl() 在外部线程执行，此处不操作
     GLContextManager::shareInstance().removeMainContext(playerId_);
     {
         // 保证 isReleased_ 的写入与 cond_.wait 的 happens-before 关系
