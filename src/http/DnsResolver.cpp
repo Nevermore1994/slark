@@ -118,11 +118,13 @@ void DnsResolver::insertCache(const std::string& key, const AddressInfoPtr& addr
     }
 
     lruList_.push_front(key);
-    cache_[key] = CacheValue{
-        .entry = {.address = cloneAddrInfo(addr.get()),
-                  .expireAt = std::chrono::steady_clock::now() + config_.cacheTtl},
-        .lruIt = lruList_.begin(),
-    };
+    cache_.insert_or_assign(
+        key,
+        CacheValue{
+            .entry = {.address = cloneAddrInfo(addr.get()),
+                      .expireAt = std::chrono::steady_clock::now() + config_.cacheTtl},
+            .lruIt = lruList_.begin(),
+        });
 }
 
 AddressInfoPtr DnsResolver::cloneAddrInfo(const addrinfo* src) noexcept {
