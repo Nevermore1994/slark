@@ -76,6 +76,11 @@ void VideoHardwareDecoder::receiveDecodedData(DataPtr data,
     frame->pts = pts;
     frame->timeScale = 1000000;
     frame->data = std::move(data);
+    // 检查是否为 seek 期间的 discard 帧，设置标志供 seekPreviewFrame 使用
+    if (discardPackets_.contains(pts)) {
+        frame->isDiscard = true;
+        discardPackets_.erase(pts);
+    }
     auto videoFrameInfo = std::make_shared<VideoFrameInfo>();
     videoFrameInfo->format = FrameFormat::MediaCodecByteBuffer;
     videoFrameInfo->width = videoConfig->width;
@@ -222,8 +227,15 @@ void VideoHardwareDecoder::frameWorkerLoop() noexcept {
 
         auto* glFb = frameBuffer.get();
         if (discardPackets_.contains(result.pts)) {
-            restoreTexture(glFb ? glFb->detachTexture() : nullptr);
             discardPackets_.erase(result.pts);
+            // 构建 isDiscard 帧送给 onVideoDecoded，供 seekPreviewFrame 预览
+            auto discardFrame = buildOutputFrame(glFb, result.pts, curWidth, curHeight);
+            if (discardFrame) {
+                discardFrame->isDiscard = true;
+                invokeReceiveFunc(DecoderData{std::move(discardFrame)});
+            } else {
+                restoreTexture(glFb ? glFb->detachTexture() : nullptr);
+            }
             LogI("decode success, discard:{}", result.pts);
             continue;
         }

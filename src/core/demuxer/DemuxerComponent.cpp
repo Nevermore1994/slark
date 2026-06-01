@@ -193,8 +193,14 @@ void DemuxerComponent::seekToPos(uint64_t pos) noexcept {
         LogE("demuxer component is closed.");
         return;
     }
-    if (auto demuxer = demuxer_.load()) {
-        demuxer->seekPos(pos);
+    auto demuxer = demuxer_.load();
+    if (!demuxer) {
+        return;
+    }
+    demuxer->seekPos(pos);
+    // HLS 的 pos 是 segment index，不能作为 byte offset 通知 IO 层
+    if (demuxer->type() != DemuxerType::HLS) {
+        invokeSeekFunc(Range(pos, 0));
     }
 }
 
