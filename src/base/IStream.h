@@ -94,6 +94,12 @@ public:
     virtual void start() noexcept = 0;
     virtual void pause() noexcept = 0;
     virtual auto seek(uint64_t position) -> StreamResult<void> = 0;
+
+    /// 基于时间的 seek，默认返回 InvalidOperation；HLS 实现此接口
+    virtual auto seekByTime(double /*timeSec*/) -> StreamResult<void> {
+        return std::unexpected(Error::InvalidOperation);
+    }
+
     virtual void updateRange(Range range) noexcept = 0;
 
     [[nodiscard]] virtual StreamState state() const noexcept = 0;

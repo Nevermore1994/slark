@@ -85,14 +85,20 @@ void MediaSourceManager::close() noexcept {
     streamInfo_ = {};
 }
 
-void MediaSourceManager::seek(uint64_t position) noexcept {
+StreamResult<void> MediaSourceManager::seek(uint64_t position) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (stream_) {
-        auto res = stream_->seek(position);
-        if (!res.has_value()) {
-            LogE("MediaSourceManager seek failed at position:{}", position);
-        }
+    if (!stream_) {
+        return std::unexpected(Error::StreamNotReady);
     }
+    return stream_->seek(position);
+}
+
+StreamResult<void> MediaSourceManager::seekByTime(double timeSec) noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!stream_) {
+        return std::unexpected(Error::StreamNotReady);
+    }
+    return stream_->seekByTime(timeSec);
 }
 
 void MediaSourceManager::updateRange(Range range) noexcept {

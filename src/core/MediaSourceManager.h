@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "Error.h"
 #include "IStream.h"
 #include "NonCopyable.h"
 #include "StreamFactory.hpp"
@@ -34,7 +35,8 @@ public:
     void pause() noexcept;
     void close() noexcept;
 
-    void seek(uint64_t position) noexcept;
+    [[nodiscard]] StreamResult<void> seek(uint64_t position) noexcept;
+    [[nodiscard]] StreamResult<void> seekByTime(double timeSec) noexcept;
     void updateRange(Range range) noexcept;
 
     [[nodiscard]] const StreamInfo& streamInfo() const noexcept {

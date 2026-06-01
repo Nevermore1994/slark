@@ -99,24 +99,34 @@ void HLSStream::pause() noexcept {
     isRunning_ = false;
 }
 
-StreamResult<void> HLSStream::seek(uint64_t position) {
+StreamResult<void> HLSStream::seek(uint64_t /*position*/) {
+    // HLS \u4f7f\u7528 seekByTime \u8fdb\u884c\u65f6\u95f4\u8bed\u4e49\u7684
+    // seek\uff0c\u4e0d\u652f\u6301 byte offset seek
+    return std::unexpected(Error::InvalidOperation);
+}
+
+StreamResult<void> HLSStream::seekByTime(double timeSec) {
     if (!playlist_ || playlist_->segments().empty()) {
         return std::unexpected(Error::StreamInvalidData);
     }
-
     if (playlist_->isLive()) {
         return std::unexpected(Error::InvalidOperation);
     }
-
-    double timeInSeconds = static_cast<double>(position) / 1000.0;
-    auto segOpt = playlist_->findSegmentByTime(timeInSeconds);
+    auto segOpt = playlist_->findSegmentByTime(timeSec);
     if (!segOpt) {
         return std::unexpected(Error::OutOfRange);
     }
-
     currentSegmentIndex_.store(*segOpt);
-    position_ = position;
-
+    position_ = 0;
+    // \u53d6\u6d88\u5f53\u524d segment \u4e0b\u8f7d\uff0c\u91cd\u65b0\u62c9\u53d6\u76ee\u6807
+    // segment
+    if (request_) {
+        request_->cancel();
+        request_.reset();
+    }
+    if (isRunning_) {
+        downloadSegments();
+    }
     return {};
 }
 

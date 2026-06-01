@@ -25,6 +25,7 @@ public:
     void start() noexcept override;
     void pause() noexcept override;
     StreamResult<void> seek(uint64_t position) override;
+    StreamResult<void> seekByTime(double timeSec) override;
     void updateRange(Range range) noexcept override;
 
     [[nodiscard]] StreamState state() const noexcept override {
