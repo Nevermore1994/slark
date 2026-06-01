@@ -13,6 +13,7 @@
 #include "DecoderConfig.h"
 #include "IDemuxer.h"
 #include "IPipelineComponent.h"
+#include "IStream.h"
 #include "MediaDefs.h"
 #include "NonCopyable.h"
 #include "PipelineConfig.h"
@@ -45,6 +46,7 @@ struct MediaInfo {
     bool hasAudio = false;
     bool hasVideo = false;
     CTime totalDuration;
+    StreamType streamType = StreamType::File;
 };
 
 enum class PipelineState : uint8_t {
@@ -105,6 +107,15 @@ public:
     void onHeartbeat() noexcept;
 
     void setStreamControl(StreamControlFunc pauseStream, StreamControlFunc resumeStream) noexcept;
+
+    /// 注入 HLS 时间 seek 回调，由 PlayerImpl 设置
+    void setSeekByTimeFunc(std::function<StreamResult<void>(double)> func) noexcept {
+        seekByTimeFunc_ = std::move(func);
+    }
+
+    void setStreamType(StreamType type) noexcept {
+        mediaInfo_.streamType = type;
+    }
 
     void setPlaySession(std::weak_ptr<perf::PlaySession> session) noexcept {
         playSession_ = std::move(session);
@@ -269,6 +280,8 @@ private:
 
     void registerComponents() noexcept;
 
+    void recoverFromSeekTimeout() noexcept;
+
 private:
     BackpressureConfig config_;
     std::thread::id ownerThreadId_;
@@ -300,6 +313,7 @@ private:
     StreamControlFunc pauseStreamFunc_;
     StreamControlFunc resumeStreamFunc_;
     std::function<void()> wakeupCallback_;
+    std::function<StreamResult<void>(double)> seekByTimeFunc_;
 
     std::weak_ptr<perf::PlaySession> playSession_;
 

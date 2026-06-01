@@ -70,9 +70,15 @@ struct IVideoRender : public IPipelineComponent {
         playerId_ = playerId;
     }
 
+    /// 注入视频时间更新回调，renderFrameComplete 后同步更新 ClockSync::videoTime_
+    void setVideoTimeUpdater(std::function<void(Time::TimePoint)> updater) noexcept {
+        videoTimeUpdater_ = std::move(updater);
+    }
+
 protected:
     AtomicSharedPtr<RequestRenderFunc> requestRenderFunc_;
     std::string playerId_;
+    std::function<void(Time::TimePoint)> videoTimeUpdater_;
 };
 
 } // namespace slark

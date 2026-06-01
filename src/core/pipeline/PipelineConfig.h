@@ -28,6 +28,7 @@ struct BackpressureConfig {
     int32_t maxDropPerVsync = 8;                  // 单次 vsync 最大追帧丢帧数，防止 vsync 超时
     double avSyncThresholdSec = 0.1;              // AV 同步阈值（秒），视频落后超过此值开始追帧
     bool isLiveSource = false;                    // 是否为直播源
+    bool isNetworkSource = false;                 // 是否为网络源（HTTP/HLS）
 
     [[nodiscard]] static BackpressureConfig forLocal() noexcept {
         BackpressureConfig cfg;
@@ -43,6 +44,7 @@ struct BackpressureConfig {
         cfg.maxDropPerVsync = 8;
         cfg.avSyncThresholdSec = 0.1;
         cfg.isLiveSource = false;
+        cfg.isNetworkSource = false;
         return cfg;
     }
 
@@ -60,6 +62,7 @@ struct BackpressureConfig {
         cfg.maxDropPerVsync = 8;
         cfg.avSyncThresholdSec = 0.1;
         cfg.isLiveSource = false;
+        cfg.isNetworkSource = true;
         return cfg;
     }
 
@@ -77,6 +80,7 @@ struct BackpressureConfig {
         cfg.maxDropPerVsync = 4; // 直播追帧更保守，避免画面跳跃
         cfg.avSyncThresholdSec = 0.08;
         cfg.isLiveSource = true;
+        cfg.isNetworkSource = true;
         return cfg;
     }
 

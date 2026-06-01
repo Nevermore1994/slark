@@ -126,6 +126,10 @@ void VideoRender::renderFrameComplete(int32_t id) noexcept {
         renderInfos_.erase(textureId);
         auto ptsTime = info.ptsTime;
         videoClock_.setTime(Time::TimePoint::fromSeconds(ptsTime));
+        // 同步更新 ClockSync::videoTime_，确保 AV Sync 正常工作
+        if (videoTimeUpdater_) {
+            videoTimeUpdater_(Time::TimePoint::fromSeconds(ptsTime));
+        }
         backupRenderInfo_ = std::move(info);
         LogI("rendered video, ptsTime:{}, texture id:{}", ptsTime, id);
     } else {

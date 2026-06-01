@@ -220,7 +220,15 @@ void PlayPipeline::seek(CTime target, bool isAccurate) noexcept {
         pause();
         flush();
         clockSync_->reset();
-        if (demuxer_) {
+        if (mediaInfo_.streamType == StreamType::HLS) {
+            // HLS 走时间 seek：切换到目标 segment，demuxer 重新从 segment 头解析
+            if (seekByTimeFunc_) {
+                auto res = seekByTimeFunc_(targetSec);
+                if (!res.has_value()) {
+                    LogE("HLS seekByTime failed: {}", static_cast<uint32_t>(res.error()));
+                }
+            }
+        } else if (demuxer_) {
             const double seekPos = (strategy == SeekStrategy::SeekToGOPKeyframe)
                                        ? seekContext_->gopKeyframePts()
                                        : targetSec;
@@ -496,11 +504,28 @@ void PlayPipeline::onFastTick() noexcept {
 
 void PlayPipeline::onHeartbeat() noexcept {
     assert(isOnOwnerThread());
-    constexpr auto kSeekTimeout = std::chrono::milliseconds(5000);
+    // 网络源弱网环境延长超时阈値，避免误超时
+    const auto kSeekTimeout =
+        config_.isNetworkSource ? std::chrono::milliseconds(8000) : std::chrono::milliseconds(2000);
     if (seekContext_->isSeekTimedOut(kSeekTimeout)) {
         std::ignore = seekContext_->completeSeek();
+        recoverFromSeekTimeout();
         fireEvent(PipelineEvent::SeekTimeout);
-        LogW("seek timeout");
+        LogW("seek timeout, recovered");
+    }
+}
+
+void PlayPipeline::recoverFromSeekTimeout() noexcept {
+    assert(isOnOwnerThread());
+    // pause → flush → start 确保组件从当前位置继续运行，不会停滞
+    pause();
+    flush();
+    start();
+    if (audioDecoder_) {
+        audioDecoder_->resume();
+    }
+    if (videoDecoder_) {
+        videoDecoder_->resume();
     }
 }
 
@@ -553,6 +578,12 @@ bool PlayPipeline::isOnOwnerThread() const noexcept {
 
 void PlayPipeline::setVideoRender(std::weak_ptr<IVideoRender> render) noexcept {
     videoRender_.store(render);
+    // 注入 videoTimeUpdater，确保运行时动态绑定 render 时 AV Sync 也能正常工作
+    if (auto r = videoRender_.load()) {
+        r->setVideoTimeUpdater([this](Time::TimePoint t) {
+            clockSync_->setVideoTime(t);
+        });
+    }
 }
 
 void PlayPipeline::setVolume(float volume) noexcept {
@@ -652,10 +683,15 @@ void PlayPipeline::handleSeekFirstFrame(const AVFrameRefPtr& frame,
         render->pushFrame(frame);
     }
     clockSync_->setVideoTime(Time::TimePoint::fromSeconds(frame->ptsTime()));
-    const bool needFirstFrame = !readiness_.firstFrameRendered.load(std::memory_order_acquire);
+    // 首帧 push 上屏后立即在当前线程（解码器线程）CAS 设置，与 VSync 路径互斥
+    // 确保 AV Sync 在首帧上屏后立即生效，不依赖 ownerThread 调度时机
+    bool expected = false;
+    const bool needFirstFrame =
+        readiness_.firstFrameRendered.compare_exchange_strong(expected,
+                                                              true,
+                                                              std::memory_order_acq_rel);
     postToOwnerThread([this, needFirstFrame, isSeekFirstFrame] {
-        if (needFirstFrame && !readiness_.firstFrameRendered.load(std::memory_order_acquire)) {
-            readiness_.firstFrameRendered.store(true, std::memory_order_release);
+        if (needFirstFrame) {
             if (auto session = playSession_.lock()) {
                 session->markFirstFrame();
                 SLARK_TRACE_MILESTONE(session.get(), "first_video_frame");
