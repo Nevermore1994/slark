@@ -36,7 +36,7 @@ std::vector<int32_t> ints(JNIEnv* env, jintArray arr) noexcept {
         return {};
     }
     const jsize len = env->GetArrayLength(arr);
-    std::vector<int32_t> result(len);
+    std::vector<int32_t> result(static_cast<std::size_t>(len));
     env->GetIntArrayRegion(arr, 0, len, result.data());
     return result;
 }

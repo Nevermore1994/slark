@@ -63,10 +63,13 @@ ClassReference JNICache::getClass(JNIEnv* env, std::string_view className) noexc
 
         // 查找类并缓存
         if (auto cls = env->FindClass(className.data())) {
+            clearException(env);
             auto weakRef = env->NewWeakGlobalRef(cls);
             classCache_.emplace(std::move(key), ClassInfo{weakRef});
             return {env, cls, className};
         }
+        // FindClass 失败会设置 pending exception，需要清除
+        clearException(env);
     }
 
     return {env, nullptr};

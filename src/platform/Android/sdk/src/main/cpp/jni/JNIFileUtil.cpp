@@ -38,7 +38,13 @@ std::string getAppPath(const std::string& methodName) noexcept {
         return {};
     }
 
-    // 调用 File.getPath() -> String
+    // 优先使用 getCanonicalPath() 解析真实路径，避免 SELinux 拒绝符号链接访问
+    // 失败时回退到 getPath()
+    auto canonicalPath = JNI::JNICall::call<std::string>(
+        env, fileObj.get(), kFileClass, "getCanonicalPath");
+    if (!canonicalPath.empty()) {
+        return canonicalPath;
+    }
     auto path = JNI::JNICall::call<std::string>(env, fileObj.get(), kFileClass, "getPath");
     return path;
 }

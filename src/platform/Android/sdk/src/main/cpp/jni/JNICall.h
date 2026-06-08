@@ -231,13 +231,25 @@ public:
         return m ? invoke<R>(env, obj, m.get(), std::forward<Args>(args)...) : emptyResult<R>();
     }
 
+    // 构造 Java 对象（支持 JObjectWithSig 运行时签名）
     template <typename... Args>
     static ObjectReference create(JNIEnv* env, std::string_view cls, Args&&... args) {
         auto c = JNICache::instance().getClass(env, cls);
         if (!c) {
             return {env, nullptr};
         }
-        auto m = JNICache::instance().getMethod(c, "<init>", makeSignature("V", sigOf<Args>()...));
+        // 检查是否含有 JObjectWithSig 参数（需要运行时签名）
+        constexpr bool hasRuntimeSig = (std::is_same_v<std::decay_t<Args>, JObjectWithSig> || ...);
+        std::string sig;
+        if constexpr (hasRuntimeSig) {
+            // 使用参数的运行时签名，构造函数返回值为 V
+            sig = std::string("(");
+            ((sig.append(sigOfArg(args))), ...);
+            sig.append(")V");
+        } else {
+            sig = makeSignature("V", sigOf<Args>()...);
+        }
+        auto m = JNICache::instance().getMethod(c, "<init>", sig);
         if (!m) {
             return {env, nullptr};
         }
