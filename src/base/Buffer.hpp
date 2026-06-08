@@ -53,7 +53,7 @@ public:
         if (!ptr || (isUpdatedOffset_ && offset_ != offset)) {
             return false;
         }
-        if (offset_ > offset) {
+        if (offset_ > offset || !data_) {
             data_.reset();
             offset_ = offset;
         }

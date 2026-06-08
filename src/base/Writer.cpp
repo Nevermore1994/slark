@@ -131,8 +131,8 @@ uint64_t Writer::writeSize() noexcept {
 }
 
 bool Writer::write(DataPtr data) noexcept {
-    if (!isOpen_.load(std::memory_order_acquire) || isStop_.load(std::memory_order_acquire)) {
-        LogE("unable to write data, file has been closed.");
+    if (isStop_.load(std::memory_order_acquire)) {
+        LogD("unable to write data, file has been stopped.");
         return false;
     }
     dataQueue_.push(std::move(data));

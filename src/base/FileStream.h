@@ -19,11 +19,11 @@ public:
     FileStream();
     ~FileStream() override;
 
-    auto open(const OpenParams& params) -> StreamResult<StreamInfo> override;
+    StreamResult<StreamInfo> open(const OpenParams& params) override;
     void close() noexcept override;
     void start() noexcept override;
     void pause() noexcept override;
-    auto seek(uint64_t position) -> StreamResult<void> override;
+    StreamResult<void> seek(uint64_t position) override;
     void updateRange(Range range) noexcept override;
 
     [[nodiscard]] StreamState state() const noexcept override {
@@ -49,6 +49,7 @@ public:
 private:
     void readLoop() noexcept;
     void notifyThread() noexcept;
+    bool deliverData(std::shared_ptr<Data> buffer, bool eof) noexcept;
 
 private:
     std::unique_ptr<File::ReadFile> file_;
@@ -68,8 +69,9 @@ private:
     std::atomic<bool> isCompleted_{false};
     std::atomic<bool> shouldStop_{false};
     std::atomic<bool> shouldPause_{false};
-    bool pendingSeekFlag_ = false;
+    std::atomic<bool> pendingSeekFlag_{false};
     uint64_t pendingSeekPos_ = 0;
+    bool seekCompleted_ = false;
 };
 
 } // namespace slark

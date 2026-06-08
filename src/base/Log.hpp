@@ -26,7 +26,7 @@ enum class LogType {
 constexpr const std::string_view kLogTags[] =
     {" [print] ", " [debug] ", " [info] ", " [warning] ", " [error] ", " [assert] ", " [record] "};
 
-void printLog(const std::string& log);
+void printLog(LogType type, const std::string& log);
 
 template <typename... Args>
 void outputLog(LogType level, std::string_view format, Args&&... args) {
@@ -38,9 +38,9 @@ void outputLog(LogType level, std::string_view format, Args&&... args) {
         return;
     }
 #if SLAKR_IOS
-    printLog(logStr);
+    printLog(level, logStr);
 #elif SLARK_ANDROID
-    printLog(logStr);
+    printLog(level, logStr);
 #else
     std::print("{}", logStr);
     fflush(stdout);
