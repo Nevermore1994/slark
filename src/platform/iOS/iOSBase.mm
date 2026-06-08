@@ -9,13 +9,24 @@
 #import <Foundation/NSObjCRuntime.h>
 #import <Foundation/NSPathUtilities.h>
 #import <Foundation/NSString.h>
+#import <os/log.h>
 
 namespace slark {
 
-void printLog(const std::string& log) {
+void printLog(LogType type, const std::string& log) {
     @autoreleasepool {
         NSString* str = [NSString stringWithUTF8String:log.data()];
-        NSLog(@"%@", str);
+        os_log_type_t logType = OS_LOG_TYPE_DEFAULT;
+        switch (type) {
+            case LogType::Error:   logType = OS_LOG_TYPE_ERROR;   break;
+            case LogType::Warning: logType = OS_LOG_TYPE_FAULT;   break;
+            case LogType::Info:    logType = OS_LOG_TYPE_INFO;    break;
+            case LogType::Debug:   logType = OS_LOG_TYPE_DEBUG;   break;
+            case LogType::Print:
+            case LogType::Record:
+            default:               logType = OS_LOG_TYPE_DEFAULT; break;
+        }
+        os_log_with_type(OS_LOG_DEFAULT, logType, "%{public}s", log.data());
         str = nil;
     }
 }
