@@ -21,6 +21,9 @@ void loadClassCache(JNIEnv* env) {
         "com/slark/sdk/MediaCodecDecoder$Action",
         "com/slark/sdk/MediaCodecDecoder",
         "com/slark/sdk/RenderTexture",
+        "com/slark/sdk/AudioDecoderConfig",
+        "com/slark/sdk/VideoDecoderConfig",
+        "com/slark/sdk/DecodeMode",
     };
 
     for (const auto* className : kClasses) {

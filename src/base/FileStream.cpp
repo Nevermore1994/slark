@@ -4,6 +4,8 @@
 
 #include "FileStream.h"
 
+#include "Log.hpp"
+
 namespace slark {
 
 FileStream::FileStream() = default;
@@ -12,7 +14,7 @@ FileStream::~FileStream() {
     close();
 }
 
-auto FileStream::open(const OpenParams& params) -> StreamResult<StreamInfo> {
+StreamResult<StreamInfo> FileStream::open(const OpenParams& params) {
     params_ = params;
     readRange_ = params.range;
 
@@ -25,6 +27,7 @@ auto FileStream::open(const OpenParams& params) -> StreamResult<StreamInfo> {
     fileSize_ = file_->fileSize();
 
     info_.type = StreamType::File;
+    info_.uri = params.uri;
     info_.totalSize = fileSize_;
     info_.isSeekable = true;
     info_.isLive = false;
@@ -75,7 +78,6 @@ void FileStream::start() noexcept {
     state_ = StreamState::Reading;
 
     if (wasPaused && thread_ && thread_->joinable()) {
-        // Paused 状态：旧线程仍在 cv_.wait，直接唤醒，不新建线程
         notifyThread();
         return;
     }
@@ -105,13 +107,38 @@ auto FileStream::seek(uint64_t position) -> StreamResult<void> {
         return std::unexpected(Error::OutOfRange);
     }
 
-    // seek 投递到 readLoop 线程执行，避免与 readLoop 中的 file_->readInto 竞争
+    // IO thread 已退出（读完整个文件后 readLoop break 了），需要直接 seek 并重启
+    if (!isRunning_.load(std::memory_order_acquire)) {
+        auto result = file_->seek(static_cast<int64_t>(position));
+        if (!result) {
+            return std::unexpected(Error::IOError);
+        }
+        position_ = position;
+        isCompleted_ = false;
+        // 旧的 IO thread 已退出但 joinable，启动新线程前先 join
+        if (thread_ && thread_->joinable()) {
+            thread_->join();
+        }
+        state_ = StreamState::Ready;
+        start();
+        return {};
+    }
+
     {
         std::lock_guard lock(mutex_);
         pendingSeekPos_ = position;
-        pendingSeekFlag_ = true;
+        seekCompleted_ = false;
     }
+    pendingSeekFlag_.store(true, std::memory_order_release);
     notifyThread();
+
+    // 同步等待 IO 线程完成 seek，确保后续读取从新位置开始
+    {
+        std::unique_lock lock(mutex_);
+        if (!cv_.wait_for(lock, std::chrono::seconds(5), [this] { return seekCompleted_; })) {
+            LogW("seek: wait for completion timeout, pos={}", pendingSeekPos_);
+        }
+    }
     return {};
 }
 
@@ -119,26 +146,66 @@ void FileStream::updateRange(Range range) noexcept {
     readRange_ = range;
 }
 
+bool FileStream::deliverData(std::shared_ptr<Data> buffer, bool eof) noexcept {
+    if (!buffer || buffer->empty()) {
+        return false;
+    }
+    if (eof) {
+        isCompleted_ = true;
+        state_ = StreamState::Completed;
+        isRunning_ = false;
+        if (params_.onComplete) {
+            params_.onComplete();
+        }
+        return false;
+    }
+
+    bool isLast = false;
+    auto bufferSize = buffer->size();
+
+    if (readRange_.isValid() && readRange_.size.has_value()) {
+        auto endPos = readRange_.start() + static_cast<uint64_t>(readRange_.size.value());
+        if (position_ + bufferSize >= endPos) {
+            auto remaining = static_cast<size_t>(endPos - position_);
+            buffer->setSize(remaining);
+            bufferSize = remaining;
+            isLast = true;
+        }
+    }
+
+    if (params_.onData) {
+        auto dataView = buffer->view();
+        params_.onData(DataChunk{
+            .data = DataView(dataView),
+            .owner = std::move(buffer),
+            .offset = position_,
+            .segmentIndex = 0,
+            .isLastChunk = isLast,
+        });
+    }
+
+    if (isLast) {
+        isCompleted_ = true;
+        state_ = StreamState::Completed;
+        isRunning_ = false;
+        if (params_.onComplete) {
+            params_.onComplete();
+        }
+        return false;
+    }
+
+    position_ += bufferSize;
+    return true;
+}
+
 void FileStream::readLoop() noexcept {
     while (!shouldStop_) {
-        {
-            std::unique_lock lock(mutex_);
-            cv_.wait(lock, [this] {
-                return !shouldPause_ || shouldStop_ || pendingSeekFlag_;
-            });
-        }
-
-        if (shouldStop_) {
-            break;
-        }
-
-        // 处理 seek 请求
-        if (pendingSeekFlag_) {
+        if (pendingSeekFlag_.load(std::memory_order_acquire)) {
             uint64_t seekPos = 0;
             {
                 std::lock_guard lock(mutex_);
                 seekPos = pendingSeekPos_;
-                pendingSeekFlag_ = false;
+                pendingSeekFlag_.store(false, std::memory_order_release);
             }
             if (file_) {
                 auto result = file_->seek(static_cast<int64_t>(seekPos));
@@ -146,69 +213,50 @@ void FileStream::readLoop() noexcept {
                     position_ = seekPos;
                 }
             }
+            {
+                std::lock_guard lock(mutex_);
+                seekCompleted_ = true;
+            }
+            cv_.notify_all();
+        }
+
+        // pause：等待 resume/seek/stop 信号
+        if (shouldPause_) {
+            std::unique_lock lock(mutex_);
+            cv_.wait(lock, [this] {
+                return !shouldPause_ || shouldStop_ || pendingSeekFlag_.load(std::memory_order_acquire);
+            });
             continue;
         }
 
-        auto buffer = std::make_shared<Data>(params_.readChunkSize);
+        if (shouldStop_) {
+            break;
+        }
+
+        auto chunkSize = std::max<uint32_t>(params_.readChunkSize, 1);
+        auto buffer = std::make_shared<Data>(chunkSize);
         if (!buffer || buffer->capacity() == 0) {
+            LogE("readLoop: buffer alloc failed, chunkSize={}", chunkSize);
             if (params_.onError) {
                 params_.onError(Error::OutOfMemory);
             }
             break;
         }
 
-        auto readResult = file_->readInto(*buffer, params_.readChunkSize);
-        if (!readResult || *readResult == 0) {
-            isCompleted_ = true;
-            state_ = StreamState::Completed;
-            isRunning_ = false;
+        auto readResult = file_->readInto(*buffer, chunkSize);
+        bool eof = (!readResult || *readResult == 0);
+        if (!eof) {
+            buffer->setSize(*readResult);
+        }
 
-            if (params_.onComplete) {
-                params_.onComplete();
-            }
+        // 读取期间如有 seek 请求，丢弃当前数据（来自老位置）
+        if (pendingSeekFlag_.load(std::memory_order_acquire)) {
+            continue;
+        }
+
+        if (!deliverData(std::move(buffer), eof)) {
             break;
         }
-
-        buffer->setSize(*readResult);
-
-        if (readRange_.isValid() && readRange_.size.has_value()) {
-            auto endPos = readRange_.start() + static_cast<uint64_t>(readRange_.size.value());
-            if (position_ + *readResult >= endPos) {
-                auto remaining = endPos - position_;
-                buffer->setSize(remaining);
-
-                if (params_.onData) {
-                    params_.onData(DataChunk{
-                        .data = DataView(buffer->view()),
-                        .owner = std::move(buffer),
-                        .offset = position_,
-                        .segmentIndex = 0,
-                        .isLastChunk = true,
-                    });
-                }
-
-                isCompleted_ = true;
-                state_ = StreamState::Completed;
-                isRunning_ = false;
-
-                if (params_.onComplete) {
-                    params_.onComplete();
-                }
-                break;
-            }
-        }
-
-        if (params_.onData) {
-            params_.onData(DataChunk{
-                .data = DataView(buffer->view()),
-                .owner = std::move(buffer),
-                .offset = position_,
-                .segmentIndex = 0,
-                .isLastChunk = false,
-            });
-        }
-
-        position_ += *readResult;
     }
 }
 

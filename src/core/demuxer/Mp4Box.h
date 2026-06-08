@@ -391,6 +391,77 @@ public:
     [[nodiscard]] bool hasEmptyEdit() const noexcept;
 };
 
+class BoxTkhd : public Box {
+public:
+    uint8_t version{};
+    uint32_t flags{};
+    uint64_t creationTime{};
+    uint64_t modificationTime{};
+    uint32_t trackId{};
+    uint64_t duration{};
+    int16_t layer{};
+    int16_t alternateGroup{};
+    int16_t volume{};
+    std::vector<float> matrix{9, 0};
+    uint32_t width{};
+    uint32_t height{};
+
+public:
+    BoxTkhd(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
+    ~BoxTkhd() override = default;
+
+    bool decode(Buffer&) noexcept override;
+};
+
+class BoxHdlr : public Box {
+public:
+    uint8_t version{};
+    uint32_t flags{};
+    std::string handlerType; // "vide", "soun", "hint", etc.
+
+public:
+    BoxHdlr(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
+    ~BoxHdlr() override = default;
+
+    bool decode(Buffer&) noexcept override;
+};
+
+class BoxVmhd : public Box {
+public:
+    uint8_t version{};
+    uint32_t flags{};
+
+public:
+    BoxVmhd(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
+    ~BoxVmhd() override = default;
+
+    bool decode(Buffer&) noexcept override;
+};
+
+class BoxSmhd : public Box {
+public:
+    uint8_t version{};
+    uint32_t flags{};
+
+public:
+    BoxSmhd(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
+    ~BoxSmhd() override = default;
+
+    bool decode(Buffer&) noexcept override;
+};
+
+class BoxDref : public Box {
+public:
+    uint8_t version{};
+    uint32_t flags{};
+
+public:
+    BoxDref(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
+    ~BoxDref() override = default;
+
+    bool decode(Buffer&) noexcept override;
+};
+
 class BoxMvex : public Box {
 public:
     BoxMvex(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}

@@ -19,7 +19,7 @@ std::expected<BoxInfo, bool> Box::tryParseBoxInfo(Buffer& buffer) noexcept {
         return std::unexpected(false);
     }
     BoxInfo info;
-    info.start = static_cast<uint32_t>(buffer.pos());
+    info.start = buffer.pos();
     uint32_t tmpSize = 0;
     if (!buffer.read4ByteBE(tmpSize)) {
         return std::unexpected(false);
@@ -42,6 +42,18 @@ std::expected<BoxInfo, bool> Box::tryParseBoxInfo(Buffer& buffer) noexcept {
         info.size = buffer.totalSize() - buffer.pos() + info.headerSize;
     }
     info.symbol = Util::toStringBE<uint32_t>(info.type);
+    // 校验 box type 为可打印 ASCII，拒绝垃圾数据产生的非法 box
+    bool validType = true;
+    for (auto c : info.symbol) {
+        if (c < 0x20 || c > 0x7E) {
+            validType = false;
+            break;
+        }
+    }
+    if (!validType) {
+        LogW("tryParseBoxInfo: invalid box type '{}' at pos:{}", info.symbol, info.start);
+        return std::unexpected(false);
+    }
     return info;
 }
 
@@ -172,6 +184,26 @@ BoxRefPtr Box::createBox(Buffer& buffer) {
         {"trun",
          [](BoxInfo&& info) {
              return new BoxTrun(std::move(info));
+         }},
+        {"tkhd",
+         [](BoxInfo&& info) {
+             return new BoxTkhd(std::move(info));
+         }},
+        {"hdlr",
+         [](BoxInfo&& info) {
+             return new BoxHdlr(std::move(info));
+         }},
+        {"vmhd",
+         [](BoxInfo&& info) {
+             return new BoxVmhd(std::move(info));
+         }},
+        {"smhd",
+         [](BoxInfo&& info) {
+             return new BoxSmhd(std::move(info));
+         }},
+        {"dref",
+         [](BoxInfo&& info) {
+             return new BoxDref(std::move(info));
          }},
         {"sidx", [](BoxInfo&& info) {
              return new BoxSidx(std::move(info));
@@ -370,7 +402,9 @@ bool BoxMdhd::decode(Buffer& buffer) noexcept {
 
 std::tuple<CodecId, std::string> BoxStsd::getCodecId() {
     using namespace std::string_view_literals;
+    LogI("getCodecId: childs={}", childs.size());
     for (auto& ptr : childs) {
+        LogI("getCodecId: child symbol='{}'", ptr->info.symbol);
         if (auto box = ptr->getChild("esds"sv); box) {
             auto esds = std::dynamic_pointer_cast<BoxEsds>(box);
             return {esds->codecId, "mp4a"};
@@ -380,6 +414,7 @@ std::tuple<CodecId, std::string> BoxStsd::getCodecId() {
             return {CodecId::AVC, ptr->info.symbol};
         }
     }
+    LogI("getCodecId: returning Unknown");
     return {CodecId::Unknown, ""};
 }
 
@@ -1080,6 +1115,110 @@ bool BoxSidx::decode(Buffer& buffer) noexcept {
         e.sapType = static_cast<uint8_t>((sapField >> 28) & 0x7);
         e.sapDeltaTime = sapField & 0x0fffffff;
         entries.push_back(e);
+    }
+    return true;
+}
+
+bool BoxTkhd::decode(Buffer& buffer) noexcept {
+    if (!buffer.require(4)) {
+        return false;
+    }
+    buffer.readByte(version);
+    buffer.read3ByteBE(flags);
+    if (version == 1) {
+        buffer.read8ByteBE(creationTime);
+        buffer.read8ByteBE(modificationTime);
+        buffer.read4ByteBE(trackId);
+        buffer.skip(4); // reserved
+        buffer.read8ByteBE(duration);
+    } else {
+        uint32_t tmp = 0;
+        buffer.read4ByteBE(tmp);
+        creationTime = tmp;
+        buffer.read4ByteBE(tmp);
+        modificationTime = tmp;
+        buffer.read4ByteBE(trackId);
+        buffer.skip(4); // reserved
+        buffer.read4ByteBE(tmp);
+        duration = tmp;
+    }
+    buffer.skip(4 + 4 + 4 + 2 + 2); // reserved(4) + layer(2) + alternate_group(2) + volume(2) + reserved(2)
+    buffer.read2ByteBE(reinterpret_cast<uint16_t&>(layer));
+    buffer.read2ByteBE(reinterpret_cast<uint16_t&>(alternateGroup));
+    buffer.readByte(reinterpret_cast<uint8_t&>(volume));
+    buffer.skip(1 + 2); // reserved(1) + matrix 前 8 个值
+    for (auto& m : matrix) {
+        uint32_t v = 0;
+        buffer.read4ByteBE(v);
+        auto h = (v >> 16) & 0xffff;
+        auto l = v & 0xffff;
+        m = static_cast<float>(h) + static_cast<float>(l) / 65535.f;
+    }
+    // width + height (fixed-point 16.16)
+    uint32_t w = 0, h = 0;
+    buffer.read4ByteBE(w);
+    buffer.read4ByteBE(h);
+    width = w >> 16;
+    height = h >> 16;
+    return true;
+}
+
+bool BoxHdlr::decode(Buffer& buffer) noexcept {
+    if (!buffer.require(20)) {
+        return false;
+    }
+    buffer.readByte(version);
+    buffer.read3ByteBE(flags);
+    buffer.skip(4); // pre_defined
+    buffer.readString(4, handlerType);
+    // reserved(12) + name
+    auto remaining = static_cast<uint32_t>(info.size - info.headerSize - 12);
+    if (remaining > 0) {
+        buffer.skip(remaining);
+    }
+    return true;
+}
+
+bool BoxVmhd::decode(Buffer& buffer) noexcept {
+    if (!buffer.require(4)) {
+        return false;
+    }
+    buffer.readByte(version);
+    buffer.read3ByteBE(flags);
+    buffer.skip(4); // graphicsmode + opcolor
+    return true;
+}
+
+bool BoxSmhd::decode(Buffer& buffer) noexcept {
+    if (!buffer.require(4)) {
+        return false;
+    }
+    buffer.readByte(version);
+    buffer.read3ByteBE(flags);
+    buffer.skip(2); // balance
+    buffer.skip(2); // reserved
+    return true;
+}
+
+bool BoxDref::decode(Buffer& buffer) noexcept {
+    if (!buffer.require(8)) {
+        return false;
+    }
+    buffer.readByte(version);
+    buffer.read3ByteBE(flags);
+    uint32_t entryCount = 0;
+    buffer.read4ByteBE(entryCount);
+    for (uint32_t i = 0; i < entryCount; ++i) {
+        auto box = Box::createBox(buffer);
+        if (!box) {
+            break;
+        }
+        box->decode(buffer);
+        append(box);
+        auto skip = static_cast<int64_t>(box->info.start + box->info.size - buffer.pos());
+        if (skip > 0 && !buffer.skip(skip)) {
+            break;
+        }
     }
     return true;
 }

@@ -14,9 +14,6 @@ inline constexpr const char* SlarkPlayerManager = "com/slark/sdk/SlarkPlayerMana
 inline constexpr const char* SlarkPlayerState = "com/slark/api/SlarkPlayerState";
 inline constexpr const char* SlarkPlayerEvent = "com/slark/api/SlarkPlayerEvent";
 inline constexpr const char* MediaCodecDecoder = "com/slark/sdk/MediaCodecDecoder";
-inline constexpr const char* AudioPlayer = "com/slark/sdk/AudioPlayer";
-inline constexpr const char* AudioPlayerAction = "com/slark/sdk/AudioPlayer$Action";
-inline constexpr const char* AudioPlayerConfig = "com/slark/sdk/AudioPlayer$Config";
 inline constexpr const char* RenderTexture = "com/slark/sdk/RenderTexture";
 inline constexpr const char* AudioDecoderConfig = "com/slark/sdk/AudioDecoderConfig";
 inline constexpr const char* VideoDecoderConfig = "com/slark/sdk/VideoDecoderConfig";
@@ -31,9 +28,6 @@ inline constexpr const char* NotifyPlayerState = "notifyPlayerState";
 inline constexpr const char* NotifyPlayerEvent = "notifyPlayerEvent";
 inline constexpr const char* NotifyPlayerTime = "notifyPlayerTime";
 inline constexpr const char* RequestRender = "requestRender";
-inline constexpr const char* CreateAudioPlayer = "createAudioPlayer";
-inline constexpr const char* AudioPlayerAction = "audioPlayerAction";
-inline constexpr const char* AudioPlayerConfig = "audioPlayerConfig";
 inline constexpr const char* GetPlayedTime = "getPlayedTime";
 inline constexpr const char* SendPacket = "sendPacket";
 inline constexpr const char* CreateVideoDecoder = "createVideoDecoder";
@@ -81,9 +75,6 @@ inline constexpr std::array Classes = {
     JavaClass::SlarkPlayerState,
     JavaClass::SlarkPlayerEvent,
     JavaClass::MediaCodecDecoder,
-    JavaClass::AudioPlayer,
-    JavaClass::AudioPlayerAction,
-    JavaClass::AudioPlayerConfig,
     JavaClass::RenderTexture,
     JavaClass::AudioDecoderConfig,
     JavaClass::VideoDecoderConfig,
