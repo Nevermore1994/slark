@@ -51,5 +51,5 @@ fun formatDuration(ms: Long): String {
     val totalSec = round(ms / 1000.0).toInt()
     val min = totalSec / 60
     val sec = totalSec % 60
-    return String.format(Locale.ENGLISH, "Video length:%02d:%02d", min, sec)
+    return String.format(Locale.ENGLISH, "Video duration:%02d:%02d", min, sec)
 }

@@ -56,8 +56,8 @@ fun MainScreen(navController: NavHostController) {
                     NavigationBarItem(
                         selected = currentRoute == Screen.SelectUrlScreen.route,
                         onClick = {
-                            navController.navigate(Screen.SelectUrlScreen.route) {
-                                popUpTo(Screen.SelectUrlScreen.route) { inclusive = true }
+                            navController.navigate("network_flow") {
+                                popUpTo("network_flow") { inclusive = true }
                             }
                         },
                         icon = {
@@ -68,8 +68,8 @@ fun MainScreen(navController: NavHostController) {
                     NavigationBarItem(
                         selected = currentRoute == Screen.VideoPickerScreen.route,
                         onClick = {
-                            navController.navigate(Screen.VideoPickerScreen.route) {
-                                popUpTo(Screen.SelectUrlScreen.route) { inclusive = false }
+                            navController.navigate("local_flow") {
+                                popUpTo("network_flow") { inclusive = false }
                             }
                         },
                         icon = {
@@ -81,7 +81,7 @@ fun MainScreen(navController: NavHostController) {
                         selected = currentRoute == Screen.AudioPlayerScreen.route,
                         onClick = {
                             navController.navigate(Screen.AudioPlayerScreen.route) {
-                                popUpTo(Screen.SelectUrlScreen.route) { inclusive = false }
+                                popUpTo("network_flow") { inclusive = false }
                             }
                         },
                         icon = {

@@ -30,7 +30,7 @@ fun NavBackStackEntry.rememberParentEntry(navController: NavController, parentRo
 fun AppNavHost(navController: NavHostController, innerPadding: PaddingValues) {
     NavHost(
         navController = navController,
-        startDestination = Screen.SelectUrlScreen.route
+        startDestination = "network_flow"
     ) {
         navigation(
             startDestination = Screen.SelectUrlScreen.route,
@@ -41,8 +41,7 @@ fun AppNavHost(navController: NavHostController, innerPadding: PaddingValues) {
                 SelectUrlScreen(
                     innerPadding = innerPadding,
                     onItemClick = { uri ->
-                        flowViewModel.selectedVideoUris.clear()
-                        flowViewModel.selectedVideoUris.add(uri)
+                        flowViewModel.setUris(listOf(uri))
                         navController.navigate(Screen.NetworkPlayerScreen.route)
                     }
                 )
@@ -65,8 +64,7 @@ fun AppNavHost(navController: NavHostController, innerPadding: PaddingValues) {
                 VideoPickerWithPermission(
                     innerPadding = innerPadding,
                     onResult = { selectedUris ->
-                        flowViewModel.selectedVideoUris.clear()
-                        flowViewModel.selectedVideoUris.addAll(selectedUris)
+                        flowViewModel.setUris(selectedUris)
                         navController.navigate(Screen.LocalPlayerScreen.route)
                     }
                 )

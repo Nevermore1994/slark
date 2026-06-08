@@ -24,11 +24,10 @@ import com.slark.demo.ui.screen.LocalPlayer.SharedViewModel
 fun NetworkPlayerScreenRoute(navController: NavHostController, sharedViewModel: SharedViewModel) {
     var playerViewModel by remember { mutableStateOf<PlayerViewModel?>(null) }
 
-    LaunchedEffect(sharedViewModel.selectedVideoUris) {
-        if (sharedViewModel.selectedVideoUris.isEmpty()) {
-            return@LaunchedEffect
-        }
-        val config = SlarkPlayerConfig(sharedViewModel.selectedVideoUris[0].toString())
+    LaunchedEffect(sharedViewModel.uriVersion) {
+        if (sharedViewModel.uriVersion == 0) return@LaunchedEffect
+        val uri = sharedViewModel.firstUri ?: return@LaunchedEffect
+        val config = SlarkPlayerConfig(uri.toString())
         val slarkPlayer: SlarkPlayer? = SlarkPlayerFactory.createPlayer(config)
         playerViewModel = PlayerViewModel(slarkPlayer)
     }

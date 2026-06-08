@@ -13,7 +13,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Size
 import androidx.lifecycle.ViewModel
-import com.slark.api.PlayerErrorCode
+import com.slark.api.SlarkPlayerErrorCode
 import com.slark.api.SlarkPlayer
 import com.slark.api.SlarkPlayerEvent
 import com.slark.api.SlarkPlayerObserver
@@ -31,10 +31,17 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
     var isLoading by mutableStateOf(false)
     var isLoop by mutableStateOf(false)
     var isMute by mutableStateOf(false)
-    var speed by mutableStateOf(1.0f)
+    private var _speed = mutableStateOf(1.0f)
+    var speed: Float
+        get() = _speed.value
+        set(value) {
+            // TODO: SlarkPlayer SDK 暂未暴露 speed 属性，待支持后在此设置
+            _speed.value = value
+        }
     var errorMessage by mutableStateOf<String?>(null)
     var rotationDegrees by mutableIntStateOf(0)
     var graphicsBackend by mutableStateOf(GraphicsBackend.OpenGL)
+    var hasVideo by mutableStateOf(false)
 
     private var _volume = mutableStateOf(100.0f)
     var volume: Float
@@ -62,7 +69,10 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
                 SlarkPlayerState.Pause,
                 SlarkPlayerState.Stop,
                 SlarkPlayerState.Completed -> setPlayState(isPlaying = false, isLoading = false)
-                SlarkPlayerState.Prepared -> totalTime = player?.totalDuration() ?: 0.0
+                SlarkPlayerState.Prepared -> {
+                    totalTime = player?.totalDuration() ?: 0.0
+                    hasVideo = player?.hasVideo ?: false
+                }
                 SlarkPlayerState.Error -> SlarkLog.e("PlayerViewModel", "Player error occurred")
                 else -> {}
             }
@@ -72,15 +82,22 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
             SlarkLog.d("notifyEvent", "$event $value")
             when (event) {
                 SlarkPlayerEvent.UpdateCacheTime -> cacheTime = value.toDouble()
+                SlarkPlayerEvent.VideoRotation -> {
+                    // auto-rotation from native, handled by renderer only
+                }
                 SlarkPlayerEvent.OnError -> {
                     SlarkLog.e("PlayerViewModel", "Player error: $value")
-                    errorMessage = when (PlayerErrorCode.fromString(value)) {
-                        PlayerErrorCode.OpenFileError -> "Failed to open file"
-                        PlayerErrorCode.NetWorkError -> "Network error"
-                        PlayerErrorCode.NotSupport -> "Format not supported"
-                        PlayerErrorCode.DemuxError -> "Demuxing error"
-                        PlayerErrorCode.DecodeError -> "Decoding error"
-                        PlayerErrorCode.RenderError -> "Rendering error"
+                    errorMessage = when (SlarkPlayerErrorCode.entries.firstOrNull { it.value == value.toIntOrNull() }) {
+                        SlarkPlayerErrorCode.MediaOpenFailed,
+                        SlarkPlayerErrorCode.PipelineOpenFailed -> "Failed to open file"
+                        SlarkPlayerErrorCode.NetworkError,
+                        SlarkPlayerErrorCode.ConnectionFailed,
+                        SlarkPlayerErrorCode.ConnectionTimeout -> "Network error"
+                        SlarkPlayerErrorCode.PipelineFormatNotSupported,
+                        SlarkPlayerErrorCode.CodecUnsupportedFormat -> "Format not supported"
+                        SlarkPlayerErrorCode.PipelineDemuxError -> "Demuxing error"
+                        SlarkPlayerErrorCode.PipelineDecodeError -> "Decoding error"
+                        SlarkPlayerErrorCode.PipelineRenderError -> "Rendering error"
                         else -> "Unknown error"
                     }
                 }
@@ -100,11 +117,6 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
     fun skipPrev() {}
 
     fun skipNext() {}
-
-    fun setSpeed(speed: Float) {
-        // TODO: SlarkPlayer SDK 暂未暴露 speed 属性，待支持后在此设置
-        this.speed = speed
-    }
 
     fun onBackground(isBackground: Boolean) {
         player?.onBackground(isBackground)
