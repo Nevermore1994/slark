@@ -73,7 +73,6 @@ void BufferMonitor::reset() noexcept {
     isPrebuffering_ = false;
     isRebuffering_ = false;
     readyFired_ = false;
-    pauseFailCount_ = 0;
     starvationCount_ = 0;
     lastCheckTime_.reset();
     lastDecoderCheckTime_.reset();
@@ -104,6 +103,10 @@ void BufferMonitor::regulateDecoderFlow() noexcept {
 }
 
 void BufferMonitor::regulateDataFlow() noexcept {
+    // 首帧渲染前跳过背压控制，允许快速推帧
+    if (!readyFired_) {
+        return;
+    }
     // 快速推帧期间跳过背压控制，保证 demuxer 不被水位线阻塞
     if (backpressurePaused_) {
         return;
@@ -137,14 +140,6 @@ void BufferMonitor::regulateDataFlow() noexcept {
         }
     }
 
-    // pause 失效屌底：连续多次超限后上报错误
-    if (streamPaused_ && duration > config_.demuxHighWatermarkDuration) {
-        ++pauseFailCount_;
-        if (pauseFailCount_ >= kPauseFailThreshold) {
-            fireEvent(PipelineEvent::ReadError, PipelineError{.error = Error::InvalidOperation});
-            pauseFailCount_ = 0;
-        }
-    }
 }
 
 void BufferMonitor::checkPrebufferComplete() noexcept {

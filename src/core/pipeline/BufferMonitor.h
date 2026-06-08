@@ -100,7 +100,6 @@ private:
         if (!streamPaused_) {
             delegate_.pauseStream();
             streamPaused_ = true;
-            pauseFailCount_ = 0;
         }
     }
 
@@ -108,7 +107,6 @@ private:
         if (streamPaused_) {
             delegate_.resumeStream();
             streamPaused_ = false;
-            pauseFailCount_ = 0;
         }
     }
 
@@ -150,7 +148,6 @@ private:
     using TimePoint = std::chrono::steady_clock::time_point;
 
     static constexpr int32_t kStarvationThreshold = 5;
-    static constexpr int32_t kPauseFailThreshold = 3;
 
     BackpressureConfig config_;
     IBufferMonitorDelegate& delegate_;
@@ -168,7 +165,6 @@ private:
     bool isRebuffering_ = false;
     bool readyFired_ = false;
 
-    int32_t pauseFailCount_ = 0;
     int32_t starvationCount_ = 0;
 
     std::optional<TimePoint> lastCheckTime_;

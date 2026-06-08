@@ -30,7 +30,6 @@ PlayPipeline::PlayPipeline(BackpressureConfig config) noexcept : config_(std::mo
     assert(config_.isValid() && "BackpressureConfig is invalid");
     clockSync_ = std::make_unique<ClockSync>();
     seekContext_ = std::make_unique<SeekContext>();
-    ownerThreadId_ = std::this_thread::get_id();
     bufferMonitor_ = std::make_unique<BufferMonitor>(config_, *this);
     connectComponents();
     pipelineState_.store(PipelineState::Built, std::memory_order_release);
@@ -66,8 +65,35 @@ void PlayPipeline::start() noexcept {
     }
     if (auto render = videoRender_.load()) {
         render->start();
+    } else {
+        LogW("PlayPipeline::start: videoRender is null, skip start");
     }
     pipelineState_.store(PipelineState::Playing, std::memory_order_release);
+    LogI("PlayPipeline start complete, state:Playing");
+}
+
+void PlayPipeline::resume() noexcept {
+    assert(isOnOwnerThread());
+    if (pipelineState_.load(std::memory_order_acquire) == PipelineState::Faulted) {
+        fireEvent(PipelineEvent::ReadError, PipelineError{.error = Error::InvalidOperation});
+        return;
+    }
+    if (pipelineState_.load(std::memory_order_acquire) == PipelineState::Playing) {
+        return;
+    }
+    if (demuxer_) {
+        demuxer_->start();
+    }
+    if (audioRender_) {
+        audioRender_->start();
+    }
+    if (auto render = videoRender_.load()) {
+        render->start();
+    } else {
+        LogW("PlayPipeline::resume: videoRender is null, skip start");
+    }
+    pipelineState_.store(PipelineState::Playing, std::memory_order_release);
+    LogI("PlayPipeline resume complete, state:Playing");
 }
 
 void PlayPipeline::pause() noexcept {
@@ -145,6 +171,7 @@ void PlayPipeline::teardown() noexcept {
     pipelineState_.store(PipelineState::TearingDown, std::memory_order_release);
     LogI("PlayPipeline teardown");
     stopComponents();
+    bufferMonitor_.reset();
     if (!joinWithTimeout(kTeardownTimeout)) {
         LogE("PlayPipeline teardown timeout, entering Faulted");
         enterFaultedState();
@@ -263,6 +290,23 @@ double PlayPipeline::cachedDuration() const noexcept {
     return demuxedDuration();
 }
 
+double PlayPipeline::cacheEndTime() const noexcept {
+    double maxPts = 0.0;
+    videoFrames_.withLock([&maxPts](const auto& m) {
+        if (!m.empty()) {
+            maxPts = std::max(maxPts, m.rbegin()->second->ptsTime());
+        }
+    });
+    audioFrames_.withLock([&maxPts](const auto& q) {
+        if (!q.empty()) {
+            maxPts = std::max(maxPts, q.back()->ptsTime());
+        }
+    });
+    maxPts = std::max(maxPts, lastEnqueuedAudioPts_.load(std::memory_order_acquire));
+    maxPts = std::max(maxPts, lastEnqueuedVideoPts_.load(std::memory_order_acquire));
+    return std::max(0.0, maxPts);
+}
+
 AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
     recordVsyncInterval();
 
@@ -271,14 +315,17 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
     }
 
     const double playbackRate = clockSync_->playbackRate();
-    const double diff =
-        clockSync_->masterTime(mediaInfo_.hasAudio).second() - clockSync_->videoTime().second();
+    const double masterTime = clockSync_->masterTime(mediaInfo_.hasAudio).second();
+    const double videoTime = clockSync_->videoTime().second();
+    const double diff = masterTime - videoTime;
     if (shouldHoldVideoFrame(diff, playbackRate)) {
+        LogD("requestVideoFrame: holding, audio:{:.3f} video:{:.3f} diff:{:.3f}", masterTime, videoTime, diff);
         return nullptr;
     }
 
     auto frame = popVideoFrame();
     if (!frame) {
+        LogD("requestVideoFrame: no frame in queue");
         if (seekContext_->isSeekPending()) {
             auto preview = seekPreviewFrame();
             if (preview) {
@@ -496,14 +543,23 @@ void PlayPipeline::onBufferEvent(PipelineEvent event, std::optional<PipelineErro
 
 void PlayPipeline::onFastTick() noexcept {
     assert(isOnOwnerThread());
-    if (bufferMonitor_) {
-        bufferMonitor_->onHeartbeat();
+    // teardown 后不再访问成员，避免访问已销毁的 mutex
+    if (pipelineState_.load(std::memory_order_acquire) >= PipelineState::TearingDown) {
+        return;
+    }
+    // 先保存到局部变量，避免访问已释放的对象
+    if (auto* monitor = bufferMonitor_.get()) {
+        monitor->onHeartbeat();
     }
     pushAudioFrames();
 }
 
 void PlayPipeline::onHeartbeat() noexcept {
     assert(isOnOwnerThread());
+    // teardown 后不再访问成员，避免访问已销毁的 mutex
+    if (pipelineState_.load(std::memory_order_acquire) >= PipelineState::TearingDown) {
+        return;
+    }
     // 网络源弱网环境延长超时阈値，避免误超时
     const auto kSeekTimeout =
         config_.isNetworkSource ? std::chrono::milliseconds(8000) : std::chrono::milliseconds(2000);
@@ -554,8 +610,7 @@ AVFrameRefPtr PlayPipeline::popVideoFrame() noexcept {
         return frame;
     };
 
-    // vsync 路径不阻塞，try_lock 失败直接跳过本帧
-    videoFrames_.withTryLock([&frame, &popFrame](auto& m) {
+    videoFrames_.withLock([&frame, &popFrame](auto& m) {
         frame = popFrame(m);
     });
 
@@ -600,11 +655,21 @@ void PlayPipeline::setStreamControl(StreamControlFunc pauseStream,
 
 void PlayPipeline::setDemuxerComponent(std::shared_ptr<DemuxerComponent> demuxer) noexcept {
     demuxer_ = std::move(demuxer);
+    std::tie(audioFrameSender_, audioFrameReceiver_) = Channel<AVFrameRefPtr>::create();
+    std::tie(videoFrameSender_, videoFrameReceiver_) = Channel<AVFrameRefPtr>::create();
     connectComponents();
 }
 
 void PlayPipeline::onAudioDecoded(DecoderData data) noexcept {
     if (pipelineState_.load(std::memory_order_acquire) >= PipelineState::TearingDown) {
+        return;
+    }
+    if (!data.frame) {
+        if (data.error != Error::Success) {
+            postToOwnerThread([this, err = data.error] {
+                fireEvent(PipelineEvent::DecodeError, PipelineError{.error = err});
+            });
+        }
         return;
     }
     if (data.frame->isEOS) {
@@ -645,11 +710,7 @@ void PlayPipeline::setupAudioTrack(DecoderType type,
     });
 
     audioDecoder_ = std::make_shared<DecoderComponent>(
-        [this]() -> ReceiverPtr<AVFrameRefPtr> {
-            auto [sender, receiver] = Channel<AVFrameRefPtr>::create();
-            audioFrameSender_ = std::move(sender);
-            return std::move(receiver);
-        }(),
+        std::move(audioFrameReceiver_),
         DecoderComponentConfig{
             .onData =
                 [this](DecoderData data) {
@@ -708,6 +769,14 @@ void PlayPipeline::onVideoDecoded(DecoderData data) noexcept {
     if (pipelineState_.load(std::memory_order_acquire) >= PipelineState::TearingDown) {
         return;
     }
+    if (!data.frame) {
+        if (data.error != Error::Success) {
+            postToOwnerThread([this, err = data.error] {
+                fireEvent(PipelineEvent::DecodeError, PipelineError{.error = err});
+            });
+        }
+        return;
+    }
     if (data.frame->isEOS) {
         return;
     }
@@ -753,11 +822,7 @@ void PlayPipeline::setupVideoTrack(DecoderType type,
     }
 
     videoDecoder_ = std::make_shared<DecoderComponent>(
-        [this]() -> ReceiverPtr<AVFrameRefPtr> {
-            auto [sender, receiver] = Channel<AVFrameRefPtr>::create();
-            videoFrameSender_ = std::move(sender);
-            return std::move(receiver);
-        }(),
+        std::move(videoFrameReceiver_),
         DecoderComponentConfig{
             .onData =
                 [this](DecoderData data) {
@@ -916,7 +981,7 @@ void PlayPipeline::updateLiveReadyFlags(const DemuxerResult& result) noexcept {
 }
 
 bool PlayPipeline::dispatchAudioFrames(AVFramePtrArray& frames, uint64_t epoch) noexcept {
-    if (!audioDecoder_ || !audioFrameSender_) {
+    if (!audioFrameSender_) {
         return false;
     }
     const auto seekTarget = seekContext_->targetSeekTime();
@@ -942,7 +1007,7 @@ bool PlayPipeline::dispatchAudioFrames(AVFramePtrArray& frames, uint64_t epoch) 
 }
 
 bool PlayPipeline::dispatchVideoFrames(AVFramePtrArray& frames, uint64_t epoch) noexcept {
-    if (!videoDecoder_ || !videoFrameSender_) {
+    if (!videoFrameSender_) {
         return false;
     }
     bool enqueued = false;
@@ -1011,6 +1076,9 @@ void PlayPipeline::notifyDataEnqueued() noexcept {
     if (dataEnqueuedPending_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
         postToOwnerThread([this] {
             dataEnqueuedPending_.store(false, std::memory_order_release);
+            if (pipelineState_.load(std::memory_order_acquire) >= PipelineState::TearingDown) {
+                return;
+            }
             if (bufferMonitor_) {
                 bufferMonitor_->onDemuxedDataEnqueued();
             }

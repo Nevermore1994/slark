@@ -78,6 +78,9 @@ public:
 
     void start() noexcept;
 
+    /// 从暂停恢复：仅恢复音视频渲染时钟，不重启 demuxer 和数据源
+    void resume() noexcept;
+
     void pause() noexcept;
 
     void flush() noexcept;
@@ -93,6 +96,9 @@ public:
     [[nodiscard]] Time::TimePoint audioTime() noexcept;
 
     [[nodiscard]] double cachedDuration() const noexcept;
+
+    /// 缓存数据的结束时间戳，单调递增（用于 UI 显示缓冲进度）
+    [[nodiscard]] double cacheEndTime() const noexcept;
 
     [[nodiscard]] AVFrameRefPtr requestVideoFrame() noexcept;
 
@@ -143,6 +149,10 @@ public:
     }
 
     [[nodiscard]] bool isOnOwnerThread() const noexcept;
+
+    void bindToCurrentThread() noexcept {
+        ownerThreadId_ = std::this_thread::get_id();
+    }
 
     void setVideoRender(std::weak_ptr<IVideoRender> render) noexcept;
 
@@ -292,9 +302,10 @@ private:
     Synchronized<std::map<int64_t, AVFrameRefPtr>> videoFrames_;
     Synchronized<std::deque<AVFrameRefPtr>> audioFrames_;
 
-    // Channel senders：替代旧的 pendingDecodeXxxQueue_
     SenderPtr<AVFrameRefPtr> audioFrameSender_;
     SenderPtr<AVFrameRefPtr> videoFrameSender_;
+    ReceiverPtr<AVFrameRefPtr> audioFrameReceiver_;
+    ReceiverPtr<AVFrameRefPtr> videoFrameReceiver_;
 
     // 累加器：记录最后入队帧的 pts，用于 demuxedDuration 统计
     std::atomic<double> lastEnqueuedAudioPts_{0.0};
