@@ -21,4 +21,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "slark"
 include(":sdk")
+include(":demo-app")
 project(":sdk").projectDir = file("src/platform/Android/sdk")
+project(":demo-app").projectDir = file("demo/Android/app")

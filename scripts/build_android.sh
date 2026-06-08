@@ -17,6 +17,7 @@ generate_android_project() {
     
     local output_dir="${script_dir}/cmake-build-${build_type}/Android"
     local ndk_toolchain="${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake"
+    local fc_cache="${script_dir}/.fetchcontent_cache/Android"
     
     if [[ ! -f "$ndk_toolchain" ]]; then
         print_error "未找到 Android NDK 工具链文件: $ndk_toolchain"
@@ -32,6 +33,7 @@ generate_android_project() {
         -DANDROID_ABI=${ANDROID_ABI} \
         -DCMAKE_BUILD_TYPE="$build_type" \
         -DANDROID_PLATFORM=${ANDROID_PLATFORM_VERSION} \
+        -DFETCHCONTENT_BASE_DIR="$fc_cache" \
         $cmake_options
     
     print_success "Android 项目生成成功"
@@ -168,7 +170,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
         build_aar "$SCRIPT_DIR" "$BUILD_TYPE" "$AAR_OUTPUT_DIR" "$CLEAN_BUILD"
     else
         check_android_dependencies
-        clean_build_cache "$SCRIPT_DIR"
+        clean_build_cache "$SCRIPT_DIR" "Android"
         generate_android_project "$SCRIPT_DIR" "$BUILD_TYPE" "$DISABLE_HTTP" "$DISABLE_TEST" "$DEMO"
     fi
 fi

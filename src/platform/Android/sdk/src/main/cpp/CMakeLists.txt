@@ -1,67 +1,53 @@
 cmake_minimum_required(VERSION 3.22.1)
 
-project("sdk")
+project("slark_jni")
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(SLARK_PROJECT_PATH ${CMAKE_SOURCE_DIR}/../../../../../../..)
 
-message(STATUS ${SLARK_PROJECT_PATH})
+message(STATUS "slark_jni build path: " ${SLARK_PROJECT_PATH})
 
-# add slark library
-add_subdirectory(${SLARK_PROJECT_PATH} slark)
-
-# add jni common library
-add_subdirectory(jni)
-
-set(BUSINESS_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/AACHardwareDecoder.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/AndroidEGLContext.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/AndroidVulkanContext.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/FrameBuffer.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/FrameBufferPool.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/NativeDecoderManager.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/NativeHardwareDecoder.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/PlayerManager.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/RenderManger.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/SlarkLogJNI.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/SlarkNative.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/Texture.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/TexturePool.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/VideoDecodeResource.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/VideoHardwareDecoder.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/VideoRender.cpp
+file(GLOB BUSINESS_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
 )
 
-add_library(${CMAKE_PROJECT_NAME} SHARED ${BUSINESS_SOURCES})
+# 编译 slark_jni 静态库
+add_library(slark_jni STATIC ${BUSINESS_SOURCES})
 
-target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
-    .
-    ${SLARK_PROJECT_PATH}/include
+target_include_directories(slark_jni PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/jni
     ${SLARK_PROJECT_PATH}/src/base
     ${SLARK_PROJECT_PATH}/src/core
-    ${SLARK_PROJECT_PATH}/src/core/codec
+    ${SLARK_PROJECT_PATH}/src/core/demuxer
     ${SLARK_PROJECT_PATH}/src/core/audio
+    ${SLARK_PROJECT_PATH}/src/core/codec
+    ${SLARK_PROJECT_PATH}/src/core/pipeline
+    ${SLARK_PROJECT_PATH}/src/core/perf
+    ${SLARK_PROJECT_PATH}/include
     ${SLARK_PROJECT_PATH}/internal
 )
 
-target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
-    SLARK_ANDROID=1
+target_compile_definitions(slark_jni PUBLIC
+    SLARK_ANDROID
+    ANDROID_PLATFORM
+    __ANDROID__
 )
 
-target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE
-    -Wno-invalid-constexpr
-)
+find_library(ANDROID_LOG_LIB log)
+find_library(ANDROID_LIB android)
+find_library(ANDROID_GLESv3_LIB GLESv3)
+find_library(ANDROID_EGL_LIB EGL)
 
-target_link_libraries(${CMAKE_PROJECT_NAME}
-    PRIVATE
-
-    slark
+target_link_libraries(slark_jni
+    PUBLIC
     slark_jni_common
-    EGL
-    GLESv2
-    GLESv3
+    ${ANDROID_LOG_LIB}
+    ${ANDROID_LIB}
+    ${ANDROID_GLESv3_LIB}
+    ${ANDROID_EGL_LIB}
+    aaudio
     vulkan
 )

@@ -19,3 +19,32 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Keep all classes in slark.sdk package (used by JNI)
+-keep class com.slark.sdk.** { *; }
+
+# Keep all classes in slark.api package (used by JNI)
+-keep class com.slark.api.** { *; }
+
+# Keep Parcelable classes
+-keep class * implements android.os.Parcelable {
+    public static final android.os.Parcelable$Creator *;
+}
+
+# Keep data classes (Kotlin)
+-keepclassmembers class kotlinx.serialization.json.** {
+    *** Companion;
+}
+-keepclasseswithmembers class kotlinx.serialization.json.** {
+    kotlinx.serialization.KSerializer serializer(...);
+}
+
+# Keep MediaCodec related classes
+-keep class android.media.MediaCodec { *; }
+-keep class android.media.MediaFormat { *; }
+-keep class android.media.MediaCodecInfo { *; }
+
+# Keep native methods
+-keepclasseswithmembernames class * {
+    native <methods>;
+}

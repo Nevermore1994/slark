@@ -18,6 +18,7 @@ generate_ios_project() {
     
     local output_dir="${script_dir}/cmake-build-${build_type}/iOS"
     local toolchain_file="${script_dir}/ios.toolchain.cmake"
+    local fc_cache="${script_dir}/.fetchcontent_cache/iOS"
     
     if [[ ! -f "$toolchain_file" ]]; then
         print_error "未找到 iOS 工具链文件: $toolchain_file"
@@ -34,6 +35,7 @@ generate_ios_project() {
         -DENABLE_BITCODE=${IOS_ENABLE_BITCODE} \
         -DDEPLOYMENT_TARGET=${IOS_DEPLOYMENT_TARGET} \
         -DCMAKE_BUILD_TYPE="$build_type" \
+        -DFETCHCONTENT_BASE_DIR="$fc_cache" \
         $cmake_options
     
     print_success "iOS 项目生成成功"
@@ -377,7 +379,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
         build_framework "$SCRIPT_DIR" "$BUILD_TYPE" "$FRAMEWORK_OUTPUT_DIR" "$CLEAN_BUILD"
     else
         check_ios_dependencies
-        clean_build_cache "$SCRIPT_DIR"
+        clean_build_cache "$SCRIPT_DIR" "iOS"
         generate_ios_project "$SCRIPT_DIR" "$BUILD_TYPE" "$DISABLE_HTTP" "$DISABLE_TEST" "$DEMO"
     fi
 fi

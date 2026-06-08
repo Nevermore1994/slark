@@ -6,6 +6,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(slark)
 
+set(SLARK_PROJECT_PATH ${CMAKE_CURRENT_SOURCE_DIR})
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -23,6 +25,11 @@ set(BUILD_PLATFORM "PC" CACHE STRING "build platform")
 option(DISABLE_TEST "disable test" OFF)
 option(DISABLE_HTTP "disable http" OFF)
 option(DISABLE_CORE "disable core module (for testing base/http only)" OFF)
+
+if(${BUILD_PLATFORM} STREQUAL "Android")
+    set(SLARK_ANDROID ON)
+    add_compile_definitions(SLARK_ANDROID)
+endif()
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build type" FORCE)
@@ -79,7 +86,17 @@ else()
     if(${BUILD_PLATFORM} STREQUAL "Android")
         message(STATUS "add Android interface")
         include(CMake-Android.cmake)
-        add_android_sources(${PROJECT_NAME})
+        add_android_interface()
+
+        # JNI 函数由 JVM 动态查找，libslark.so 中没有代码直接引用它们，
+        # 必须使用 --whole-archive 强制链接器保留所有静态库中的符号
+        target_link_libraries(${PROJECT_NAME}
+            PUBLIC
+            -Wl,--whole-archive
+            slark_jni
+            slark_jni_common
+            -Wl,--no-whole-archive
+        )
     endif()
 
     if(NOT DISABLE_HTTP)

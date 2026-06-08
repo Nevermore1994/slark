@@ -35,6 +35,14 @@ target_include_directories(slark_core
     ${CMAKE_CURRENT_SOURCE_DIR}/perf
 )
 
+# 需要包含Android平台特有的头文件
+if(SLARK_ANDROID)
+    target_include_directories(slark_core
+        PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/../platform/Android/sdk/src/main/cpp
+    )
+endif()
+
 target_link_libraries(slark_core PUBLIC slark_base slark_internal slark_include)
 
 if(NOT DISABLE_HTTP)

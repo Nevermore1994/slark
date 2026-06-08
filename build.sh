@@ -133,7 +133,7 @@ case "$PLATFORM" in
             check_framework_dependencies "$SCRIPT_DIR"
             build_framework "$SCRIPT_DIR" "$BUILD_TYPE" "$FRAMEWORK_OUTPUT_DIR" "$CLEAN_BUILD"
         else
-            clean_build_cache "$SCRIPT_DIR"
+            clean_build_cache "$SCRIPT_DIR" "iOS"
             check_cmake_dependency
             check_ios_dependencies
             generate_ios_project "$SCRIPT_DIR" "$BUILD_TYPE" "$DISABLE_HTTP" "$DISABLE_TEST" "$DEMO"
@@ -156,7 +156,7 @@ case "$PLATFORM" in
             check_aar_dependencies "$SCRIPT_DIR"
             build_aar "$SCRIPT_DIR" "$BUILD_TYPE" "$AAR_OUTPUT_DIR" "$CLEAN_BUILD"
         else
-            clean_build_cache "$SCRIPT_DIR"
+            clean_build_cache "$SCRIPT_DIR" "Android"
             check_cmake_dependency
             check_android_dependencies
             generate_android_project "$SCRIPT_DIR" "$BUILD_TYPE" "$DISABLE_HTTP" "$DISABLE_TEST" "$DEMO"
@@ -174,7 +174,7 @@ case "$PLATFORM" in
         fi
         ;;
     *)
-        clean_build_cache "$SCRIPT_DIR"
+        clean_build_cache "$SCRIPT_DIR" "local"
         check_cmake_dependency
         generate_local_project "$SCRIPT_DIR" "$BUILD_TYPE" "$DISABLE_HTTP" "$DISABLE_TEST" "$WITH_CORE"
         ;;

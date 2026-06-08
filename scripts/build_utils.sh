@@ -28,30 +28,46 @@ print_error() {
 }
 
 # 清理构建缓存
+# 参数: script_dir [platform]
+# platform 可选: iOS | Android | local，不传则清理所有平台
 clean_build_cache() {
     local script_dir="$1"
+    local platform="${2:-}"
     print_info "开始清理构建缓存..."
-    
-    local cache_dirs=(
-        "${script_dir}/cmake-build-debug"
-        "${script_dir}/cmake-build-release"
-        "${script_dir}/cmake-build-Debug"
-        "${script_dir}/cmake-build-Release"
-    )
-    
-    for dir in "${cache_dirs[@]}"; do
-        if [[ -d "$dir" ]]; then
-            print_info "删除目录: $dir"
-            rm -rf "$dir"
+
+    local build_types=("debug" "release" "Debug" "Release")
+
+    if [[ -z "$platform" ]]; then
+        # 清理所有平台
+        for bt in "${build_types[@]}"; do
+            local dir="${script_dir}/cmake-build-${bt}"
+            if [[ -d "$dir" ]]; then
+                print_info "删除目录: $dir"
+                rm -rf "$dir"
+            fi
+        done
+        # 清理 Make 缓存
+        if [[ -f "${script_dir}/Makefile" ]]; then
+            cd "$script_dir"
+            make clean 2>/dev/null || true
         fi
-    done
-    
-    # 清理 Make 缓存
-    if [[ -f "${script_dir}/Makefile" ]]; then
-        cd "$script_dir"
-        make clean 2>/dev/null || true
+    else
+        # 只清理指定平台的子目录
+        for bt in "${build_types[@]}"; do
+            local dir="${script_dir}/cmake-build-${bt}/${platform}"
+            if [[ -d "$dir" ]]; then
+                print_info "删除目录: $dir"
+                rm -rf "$dir"
+            fi
+        done
+        # 清理平台对应的 FetchContent 缓存（避免 generator 冲突）
+        local fc_cache="${script_dir}/.fetchcontent_cache/${platform}"
+        if [[ -d "$fc_cache" ]]; then
+            print_info "删除 FetchContent 缓存: $fc_cache"
+            rm -rf "$fc_cache"
+        fi
     fi
-    
+
     print_success "构建缓存清理完成"
 }
 
@@ -94,11 +110,13 @@ generate_local_project() {
         print_info "生成本地 Makefile 项目 (仅 base + http 模块)..."
     fi
     
-    local output_dir="${script_dir}/cmake-build-${build_type}"
+    local output_dir="${script_dir}/cmake-build-${build_type}/local"
+    local fc_cache="${script_dir}/.fetchcontent_cache/local"
     local cmake_options=$(build_cmake_options "$disable_http" "$disable_test" "$disable_core")
-    
+
     cmake -S "$script_dir" -B "$output_dir" -G "Unix Makefiles" \
         -DCMAKE_BUILD_TYPE="$build_type" \
+        -DFETCHCONTENT_BASE_DIR="$fc_cache" \
         $cmake_options
     
     print_success "项目配置成功"

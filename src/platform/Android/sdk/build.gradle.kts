@@ -17,9 +17,9 @@ android {
                 abiFilters("arm64-v8a")
                 cppFlags("-std=c++23")
                 arguments(
-                    "-DCMAKE_BUILD_TYPE=Debug",
                     "-DDISABLE_TEST=ON",
-                    "-DDISABLE_HTTP=OFF"
+                    "-DDISABLE_HTTP=OFF",
+                    "-DBUILD_PLATFORM=Android"
                 )
             }
         }
@@ -32,7 +32,8 @@ android {
                     arguments(
                         "-DCMAKE_BUILD_TYPE=Debug",
                         "-DDISABLE_TEST=ON",
-                        "-DDISABLE_HTTP=OFF"
+                        "-DDISABLE_HTTP=OFF",
+                        "-DBUILD_PLATFORM=Android"
                     )
                 }
             }
@@ -48,7 +49,8 @@ android {
                     arguments(
                         "-DCMAKE_BUILD_TYPE=Release",
                         "-DDISABLE_TEST=ON",
-                        "-DDISABLE_HTTP=OFF"
+                        "-DDISABLE_HTTP=OFF",
+                        "-DBUILD_PLATFORM=Android"
                     )
                 }
             }
@@ -57,7 +59,7 @@ android {
 
     externalNativeBuild {
         cmake {
-            path("src/main/cpp/CMakeLists.txt")
+            path(File(project.projectDir, "../../../../CMakeLists.txt").absolutePath)
             version = "3.22.1"
         }
     }
@@ -71,6 +73,8 @@ android {
     }
     ndkVersion = "27.0.12077973"
     buildToolsVersion = "35.0.0"
+
+    setProperty("archivesBaseName", "slark")
 }
 
 dependencies {
