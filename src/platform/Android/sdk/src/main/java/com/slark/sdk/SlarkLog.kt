@@ -8,6 +8,8 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import java.time.LocalDateTime
 import com.slark.sdk.toMicrosecondString
+import android.util.Log
+
 class SlarkLog {
     companion object {
         init {
@@ -65,13 +67,20 @@ class SlarkLog {
                 return " [formatting error: ${e.message}]" + ", $format"
             }
         }
+        private const val TAG = "Slark"
+
         private fun processLog(message: LogMessage) {
             val logStr = LocalDateTime.now().toMicrosecondString() + " ${message.level} [${message.tag}] ${formatMessage(message.format, *message.args)}"
             if (message.level != LOG_PRINT) {
                 nativeLog(logStr)
             }
             if (message.level != LOG_RECORD) {
-                println(logStr)
+                when (message.level) {
+                    LOG_ERROR   -> Log.e(TAG, logStr)
+                    LOG_WARNING -> Log.w(TAG, logStr)
+                    LOG_DEBUG   -> Log.d(TAG, logStr)
+                    else        -> Log.i(TAG, logStr)
+                }
             }
         }
         private fun submitLog(level: String, tag: String, format: String, vararg args: Any?) {
@@ -80,22 +89,22 @@ class SlarkLog {
             }
         }
         fun p(tag: String, format: String, vararg args: Any?) {
-            submitLog(LOG_PRINT, tag, format, args)
+            submitLog(LOG_PRINT, tag, format, *args)
         }
         fun d(tag: String, format: String, vararg args: Any?) {
-            submitLog(LOG_DEBUG, tag, format, args)
+            submitLog(LOG_DEBUG, tag, format, *args)
         }
         fun i(tag: String, format: String, vararg args: Any?) {
-            submitLog(LOG_INFO, tag, format, args)
+            submitLog(LOG_INFO, tag, format, *args)
         }
         fun w(tag: String, format: String, vararg args: Any?) {
-            submitLog(LOG_WARNING, tag, format, args)
+            submitLog(LOG_WARNING, tag, format, *args)
         }
         fun e(tag: String, format: String, vararg args: Any?) {
-            submitLog(LOG_ERROR, tag, format, args)
+            submitLog(LOG_ERROR, tag, format, *args)
         }
         fun r(tag: String, format: String, vararg args: Any?) {
-            submitLog(LOG_RECORD, tag, format, args)
+            submitLog(LOG_RECORD, tag, format, *args)
         }
         fun cleanup() {
             runBlocking {

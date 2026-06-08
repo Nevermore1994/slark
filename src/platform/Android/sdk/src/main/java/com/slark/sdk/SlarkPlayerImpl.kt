@@ -17,6 +17,7 @@ import com.slark.api.KtTimeRange
 import com.slark.api.SlarkPlayer
 import com.slark.api.SlarkPlayer.Rotation
 import com.slark.api.SlarkPlayerConfig
+import com.slark.api.SlarkPlayerEvent
 import com.slark.api.SlarkPlayerObserver
 import com.slark.api.SlarkPlayerState
 import com.slark.api.SlarkRenderTarget
@@ -72,6 +73,10 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
     }
 
     override fun release() {
+        stopRendering()
+        renderThread?.shutdown()
+        renderThread?.join()
+        renderThread = null
         SlarkPlayerManager.doAction(playerId, SlarkPlayerManager.Action.RELEASE.ordinal)
         SlarkPlayerManager.removePlayer(playerId)
     }
@@ -104,8 +109,16 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
         renderThread?.setRenderSize(width, height)
     }
 
+    override val hasVideo: Boolean
+        get() = SlarkPlayerManager.hasVideo(playerId)
+
     override fun setRotation(rotation: Rotation) {
         renderThread?.setRotation(rotation.ordinal * 90)
+    }
+
+    fun setVideoRotation(rotationDegrees: Int) {
+        renderThread?.setRotation(rotationDegrees)
+        playerObserver?.notifyEvent(playerId, SlarkPlayerEvent.VideoRotation, rotationDegrees.toString())
     }
 
     override fun onBackground(isBackground: Boolean) {
@@ -143,6 +156,15 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
         renderThread?.render(textureRenderId, width, height)
     }
 
+
+    fun startRendering() {
+        renderThread?.start()
+    }
+
+    fun stopRendering() {
+        renderThread?.stop()
+    }
+
     fun switchGraphicsBackend(backend: GraphicsBackend) {
         if (graphicsBackend == backend) return
         graphicsBackend = backend
@@ -159,7 +181,7 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
         old?.join()
         renderThread = RenderThreadFactory.create(graphicsBackend, surface, width, height)
         renderThread?.playerId = playerId
-        renderThread?.start()
+        renderThread?.initContext()
     }
 
     private fun shouldRebuildOnSizeChange(): Boolean {
@@ -189,6 +211,11 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
 
             override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
         }
+        // 处理 Surface 已就绪后才设置 listener 的场景（如主线程卡死后恢复），
+        // 此时 onSurfaceTextureAvailable 不会再触发
+        if (textureView.isAvailable) {
+            onSurfaceAvailable(Surface(textureView.surfaceTexture), textureView.width, textureView.height)
+        }
     }
 
     private fun setupSurfaceView(surfaceView: SurfaceView) {
@@ -208,6 +235,11 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
                 renderThread = null
             }
         })
+        // 处理 Surface 已就绪后才注册 callback 的场景
+        val holderSurface = surfaceView.holder.surface
+        if (holderSurface != null && holderSurface.isValid) {
+            onSurfaceAvailable(holderSurface, surfaceView.holder.surfaceFrame.width(), surfaceView.holder.surfaceFrame.height())
+        }
     }
 
     companion object {

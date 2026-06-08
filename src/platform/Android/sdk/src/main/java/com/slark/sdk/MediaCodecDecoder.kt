@@ -80,6 +80,7 @@ class MediaCodecDecoder(
             }
             if (format.isVideoFormat() && decodeMode == DecodeMode.Texture) {
                 outputBufferQueue.offer(index to info)
+                processRawData(decoderId, null, info.presentationTimeUs, isCompleted.get())
             } else {
                 consumeOutputBuffer(codec, index, info)
             }
@@ -143,7 +144,12 @@ class MediaCodecDecoder(
                     return SlarkPlayerErrorCode.CodecInputTooLarge.value
                 }
                 inputBuffer.put(byteBuffer)
-                decoder!!.queueInputBuffer(inputIndex, 0, byteBuffer.size, presentationTimeUs, 0)
+                val queueFlag = if (flag.hasFlag(MediaCodec.BUFFER_FLAG_CODEC_CONFIG)) {
+                    MediaCodec.BUFFER_FLAG_CODEC_CONFIG
+                } else {
+                    0
+                }
+                decoder!!.queueInputBuffer(inputIndex, 0, byteBuffer.size, presentationTimeUs, queueFlag)
             }
         } catch (e: Exception) {
             SlarkLog.e(LOG_TAG, "queueInputBuffer exception: ${e.message}")
@@ -154,6 +160,7 @@ class MediaCodecDecoder(
 
     fun release() {
         isRunning.set(false)
+        outputBufferQueue.offer(-1 to MediaCodec.BufferInfo())
         flush()
         decoder?.let { MediaCodecDecoderPool.releaseDecoder(mediaInfo, it) }
         decoder = null
@@ -162,10 +169,20 @@ class MediaCodecDecoder(
     }
 
     fun flush() {
+        // 使用 poll 循环替代 clear() 来 drain 队列，避免 LinkedBlockingQueue.clear() 内部
+        // 同时获取 putLock + takeLock 而与 codec 回调线程（offer/put）死锁
+        drainNonBlocking(inputBufferQueue)
+        drainNonBlocking(outputBufferQueue)
         decoder?.flush()
         isCompleted.set(false)
-        inputBufferQueue.clear()
-        outputBufferQueue.clear()
+    }
+
+    private fun <T> drainNonBlocking(queue: LinkedBlockingQueue<T>) {
+        var count = 0
+        // poll() 只获取 takeLock，不会与 offer 的 putLock 冲突
+        while (queue.poll() != null && count < 4096) {
+            count++
+        }
     }
 
     fun isValid(): Boolean = decoder != null
@@ -209,7 +226,7 @@ class MediaCodecDecoder(
         return availBit or completeBit or (pts and 0x3FFFFFFFFFFFFFFF)
     }
 
-    private external fun processRawData(decoderId: String, byteBuffer: ByteArray, presentationTimeUs: Long, isCompleted: Boolean)
+    private external fun processRawData(decoderId: String, byteBuffer: ByteArray?, presentationTimeUs: Long, isCompleted: Boolean)
     private external fun processCodecError(decoderId: String, errorCode: Int)
     private external fun onVideoSizeChanged(decoderId: String, width: Int, height: Int)
 
@@ -218,11 +235,14 @@ class MediaCodecDecoder(
         private val decoders = ConcurrentHashMap<String, MediaCodecDecoder>()
 
         @JvmStatic
-        fun createVideoDecoder(mediaInfo: String, config: VideoDecoderConfig): String {
+        fun createVideoDecoder(mediaInfo: String, config: VideoDecoderConfig, csdBytes: ByteArray? = null): String {
             val format = MediaFormat.createVideoFormat(mediaInfo, config.width, config.height).apply {
                 setInteger(MediaFormat.KEY_PROFILE, config.profile)
                 setInteger(MediaFormat.KEY_LEVEL, config.level)
-                setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 1048576 * 2)
+                setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 1048576 * 10)
+                if (csdBytes != null) {
+                    setByteBuffer("csd-0", java.nio.ByteBuffer.wrap(csdBytes))
+                }
             }
             val decoder = MediaCodecDecoder(mediaInfo, format, config.decodeMode)
             if (!decoder.isValid()) {

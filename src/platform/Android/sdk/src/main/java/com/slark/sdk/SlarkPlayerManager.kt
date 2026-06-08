@@ -51,6 +51,23 @@ class SlarkPlayerManager {
             players[playerId]?.requestRender(textureId, width, height)
         }
 
+        // Symmetric to iOS: start CADisplayLink when Prepared
+        @JvmStatic
+        fun startRendering(playerId: String) {
+            players[playerId]?.startRendering()
+        }
+
+        // Symmetric to iOS: stop CADisplayLink when Stop/Error
+        @JvmStatic
+        fun stopRendering(playerId: String) {
+            players[playerId]?.stopRendering()
+        }
+
+        @JvmStatic
+        fun setVideoRotation(playerId: String, rotationDegrees: Int) {
+            players[playerId]?.setVideoRotation(rotationDegrees)
+        }
+
         external fun createPlayer(path: String, start: Double, duration: Double): String
 
         external fun doAction(playerId: String, action: Int)
@@ -63,11 +80,13 @@ class SlarkPlayerManager {
 
         external fun seek(playerId: String, time: Double, isAccurate: Boolean)
 
-        external fun totalDuration(playerId: String):Double
+        external fun totalDuration(playerId: String): Double
 
         external fun currentPlayedTime(playerId: String): Double
 
         external fun state(playerId: String): SlarkPlayerState
+
+        external fun hasVideo(playerId: String): Boolean
 
     }
 }

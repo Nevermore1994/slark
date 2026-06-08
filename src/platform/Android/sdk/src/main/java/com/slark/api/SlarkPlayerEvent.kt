@@ -12,5 +12,6 @@ enum class SlarkPlayerEvent {
     PlayEnd,
     UpdateCacheTime,
     OnError,
+    VideoRotation,
 }
 

@@ -8,13 +8,18 @@ package com.slark.sdk
 
 import android.view.Surface
 
-// Abstraction for render threads supporting different graphics backends
+// Abstraction for render threads supporting different graphics backends.
+// Design symmetric to iOS: initContext() sets up GL/Vulkan context,
+// start() registers VSync, stop() unregisters VSync, shutdown() releases resources.
 interface IRenderThread {
     var playerId: String
+    fun initContext()
     fun start()
+    fun stop()
     fun render(textureId: Int, width: Int, height: Int)
     fun render(texture: RenderTexture)
     fun shutdown()
+    fun join()
     fun setRotation(rotation: Int)
     fun setRenderSize(width: Int, height: Int)
     fun rebuildSurface()

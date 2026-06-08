@@ -113,6 +113,11 @@ interface SlarkPlayer {
     fun setRotation(rotation: Rotation)
 
     /**
+     * Whether the player has a video track.
+     */
+    val hasVideo: Boolean
+
+    /**
      * Handle background state changes.
      * This method is called when the player goes into the background or comes back to the foreground.
      * @param isBackground: true if the player is in the background, false if it is in the foreground.

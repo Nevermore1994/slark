@@ -1,8 +1,4 @@
-
-//
 // Copyright (c) 2026 Nevermore-. All rights reserved.
-//
-
 
 package com.slark.sdk
 
@@ -16,13 +12,16 @@ class GLPreviewRenderer : IPreviewRenderer {
     private var positionHandle: Int = 0
     private var textureHandle: Int = 0
     private var texCoordHandle: Int = 0
-    private var rotationHandle: Int = 0
     private var vertexVBO: Int = 0
     private var textureVBO: Int = 0
     private var surfaceSize: Size = Size(0, 0)
     @Volatile
     private var rotationDeg: Double = 0.0
     private val vertexBuffer: java.nio.FloatBuffer = ByteBuffer
+        .allocateDirect(8 * Float.SIZE_BYTES)
+        .order(ByteOrder.nativeOrder())
+        .asFloatBuffer()
+    private val texCoordBuffer: java.nio.FloatBuffer = ByteBuffer
         .allocateDirect(8 * Float.SIZE_BYTES)
         .order(ByteOrder.nativeOrder())
         .asFloatBuffer()
@@ -38,7 +37,6 @@ class GLPreviewRenderer : IPreviewRenderer {
         positionHandle = GLES20.glGetAttribLocation(program, "aPosition")
         textureHandle = GLES20.glGetUniformLocation(program, "uTexture")
         texCoordHandle = GLES20.glGetAttribLocation(program, "aTexCoord")
-        rotationHandle = GLES20.glGetUniformLocation(program, "uRotation")
 
         val buffers = IntArray(2)
         GLES20.glGenBuffers(2, buffers, 0)
@@ -49,11 +47,9 @@ class GLPreviewRenderer : IPreviewRenderer {
         GLES20.glEnableVertexAttribArray(positionHandle)
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
 
-        val texBuf = ByteBuffer.allocateDirect(kTexCoords.size * Float.SIZE_BYTES)
-            .order(ByteOrder.nativeOrder()).asFloatBuffer().apply { put(kTexCoords); position(0) }
         textureVBO = buffers[1]
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, textureVBO)
-        GLES20.glBufferData(GLES20.GL_ARRAY_BUFFER, kTexCoords.size * Float.SIZE_BYTES, texBuf, GLES20.GL_STATIC_DRAW)
+        GLES20.glBufferData(GLES20.GL_ARRAY_BUFFER, 8 * Float.SIZE_BYTES, null, GLES20.GL_DYNAMIC_DRAW)
         GLES20.glVertexAttribPointer(texCoordHandle, 2, GLES20.GL_FLOAT, false, 0, 0)
         GLES20.glEnableVertexAttribArray(texCoordHandle)
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
@@ -66,7 +62,11 @@ class GLPreviewRenderer : IPreviewRenderer {
         GLES20.glUseProgram(program)
         GLES20.glViewport(0, 0, surfaceSize.width, surfaceSize.height)
 
-        val (normX, normY) = computeNormalizedScale(Size(texture.width, texture.height), surfaceSize)
+        val rot = rotationDeg.toInt() % 360
+        val isSwapped = rot == 90 || rot == 270
+        val picW = if (isSwapped) texture.height else texture.width
+        val picH = if (isSwapped) texture.width else texture.height
+        val (normX, normY) = computeNormalizedScale(Size(picW, picH), surfaceSize)
         val verts = floatArrayOf(
             -normX, -normY, normX, -normY,
             -normX,  normY, normX,  normY
@@ -74,10 +74,25 @@ class GLPreviewRenderer : IPreviewRenderer {
         vertexBuffer.rewind()
         vertexBuffer.put(verts)
         vertexBuffer.rewind()
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, vertexVBO)
+        GLES20.glBufferSubData(GLES20.GL_ARRAY_BUFFER, 0, 8 * Float.SIZE_BYTES, vertexBuffer)
+
+        // 通过修改 texcoord 实现旋转，避免 vertex shader 旋转与宽高比矫正冲突
+        val texCoords = when (rot) {
+            90  -> floatArrayOf(1f, 0f, 1f, 1f, 0f, 0f, 0f, 1f)
+            180 -> floatArrayOf(1f, 1f, 0f, 1f, 1f, 0f, 0f, 0f)
+            270 -> floatArrayOf(0f, 1f, 0f, 0f, 1f, 1f, 1f, 0f)
+            else -> floatArrayOf(0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f)
+        }
+        texCoordBuffer.rewind()
+        texCoordBuffer.put(texCoords)
+        texCoordBuffer.rewind()
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, textureVBO)
+        GLES20.glBufferSubData(GLES20.GL_ARRAY_BUFFER, 0, 8 * Float.SIZE_BYTES, texCoordBuffer)
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
 
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture.textureId)
-        // 纹理参数只在 textureId 变化时设置一次
         if (texture.textureId != lastBoundTextureId) {
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
@@ -86,14 +101,9 @@ class GLPreviewRenderer : IPreviewRenderer {
             lastBoundTextureId = texture.textureId
         }
         GLES20.glUniform1i(textureHandle, 0)
-        GLES20.glUniform1f(rotationHandle, Math.toRadians(rotationDeg).toFloat())
 
-        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, vertexVBO)
-        GLES20.glBufferSubData(GLES20.GL_ARRAY_BUFFER, 0, verts.size * Float.SIZE_BYTES, vertexBuffer)
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
-
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
-        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
         GLES20.glUseProgram(0)
         return true
     }
@@ -130,13 +140,9 @@ class GLPreviewRenderer : IPreviewRenderer {
         private val VERTEX_SHADER = """
             attribute vec4 aPosition;
             attribute vec2 aTexCoord;
-            uniform float uRotation;
             varying vec2 vTexCoord;
             void main() {
-                mat4 rot = mat4(cos(uRotation), -sin(uRotation), 0.0, 0.0,
-                                sin(uRotation), cos(uRotation), 0.0, 0.0,
-                                0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0);
-                gl_Position = rot * aPosition;
+                gl_Position = aPosition;
                 vTexCoord = aTexCoord;
             }
         """
@@ -146,6 +152,5 @@ class GLPreviewRenderer : IPreviewRenderer {
             uniform sampler2D uTexture;
             void main() { gl_FragColor = texture2D(uTexture, vTexCoord); }
         """
-        private val kTexCoords = floatArrayOf(0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f)
     }
 }

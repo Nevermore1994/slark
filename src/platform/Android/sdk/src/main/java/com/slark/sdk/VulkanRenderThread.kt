@@ -4,76 +4,103 @@
 
 package com.slark.sdk
 
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.Looper
 import android.view.Choreographer
 import android.view.Surface
 
+// Vulkan-backed render thread, symmetric to iOS RenderMTKView.
+// Uses HandlerThread + Handler (message-driven), matching iOS dispatch_async(renderQueue).
 class VulkanRenderThread(
     private val surface: Surface,
     private var width: Int,
     private var height: Int
-) : Thread(), IRenderThread {
+) : IRenderThread {
+
     override var playerId: String = ""
+    private val renderer: IPreviewRenderer = VulkanPreviewRenderer()
+
+    // HandlerThread for Vulkan rendering, symmetric to iOS renderQueue (serial GCD queue)
+    private val handlerThread = HandlerThread("VulkanRenderThread[$playerId]").apply { start() }
+    private val handler = Handler(handlerThread.looper)
+
+    // VSync state, controlled by start()/stop()
     @Volatile
-    private var running = true
-    private val lock = Object()
+    private var vsyncActive = false
+
+    // Track if Vulkan context is initialized
+    @Volatile
+    private var vulkanInitialized = false
+
+    // startRendering 在 Vulkan 尚未就绪时被调用，等 initContext 完成后自动启动 VSync
+    @Volatile
+    private var startPending = false
+
+    // Pending texture for render, protected by handler posting (single-threaded render queue)
     @Volatile
     private var pendingTexture: RenderTexture = RenderTexture.default()
-    @Volatile
-    private var hasRenderRequest = false
-    @Volatile
-    private var isRebuildingSurface = false
-    @Volatile
-    private var pendingSurface: Surface? = null
 
+    // Choreographer VSync callback, symmetric to iOS CADisplayLink
     private val vsyncCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
-            if (!running) return
+            if (!vsyncActive) return
             if (playerId.isNotEmpty()) {
                 onVSync(playerId)
             }
-            Choreographer.getInstance().postFrameCallback(this)
+            // Re-register for next VSync
+            if (vsyncActive) {
+                Choreographer.getInstance().postFrameCallback(this)
+            }
         }
     }
 
-    override fun run() {
+    // Init Vulkan context on render thread, called after playerId is set.
+    // Symmetric to iOS setContext: -> setupMetal on renderQueue.
+    override fun initContext() {
+        handler.post {
+            if (vulkanInitialized) return@post
+            if (playerId.isEmpty()) {
+                SlarkLog.e(LOG_TAG, "initContext: playerId is empty")
+                return@post
+            }
+            if (createVulkanContext(playerId, surface, width, height)) {
+                renderer.init()
+                renderer.setSurfaceSize(width, height)
+                vulkanInitialized = true
+                if (startPending) {
+                    start()
+                }
+            } else {
+                SlarkLog.e(LOG_TAG, "initContext: createVulkanContext failed")
+            }
+        }
+    }
+
+    // Register VSync (symmetric to iOS CADisplayLink start)
+    override fun start() {
+        if (vsyncActive) return
         if (playerId.isEmpty()) {
-            SlarkLog.e(LOG_TAG, "playerId is empty")
-            surface.release()
+            SlarkLog.e(LOG_TAG, "start: playerId is empty")
             return
         }
-        if (!createVulkanContext(playerId, surface, width, height)) {
-            SlarkLog.e(LOG_TAG, "createVulkanContext failed")
-            surface.release()
+        if (!vulkanInitialized) {
+            startPending = true
             return
         }
-        android.os.Handler(android.os.Looper.getMainLooper()).post {
-            Choreographer.getInstance().postFrameCallback(vsyncCallback)
-        }
-        while (running) {
-            synchronized(lock) {
-                while (!hasRenderRequest && running) {
-                    try { lock.wait(100) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
-                }
-                hasRenderRequest = false
-            }
-            if (!running) break
-            if (isRebuildingSurface) {
-                pendingSurface?.let { s -> rebuildVulkanSurface(playerId, s) }
-                isRebuildingSurface = false
-                pendingSurface = null
-            }
-            val tex = pendingTexture
-            if (tex.isValid()) {
-                drawFrame(playerId, tex.textureId, tex.width, tex.height)
-                if (!tex.isBackup) {
-                    renderFrameComplete(playerId, tex.textureId)
-                }
-            }
-        }
-        destroyVulkanContext(playerId)
-        surface.release()
-        android.os.Handler(android.os.Looper.getMainLooper()).post {
+        startPending = false
+        vsyncActive = true
+        Choreographer.getInstance().postFrameCallback(vsyncCallback)
+    }
+
+    override fun stop() {
+        vsyncActive = false
+        if (Looper.myLooper() != null) {
             Choreographer.getInstance().removeFrameCallback(vsyncCallback)
+        } else {
+            handler.post {
+                Choreographer.getInstance().removeFrameCallback(vsyncCallback)
+            }
         }
     }
 
@@ -83,63 +110,83 @@ class VulkanRenderThread(
 
     override fun render(texture: RenderTexture) {
         if (!texture.isValid()) {
-            SlarkLog.e(LOG_TAG, "Invalid texture for rendering: $texture")
+            SlarkLog.e(LOG_TAG, "render: invalid texture: $texture")
             return
         }
-        synchronized(lock) {
+        handler.post {
             pendingTexture = texture
-            hasRenderRequest = true
-            lock.notify()
+            drawAndPresent()
         }
     }
 
     override fun shutdown() {
-        running = false
-        android.os.Handler(android.os.Looper.getMainLooper()).post {
-            Choreographer.getInstance().removeFrameCallback(vsyncCallback)
+        stop()
+        handler.post {
+            if (vulkanInitialized) {
+                renderer.release()
+                destroyVulkanContext(playerId)
+                vulkanInitialized = false
+            }
         }
-        synchronized(lock) { lock.notify() }
+        handlerThread.quitSafely()
+    }
+
+    override fun join() {
+        handlerThread.join()
     }
 
     override fun setRotation(rotation: Int) {
         if (rotation < 0 || rotation > 360 || rotation % 90 != 0) {
-            SlarkLog.e(LOG_TAG, "Invalid rotation value: $rotation")
+            SlarkLog.e(LOG_TAG, "setRotation: invalid value: $rotation")
             return
         }
-        setVulkanRotation(playerId, rotation)
+        handler.post {
+            renderer.setRotation(rotation.toDouble())
+        }
     }
 
     override fun setRenderSize(width: Int, height: Int) {
         if (width <= 0 || height <= 0) {
-            SlarkLog.e(LOG_TAG, "Invalid render size: $width x $height")
+            SlarkLog.e(LOG_TAG, "setRenderSize: invalid size: $width x $height")
             return
         }
         this.width = width
         this.height = height
-        resizeVulkanSurface(playerId, width, height)
+        handler.post {
+            renderer.setSurfaceSize(width, height)
+        }
     }
 
     override fun rebuildSurface() {
         val backupTexture = getBackupTextureId(playerId)
-        synchronized(lock) {
-            pendingSurface = surface
-            isRebuildingSurface = true
-            if (backupTexture != null && backupTexture.isValid()) {
-                pendingTexture = backupTexture.asBackup()
+        if (backupTexture != null && backupTexture.isValid()) {
+            val backup = backupTexture.asBackup()
+            handler.post {
+                rebuildVulkanSurface(playerId, surface)
+                pendingTexture = backup
+                drawAndPresent()
             }
-            hasRenderRequest = true
-            lock.notify()
+        } else {
+            SlarkLog.w(LOG_TAG, "rebuildSurface: no valid backup texture")
+        }
+    }
+
+    // Draw pendingTexture and present, must be called on render handler thread
+    private fun drawAndPresent() {
+        if (!vulkanInitialized) return
+        if (renderer.drawFrame(pendingTexture)) {
+            presentVulkanFrame(playerId, if (pendingTexture.isBackup) 0 else pendingTexture.textureId)
+        } else {
+            SlarkLog.e(LOG_TAG, "drawAndPresent: render error: {0}", pendingTexture.textureId)
         }
     }
 
     private external fun createVulkanContext(playerId: String, surface: Surface, width: Int, height: Int): Boolean
     private external fun destroyVulkanContext(playerId: String)
-    private external fun drawFrame(playerId: String, textureId: Int, width: Int, height: Int)
-    private external fun renderFrameComplete(playerId: String, textureId: Int)
+    private external fun presentVulkanFrame(playerId: String, textureId: Int)
     private external fun getBackupTextureId(playerId: String): RenderTexture?
-    private external fun setVulkanRotation(playerId: String, rotation: Int)
-    private external fun resizeVulkanSurface(playerId: String, width: Int, height: Int)
     private external fun rebuildVulkanSurface(playerId: String, surface: Surface)
+    // Notify C++ VideoRender::onVSync() on each VSync beat
     private external fun onVSync(playerId: String)
 
     companion object {
