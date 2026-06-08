@@ -1,5 +1,5 @@
 //
-// Created by Nevermore- on 2025/5/6.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #include "AndroidVulkanContext.h"
@@ -23,7 +23,10 @@ AndroidVulkanContext::~AndroidVulkanContext() noexcept {
     release();
 }
 
-bool AndroidVulkanContext::init(ANativeWindow* window, int32_t width, int32_t height) noexcept {
+bool AndroidVulkanContext::init(ANativeWindow* window,
+                                int32_t width,
+                                int32_t height,
+                                void* sharedEGLContext) noexcept {
     if (!window) {
         LogE("AndroidVulkanContext::init: window is null");
         return false;
@@ -48,7 +51,7 @@ bool AndroidVulkanContext::init(ANativeWindow* window, int32_t width, int32_t he
         [&] { return createSyncObjects();         },
         [&] { return createDescriptorPool();      },
         [&] { return createSampler();             },
-        [&] { return initEGLInterop();            },
+        [&] { return initEGLInterop(sharedEGLContext); },
     };
     // clang-format on
     isInit_ = std::all_of(steps.begin(), steps.end(), [](const Step& step) {
@@ -618,10 +621,11 @@ bool AndroidVulkanContext::createSampler() noexcept {
     return true;
 }
 
-bool AndroidVulkanContext::initEGLInterop() noexcept {
+bool AndroidVulkanContext::initEGLInterop(void* sharedEGLContext) noexcept {
     eglContext_ = std::make_shared<AndroidEGLContext>();
-    if (!eglContext_->init(nullptr)) {
-        LogE("EGL interop context init failed");
+    if (!eglContext_->init(sharedEGLContext)) {
+        LogE("EGL interop context init failed (sharedEGLContext={})",
+             sharedEGLContext ? "provided" : "nullptr");
         eglContext_.reset();
         return false;
     }

@@ -63,6 +63,8 @@ private:
     std::mutex mutex_;
     std::unordered_map<uint32_t, RenderInfo> renderInfos_;
     RenderInfo backupRenderInfo_;
+    int32_t rotationDegrees_ = 0;
+    bool rotationApplied_ = false;
 };
 
 using VideoRenderManager = Manager<VideoRender>;

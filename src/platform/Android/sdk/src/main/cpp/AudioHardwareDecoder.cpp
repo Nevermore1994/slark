@@ -26,7 +26,7 @@ Error AudioHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
         int64_t(frame->ptsTime() * 1000000), // convert to microseconds
         flag,
         PacketType::Audio);
-    if (res == Error::Success || res == Error::CodecAgain) {
+    if (res == Error::Success || res == Error::CodecAgain || res == Error::CodecNotProcessed) {
         LogI("send audio packet success, pts:{}, dts:{}, pts time:{}, dts time:{}",
              frame->pts,
              frame->dts,

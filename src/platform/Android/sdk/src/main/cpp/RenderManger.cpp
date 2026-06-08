@@ -1,5 +1,5 @@
 //
-// Created by Nevermore- on 2025/5/12.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #include "AndroidEGLContext.h"
@@ -281,8 +281,11 @@ Java_com_slark_sdk_VulkanRenderThread_createVulkanContext(JNIEnv* env,
         LogE("createVulkanContext: failed to get ANativeWindow for playerId:{}", playerId);
         return false;
     }
+    // 获取主 EGL 上下文，使 Vulkan 的 EGL interop 上下文与解码器共享纹理
+    auto mainContext = GLContextManager::shareInstance().getMainContext(playerId);
+    void* nativeSharedCtx = mainContext ? mainContext->nativeContext() : nullptr;
     auto ctx = std::make_shared<AndroidVulkanContext>();
-    bool ok = ctx->init(window, width, height);
+    bool ok = ctx->init(window, width, height, nativeSharedCtx);
     ANativeWindow_release(window);
     if (!ok) {
         LogE("createVulkanContext: init failed for playerId:{}", playerId);
@@ -313,6 +316,17 @@ extern "C" JNIEXPORT void JNICALL Java_com_slark_sdk_VulkanRenderThread_drawFram
     auto ctx = VulkanContextManager::shareInstance().find(JNI::FromJVM::str(env, player_id));
     if (ctx) {
         ctx->drawFrame(textureId, width, height);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_slark_sdk_VulkanRenderThread_presentVulkanFrame(JNIEnv* env,
+                                                         jobject /*thiz*/,
+                                                         jstring player_id,
+                                                         jint textureId) {
+    auto render = VideoRenderManager::shareInstance().find(JNI::FromJVM::str(env, player_id));
+    if (render) {
+        render->renderFrameComplete(textureId);
     }
 }
 

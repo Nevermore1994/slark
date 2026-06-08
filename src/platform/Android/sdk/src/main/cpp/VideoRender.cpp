@@ -60,9 +60,11 @@ void VideoRender::pause() noexcept {
 }
 
 void VideoRender::notifyVideoInfo(std::shared_ptr<VideoInfo> videoInfo) noexcept {
-    LogI("video info: fps:{}, frame duration:{}ms",
+    LogI("video info: fps:{}, frame duration:{}ms, rotation:{}",
          videoInfo->fps,
-         videoInfo->frameDurationMs().count());
+         videoInfo->frameDurationMs().count(),
+         videoInfo->rotationDegrees);
+    rotationDegrees_ = videoInfo->rotationDegrees;
 }
 
 void VideoRender::onVSync() noexcept {
@@ -81,18 +83,45 @@ void VideoRender::requestRenderFrame() noexcept {
         return;
     }
     auto frame = std::invoke(*func);
+    if (!frame) {
+        LogD("requestRenderFrame: no frame available");
+        return;
+    }
     renderFrame(frame);
+}
+
+void Native_SetVideoRotation(const std::string& playerId, int32_t rotationDegrees) {
+    using namespace slark::JNI;
+    constexpr std::string_view kClass = "com/slark/sdk/SlarkPlayerManager";
+    JNIEnvGuard env(getJavaVM());
+    auto playerClass = JNICache::instance().getClass(env.get(), kClass);
+    if (!playerClass) {
+        LogE("not found player manager class");
+        return;
+    }
+    auto methodSig = JNI::makeSignature(JNI::Sig::Void, JNI::Sig::String, JNI::Sig::Int);
+    auto methodId = JNICache::instance().getStaticMethod(playerClass, "setVideoRotation", methodSig);
+    if (!methodId) {
+        LogE("not found setVideoRotation method");
+        return;
+    }
+    env.get()->CallStaticVoidMethod(playerClass.get(), methodId.get(),
+                                    JNI::ToJVM::str(env.get(), playerId).get(),
+                                    static_cast<jint>(rotationDegrees));
 }
 
 void VideoRender::renderFrame(const AVFrameRefPtr& frame) noexcept {
     if (!frame) {
-        LogD("renderFrame: frame is null, skip");
         return;
     }
     auto videoFrameInfo = std::dynamic_pointer_cast<VideoFrameInfo>(frame->info);
     if (!videoFrameInfo) {
         LogE("videoFrameInfo is null");
         return;
+    }
+    if (!rotationApplied_ && rotationDegrees_ != 0) {
+        Native_SetVideoRotation(playerId_, rotationDegrees_);
+        rotationApplied_ = true;
     }
     if (videoFrameInfo->format == FrameFormat::MediaCodecSurface) {
         auto* tex = static_cast<Texture*>(frame->opaque);

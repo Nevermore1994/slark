@@ -46,4 +46,8 @@ static AndroidPlatformRegistrar androidPlatformRegistrar;
 
 } // namespace
 
+std::shared_ptr<IAudioRender> createAudioRender(const std::shared_ptr<AudioInfo>& audioInfo) {
+    return PlatformRegistry::instance().createAudioRender(audioInfo);
+}
+
 } // namespace slark

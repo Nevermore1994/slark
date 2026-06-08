@@ -86,6 +86,10 @@ void AndroidEGLContext::detachContext() noexcept {
 }
 
 void AndroidEGLContext::releaseSurface(EGLSurface eglSurface) noexcept {
+    if (eglSurface == nullptr || display_ == EGL_NO_DISPLAY) {
+        return;
+    }
+    glFinish();
     eglDestroySurface(display_, eglSurface);
 }
 

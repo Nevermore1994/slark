@@ -37,6 +37,7 @@ constexpr std::string_view kPlayerEventNames[] = {
     "PlayEnd",
     "UpdateCacheTime",
     "OnError",
+    "VideoRotation",
 };
 
 template <typename T, size_t N>
@@ -73,6 +74,16 @@ public:
             "notifyPlayerState",
             JNI::JObjectWithSig(ToJVM::str(env, playerId), JNI::Sig::String),
             JNI::JObjectWithSig(std::move(stateEnum), JNI::makeObject(kPlayerStateClass)));
+        // Prepared: start VSync (symmetric to iOS CADisplayLink start)
+        if (state == PlayerState::Prepared) {
+            JNI::JNICall::callStatic<void>(env, kPlayerManagerClass, "startRendering",
+                                           JNI::JObjectWithSig(ToJVM::str(env, playerId),
+                                                                JNI::Sig::String));
+        } else if (state == PlayerState::Stop || state == PlayerState::Error) {
+            JNI::JNICall::callStatic<void>(env, kPlayerManagerClass, "stopRendering",
+                                           JNI::JObjectWithSig(ToJVM::str(env, playerId),
+                                                                JNI::Sig::String));
+        }
     }
 
     void notifyPlayerEvent(std::string_view playerId,
@@ -270,4 +281,18 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_state(JNIEnv* env,
     }
     auto stateValue = JNICache::instance().getEnumField(env, kPlayerStateClass, fieldView);
     return stateValue.detach();
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_slark_sdk_SlarkPlayerManager_00024Companion_hasVideo(JNIEnv* env,
+                                                              jobject /*thiz*/,
+                                                              jstring jPlayerId) {
+    auto playerId = FromJVM::str(env, jPlayerId);
+    auto hasVideo = false;
+    if (auto player = PlayerManager::shareInstance().find(playerId)) {
+        hasVideo = player->info().hasVideo;
+    } else {
+        LogE("not found player, {}", playerId);
+    }
+    return hasVideo;
 }

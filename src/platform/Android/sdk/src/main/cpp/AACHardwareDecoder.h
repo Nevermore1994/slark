@@ -21,7 +21,12 @@ public:
 
     void flush() noexcept override;
 
-    SLARK_DECODER_INFO(AACHardwareDecoder, DecoderType::AACHardwareDecoder)
+    inline static const DecoderTypeInfo& info() noexcept {
+        static DecoderTypeInfo info = {
+            DecoderType::AACHardwareDecoder,
+            Reflection::enroll<AACHardwareDecoder>("AACHardwareDecoder")};
+        return info;
+    }
 
     void receiveDecodedData(DataPtr data, int64_t pts, bool isCompleted) noexcept override;
 };

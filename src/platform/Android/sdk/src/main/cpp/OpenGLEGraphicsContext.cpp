@@ -93,7 +93,7 @@ IFrameBufferRefPtr OpenGLEGraphicsContext::acquireFrameBuffer(uint32_t width,
     return std::make_shared<OpenGLFrameBuffer>(std::move(fb));
 }
 
-ITexturePtr OpenGLEGraphicsContext::createTexture(uint32_t width, uint32_t height) noexcept {
+ITextureRefPtr OpenGLEGraphicsContext::createTexture(uint32_t width, uint32_t height) noexcept {
     auto texture = std::make_unique<Texture>(width, height);
     if (!texture->isValid()) {
         return nullptr;

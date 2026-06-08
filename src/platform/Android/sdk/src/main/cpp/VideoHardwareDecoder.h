@@ -1,5 +1,5 @@
 //
-// Created by Nevermore on 2025/3/6.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #pragma once
@@ -10,9 +10,6 @@
 #include "VideoDecodeResource.h"
 
 #include <atomic>
-#include <condition_variable>
-#include <mutex>
-#include <thread>
 #include <unordered_set>
 
 namespace slark {
@@ -30,6 +27,13 @@ public:
 
     Error decode(AVFrameRefPtr& frame) noexcept override;
 
+    bool hasPendingOutput() const noexcept override {
+        return mode_ == DecodeMode::Texture &&
+               pendingOutput_.load(std::memory_order_acquire);
+    }
+
+    Error renderOutput() noexcept override;
+
     inline static const DecoderTypeInfo& info() noexcept {
         static DecoderTypeInfo info = {
             DecoderType::VideoHardwareDecoder,
@@ -43,28 +47,19 @@ public:
 
     void flush() noexcept override;
 
+    void close() noexcept override;
+
+    void stop() noexcept;
+
 private:
     Error sendPacket(AVFrameRefPtr& frame) noexcept;
 
-    Error decodeByteBufferMode(AVFrameRefPtr& frame) noexcept;
-
-    Error decodeTextureMode(AVFrameRefPtr& frame) noexcept;
-
-    /// 启动帧处理线程（Texture 模式专用）
-    void startFrameWorker() noexcept;
-
-    /// 停止帧处理线程
-    void stopFrameWorker() noexcept;
-
-    /// 帧处理线程主循环：等待帧就绪信号 → FBO 绘制 → invokeReceiveFunc
-    void frameWorkerLoop() noexcept;
+    bool tryAquireFrame(int64_t& pts, bool& isCompleted) noexcept;
 
     void initResource() noexcept;
 
-    /// 将 texture 归还 TexturePool
     void restoreTexture(TexturePtr texture) noexcept;
 
-    /// 从 FBO 取出 texture，构造输出 AVFrame
     std::shared_ptr<AVFrame> buildOutputFrame(FrameBuffer* fb,
                                               int64_t pts,
                                               uint32_t width,
@@ -76,12 +71,10 @@ private:
     std::shared_ptr<VideoDecodeResource> resource_ = nullptr;
     std::unordered_set<int64_t> discardPackets_;
 
-    // 帧处理线程（Texture 模式）
-    std::thread frameWorker_;
-    std::mutex frameReadyMutex_;
-    std::condition_variable frameReadyCv_;
-    std::atomic<int32_t> pendingFrameCount_{0};
-    std::atomic_bool frameWorkerRunning_{false};
+    std::atomic<bool> pendingOutput_{false};
+    bool contextAttached_ = false;
+    std::atomic<uint32_t> renderWidth_{0};
+    std::atomic<uint32_t> renderHeight_{0};
 };
 
 } // namespace slark

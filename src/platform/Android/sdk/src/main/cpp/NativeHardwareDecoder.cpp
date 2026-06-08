@@ -101,12 +101,29 @@ std::string Native_HardwareDecoder_createVideoDecoder(
         LogE("build VideoDecoderConfig failed");
         return {};
     }
+
+    // 构建 CSD 数据（Annex B: start code + NAL），通过 MediaFormat csd-0 传入，不占输入 slot
+    auto decoderInfo = std::make_unique<Data>();
+    static constexpr uint8_t kNaluStartCode[] = {0x00, 0x00, 0x00, 0x01};
+    Data naluHeader(4, kNaluStartCode);
+    if (decoderConfig->vps) {
+        decoderInfo->append(naluHeader);
+        decoderInfo->append(*decoderConfig->vps);
+    }
+    decoderInfo->append(naluHeader);
+    decoderInfo->append(*decoderConfig->sps);
+    decoderInfo->append(naluHeader);
+    decoderInfo->append(*decoderConfig->pps);
+    auto csdBytes = ToJVM::naluBytes(env, *decoderInfo, /*skipExistingHeader=*/true);
+
     auto jDecoderId = JNI::JNICall::callStatic<jobject>(
         env,
         kMediaCodecDecoderClass,
         "createVideoDecoder",
+        JNI::ReturnSig{JNI::Sig::String},
         JNI::JObjectWithSig(ToJVM::str(env, decoderConfig->mediaInfo), JNI::Sig::String),
-        JNI::JObjectWithSig(std::move(configObj), JNI::makeObject(kConfigClass)));
+        JNI::JObjectWithSig(std::move(configObj), JNI::makeObject(kConfigClass)),
+        JNI::JObjectWithSig(std::move(csdBytes), JNI::Sig::ByteArray));
     auto decoderId =
         jDecoderId ? FromJVM::str(env, reinterpret_cast<jstring>(jDecoderId.get())) : std::string{};
     if (decoderId.empty()) {
@@ -114,24 +131,6 @@ std::string Native_HardwareDecoder_createVideoDecoder(
         return {};
     }
     LogI("create video decoder:{}", decoderId);
-
-    auto decoderInfo = std::make_unique<Data>();
-    static constexpr uint8_t kNaluStartCode[] = {0x00, 0x00, 0x00, 0x01};
-    Data naluHeader(4, kNaluStartCode);
-    decoderInfo->append(naluHeader);
-    decoderInfo->append(*decoderConfig->sps);
-    decoderInfo->append(naluHeader);
-    decoderInfo->append(*decoderConfig->pps);
-    if (decoderConfig->vps) {
-        decoderInfo->append(naluHeader);
-        decoderInfo->append(*decoderConfig->vps);
-    }
-    Native_HardwareDecoder_sendPacket(env,
-                                      decoderId,
-                                      decoderInfo,
-                                      0,
-                                      NativeDecodeFlag::CodecConfig,
-                                      PacketType::Video);
     return decoderId;
 }
 
@@ -157,10 +156,12 @@ std::string Native_HardwareDecoder_createAudioDecoder(
         LogE("build AudioDecoderConfig failed");
         return {};
     }
+    // 使用 ReturnSig 指定返回类型为 String，而非推导为 jobject(Ljava/lang/Object;)
     auto jDecoderId = JNI::JNICall::callStatic<jobject>(
         env,
         kMediaCodecDecoderClass,
         "createAudioDecoder",
+        JNI::ReturnSig{JNI::Sig::String},
         JNI::JObjectWithSig(ToJVM::str(env, decoderConfig->mediaInfo), JNI::Sig::String),
         JNI::JObjectWithSig(std::move(configObj), JNI::makeObject(kConfigClass)));
     return jDecoderId ? FromJVM::str(env, reinterpret_cast<jstring>(jDecoderId.get()))

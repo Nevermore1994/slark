@@ -13,21 +13,30 @@
 using namespace slark;
 using namespace slark::JNI;
 
-extern "C" JNIEXPORT void JNICALL
-Java_com_slark_sdk_SlarkNativeBridge_logout(JNIEnv* env,
-                                            jobject /* this*/,
-                                            const std::string& log) {
-    JNI::JNICall::callStatic<void>(env, "com/slark/sdk/SlarkNativeBridge", "logout", log);
+extern "C" JNIEXPORT void JNICALL Java_com_slark_sdk_SlarkNativeBridge_logout(JNIEnv* env,
+                                                                              jobject /* this */,
+                                                                              jint level,
+                                                                              jstring message) {
+    JNI::JNICall::callStatic<void>(env,
+                                   "com/slark/sdk/SlarkNativeBridge",
+                                   "logout",
+                                   level,
+                                   message);
 }
 
 namespace slark {
 
-void printLog(const std::string& logStr) {
+void printLog(LogType type, const std::string& logStr) {
     JNIEnvGuard guard(JNI::getJavaVM());
     if (!guard) {
         return;
     }
-    Java_com_slark_sdk_SlarkNativeBridge_logout(guard.get(), nullptr, logStr);
+    auto* env = guard.get();
+    auto jMessage = JNI::ToJVM::str(env, logStr);
+    Java_com_slark_sdk_SlarkNativeBridge_logout(env,
+                                                nullptr,
+                                                static_cast<jint>(type),
+                                                jMessage.get());
 }
 
 } // namespace slark

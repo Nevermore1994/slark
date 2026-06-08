@@ -1,5 +1,5 @@
 //
-// Created by Nevermore- on 2025/5/6.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #pragma once
@@ -20,20 +20,15 @@
 
 namespace slark {
 
-/// Vulkan 渲染上下文，管理 VkInstance/VkDevice/VkSwapchain 生命周期。
-/// 内部通过 EGL + AHardwareBuffer 桥接 MediaCodec OES 纹理到 Vulkan swapchain。
 class AndroidVulkanContext {
 public:
     AndroidVulkanContext() = default;
     ~AndroidVulkanContext() noexcept;
 
-    /// 初始化 Vulkan 实例、设备、交换链，以及 EGL interop 上下文
-    bool init(ANativeWindow* window, int32_t width, int32_t height) noexcept;
+    bool init(ANativeWindow* window, int32_t width, int32_t height, void* sharedEGLContext = nullptr) noexcept;
 
-    /// 重建交换链（Surface 尺寸变化或 Surface 重建时调用）
     bool recreateSwapchain(ANativeWindow* window, int32_t width, int32_t height) noexcept;
 
-    /// 将 OES textureId 渲染到 swapchain（EGL blit → AHardwareBuffer → Vulkan present）
     void drawFrame(int32_t textureId, int32_t width, int32_t height) noexcept;
 
     void setRotation(int32_t rotation) noexcept {
@@ -62,7 +57,7 @@ private:
     bool createSyncObjects() noexcept;
     bool createDescriptorPool() noexcept;
 
-    bool initEGLInterop() noexcept;
+    bool initEGLInterop(void* sharedEGLContext) noexcept;
     bool loadEGLExtensions() noexcept;
     bool allocateHardwareBuffer(int32_t width, int32_t height) noexcept;
     bool createEGLImageFromHWB() noexcept;

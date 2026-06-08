@@ -34,7 +34,7 @@ public:
     void releaseSurface(IGraphicsSurfaceRefPtr surface) noexcept override;
 
     IFrameBufferRefPtr acquireFrameBuffer(uint32_t width, uint32_t height) noexcept override;
-    ITexturePtr createTexture(uint32_t width, uint32_t height) noexcept override;
+    ITextureRefPtr createTexture(uint32_t width, uint32_t height) noexcept override;
 
     void* nativeContext() noexcept override;
 

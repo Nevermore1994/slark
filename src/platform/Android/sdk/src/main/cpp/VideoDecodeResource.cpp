@@ -1,10 +1,11 @@
 //
-// Created by Nevermore- on 2025/6/22.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #include "VideoDecodeResource.h"
 
 #include "GLContextManager.h"
+#include "Log.hpp"
 
 #include <utility>
 
@@ -20,7 +21,15 @@ VideoDecodeResource::~VideoDecodeResource() noexcept {
 
 void VideoDecodeResource::init() noexcept {
     auto context = GLContextManager::shareInstance().createShareContextWithId(playerId_);
+    if (!context) {
+        LogE("VideoDecodeResource: failed to create shared context for {}", playerId_);
+        return;
+    }
     context_ = std::dynamic_pointer_cast<AndroidEGLContext>(context);
+    if (!context_) {
+        LogE("VideoDecodeResource: shared context is not AndroidEGLContext for {}", playerId_);
+        return;
+    }
     frameBufferPool_ = std::make_unique<FrameBufferPool>();
 }
 
