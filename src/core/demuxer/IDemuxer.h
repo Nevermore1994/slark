@@ -15,6 +15,7 @@
 #include "VideoInfo.h"
 
 #include <memory>
+#include <optional>
 #include <tuple>
 
 namespace slark {
@@ -80,7 +81,10 @@ public:
 
     /// 刷新 demuxer 内部状态，清除缓冲区中的残留数据
     virtual void flush() noexcept {
-        reset();
+        isCompleted_ = false;
+        if (buffer_) {
+            buffer_->reset();
+        }
     }
 
     virtual void seekPos(uint64_t pos) noexcept {
@@ -146,6 +150,14 @@ public:
         config_ = std::move(config);
     }
 
+    [[nodiscard]] std::optional<uint64_t> pendingSeekPos() const noexcept {
+        return pendingSeekPos_;
+    }
+
+    void resetPendingSeek() noexcept {
+        pendingSeekPos_.reset();
+    }
+
 protected:
     bool isOpened_ = false;
     bool isCompleted_ = false;
@@ -156,6 +168,7 @@ protected:
     std::shared_ptr<VideoInfo> videoInfo_;
     std::shared_ptr<AudioInfo> audioInfo_;
     std::shared_ptr<DemuxerHeaderInfo> headerInfo_;
+    std::optional<uint64_t> pendingSeekPos_;
 };
 
 } // end namespace slark

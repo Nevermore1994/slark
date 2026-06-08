@@ -77,6 +77,7 @@ public:
     };
 
     std::vector<SidxSegment> sidxSegments;
+    int32_t rotationDegrees = 0;
 
 public:
     /// @return true if current sample is fully within buffer; optionally outputs sample start
@@ -147,6 +148,8 @@ public:
 
     void close() noexcept override;
 
+    void flush() noexcept override;
+
     void seekPos(uint64_t pos) noexcept override;
 
     DemuxerResult parseData(DataPacket& packet) noexcept override;
@@ -194,6 +197,7 @@ private:
     BoxRefPtr rootBox_;
     std::unordered_map<CodecId, std::shared_ptr<TrackContext>> tracks_;
     bool isFragmented_ = false;
+    std::unordered_map<uint32_t, int32_t> trackRotations_;
 };
 
 } // namespace slark

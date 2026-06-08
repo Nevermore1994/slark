@@ -32,7 +32,8 @@ void DemuxerComponent::reset() noexcept {
     }
     flushed_ = false;
     demuxer_.reset();
-    probeBuffer_.reset();
+    // probeBuffer_ 可能正被 worker 线程通过引用使用，不能在 reset 中释放。
+    // 析构函数会先 join worker 线程再销毁成员，由那里安全清理。
 }
 
 void DemuxerComponent::close() noexcept {
@@ -89,6 +90,16 @@ void DemuxerComponent::runLoop() noexcept {
             continue;
         }
 
+        // seek 后验证第一个包的 offset：如果不匹配目标位置则丢弃（过期数据）
+        auto expectedOffset = pendingSeekVerifiedOffset_.load(std::memory_order_acquire);
+        if (expectedOffset != 0) {
+            if (static_cast<uint64_t>(packet.offset) != expectedOffset) {
+                LogW("open: discard stale packet offset={}, expected={}", packet.offset, expectedOffset);
+                continue;
+            }
+            pendingSeekVerifiedOffset_.store(0, std::memory_order_release);
+        }
+
         auto demuxer = demuxer_.load();
         if (!demuxer || !demuxer->isOpened()) {
             openDemuxer(packet);
@@ -118,20 +129,21 @@ bool DemuxerComponent::open() noexcept {
         return true;
     }
     if (!demuxer->open(probeBuffer_)) {
-        // open 失败，可能需要继续探测（如 MP4 moov box 在文件末尾）
-        if (auto headerInfo = demuxer->headerInfo(); headerInfo && headerInfo->headerLength > 0) {
-            auto pos = headerInfo->headerLength;
-            seekToPos(pos);
-            probeBuffer_->reset();
-            probeBuffer_->setOffset(pos);
-            invokeSeekFunc(Range(pos, 0));
+        if (auto seekTo = demuxer->pendingSeekPos(); seekTo.has_value()) {
+            demuxer->resetPendingSeek();
+            probeBuffer_.reset();
+            invokeSeekFunc(Range(*seekTo));
+            // seek 后第一个包如果 offset 不匹配目标，说明是 seek 生效前
+            // IO 线程发来的过期数据，需要丢弃
+            pendingSeekVerifiedOffset_.store(*seekTo, std::memory_order_release);
+            flushed_.store(false, std::memory_order_release);
         }
         return false;
     }
 
     if (auto headerInfo = demuxer->headerInfo(); headerInfo && headerInfo->headerLength > 0) {
         demuxer->seekPos(headerInfo->headerLength);
-        invokeSeekFunc(Range(headerInfo->headerLength, 0));
+        invokeSeekFunc(Range(headerInfo->headerLength));
         flushed_ = false;
         LogI("demuxer seek to:{}", headerInfo->headerLength);
     }
@@ -162,7 +174,7 @@ bool DemuxerComponent::openDemuxer(DataPacket& packet) noexcept {
         probeBuffer_ = std::make_unique<Buffer>();
     }
     if (!probeBuffer_->append(static_cast<uint64_t>(packet.offset), std::move(packet.data))) {
-        LogE("append data error:{}", packet.offset);
+        LogW("append failed, offset={}, skip this packet", packet.offset);
         return false;
     }
     if (!demuxer_.isValid() && !createDemuxer()) {
@@ -200,7 +212,7 @@ void DemuxerComponent::seekToPos(uint64_t pos) noexcept {
     demuxer->seekPos(pos);
     // HLS 的 pos 是 segment index，不能作为 byte offset 通知 IO 层
     if (demuxer->type() != DemuxerType::HLS) {
-        invokeSeekFunc(Range(pos, 0));
+        invokeSeekFunc(Range(pos));
     }
 }
 

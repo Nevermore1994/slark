@@ -179,6 +179,7 @@ private:
     std::atomic_bool flushed_ = false;
     std::atomic_bool isClosed_ = false;
     std::atomic_bool stopRequested_ = false;
+    std::atomic<uint64_t> pendingSeekVerifiedOffset_{0};
     std::weak_ptr<perf::PlaySession> session_;
 };
 
