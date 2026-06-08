@@ -15,10 +15,12 @@
 #include "NotifyCenter.h"
 #include "Player.h"
 #include "Synchronized.hpp"
+#include "Timer.h"
 #include "pipeline/PlayPipeline.h"
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 
 namespace slark {
 
@@ -108,9 +110,13 @@ private:
 
     void doPlay() noexcept;
 
+    void resumeInternal() noexcept;
+
     void doPause() noexcept;
 
     void doStop() noexcept;
+
+    void forceCleanup() noexcept;
 
     void doSeek(PlayerSeekRequest seekRequest) noexcept;
 
@@ -134,6 +140,9 @@ private:
     ReceiverPtr<EventPtr> receiver_;
 
     std::shared_ptr<Thread> ownerThread_ = nullptr;
+    TimerId fastTickTaskId_;
+    TimerId playedTimeTaskId_;
+    TimerId cacheTickTaskId_;
 
     NotifyCenter notifyCenter_;
     MediaSourceManager mediaSourceManager_;
@@ -155,6 +164,8 @@ private:
 
     std::mutex releaseMutex_;
     std::condition_variable cond_;
+
+    std::once_flag bindOwnerThreadFlag_;
 };
 
 } // namespace slark

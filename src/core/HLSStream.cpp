@@ -34,6 +34,7 @@ StreamResult<StreamInfo> HLSStream::open(const OpenParams& params) {
     }
 
     info_.type = StreamType::HLS;
+    info_.uri = params.uri;
     info_.isSeekable = true;
     info_.isLive = false;
 

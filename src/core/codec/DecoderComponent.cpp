@@ -14,6 +14,7 @@ DecoderComponent::DecoderComponent(ReceiverPtr<AVFrameRefPtr> receiver,
                                    DecoderComponentConfig config)
     : config_(std::move(config)), receiver_(std::move(receiver)) {}
 
+
 DecoderComponent::~DecoderComponent() {
     stop();
 }
@@ -37,6 +38,13 @@ void DecoderComponent::open(DecoderType type,
             s->config_.onData(std::move(data));
         }
     });
+    decoder->setWakeupCallback([weak = weak_from_this()]() {
+        if (auto s = weak.lock()) {
+            if (s->receiver_) {
+                s->receiver_->wakeup();
+            }
+        }
+    });
     if (!decoder->open(config)) {
         LogE("open {} decoder failed", isVideo ? "video" : "audio");
         if (config_.onError) {
@@ -56,7 +64,6 @@ void DecoderComponent::close() noexcept {
         return;
     }
     decoder_->close();
-    decoder_.reset();
 }
 
 void DecoderComponent::flush() noexcept {
@@ -110,44 +117,97 @@ void DecoderComponent::stop() noexcept {
         decodeWorker_.reset();
     }
     close();
+    decoder_.reset();
 }
 
 bool DecoderComponent::isRunning() const noexcept {
     return decodeWorker_ && decodeWorker_->isRunning();
 }
 
+void DecoderComponent::processPendingOutputs() noexcept {
+    if (!decoder_) {
+        return;
+    }
+    while (decoder_->hasPendingOutput() && !stopRequested_.load(std::memory_order_acquire)) {
+        (void)decoder_->renderOutput();
+    }
+}
+
+bool DecoderComponent::waitIfPaused() noexcept {
+    std::unique_lock<std::mutex> lock(pauseMutex_);
+    if (paused_ && !stopRequested_.load(std::memory_order_acquire)) {
+        Thread::ScopedInactive guard;
+        pauseCv_.wait(lock, [this] {
+            return stopRequested_.load(std::memory_order_acquire) || !paused_;
+        });
+    }
+    return stopRequested_.load(std::memory_order_acquire);
+}
+
+AVFrameRefPtr DecoderComponent::waitForFrame() noexcept {
+    auto exp = receiver_->receive();
+    if (!exp.has_value()) {
+        if (exp.error() == ChannelEventType::Awakened) {
+            processPendingOutputs();
+        }
+        return nullptr;
+    }
+    // flush 兜底：清空窗口期残帧
+    if (flushed_.load(std::memory_order_acquire)) {
+        (void)receiver_->tryReceiveAll();
+        flushed_.store(false, std::memory_order_release);
+        return nullptr;
+    }
+    return std::move(*exp);
+}
+
+bool DecoderComponent::decodeFrame(AVFrameRefPtr& frame) noexcept {
+    int retryCount = 0;
+    while (!stopRequested_.load(std::memory_order_acquire) && decoder_) {
+        auto res = decoder_->decode(frame);
+        if (res == Error::Success) {
+            return true;
+        }
+        if (res == Error::CodecNotProcessed || res == Error::CodecAgain) {
+            retryCount++;
+            if (retryCount > kMaxDecodeRetry) {
+                LogE("decode retry exhausted after {} retries, pts:{}", kMaxDecodeRetry, frame->pts);
+                if (config_.onError) {
+                    config_.onError(Error::CodecResourceExhausted);
+                }
+                return false;
+            }
+            auto backoff = std::chrono::milliseconds(1) * (1 << std::min(retryCount, 4));
+            backoff = std::min(backoff, kMaxDecodeBackoff);
+            std::this_thread::sleep_for(backoff);
+            processPendingOutputs();
+        } else {
+            if (stopRequested_.load(std::memory_order_acquire) &&
+                res == Error::CodecNotStarted) {
+                break;
+            }
+            LogE("decode error: {}", toString(res));
+            if (config_.onError) {
+                config_.onError(res);
+            }
+            return false;
+        }
+    }
+    return true; // stop requested, not an error
+}
+
 void DecoderComponent::runLoop() noexcept {
     while (!stopRequested_.load(std::memory_order_acquire)) {
-        {
-            std::unique_lock<std::mutex> lock(pauseMutex_);
-            if (paused_ && !stopRequested_.load(std::memory_order_acquire)) {
-                Thread::ScopedInactive guard; // 阻塞等待时标记非活跃，防止 ThreadManager 误判卡死
-                pauseCv_.wait(lock, [this] {
-                    return stopRequested_.load(std::memory_order_acquire) || !paused_;
-                });
-            }
-        }
-        if (stopRequested_.load(std::memory_order_acquire)) {
+        if (waitIfPaused()) {
             break;
         }
 
-        auto exp = receiver_->receive();
+        processPendingOutputs();
 
-        if (!exp.has_value()) {
-            if (exp.error() == ChannelEventType::Awakened) {
-                continue;
-            }
-            break;
-        }
-
-        // flush 兜底：清空窗口期残帧
-        if (flushed_.load(std::memory_order_acquire)) {
-            (void)receiver_->tryReceiveAll();
-            flushed_.store(false, std::memory_order_release);
+        auto frame = waitForFrame();
+        if (!frame) {
             continue;
         }
-
-        auto frame = std::move(*exp);
 
         if (!decoder_) {
             continue;
@@ -159,14 +219,11 @@ void DecoderComponent::runLoop() noexcept {
             continue;
         }
 
-        auto res = decoder_->decode(frame);
-        if (res != Error::Success && res != Error::CodecAgain) {
-            LogE("decode error: {}", toString(res));
-            if (config_.onError) {
-                config_.onError(res);
-            }
-            break;
+        if (!decodeFrame(frame)) {
+            return;
         }
+
+        processPendingOutputs();
     }
 }
 

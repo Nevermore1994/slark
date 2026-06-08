@@ -1,8 +1,5 @@
 //
-//  IDecoder.h
-//  slark
-//
-//  Created by Nevermore.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #pragma once
 #include "AVFrame.hpp"
@@ -93,8 +90,24 @@ public:
 
     virtual Error decode(AVFrameRefPtr& frame) noexcept = 0;
 
+    /// 解码器是否有待处理的输出帧（Texture 模式专用，默认无）
+    virtual bool hasPendingOutput() const noexcept {
+        return false;
+    }
+
+    /// 渲染并递送待处理的输出帧（Texture 模式专用，默认 no-op）
+    virtual Error renderOutput() noexcept {
+        return Error::CodecError;
+    }
+
+    using WakeupCallback = std::function<void()>;
+
     void setReceiveFunc(DecoderReceiveFunc&& func) noexcept {
         receiveFunc_.reset(std::make_shared<DecoderReceiveFunc>(std::move(func)));
+    }
+
+    void setWakeupCallback(WakeupCallback cb) noexcept {
+        wakeupCallback_ = std::move(cb);
     }
 
     bool isCompleted() const noexcept {
@@ -107,10 +120,17 @@ public:
         }
     }
 
+    void notifyWakeup() noexcept {
+        if (wakeupCallback_) {
+            wakeupCallback_();
+        }
+    }
+
 protected:
     std::atomic_bool isOpen_ = false;
     std::atomic_bool isCompleted_ = false;
     AtomicSharedPtr<DecoderReceiveFunc> receiveFunc_;
+    WakeupCallback wakeupCallback_;
     DecoderType decoderType_ = DecoderType::Unknown;
     std::shared_ptr<DecoderConfig> config_;
 };

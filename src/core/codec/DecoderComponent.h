@@ -1,10 +1,12 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
+
 #pragma once
 #include "Channel.hpp"
 #include "DecoderManager.h"
 #include "Error.h"
+#include "IDecoder.h"
 #include "IPipelineComponent.h"
 #include "Thread.h"
 #include "ThreadManager.h"
@@ -49,6 +51,18 @@ public:
 private:
     void runLoop() noexcept;
 
+    void processPendingOutputs() noexcept;
+
+    [[nodiscard]] bool waitIfPaused() noexcept;
+
+    [[nodiscard]] AVFrameRefPtr waitForFrame() noexcept;
+
+    [[nodiscard]] bool decodeFrame(AVFrameRefPtr& frame) noexcept;
+
+private:
+    static constexpr int kMaxDecodeRetry = 100;
+    static constexpr auto kMaxDecodeBackoff = std::chrono::milliseconds(16);
+
 private:
     std::atomic<bool> stopRequested_{false};
     std::atomic<bool> flushed_{false};
@@ -60,6 +74,7 @@ private:
     std::shared_ptr<IDecoder> decoder_;
     std::shared_ptr<Thread> decodeWorker_;
     ReceiverPtr<AVFrameRefPtr> receiver_;
+    std::function<void()> wakeupFunc_;
 };
 
 } // namespace slark

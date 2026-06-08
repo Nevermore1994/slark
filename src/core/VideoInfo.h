@@ -19,11 +19,12 @@ struct VideoInfo {
     uint32_t timeScale{};
     uint8_t profile{};
     uint8_t level{};
-    uint8_t numRefFrames{}; // H.264 SPS num_ref_frames / H.265 sps_max_dec_pic_buffering
+    uint8_t numRefFrames{};
     std::string mediaInfo;
     DataRefPtr sps;
     DataRefPtr pps;
     DataRefPtr vps;
+    int32_t rotationDegrees = 0;
 
     double frameDuration() const noexcept {
         if (fps == 0) {

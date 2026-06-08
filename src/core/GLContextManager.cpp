@@ -3,6 +3,7 @@
 //
 
 #include "GLContextManager.h"
+#include "Log.hpp"
 
 #include <mutex>
 
@@ -38,8 +39,15 @@ IEGLContextRefPtr GLContextManager::getMainContext(const std::string& id) noexce
 
 IEGLContextRefPtr GLContextManager::createShareContextWithId(const std::string& id) noexcept {
     auto ptr = getMainContext(id);
+    if (!ptr) {
+        LogE("createShareContextWithId: main context not found for {}", id);
+        return nullptr;
+    }
     auto res = std::shared_ptr<IEGLContext>(createGLContext());
-    res->init(ptr->nativeContext());
+    if (!res->init(ptr->nativeContext())) {
+        LogE("createShareContextWithId: failed to init shared context for {}", id);
+        return nullptr;
+    }
     return res;
 }
 

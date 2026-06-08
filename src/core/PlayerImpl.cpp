@@ -1,9 +1,4 @@
-//
-//  PlayerImpl.cpp
-//  slark
-//
-//  Created by Nevermore on 2022/5/4.
-//
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 
 #include "PlayerImpl.h"
 
@@ -35,7 +30,7 @@ BackpressureConfig buildBackpressureConfig(StreamType type, bool isLive) {
     }
     return BackpressureConfig::forLocal();
 }
-} // namespace
+}
 
 Player::Impl::Impl(std::unique_ptr<PlayerParams> params)
     : playerId_(Random::uuid()), notifyCenter_(playerId_) {
@@ -44,23 +39,48 @@ Player::Impl::Impl(std::unique_ptr<PlayerParams> params)
     params_.withWriteLock([&params](auto& p) {
         p = std::move(params);
     });
+    LogI("PlayerImpl created, id:{}", playerId_);
 }
 
 Player::Impl::~Impl() {
     isStopped_ = true;
     if (ownerThread_) {
+        // 尝试通过事件机制正常停止（非阻塞），然后立即强制清理，不阻塞主线程
         updateState(PlayerState::Stop);
-        std::unique_lock<std::mutex> lock(releaseMutex_);
-        // 超时保护：防止 ownerThread_ 卡死导致析构永久阻塞
-        if (!cond_.wait_for(lock, std::chrono::seconds(5), [this] {
-                return isReleased_.load();
-            })) {
-            LogE("PlayerImpl destructor: wait for release timeout");
-        }
+        forceCleanup();
+
         // doStop 内部不 join ownerThread_，由此处在外部线程安全地 stop + join
         ownerThread_->stop();
         ownerThread_.reset();
     }
+    GLContextManager::shareInstance().removeMainContext(playerId_);
+    LogI("PlayerImpl destroyed, id:{}", playerId_);
+}
+
+void Player::Impl::forceCleanup() noexcept {
+    LogI("force cleanup start");
+    {
+        std::lock_guard<std::mutex> lock(releaseMutex_);
+        isReleased_ = true;
+    }
+    cond_.notify_all();
+    // 先取消所有定时任务，防止定时任务在 pipeline_ 销毁后访问它
+    if (ownerThread_) {
+        ownerThread_->cancelRepeatTask(fastTickTaskId_);
+        ownerThread_->cancelRepeatTask(playedTimeTaskId_);
+        ownerThread_->cancelRepeatTask(cacheTickTaskId_);
+    }
+    // 直接执行清理，不依赖 ownerThread_
+    mediaSourceManager_.close();
+    dataPacketSender_.reset();
+    if (pipeline_) {
+        pipeline_->teardown();
+        pipeline_.reset();
+    }
+    demuxerComponent_.reset();
+    notifyCenter_.resetNotifyState();
+    stats_.reset();
+    LogI("force cleanup end");
 }
 
 void Player::Impl::seek(double time, bool isAccurate) noexcept {
@@ -106,6 +126,7 @@ void Player::Impl::init() noexcept {
         LogE("setupIOHandler failed.");
         return;
     }
+
     if (!createDemuxerComponent()) {
         LogE("create demuxer component failed.");
         setState(PlayerState::Error);
@@ -121,26 +142,40 @@ void Player::Impl::init() noexcept {
     });
 
     ownerThread_ = Thread::create("playerThread");
-    ownerThread_->postRepeatTask(std::chrono::milliseconds(setting.playerThreadTickMs), [this]() {
-        process();
-        if (pipeline_ && pipeline_->isBuilt()) {
-            pipeline_->onFastTick();
-        }
-    });
-    ownerThread_->postRepeatTask(std::chrono::milliseconds(setting.playedTimeTickMs), [this]() {
-        if (state() == PlayerState::Playing) {
-            notifyPlayedTime();
-        }
-    });
-    ownerThread_->postRepeatTask(std::chrono::milliseconds(setting.cacheTickMs), [this]() {
-        if (isStopped_) {
-            return;
-        }
-        notifyCacheTime();
-        if (pipeline_ && pipeline_->isBuilt()) {
-            pipeline_->onHeartbeat();
-        }
-    });
+    fastTickTaskId_ =
+        ownerThread_->postRepeatTask(std::chrono::milliseconds(setting.playerThreadTickMs),
+                                     [this]() {
+                                         process();
+                                         if (isStopped_) {
+                                             return;
+                                         }
+                                         // 拷贝 shared_ptr 以延长 PlayPipeline 生命周期，避免
+                                         // onFastTick 执行期间 pipeline_ 被 reset
+                                         if (auto pipeline = pipeline_) {
+                                             pipeline->onFastTick();
+                                         }
+                                     });
+    playedTimeTaskId_ =
+        ownerThread_->postRepeatTask(std::chrono::milliseconds(setting.playedTimeTickMs), [this]() {
+            if (isStopped_) {
+                return;
+            }
+            if (state() == PlayerState::Playing) {
+                notifyPlayedTime();
+            }
+        });
+    cacheTickTaskId_ =
+        ownerThread_->postRepeatTask(std::chrono::milliseconds(setting.cacheTickMs), [this]() {
+            if (isStopped_) {
+                return;
+            }
+            notifyCacheTime();
+            // 拷贝 shared_ptr 以延长 PlayPipeline 生命周期，避免 onHeartbeat 执行期间 pipeline_ 被
+            // reset
+            if (auto pipeline = pipeline_) {
+                pipeline->onHeartbeat();
+            }
+        });
 
     mediaSourceManager_.start();
     ownerThread_->start();
@@ -211,10 +246,10 @@ bool Player::Impl::createDemuxerComponent() noexcept {
         LogE("demuxer config file path is empty.");
         return false;
     }
+    const auto filePath = config.filePath;
 
     config.fileSize = mediaSourceManager_.streamInfo().totalSize;
 
-    // 创建 Channel，持有 sender，将 receiver 传给 DemuxerComponent
     auto [sender, receiver] = Channel<DataPacket>::create();
     dataPacketSender_ = std::move(sender);
 
@@ -225,10 +260,8 @@ bool Player::Impl::createDemuxerComponent() noexcept {
             return;
         }
         self->demuxerComponent_->flush();
-        // 取消当前 HTTP 请求并重新发起指定 Range 的请求，确保 moov box 在文件末尾时能正确重定位
         auto res = self->mediaSourceManager_.seek(range.start());
         if (!res.has_value()) {
-            // 数据源拒绝 seek（如不支持 Range），立即上报错误，避免 UI 卡在 Buffering
             self->notifyPlayerEvent(PlayerEvent::OnError,
                                     std::to_string(static_cast<uint32_t>(res.error())));
             self->setState(PlayerState::Error);
@@ -236,7 +269,7 @@ bool Player::Impl::createDemuxerComponent() noexcept {
         LogI("demuxer seek to pos:{}, ok:{}", range.toString(), res.has_value());
     });
     demuxerComponent_->start();
-    LogI("demuxer component created, uri:{}", config.filePath);
+    LogI("demuxer component created, uri:{}", filePath);
     return true;
 }
 
@@ -379,6 +412,10 @@ void Player::Impl::process() noexcept {
     if (!pipeline_) {
         return;
     }
+    // 懒绑定：确保 PlayPipeline 的 ownerThreadId_ 指向 playerThread
+    std::call_once(bindOwnerThreadFlag_, [this] {
+        pipeline_->bindToCurrentThread();
+    });
     if (!pipeline_->isBuilt()) {
         pipeline_->build();
     }
@@ -399,6 +436,16 @@ void Player::Impl::doPlay() noexcept {
     mediaSourceManager_.start();
 }
 
+void Player::Impl::resumeInternal() noexcept {
+    LogI("resume from pause");
+    if (!info_.isValid || !pipeline_) {
+        return;
+    }
+    ownerThread_->start();
+    pipeline_->resume();
+    mediaSourceManager_.start();
+}
+
 void Player::Impl::doPause() noexcept {
     LogI("do pause");
     if (!info_.isValid || !pipeline_) {
@@ -410,6 +457,16 @@ void Player::Impl::doPause() noexcept {
 
 void Player::Impl::doStop() noexcept {
     LogI("do stop start");
+    isStopped_.store(true, std::memory_order_release);
+    if (isReleased_.load(std::memory_order_acquire)) {
+        LogI("do stop: already released by forceCleanup, skip");
+        return;
+    }
+    if (ownerThread_) {
+        ownerThread_->cancelRepeatTask(fastTickTaskId_);
+        ownerThread_->cancelRepeatTask(playedTimeTaskId_);
+        ownerThread_->cancelRepeatTask(cacheTickTaskId_);
+    }
     mediaSourceManager_.close();
     // 先关闭 Channel，触发 DemuxerComponent worker 收到 Closed 自然退出
     dataPacketSender_.reset();
@@ -474,8 +531,9 @@ void Player::Impl::doLoop() noexcept {
 }
 
 void Player::Impl::setState(PlayerState state) noexcept {
+    PlayerState oldState = PlayerState::Unknown;
     bool isChanged = false;
-    state_.withWriteLock([state, &isChanged](auto& nowState) {
+    state_.withWriteLock([state, &isChanged, &oldState](auto& nowState) {
         if (nowState == state) {
             return;
         }
@@ -485,6 +543,7 @@ void Player::Impl::setState(PlayerState state) noexcept {
                  static_cast<uint32_t>(state));
             return;
         }
+        oldState = nowState;
         nowState = state;
         isChanged = true;
     });
@@ -493,7 +552,11 @@ void Player::Impl::setState(PlayerState state) noexcept {
     }
 
     if (state == PlayerState::Playing) {
-        doPlay();
+        if (oldState == PlayerState::Pause) {
+            resumeInternal();
+        } else {
+            doPlay();
+        }
     } else if (state == PlayerState::Pause || state == PlayerState::Completed) {
         doPause();
     } else if (state == PlayerState::Stop || state == PlayerState::Error) {
@@ -586,7 +649,6 @@ void Player::Impl::handlePipelineEvent(PipelineEvent event,
             preparePlayerInfo();
             break;
         case PipelineEvent::PipelineReady:
-            // 解码器就绪，无需额外处理，首帧渲染后才进入 Ready
             break;
         case PipelineEvent::FirstFrameRendered:
             notifyPlayerEvent(PlayerEvent::FirstFrameRendered);
@@ -631,6 +693,15 @@ void Player::Impl::handlePipelineEvent(PipelineEvent event,
         }
         case PipelineEvent::ReadError:
         case PipelineEvent::DecodeError: {
+            // 如果已经在停止或出错状态，忽略此类错误（可能是 stop 过程中触发的）
+            auto currentState = state();
+            if (currentState == PlayerState::Stop || currentState == PlayerState::Error) {
+                LogW("pipeline error ignored, event:{}, error:{}, current state:{}",
+                     static_cast<uint32_t>(event),
+                     error.has_value() ? static_cast<uint32_t>(error->error) : 0,
+                     static_cast<uint32_t>(currentState));
+                break;
+            }
             const auto err = error.has_value() ? error->error : Error::PipelineDecodeError;
             LogE("pipeline error, event:{}, error:{}",
                  static_cast<uint32_t>(event),
@@ -682,7 +753,10 @@ void Player::Impl::notifyPlayedTime(bool isEndTime) noexcept {
 }
 
 void Player::Impl::notifyCacheTime() noexcept {
-    notifyCenter_.notifyCacheTime(demuxedDuration());
+    if (!pipeline_) {
+        return;
+    }
+    notifyCenter_.notifyCacheTime(pipeline_->cacheEndTime());
 }
 
 PlayerParams Player::Impl::params() noexcept {
@@ -780,4 +854,4 @@ void Player::Impl::setRenderImpl(std::weak_ptr<IVideoRender> render) noexcept {
     }
 }
 
-} // namespace slark
+}
