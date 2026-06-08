@@ -42,17 +42,12 @@ std::expected<BoxInfo, bool> Box::tryParseBoxInfo(Buffer& buffer) noexcept {
         info.size = buffer.totalSize() - buffer.pos() + info.headerSize;
     }
     info.symbol = Util::toStringBE<uint32_t>(info.type);
-    // 校验 box type 为可打印 ASCII，拒绝垃圾数据产生的非法 box
-    bool validType = true;
+    // 警告但不拒绝：非可打印 ASCII 的 box type 可能是垃圾数据，仍尝试跳过
     for (auto c : info.symbol) {
         if (c < 0x20 || c > 0x7E) {
-            validType = false;
+            LogW("tryParseBoxInfo: invalid box type '{}' at pos:{}", info.symbol, info.start);
             break;
         }
-    }
-    if (!validType) {
-        LogW("tryParseBoxInfo: invalid box type '{}' at pos:{}", info.symbol, info.start);
-        return std::unexpected(false);
     }
     return info;
 }

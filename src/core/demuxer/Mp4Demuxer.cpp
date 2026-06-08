@@ -754,11 +754,12 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
 
         parentBox.top()->append(box);
         // udta 在 moov 顶层时跳过深度遍历，避免其异常大的 size 吞掉后续 trak
-        if (box->info.symbol == "udta" && parentBox.size() == 1) {
-            LogD("parseMoovBox: skip udta as leaf at moov top level, size={}", box->info.size);
+        // udta/meta 在 moov 顶层时跳过深度遍历，避免异常大的 size 吞掉后续 trak
+        if ((box->info.symbol == "udta" || box->info.symbol == "meta") && parentBox.size() == 1) {
+            LogD("parseMoovBox: skip '{}' as leaf at moov top level, size={}", box->info.symbol, box->info.size);
             auto skipOffset = static_cast<int64_t>(box->info.start + box->info.size - buffer.pos());
             if (!buffer.skip(skipOffset)) {
-                LogW("parseMoovBox: skip udta failed at pos:{}, size:{}", buffer.pos(), box->info.size);
+                LogW("parseMoovBox: skip '{}' failed at pos:{}, size:{}", box->info.symbol, buffer.pos(), box->info.size);
                 if (tracks_.empty()) {
                     res = false;
                 }

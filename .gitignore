@@ -85,3 +85,4 @@ test/base/test1.txt
 test/base/test2.txt
 .temp
 .plan
+t.log
