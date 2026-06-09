@@ -1,5 +1,5 @@
 //
-// Created by Nevermore- on 2025/5/6.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 package com.slark.sdk
@@ -44,9 +44,15 @@ class VulkanRenderThread(
     // Choreographer VSync callback, symmetric to iOS CADisplayLink
     private val vsyncCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
-            if (!vsyncActive) return
+            if (!vsyncActive) {
+                return
+            }
             if (playerId.isNotEmpty()) {
-                onVSync(playerId)
+                try {
+                    onVSync(playerId)
+                } catch (e: Exception) {
+                    SlarkLog.e(LOG_TAG, "doFrame: onVSync JNI exception: {0}", e.message ?: "")
+                }
             }
             // Re-register for next VSync
             if (vsyncActive) {
@@ -90,7 +96,14 @@ class VulkanRenderThread(
         }
         startPending = false
         vsyncActive = true
-        Choreographer.getInstance().postFrameCallback(vsyncCallback)
+        // Choreographer.getInstance() 要求调用线程有 Looper
+        if (Looper.myLooper() != null) {
+            Choreographer.getInstance().postFrameCallback(vsyncCallback)
+        } else {
+            handler.post {
+                Choreographer.getInstance().postFrameCallback(vsyncCallback)
+            }
+        }
     }
 
     override fun stop() {

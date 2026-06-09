@@ -1,5 +1,5 @@
 //
-// Created by Nevermore- on 2025/5/13.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #include "VideoRender.h"
@@ -84,7 +84,6 @@ void VideoRender::requestRenderFrame() noexcept {
     }
     auto frame = std::invoke(*func);
     if (!frame) {
-        LogD("requestRenderFrame: no frame available");
         return;
     }
     renderFrame(frame);

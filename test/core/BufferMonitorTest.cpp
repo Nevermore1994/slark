@@ -1,4 +1,6 @@
+//
 // Copyright (c) 2026 Nevermore-. All rights reserved.
+//
 
 #include "pipeline/BufferMonitor.h"
 
@@ -107,31 +109,14 @@ TEST(BufferMonitorTest, ResumesStreamWhenDurationDropsBelowLowWatermark) {
     monitor.onHeartbeat(); // resume
 }
 
-// MARK: - hardCap 触发 onDropOldest
-
-TEST(BufferMonitorTest, DropOldestWhenHardCapExceeded) {
-    MockDelegate delegate;
-    auto cfg = BackpressureConfig::forNetwork();
-    // hardCapDuration = 20.0
-
-    EXPECT_CALL(delegate, demuxedDuration()).WillRepeatedly(Return(25.0));
-    EXPECT_CALL(delegate, pauseStream()).Times(AtLeast(1));
-    EXPECT_CALL(delegate, onDropOldest()).Times(AtLeast(1));
-    EXPECT_CALL(delegate, audioDecodedFrameCount()).WillRepeatedly(Return(0));
-    EXPECT_CALL(delegate, videoDecodedFrameCount()).WillRepeatedly(Return(0));
-
-    BufferMonitor monitor(cfg, delegate);
-    monitor.onHeartbeat();
-}
-
 // MARK: - 重缓冲
 
 TEST(BufferMonitorTest, RebufferingStartsWhenStreamRunningAndDurationDropsBelowLow) {
     MockDelegate delegate;
     auto cfg = BackpressureConfig::forNetwork();
-    // startBufferDuration = 2.0, demuxLowWatermarkDuration = 3.0
+    // startBufferDuration = 2.0, rebufferScale = 1.5 → rebufferThreshold = 3.0
 
-    // 场景：prebuffer 完成后，stream 正在运行（未 pause），duration 降到低水位以下 → BufferingStart
+    // 场景：prebuffer 完成后，stream 正在运行（未 pause），duration 降到 rebufferThreshold 以下 → BufferingStart
     EXPECT_CALL(delegate, demuxedDuration())
         .WillOnce(Return(3.0))        // heartbeat 1: prebuffer complete
         .WillRepeatedly(Return(1.0)); // heartbeat 2+: low watermark，stream 未 pause
@@ -151,7 +136,7 @@ TEST(BufferMonitorTest, RebufferingStartsWhenStreamRunningAndDurationDropsBelowL
 TEST(BufferMonitorTest, RebufferingEndsWhenStreamResumesAndDurationRecovered) {
     MockDelegate delegate;
     auto cfg = BackpressureConfig::forNetwork();
-    // demuxHighWatermarkDuration = 10.0, demuxLowWatermarkDuration = 3.0, rebufferDuration = 2.0
+    // startBufferDuration = 2.0, rebufferScale = 1.5 → rebufferThreshold = 3.0
 
     // 场景：高水位 pause → 低水位 resume → checkRebufferComplete 触发 BufferingEnd
     // 注意：BufferingStart 由 onStarvation 触发（绕过 streamPaused_ 约束）

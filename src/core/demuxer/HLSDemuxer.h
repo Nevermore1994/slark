@@ -1,8 +1,5 @@
 //
-//  HLSDemuxer.h
-//  slark
-//
-//  Created by Nevermore on 2024/12/9.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #pragma once

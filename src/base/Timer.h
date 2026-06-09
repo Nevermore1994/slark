@@ -64,7 +64,6 @@ struct TimerEntry {
 
 } // namespace slark
 
-// std::hash 特化，支持 TimerId 在 unordered_map/unordered_set 中使用
 template <>
 struct std::hash<slark::TimerId> {
     size_t operator()(const slark::TimerId& id) const noexcept {

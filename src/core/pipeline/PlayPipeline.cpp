@@ -319,13 +319,11 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
     const double videoTime = clockSync_->videoTime().second();
     const double diff = masterTime - videoTime;
     if (shouldHoldVideoFrame(diff, playbackRate)) {
-        LogD("requestVideoFrame: holding, audio:{:.3f} video:{:.3f} diff:{:.3f}", masterTime, videoTime, diff);
         return nullptr;
     }
 
     auto frame = popVideoFrame();
     if (!frame) {
-        LogD("requestVideoFrame: no frame in queue");
         if (seekContext_->isSeekPending()) {
             auto preview = seekPreviewFrame();
             if (preview) {
@@ -571,6 +569,63 @@ void PlayPipeline::onHeartbeat() noexcept {
     }
 }
 
+void PlayPipeline::checkPlaybackComplete() noexcept {
+    postToOwnerThread([this] {
+        auto state = pipelineState_.load(std::memory_order_acquire);
+        if (state >= PipelineState::Ended || state >= PipelineState::TearingDown) {
+            return;
+        }
+        // 未开始播放前不检查完成：初始化时解码器/队列均为空，会误触 RenderEnd
+        if (state != PipelineState::Playing && state != PipelineState::Paused) {
+            return;
+        }
+        // 至少首帧渲染过才可能播放结束
+        if (!readiness_.firstFrameRendered.load(std::memory_order_acquire)) {
+            return;
+        }
+
+        // 1. 所有解码器必须已完成（收到 EOS）
+        if (audioDecoder_) {
+            auto dec = audioDecoder_->decoder();
+            if (!dec || !dec->isCompleted()) {
+                return;
+            }
+        }
+        if (videoDecoder_) {
+            auto dec = videoDecoder_->decoder();
+            if (!dec || !dec->isCompleted()) {
+                return;
+            }
+        }
+
+        // 2. 音视频帧队列必须为空
+        bool allEmpty = true;
+        audioFrames_.withLock([&allEmpty](auto& q) {
+            if (!q.empty()) {
+                allEmpty = false;
+            }
+        });
+        videoFrames_.withLock([&allEmpty](auto& m) {
+            if (!m.empty()) {
+                allEmpty = false;
+            }
+        });
+        if (!allEmpty) {
+            return;
+        }
+
+        // 3. 有音频时需确保音频 ring buffer 也已耗尽
+        if (audioRender_ && mediaInfo_.hasAudio && audioRender_->available() > 0) {
+            return;
+        }
+
+        // 所有条件满足，触发结束
+        pipelineState_.store(PipelineState::Ended, std::memory_order_release);
+        LogI("playback complete, firing RenderEnd");
+        fireEvent(PipelineEvent::RenderEnd);
+    });
+}
+
 void PlayPipeline::recoverFromSeekTimeout() noexcept {
     assert(isOnOwnerThread());
     // pause → flush → start 确保组件从当前位置继续运行，不会停滞
@@ -614,15 +669,8 @@ AVFrameRefPtr PlayPipeline::popVideoFrame() noexcept {
         frame = popFrame(m);
     });
 
-    if (!frame && !mediaInfo_.hasAudio && demuxer_ && demuxer_->isCompleted()) {
-        // 纯视频流：视频帧耗尽且 demux 完成即为播放结束
-        postToOwnerThread([this] {
-            if (pipelineState_.load(std::memory_order_acquire) == PipelineState::Ended) {
-                return;
-            }
-            pipelineState_.store(PipelineState::Ended, std::memory_order_release);
-            fireEvent(PipelineEvent::RenderEnd);
-        });
+    if (!frame) {
+        checkPlaybackComplete();
     }
     return frame;
 }
@@ -697,16 +745,7 @@ void PlayPipeline::setupAudioTrack(DecoderType type,
         clockSync_->setAudioTime(t);
     });
     audioRender_->setRenderEndCallback([this] {
-        if (!demuxer_ || !demuxer_->isCompleted()) {
-            return;
-        }
-        postToOwnerThread([this] {
-            if (pipelineState_.load(std::memory_order_acquire) == PipelineState::Ended) {
-                return;
-            }
-            pipelineState_.store(PipelineState::Ended, std::memory_order_release);
-            fireEvent(PipelineEvent::RenderEnd);
-        });
+        checkPlaybackComplete();
     });
 
     audioDecoder_ = std::make_shared<DecoderComponent>(
@@ -1045,11 +1084,17 @@ void PlayPipeline::injectEosFrames() noexcept {
     if (audioDecoder_ && audioFrameSender_) {
         auto eos = std::make_shared<AVFrame>(AVFrameType::Audio);
         eos->isEOS = true;
+        auto audioInfo = std::make_shared<AudioFrameInfo>();
+        audioInfo->isEndOfStream = true;
+        eos->info = std::move(audioInfo);
         (void)audioFrameSender_->send(std::move(eos));
     }
     if (videoDecoder_ && videoFrameSender_) {
         auto eos = std::make_shared<AVFrame>(AVFrameType::Video);
         eos->isEOS = true;
+        auto videoInfo = std::make_shared<VideoFrameInfo>();
+        videoInfo->isEndOfStream = true;
+        eos->info = std::move(videoInfo);
         (void)videoFrameSender_->send(std::move(eos));
     }
 }
@@ -1064,6 +1109,9 @@ void PlayPipeline::dispatchFrames(DemuxerResult&& result, uint64_t epoch) noexce
         injectEosFrames();
         hasAudio = hasAudio || audioDecoder_ != nullptr;
         hasVideo = hasVideo || videoDecoder_ != nullptr;
+        if (bufferMonitor_) {
+            bufferMonitor_->setDemuxEof();
+        }
     }
 
     if (hasAudio || hasVideo) {

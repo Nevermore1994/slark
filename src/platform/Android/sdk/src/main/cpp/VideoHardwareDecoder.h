@@ -34,6 +34,10 @@ public:
 
     Error renderOutput() noexcept override;
 
+    void clearPendingOutput() noexcept override {
+        pendingOutput_.store(false, std::memory_order_release);
+    }
+
     inline static const DecoderTypeInfo& info() noexcept {
         static DecoderTypeInfo info = {
             DecoderType::VideoHardwareDecoder,

@@ -1,8 +1,5 @@
 //
-//  HLSDemuxer.cpp
-//  slark
-//
-//  Created by Nevermore on 2024/12/9.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #include "HLSDemuxer.h"
@@ -48,7 +45,6 @@ bool TSDemuxer::parsePacket(DataView data, uint32_t tsIndex, DemuxerResult& resu
         return false;
     }
 
-    // has adaption
     if ((header.adaptationFieldControl & 0x02) == 0x02) {
         uint8_t adaptionLen;
         data.readNumberLE(adaptionLen, 1);

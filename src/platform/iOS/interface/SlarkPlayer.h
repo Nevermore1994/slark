@@ -1,8 +1,5 @@
 //
-//  SlarkPlayer.h
-//  slark
-//
-//  Created by Nevermore
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 //  SlarkPlayer - iOS media player framework
 //
@@ -11,36 +8,29 @@
 
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CMTime.h>
-/**
- * Player state definitions
- */
 typedef NS_ENUM(NSUInteger, SlarkPlayerState) {
-    SlarkPlayerStateNotInited,    // Not initialized
-    SlarkPlayerStateInitializing, // Initializing
-    SlarkPlayerStatePrepared,     // Ready for playback
-    SlarkPlayerStateBuffering,    // Loading content
-    SlarkPlayerStateReady,        // Ready to play
-    SlarkPlayerStatePlaying,      // Currently playing
-    SlarkPlayerStatePause,        // Paused
-    SlarkPlayerStateStop,         // Stopped
-    SlarkPlayerStateError,        // Error occurred
-    SlarkPlayerStateCompleted,    // Playback finished
-    SlarkPlayerStateUnknown       // Unknown state
+    SlarkPlayerStateNotInited,
+    SlarkPlayerStateInitializing,
+    SlarkPlayerStatePrepared,
+    SlarkPlayerStateBuffering,
+    SlarkPlayerStateReady,
+    SlarkPlayerStatePlaying,
+    SlarkPlayerStatePause,
+    SlarkPlayerStateStop,
+    SlarkPlayerStateError,
+    SlarkPlayerStateCompleted,
+    SlarkPlayerStateUnknown
 };
 
-/**
- * Player event types
- */
 typedef NS_ENUM(NSUInteger, SlarkPlayerEvent) {
-    SlarkPlayerEventFirstFrameRendered, // First frame displayed
-    SlarkPlayerEventSeekDone,           // Seek completed
-    SlarkPlayerEventPlayEnd,            // Playback ended
-    SlarkPlayerEventUpdateCacheTime,    // Cache updated
-    SlarkPlayerEventOnError,            // Error occurred
+    SlarkPlayerEventFirstFrameRendered,
+    SlarkPlayerEventSeekDone,
+    SlarkPlayerEventPlayEnd,
+    SlarkPlayerEventUpdateCacheTime,
+    SlarkPlayerEventOnError,
 };
 
 typedef NS_ENUM(NSUInteger, SlarkPlayerErrorCode) {
-    // General errors (0 - 99)
     SlarkPlayerErrorSuccess = 0,
     SlarkPlayerErrorOutOfMemory = 1,
     SlarkPlayerErrorOutOfRange = 2,
@@ -52,7 +42,6 @@ typedef NS_ENUM(NSUInteger, SlarkPlayerErrorCode) {
     SlarkPlayerErrorEmptyData = 8,
     SlarkPlayerErrorNotFound = 9,
     SlarkPlayerErrorCancelled = 10,
-    // I/O errors (100 - 199)
     SlarkPlayerErrorIOError = 100,
     SlarkPlayerErrorEndOfFile = 101,
     SlarkPlayerErrorPermissionDenied = 102,
@@ -60,7 +49,6 @@ typedef NS_ENUM(NSUInteger, SlarkPlayerErrorCode) {
     SlarkPlayerErrorFileAlreadyExists = 104,
     SlarkPlayerErrorStreamNotReady = 110,
     SlarkPlayerErrorStreamInvalidData = 111,
-    // Codec errors (200 - 299)
     SlarkPlayerErrorCodecNotFound = 200,
     SlarkPlayerErrorCodecError = 201,
     SlarkPlayerErrorCodecInputError = 202,
@@ -71,7 +59,6 @@ typedef NS_ENUM(NSUInteger, SlarkPlayerErrorCode) {
     SlarkPlayerErrorCodecUnsupportedFormat = 207,
     SlarkPlayerErrorCodecResourceExhausted = 208,
     SlarkPlayerErrorCodecConfigInvalid = 209,
-    // Network errors (300 - 399)
     SlarkPlayerErrorNetworkError = 300,
     SlarkPlayerErrorConnectionFailed = 301,
     SlarkPlayerErrorConnectionTimeout = 302,
@@ -83,7 +70,6 @@ typedef NS_ENUM(NSUInteger, SlarkPlayerErrorCode) {
     SlarkPlayerErrorWouldBlock = 308,
     SlarkPlayerErrorInvalidSocket = 309,
     SlarkPlayerErrorBrokenPipe = 310,
-    // HTTP errors (400 - 499)
     SlarkPlayerErrorHttpError = 400,
     SlarkPlayerErrorHttpTimeout = 401,
     SlarkPlayerErrorHttpRedirectError = 402,
@@ -92,14 +78,12 @@ typedef NS_ENUM(NSUInteger, SlarkPlayerErrorCode) {
     SlarkPlayerErrorHttpChunkedError = 405,
     SlarkPlayerErrorHttpSslError = 406,
     SlarkPlayerErrorHttpSslHandshakeFailed = 407,
-    // Media errors (500 - 599)
     SlarkPlayerErrorMediaOpenFailed = 500,
     SlarkPlayerErrorMediaEndOfFile = 501,
     SlarkPlayerErrorMediaHeaderParsed = 502,
     SlarkPlayerErrorMediaInfoChanged = 503,
     SlarkPlayerErrorMediaFpsParsed = 504,
     SlarkPlayerErrorMediaInvalidData = 505,
-    // Pipeline errors (600 - 699)
     SlarkPlayerErrorPipelineOpenFailed = 600,
     SlarkPlayerErrorPipelineFormatNotSupported = 601,
     SlarkPlayerErrorPipelineDemuxError = 602,
@@ -118,17 +102,11 @@ typedef NS_ENUM(NSUInteger, SlarkPlayerRotation) {
  * Observer protocol for player notifications
  */
 @protocol ISlarkPlayerObserver <NSObject>
-// Time update callback
 - (void)notifyTime:(NSString*)playerId time:(double)time;
-// State change callback
 - (void)notifyState:(NSString*)playerId state:(SlarkPlayerState)state;
-// Event callback
 - (void)notifyEvent:(NSString*)playerId event:(SlarkPlayerEvent)event value:(NSString*)value;
 @end
 
-/**
- * Main media player class
- */
 @interface SlarkPlayer : NSObject
 @property (nonatomic, assign) BOOL isLoop;
 @property (nonatomic, assign) BOOL isMute;
@@ -140,28 +118,20 @@ typedef NS_ENUM(NSUInteger, SlarkPlayerRotation) {
 @property (nonatomic, assign, readonly) CMTime currentTime;
 @property (nonatomic, weak) id<ISlarkPlayerObserver> delegate;
 
-// Initialize with file path
 - (instancetype)init:(NSString*)path;
 
-// Initialize with file path and time range
 - (instancetype)initWithTimeRange:(NSString*)path range:(CMTimeRange)range;
 
-// Prepare for playback
 - (void)prepare;
 
-// Start playback
 - (void)play;
 
-// Pause playback
 - (void)pause;
 
-// Stop playback
 - (void)stop;
 
-// Seek to time position
 - (void)seek:(double)seekToTime;
 
-// Seek with accuracy option
 - (void)seek:(double)seekToTime isAccurate:(BOOL)isAccurate;
 
 @end

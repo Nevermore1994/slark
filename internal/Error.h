@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
+//
 
 #pragma once
 
@@ -11,7 +12,6 @@
 namespace slark {
 
 enum class Error : uint16_t {
-    // General errors(0 - 99)
     Success = 0,
     OutOfMemory = 1,
     OutOfRange = 2,
@@ -24,7 +24,6 @@ enum class Error : uint16_t {
     NotFound = 9,
     Cancelled = 10,
 
-    // I/O errors(100 - 199)
     IOError = 100,
     EndOfFile = 101,
     PermissionDenied = 102,
@@ -33,7 +32,6 @@ enum class Error : uint16_t {
     StreamNotReady = 110,
     StreamInvalidData = 111,
 
-    // Codec errors(200 - 299)
     CodecNotFound = 200,
     CodecError = 201,
     CodecInputError = 202,
@@ -45,7 +43,6 @@ enum class Error : uint16_t {
     CodecResourceExhausted = 208,
     CodecConfigInvalid = 209,
 
-    // Network errors(300 - 399)
     NetworkError = 300,
     ConnectionFailed = 301,
     ConnectionTimeout = 302,
@@ -58,7 +55,6 @@ enum class Error : uint16_t {
     InvalidSocket = 309,
     BrokenPipe = 310,
 
-    // HTTP errors(400 - 499)
     HttpError = 400,
     HttpTimeout = 401,
     HttpRedirectError = 402,
@@ -68,7 +64,6 @@ enum class Error : uint16_t {
     HttpSslError = 406,
     HttpSslHandshakeFailed = 407,
 
-    // Media errors(500 - 599)
     MediaOpenFailed = 500,
     MediaEndOfFile = 501,
     MediaHeaderParsed = 502,
@@ -76,7 +71,6 @@ enum class Error : uint16_t {
     MediaFpsParsed = 504,
     MediaInvalidData = 505,
 
-    // Pipeline errors(600 - 699)
     PipelineOpenFailed = 600,
     PipelineFormatNotSupported = 601,
     PipelineDemuxError = 602,

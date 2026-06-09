@@ -1,5 +1,5 @@
 //
-// Created by Nevermore on 2025/3/6.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #include "NativeHardwareDecoder.h"
@@ -65,7 +65,6 @@ Error Native_HardwareDecoder_sendPacket(JNIEnv* env,
     return static_cast<Error>(res);
 }
 
-// 构造 Kotlin VideoDecoderConfig 对象
 static ObjectReference buildVideoDecoderConfig(JNIEnv* env,
                                                const std::shared_ptr<VideoDecoderConfig>& cfg,
                                                DecodeMode mode) {
@@ -190,7 +189,6 @@ void Native_HardwareDecoder_flush(JNIEnv* env, std::string_view decoderId) {
         JNI::JObjectWithSig(std::move(enumValue), JNI::makeObject(kActionClass)));
 }
 
-// only for audio decoder
 extern "C" JNIEXPORT void JNICALL
 Java_com_slark_sdk_MediaCodecDecoder_processRawData(JNIEnv* env,
                                                     jobject /* thiz */,
@@ -201,7 +199,6 @@ Java_com_slark_sdk_MediaCodecDecoder_processRawData(JNIEnv* env,
     using namespace slark;
     LogI("native decode success:{}", pts);
     auto decoderId = FromJVM::str(env, jDecoderId);
-    // send to manager
     auto decoder = NativeDecoderManager::shareInstance().find(decoderId);
     if (!decoder) {
         LogE("not found decoder, decoderId:{}", decoderId);

@@ -1,9 +1,5 @@
-
 //
-//  DemuxerManager.hpp
-//  slark
-//
-//  Created by Nevermore on 2022/5/2.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #pragma once

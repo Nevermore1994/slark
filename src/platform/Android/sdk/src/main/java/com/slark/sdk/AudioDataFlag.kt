@@ -1,6 +1,5 @@
-
 //
-// Created by Nevermore- on 2025/5/6.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 package com.slark.sdk

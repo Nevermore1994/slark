@@ -1,8 +1,6 @@
 //
-//  Buffer.hpp
-//  slark
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-//  Created by Nevermore.
 
 #pragma once
 

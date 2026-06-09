@@ -22,9 +22,7 @@ TEST(BackpressureConfigTest, ForLocalDefaultsAreValid) {
     EXPECT_FALSE(cfg.isLiveSource);
     EXPECT_EQ(cfg.demuxHighWatermarkDuration, 30.0);
     EXPECT_EQ(cfg.demuxLowWatermarkDuration, 5.0);
-    EXPECT_EQ(cfg.hardCapDuration, 60.0);
     EXPECT_EQ(cfg.startBufferDuration, 0.0);
-    EXPECT_EQ(cfg.rebufferDuration, 1.0);
 }
 
 TEST(BackpressureConfigTest, ForNetworkDefaultsAreValid) {
@@ -33,9 +31,8 @@ TEST(BackpressureConfigTest, ForNetworkDefaultsAreValid) {
     EXPECT_FALSE(cfg.isLiveSource);
     EXPECT_EQ(cfg.demuxHighWatermarkDuration, 10.0);
     EXPECT_EQ(cfg.demuxLowWatermarkDuration, 3.0);
-    EXPECT_EQ(cfg.hardCapDuration, 20.0);
     EXPECT_EQ(cfg.startBufferDuration, 2.0);
-    EXPECT_EQ(cfg.rebufferDuration, 2.0);
+    EXPECT_EQ(cfg.rebufferScale, 1.5);
 }
 
 TEST(BackpressureConfigTest, ForLiveDefaultsAreValid) {
@@ -44,21 +41,14 @@ TEST(BackpressureConfigTest, ForLiveDefaultsAreValid) {
     EXPECT_TRUE(cfg.isLiveSource);
     EXPECT_EQ(cfg.demuxHighWatermarkDuration, 5.0);
     EXPECT_EQ(cfg.demuxLowWatermarkDuration, 1.0);
-    EXPECT_EQ(cfg.hardCapDuration, 10.0);
     EXPECT_EQ(cfg.startBufferDuration, 1.0);
-    EXPECT_EQ(cfg.rebufferDuration, 1.0);
+    EXPECT_EQ(cfg.rebufferScale, 1.5);
     EXPECT_EQ(cfg.maxDropPerVsync, 4);
 }
 
 TEST(BackpressureConfigTest, InvalidWhenLowWatermarkExceedsHigh) {
     auto cfg = BackpressureConfig::forLocal();
     cfg.demuxLowWatermarkDuration = cfg.demuxHighWatermarkDuration + 1.0;
-    EXPECT_FALSE(cfg.isValid());
-}
-
-TEST(BackpressureConfigTest, InvalidWhenHighWatermarkExceedsHardCap) {
-    auto cfg = BackpressureConfig::forLocal();
-    cfg.demuxHighWatermarkDuration = cfg.hardCapDuration + 1.0;
     EXPECT_FALSE(cfg.isValid());
 }
 
@@ -78,7 +68,6 @@ TEST(BackpressureConfigTest, ValidBoundaryLowEqualsZero) {
     auto cfg = BackpressureConfig::forLocal();
     cfg.demuxLowWatermarkDuration = 0.0;
     cfg.demuxHighWatermarkDuration = 1.0;
-    cfg.hardCapDuration = 2.0;
     cfg.startBufferDuration = 0.5;
     EXPECT_TRUE(cfg.isValid());
 }
@@ -87,16 +76,14 @@ TEST(BackpressureConfigTest, ValidBoundaryLowJustBelowHigh) {
     auto cfg = BackpressureConfig{};
     cfg.demuxLowWatermarkDuration = 0.99;
     cfg.demuxHighWatermarkDuration = 1.0;
-    cfg.hardCapDuration = 2.0;
     cfg.startBufferDuration = 0.5;
     EXPECT_TRUE(cfg.isValid());
 }
 
-TEST(BackpressureConfigTest, ValidBoundaryHighJustBelowHardCap) {
+TEST(BackpressureConfigTest, ValidBoundaryHighAboveHighWatermark) {
     auto cfg = BackpressureConfig{};
     cfg.demuxLowWatermarkDuration = 0.5;
-    cfg.demuxHighWatermarkDuration = 1.99;
-    cfg.hardCapDuration = 2.0;
+    cfg.demuxHighWatermarkDuration = 2.0;
     cfg.startBufferDuration = 1.0;
     EXPECT_TRUE(cfg.isValid());
 }
@@ -105,7 +92,6 @@ TEST(BackpressureConfigTest, ValidBoundaryStartBufferJustBelowHigh) {
     auto cfg = BackpressureConfig{};
     cfg.demuxLowWatermarkDuration = 0.5;
     cfg.demuxHighWatermarkDuration = 2.0;
-    cfg.hardCapDuration = 3.0;
     cfg.startBufferDuration = 1.99;
     EXPECT_TRUE(cfg.isValid());
 }

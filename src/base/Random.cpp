@@ -63,7 +63,6 @@ std::string uuid() noexcept {
     appendHex(3);
     result.push_back('-');
 
-    // variant bits = 10xx
     constexpr std::string_view kVariantChars = "89ab";
     std::uniform_int_distribution<> variantDis(0, 3);
     result.push_back(kVariantChars[static_cast<size_t>(variantDis(gen))]);

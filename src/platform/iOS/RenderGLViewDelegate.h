@@ -1,10 +1,6 @@
 //
-//  RenderGLViewDelegate.h
-//  slark
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-//  Created by Nevermore- on 2025/8/6.
-//
-
 #ifndef RenderGLViewDelegate_h
 #define RenderGLViewDelegate_h
 

@@ -117,26 +117,23 @@ void BufferMonitor::regulateDataFlow() noexcept {
         return;
     }
 
-    if (duration > config_.hardCapDuration) {
-        pauseStream();
-        delegate_.onDropOldest();
-        if (!isRebuffering_ && readyFired_) {
-            isRebuffering_ = true;
-            fireEvent(PipelineEvent::BufferingStart);
-        }
-        return;
-    }
-
     if (duration >= config_.demuxHighWatermarkDuration) {
         pauseStream();
     } else if (duration <= config_.demuxLowWatermarkDuration) {
-        if (!streamPaused_ && !isRebuffering_ && readyFired_) {
-            isRebuffering_ = true;
-            fireEvent(PipelineEvent::BufferingStart);
-        }
         if (streamPaused_) {
             resumeStream();
-            checkRebufferComplete();
+        }
+    }
+
+    // 低于重新缓冲水位线时触发 BufferingStart
+    // 网络源：startBufferDuration * rebufferScale（默认 2.0 * 1.5 = 3.0s）
+    // 本地文件：startBufferDuration = 0，跳过
+    auto rebufferThreshold = config_.startBufferDuration * config_.rebufferScale;
+    if (duration <= rebufferThreshold) {
+        if (!isRebuffering_ && readyFired_) {
+            isRebuffering_ = true;
+            LogI("start rebuffering:{}", duration);
+            fireEvent(PipelineEvent::BufferingStart);
         }
     }
 
@@ -159,7 +156,8 @@ void BufferMonitor::checkRebufferComplete() noexcept {
     if (!isRebuffering_) {
         return;
     }
-    if (demuxedDuration() >= config_.rebufferDuration) {
+    auto rebufferThreshold = config_.startBufferDuration * config_.rebufferScale;
+    if (demuxedDuration() >= rebufferThreshold) {
         isRebuffering_ = false;
         fireEvent(PipelineEvent::BufferingEnd);
     }

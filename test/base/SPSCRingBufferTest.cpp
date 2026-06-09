@@ -1,4 +1,7 @@
 //
+// Copyright (c) 2026 Nevermore-. All rights reserved.
+//
+//
 // SPSCRingBufferTest.cpp
 // Unit tests for SPSCRingBuffer (lock-free single-producer single-consumer ring buffer)
 //

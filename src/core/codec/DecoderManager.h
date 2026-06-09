@@ -1,8 +1,5 @@
 //
-//  DecoderManager.hpp
-//  slark
-//
-//  Created by Nevermore on 2022/4/24.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #include "IDecoder.h"

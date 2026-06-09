@@ -1,8 +1,5 @@
 //
-//  DataView.cpp
-//  slark
-//
-//  Created by Nevermore on 2025/1/10.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #include "DataView.hpp"

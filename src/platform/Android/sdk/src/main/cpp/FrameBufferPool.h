@@ -1,5 +1,5 @@
 //
-// Created by Nevermore- on 2025/5/8.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #pragma once

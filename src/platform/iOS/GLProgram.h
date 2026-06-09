@@ -1,10 +1,6 @@
 //
-//  GLProgram.h
-//  slark
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-//  Created by Nevermore on 2024/11/1.
-//
-
 #pragma once
 
 #include <OpenGLES/ES2/gl.h>

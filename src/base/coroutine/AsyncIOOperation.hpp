@@ -149,7 +149,6 @@ private:
     TimerId timerId_;
 };
 
-// void 特化
 template <>
 class AsyncIOOperation<void> {
 public:

@@ -1,10 +1,6 @@
 //
-//  GLShader.h
-//  slark
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-//  Created by Nevermore on 2024/11/2.
-//
-
 #pragma once
 #include <string_view>
 

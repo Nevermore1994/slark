@@ -1,10 +1,6 @@
 //
-//  iOSMediaUtil.h
-//  slark
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-//  Created by Nevermore on 2024/10/21.
-//
-
 #ifndef iOSMediaUtil_h
 #define iOSMediaUtil_h
 

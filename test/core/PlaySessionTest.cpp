@@ -1,4 +1,6 @@
+//
 // Copyright (c) 2026 Nevermore-. All rights reserved.
+//
 
 #include "perf/PlaySession.h"
 
@@ -287,6 +289,5 @@ TEST(BackpressureConfigTest, LiveConfigHasLowerWatermarks) {
     auto live = slark::BackpressureConfig::forLive();
     auto net = slark::BackpressureConfig::forNetwork();
     EXPECT_LT(live.demuxHighWatermarkDuration, net.demuxHighWatermarkDuration);
-    EXPECT_LT(live.hardCapDuration, net.hardCapDuration);
     EXPECT_LT(live.maxDropPerVsync, net.maxDropPerVsync);
 }

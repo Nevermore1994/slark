@@ -1,10 +1,6 @@
 //
-//  SlarkViewController.h
-//  slark
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-//  Created by Nevermore on 2024/11/6.
-//
-
 #ifndef SlarkViewController_h
 #define SlarkViewController_h
 #import "SlarkGraphicsConfig.h"

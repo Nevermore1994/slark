@@ -1,10 +1,6 @@
 //
-//  GLShaderView.cpp
-//  slark
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-//  Created by Nevermore on 2024/11/2.
-//
-
 #include "GLShader.h"
 
 namespace slark::GLShader {

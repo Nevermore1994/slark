@@ -252,7 +252,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_slark_sdk_GLRenderThread_onVSync(JNIE
     if (render) {
         render->onVSync();
     } else {
-        LogE("onVSync: failed to find VideoRender for playerId:{}", playerId);
+        LogE("onVSync[GL]: failed to find VideoRender for playerId:{}", playerId);
     }
 }
 
@@ -264,7 +264,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_slark_sdk_VulkanRenderThread_onVSync(
     if (render) {
         render->onVSync();
     } else {
-        LogE("onVSync: failed to find VideoRender for playerId:{}", playerId);
+        LogE("onVSync[VK]: failed to find VideoRender for playerId:{}", playerId);
     }
 }
 

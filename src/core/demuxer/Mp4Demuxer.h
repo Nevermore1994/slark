@@ -1,8 +1,5 @@
 //
-//  Mp4Demuxer.h
-//  slark
-//
-//  Created by Nevermore
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #pragma once

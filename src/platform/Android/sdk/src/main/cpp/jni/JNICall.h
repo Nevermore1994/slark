@@ -17,9 +17,6 @@
 
 namespace slark::JNI {
 
-// 运行时签名的 jobject 参数包装器
-// 用于参数类型为具体 Java 类时，携带精确签名
-// 可选持有引用的所有权（RAII），避免 .detach() 导致的 local ref 泄漏
 struct JObjectWithSig {
     jobject obj;
     std::string_view sig;
@@ -48,8 +45,6 @@ private:
     ByteArrayReference ownedByteArrayRef_;
 };
 
-// 运行时返回值签名
-// 用于返回值为具体 Java 类时，指定精确签名
 struct ReturnSig {
     std::string_view sig;
 
@@ -113,7 +108,6 @@ std::string methodSigRuntime(const Args&... args) {
     return makeSignature(sigOf<R>(), sigOfArg(args)...);
 }
 
-// 参数转换：基础类型直接转，string 类型返回 StringReference（RAII 管理 local ref）
 template <typename T>
 auto toArg(JNIEnv* env, T&& v) {
     using D = std::decay_t<T>;
@@ -149,8 +143,6 @@ auto argValue(T&& v) {
 
 class JNICall {
 public:
-    // 调用静态方法
-    // 参数中若含有 JObjectWithSig，会自动使用其携带的精确签名
     template <typename R, typename... Args>
     static auto callStatic(JNIEnv* env,
                            std::string_view cls,
@@ -190,8 +182,6 @@ public:
                  : emptyResult<R>();
     }
 
-    // 调用实例方法
-    // 参数中若含有 JObjectWithSig，会自动使用其携带的精确签名
     template <typename R, typename... Args>
     static auto call(JNIEnv* env,
                      jobject obj,
@@ -213,8 +203,6 @@ public:
         return m ? invoke<R>(env, obj, m.get(), std::forward<Args>(args)...) : emptyResult<R>();
     }
 
-    // 调用实例方法（指定精确返回类型签名）
-    // 返回值为具体 Java 类时必须传入 ReturnSig，参数中若含有 JObjectWithSig 同样兼容
     template <typename R, typename... Args>
     static auto call(JNIEnv* env,
                      jobject obj,
@@ -231,7 +219,6 @@ public:
         return m ? invoke<R>(env, obj, m.get(), std::forward<Args>(args)...) : emptyResult<R>();
     }
 
-    // 构造 Java 对象（支持 JObjectWithSig 运行时签名）
     template <typename... Args>
     static ObjectReference create(JNIEnv* env, std::string_view cls, Args&&... args) {
         auto c = JNICache::instance().getClass(env, cls);
@@ -337,7 +324,6 @@ private:
         }
     }
 
-    // 基础类型分发：接受一个 lambda 提供实际 JNI 调用，消除 invokeStatic/invoke 的重复分支
     template <typename R, typename CallFn>
     static auto dispatchPrimitive(JNIEnv* env, CallFn&& callFn) {
         if constexpr (std::is_same_v<R, std::string>) {
@@ -359,8 +345,6 @@ private:
         }
     }
 
-    // 统一调用分发：voidFn/objectFn/primitiveFn 分别对应三种返回类型
-    // 调用方只需传入对应的 lambda，不再重复 if constexpr 链
     template <typename R, typename VoidFn, typename ObjectFn, typename PrimFn>
     static auto dispatchCall(JNIEnv* env, VoidFn&& voidFn, ObjectFn&& objectFn, PrimFn&& primFn) {
         if constexpr (std::is_same_v<R, void>) {
@@ -479,7 +463,6 @@ private:
             jargs);
     }
 
-    // 字段读取：接受 getter lambda，消除 Static/instance 两套重复分支
     template <typename R, typename GetterFn>
     static std::optional<R> readFieldWith(JNIEnv* env, GetterFn&& getter) {
         if constexpr (std::is_same_v<R, std::string>) {

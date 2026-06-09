@@ -1,4 +1,6 @@
-
+//
+// Copyright (c) 2026 Nevermore-. All rights reserved.
+//
 #include "MoveOnlyFunction.hpp"
 
 #include <gtest/gtest.h>

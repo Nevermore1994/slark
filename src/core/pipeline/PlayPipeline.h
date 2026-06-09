@@ -180,6 +180,9 @@ public:
 
     void setVolume(float volume) noexcept;
 
+    /// 检查所有播放完成条件（demux 完成、解码器完成、帧队列为空），满足则触发 RenderEnd
+    void checkPlaybackComplete() noexcept;
+
     /// 返回下一次 seek 将使用的 epoch（beginSeek 后递增），用于绑定 seekRequest
     [[nodiscard]] uint64_t nextSeekEpoch() const noexcept {
         return seekContext_->currentEpoch() + 1;

@@ -48,6 +48,10 @@ public:
 
     [[nodiscard]] bool isRunning() const noexcept override;
 
+    [[nodiscard]] std::shared_ptr<IDecoder> decoder() const noexcept {
+        return decoder_;
+    }
+
 private:
     void runLoop() noexcept;
 

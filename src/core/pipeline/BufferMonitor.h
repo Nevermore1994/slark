@@ -62,9 +62,12 @@ public:
         backpressurePaused_ = false;
     }
 
-    // 文件读取到结尾时通知，停止 IO/demux 背压
     void setDemuxEof() noexcept {
         demuxEof_ = true;
+        if (isRebuffering_) {
+            isRebuffering_ = false;
+            fireEvent(PipelineEvent::BufferingEnd);
+        }
     }
 
     // 解码器输入耗尽时通知，停止 decoder 背压

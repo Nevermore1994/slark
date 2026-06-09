@@ -1,3 +1,7 @@
+//
+// Copyright (c) 2026 Nevermore-. All rights reserved.
+//
+
 #include "PlayerManagerInternal.h"
 
 #include "JNICache.h"
@@ -24,19 +28,41 @@ void PlayerObserver::notifyPlayedTime(std::string_view playerId, double time) {
 void PlayerObserver::notifyPlayerState(std::string_view playerId, PlayerState state) {
     using namespace slark::JNI;
     JNIEnvGuard jniGuard(getJavaVM());
+    auto* env = jniGuard.get();
     auto stateIdx = static_cast<size_t>(state);
     if (stateIdx >= kPlayerStateCount) {
         LogE("notifyPlayerState: invalid state index {}", stateIdx);
         return;
     }
-    auto stateEnum = JNICache::instance().getEnumField(jniGuard.get(),
+    auto stateEnum = JNICache::instance().getEnumField(env,
                                                        kPlayerStateClass,
                                                        kPlayerStateNames[stateIdx]);
-    JNICall::callStatic<void>(jniGuard.get(),
+    JNICall::callStatic<void>(env,
                               kPlayerManagerClass,
                               "notifyPlayerState",
                               std::string(playerId),
                               JObjectWithSig(std::move(stateEnum), makeObject(kPlayerStateClass)));
+    if (state == PlayerState::Prepared) {
+        JNICall::callStatic<void>(env,
+                                  kPlayerManagerClass,
+                                  "startRendering",
+                                  std::string(playerId));
+    } else if (state == PlayerState::Playing) {
+        JNICall::callStatic<void>(env,
+                                  kPlayerManagerClass,
+                                  "startRendering",
+                                  std::string(playerId));
+    } else if (state == PlayerState::Pause) {
+        JNICall::callStatic<void>(env,
+                                  kPlayerManagerClass,
+                                  "stopRendering",
+                                  std::string(playerId));
+    } else if (state == PlayerState::Stop || state == PlayerState::Error) {
+        JNICall::callStatic<void>(env,
+                                  kPlayerManagerClass,
+                                  "stopRendering",
+                                  std::string(playerId));
+    }
 }
 
 void PlayerObserver::notifyPlayerEvent(std::string_view playerId,

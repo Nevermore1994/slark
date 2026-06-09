@@ -1,10 +1,6 @@
 //
-//  iOSEGLContext.hpp
-//  slark
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-//  Created by Nevermore on 2024/10/30.
-//
-
 #ifndef iOSEGLContext_hpp
 #define iOSEGLContext_hpp
 

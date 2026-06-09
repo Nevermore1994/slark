@@ -1,10 +1,6 @@
 //
-//  iOSBase.h
-//  slark
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-//  Created by Nevermore on 2022/8/15.
-//
-
 #ifndef slark_iOS_Base_h
 #define slark_iOS_Base_h
 

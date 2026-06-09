@@ -129,7 +129,10 @@ void DecoderComponent::processPendingOutputs() noexcept {
         return;
     }
     while (decoder_->hasPendingOutput() && !stopRequested_.load(std::memory_order_acquire)) {
-        (void)decoder_->renderOutput();
+        if (decoder_->renderOutput() == Error::CodecAgain) {
+            decoder_->clearPendingOutput();
+            break;
+        }
     }
 }
 

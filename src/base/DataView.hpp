@@ -1,8 +1,7 @@
 //
-//  DataView.hpp
-//  slark
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-//  Created by Nevermore on 2025/3/31.
+
 //  C++23 Modernized DataView based on std::span
 //
 #pragma once

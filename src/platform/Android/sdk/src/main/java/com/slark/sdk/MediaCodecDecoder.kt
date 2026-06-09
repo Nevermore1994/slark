@@ -111,6 +111,9 @@ class MediaCodecDecoder(
                 val decodeData = extractBytes(outputBuffer)
                 outputBuffer.clear()
                 processRawData(decoderId, decodeData, info.presentationTimeUs, isCompleted.get())
+            } else if (isCompleted.get()) {
+                // EOS with no data: still notify C++ so decoder knows it's done
+                processRawData(decoderId, null, 0L, true)
             }
             codec.releaseOutputBuffer(index, false)
         } catch (e: Exception) {

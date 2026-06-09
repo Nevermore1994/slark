@@ -1,5 +1,5 @@
 //
-// Created by Nevermore on 2025/4/26.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #include "GLContextManager.h"
 #include "JNICache.h"
@@ -10,121 +10,19 @@
 #include "Log.hpp"
 #include "Manager.hpp"
 #include "Player.h"
-#include "PlayerObserver.h"
-#include "VideoDecodeResource.h"
+#include "PlayerManagerInternal.h"
+#include "PlayerStateNames.h"
 #include "VideoRender.h"
 
 namespace slark {
 
-namespace {
-
-constexpr std::string_view kPlayerStateNames[] = {
-    "Unknown",
-    "Initializing",
-    "Prepared",
-    "Buffering",
-    "Ready",
-    "Playing",
-    "Pause",
-    "Stop",
-    "Error",
-    "Completed",
-};
-
-constexpr std::string_view kPlayerEventNames[] = {
-    "FirstFrameRendered",
-    "SeekDone",
-    "PlayEnd",
-    "UpdateCacheTime",
-    "OnError",
-    "VideoRotation",
-};
-
-template <typename T, size_t N>
-constexpr std::string_view enumToName(const std::string_view (&names)[N], T value) noexcept {
-    auto idx = static_cast<size_t>(value);
-    return idx < N ? names[idx] : "Unknown";
-}
-
-} // namespace
-
-class PlayerObserver : public IPlayerObserver {
-public:
-    PlayerObserver() = default;
-
-    void notifyPlayedTime(std::string_view playerId, double time) override {
-        using namespace slark::JNI;
-        JNIEnvGuard jniGuard(getJavaVM());
-        JNI::JNICall::callStatic<void>(jniGuard.get(),
-                                       kPlayerManagerClass,
-                                       "notifyPlayerTime",
-                                       std::string(playerId),
-                                       time);
-    }
-
-    void notifyPlayerState(std::string_view playerId, PlayerState state) override {
-        using namespace slark::JNI;
-        JNIEnvGuard jniGuard(getJavaVM());
-        auto env = jniGuard.get();
-        auto fieldName = enumToName(kPlayerStateNames, state);
-        auto stateEnum = JNICache::instance().getEnumField(env, kPlayerStateClass, fieldName);
-        JNI::JNICall::callStatic<void>(
-            env,
-            kPlayerManagerClass,
-            "notifyPlayerState",
-            JNI::JObjectWithSig(ToJVM::str(env, playerId), JNI::Sig::String),
-            JNI::JObjectWithSig(std::move(stateEnum), JNI::makeObject(kPlayerStateClass)));
-        // Prepared: start VSync (symmetric to iOS CADisplayLink start)
-        if (state == PlayerState::Prepared) {
-            JNI::JNICall::callStatic<void>(env, kPlayerManagerClass, "startRendering",
-                                           JNI::JObjectWithSig(ToJVM::str(env, playerId),
-                                                                JNI::Sig::String));
-        } else if (state == PlayerState::Stop || state == PlayerState::Error) {
-            JNI::JNICall::callStatic<void>(env, kPlayerManagerClass, "stopRendering",
-                                           JNI::JObjectWithSig(ToJVM::str(env, playerId),
-                                                                JNI::Sig::String));
-        }
-    }
-
-    void notifyPlayerEvent(std::string_view playerId,
-                           slark::PlayerEvent event,
-                           std::string value) override {
-        using namespace slark::JNI;
-        JNIEnvGuard jniGuard(getJavaVM());
-        auto env = jniGuard.get();
-        auto fieldName = enumToName(kPlayerEventNames, event);
-        auto eventEnum = JNICache::instance().getEnumField(env, kPlayerEventClass, fieldName);
-        JNI::JNICall::callStatic<void>(
-            env,
-            kPlayerManagerClass,
-            "notifyPlayerEvent",
-            JNI::JObjectWithSig(ToJVM::str(env, playerId), JNI::Sig::String),
-            JNI::JObjectWithSig(std::move(eventEnum), JNI::makeObject(kPlayerEventClass)),
-            std::move(value));
-    }
-
-private:
-    const std::string_view kPlayerManagerClass = "com/slark/sdk/SlarkPlayerManager";
-    const std::string_view kPlayerStateClass = "com/slark/api/SlarkPlayerState";
-    const std::string_view kPlayerEventClass = "com/slark/api/SlarkPlayerEvent";
-};
-
 using PlayerManager = Manager<Player>;
 using PlayerObserverManager = Manager<PlayerObserver>;
-} // namespace slark
 
-enum class Action { Prepare = 0, Play, Pause, Release };
+} // namespace slark
 
 using namespace slark;
 using namespace slark::JNI;
-
-void asyncCreateDecoderResource(const std::string& playerId) noexcept {
-    std::thread([playerId]() {
-        auto resource = std::make_shared<VideoDecodeResource>(playerId);
-        resource->init();
-        VideoDecodeResourceManager::shareInstance().add(playerId, resource);
-    }).detach();
-}
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_slark_sdk_SlarkPlayerManager_00024Companion_createPlayer(JNIEnv* env,
@@ -142,13 +40,11 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_createPlayer(JNIEnv* env,
     auto playerId = std::string(player->playerId());
     asyncCreateDecoderResource(playerId);
 
-    // set observer
     auto observer = std::make_shared<PlayerObserver>();
     player->addObserver(observer);
     PlayerManager::shareInstance().add(playerId, player);
     PlayerObserverManager::shareInstance().add(playerId, observer);
 
-    // set render
     auto render = std::make_shared<VideoRender>();
     render->setPlayerId(playerId);
     player->setRenderImpl(render);
@@ -275,7 +171,8 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_state(JNIEnv* env,
     auto playerId = FromJVM::str(env, jPlayerId);
     std::string_view fieldView = "Unknown";
     if (auto player = PlayerManager::shareInstance().find(playerId)) {
-        fieldView = enumToName(kPlayerStateNames, player->state());
+        auto stateIdx = static_cast<size_t>(player->state());
+        fieldView = stateIdx < kPlayerStateCount ? kPlayerStateNames[stateIdx] : "Unknown";
     } else {
         LogE("not found player, {}", playerId);
     }

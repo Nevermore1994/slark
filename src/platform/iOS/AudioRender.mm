@@ -283,7 +283,6 @@ bool AudioRender::setupAudioComponent() noexcept {
     connection.sourceAudioUnit = volumeUnit_;
     connection.sourceOutputNumber = kMixerOutputBus;
     connection.destInputNumber = kAudioRemoteIOUnitOutputBus;
-    // loudspeaker
     if (!checkOSStatus(AudioUnitSetProperty(renderUnit_,
                                             kAudioUnitProperty_MakeConnection,
                                             kAudioUnitScope_Input,

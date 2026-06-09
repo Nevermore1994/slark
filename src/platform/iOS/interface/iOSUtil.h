@@ -1,8 +1,5 @@
 //
-//  iOSUtil.h
-//  slark
-//
-//  Created by Nevermore
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #ifndef SLARK_IOS_UTIL_H
 #define SLARK_IOS_UTIL_H

@@ -1,5 +1,5 @@
 //
-// Created by Nevermore- on 2025/6/23.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #include "HttpUtil.hpp"

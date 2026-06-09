@@ -1,8 +1,5 @@
 //
-//  IOBase.h
-//  Pods
-//
-//  Created by Nevermore on 2024/12/17.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #pragma once

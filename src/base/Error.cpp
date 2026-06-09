@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2026 Nevermore-. All rights reserved.
+//
 #include "Error.h"
 
 namespace slark {

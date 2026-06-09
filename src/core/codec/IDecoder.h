@@ -100,6 +100,10 @@ public:
         return Error::CodecError;
     }
 
+    /// 清除待处理输出标记（Texture 模式专用，默认 no-op）
+    virtual void clearPendingOutput() noexcept {
+    }
+
     using WakeupCallback = std::function<void()>;
 
     void setReceiveFunc(DecoderReceiveFunc&& func) noexcept {

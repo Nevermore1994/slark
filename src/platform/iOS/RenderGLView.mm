@@ -464,14 +464,12 @@ static const GLfloat kColorConversion709FullRange[] = {
 
     _context->attachContext();
 
-    // Setup program
     _program = std::make_unique<GLProgram>(GLShader::vertexShader, GLShader::fragmentShader);
     if (!_program->isValid()) {
         _context->detachContext();
         return;
     }
 
-    // Get locations
     auto program = _program->program();
     _attributes[ATTRIB_VERTEX] = static_cast<GLuint>(glGetAttribLocation(program, "position"));
     _attributes[ATTRIB_TEXCOORD] = static_cast<GLuint>(glGetAttribLocation(program, "texCoord"));
@@ -573,7 +571,6 @@ static const GLfloat kColorConversion709FullRange[] = {
 
     _context->attachContext();
 
-    // Delete old
     if (_frameBuffer) {
         glDeleteFramebuffers(1, &_frameBuffer);
         _frameBuffer = 0;
@@ -583,7 +580,6 @@ static const GLfloat kColorConversion709FullRange[] = {
         _renderBuffer = 0;
     }
 
-    // Recreate
     [self createFramebuffer];
 
     _context->detachContext();
