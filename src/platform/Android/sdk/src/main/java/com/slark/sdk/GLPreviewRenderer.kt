@@ -65,6 +65,7 @@ class GLPreviewRenderer : IPreviewRenderer {
         GLES20.glViewport(0, 0, surfaceSize.width, surfaceSize.height)
 
         val rot = rotationDeg.toInt() % 360
+        SlarkLog.d(LOG_TAG, "drawFrame: rotationDeg=$rotationDeg, rot=$rot, texture=$texture")
         val isSwapped = rot == 90 || rot == 270
         val picW = if (isSwapped) texture.height else texture.width
         val picH = if (isSwapped) texture.width else texture.height
@@ -119,6 +120,7 @@ class GLPreviewRenderer : IPreviewRenderer {
     }
 
     override fun setRotation(rotation: Double) {
+        SlarkLog.i(LOG_TAG, "setRotation: $rotation")
         this.rotationDeg = rotation
     }
 

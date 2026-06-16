@@ -3,10 +3,8 @@
 package com.slark.demo.ui.component
 
 import android.content.Context
-import android.view.Surface
 import android.view.TextureView
 import android.view.ViewGroup
-import android.view.WindowManager
 import android.widget.Toast
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
@@ -49,16 +47,6 @@ fun PlayerScreen(
     val context = LocalContext.current
     val errorMessage = viewModel.errorMessage
 
-    // 屏幕方向
-    val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-    val displayRotation = windowManager.defaultDisplay.rotation
-    val screenRotationDeg = when (displayRotation) {
-        Surface.ROTATION_90  -> 90
-        Surface.ROTATION_180 -> 180
-        Surface.ROTATION_270 -> 270
-        else -> 0
-    }
-
     LaunchedEffect(errorMessage) {
         errorMessage?.let {
             Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
@@ -87,9 +75,7 @@ fun PlayerScreen(
                 detectTapGestures { showControls() }
             }
     ) {
-        val totalRotation = (viewModel.rotationDegrees + screenRotationDeg) % 360
-
-        // 视频渲染
+        // 视频渲染，不额外施加 Rotation 变换，画面方向由 player.setRotation 内部处理
         AndroidView(
             factory = { ctx ->
                 TextureView(ctx).apply {
@@ -100,9 +86,7 @@ fun PlayerScreen(
                     viewModel.setRenderTarget(this)
                 }
             },
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer { rotationZ = totalRotation.toFloat() }
+            modifier = Modifier.fillMaxSize()
         )
 
         // loading

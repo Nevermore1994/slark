@@ -24,7 +24,7 @@ bool PlayerStateMachine::isValidTransition(PlayerState from, PlayerState to) noe
         case Pause:
             return to == Playing || to == Buffering || to == Stop || to == Error;
         case Completed:
-            return to == Stop;
+            return to == Playing || to == Pause || to == Buffering || to == Stop;
         case Stop:
             return false;
         case Error:

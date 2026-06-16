@@ -47,11 +47,7 @@ Player::Impl::Impl(std::unique_ptr<PlayerParams> params)
 Player::Impl::~Impl() {
     isStopped_ = true;
     if (ownerThread_) {
-        // 尝试通过事件机制正常停止（非阻塞），然后立即强制清理，不阻塞主线程
-        updateState(PlayerState::Stop);
         forceCleanup();
-
-        // doStop 内部不 join ownerThread_，由此处在外部线程安全地 stop + join
         ownerThread_->stop();
         ownerThread_.reset();
     }
@@ -444,7 +440,7 @@ void Player::Impl::resumeInternal() noexcept {
         return;
     }
     ownerThread_->start();
-    pipeline_->resume();
+    pipeline_->start();
     mediaSourceManager_.start();
 }
 
@@ -460,9 +456,14 @@ void Player::Impl::doPause() noexcept {
 void Player::Impl::doStop() noexcept {
     LogI("do stop start");
     isStopped_.store(true, std::memory_order_release);
-    if (isReleased_.load(std::memory_order_acquire)) {
-        LogI("do stop: already released by forceCleanup, skip");
-        return;
+    {
+        // 与 forceCleanup 互斥，防止双线程同时 teardown
+        std::lock_guard<std::mutex> lock(releaseMutex_);
+        if (isReleased_.load(std::memory_order_acquire)) {
+            LogI("do stop: already released by forceCleanup, skip");
+            return;
+        }
+        isReleased_ = true;
     }
     if (ownerThread_) {
         ownerThread_->cancelRepeatTask(fastTickTaskId_);
@@ -483,11 +484,6 @@ void Player::Impl::doStop() noexcept {
 
     // ownerThread_ 的 stop/join 由 ~Impl() 在外部线程执行，此处不操作
     GLContextManager::shareInstance().removeMainContext(playerId_);
-    {
-        // 保证 isReleased_ 的写入与 cond_.wait 的 happens-before 关系
-        std::lock_guard<std::mutex> lock(releaseMutex_);
-        isReleased_ = true;
-    }
     cond_.notify_all();
     LogI("do stop end");
 }
@@ -619,6 +615,10 @@ void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
                    state.has_value()) {
             if (currentState == PlayerState::Stop || currentState == PlayerState::Error) {
                 continue;
+            }
+            if (currentState == PlayerState::Completed && *state == PlayerState::Playing) {
+                LogI("replay from completed, seek to 0");
+                doSeek(PlayerSeekRequest{.isAccurate = false, .seekTime = 0.0});
             }
             changeState = state.value();
         }

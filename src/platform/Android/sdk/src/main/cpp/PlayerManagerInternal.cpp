@@ -42,22 +42,13 @@ void PlayerObserver::notifyPlayerState(std::string_view playerId, PlayerState st
                               "notifyPlayerState",
                               std::string(playerId),
                               JObjectWithSig(std::move(stateEnum), makeObject(kPlayerStateClass)));
-    if (state == PlayerState::Prepared) {
+    if (state == PlayerState::Prepared || state == PlayerState::Playing) {
         JNICall::callStatic<void>(env,
                                   kPlayerManagerClass,
                                   "startRendering",
                                   std::string(playerId));
-    } else if (state == PlayerState::Playing) {
-        JNICall::callStatic<void>(env,
-                                  kPlayerManagerClass,
-                                  "startRendering",
-                                  std::string(playerId));
-    } else if (state == PlayerState::Pause) {
-        JNICall::callStatic<void>(env,
-                                  kPlayerManagerClass,
-                                  "stopRendering",
-                                  std::string(playerId));
-    } else if (state == PlayerState::Stop || state == PlayerState::Error) {
+    } else if (state == PlayerState::Pause || state == PlayerState::Completed || 
+        state == PlayerState::Stop || state == PlayerState::Error) {
         JNICall::callStatic<void>(env,
                                   kPlayerManagerClass,
                                   "stopRendering",
@@ -87,7 +78,6 @@ void PlayerObserver::notifyPlayerEvent(std::string_view playerId,
 }
 
 void asyncCreateDecoderResource(const std::string& playerId) noexcept {
-    // 使用 std::thread + detach 真正异步，避免 std::async future 析构时阻塞主线程
     std::thread([playerId]() {
         auto resource = std::make_shared<VideoDecodeResource>(playerId);
         resource->init();

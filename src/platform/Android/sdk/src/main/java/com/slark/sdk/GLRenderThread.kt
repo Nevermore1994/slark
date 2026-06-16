@@ -158,8 +158,14 @@ class GLRenderThread(
             SlarkLog.e(LOG_TAG, "setRotation: invalid value: $rotation")
             return
         }
+        SlarkLog.i(LOG_TAG, "setRotation: degrees=$rotation")
         handler.post {
             renderer.setRotation(rotation.toDouble())
+            val backup = getBackupTextureId(playerId)
+            if (backup != null && backup.isValid()) {
+                pendingTexture = backup.asBackup()
+                drawAndSwap()
+            }
         }
     }
 

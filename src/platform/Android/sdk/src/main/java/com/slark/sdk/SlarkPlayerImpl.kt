@@ -23,6 +23,7 @@ import com.slark.api.SlarkPlayerState
 import com.slark.api.SlarkRenderTarget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.ceil
@@ -37,6 +38,8 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
     private var currentSurface: Surface? = null
     private var currentSurfaceWidth: Int = 0
     private var currentSurfaceHeight: Int = 0
+    private var isReleased = false
+    private val releaseScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     override var isLoop: Boolean = false
         set(value) {
@@ -73,12 +76,16 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
     }
 
     override fun release() {
+        if (isReleased) return
+        isReleased = true
         stopRendering()
-        renderThread?.shutdown()
-        renderThread?.join()
-        renderThread = null
-        SlarkPlayerManager.doAction(playerId, SlarkPlayerManager.Action.RELEASE.ordinal)
-        SlarkPlayerManager.removePlayer(playerId)
+        releaseScope.launch {
+            renderThread?.shutdown()
+            renderThread?.join()
+            renderThread = null
+            SlarkPlayerManager.doAction(playerId, SlarkPlayerManager.Action.RELEASE.ordinal)
+            SlarkPlayerManager.removePlayer(playerId)
+        }
     }
 
     override fun seekTo(time: Double, isAccurate: Boolean) {
@@ -113,10 +120,13 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
         get() = SlarkPlayerManager.hasVideo(playerId)
 
     override fun setRotation(rotation: Rotation) {
-        renderThread?.setRotation(rotation.ordinal * 90)
+        val degrees = rotation.ordinal * 90
+        SlarkLog.i(LOG_TAG, "setRotation(api): rotation=$rotation, degrees={$degrees}")
+        renderThread?.setRotation(degrees)
     }
 
     fun setVideoRotation(rotationDegrees: Int) {
+        SlarkLog.i(LOG_TAG, "setVideoRotation(metadata): degrees=$rotationDegrees")
         renderThread?.setRotation(rotationDegrees)
         playerObserver?.notifyEvent(playerId, SlarkPlayerEvent.VideoRotation, rotationDegrees.toString())
     }
