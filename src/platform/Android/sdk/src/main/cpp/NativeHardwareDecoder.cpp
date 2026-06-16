@@ -197,7 +197,6 @@ Java_com_slark_sdk_MediaCodecDecoder_processRawData(JNIEnv* env,
                                                     jlong pts,
                                                     jboolean isCompleted) {
     using namespace slark;
-    LogI("native decode success:{}", pts);
     auto decoderId = FromJVM::str(env, jDecoderId);
     auto decoder = NativeDecoderManager::shareInstance().find(decoderId);
     if (!decoder) {
@@ -205,6 +204,11 @@ Java_com_slark_sdk_MediaCodecDecoder_processRawData(JNIEnv* env,
         return;
     }
     auto dataPtr = FromJVM::bytes(env, byteBuffer);
+    if (isCompleted) {
+        LogI("native decode completed");
+    } else {
+        LogI("native decode success:{}", pts);
+    }
     decoder->receiveDecodedData(std::move(dataPtr), pts, (JNI_TRUE == isCompleted));
 }
 

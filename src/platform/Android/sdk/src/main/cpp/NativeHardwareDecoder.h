@@ -33,7 +33,11 @@ struct VideoFrameResult {
         VideoFrameResult r;
         r.isAvailable = (packed >> 63) & 1u;
         r.isCompleted = (packed >> 62) & 1u;
-        r.pts = static_cast<int64_t>(packed & 0x3FFFFFFFFFFFFFFFull);
+        auto maskedPts = packed & 0x3FFFFFFFFFFFFFFFull;
+        if (maskedPts & (1ULL << 61)) {
+            maskedPts |= 0xC000000000000000ULL;
+        }
+        r.pts = static_cast<int64_t>(maskedPts);
         return r;
     }
 };

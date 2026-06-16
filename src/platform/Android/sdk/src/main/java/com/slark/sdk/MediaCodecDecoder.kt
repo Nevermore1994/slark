@@ -172,18 +172,17 @@ class MediaCodecDecoder(
     }
 
     fun flush() {
-        // 使用 poll 循环替代 clear() 来 drain 队列，避免 LinkedBlockingQueue.clear() 内部
-        // 同时获取 putLock + takeLock 而与 codec 回调线程（offer/put）死锁
-        drainNonBlocking(inputBufferQueue)
+        decoder?.flush() 
+        drainNonBlocking(inputBufferQueue) 
         drainNonBlocking(outputBufferQueue)
-        decoder?.flush()
-        isCompleted.set(false)
+        isCompleted.set(false) 
+        decoder?.start()
     }
 
     private fun <T> drainNonBlocking(queue: LinkedBlockingQueue<T>) {
+        val MAX_COUNT = 4096
         var count = 0
-        // poll() 只获取 takeLock，不会与 offer 的 putLock 冲突
-        while (queue.poll() != null && count < 4096) {
+        while (queue.poll() != null && count < MAX_COUNT) {
             count++
         }
     }

@@ -40,7 +40,7 @@ Error VideoHardwareDecoder::sendPacket(AVFrameRefPtr& frame) noexcept {
     if (res != Error::Success && res != Error::CodecAgain && res != Error::CodecNotProcessed) {
         LogE("send video packet failed, {}", toString(res));
     } else {
-        LogI("send video packet, index:{}, pts:{}, dts:{}, isDiscard:{}, frameType:{}",
+        LogI("send video packet {}, index:{}, pts:{}, dts:{}, isDiscard:{}, frameType:{}",
              toString(res),
              frame->index,
              frame->ptsTime(),
@@ -64,8 +64,10 @@ void VideoHardwareDecoder::receiveDecodedData(DataPtr data,
 
     if (mode_ == DecodeMode::ByteBuffer) {
         if (!data || data->empty()) {
-            LogE("data is empty");
-            return;
+            if (!isCompleted) {
+                LogE("data is empty");
+                return;
+            }
         }
         auto videoConfig = std::dynamic_pointer_cast<VideoDecoderConfig>(config_);
         auto frame = std::make_unique<AVFrame>(AVFrameType::Video);
