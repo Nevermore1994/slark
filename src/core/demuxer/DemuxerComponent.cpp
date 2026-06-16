@@ -32,8 +32,6 @@ void DemuxerComponent::reset() noexcept {
     }
     flushed_ = false;
     demuxer_.reset();
-    // probeBuffer_ 可能正被 worker 线程通过引用使用，不能在 reset 中释放。
-    // 析构函数会先 join worker 线程再销毁成员，由那里安全清理。
 }
 
 void DemuxerComponent::close() noexcept {
@@ -53,14 +51,27 @@ void DemuxerComponent::start() noexcept {
 
 void DemuxerComponent::flush() noexcept {
     flushed_.store(true, std::memory_order_release);
-    // 主调线程先清一次 Channel 残留 packet
     if (receiver_) {
         (void)receiver_->tryReceiveAll();
     }
     if (auto demuxer = demuxer_.load()) {
         demuxer->flush();
     }
-    // 唤醒可能在 receive() 阻塞的 worker
+    if (receiver_) {
+        receiver_->wakeup();
+    }
+}
+
+void DemuxerComponent::pause() noexcept {
+    paused_.store(true, std::memory_order_release);
+}
+
+void DemuxerComponent::resume() noexcept {
+    {
+        std::lock_guard<std::mutex> lock(pauseMutex_);
+        paused_ = false;
+    }
+    pauseCv_.notify_all();
     if (receiver_) {
         receiver_->wakeup();
     }
@@ -71,6 +82,16 @@ void DemuxerComponent::runLoop() noexcept {
         // flush 信号优先处理：清空 Channel 残留数据
         if (flushed_.exchange(false, std::memory_order_acq_rel)) {
             (void)receiver_->tryReceiveAll();
+        }
+
+        // pause: seek 期间阻止 worker 处理数据，避免旧的 demuxer 状态被 push 到 decoder
+        if (paused_.load(std::memory_order_acquire)) {
+            std::unique_lock<std::mutex> lock(pauseMutex_);
+            pauseCv_.wait(lock, [this] {
+                return !paused_.load(std::memory_order_acquire) ||
+                       stopRequested_.load(std::memory_order_acquire);
+            });
+            continue;
         }
 
         auto exp = receiver_->receive();
@@ -133,8 +154,6 @@ bool DemuxerComponent::open() noexcept {
             demuxer->resetPendingSeek();
             probeBuffer_.reset();
             invokeSeekFunc(Range(*seekTo));
-            // seek 后第一个包如果 offset 不匹配目标，说明是 seek 生效前
-            // IO 线程发来的过期数据，需要丢弃
             pendingSeekVerifiedOffset_.store(*seekTo, std::memory_order_release);
             flushed_.store(false, std::memory_order_release);
         }

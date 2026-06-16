@@ -41,8 +41,9 @@ public:
     /// 启动 worker 线程（生命周期接口，构造后调一次）
     void start() noexcept override;
 
-    /// IO 侧 pause 由 MediaSourceManager 完成，本组件无需感知，空实现
-    void pause() noexcept override {}
+    void pause() noexcept override;
+
+    void resume() noexcept;
 
     void flush() noexcept override;
 
@@ -179,6 +180,9 @@ private:
     std::atomic_bool flushed_ = false;
     std::atomic_bool isClosed_ = false;
     std::atomic_bool stopRequested_ = false;
+    std::mutex pauseMutex_;
+    std::condition_variable pauseCv_;
+    std::atomic_bool paused_ = false;
     std::atomic<uint64_t> pendingSeekVerifiedOffset_{0};
     std::weak_ptr<perf::PlaySession> session_;
 };

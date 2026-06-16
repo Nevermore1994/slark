@@ -77,8 +77,6 @@ public:
     int32_t rotationDegrees = 0;
 
 public:
-    /// @return true if current sample is fully within buffer; optionally outputs sample start
-    /// offset
     bool isInRange(Buffer& buffer, uint64_t* outOffset = nullptr) const noexcept;
 
     void reset() noexcept;

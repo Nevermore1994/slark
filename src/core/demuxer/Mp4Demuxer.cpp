@@ -39,7 +39,6 @@ void TrackContext::init() noexcept {
         elstMediaTimeOffset = elst->mediaTimeOffset();
     }
     if (type == TrackType::Video && ctts && !ctts->entrys.empty()) {
-        // Set pts to 0 and calculate the initial value of dts, which may be a negative number.
         dts = pts - ctts->entrys[0].sampleOffset;
         cttsEntrySampleIndex = 0;
     }
@@ -54,18 +53,15 @@ uint64_t TrackContext::getSeekPos(double targetTime) const noexcept {
         return 0;
     }
 
-    // 第一步：根据时间找到 sample index
     uint32_t sampleIndex = findSampleIndexByTime(targetTime);
 
-    // 第二步：视频轨道对齐到最近关键帧
     uint32_t seekSampleIndex = sampleIndex;
     if (type == TrackType::Video && stss) {
         const auto& keyIndexes = stss->keyIndexs;
-        auto it = std::lower_bound(keyIndexes.begin(), keyIndexes.end(), sampleIndex);
-        seekSampleIndex = it != keyIndexes.end() ? *it : keyIndexes.back();
+        auto it = std::upper_bound(keyIndexes.begin(), keyIndexes.end(), sampleIndex);
+        seekSampleIndex = it != keyIndexes.begin() ? *std::prev(it) : keyIndexes.front();
     }
 
-    // 第三步：找到 chunk index 和 chunk 内的 sample 偏移
     auto chunkResult = findChunkBySampleIndex(seekSampleIndex);
     if (!chunkResult.has_value()) {
         return 0;
@@ -185,8 +181,8 @@ void TrackContext::seek(uint64_t pos) noexcept {
     uint32_t sampleIndex = sampleBeforeChunk + sampleInChunk + 1; // 1-based
     if (stss) {
         const auto& keyIndexs = stss->keyIndexs;
-        auto keyIt = std::lower_bound(keyIndexs.begin(), keyIndexs.end(), sampleIndex);
-        sampleIndex = keyIt != keyIndexs.end() ? *keyIt : keyIndexs.back();
+        auto keyIt = std::upper_bound(keyIndexs.begin(), keyIndexs.end(), sampleIndex);
+        sampleIndex = keyIt != keyIndexs.begin() ? *std::prev(keyIt) : keyIndexs.front();
     }
 
     // 直接通过 stts 累加计算目标 sample 的 dts，避免逐帧推进
@@ -276,6 +272,12 @@ void TrackContext::seekToSample(uint32_t targetSampleIndex) noexcept {
     }
 
     index = targetSampleIndex;
+    LogI("[debug] seekToSample {} done: idx={}, dts={}({:.3f}s), pts={}({:.3f}s), cttsIdx={}, cttsSample={}, cttsOffset={}",
+         type == TrackType::Video ? "video" : "audio",
+         idx, dts, double(dts) / mdhd->timeScale,
+         pts, double(pts) / mdhd->timeScale,
+         cttsEntryIndex, cttsEntrySampleIndex,
+         ctts ? ctts->entrys[cttsEntryIndex].sampleOffset : 0);
 }
 
 void TrackContext::reset() noexcept {
@@ -297,7 +299,6 @@ void TrackContext::reset() noexcept {
     index = 0;
     isCompleted = false;
     fragSampleIndex = 0;
-    init();
 }
 
 void TrackContext::advanceStscState() noexcept {
@@ -323,7 +324,6 @@ void TrackContext::advanceStscState() noexcept {
 }
 
 void TrackContext::advanceSttsState() noexcept {
-    // 先取当前 entry 的 delta，再推进 entry index，避免引用失效后取到错误值
     const auto delta = stts->entrys[sttsEntryIndex].sampleDelta;
     sttsEntrySampleIndex++;
     if (sttsEntrySampleIndex >= stts->entrys[sttsEntryIndex].sampleCount) {
@@ -1190,6 +1190,7 @@ DemuxerResult Mp4Demuxer::parseData(DataPacket& packet) noexcept {
         LogE("parseData: buffer append failed, offset:{}", packet.offset);
         return {DemuxerResultCode::InvalidData, AVFramePtrArray(), AVFramePtrArray()};
     }
+    auto currentOffset = buffer_->pos();
     DemuxerResult result;
     while (!buffer_->empty()) {
         uint64_t offset = INT64_MAX; // To find the earliest starting track
@@ -1204,6 +1205,22 @@ DemuxerResult Mp4Demuxer::parseData(DataPacket& packet) noexcept {
             }
         }
         if (!parseTrack) {
+            bool advanced = false;
+            for (const auto& track : std::views::values(tracks_)) {
+                if (track->isCompleted || track->isFragmented) {
+                    continue;
+                }
+                auto start = track->stco->chunkOffsets[track->chunkLogicIndex] + 
+                             static_cast<uint64_t>(track->sampleOffset);
+                auto end = start + track->stsz->sampleSizes[track->stszSampleSizeIndex];
+                if (end < buffer_->pos()) {
+                    track->calcIndex();
+                    advanced = true;
+                }
+            }
+            if (advanced) {
+                continue; // 跳过后被跳过的 sample，重新找在范围内的 track
+            }
             break;
         }
         if (parseTrack->type == TrackType::Audio) {
@@ -1213,12 +1230,15 @@ DemuxerResult Mp4Demuxer::parseData(DataPacket& packet) noexcept {
         }
     }
     if (!result.audioFrames.empty() || !result.videoFrames.empty()) {
+        LogI("parseData: parsedLength {} - {}, audioFrameCount:{}, videoFrameCount:{}", 
+            currentOffset, buffer_->pos(), result.audioFrames.size(), result.videoFrames.size());
         buffer_->shrink();
     }
 
     isCompleted_ = isCompleted();
     if (isCompleted_) {
-        LogI("demux completed");
+        result.resultCode = DemuxerResultCode::FileEnd;
+        LogI("demux completed, sending FileEnd");
     }
     return result;
 }

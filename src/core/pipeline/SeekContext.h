@@ -97,7 +97,6 @@ public:
         isVideoSeeked_.store(true, std::memory_order_release);
     }
 
-    /// CAS 语义：仅第一次调用返回 true，用于解码线程抢占 seek 首帧 push 权
     [[nodiscard]] bool tryMarkVideoSeeked() noexcept {
         bool expected = false;
         return isVideoSeeked_.compare_exchange_strong(expected, true, std::memory_order_acq_rel);

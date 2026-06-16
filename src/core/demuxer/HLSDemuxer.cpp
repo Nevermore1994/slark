@@ -569,6 +569,7 @@ DemuxerResult HLSDemuxer::parseData(DataPacket& packet) noexcept {
     }
     if (tsIndex == getTSInfos().size() - 1 && buffer_->empty()) {
         isCompleted_ = true;
+        result.resultCode = DemuxerResultCode::FileEnd;
     }
     return result;
 }

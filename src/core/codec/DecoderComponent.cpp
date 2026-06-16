@@ -103,6 +103,7 @@ void DecoderComponent::resume() noexcept {
         std::lock_guard<std::mutex> lock(pauseMutex_);
         paused_ = false;
     }
+    flushed_.store(false, std::memory_order_release);
     pauseCv_.notify_all();
 }
 
