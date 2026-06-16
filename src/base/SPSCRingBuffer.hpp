@@ -53,6 +53,22 @@ public:
         return true;
     }
 
+    /// 读取最多 count 个元素，返回实际读取数（0 ≤ 返回值 ≤ count）。
+    uint32_t readUpTo(T* dst, uint32_t count) noexcept {
+        if (count == 0 || dst == nullptr) {
+            return 0;
+        }
+        auto avail = length();
+        auto toRead = std::min(count, avail);
+        if (toRead == 0) {
+            return 0;
+        }
+        auto rp = readPos_.load(std::memory_order_relaxed);
+        detail::wrapCopyFrom(data_.data(), kCapacity, rp, dst, toRead);
+        readPos_.store((rp + toRead) & kMask, std::memory_order_release);
+        return toRead;
+    }
+
     void reset() noexcept {
         readPos_.store(0, std::memory_order_release);
         writePos_.store(0, std::memory_order_release);

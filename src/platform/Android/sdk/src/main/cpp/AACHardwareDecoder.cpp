@@ -62,7 +62,9 @@ void AACHardwareDecoder::receiveDecodedData(DataPtr data, int64_t pts, bool isCo
         LogI("audio decode completed");
     }
     if (!data || data->empty()) {
-        LogE("data is empty");
+        if (!isCompleted) {
+            LogE("data is empty");
+        }
         return;
     }
     auto audioConfig = std::dynamic_pointer_cast<AudioDecoderConfig>(config_);

@@ -42,16 +42,25 @@ void AudioRenderComponent::init() noexcept {
         return;
     }
     pimpl->setProvider([this](uint8_t* data, uint32_t size, AudioDataFlag& /*flag*/) -> uint32_t {
+        uint32_t read = size;
         if (!audioBuffer_->readExact(data, size)) {
-            std::fill_n(data, size, 0);
-            return 0;
+            read = 0;
+            if (decoderCompleted_.load(std::memory_order_acquire)) {
+                read = audioBuffer_->readUpTo(data, size);
+            }
+            if (read == 0) {
+                LogI("request audio data failed");
+                return 0;
+            }
+            std::fill_n(data + read, size - read, 0);
         }
-        auto rendered = renderedDataLength_.fetch_add(size, std::memory_order_relaxed) + size;
+        auto rendered = renderedDataLength_.fetch_add(read, std::memory_order_relaxed) + read;
         clock_.setTime(offsetTime_ + audioInfo_->dataLen2TimePoint(rendered));
 
         if (auto updater = audioTimeUpdater_.load()) {
             (*updater)(playedTime());
         }
+        LogI("request audio data, request size: {}, read: {}", size, read);
         return size;
     });
     pimpl_.reset(std::move(pimpl));
@@ -78,6 +87,7 @@ void AudioRenderComponent::reset() noexcept {
     renderedDataLength_.store(0, std::memory_order_release);
     offsetTime_ = {};
     clock_.reset();
+    decoderCompleted_.store(false, std::memory_order_release);
     if (auto impl = pimpl_.load()) {
         impl->reset();
     }
@@ -128,6 +138,7 @@ void AudioRenderComponent::flush() noexcept {
     if (audioBuffer_) {
         audioBuffer_->reset();
     }
+    decoderCompleted_.store(false, std::memory_order_release);
     if (auto pimpl = pimpl_.load()) {
         pimpl->flush();
     } else {

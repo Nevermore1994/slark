@@ -66,6 +66,10 @@ public:
         return audioBuffer_ ? audioBuffer_->available() : 0;
     }
 
+    [[nodiscard]] uint32_t readable() const noexcept {
+        return audioBuffer_ ? audioBuffer_->length() : 0;
+    }
+
     RenderStatus status() const {
         if (auto pimpl = pimpl_.load()) {
             return pimpl->status();
@@ -74,6 +78,16 @@ public:
     }
 
     void renderEnd() noexcept;
+
+    /// 标记音频解码已完成，后续不会有新数据写入 ring buffer。
+    /// 此时 provider 可用 `readUpTo` 放行残片并补零，避免残片卡住完成检测。
+    void setDecoderCompleted() noexcept {
+        decoderCompleted_.store(true, std::memory_order_release);
+    }
+
+    [[nodiscard]] bool isDecoderCompleted() const noexcept {
+        return decoderCompleted_.load(std::memory_order_acquire);
+    }
 
 private:
     void init() noexcept;
@@ -87,6 +101,8 @@ private:
     ThreadSafeClock clock_;
     std::atomic<uint64_t> renderedDataLength_{0};
     Time::TimePoint offsetTime_{};
+
+    std::atomic<bool> decoderCompleted_{false};
 
     AtomicSharedPtr<IAudioRender> pimpl_;
     AtomicSharedPtr<std::function<void(Time::TimePoint)>> audioTimeUpdater_;

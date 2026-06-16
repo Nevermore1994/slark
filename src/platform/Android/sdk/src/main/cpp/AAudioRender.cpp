@@ -144,6 +144,15 @@ void AAudioRender::stop() noexcept {
         return;
     }
     if (stream_) {
+        auto state = AAudioStream_getState(stream_);
+        if (state == AAUDIO_STREAM_STATE_PAUSED) {
+            AAudioStream_requestStart(stream_);
+            aaudio_stream_state_t nextState = AAUDIO_STREAM_STATE_UNINITIALIZED;
+            AAudioStream_waitForStateChange(stream_,
+                                            AAUDIO_STREAM_STATE_STARTING,
+                                            &nextState,
+                                            200'000'000LL);
+        }
         AAudioStream_requestStop(stream_);
     }
     status_ = RenderStatus::Stop;
