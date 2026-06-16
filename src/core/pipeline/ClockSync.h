@@ -11,26 +11,28 @@
 
 namespace slark {
 
-// AV 同步动作
 enum class AVSyncAction : uint8_t {
-    Render, // 正常渲染当前帧
-    Hold,   // 跳过本次渲染，等音频追上
-    Drop,   // 丢弃当前帧（追帧）
+    Render,
+    Hold,
+    Drop,
 };
 
 class ClockSync : public NonCopyMovable {
 public:
     struct Metrics {
-        int32_t dropCount = 0;       // 追帧循环中累计丢帧数
-        int32_t chaseRoundCount = 0; // 追帧循环累计轮数
-        int64_t vsyncDurationUs = 0; // 最近两次 vsync 回调间隔（微秒）
+        int32_t dropCount = 0;
+        int32_t chaseRoundCount = 0;
+        int64_t vsyncDurationUs = 0;
     };
 
-    ClockSync() = default;
+    ClockSync() noexcept {
+        audioLastUpdateUs_.store(Time::nowTimeStamp().point(), std::memory_order_release);
+    }
     ~ClockSync() = default;
 
     void setAudioTime(Time::TimePoint t) noexcept {
         audioTime_.store(t.point(), std::memory_order_release);
+        audioLastUpdateUs_.store(Time::nowTimeStamp().point(), std::memory_order_release);
     }
 
     void setVideoTime(Time::TimePoint t) noexcept {
@@ -46,11 +48,24 @@ public:
     }
 
     [[nodiscard]] Time::TimePoint masterTime(bool hasAudio) const noexcept {
-        return hasAudio ? audioTime() : videoTime();
+        if (!hasAudio) {
+            return videoTime();
+        }
+        auto audioPts = audioTime_.load(std::memory_order_acquire);
+        auto lastUpdate = audioLastUpdateUs_.load(std::memory_order_acquire);
+        auto now = Time::nowTimeStamp().point();
+        if (now > lastUpdate && (now - lastUpdate) > kAudioClockStaleThresholdUs) {
+            auto elapsed = static_cast<double>(now - lastUpdate);
+            auto rate = playbackRate();
+            auto estimatedUs = static_cast<uint64_t>(elapsed * rate);
+            return Time::TimePoint(audioPts + estimatedUs);
+        }
+        return Time::TimePoint(audioPts);
     }
 
     void reset() noexcept {
         audioTime_.store(0, std::memory_order_release);
+        audioLastUpdateUs_.store(Time::nowTimeStamp().point(), std::memory_order_release);
         videoTime_.store(0, std::memory_order_release);
         playbackRate_.store(static_cast<uint16_t>(kDefaultPlaybackRate * kPlaybackRateScale),
                             std::memory_order_release);
@@ -77,7 +92,6 @@ public:
         vsyncDurationUs_.store(us, std::memory_order_relaxed);
     }
 
-    // 设置变速播放速率，范围[0.5, 2.0]，默认 1.0
     void setPlaybackRate(double rate) noexcept {
         if (rate >= kMinPlaybackRate && rate <= kMaxPlaybackRate) {
             playbackRate_.store(static_cast<uint16_t>(rate * kPlaybackRateScale),
@@ -100,22 +114,17 @@ public:
         return videoFps_.load(std::memory_order_acquire) / static_cast<double>(kFpsScale);
     }
 
-    // VSync 边界容忍窗口：消除 VSync 回调 ±1~2ms 抖动导致的误 Hold，供调用方传入
-    static constexpr double kEarlyTolerance = 0.002; // 2ms
+    static constexpr double kEarlyTolerance = 0.002;
 
-    // diff = audioTime - videoTime；正数表示视频落后，负数表示视频超前
     [[nodiscard]] static AVSyncAction evaluateAVSync(double diffSec,
                                                      double playbackRate = 1.0,
                                                      double earlyToleranceSec = 0.0) noexcept {
         const double scaledMinThreshold = kMinThreshold * playbackRate;
 
-        // 视频落后音频 → 追帧
         if (diffSec > scaledMinThreshold) {
             return AVSyncAction::Drop;
         }
 
-        // 视频超前音频：在容忍窗口内仍 Render，超出才 Hold
-        // 超前异常（≥ kMaxThreshold）视为时钟跳变，强制 Render 避免长时间 Hold
         if (diffSec < -(scaledMinThreshold + earlyToleranceSec)) {
             if (-diffSec >= kMaxThreshold) {
                 return AVSyncAction::Render;
@@ -133,10 +142,12 @@ private:
     static constexpr uint32_t kPlaybackRateScale = 1000;
     static constexpr uint32_t kFpsScale = 100;
 
-    static constexpr double kMinThreshold = 0.04; // 40ms，覆盖人眼对音视频不同步的感知阈值
-    static constexpr double kMaxThreshold = 10.0; // 10s
+    static constexpr double kMinThreshold = 0.04;
+    static constexpr double kMaxThreshold = 10.0;
+    static constexpr uint64_t kAudioClockStaleThresholdUs = 50000;
 
     std::atomic<uint64_t> audioTime_{0};
+    std::atomic<uint64_t> audioLastUpdateUs_{0};
     std::atomic<uint64_t> videoTime_{0};
     std::atomic<uint16_t> playbackRate_{
         static_cast<uint16_t>(kDefaultPlaybackRate * kPlaybackRateScale)};

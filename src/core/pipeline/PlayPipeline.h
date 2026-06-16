@@ -78,9 +78,6 @@ public:
 
     void start() noexcept;
 
-    /// 从暂停恢复：仅恢复音视频渲染时钟，不重启 demuxer 和数据源
-    void resume() noexcept;
-
     void pause() noexcept;
 
     void flush() noexcept;
@@ -286,6 +283,8 @@ private:
     void recordVsyncInterval() noexcept;
 
     [[nodiscard]] bool shouldHoldVideoFrame(double diff, double playbackRate) const noexcept;
+
+    [[nodiscard]] bool isDecodeCompleted() const noexcept;
 
     void chaseVideoFrames(AVFrameRefPtr& frame, double diff, double playbackRate) noexcept;
 
