@@ -4,30 +4,23 @@
 
 package com.slark.sdk
 
-// Vulkan implementation of IPreviewRenderer.
-// Actual rendering is delegated to C++ layer (AndroidVulkanContext).
 class VulkanPreviewRenderer : IPreviewRenderer {
 
     override fun init() {
-        // Vulkan context is created via createVulkanContext() in VulkanRenderThread.initContext()
     }
 
     override fun drawFrame(texture: RenderTexture): Boolean {
-        // Drawing is done in C++ layer via AndroidVulkanContext::drawFrame()
-        // Called from VulkanRenderThread.drawAndPresent()
         return true
     }
 
     override fun setRotation(rotation: Double) {
-        // Rotation is handled in C++ layer
+        SlarkLog.i(LOG_TAG, "setRotation: $rotation (delegated to C++ via setVulkanRotation JNI)")
     }
 
     override fun setSurfaceSize(width: Int, height: Int) {
-        // Surface size is handled in C++ layer via recreateSwapchain()
     }
 
     override fun release() {
-        // Vulkan context is destroyed via destroyVulkanContext() in VulkanRenderThread.shutdown()
     }
 
     companion object {

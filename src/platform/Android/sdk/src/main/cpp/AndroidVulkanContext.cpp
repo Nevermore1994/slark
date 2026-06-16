@@ -844,7 +844,28 @@ void AndroidVulkanContext::updateHWBDescriptor() noexcept {
 
 void AndroidVulkanContext::doBlitOES(int32_t textureId, int32_t width, int32_t height) noexcept {
     static const float kVerts[] = {-1, -1, 1, -1, -1, 1, 1, 1};
-    static const float kUVs[] = {0, 0, 1, 0, 0, 1, 1, 1};
+
+    // 根据 rotation_ 计算纹理坐标，与 GLPreviewRenderer 一致
+    // TRIANGLE_STRIP: BL, BR, TL, TR
+    float kUVs[8];
+    switch (rotation_) {
+        case 90:
+            kUVs[0] = 1; kUVs[1] = 0; kUVs[2] = 1; kUVs[3] = 1;
+            kUVs[4] = 0; kUVs[5] = 0; kUVs[6] = 0; kUVs[7] = 1;
+            break;
+        case 180:
+            kUVs[0] = 1; kUVs[1] = 1; kUVs[2] = 0; kUVs[3] = 1;
+            kUVs[4] = 1; kUVs[5] = 0; kUVs[6] = 0; kUVs[7] = 0;
+            break;
+        case 270:
+            kUVs[0] = 0; kUVs[1] = 1; kUVs[2] = 0; kUVs[3] = 0;
+            kUVs[4] = 1; kUVs[5] = 1; kUVs[6] = 1; kUVs[7] = 0;
+            break;
+        default:
+            kUVs[0] = 0; kUVs[1] = 0; kUVs[2] = 1; kUVs[3] = 0;
+            kUVs[4] = 0; kUVs[5] = 1; kUVs[6] = 1; kUVs[7] = 1;
+            break;
+    }
 
     glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
     glViewport(0, 0, width, height);
@@ -917,7 +938,12 @@ void AndroidVulkanContext::drawFrame(int32_t textureId, int32_t width, int32_t h
         eglContextBound_ = true;
     }
 
-    blitOESToHardwareBuffer(textureId, width, height);
+    // 90/270 旋转需要交换宽高，保持内容宽高比
+    const bool swapWH = (rotation_ == 90 || rotation_ == 270);
+    const int32_t renderW = swapWH ? height : width;
+    const int32_t renderH = swapWH ? width : height;
+
+    blitOESToHardwareBuffer(textureId, renderW, renderH);
     // blit 失败（hwbImage_ 无效）时跳过本帧渲染，避免向 Vulkan 提交非法 image barrier
     if (hwbImage_ == VK_NULL_HANDLE) {
         return;

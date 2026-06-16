@@ -10,8 +10,6 @@ import android.os.Looper
 import android.view.Choreographer
 import android.view.Surface
 
-// Vulkan-backed render thread, symmetric to iOS RenderMTKView.
-// Uses HandlerThread + Handler (message-driven), matching iOS dispatch_async(renderQueue).
 class VulkanRenderThread(
     private val surface: Surface,
     private var width: Int,
@@ -21,27 +19,21 @@ class VulkanRenderThread(
     override var playerId: String = ""
     private val renderer: IPreviewRenderer = VulkanPreviewRenderer()
 
-    // HandlerThread for Vulkan rendering, symmetric to iOS renderQueue (serial GCD queue)
     private val handlerThread = HandlerThread("VulkanRenderThread[$playerId]").apply { start() }
     private val handler = Handler(handlerThread.looper)
 
-    // VSync state, controlled by start()/stop()
     @Volatile
     private var vsyncActive = false
 
-    // Track if Vulkan context is initialized
     @Volatile
     private var vulkanInitialized = false
 
-    // startRendering 在 Vulkan 尚未就绪时被调用，等 initContext 完成后自动启动 VSync
     @Volatile
     private var startPending = false
 
-    // Pending texture for render, protected by handler posting (single-threaded render queue)
     @Volatile
     private var pendingTexture: RenderTexture = RenderTexture.default()
 
-    // Choreographer VSync callback, symmetric to iOS CADisplayLink
     private val vsyncCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
             if (!vsyncActive) {
@@ -54,15 +46,12 @@ class VulkanRenderThread(
                     SlarkLog.e(LOG_TAG, "doFrame: onVSync JNI exception: {0}", e.message ?: "")
                 }
             }
-            // Re-register for next VSync
             if (vsyncActive) {
                 Choreographer.getInstance().postFrameCallback(this)
             }
         }
     }
 
-    // Init Vulkan context on render thread, called after playerId is set.
-    // Symmetric to iOS setContext: -> setupMetal on renderQueue.
     override fun initContext() {
         handler.post {
             if (vulkanInitialized) return@post
@@ -83,7 +72,6 @@ class VulkanRenderThread(
         }
     }
 
-    // Register VSync (symmetric to iOS CADisplayLink start)
     override fun start() {
         if (vsyncActive) return
         if (playerId.isEmpty()) {
@@ -96,7 +84,6 @@ class VulkanRenderThread(
         }
         startPending = false
         vsyncActive = true
-        // Choreographer.getInstance() 要求调用线程有 Looper
         if (Looper.myLooper() != null) {
             Choreographer.getInstance().postFrameCallback(vsyncCallback)
         } else {
@@ -153,8 +140,14 @@ class VulkanRenderThread(
             SlarkLog.e(LOG_TAG, "setRotation: invalid value: $rotation")
             return
         }
+        SlarkLog.i(LOG_TAG, "setRotation: degrees=$rotation")
         handler.post {
-            renderer.setRotation(rotation.toDouble())
+            setVulkanRotation(playerId, rotation)
+            val backup = getBackupTextureId(playerId)
+            if (backup != null && backup.isValid()) {
+                pendingTexture = backup.asBackup()
+                drawAndPresent()
+            }
         }
     }
 
@@ -184,7 +177,6 @@ class VulkanRenderThread(
         }
     }
 
-    // Draw pendingTexture and present, must be called on render handler thread
     private fun drawAndPresent() {
         if (!vulkanInitialized) return
         if (renderer.drawFrame(pendingTexture)) {
@@ -199,8 +191,8 @@ class VulkanRenderThread(
     private external fun presentVulkanFrame(playerId: String, textureId: Int)
     private external fun getBackupTextureId(playerId: String): RenderTexture?
     private external fun rebuildVulkanSurface(playerId: String, surface: Surface)
-    // Notify C++ VideoRender::onVSync() on each VSync beat
     private external fun onVSync(playerId: String)
+    private external fun setVulkanRotation(playerId: String, rotation: Int)
 
     companion object {
         const val LOG_TAG = "VulkanRenderThread"
