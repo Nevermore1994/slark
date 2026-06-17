@@ -30,9 +30,7 @@ class MediaCodecDecoder(
     private val isCompleted = AtomicBoolean(false)
     private var surface: IGraphicsSurface? = null
 
-    // 异步模式：空闲输入槽队列
     private val inputBufferQueue = LinkedBlockingQueue<Int>()
-    // 异步模式：已解码输出帧队列，元素为 (bufferIndex, BufferInfo)
     private val outputBufferQueue = LinkedBlockingQueue<Pair<Int, MediaCodec.BufferInfo>>()
 
     enum class Action {
@@ -115,9 +113,10 @@ class MediaCodecDecoder(
                 // EOS with no data: still notify C++ so decoder knows it's done
                 processRawData(decoderId, null, 0L, true)
             }
-            codec.releaseOutputBuffer(index, false)
         } catch (e: Exception) {
             SlarkLog.e(LOG_TAG, "output buffer consume error: ${e.message}")
+        } finally {
+            codec.releaseOutputBuffer(index, false)
         }
     }
 
