@@ -41,6 +41,7 @@ private:
 private:
     AAudioStream* stream_ = nullptr;
     AAudioStreamBuilder* builder_ = nullptr;
+    std::atomic<int64_t> flushBaseFrames_{0};
 };
 
 } // namespace slark

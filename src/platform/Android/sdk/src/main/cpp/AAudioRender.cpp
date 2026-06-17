@@ -36,6 +36,7 @@ void AAudioRender::initStream() noexcept {
         status_ = RenderStatus::Error;
         return;
     }
+    flushBaseFrames_.store(0, std::memory_order_release);
     status_ = RenderStatus::Ready;
 }
 
@@ -110,6 +111,11 @@ void AAudioRender::play() noexcept {
         LogE("AAudio requestStart failed: {}", AAudio_convertResultToText(result));
         return;
     }
+    aaudio_stream_state_t nextState = AAUDIO_STREAM_STATE_UNINITIALIZED;
+    AAudioStream_waitForStateChange(stream_,
+                                    AAUDIO_STREAM_STATE_STARTING,
+                                    &nextState,
+                                    200'000'000LL); // 200ms timeout
     status_ = RenderStatus::Playing;
 }
 
@@ -120,7 +126,6 @@ void AAudioRender::pause() noexcept {
     if (!stream_) {
         return;
     }
-    // 等待 Starting 状态结束后再 pause，避免在 Starting 状态调用 requestPause 行为未定义
     auto streamState = AAudioStream_getState(stream_);
     if (streamState == AAUDIO_STREAM_STATE_STARTING) {
         aaudio_stream_state_t nextState = AAUDIO_STREAM_STATE_UNINITIALIZED;
@@ -130,7 +135,6 @@ void AAudioRender::pause() noexcept {
                                         500'000'000LL);
     }
     AAudioStream_requestPause(stream_);
-    // 等待 Pausing → Paused，确保后续 flush/seek 操作在合法状态下执行
     aaudio_stream_state_t pausedState = AAUDIO_STREAM_STATE_UNINITIALIZED;
     AAudioStream_waitForStateChange(stream_,
                                     AAUDIO_STREAM_STATE_PAUSING,
@@ -162,7 +166,6 @@ void AAudioRender::flush() noexcept {
     if (!stream_) {
         return;
     }
-    // requestFlush 只能在 Paused/Stopped 状态调用，需等待 pause 完成
     if (status_ == RenderStatus::Playing) {
         AAudioStream_requestPause(stream_);
         aaudio_stream_state_t nextState = AAUDIO_STREAM_STATE_UNINITIALIZED;
@@ -172,7 +175,13 @@ void AAudioRender::flush() noexcept {
                                         500'000'000LL);
         status_ = RenderStatus::Pause;
     }
+    flushBaseFrames_.store(AAudioStream_getFramesWritten(stream_), std::memory_order_release);
     AAudioStream_requestFlush(stream_);
+    aaudio_stream_state_t flushedState = AAUDIO_STREAM_STATE_UNINITIALIZED;
+    AAudioStream_waitForStateChange(stream_,
+                                    AAUDIO_STREAM_STATE_FLUSHING,
+                                    &flushedState,
+                                    500'000'000LL);
 }
 
 void AAudioRender::reset() noexcept {}
@@ -193,17 +202,15 @@ Time::TimeDelta AAudioRender::getHardwareLatency() noexcept {
     if (sampleRate <= 0) {
         return Time::TimeDelta(0);
     }
-    // 通过 timestamp 锚点计算真实 pipeline 延迟
     int64_t framePosition = 0;
     int64_t timeNs = 0;
     if (AAudioStream_getTimestamp(stream_, CLOCK_MONOTONIC, &framePosition, &timeNs) == AAUDIO_OK) {
         const int64_t framesWritten = AAudioStream_getFramesWritten(stream_);
-        const int64_t pendingFrames = framesWritten - framePosition;
+        const int64_t pendingFrames = (framesWritten - flushBaseFrames_.load(std::memory_order_acquire)) - framePosition;
         if (pendingFrames > 0) {
             return Time::TimeDelta(pendingFrames * 1'000'000LL / sampleRate);
         }
     }
-    // stream 刚启动时 timestamp 尚不可用，fallback 到 burst size 估算
     const int32_t burst = AAudioStream_getFramesPerBurst(stream_);
     return Time::TimeDelta(static_cast<int64_t>(burst) * 1'000'000LL / sampleRate);
 }
