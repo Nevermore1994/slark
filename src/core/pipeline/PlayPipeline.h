@@ -92,14 +92,16 @@ public:
 
     [[nodiscard]] Time::TimePoint audioTime() noexcept;
 
+    [[nodiscard]] Time::TimePoint videoTime() noexcept {
+        return clockSync_->videoTime();
+    }
+
     [[nodiscard]] double cachedDuration() const noexcept;
 
-    /// 缓存数据的结束时间戳，单调递增（用于 UI 显示缓冲进度）
     [[nodiscard]] double cacheEndTime() const noexcept;
 
     [[nodiscard]] AVFrameRefPtr requestVideoFrame() noexcept;
 
-    [[nodiscard]] AVFrameRefPtr requestAudioFrame() noexcept;
 
     void drainPendingTasks() noexcept;
 
@@ -111,7 +113,6 @@ public:
 
     void setStreamControl(StreamControlFunc pauseStream, StreamControlFunc resumeStream) noexcept;
 
-    /// 注入 HLS 时间 seek 回调，由 PlayerImpl 设置
     void setSeekByTimeFunc(std::function<StreamResult<void>(double)> func) noexcept {
         seekByTimeFunc_ = std::move(func);
     }
@@ -177,15 +178,12 @@ public:
 
     void setVolume(float volume) noexcept;
 
-    /// 检查所有播放完成条件（demux 完成、解码器完成、帧队列为空），满足则触发 RenderEnd
     void checkPlaybackComplete() noexcept;
 
-    /// 返回下一次 seek 将使用的 epoch（beginSeek 后递增），用于绑定 seekRequest
     [[nodiscard]] uint64_t nextSeekEpoch() const noexcept {
         return seekContext_->currentEpoch() + 1;
     }
 
-    /// 返回当前 seek 的 epoch
     [[nodiscard]] uint64_t currentSeekEpoch() const noexcept {
         return seekContext_->currentEpoch();
     }
@@ -309,7 +307,6 @@ private:
     ReceiverPtr<AVFrameRefPtr> audioFrameReceiver_;
     ReceiverPtr<AVFrameRefPtr> videoFrameReceiver_;
 
-    // 累加器：记录最后入队帧的 pts，用于 demuxedDuration 统计
     std::atomic<double> lastEnqueuedAudioPts_{0.0};
     std::atomic<double> lastEnqueuedVideoPts_{0.0};
 

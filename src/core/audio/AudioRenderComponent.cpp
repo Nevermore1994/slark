@@ -27,6 +27,7 @@ AudioRenderComponent::~AudioRenderComponent() {
 
 void AudioRenderComponent::init() noexcept {
     renderedDataLength_.store(0, std::memory_order_release);
+    maxPlayedTimeUs_.store(0, std::memory_order_release);
     offsetTime_ = {};
     clock_.reset();
 
@@ -55,12 +56,14 @@ void AudioRenderComponent::init() noexcept {
             std::fill_n(data + read, size - read, 0);
         }
         auto rendered = renderedDataLength_.fetch_add(read, std::memory_order_relaxed) + read;
-        clock_.setTime(offsetTime_ + audioInfo_->dataLen2TimePoint(rendered));
-
+        auto clockTime = offsetTime_ + audioInfo_->dataLen2TimePoint(rendered);
+        clock_.setTime(clockTime);
+        auto played = playedTime();
         if (auto updater = audioTimeUpdater_.load()) {
-            (*updater)(playedTime());
+            (*updater)(played);
         }
-        LogI("request audio data, request size: {}, read: {}", size, read);
+        LogI("request audio data, size:{} read:{} rendered:{} clockTime:{:.6f} played:{:.6f}",
+             size, read, rendered, clockTime.second(), played.second());
         return size;
     });
     pimpl_.reset(std::move(pimpl));
@@ -85,6 +88,7 @@ void AudioRenderComponent::reset() noexcept {
         audioBuffer_->reset();
     }
     renderedDataLength_.store(0, std::memory_order_release);
+    maxPlayedTimeUs_.store(0, std::memory_order_release);
     offsetTime_ = {};
     clock_.reset();
     decoderCompleted_.store(false, std::memory_order_release);
@@ -151,6 +155,7 @@ void AudioRenderComponent::seek(double time) noexcept {
         audioBuffer_->reset();
     }
     renderedDataLength_.store(0, std::memory_order_release);
+    maxPlayedTimeUs_.store(0, std::memory_order_release);
     offsetTime_ = Time::TimePoint::fromSeconds(time);
     clock_.setTime(offsetTime_);
     if (auto pimpl = pimpl_.load()) {
@@ -162,15 +167,27 @@ void AudioRenderComponent::seek(double time) noexcept {
 
 Time::TimePoint AudioRenderComponent::playedTime() noexcept {
     auto t = clock_.time();
+    Time::TimePoint result = t;
+    uint64_t latencyUs = 0;
     if (auto pimpl = pimpl_.load()) {
         auto latency = pimpl->getHardwareLatency();
-        // latency 为负或超过当前时间时，返回 0 防止下溢
-        if (latency.point() <= 0 || t.point() < static_cast<uint64_t>(latency.point())) {
-            return Time::TimePoint{0};
+        latencyUs = latency.point();
+        if (latency.point() > 0) {
+            if (t.point() >= static_cast<uint64_t>(latency.point())) {
+                result = t - latency;
+            }
         }
-        return t - latency;
     }
-    return t;
+    auto prev = maxPlayedTimeUs_.load(std::memory_order_acquire);
+    while (result.point() > prev &&
+           !maxPlayedTimeUs_.compare_exchange_weak(prev,
+                                                   result.point(),
+                                                   std::memory_order_acq_rel)) {
+    }
+    auto finalTime = std::max(result.point(), prev);
+    LogI("playedTime clock:{:.6f} latency:{}us result:{:.6f} prev:{:.6f} final:{:.6f}",
+         t.second(), latencyUs, result.second(), Time::TimePoint(prev).second(), Time::TimePoint(finalTime).second());
+    return Time::TimePoint(finalTime);
 }
 
 void AudioRenderComponent::renderEnd() noexcept {

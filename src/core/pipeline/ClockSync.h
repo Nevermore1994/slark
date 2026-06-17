@@ -30,7 +30,11 @@ public:
     }
     ~ClockSync() = default;
 
-    void setAudioTime(Time::TimePoint t) noexcept {
+    void setAudioTime(Time::TimePoint t, uint64_t epoch = kDefaultEpoch) noexcept {
+        auto currentEpoch = audioEpoch_.load(std::memory_order_acquire);
+        if (epoch != currentEpoch) {
+            return;
+        }
         audioTime_.store(t.point(), std::memory_order_release);
         audioLastUpdateUs_.store(Time::nowTimeStamp().point(), std::memory_order_release);
     }
@@ -47,8 +51,12 @@ public:
         return Time::TimePoint(videoTime_.load(std::memory_order_acquire));
     }
 
-    [[nodiscard]] Time::TimePoint masterTime(bool hasAudio) const noexcept {
-        if (!hasAudio) {
+    void setHasAudio(bool hasAudio) noexcept {
+        hasAudio_.store(hasAudio, std::memory_order_release);
+    }
+
+    [[nodiscard]] Time::TimePoint masterTime() const noexcept {
+        if (!hasAudio_.load(std::memory_order_acquire)) {
             return videoTime();
         }
         auto audioPts = audioTime_.load(std::memory_order_acquire);
@@ -64,6 +72,7 @@ public:
     }
 
     void reset() noexcept {
+        audioEpoch_.fetch_add(1, std::memory_order_acq_rel);
         audioTime_.store(0, std::memory_order_release);
         audioLastUpdateUs_.store(Time::nowTimeStamp().point(), std::memory_order_release);
         videoTime_.store(0, std::memory_order_release);
@@ -73,6 +82,10 @@ public:
         dropCount_.store(0, std::memory_order_relaxed);
         chaseRoundCount_.store(0, std::memory_order_relaxed);
         vsyncDurationUs_.store(0, std::memory_order_relaxed);
+    }
+
+    [[nodiscard]] uint64_t currentAudioEpoch() const noexcept {
+        return audioEpoch_.load(std::memory_order_acquire);
     }
 
     [[nodiscard]] Metrics metrics() const noexcept {
@@ -146,9 +159,13 @@ private:
     static constexpr double kMaxThreshold = 10.0;
     static constexpr uint64_t kAudioClockStaleThresholdUs = 50000;
 
+    static constexpr uint64_t kDefaultEpoch = 0;
+
     std::atomic<uint64_t> audioTime_{0};
+    std::atomic<uint64_t> audioEpoch_{kDefaultEpoch};
     std::atomic<uint64_t> audioLastUpdateUs_{0};
     std::atomic<uint64_t> videoTime_{0};
+    std::atomic<bool> hasAudio_{false};
     std::atomic<uint16_t> playbackRate_{
         static_cast<uint16_t>(kDefaultPlaybackRate * kPlaybackRateScale)};
     std::atomic<uint32_t> videoFps_{0};

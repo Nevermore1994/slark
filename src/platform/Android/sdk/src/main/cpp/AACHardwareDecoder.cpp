@@ -27,11 +27,12 @@ Error AACHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
         flag,
         PacketType::Audio);
     if (res == Error::Success || res == Error::CodecAgain) {
-        LogI("send audio packet success, pts:{}, dts:{}, pts time:{}, dts time:{}",
+        LogI("send audio packet success, pts:{}, dts:{}, pts time:{}, dts time:{}, isEOS:{}",
              frame->pts,
              frame->dts,
              frame->ptsTime(),
-             frame->dtsTime());
+             frame->dtsTime(),
+             frame->isEOS);
     } else {
         LogE("decode frame error:{}", toString(res));
     }

@@ -161,7 +161,7 @@ void PlayPipeline::applyLiveConfig() noexcept {
 }
 
 SeekStrategy PlayPipeline::resolveSeekStrategy(double targetSec) const noexcept {
-    const double currentSec = clockSync_->masterTime(mediaInfo_.hasAudio).second();
+    const double currentSec = clockSync_->masterTime().second();
     const double gopKeyframe = seekContext_->gopKeyframePts();
     const double gopEnd = seekContext_->gopEndPts();
     const bool inGOP = gopEnd > 0.0 && targetSec >= gopKeyframe && targetSec <= gopEnd;
@@ -182,7 +182,7 @@ void PlayPipeline::seek(CTime target, bool isAccurate) noexcept {
     }
 
     const double targetSec = target.second();
-    const double currentSec = clockSync_->masterTime(mediaInfo_.hasAudio).second();
+    const double currentSec = clockSync_->masterTime().second();
 
     constexpr double kMinSeekDistance = 0.05;
     if (std::abs(targetSec - currentSec) <= kMinSeekDistance) {
@@ -250,7 +250,7 @@ void PlayPipeline::seek(CTime target, bool isAccurate) noexcept {
 }
 
 Time::TimePoint PlayPipeline::currentTime() noexcept {
-    return clockSync_->masterTime(mediaInfo_.hasAudio);
+    return clockSync_->masterTime();
 }
 
 Time::TimePoint PlayPipeline::audioTime() noexcept {
@@ -302,14 +302,15 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
     }
 
     const double playbackRate = clockSync_->playbackRate();
-    const double masterTime = clockSync_->masterTime(mediaInfo_.hasAudio).second();
+    const double masterTime = clockSync_->masterTime().second();
     const double videoTime = clockSync_->videoTime().second();
     const double diff = masterTime - videoTime;
     if (shouldHoldVideoFrame(diff, playbackRate)) {
         if (isDecodeCompleted()) {
             checkPlaybackComplete();
         }
-        LogD("requestVideoFrame HOLD, video ahead of audio, diff={:.3f}, playbackRate={:.3f}", diff, playbackRate);
+        LogI("requestVideoFrame HOLD, diff={:.3f}, masterTime={:.3f}, videoTime={:.3f}, playbackRate={:.3f}",
+             diff, masterTime, videoTime, playbackRate);
         return nullptr;
     }
 
@@ -359,7 +360,7 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
 
     if (mediaInfo_.hasAudio && !seekContext_->isSeekPending()) {
         const double diffAfter =
-            clockSync_->masterTime(mediaInfo_.hasAudio).second() - clockSync_->videoTime().second();
+            clockSync_->masterTime().second() - clockSync_->videoTime().second();
         chaseVideoFrames(frame, diffAfter, playbackRate);
     }
 
@@ -416,7 +417,7 @@ void PlayPipeline::chaseVideoFrames(AVFrameRefPtr& frame,
             break;
         }
         diff =
-            clockSync_->masterTime(mediaInfo_.hasAudio).second() - clockSync_->videoTime().second();
+            clockSync_->masterTime().second() - clockSync_->videoTime().second();
     }
 
     if (dropCount > 0) {
@@ -425,11 +426,6 @@ void PlayPipeline::chaseVideoFrames(AVFrameRefPtr& frame,
             LogW("drop limit reached: dropped {} frames in one vsync", dropCount);
         }
     }
-}
-
-AVFrameRefPtr PlayPipeline::requestAudioFrame() noexcept {
-    // 新架构中音频帧直接 push 到 audioRender，此接口不再被调用
-    return nullptr;
 }
 
 double PlayPipeline::demuxedDuration() const noexcept {
@@ -446,7 +442,7 @@ double PlayPipeline::demuxedDuration() const noexcept {
     });
     maxPts = std::max(maxPts, lastEnqueuedAudioPts_.load(std::memory_order_acquire));
     maxPts = std::max(maxPts, lastEnqueuedVideoPts_.load(std::memory_order_acquire));
-    const double currentSec = clockSync_->masterTime(mediaInfo_.hasAudio).second();
+    const double currentSec = clockSync_->masterTime().second();
     return std::max(0.0, maxPts - currentSec);
 }
 
@@ -563,8 +559,23 @@ void PlayPipeline::checkPlaybackComplete() noexcept {
         if (audioDecoder_) {
             auto dec = audioDecoder_->decoder();
             if (!dec || !dec->isCompleted()) {
-                LogI("audio decoder not completed");
-                return;
+                bool canForceAudioComplete = false;
+                if (videoDecoder_) {
+                    if (auto videoDec = videoDecoder_->decoder(); videoDec && videoDec->isCompleted()) {
+                        bool audioQueueEmpty = true;
+                        audioFrames_.withLock([&audioQueueEmpty](auto& q) {
+                            audioQueueEmpty = q.empty();
+                        });
+                        if (audioQueueEmpty && audioRender_ && audioRender_->readable() == 0) {
+                            canForceAudioComplete = true;
+                            LogW("audio decoder not completed but video done and data drained, force complete");
+                        }
+                    }
+                }
+                if (!canForceAudioComplete) {
+                    LogI("audio decoder not completed");
+                    return;
+                }
             }
         }
         if (videoDecoder_) {
@@ -714,7 +725,7 @@ void PlayPipeline::setupAudioTrack(DecoderType type,
     audioRender_ = std::make_shared<AudioRenderComponent>(renderInfo);
     audioRender_->setVolume(volume);
     audioRender_->setAudioTimeUpdater([this](Time::TimePoint t) {
-        clockSync_->setAudioTime(t);
+        clockSync_->setAudioTime(t, clockSync_->currentAudioEpoch());
     });
     audioRender_->setRenderEndCallback([this] {
         checkPlaybackComplete();
@@ -963,6 +974,7 @@ void PlayPipeline::handleDemuxHeader(const std::shared_ptr<IDemuxer>& demuxer) n
     }
     mediaInfo_.hasAudio = demuxer->hasAudio();
     mediaInfo_.hasVideo = demuxer->hasVideo();
+    clockSync_->setHasAudio(mediaInfo_.hasAudio);
     auto duration = demuxer->totalDuration();
     if (duration.isValid()) {
         mediaInfo_.totalDuration = duration;
@@ -1184,7 +1196,7 @@ int32_t PlayPipeline::dropFramesUpTo(double cutoffPts) noexcept {
 
 void PlayPipeline::dropOldestFrames() noexcept {
     const double target = config_.demuxHighWatermarkDuration;
-    const double currentSec = clockSync_->masterTime(mediaInfo_.hasAudio).second();
+    const double currentSec = clockSync_->masterTime().second();
     int32_t droppedTotal = 0;
 
     while (true) {
@@ -1241,27 +1253,29 @@ void PlayPipeline::pushAudioFrames() noexcept {
             break;
         }
         hasPushed = true;
+        const auto pushMasterTime = clockSync_->masterTime().second();
         if (!audioRender_->process(frame)) {
-            LogD("pushAudioFrames: render process failed, pts={:.3f}", frame->ptsTime());
+            LogD("pushAudioFrames: render process failed, pts={:.3f}, masterTime={:.3f}", frame->ptsTime(), pushMasterTime);
             audioFrames_.withLock([&frame](auto& q) {
                 q.emplace_front(std::move(frame));
             });
             break;
         }
-        LogD("pushAudioFrames: pushed frame pts={:.3f}", frame->ptsTime());
+        LogD("pushAudioFrames: pushed frame pts={:.3f}, masterTime={:.3f}", frame->ptsTime(), pushMasterTime);
         if (seekContext_->isSeekPending() && !seekContext_->isAudioSeeked()) {
             onSeekFrameConsumed(TrackType::Audio);
         }
     }
     if (!hasPushed) {
+        const auto masterTime = clockSync_->masterTime().second();
         audioFrames_.withLock([&](auto& q) {
             if (q.empty() && audioDecoder_) {
                 if (auto dec = audioDecoder_->decoder(); dec && dec->isCompleted()) {
                     audioRender_->setDecoderCompleted();
                 }
             } else if (!q.empty()) {
-                LogD("pushAudioFrames: queue not empty, render unavailable, queueSize={}, readable={}",
-                     q.size(), audioRender_->readable());
+                LogD("pushAudioFrames: queue not empty, render unavailable, masterTime={:.3f}, queueSize={}, readable={}",
+                     masterTime, q.size(), audioRender_->readable());
             }
         });
         if (audioRender_->readable() == 0) {

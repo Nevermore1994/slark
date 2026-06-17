@@ -745,7 +745,7 @@ void Player::Impl::notifyPlayerState(PlayerState state) noexcept {
 
 void Player::Impl::notifyPlayedTime(bool isEndTime) noexcept {
     double audioTime = pipeline_ ? pipeline_->audioTime().second() : 0.0;
-    double videoTime = pipeline_ ? pipeline_->currentTime().second() : 0.0;
+    double videoTime = pipeline_ ? pipeline_->videoTime().second() : 0.0;
     notifyCenter_.notifyPlayedTime(info_.duration,
                                    audioTime,
                                    videoTime,

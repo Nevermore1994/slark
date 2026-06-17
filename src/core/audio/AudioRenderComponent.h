@@ -100,6 +100,7 @@ private:
 
     ThreadSafeClock clock_;
     std::atomic<uint64_t> renderedDataLength_{0};
+    std::atomic<uint64_t> maxPlayedTimeUs_{0};
     Time::TimePoint offsetTime_{};
 
     std::atomic<bool> decoderCompleted_{false};
