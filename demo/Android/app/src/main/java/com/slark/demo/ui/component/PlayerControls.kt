@@ -124,7 +124,7 @@ fun PlayerBottomRow(viewModel: PlayerViewModel) {
             modifier = Modifier.size(32.dp)
         ) {
             Icon(
-                painter = painterResource(id = if (viewModel.isLoop) R.drawable.stop_loop else R.drawable.loop),
+                painter = painterResource(id = if (viewModel.isLoop) R.drawable.loop else R.drawable.stop_loop ),
                 contentDescription = null,
                 tint = kControlTint,
                 modifier = Modifier.size(24.dp)

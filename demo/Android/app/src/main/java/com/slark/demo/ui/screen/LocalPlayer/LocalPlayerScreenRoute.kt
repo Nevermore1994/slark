@@ -97,7 +97,6 @@ fun LocalPlayerScreenRoute(navController: NavHostController, sharedViewModel: Sh
 
     val context = LocalContext.current
 
-    // 离开播放页时立即释放播放器，避免 pipeline 持续运行导致后续 release() 卡死
     DisposableEffect(Unit) {
         onDispose {
             sharedViewModel.releasePlayer()
