@@ -69,7 +69,6 @@ aaudio_data_callback_result_t AAudioRender::dataCallback(AAudioStream* /*stream*
         std::fill_n(dataPtr + readSize, size - readSize, 0);
     }
 
-    // 应用音量：对 PCM I16 数据逐样本乘以 volume
     const auto vol = render->volume_.load(std::memory_order_relaxed);
     if (vol != 1.0f) {
         auto* samples = reinterpret_cast<int16_t*>(dataPtr);

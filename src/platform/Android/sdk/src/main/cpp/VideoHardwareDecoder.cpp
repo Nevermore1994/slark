@@ -107,10 +107,11 @@ void VideoHardwareDecoder::onVideoSizeChanged(uint32_t width, uint32_t height) n
 }
 
 void VideoHardwareDecoder::flush() noexcept {
+    pendingOutput_.store(false, std::memory_order_release);
+    std::this_thread::sleep_for(std::chrono::milliseconds(3));
     NativeDecoder::flush();
     discardPackets_.clear();
     isCompleted_ = false;
-    pendingOutput_.store(false, std::memory_order_release);
 }
 
 void VideoHardwareDecoder::close() noexcept {

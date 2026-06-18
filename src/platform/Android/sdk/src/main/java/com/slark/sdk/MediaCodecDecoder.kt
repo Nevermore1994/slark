@@ -9,9 +9,13 @@ import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.opengl.EGL14
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.Looper
 import android.util.Size
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -32,6 +36,12 @@ class MediaCodecDecoder(
 
     private val inputBufferQueue = LinkedBlockingQueue<Int>()
     private val outputBufferQueue = LinkedBlockingQueue<Pair<Int, MediaCodec.BufferInfo>>()
+    private val codecLock = Any()
+    @Volatile
+    private var codecGeneration = 0L
+
+    private var callbackThread: HandlerThread? = null
+    private var callbackHandler: Handler? = null
 
     enum class Action {
         Flush,
@@ -43,7 +53,11 @@ class MediaCodecDecoder(
         if (dec != null) {
             dec.reset()
             configureDecoder(dec)
-            dec.setCallback(makeCodecCallback())
+            val thread = HandlerThread("MediaCodec-cb-$decoderId").apply { start() }
+            val handler = Handler(thread.looper)
+            callbackThread = thread
+            callbackHandler = handler
+            dec.setCallback(makeCodecCallback(), handler)
             dec.start()
             isRunning.set(true)
         } else {
@@ -101,8 +115,11 @@ class MediaCodecDecoder(
     }
 
     private fun consumeOutputBuffer(codec: MediaCodec, index: Int, info: MediaCodec.BufferInfo) {
+        val genAtEntry = codecGeneration
+        var bufferValid = false
         try {
             val outputBuffer = codec.getOutputBuffer(index)
+            bufferValid = true
             if (outputBuffer != null && info.size > 0) {
                 outputBuffer.position(info.offset)
                 outputBuffer.limit(info.size + info.offset)
@@ -116,7 +133,18 @@ class MediaCodecDecoder(
         } catch (e: Exception) {
             SlarkLog.e(LOG_TAG, "output buffer consume error: ${e.message}")
         } finally {
-            codec.releaseOutputBuffer(index, false)
+            if (bufferValid) {
+                synchronized(codecLock) {
+                    if (codecGeneration == genAtEntry) {
+                        try {
+                            codec.releaseOutputBuffer(index, false)
+                        } catch (e: Exception) {
+                            // flush 与回调跨线程竞态的最终兜底：buffer 可能在 release 前刚被失效
+                            SlarkLog.e(LOG_TAG, "releaseOutputBuffer error: ${e.message}")
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -166,16 +194,41 @@ class MediaCodecDecoder(
         flush()
         decoder?.let { MediaCodecDecoderPool.releaseDecoder(mediaInfo, it) }
         decoder = null
+        callbackThread?.quitSafely()
+        callbackThread = null
+        callbackHandler = null
         surface?.release()
         surface = null
     }
 
     fun flush() {
-        decoder?.flush() 
-        drainNonBlocking(inputBufferQueue) 
-        drainNonBlocking(outputBufferQueue)
-        isCompleted.set(false) 
-        decoder?.start()
+        val handler = callbackHandler
+        if (handler == null || Looper.myLooper() == handler.looper) {
+            flushLocked()
+            return
+        }
+        val latch = CountDownLatch(1)
+        handler.post {
+            try {
+                flushLocked()
+            } finally {
+                latch.countDown()
+            }
+        }
+        if (!latch.await(500, TimeUnit.MILLISECONDS)) {
+            SlarkLog.e(LOG_TAG, "flush timeout waiting on callback thread")
+        }
+    }
+
+    private fun flushLocked() {
+        synchronized(codecLock) {
+            decoder?.flush()
+            drainNonBlocking(inputBufferQueue)
+            drainNonBlocking(outputBufferQueue)
+            isCompleted.set(false)
+            decoder?.start()
+            codecGeneration++
+        }
     }
 
     private fun <T> drainNonBlocking(queue: LinkedBlockingQueue<T>) {
@@ -203,19 +256,31 @@ class MediaCodecDecoder(
         if (outputIndex < 0) {
             return packFrameResult(false, isCompleted.get(), 0L)
         }
-        val surfaceRef = surface ?: run {
-            // surface 无效时不渲染，直接丢弃
-            decoder?.releaseOutputBuffer(outputIndex, false)
-            return packFrameResult(false, isCompleted.get(), 0L)
+        val genAtEntry = codecGeneration
+        var surfaceRef: IGraphicsSurface? = null
+        synchronized(codecLock) {
+            if (codecGeneration != genAtEntry) {
+                return packFrameResult(false, isCompleted.get(), 0L)
+            }
+            val ref = surface
+            try {
+                if (ref == null) {
+                    decoder?.releaseOutputBuffer(outputIndex, false)
+                    return packFrameResult(false, isCompleted.get(), 0L)
+                }
+                decoder?.releaseOutputBuffer(outputIndex, true)
+            } catch (e: Exception) {
+                SlarkLog.e(LOG_TAG, "releaseOutputBuffer(render) error: ${e.message}")
+                return packFrameResult(false, isCompleted.get(), 0L)
+            }
+            surfaceRef = ref
         }
-        // releaseOutputBuffer(true) 触发 MediaCodec 将帧渲染到 Surface
-        decoder?.releaseOutputBuffer(outputIndex, true)
         // 用剩余时间等 SurfaceTexture 回调，避免总等待超过 waitTime
         val elapsedMs = (System.nanoTime() - startNs) / 1_000_000L
         val remainMs = (waitTime - elapsedMs).coerceAtLeast(1L)
-        val (frameReady, _) = surfaceRef.awaitFrame(remainMs)
+        val (frameReady, _) = surfaceRef!!.awaitFrame(remainMs)
         if (frameReady) {
-            surfaceRef.drawFrame(format, Size(width, height))
+            surfaceRef!!.drawFrame(format, Size(width, height))
             return packFrameResult(true, isCompleted.get(), info.presentationTimeUs)
         }
         return packFrameResult(false, isCompleted.get(), 0L)

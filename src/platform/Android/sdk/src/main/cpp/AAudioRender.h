@@ -24,7 +24,6 @@ public:
     void reset() noexcept override;
     void renderEnd() noexcept override;
 
-    /// 返回 AAudio stream 的硬件 pipeline 延迟
     [[nodiscard]] Time::TimeDelta getHardwareLatency() noexcept override;
 
 private:
