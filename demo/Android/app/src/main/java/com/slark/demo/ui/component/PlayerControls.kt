@@ -244,8 +244,8 @@ fun PlayerProgressBar(viewModel: PlayerViewModel) {
         CustomSlider(
             value = if (totalTime > 0) (currentTime.toFloat() / totalTime.toFloat()) else 0f,
             onValueChange = { t, b ->
-                if (!b) viewModel.currentTime = (t * totalTime) / 1000.0
-                viewModel.seekTo(viewModel.currentTime, !b)
+                viewModel.currentTime = (t * totalTime) / 1000.0
+                viewModel.seekTo(viewModel.currentTime, b)
             },
             valueRange = 0f..1f,
             bufferedColor = Color(0x66FFFFFF),
