@@ -44,6 +44,20 @@ PlayPipeline::~PlayPipeline() {
 }
 
 void PlayPipeline::build() noexcept {
+    assert(isOnOwnerThread());
+    if (componentStarted_.exchange(true)) {
+        return;
+    }
+    if (demuxer_) {
+        demuxer_->start();
+    }
+    if (audioRender_) {
+        audioRender_->start();
+    }
+    if (!videoRender_.load()) {
+        LogW("PlayPipeline::build: videoRender is null");
+    }
+    LogI("PlayPipeline build complete");
 }
 
 void PlayPipeline::start() noexcept {
@@ -55,19 +69,16 @@ void PlayPipeline::start() noexcept {
     if (pipelineState_.load(std::memory_order_acquire) == PipelineState::Playing) {
         return;
     }
-    if (demuxer_) {
-        demuxer_->start();
-    }
-    if (audioRender_) {
-        audioRender_->start();
-    }
-    if (auto render = videoRender_.load()) {
-        render->start();
-    } else {
-        LogW("PlayPipeline::start: videoRender is null, skip start");
+    if (pipelineState_.load(std::memory_order_acquire) == PipelineState::Paused) {
+        if (demuxer_) {
+            demuxer_->start();
+        }
+        if (audioRender_) {
+            audioRender_->start();
+        }
     }
     pipelineState_.store(PipelineState::Playing, std::memory_order_release);
-    LogI("PlayPipeline start complete, state:Playing");
+    LogI("PlayPipeline start, state:Playing");
 }
 
 void PlayPipeline::pause() noexcept {
@@ -297,7 +308,12 @@ bool PlayPipeline::isDecodeCompleted() const noexcept {
 AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
     recordVsyncInterval();
 
-    if (pipelineState_.load(std::memory_order_acquire) == PipelineState::Faulted) {
+    const auto state = pipelineState_.load(std::memory_order_acquire);
+    if (state != PipelineState::Playing) {
+        return nullptr;
+    }
+    
+    if (!readiness_.firstFrameRendered.load(std::memory_order_acquire)) {
         return nullptr;
     }
 
@@ -819,7 +835,7 @@ void PlayPipeline::onVideoDecoded(DecoderData data) noexcept {
     const bool isSeekFirstFrame =
         seekContext_->isSeekPending() && seekContext_->tryMarkVideoSeeked();
     const bool isFastPush = isSeekFirstFrame || !readiness_.firstFrameRendered.load(std::memory_order_acquire);
-    LogI("[debug] onVideoDecoded pts={:.3f} isDiscard={} seekPending={} isSeekFirst={} firstFrameRendered={} {}",
+    LogI("onVideoDecoded pts={:.3f} isDiscard={} seekPending={} isSeekFirst={} firstFrameRendered={} {}",
          data.frame->ptsTime(), data.frame->isDiscard,
          seekContext_->isSeekPending(), isSeekFirstFrame,
          readiness_.firstFrameRendered.load(),

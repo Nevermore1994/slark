@@ -403,7 +403,9 @@ void Player::Impl::preparePlayerInfo() noexcept {
     }
 
     setState(PlayerState::Buffering);
-    doPlay(); // 首帧快速推帧：pipeline start，不做 AV Sync，不做背压 Hold
+    pipeline_->build();
+    ownerThread_->start();
+    mediaSourceManager_.start();
 }
 
 void Player::Impl::process() noexcept {

@@ -24,7 +24,7 @@ namespace slark {
 struct PlayerSeekRequest {
     bool isAccurate = false;
     double seekTime{0};
-    Time::TimePoint startTime;
+    Time::TimePoint startTime{};
     uint64_t seekEpoch{0};
 };
 

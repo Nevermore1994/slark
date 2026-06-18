@@ -329,6 +329,9 @@ private:
 
     std::atomic<PipelineState> pipelineState_{PipelineState::Idle};
 
+    /// build() 幂等标记：组件是否已首次启动
+    std::atomic<bool> componentStarted_{false};
+
     ReadinessTracker readiness_;
 
     // dataEnqueued 去抖标志，仅 ownerThread 消费，decoder 线程写
