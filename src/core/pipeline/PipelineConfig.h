@@ -25,6 +25,7 @@ struct BackpressureConfig {
     int32_t videoDecoderHighWatermarkFrames = 8;  // 待渲染视频队列触发暂停解码器的上限（帧）
     int32_t videoDecoderLowWatermarkFrames = 2;   // 待渲染视频队列触发恢复解码器的下限（帧）
     int32_t maxDropPerVsync = 8;                  // 单次 vsync 最大追帧丢帧数，防止 vsync 超时
+    int64_t seekFastForwardMs = 100;               // 跳帧窗口（ms）
     double avSyncThresholdSec = 0.1;              // AV 同步阈值（秒），视频落后超过此值开始追帧
     bool isLiveSource = false;                    // 是否为直播源
     bool isNetworkSource = false;                 // 是否为网络源（HTTP/HLS）

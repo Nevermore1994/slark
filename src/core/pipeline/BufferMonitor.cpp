@@ -159,6 +159,8 @@ void BufferMonitor::checkRebufferComplete() noexcept {
     auto rebufferThreshold = config_.startBufferDuration * config_.rebufferScale;
     if (demuxedDuration() >= rebufferThreshold) {
         isRebuffering_ = false;
+        LogI("checkRebufferComplete -> BufferingEnd, demuxedDuration={:.3f} threshold={:.3f}",
+             demuxedDuration(), rebufferThreshold);
         fireEvent(PipelineEvent::BufferingEnd);
     }
 }
@@ -170,6 +172,8 @@ void BufferMonitor::onStarvation(bool isLocalSource) noexcept {
     ++starvationCount_;
     if (starvationCount_ >= kStarvationThreshold && !isRebuffering_ && readyFired_) {
         isRebuffering_ = true;
+        LogI("onStarvation -> BufferingStart, starvationCount={}, demuxedDuration={:.3f}",
+             starvationCount_, demuxedDuration());
         fireEvent(PipelineEvent::BufferingStart);
     }
 }

@@ -108,9 +108,6 @@ public:
     // 高频 tick（playerThreadTickMs）：背压调节 + 音频推帧
     void onFastTick() noexcept;
 
-    // 低频 tick（cacheTickMs）：seek 超时检测
-    void onHeartbeat() noexcept;
-
     void setStreamControl(StreamControlFunc pauseStream, StreamControlFunc resumeStream) noexcept;
 
     void setSeekByTimeFunc(std::function<StreamResult<void>(double)> func) noexcept {
@@ -258,7 +255,11 @@ private:
 
     void onSeekFrameConsumed(TrackType track) noexcept;
 
-    void exitFastForwardMode() noexcept;
+    /// FastForwardInGOP：不重定位 demuxer、不 flush 解码器，快进消费 [current, target) 的音视频
+    void fastForwardInGOP(CTime target) noexcept;
+
+    /// SeekToKeyframe：暂停-flush-重定位-恢复
+    void performKeyframeSeek(CTime target, SeekStrategy strategy) noexcept;
 
     [[nodiscard]] AVFrameRefPtr seekPreviewFrame() noexcept;
 
@@ -267,6 +268,7 @@ private:
     void dropOldestFrames() noexcept;
 
     void pushAudioFrames() noexcept;
+    void pushSeekFrames() noexcept;
 
     struct QueueBounds {
         double audioOldestPts = -1.0;
@@ -289,8 +291,6 @@ private:
     void updateLiveReadyFlags(const DemuxerResult& result) noexcept;
 
     void registerComponents() noexcept;
-
-    void recoverFromSeekTimeout() noexcept;
 
 private:
     BackpressureConfig config_;
@@ -329,7 +329,6 @@ private:
 
     std::atomic<PipelineState> pipelineState_{PipelineState::Idle};
 
-    /// build() 幂等标记：组件是否已首次启动
     std::atomic<bool> componentStarted_{false};
 
     ReadinessTracker readiness_;
@@ -340,6 +339,7 @@ private:
     std::vector<std::shared_ptr<IPipelineComponent>> components_;
 
     std::chrono::steady_clock::time_point lastVsyncTime_{};
+
 };
 
 } // namespace slark

@@ -55,11 +55,21 @@ public:
         hasAudio_.store(hasAudio, std::memory_order_release);
     }
 
+    void setClockRunning(bool running) noexcept {
+        if (running) {
+            audioLastUpdateUs_.store(Time::nowTimeStamp().point(), std::memory_order_release);
+        }
+        clockRunning_.store(running, std::memory_order_release);
+    }
+
     [[nodiscard]] Time::TimePoint masterTime() const noexcept {
         if (!hasAudio_.load(std::memory_order_acquire)) {
             return videoTime();
         }
         auto audioPts = audioTime_.load(std::memory_order_acquire);
+        if (!clockRunning_.load(std::memory_order_acquire)) {
+            return Time::TimePoint(audioPts);
+        }
         auto lastUpdate = audioLastUpdateUs_.load(std::memory_order_acquire);
         auto now = Time::nowTimeStamp().point();
         if (now > lastUpdate && (now - lastUpdate) > kAudioClockStaleThresholdUs) {
@@ -73,6 +83,7 @@ public:
 
     void reset() noexcept {
         audioEpoch_.fetch_add(1, std::memory_order_acq_rel);
+        clockRunning_.store(false, std::memory_order_release);
         audioTime_.store(0, std::memory_order_release);
         audioLastUpdateUs_.store(Time::nowTimeStamp().point(), std::memory_order_release);
         videoTime_.store(0, std::memory_order_release);
@@ -82,6 +93,15 @@ public:
         dropCount_.store(0, std::memory_order_relaxed);
         chaseRoundCount_.store(0, std::memory_order_relaxed);
         vsyncDurationUs_.store(0, std::memory_order_relaxed);
+    }
+
+    void seekTo(Time::TimePoint t) noexcept {
+        audioEpoch_.fetch_add(1, std::memory_order_acq_rel);
+        audioTime_.store(t.point(), std::memory_order_release);
+        audioLastUpdateUs_.store(Time::nowTimeStamp().point(), std::memory_order_release);
+        videoTime_.store(t.point(), std::memory_order_release);
+        dropCount_.store(0, std::memory_order_relaxed);
+        chaseRoundCount_.store(0, std::memory_order_relaxed);
     }
 
     [[nodiscard]] uint64_t currentAudioEpoch() const noexcept {
@@ -166,6 +186,7 @@ private:
     std::atomic<uint64_t> audioLastUpdateUs_{0};
     std::atomic<uint64_t> videoTime_{0};
     std::atomic<bool> hasAudio_{false};
+    std::atomic<bool> clockRunning_{false};
     std::atomic<uint16_t> playbackRate_{
         static_cast<uint16_t>(kDefaultPlaybackRate * kPlaybackRateScale)};
     std::atomic<uint32_t> videoFps_{0};

@@ -18,7 +18,6 @@ enum class PipelineEvent : uint8_t {
     BufferingEnd,       // 缓冲结束
     ReadError,          // 读取 / 背压错误（PipelineError 必填）
     SeekCompleted,      // seek 完成
-    SeekTimeout,        // seek 被新 seek 覆盖，上层可降级处理
     DecodeError,        // 连续解码失败超阈值（PipelineError 必填）
     RenderEnd,          // 播放结束
 };

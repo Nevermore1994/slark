@@ -8,7 +8,6 @@
 #include "Time.hpp"
 
 #include <atomic>
-#include <chrono>
 #include <cstdint>
 #include <optional>
 
@@ -16,16 +15,24 @@ namespace slark {
 
 enum class SeekStrategy : uint8_t {
     FastForwardInGOP,
-    SeekToGOPKeyframe,
     SeekToKeyframe,
 };
+
+[[nodiscard]] constexpr std::string_view toStringView(SeekStrategy strategy) noexcept {
+    switch (strategy) {
+        case SeekStrategy::FastForwardInGOP:
+            return "FastForwardInGOP";
+        case SeekStrategy::SeekToKeyframe:
+            return "SeekToKeyframe";
+    }
+    return "Unknown";
+}
 
 class SeekContext : public NonCopyMovable {
 public:
     SeekContext() = default;
     ~SeekContext() = default;
 
-    /// 开始 seek，返回 true 表示覆盖了上一次未完成的 seek
     [[nodiscard]] bool beginSeek(CTime target, SeekStrategy strategy) noexcept {
         bool superseded = isSeekPending_.load(std::memory_order_acquire);
         seekEpoch_.fetch_add(1, std::memory_order_acq_rel);
@@ -34,8 +41,7 @@ public:
         isSeekPending_.store(true, std::memory_order_release);
         isVideoSeeked_.store(false, std::memory_order_release);
         isAudioSeeked_.store(false, std::memory_order_release);
-        seekStartTimeNs_.store(std::chrono::steady_clock::now().time_since_epoch().count(),
-                               std::memory_order_release);
+        isPreviewPushed_.store(false, std::memory_order_release);
         return superseded;
     }
 
@@ -56,29 +62,17 @@ public:
         return gopEndPts_.load(std::memory_order_acquire);
     }
 
-    /// 完成 seek，返回 true 表示本次调用成功完成（CAS 语义，多线程安全）
     [[nodiscard]] bool completeSeek() noexcept {
         bool expected = true;
         if (!isSeekPending_.compare_exchange_strong(expected, false, std::memory_order_acq_rel)) {
             return false;
         }
         activeSeekTimeSec_.store(kNoSeekTime, std::memory_order_release);
-        seekStartTimeNs_.store(kNoSeekStartTime, std::memory_order_release);
         return true;
     }
 
     [[nodiscard]] bool isSeekPending() const noexcept {
         return isSeekPending_.load(std::memory_order_acquire);
-    }
-
-    [[nodiscard]] bool isSeekTimedOut(std::chrono::milliseconds timeout) const noexcept {
-        auto startNs = seekStartTimeNs_.load(std::memory_order_acquire);
-        if (!isSeekPending_.load(std::memory_order_acquire) || startNs == kNoSeekStartTime) {
-            return false;
-        }
-        using namespace std::chrono;
-        auto startTp = steady_clock::time_point{nanoseconds{startNs}};
-        return (steady_clock::now() - startTp) >= timeout;
     }
 
     [[nodiscard]] std::optional<double> targetSeekTime() const noexcept {
@@ -100,6 +94,11 @@ public:
     [[nodiscard]] bool tryMarkVideoSeeked() noexcept {
         bool expected = false;
         return isVideoSeeked_.compare_exchange_strong(expected, true, std::memory_order_acq_rel);
+    }
+
+    [[nodiscard]] bool tryMarkPreviewPushed() noexcept {
+        bool expected = false;
+        return isPreviewPushed_.compare_exchange_strong(expected, true, std::memory_order_acq_rel);
     }
 
     void markAudioSeeked() noexcept {
@@ -124,9 +123,16 @@ public:
         return capturedEpoch != seekEpoch_.load(std::memory_order_acquire);
     }
 
+    void setMaxSkipFrames(int32_t n) noexcept {
+        maxSkipFrames_.store(n, std::memory_order_release);
+    }
+
+    [[nodiscard]] int32_t maxSkipFrames() const noexcept {
+        return maxSkipFrames_.load(std::memory_order_acquire);
+    }
+
 private:
     static constexpr double kNoSeekTime = -1.0;
-    static constexpr int64_t kNoSeekStartTime = -1;
 
     std::atomic<uint64_t> seekEpoch_{0};
     std::atomic<double> activeSeekTimeSec_{kNoSeekTime};
@@ -136,7 +142,8 @@ private:
     std::atomic<bool> isSeekPending_{false};
     std::atomic<bool> isVideoSeeked_{false};
     std::atomic<bool> isAudioSeeked_{false};
-    std::atomic<int64_t> seekStartTimeNs_{kNoSeekStartTime};
+    std::atomic<bool> isPreviewPushed_{false};
+    std::atomic<int32_t> maxSkipFrames_{0};
 };
 
 } // namespace slark
