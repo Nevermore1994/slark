@@ -59,28 +59,17 @@ std::shared_ptr<Thread> Thread::create(std::string name) {
     return thread;
 }
 
-std::shared_ptr<Thread> Thread::createWithRunLoop(std::string name, std::function<void()> runLoop) {
+std::shared_ptr<Thread> Thread::createWithLoop(std::string name, std::function<void(Thread&)> loop) {
     auto thread = std::shared_ptr<Thread>(new Thread(std::move(name)));
-    thread->customRunLoop_ = std::move(runLoop);
+    thread->customWork_ = std::move(loop);
     {
         std::lock_guard<std::mutex> lock(thread->mutex_);
         thread->isRunning_ = true;
     }
     thread->worker_ = std::thread([weak = thread->weak_from_this()]() {
-        auto self = weak.lock();
-        if (!self) {
-            return;
+        if (auto self = weak.lock()) {
+            self->process();
         }
-        self->setup();
-        tlsCurrentThread = self.get();
-        self->setActive(true);
-        if (self->customRunLoop_) {
-            self->customRunLoop_();
-        }
-        self->setActive(false);
-        tlsCurrentThread = nullptr;
-        std::lock_guard<std::mutex> lock(self->mutex_);
-        self->isRunning_ = false;
     });
     return thread;
 }
@@ -118,21 +107,25 @@ void Thread::stop() noexcept {
     }
 }
 
-void Thread::pause() noexcept {
-    if (customRunLoop_) {
-        return; // 独占 runLoop 模式下 no-op
+void Thread::join() noexcept {
+    // 不能在 worker 自身线程上调用，否则 self-join 死锁
+    if (worker_.joinable() && worker_.get_id() != std::this_thread::get_id()) {
+        worker_.join();
     }
+}
+
+void Thread::pause() noexcept {
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        if (!isRunning_) {
+            return;
+        }
         isRunning_ = false;
     }
     cond_.notify_all();
 }
 
 void Thread::start() noexcept {
-    if (customRunLoop_) {
-        return; // 独占 runLoop 模式下 no-op
-    }
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (isRunning_ || stopRequested_.load(std::memory_order_acquire)) {
@@ -192,53 +185,62 @@ void Thread::cancelRepeatTask(TimerId id) noexcept {
 
 void Thread::process() noexcept {
     tlsCurrentThread = this;
+    setup();
     setActive(true);
-    while (!stopRequested_.load(std::memory_order_acquire)) {
-        if (!isInit_) {
-            setup();
-        }
 
-        {
-            std::unique_lock<std::mutex> lock(mutex_);
-            if (!isRunning_ && !stopRequested_.load(std::memory_order_acquire)) {
-                ScopedInactive guard;
-                cond_.wait(lock, [this] {
-                    return stopRequested_.load(std::memory_order_acquire) || isRunning_;
-                });
+    if (customWork_) {
+        customWork_(*this);
+    } else {
+        while (!stopRequested_.load(std::memory_order_acquire)) {
+            if (!isInit_) {
+                setup();
             }
-            if (!isRunning_) {
+
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                if (!isRunning_ && !stopRequested_.load(std::memory_order_acquire)) {
+                    ScopedInactive guard;
+                    cond_.wait(lock, [this] {
+                        return stopRequested_.load(std::memory_order_acquire) || isRunning_;
+                    });
+                }
+                if (!isRunning_) {
+                    continue;
+                }
+            }
+
+            if (stopRequested_.load(std::memory_order_acquire)) {
+                break;
+            }
+
+            setActive(true);
+
+            auto waitTime = runRepeatTasks();
+            drainTaskQueue();
+
+            if (waitTime == 0ms) {
                 continue;
             }
-        }
 
-        if (stopRequested_.load(std::memory_order_acquire)) {
-            break;
-        }
-
-        setActive(true);
-
-        auto waitTime = runRepeatTasks();
-        drainTaskQueue();
-
-        if (waitTime == 0ms) {
-            continue;
-        }
-
-        std::unique_lock<std::mutex> lock(mutex_);
-        if (waitTime == std::chrono::milliseconds::max()) {
-            ScopedInactive guard;
-            cond_.wait(lock, [this] {
-                return stopRequested_.load(std::memory_order_acquire) || !isRunning_;
-            });
-        } else {
-            ScopedInactive guard;
-            cond_.wait_for(lock, waitTime, [this] {
-                return stopRequested_.load(std::memory_order_acquire) || !isRunning_;
-            });
+            std::unique_lock<std::mutex> lock(mutex_);
+            if (waitTime == std::chrono::milliseconds::max()) {
+                ScopedInactive guard;
+                cond_.wait(lock, [this] {
+                    return stopRequested_.load(std::memory_order_acquire) || !isRunning_;
+                });
+            } else {
+                ScopedInactive guard;
+                cond_.wait_for(lock, waitTime, [this] {
+                    return stopRequested_.load(std::memory_order_acquire) || !isRunning_;
+                });
+            }
         }
     }
+
     setActive(false);
     tlsCurrentThread = nullptr;
+    std::lock_guard<std::mutex> lock(mutex_);
+    isRunning_ = false;
 }
 
 milliseconds Thread::runRepeatTasks() noexcept {
@@ -338,6 +340,22 @@ TimerId Thread::registerTimer(TimerId id) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     timerIds_.push_back(id);
     return id;
+}
+
+bool Thread::shouldStop() noexcept {
+    std::unique_lock<std::mutex> lock(mutex_);
+    if (!isRunning_ && !stopRequested_.load(std::memory_order_acquire)) {
+        ScopedInactive guard;
+        cond_.wait(lock, [this] {
+            return stopRequested_.load(std::memory_order_acquire) || isRunning_;
+        });
+    }
+    return stopRequested_.load(std::memory_order_acquire);
+}
+
+void Thread::drainPendingWork() noexcept {
+    runRepeatTasks();
+    drainTaskQueue();
 }
 
 } // end namespace slark

@@ -274,30 +274,152 @@ TEST(Thread, repeatTaskResumesAfterStart) {
     ASSERT_GT(counter.load(), countAtPause); // start 后继续增加
 }
 
-TEST(Thread, repeatTaskNoDanglingPointer) {
-    TEST(Thread, startAfterStopIsNoop) {
-        auto thread = Thread::create(Util::genRandomName("thread"));
-        thread->start();
-        thread->stop();
-        ASSERT_TRUE(thread->isExit());
+TEST(Thread, startAfterStopIsNoop) {
+    auto thread = Thread::create(Util::genRandomName("thread"));
+    thread->start();
+    thread->stop();
+    ASSERT_TRUE(thread->isExit());
 
-        thread->start();
-        ASSERT_FALSE(thread->isRunning());
-        ASSERT_TRUE(thread->isExit());
-    }
+    thread->start();
+    ASSERT_FALSE(thread->isRunning());
+    ASSERT_TRUE(thread->isExit());
+}
 
-    // setThreadName 不影响线程正常执行
-    TEST(Thread, setThreadName) {
-        std::atomic<int32_t> counter{0};
-        auto thread = Thread::create("initial-name");
-        thread->start();
+// setThreadName 不影响线程正常执行
+TEST(Thread, setThreadName) {
+    std::atomic<int32_t> counter{0};
+    auto thread = Thread::create("initial-name");
+    thread->start();
 
-        thread->setThreadName("renamed-thread");
-        ASSERT_EQ(thread->getName(), "renamed-thread");
+    thread->setThreadName("renamed-thread");
+    ASSERT_EQ(thread->getName(), "renamed-thread");
 
-        thread->postTask([&counter]() {
-            counter.fetch_add(1);
-        });
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        ASSERT_EQ(counter.load(), 1);
-    }
+    thread->postTask([&counter]() {
+        counter.fetch_add(1);
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    ASSERT_EQ(counter.load(), 1);
+}
+
+// custom loop 模式下 shouldStop/pause/resume 正常工作
+TEST(Thread, createWithLoopShouldStopPauseResume) {
+    using namespace std::chrono;
+    std::atomic<int> state{0}; // 0=init, 1=running, 2=paused, 3=resumed, 4=stopped
+    std::latch loopEntered{1};
+
+    auto thread = Thread::createWithLoop("testLoop", [&](Thread& t) {
+        state.store(1);
+        loopEntered.count_down();
+        while (!t.shouldStop()) {
+            std::this_thread::sleep_for(1ms);
+        }
+        state.store(4);
+    });
+
+    loopEntered.wait();
+    ASSERT_EQ(state.load(), 1);
+    ASSERT_FALSE(thread->isExit());
+
+    thread->pause();
+    std::this_thread::sleep_for(20ms);
+    ASSERT_FALSE(thread->isRunning());
+    ASSERT_FALSE(thread->isExit());
+
+    thread->start();
+    std::this_thread::sleep_for(20ms);
+    ASSERT_TRUE(thread->isRunning());
+
+    thread->stop();
+    std::this_thread::sleep_for(30ms);
+    ASSERT_TRUE(thread->isExit());
+    ASSERT_EQ(state.load(), 4);
+}
+
+// custom loop 的 drainPendingWork 能消费 postTask
+TEST(Thread, createWithLoopDrainPendingWork) {
+    using namespace std::chrono;
+    std::atomic<int> counter{0};
+    std::vector<int> order;
+    std::mutex orderMutex;
+    std::latch taskProcessed{1};
+
+    auto thread = Thread::createWithLoop("testDrain", [&](Thread& t) {
+        while (!t.shouldStop()) {
+            t.drainPendingWork();
+            std::this_thread::sleep_for(1ms);
+        }
+    });
+
+    thread->postTask([&]() {
+        counter.fetch_add(1);
+        order.push_back(1);
+        taskProcessed.count_down();
+    });
+
+    taskProcessed.wait();
+    ASSERT_EQ(counter.load(), 1);
+    ASSERT_EQ(order.size(), 1u);
+    ASSERT_EQ(order[0], 1);
+
+    thread->stop();
+    std::this_thread::sleep_for(30ms);
+    ASSERT_TRUE(thread->isExit());
+}
+
+// 没有 postTask 时 drainPendingWork 是空操作
+TEST(Thread, createWithLoopDrainPendingWorkNoop) {
+    using namespace std::chrono;
+    std::atomic<bool> loopExited{false};
+
+    auto thread = Thread::createWithLoop("testNoop", [&](Thread& t) {
+        while (!t.shouldStop()) {
+            t.drainPendingWork(); // 空队列，应该快速返回
+            loopExited.store(true);
+            break; // 只跑一轮
+        }
+    });
+
+    std::this_thread::sleep_for(30ms);
+    ASSERT_TRUE(loopExited.load());
+    ASSERT_TRUE(thread->isExit()); // loop 已退出，thread 已 stop
+}
+
+// postTask 在 shouldStop() 返回 true 后被拒绝
+TEST(Thread, createWithLoopPostTaskAfterStop) {
+    auto thread = Thread::createWithLoop("testPostStop", [&](Thread& t) {
+        while (!t.shouldStop()) {
+            std::this_thread::sleep_for(1ms);
+        }
+    });
+
+    thread->stop();
+    std::this_thread::sleep_for(30ms);
+    ASSERT_TRUE(thread->isExit());
+
+    auto result = thread->postTask([]() {});
+    ASSERT_FALSE(result.has_value());
+}
+
+// create 模式（无 custom loop）行为不变
+TEST(Thread, createModeStillWorks) {
+    std::atomic<int> counter{0};
+    auto thread = Thread::create(Util::genRandomName("thread"));
+    thread->start();
+
+    thread->postTask([&]() { counter.fetch_add(1); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    ASSERT_EQ(counter.load(), 1);
+
+    thread->pause();
+    ASSERT_FALSE(thread->isRunning());
+
+    thread->start();
+    ASSERT_TRUE(thread->isRunning());
+
+    thread->postTask([&]() { counter.fetch_add(1); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    ASSERT_EQ(counter.load(), 2);
+
+    thread->stop();
+    ASSERT_TRUE(thread->isExit());
+}

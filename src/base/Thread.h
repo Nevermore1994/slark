@@ -30,8 +30,8 @@ class Thread : public NonCopyMovable, public std::enable_shared_from_this<Thread
 public:
     [[nodiscard]] static std::shared_ptr<Thread> create(std::string name);
 
-    [[nodiscard]] static std::shared_ptr<Thread> createWithRunLoop(std::string name,
-                                                                   std::function<void()> runLoop);
+    [[nodiscard]] static std::shared_ptr<Thread> createWithLoop(std::string name,
+                                                                std::function<void(Thread&)> loop);
 
     ~Thread() noexcept;
 
@@ -40,6 +40,11 @@ public:
     void pause() noexcept;
 
     void stop() noexcept;
+
+    // 同步等待 worker 线程退出。
+    // 必须先调用 stop()/loop 自然退出条件后再 join，否则会阻塞。
+    // 若在 worker 自身线程上下文调用则跳过，避免 self-join 死锁。
+    void join() noexcept;
 
     Expected<void> postTask(Task task) noexcept;
     TimerId postTask(std::chrono::milliseconds delay, Task task) noexcept;
@@ -93,6 +98,10 @@ public:
 
     void setThreadName(std::string_view nameView) noexcept;
 
+    [[nodiscard]] bool shouldStop() noexcept;
+
+    void drainPendingWork() noexcept;
+
 private:
     explicit Thread(std::string name);
 
@@ -138,7 +147,7 @@ private:
     MPSCQueue<Task> taskQueue_;
     std::vector<TimerId> timerIds_;
     std::vector<RepeatTask> repeatTasks_;
-    std::function<void()> customRunLoop_;
+    std::function<void(Thread&)> customWork_;
     std::thread worker_;
 };
 
