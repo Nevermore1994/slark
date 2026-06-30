@@ -128,7 +128,6 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
     fun setVideoRotation(rotationDegrees: Int) {
         SlarkLog.i(LOG_TAG, "setVideoRotation(metadata): degrees=$rotationDegrees")
         renderThread?.setRotation(rotationDegrees)
-        playerObserver?.notifyEvent(playerId, SlarkPlayerEvent.VideoRotation, rotationDegrees.toString())
     }
 
     override fun onBackground(isBackground: Boolean) {

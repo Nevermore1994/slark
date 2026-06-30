@@ -7,7 +7,6 @@
 package com.slark.api
 
 enum class SlarkPlayerErrorCode(val value: Int) {
-    // General errors(0 - 99)
     Success(0),
     OutOfMemory(1),
     OutOfRange(2),
@@ -19,7 +18,6 @@ enum class SlarkPlayerErrorCode(val value: Int) {
     EmptyData(8),
     NotFound(9),
     Cancelled(10),
-    // I/O errors(100 - 199)
     IOError(100),
     EndOfFile(101),
     PermissionDenied(102),
@@ -27,7 +25,6 @@ enum class SlarkPlayerErrorCode(val value: Int) {
     FileAlreadyExists(104),
     StreamNotReady(110),
     StreamInvalidData(111),
-    // Codec errors(200 - 299)
     CodecNotFound(200),
     CodecError(201),
     CodecInputError(202),
@@ -38,7 +35,6 @@ enum class SlarkPlayerErrorCode(val value: Int) {
     CodecUnsupportedFormat(207),
     CodecResourceExhausted(208),
     CodecConfigInvalid(209),
-    // Network errors(300 - 399)
     NetworkError(300),
     ConnectionFailed(301),
     ConnectionTimeout(302),
@@ -50,7 +46,6 @@ enum class SlarkPlayerErrorCode(val value: Int) {
     WouldBlock(308),
     InvalidSocket(309),
     BrokenPipe(310),
-    // HTTP errors(400 - 499)
     HttpError(400),
     HttpTimeout(401),
     HttpRedirectError(402),
@@ -59,14 +54,12 @@ enum class SlarkPlayerErrorCode(val value: Int) {
     HttpChunkedError(405),
     HttpSslError(406),
     HttpSslHandshakeFailed(407),
-    // Media errors(500 - 599)
     MediaOpenFailed(500),
     MediaEndOfFile(501),
     MediaHeaderParsed(502),
     MediaInfoChanged(503),
     MediaFpsParsed(504),
     MediaInvalidData(505),
-    // Pipeline errors(600 - 699)
     PipelineOpenFailed(600),
     PipelineFormatNotSupported(601),
     PipelineDemuxError(602),

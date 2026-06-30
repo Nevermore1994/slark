@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <atomic>
+
 #include "Clock.h"
 #include "Manager.hpp"
 #include "Texture.h"

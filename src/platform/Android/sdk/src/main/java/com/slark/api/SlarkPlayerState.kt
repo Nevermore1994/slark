@@ -7,7 +7,7 @@
 package com.slark.api
 
 enum class SlarkPlayerState {
-    Unknown,
+    NotInited,
     Initializing,
     Prepared,
     Buffering,
@@ -17,4 +17,5 @@ enum class SlarkPlayerState {
     Stop,
     Error,
     Completed,
+    Unknown
 }

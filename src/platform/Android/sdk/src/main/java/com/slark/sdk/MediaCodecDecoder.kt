@@ -83,7 +83,12 @@ class MediaCodecDecoder(
 
     private fun makeCodecCallback() = object : MediaCodec.Callback() {
         override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
-            inputBufferQueue.offer(index)
+            val genAtEntry = codecGeneration
+            synchronized(codecLock) {
+                if (codecGeneration == genAtEntry) {
+                    inputBufferQueue.offer(index)
+                }
+            }
         }
 
         override fun onOutputBufferAvailable(codec: MediaCodec, index: Int, info: MediaCodec.BufferInfo) {
@@ -91,8 +96,13 @@ class MediaCodecDecoder(
                 isCompleted.set(true)
             }
             if (format.isVideoFormat() && decodeMode == DecodeMode.Texture) {
-                outputBufferQueue.offer(index to info)
-                processRawData(decoderId, null, info.presentationTimeUs, isCompleted.get())
+                val genAtEntry = codecGeneration
+                synchronized(codecLock) {
+                    if (codecGeneration == genAtEntry) {
+                        outputBufferQueue.offer(index to info)
+                        processRawData(decoderId, null, info.presentationTimeUs, isCompleted.get())
+                    }
+                }
             } else {
                 consumeOutputBuffer(codec, index, info)
             }
@@ -157,33 +167,39 @@ class MediaCodecDecoder(
             return SlarkPlayerErrorCode.CodecInputError.value
         }
 
+        val genAtEntry = codecGeneration
         val inputIndex = inputBufferQueue.poll()
             ?: return SlarkPlayerErrorCode.CodecNotProcessed.value
 
-        try {
-            val inputBuffer = decoder!!.getInputBuffer(inputIndex)!!
-            inputBuffer.clear()
-            if (flag.hasFlag(MediaCodec.BUFFER_FLAG_END_OF_STREAM)) {
-                decoder!!.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-            } else {
-                if (byteBuffer == null || byteBuffer.isEmpty()) {
-                    return SlarkPlayerErrorCode.CodecInputError.value
-                }
-                if (inputBuffer.capacity() < byteBuffer.size) {
-                    SlarkLog.e(LOG_TAG, "input buffer too small: ${inputBuffer.capacity()} < ${byteBuffer.size}")
-                    return SlarkPlayerErrorCode.CodecInputTooLarge.value
-                }
-                inputBuffer.put(byteBuffer)
-                val queueFlag = if (flag.hasFlag(MediaCodec.BUFFER_FLAG_CODEC_CONFIG)) {
-                    MediaCodec.BUFFER_FLAG_CODEC_CONFIG
-                } else {
-                    0
-                }
-                decoder!!.queueInputBuffer(inputIndex, 0, byteBuffer.size, presentationTimeUs, queueFlag)
+        synchronized(codecLock) {
+            if (codecGeneration != genAtEntry || !isRunning.get()) {
+                return SlarkPlayerErrorCode.CodecNotProcessed.value
             }
-        } catch (e: Exception) {
-            SlarkLog.e(LOG_TAG, "queueInputBuffer exception: ${e.message}")
-            return SlarkPlayerErrorCode.CodecError.value
+            try {
+                val inputBuffer = decoder!!.getInputBuffer(inputIndex)!!
+                inputBuffer.clear()
+                if (flag.hasFlag(MediaCodec.BUFFER_FLAG_END_OF_STREAM)) {
+                    decoder!!.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                } else {
+                    if (byteBuffer == null || byteBuffer.isEmpty()) {
+                        return SlarkPlayerErrorCode.CodecInputError.value
+                    }
+                    if (inputBuffer.capacity() < byteBuffer.size) {
+                        SlarkLog.e(LOG_TAG, "input buffer too small: ${inputBuffer.capacity()} < ${byteBuffer.size}")
+                        return SlarkPlayerErrorCode.CodecInputTooLarge.value
+                    }
+                    inputBuffer.put(byteBuffer)
+                    val queueFlag = if (flag.hasFlag(MediaCodec.BUFFER_FLAG_CODEC_CONFIG)) {
+                        MediaCodec.BUFFER_FLAG_CODEC_CONFIG
+                    } else {
+                        0
+                    }
+                    decoder!!.queueInputBuffer(inputIndex, 0, byteBuffer.size, presentationTimeUs, queueFlag)
+                }
+            } catch (e: Exception) {
+                SlarkLog.e(LOG_TAG, "queueInputBuffer exception: ${e.message}")
+                return SlarkPlayerErrorCode.CodecNotProcessed.value
+            }
         }
         return SlarkPlayerErrorCode.Success.value
     }
@@ -286,7 +302,6 @@ class MediaCodecDecoder(
         return packFrameResult(false, isCompleted.get(), 0L)
     }
     private fun packFrameResult(isAvailable: Boolean, completed: Boolean, pts: Long): Long {
-        // 高位标记帧可用，次高位标记是否解码完成
         val availBit = if (isAvailable) 1L shl 63 else 0L
         val completeBit = if (completed) 1L shl 62 else 0L
         return availBit or completeBit or (pts and 0x3FFFFFFFFFFFFFFF)
