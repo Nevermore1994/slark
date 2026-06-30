@@ -239,6 +239,10 @@ fun SpeedButton(speed: Float, onSpeedChange: (Float) -> Unit, modifier: Modifier
 fun PlayerProgressBar(viewModel: PlayerViewModel) {
     val currentTime = (viewModel.currentTime * 1000).toLong()
     val totalTime = (viewModel.totalTime * 1000).toLong()
+    // 注意：viewModel.cacheTime / totalTime 都是秒；不要用毫秒的 totalTime 与秒的 cacheTime 相除
+    val bufferedFraction = if (viewModel.totalTime > 0.0)
+        (viewModel.cacheTime.toFloat() / viewModel.totalTime.toFloat()).coerceIn(0f, 1f)
+    else 0f
 
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
         CustomSlider(
@@ -248,8 +252,8 @@ fun PlayerProgressBar(viewModel: PlayerViewModel) {
                 viewModel.seekTo(viewModel.currentTime, b)
             },
             valueRange = 0f..1f,
-            bufferedColor = Color(0x66FFFFFF),
-            bufferedValue = if (totalTime > 0) (viewModel.cacheTime.toFloat() / totalTime.toFloat()).coerceIn(0f, 1f) else 0f,
+            bufferedColor = Color(0xFFFFFFFF),
+            bufferedValue = bufferedFraction,
             trackHeight = 4.dp,
             modifier = Modifier.fillMaxWidth().height(28.dp)
         )

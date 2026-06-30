@@ -82,9 +82,6 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
             SlarkLog.d("notifyEvent", "$event $value")
             when (event) {
                 SlarkPlayerEvent.UpdateCacheTime -> cacheTime = value.toDouble()
-                SlarkPlayerEvent.VideoRotation -> {
-                    // auto-rotation from native, handled by renderer only
-                }
                 SlarkPlayerEvent.OnError -> {
                     SlarkLog.e("PlayerViewModel", "Player error: $value")
                     errorMessage = when (SlarkPlayerErrorCode.entries.firstOrNull { it.value == value.toIntOrNull() }) {

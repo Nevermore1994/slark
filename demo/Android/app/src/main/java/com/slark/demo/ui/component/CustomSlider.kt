@@ -35,7 +35,7 @@ fun CustomSlider(
     bufferedValue: Float = value,
     trackHeight: Dp = 4.dp,
     thumbRadius: Dp = 5.dp,
-    trackColor: Color = Color.LightGray,
+    trackColor: Color = Color(0x55FFFFFF),
     bufferedColor: Color = Color.Unspecified,
     activeColor: Color = Color(0xFFA9A9A9),
 ) {
