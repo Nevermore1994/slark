@@ -107,23 +107,6 @@ auto FileStream::seek(uint64_t position) -> StreamResult<void> {
         return std::unexpected(Error::OutOfRange);
     }
 
-    // IO thread 已退出（读完整个文件后 readLoop break 了），需要直接 seek 并重启
-    if (!isRunning_.load(std::memory_order_acquire)) {
-        auto result = file_->seek(static_cast<int64_t>(position));
-        if (!result) {
-            return std::unexpected(Error::IOError);
-        }
-        position_ = position;
-        isCompleted_ = false;
-        // 旧的 IO thread 已退出但 joinable，启动新线程前先 join
-        if (thread_ && thread_->joinable()) {
-            thread_->join();
-        }
-        state_ = StreamState::Ready;
-        start();
-        return {};
-    }
-
     {
         std::lock_guard lock(mutex_);
         pendingSeekPos_ = position;
@@ -201,6 +184,8 @@ bool FileStream::deliverData(std::shared_ptr<Data> buffer, bool eof) noexcept {
 void FileStream::readLoop() noexcept {
     while (!shouldStop_) {
         if (pendingSeekFlag_.load(std::memory_order_acquire)) {
+            eofReached_.store(false, std::memory_order_release);
+            isCompleted_ = false;
             uint64_t seekPos = 0;
             {
                 std::lock_guard lock(mutex_);
@@ -220,11 +205,19 @@ void FileStream::readLoop() noexcept {
             cv_.notify_all();
         }
 
-        // pause：等待 resume/seek/stop 信号
         if (shouldPause_) {
             std::unique_lock lock(mutex_);
             cv_.wait(lock, [this] {
                 return !shouldPause_ || shouldStop_ || pendingSeekFlag_.load(std::memory_order_acquire);
+            });
+            continue;
+        }
+
+        if (eofReached_.load(std::memory_order_acquire)) {
+            std::unique_lock lock(mutex_);
+            cv_.wait(lock, [this] {
+                return !eofReached_.load(std::memory_order_acquire) || shouldStop_ ||
+                       pendingSeekFlag_.load(std::memory_order_acquire);
             });
             continue;
         }
@@ -255,8 +248,11 @@ void FileStream::readLoop() noexcept {
         }
 
         if (!deliverData(std::move(buffer), eof)) {
-            break;
+            LogI("readLoop: deliverData EOF at pos={}, park thread", position_.load());
+            eofReached_.store(true, std::memory_order_release);
+            continue;
         }
+        LogI("readLoop: sent data at pos={}", position_.load());
     }
 }
 

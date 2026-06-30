@@ -16,14 +16,21 @@ DemuxerComponent::DemuxerComponent(ReceiverPtr<DataPacket> receiver, DemuxerConf
     : receiver_(std::move(receiver)), config_(std::move(config)) {}
 
 DemuxerComponent::~DemuxerComponent() {
-    stopRequested_.store(true, std::memory_order_release);
+    stop();
+}
+
+void DemuxerComponent::stop() noexcept {
     if (receiver_) {
         receiver_->wakeup();
     }
     if (worker_) {
+        worker_->stop();
+        worker_->join();  // 同步等 worker 退出，避免 loop 仍在跑而成员被 reset 导致 UAF
         ThreadManager::shareInstance().remove(worker_);
         worker_.reset();
     }
+    reset();
+    isClosed_ = true;
 }
 
 void DemuxerComponent::reset() noexcept {
@@ -41,10 +48,11 @@ void DemuxerComponent::close() noexcept {
 
 void DemuxerComponent::start() noexcept {
     if (worker_) {
+        worker_->start();
         return;
     }
-    worker_ = Thread::createWithRunLoop("DemuxerWorker", [this] {
-        runLoop();
+    worker_ = Thread::createWithLoop("DemuxerWorker", [this](Thread& thread) {
+        runLoop(thread);
     });
     ThreadManager::shareInstance().add(worker_);
 }
@@ -63,55 +71,43 @@ void DemuxerComponent::flush() noexcept {
 }
 
 void DemuxerComponent::pause() noexcept {
-    paused_.store(true, std::memory_order_release);
-}
-
-void DemuxerComponent::resume() noexcept {
-    {
-        std::lock_guard<std::mutex> lock(pauseMutex_);
-        paused_ = false;
+    if (worker_) {
+        worker_->pause();
     }
-    pauseCv_.notify_all();
     if (receiver_) {
         receiver_->wakeup();
     }
 }
 
-void DemuxerComponent::runLoop() noexcept {
-    while (!stopRequested_.load(std::memory_order_acquire)) {
-        // flush 信号优先处理：清空 Channel 残留数据
+void DemuxerComponent::resume() noexcept {
+    if (worker_) {
+        worker_->start();
+    }
+}
+
+void DemuxerComponent::runLoop(Thread& thread) noexcept {
+    while (!thread.shouldStop()) {
+        thread.drainPendingWork();
+
         if (flushed_.exchange(false, std::memory_order_acq_rel)) {
             (void)receiver_->tryReceiveAll();
-        }
-
-        // pause: seek 期间阻止 worker 处理数据，避免旧的 demuxer 状态被 push 到 decoder
-        if (paused_.load(std::memory_order_acquire)) {
-            std::unique_lock<std::mutex> lock(pauseMutex_);
-            pauseCv_.wait(lock, [this] {
-                return !paused_.load(std::memory_order_acquire) ||
-                       stopRequested_.load(std::memory_order_acquire);
-            });
-            continue;
         }
 
         auto exp = receiver_->receive();
 
         if (!exp.has_value()) {
             if (exp.error() == ChannelEventType::Awakened) {
-                // flush 主动唤醒，回到顶部重新检查 flushed_/stopRequested_
                 continue;
             }
-            // Closed：上游 sender 已释放，正常退出
             break;
         }
         DataPacket packet = std::move(*exp);
+        LogI("demuxer worker: received data packet offset={}, size={}", packet.offset, packet.data ? packet.data->size() : 0);
 
-        // flush 期间到来的旧数据丢弃
         if (flushed_.load(std::memory_order_acquire)) {
             continue;
         }
 
-        // seek 后验证第一个包的 offset：如果不匹配目标位置则丢弃（过期数据）
         auto expectedOffset = pendingSeekVerifiedOffset_.load(std::memory_order_acquire);
         if (expectedOffset != 0) {
             if (static_cast<uint64_t>(packet.offset) != expectedOffset) {
@@ -246,6 +242,34 @@ uint64_t DemuxerComponent::getSeekToPos(double time) noexcept {
         return 0;
     }
     return demuxer->getSeekToPos(time);
+}
+
+void DemuxerComponent::seekToTime(double time) noexcept {
+    postToWorker([this, time]() {
+        if (isClosed_) {
+            return;
+        }
+        auto demuxer = demuxer_.load();
+        if (!demuxer || !demuxer->isOpened()) {
+            return;
+        }
+        auto pos = demuxer->getSeekToPos(time);
+        if (pos > 0) {
+            seekToPos(pos);
+        }
+    });
+}
+
+void DemuxerComponent::drainWorkerTasks() noexcept {
+    if (worker_) {
+        worker_->drainPendingWork();
+    }
+}
+
+void DemuxerComponent::postToWorker(Task task) noexcept {
+    if (worker_) {
+        worker_->postTask(std::move(task));
+    }
 }
 
 } // namespace slark

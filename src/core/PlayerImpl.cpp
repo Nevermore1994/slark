@@ -47,8 +47,13 @@ Player::Impl::Impl(std::unique_ptr<PlayerParams> params)
 Player::Impl::~Impl() {
     isStopped_ = true;
     if (ownerThread_) {
-        forceCleanup();
+        // 不变量：ownerThread_ 生命周期严格覆盖其 worker 函数。
+        // 必须在外部线程析构，禁止 worker 自销毁 → 见下方 assert。
+        SAssert(ownerThread_->getId() != std::this_thread::get_id(),
+                "~Impl must not run on ownerThread_");
         ownerThread_->stop();
+        ownerThread_->join();  // 同步等 worker 退出，杜绝并发 reset/UAF
+        forceCleanup();        // 此时无并发，清理安全
         ownerThread_.reset();
     }
     GLContextManager::shareInstance().removeMainContext(playerId_);
@@ -62,13 +67,11 @@ void Player::Impl::forceCleanup() noexcept {
         isReleased_ = true;
     }
     cond_.notify_all();
-    // 先取消所有定时任务，防止定时任务在 pipeline_ 销毁后访问它
     if (ownerThread_) {
         ownerThread_->cancelRepeatTask(fastTickTaskId_);
         ownerThread_->cancelRepeatTask(playedTimeTaskId_);
         ownerThread_->cancelRepeatTask(cacheTickTaskId_);
     }
-    // 直接执行清理，不依赖 ownerThread_
     mediaSourceManager_.close();
     dataPacketSender_.reset();
     if (pipeline_) {
@@ -147,8 +150,6 @@ void Player::Impl::init() noexcept {
                                          if (isStopped_) {
                                              return;
                                          }
-                                         // 拷贝 shared_ptr 以延长 PlayPipeline 生命周期，避免
-                                         // onFastTick 执行期间 pipeline_ 被 reset
                                          if (auto pipeline = pipeline_) {
                                              pipeline->onFastTick();
                                          }
@@ -168,11 +169,6 @@ void Player::Impl::init() noexcept {
                 return;
             }
             notifyCacheTime();
-            // 拷贝 shared_ptr 以延长 PlayPipeline 生命周期，避免 onHeartbeat 执行期间 pipeline_ 被
-            // reset
-            if (auto pipeline = pipeline_) {
-                pipeline->onHeartbeat();
-            }
         });
 
     mediaSourceManager_.start();
@@ -211,7 +207,13 @@ bool Player::Impl::setupDataProvider() noexcept {
         }
         const auto err = isNetwork ? Error::NetworkError : Error::IOError;
         self->notifyPlayerEvent(PlayerEvent::OnError, std::to_string(static_cast<uint32_t>(err)));
-        self->setState(PlayerState::Error);
+        // 切 Error 会 doStop() 销毁 pipeline_，投递到 ownerThread 串行执行避免并发 UAF
+        if (self->sender_) {
+            self->sender_->send(buildEvent(EventType::ReadError));
+            if (self->ownerThread_) {
+                self->ownerThread_->start();
+            }
+        }
     };
 
     auto onComplete = [weak]() {
@@ -257,12 +259,17 @@ bool Player::Impl::createDemuxerComponent() noexcept {
         if (!self || self->isStopped_) {
             return;
         }
-        self->demuxerComponent_->flush();
         auto res = self->mediaSourceManager_.seek(range.start());
         if (!res.has_value()) {
             self->notifyPlayerEvent(PlayerEvent::OnError,
                                     std::to_string(static_cast<uint32_t>(res.error())));
-            self->setState(PlayerState::Error);
+            // 同 onError：投递到 ownerThread 执行，避免在 demuxer 线程并发销毁 pipeline_
+            if (self->sender_) {
+                self->sender_->send(buildEvent(EventType::ReadError));
+                if (self->ownerThread_) {
+                    self->ownerThread_->start();
+                }
+            }
         }
         LogI("demuxer seek to pos:{}, ok:{}", range.toString(), res.has_value());
     });
@@ -409,35 +416,27 @@ void Player::Impl::preparePlayerInfo() noexcept {
 }
 
 void Player::Impl::process() noexcept {
-    if (!pipeline_) {
+    // 取本地强引用保活整个 process 周期，避免期间 pipeline_ 被 reset 导致 UAF
+    auto pipeline = pipeline_;
+    if (!pipeline) {
         return;
     }
     // 懒绑定：确保 PlayPipeline 的 ownerThreadId_ 指向 playerThread
-    std::call_once(bindOwnerThreadFlag_, [this] {
-        pipeline_->bindToCurrentThread();
+    std::call_once(bindOwnerThreadFlag_, [&pipeline] {
+        pipeline->bindToCurrentThread();
     });
-    if (!pipeline_->isBuilt()) {
-        pipeline_->build();
+    if (!pipeline->isBuilt()) {
+        pipeline->build();
     }
     handleEvent(receiver_->tryReceiveAll());
     if (isStopped_) {
         return;
     }
-    pipeline_->drainPendingTasks();
+    pipeline->drainPendingTasks();
 }
 
 void Player::Impl::doPlay() noexcept {
     LogI("do play");
-    if (!info_.isValid || !pipeline_) {
-        return;
-    }
-    ownerThread_->start();
-    pipeline_->start();
-    mediaSourceManager_.start();
-}
-
-void Player::Impl::resumeInternal() noexcept {
-    LogI("resume from pause");
     if (!info_.isValid || !pipeline_) {
         return;
     }
@@ -505,7 +504,6 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
         LogI("discard non-accurate seek:{} (seek in progress)", seekTime);
         return;
     }
-
     auto nowState = state();
     setState(PlayerState::Pause);
     if (nowState == PlayerState::Playing) {
@@ -552,11 +550,7 @@ void Player::Impl::setState(PlayerState state) noexcept {
     }
 
     if (state == PlayerState::Playing) {
-        if (oldState == PlayerState::Pause) {
-            resumeInternal();
-        } else {
-            doPlay();
-        }
+        doPlay();
     } else if (state == PlayerState::Pause || state == PlayerState::Completed) {
         doPause();
     } else if (state == PlayerState::Stop || state == PlayerState::Error) {
@@ -679,12 +673,6 @@ void Player::Impl::handlePipelineEvent(PipelineEvent event,
                 seekRequest_.reset();
                 notifyPlayerEvent(PlayerEvent::SeekDone);
             }
-            resumeFromBuffering();
-            break;
-        case PipelineEvent::SeekTimeout:
-            // seek 被覆盖，恢复到 seek 前的状态
-            LogW("seek timeout, discard seek request");
-            seekRequest_.reset();
             resumeFromBuffering();
             break;
         case PipelineEvent::AudioDecoderFailed:

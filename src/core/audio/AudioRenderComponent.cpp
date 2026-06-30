@@ -105,6 +105,7 @@ std::shared_ptr<AudioInfo> AudioRenderComponent::audioInfo() const noexcept {
 void AudioRenderComponent::start() noexcept {
     clock_.start();
     if (auto pimpl = pimpl_.load()) {
+        LogD("start audio render");
         pimpl->play();
     } else {
         LogE("audio render is nullptr.");
@@ -117,6 +118,7 @@ void AudioRenderComponent::pause() noexcept {
         if (pimpl->status() == RenderStatus::Playing) {
             pimpl->pause();
         }
+        LogD("pause audio render");
     } else {
         LogE("audio render is nullptr.");
     }
@@ -125,6 +127,7 @@ void AudioRenderComponent::pause() noexcept {
 void AudioRenderComponent::stop() noexcept {
     if (auto pimpl = pimpl_.load()) {
         pimpl->stop();
+        LogD("stop audio render");
     } else {
         LogE("audio render is nullptr.");
     }
@@ -171,7 +174,7 @@ Time::TimePoint AudioRenderComponent::playedTime() noexcept {
     uint64_t latencyUs = 0;
     if (auto pimpl = pimpl_.load()) {
         auto latency = pimpl->getHardwareLatency();
-        latencyUs = latency.point();
+        latencyUs = static_cast<uint64_t>(latency.point());
         if (latency.point() > 0) {
             if (t.point() >= static_cast<uint64_t>(latency.point())) {
                 result = t - latency;

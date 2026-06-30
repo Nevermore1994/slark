@@ -104,9 +104,7 @@ private:
     void createVideoComponent(const PlayerSetting& setting) noexcept;
 
     void doPlay() noexcept;
-
-    void resumeInternal() noexcept;
-
+    
     void doPause() noexcept;
 
     void doStop() noexcept;

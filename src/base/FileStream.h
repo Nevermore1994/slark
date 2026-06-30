@@ -70,6 +70,7 @@ private:
     std::atomic<bool> shouldStop_{false};
     std::atomic<bool> shouldPause_{false};
     std::atomic<bool> pendingSeekFlag_{false};
+    std::atomic<bool> eofReached_{false};
     uint64_t pendingSeekPos_ = 0;
     bool seekCompleted_ = false;
 };

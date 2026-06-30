@@ -74,7 +74,6 @@ void DecoderComponent::flush() noexcept {
     if (decoder_) {
         decoder_->flush();
     }
-    pauseCv_.notify_all();
     if (receiver_) {
         receiver_->wakeup();
     }
@@ -82,38 +81,44 @@ void DecoderComponent::flush() noexcept {
 }
 
 void DecoderComponent::start() noexcept {
-    if (!decoder_ || decodeWorker_) {
+    if (decodeWorker_) {
+        decodeWorker_->start();
+        return;
+    }
+    if (!decoder_) {
         return;
     }
     auto workerName = Util::genRandomName(config_.isAudio ? std::string("audioDecode_")
                                                           : std::string("videoDecode_"));
-    decodeWorker_ = Thread::createWithRunLoop(std::move(workerName), [this] {
-        runLoop();
+    decodeWorker_ = Thread::createWithLoop(std::move(workerName), [this](Thread& thread) {
+        runLoop(thread);
     });
     ThreadManager::shareInstance().add(decodeWorker_);
 }
 
 void DecoderComponent::pause() noexcept {
-    std::lock_guard<std::mutex> lock(pauseMutex_);
-    paused_ = true;
+    if (decodeWorker_) {
+        decodeWorker_->pause();
+    }
+    if (receiver_) {
+        receiver_->wakeup();
+    }
 }
 
 void DecoderComponent::resume() noexcept {
-    {
-        std::lock_guard<std::mutex> lock(pauseMutex_);
-        paused_ = false;
-    }
     flushed_.store(false, std::memory_order_release);
-    pauseCv_.notify_all();
+    if (decodeWorker_) {
+        decodeWorker_->start();
+    }
 }
 
 void DecoderComponent::stop() noexcept {
-    stopRequested_.store(true, std::memory_order_release);
-    pauseCv_.notify_all();
     if (receiver_) {
         receiver_->wakeup();
     }
     if (decodeWorker_) {
+        decodeWorker_->stop();
+        decodeWorker_->join();  // 同步等 worker 退出，避免 loop 仍在跑而成员被 reset 导致 UAF
         ThreadManager::shareInstance().remove(decodeWorker_);
         decodeWorker_.reset();
     }
@@ -122,14 +127,14 @@ void DecoderComponent::stop() noexcept {
 }
 
 bool DecoderComponent::isRunning() const noexcept {
-    return decodeWorker_ && decodeWorker_->isRunning();
+    return decodeWorker_ && !decodeWorker_->isExit();
 }
 
-void DecoderComponent::processPendingOutputs() noexcept {
+void DecoderComponent::processPendingOutputs(Thread& thread) noexcept {
     if (!decoder_) {
         return;
     }
-    while (decoder_->hasPendingOutput() && !stopRequested_.load(std::memory_order_acquire)) {
+    while (decoder_->hasPendingOutput() && !thread.isExit()) {
         if (decoder_->renderOutput() == Error::CodecAgain) {
             decoder_->clearPendingOutput();
             break;
@@ -137,22 +142,11 @@ void DecoderComponent::processPendingOutputs() noexcept {
     }
 }
 
-bool DecoderComponent::waitIfPaused() noexcept {
-    std::unique_lock<std::mutex> lock(pauseMutex_);
-    if (paused_ && !stopRequested_.load(std::memory_order_acquire)) {
-        Thread::ScopedInactive guard;
-        pauseCv_.wait(lock, [this] {
-            return stopRequested_.load(std::memory_order_acquire) || !paused_;
-        });
-    }
-    return stopRequested_.load(std::memory_order_acquire);
-}
-
-AVFrameRefPtr DecoderComponent::waitForFrame() noexcept {
+AVFrameRefPtr DecoderComponent::waitForFrame(Thread& thread) noexcept {
     auto exp = receiver_->receive();
     if (!exp.has_value()) {
         if (exp.error() == ChannelEventType::Awakened) {
-            processPendingOutputs();
+            processPendingOutputs(thread);
         }
         return nullptr;
     }
@@ -165,9 +159,9 @@ AVFrameRefPtr DecoderComponent::waitForFrame() noexcept {
     return std::move(*exp);
 }
 
-bool DecoderComponent::decodeFrame(AVFrameRefPtr& frame) noexcept {
+bool DecoderComponent::decodeFrame(AVFrameRefPtr& frame, Thread& thread) noexcept {
     int retryCount = 0;
-    while (!stopRequested_.load(std::memory_order_acquire) && decoder_) {
+    while (!thread.isExit() && decoder_) {
         auto res = decoder_->decode(frame);
         if (res == Error::Success) {
             return true;
@@ -184,9 +178,9 @@ bool DecoderComponent::decodeFrame(AVFrameRefPtr& frame) noexcept {
             auto backoff = std::chrono::milliseconds(1) * (1 << std::min(retryCount, 4));
             backoff = std::min(backoff, kMaxDecodeBackoff);
             std::this_thread::sleep_for(backoff);
-            processPendingOutputs();
+            processPendingOutputs(thread);
         } else {
-            if (stopRequested_.load(std::memory_order_acquire) &&
+            if (thread.isExit() &&
                 res == Error::CodecNotStarted) {
                 break;
             }
@@ -200,15 +194,13 @@ bool DecoderComponent::decodeFrame(AVFrameRefPtr& frame) noexcept {
     return true; // stop requested, not an error
 }
 
-void DecoderComponent::runLoop() noexcept {
-    while (!stopRequested_.load(std::memory_order_acquire)) {
-        if (waitIfPaused()) {
-            break;
-        }
+void DecoderComponent::runLoop(Thread& thread) noexcept {
+    while (!thread.shouldStop()) {
+        thread.drainPendingWork();
 
-        processPendingOutputs();
+        processPendingOutputs(thread);
 
-        auto frame = waitForFrame();
+        auto frame = waitForFrame(thread);
         if (!frame) {
             continue;
         }
@@ -223,11 +215,11 @@ void DecoderComponent::runLoop() noexcept {
             continue;
         }
 
-        if (!decodeFrame(frame)) {
+        if (!decodeFrame(frame, thread)) {
             return;
         }
 
-        processPendingOutputs();
+        processPendingOutputs(thread);
     }
 }
 

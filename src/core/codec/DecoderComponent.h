@@ -53,32 +53,25 @@ public:
     }
 
 private:
-    void runLoop() noexcept;
+    void runLoop(Thread& thread) noexcept;
 
-    void processPendingOutputs() noexcept;
+    void processPendingOutputs(Thread& thread) noexcept;
 
-    [[nodiscard]] bool waitIfPaused() noexcept;
+    [[nodiscard]] AVFrameRefPtr waitForFrame(Thread& thread) noexcept;
 
-    [[nodiscard]] AVFrameRefPtr waitForFrame() noexcept;
-
-    [[nodiscard]] bool decodeFrame(AVFrameRefPtr& frame) noexcept;
+    [[nodiscard]] bool decodeFrame(AVFrameRefPtr& frame, Thread& thread) noexcept;
 
 private:
     static constexpr int kMaxDecodeRetry = 100;
     static constexpr auto kMaxDecodeBackoff = std::chrono::milliseconds(16);
 
 private:
-    std::atomic<bool> stopRequested_{false};
     std::atomic<bool> flushed_{false};
-    bool paused_ = false;
-    std::mutex pauseMutex_;
-    std::condition_variable pauseCv_;
 
     DecoderComponentConfig config_;
     std::shared_ptr<IDecoder> decoder_;
     std::shared_ptr<Thread> decodeWorker_;
     ReceiverPtr<AVFrameRefPtr> receiver_;
-    std::function<void()> wakeupFunc_;
 };
 
 } // namespace slark
