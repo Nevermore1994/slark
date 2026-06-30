@@ -521,7 +521,7 @@ struct MetalVideoRender : public IVideoRender {
 #pragma mark - Rendering
 
 - (void)displayLinkCallback {
-    if (!_isActive || _isDestructing.load()) {
+    if (_isDestructing.load()) {
         return;
     }
     dispatch_async(_renderQueue, ^{

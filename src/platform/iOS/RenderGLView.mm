@@ -411,7 +411,7 @@ static const GLfloat kColorConversion709FullRange[] = {
 #pragma mark - Rendering
 
 - (void)displayLinkCallback {
-    if (!_isActive || _isDestructing.load()) {
+    if (_isDestructing.load()) {
         return;
     }
 
