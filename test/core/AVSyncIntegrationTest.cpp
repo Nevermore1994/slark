@@ -244,3 +244,55 @@ TEST(AVSyncIntegrationTest, SeekCompleteResetsClockSyncVideoTime) {
     std::ignore = ctx.completeSeek();
     EXPECT_FALSE(ctx.isSeekPending());
 }
+
+// MARK: - 6. 关键帧 seek 主时钟对齐（回归：进度从 0 起 / 视频冻结 / 进度提前卡死）
+
+// 复现根因：performKeyframeSeek 曾用 reset() 把主时钟归零、并经 flush() 把音频渲染 offset 置 0，
+// 导致 seek 后主时钟相对真实位置整体偏移 -targetSec。此测试建模“修复后”的对齐语义：
+// 关键帧 seek 到 T 后，主时钟基准必须等于 T，视频帧(pts≈T)不应被 HOLD。
+TEST(AVSyncIntegrationTest, KeyframeSeekAlignsMasterClockToTarget) {
+    ClockSync clockSync;
+    clockSync.setHasAudio(true);
+    clockSync.setVideoFps(30.0);
+
+    constexpr double kTarget = 1.434;
+
+    // 模拟音频渲染时钟：masterBase = offset + 已播放时长。播放开始瞬间已播放时长为 0。
+    // 修复前 offset=0 → masterBase=0（错误）；修复后 offset=kTarget → masterBase=kTarget。
+    double audioRenderOffset = 0.0;
+    auto simulatePerformKeyframeSeekFix = [&](double target) {
+        audioRenderOffset = target;                                   // audioRender_->seek(target)
+        clockSync.seekTo(Time::TimePoint::fromSeconds(target));       // 替代 reset()
+    };
+
+    simulatePerformKeyframeSeekFix(kTarget);
+
+    // 主时钟已对齐到目标（未从 0 起）
+    EXPECT_NEAR(clockSync.masterTime().second(), kTarget, 1e-4);
+    EXPECT_NEAR(audioRenderOffset, kTarget, 1e-9);
+    // videoFps 未被清空（快进跳帧/追帧不退化）
+    EXPECT_NEAR(clockSync.videoFps(), 30.0, 0.01);
+
+    // 播放首帧 pts≈target：diff = master - video ≈ 0 → Render，而非因 master=0 被 HOLD
+    clockSync.setVideoTime(Time::TimePoint::fromSeconds(kTarget + 0.033));
+    const double diff = clockSync.masterTime().second() - clockSync.videoTime().second();
+    EXPECT_EQ(ClockSync::evaluateAVSync(diff, 1.0, ClockSync::kEarlyTolerance),
+              AVSyncAction::Render);
+}
+
+// 反向守护：若退化为旧行为（offset=0 且 clock 归零），首帧必被长时间 HOLD（视频冻结）。
+TEST(AVSyncIntegrationTest, KeyframeSeekBuggyBehaviorWouldHoldVideo) {
+    ClockSync clockSync;
+    clockSync.setHasAudio(true);
+
+    constexpr double kTarget = 1.434;
+    // 模拟旧 bug：reset() 使主时钟归零
+    clockSync.reset();
+    EXPECT_NEAR(clockSync.masterTime().second(), 0.0, 1e-4);
+
+    // 视频帧在真实位置 kTarget，master=0 → diff = -1.434 → 远超阈值 → HOLD（视频冻结）
+    clockSync.setVideoTime(Time::TimePoint::fromSeconds(kTarget));
+    const double diff = clockSync.masterTime().second() - clockSync.videoTime().second();
+    EXPECT_EQ(ClockSync::evaluateAVSync(diff, 1.0, ClockSync::kEarlyTolerance),
+              AVSyncAction::Hold);
+}

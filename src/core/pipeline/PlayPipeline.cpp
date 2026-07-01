@@ -281,7 +281,10 @@ void PlayPipeline::performKeyframeSeek(CTime target, SeekStrategy strategy) noex
         videoDecoder_->pause();
     }
     flush();
-    clockSync_->reset();
+    if (audioRender_) {
+        audioRender_->seek(targetSec);
+    }
+    clockSync_->seekTo(Time::TimePoint::fromSeconds(targetSec));
     if (mediaInfo_.streamType == StreamType::HLS) {
         if (seekByTimeFunc_) {
             auto res = seekByTimeFunc_(targetSec);

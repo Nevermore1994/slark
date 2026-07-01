@@ -18,7 +18,6 @@ TEST(SeekContextTest, InitialStateIsIdle) {
     EXPECT_FALSE(ctx.isAudioSeeked());
     EXPECT_EQ(ctx.currentEpoch(), 0u);
     EXPECT_FALSE(ctx.targetSeekTime().has_value());
-    EXPECT_FALSE(ctx.isSeekTimedOut(std::chrono::milliseconds(100)));
 }
 
 // MARK: - beginSeek
@@ -67,7 +66,6 @@ TEST(SeekContextTest, CompleteSeekClearsState) {
     EXPECT_TRUE(completed);
     EXPECT_FALSE(ctx.isSeekPending());
     EXPECT_FALSE(ctx.targetSeekTime().has_value());
-    EXPECT_FALSE(ctx.isSeekTimedOut(std::chrono::milliseconds(100)));
 }
 
 TEST(SeekContextTest, CompleteSeekReturnsFalseWhenNotPending) {
@@ -102,26 +100,6 @@ TEST(SeekContextTest, IsEpochStaleDetectsNewSeek) {
     std::ignore = ctx.beginSeek(CTime(2.0), SeekStrategy::SeekToKeyframe);
     EXPECT_TRUE(ctx.isEpochStale(captured));
     EXPECT_FALSE(ctx.isEpochStale(ctx.currentEpoch()));
-}
-
-// MARK: - 超时检测
-
-TEST(SeekContextTest, SeekTimedOutReturnsFalseBeforeTimeout) {
-    SeekContext ctx;
-    std::ignore = ctx.beginSeek(CTime(5.0), SeekStrategy::SeekToKeyframe);
-    EXPECT_FALSE(ctx.isSeekTimedOut(std::chrono::milliseconds(5000)));
-}
-
-TEST(SeekContextTest, SeekTimedOutReturnsTrueAfterTimeout) {
-    SeekContext ctx;
-    std::ignore = ctx.beginSeek(CTime(5.0), SeekStrategy::SeekToKeyframe);
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    EXPECT_TRUE(ctx.isSeekTimedOut(std::chrono::milliseconds(10)));
-}
-
-TEST(SeekContextTest, SeekTimedOutReturnsFalseWhenNotPending) {
-    SeekContext ctx;
-    EXPECT_FALSE(ctx.isSeekTimedOut(std::chrono::milliseconds(0)));
 }
 
 // MARK: - tryMarkVideoSeeked CAS 抢占

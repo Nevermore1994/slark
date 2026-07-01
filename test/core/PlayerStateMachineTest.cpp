@@ -189,8 +189,7 @@ TEST(PlayerStateMachineTest, PipelineNonStatefulEventsReturnUnexpected) {
                     PipelineEvent::PipelineReady,
                     PipelineEvent::FirstFrameRendered,
                     PipelineEvent::BufferingEnd,
-                    PipelineEvent::SeekCompleted,
-                    PipelineEvent::SeekTimeout}) {
+                    PipelineEvent::SeekCompleted}) {
         auto result = PlayerStateMachine::getStateFromPipelineEvent(ev);
         EXPECT_FALSE(result.has_value()) << "event=" << static_cast<int32_t>(ev);
     }

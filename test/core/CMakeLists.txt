@@ -54,10 +54,13 @@ target_include_directories(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
     slark_base
     slark_internal
-    slark_http
     gtest_main
     gmock
     pthread)
+
+if(NOT DISABLE_HTTP)
+    target_link_libraries(${PROJECT_NAME} slark_http)
+endif()
 
 gtest_discover_tests(${PROJECT_NAME}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -98,10 +101,13 @@ target_link_libraries(${PROJECT_NAME}
     slark_core
     slark_base
     slark_internal
-    slark_http
     gtest_main
     gmock
     pthread)
+
+if(NOT DISABLE_HTTP)
+    target_link_libraries(${PROJECT_NAME} slark_http)
+endif()
 
 add_test(NAME PlayerIntegrationTest
     COMMAND ${PROJECT_NAME}

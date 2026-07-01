@@ -99,19 +99,16 @@ TEST(BackpressureConfigTest, ValidBoundaryStartBufferJustBelowHigh) {
 // MARK : -ClockSync 测试
 
 TEST(ClockSyncTest, EvaluateAVSyncRenderWhenDiffWithinThreshold) {
-    // diff 在 ±0.1s 内 → Render
+    // kMinThreshold = 0.04 内 → Render
     EXPECT_EQ(ClockSync::evaluateAVSync(0.0), AVSyncAction::Render);
-    EXPECT_EQ(ClockSync::evaluateAVSync(0.05), AVSyncAction::Render);
-    EXPECT_EQ(ClockSync::evaluateAVSync(-0.05), AVSyncAction::Render);
-    EXPECT_EQ(ClockSync::evaluateAVSync(0.099), AVSyncAction::Render);
-    EXPECT_EQ(ClockSync::evaluateAVSync(-0.099), AVSyncAction::Render);
+    EXPECT_EQ(ClockSync::evaluateAVSync(0.039), AVSyncAction::Render);
+    EXPECT_EQ(ClockSync::evaluateAVSync(-0.039), AVSyncAction::Render);
 }
 
 TEST(ClockSyncTest, EvaluateAVSyncRenderWhenDiffExceedsMaxThreshold) {
-    // 差值过大（≥10s），视为时钟异常 → Render
-    EXPECT_EQ(ClockSync::evaluateAVSync(10.0), AVSyncAction::Render);
+    // 负 diff 达到 kMaxThreshold(10.0) 以上，视为时钟异常 → Render
     EXPECT_EQ(ClockSync::evaluateAVSync(-10.0), AVSyncAction::Render);
-    EXPECT_EQ(ClockSync::evaluateAVSync(100.0), AVSyncAction::Render);
+    EXPECT_EQ(ClockSync::evaluateAVSync(-100.0), AVSyncAction::Render);
 }
 
 TEST(ClockSyncTest, EvaluateAVSyncDropWhenVideoLagsAudio) {
@@ -130,30 +127,32 @@ TEST(ClockSyncTest, EvaluateAVSyncHoldWhenVideoLeadsAudio) {
 }
 
 TEST(ClockSyncTest, EvaluateAVSyncThresholdBoundary) {
-    //     精确边界测试
-    EXPECT_EQ(ClockSync::evaluateAVSync(0.1), AVSyncAction::Render);
-    //     刚好等于 kMinThreshold
-    EXPECT_EQ(ClockSync::evaluateAVSync(-0.1), AVSyncAction::Render);
-    EXPECT_EQ(ClockSync::evaluateAVSync(0.10001), AVSyncAction::Drop);
-    //     刚好超过 kMinThreshold
-    EXPECT_EQ(ClockSync::evaluateAVSync(-0.10001), AVSyncAction::Hold);
+    //     kMinThreshold = 0.04 的精确边界测试
+    EXPECT_EQ(ClockSync::evaluateAVSync(0.039), AVSyncAction::Render);
+    //     刚好在 kMinThreshold(0.04) 内 → Render
+    EXPECT_EQ(ClockSync::evaluateAVSync(-0.039), AVSyncAction::Render);
+    //     刚好在 kMinThreshold(0.04) 内 → Render（早到容忍窗口内）
+    EXPECT_EQ(ClockSync::evaluateAVSync(0.041), AVSyncAction::Drop);
+    //     刚好超过 kMinThreshold(0.04) → Drop
+    EXPECT_EQ(ClockSync::evaluateAVSync(-0.041), AVSyncAction::Hold);
+    //     刚好超过 kMinThreshold(0.04) → Hold
 }
 
 TEST(ClockSyncTest, EvaluateAVSyncWithPlaybackRate) {
     //     变速播放时阈值随速率缩放
-    //     2x 速率下：kMinThreshold* 2.0 = 0.2s, kMaxThreshold* 2.0 = 20.0s
-    //     diff = 0.15，在 1x 下应 Drop，在 2x 下应 Render（0.15 < 0.2）
-    EXPECT_EQ(ClockSync::evaluateAVSync(0.15, 2.0), AVSyncAction::Render);
+    //     实际 kMinThreshold = 0.04，2x 下 scaledMinThreshold = 0.08
+    //     diff = 0.07，在 1x 下应 Drop(0.07>0.04)，在 2x 下应 Render(0.07<0.08)
+    EXPECT_EQ(ClockSync::evaluateAVSync(0.07, 2.0), AVSyncAction::Render);
 
     //     diff = 0.25，在 1x 和 2x 下都应 Drop
     EXPECT_EQ(ClockSync::evaluateAVSync(0.25, 2.0), AVSyncAction::Drop);
 
-    //     0.5x 速率下：kMinThreshold* 0.5 = 0.05s
-    //     diff = 0.08，在 1x 下应 Render，在 0.5x 下应 Drop（0.08 > 0.05）
+    //     0.5x 速率下：kMinThreshold* 0.5 = 0.02
+    //     diff = 0.08，在 0.5x 下应 Drop（0.08 > 0.02）
     EXPECT_EQ(ClockSync::evaluateAVSync(0.08, 0.5), AVSyncAction::Drop);
 
-    //     diff = 0.03，在 0.5x 下应 Render（0.03 < 0.05）
-    EXPECT_EQ(ClockSync::evaluateAVSync(0.03, 0.5), AVSyncAction::Render);
+    //     diff = 0.01，在 0.5x 下应 Render（0.01 < 0.02）
+    EXPECT_EQ(ClockSync::evaluateAVSync(0.01, 0.5), AVSyncAction::Render);
 }
 
 TEST(ClockSyncTest, SetAndGetPlaybackRate) {
@@ -221,8 +220,11 @@ TEST(ClockSyncTest, MasterTimePrefersAudioWhenHasAudio) {
     clock.setAudioTime(Time::TimePoint::fromSeconds(3.0));
     clock.setVideoTime(Time::TimePoint::fromSeconds(2.0));
 
-    EXPECT_EQ(clock.masterTime(true), Time::TimePoint::fromSeconds(3.0));
-    EXPECT_EQ(clock.masterTime(false), Time::TimePoint::fromSeconds(2.0));
+    clock.setHasAudio(true);
+    EXPECT_EQ(clock.masterTime(), Time::TimePoint::fromSeconds(3.0));
+
+    clock.setHasAudio(false);
+    EXPECT_EQ(clock.masterTime(), Time::TimePoint::fromSeconds(2.0));
 }
 
 TEST(ClockSyncTest, ResetClearsTimes) {

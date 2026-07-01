@@ -42,6 +42,53 @@ TEST(ClockSyncExtTest, ResetClearsVideoFps) {
     EXPECT_DOUBLE_EQ(clock.videoFps(), 0.0);
 }
 
+// MARK: - seekTo 契约：重定位到目标，保留 fps/倍速
+
+// 契约：seekTo 必须保留 videoFps 与 playbackRate（seek 不改变媒体帧率与用户倍速）。
+// 该测试守护 performKeyframeSeek 修复所依赖的不变量——若有人误将 seekTo 改成 reset 语义即失败。
+TEST(ClockSyncExtTest, SeekToPreservesFpsAndPlaybackRate) {
+    ClockSync clock;
+    clock.setVideoFps(30.0);
+    clock.setPlaybackRate(1.5);
+    clock.setHasAudio(true);
+
+    clock.seekTo(Time::TimePoint::fromSeconds(1.434));
+
+    EXPECT_NEAR(clock.videoFps(), 30.0, 0.01);
+    EXPECT_NEAR(clock.playbackRate(), 1.5, 0.001);
+}
+
+// 契约：seekTo 后 audioTime/videoTime 均等于目标位置（而非归零）。
+// 直接对应 bug：关键帧 seek 到 1.434 后主时钟必须从 1.434 起，不能从 0 起。
+TEST(ClockSyncExtTest, SeekToAlignsAudioAndVideoTimeToTarget) {
+    ClockSync clock;
+    clock.setHasAudio(true);
+
+    clock.seekTo(Time::TimePoint::fromSeconds(1.434));
+
+    EXPECT_NEAR(clock.audioTime().second(), 1.434, 1e-4);
+    EXPECT_NEAR(clock.videoTime().second(), 1.434, 1e-4);
+    // 时钟未 running，masterTime 应直接返回 audioTime（不做 wall-clock 外推）
+    EXPECT_NEAR(clock.masterTime().second(), 1.434, 1e-4);
+}
+
+// 契约：seekTo 递增 epoch，使 seek 前遗留的音频时间回调失效（不会把时钟拉回旧值）。
+TEST(ClockSyncExtTest, SeekToBumpsEpochInvalidatingStaleAudioCallback) {
+    ClockSync clock;
+    clock.setHasAudio(true);
+    const uint64_t staleEpoch = clock.currentAudioEpoch();
+
+    clock.seekTo(Time::TimePoint::fromSeconds(1.434));
+
+    // 携带旧 epoch 的回调应被丢弃，时钟保持在目标位置
+    clock.setAudioTime(Time::TimePoint::fromSeconds(0.0), staleEpoch);
+    EXPECT_NEAR(clock.audioTime().second(), 1.434, 1e-4);
+
+    // 携带新 epoch 的回调正常生效
+    clock.setAudioTime(Time::TimePoint::fromSeconds(1.5), clock.currentAudioEpoch());
+    EXPECT_NEAR(clock.audioTime().second(), 1.5, 1e-4);
+}
+
 // MARK: - recordDrop / metrics
 
 TEST(ClockSyncExtTest, RecordDropAccumulatesMetrics) {

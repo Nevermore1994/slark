@@ -158,7 +158,8 @@ void AudioRenderComponent::seek(double time) noexcept {
         audioBuffer_->reset();
     }
     renderedDataLength_.store(0, std::memory_order_release);
-    maxPlayedTimeUs_.store(0, std::memory_order_release);
+    maxPlayedTimeUs_.store(Time::TimePoint::fromSeconds(time).point(),
+                           std::memory_order_release);
     offsetTime_ = Time::TimePoint::fromSeconds(time);
     clock_.setTime(offsetTime_);
     if (auto pimpl = pimpl_.load()) {
@@ -175,10 +176,8 @@ Time::TimePoint AudioRenderComponent::playedTime() noexcept {
     if (auto pimpl = pimpl_.load()) {
         auto latency = pimpl->getHardwareLatency();
         latencyUs = static_cast<uint64_t>(latency.point());
-        if (latency.point() > 0) {
-            if (t.point() >= static_cast<uint64_t>(latency.point())) {
-                result = t - latency;
-            }
+        if (t.point() >= latencyUs) {
+            result = t - latency;
         }
     }
     auto prev = maxPlayedTimeUs_.load(std::memory_order_acquire);
