@@ -51,7 +51,33 @@ Error VideoHardwareDecoder::sendPacket(AVFrameRefPtr& frame) noexcept {
             discardPackets_.insert(inputPts);
         }
     }
+    // EOS 被 codec 拒绝（输入队列满）时缓存，等排空输出后重试
+    if (frameInfo->isEndOfStream && res == Error::CodecNotProcessed) {
+        pendingEOSFrame_ = frame;
+    }
     return res;
+}
+
+void VideoHardwareDecoder::retryPendingEOS() noexcept {
+    if (!pendingEOSFrame_) {
+        return;
+    }
+    auto frameInfo = std::dynamic_pointer_cast<VideoFrameInfo>(pendingEOSFrame_->info);
+    if (!frameInfo || !frameInfo->isEndOfStream) {
+        pendingEOSFrame_.reset();
+        return;
+    }
+    auto inputPts = int64_t(pendingEOSFrame_->ptsTime() * 1000000);
+    auto res = NativeHardwareDecoder::sendPacket(decoderId_,
+                                                 pendingEOSFrame_->data,
+                                                 inputPts,
+                                                 NativeDecodeFlag::EndOfStream,
+                                                 PacketType::Video);
+    if (res == Error::Success) {
+        LogI("pending EOS retry success");
+        pendingEOSFrame_.reset();
+    }
+    // CodecNotProcessed / CodecAgain → 保持 pendingEOSFrame_，下次排空输出后继续重试
 }
 
 void VideoHardwareDecoder::receiveDecodedData(DataPtr data,
@@ -84,7 +110,9 @@ void VideoHardwareDecoder::receiveDecodedData(DataPtr data,
         videoFrameInfo->height = videoConfig->height;
         frame->info = std::move(videoFrameInfo);
         invokeReceiveFunc(DecoderData{std::move(frame)});
+        retryPendingEOS();
     } else {
+        LogD("receiveDecodedData: Texture mode, pendingOutput_ -> true, pts={:.6f}", static_cast<double>(pts) / 1000000.0);
         pendingOutput_.store(true, std::memory_order_release);
         notifyWakeup();
     }
@@ -112,6 +140,7 @@ void VideoHardwareDecoder::flush() noexcept {
     NativeDecoder::flush();
     discardPackets_.clear();
     isCompleted_ = false;
+    pendingEOSFrame_.reset();
 }
 
 void VideoHardwareDecoder::close() noexcept {
@@ -170,13 +199,17 @@ bool VideoHardwareDecoder::tryAquireFrame(int64_t& pts, bool& isCompleted) noexc
 
 Error VideoHardwareDecoder::renderOutput() noexcept {
     if (mode_ != DecodeMode::Texture || !resource_ || !resource_->isValid()) {
+        LogD("renderOutput: skip, mode={} resource={}", static_cast<int>(mode_), resource_ ? resource_->isValid() : false);
         return Error::CodecError;
     }
     if (!pendingOutput_.load(std::memory_order_acquire)) {
+        LogD("renderOutput: no pending output, retry EOS");
+        retryPendingEOS();
         return Error::CodecAgain;
     }
 
     if (!contextAttached_) {
+        LogD("renderOutput: attach context");
         resource_->attachContext(surface_);
         contextAttached_ = true;
     }
@@ -184,6 +217,7 @@ Error VideoHardwareDecoder::renderOutput() noexcept {
     const uint32_t curWidth = renderWidth_.load(std::memory_order_acquire);
     const uint32_t curHeight = renderHeight_.load(std::memory_order_acquire);
     if (curWidth == 0 || curHeight == 0) {
+        LogW("renderOutput: invalid size {}x{}", curWidth, curHeight);
         pendingOutput_.store(false, std::memory_order_release);
         return Error::CodecConfigInvalid;
     }
@@ -191,8 +225,8 @@ Error VideoHardwareDecoder::renderOutput() noexcept {
     auto frameBuffer = resource_->acquire(curWidth, curHeight);
     glViewport(0, 0, static_cast<int32_t>(curWidth), static_cast<int32_t>(curHeight));
     if (!frameBuffer->bind(true)) {
+        LogE("renderOutput: frame buffer bind failed");
         pendingOutput_.store(false, std::memory_order_release);
-        LogE("frame buffer bind failed");
         return Error::CodecError;
     }
 
@@ -200,8 +234,12 @@ Error VideoHardwareDecoder::renderOutput() noexcept {
     bool isCompleted = false;
     if (!tryAquireFrame(pts, isCompleted)) {
         frameBuffer->unbind(true);
+        retryPendingEOS();
+        LogD("renderOutput: tryAquireFrame no frame available, pendingOutput_={}", pendingOutput_.load());
         return Error::CodecAgain;
     }
+    LogI("renderOutput: acquired frame pts={:.6f}, isCompleted={}, isDiscard={}",
+         static_cast<double>(pts) / 1000000.0, isCompleted, discardPackets_.contains(pts));
     frameBuffer->unbind(true);
 
     if (isCompleted) {
@@ -221,15 +259,17 @@ Error VideoHardwareDecoder::renderOutput() noexcept {
         } else {
             restoreTexture(glFb ? glFb->detachTexture() : nullptr);
         }
+        retryPendingEOS();
         return Error::Success;
     }
 
     auto outputFrame = buildOutputFrame(glFb, pts, curWidth, curHeight);
     if (!outputFrame) {
-        LogE("buildOutputFrame failed, pts:{}", pts);
+        LogE("renderOutput: buildOutputFrame failed, pts:{:.6f}", static_cast<double>(pts) / 1000000.0);
         return Error::CodecError;
     }
     invokeReceiveFunc(DecoderData{std::move(outputFrame)});
+    retryPendingEOS();
     return Error::Success;
 }
 

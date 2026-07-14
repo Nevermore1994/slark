@@ -69,11 +69,14 @@ private:
                                               uint32_t width,
                                               uint32_t height) noexcept;
 
+    void retryPendingEOS() noexcept;
+
 private:
     DecodeMode mode_;
     EGLSurface surface_ = nullptr;
     std::shared_ptr<VideoDecodeResource> resource_ = nullptr;
     std::unordered_set<int64_t> discardPackets_;
+    AVFrameRefPtr pendingEOSFrame_; ///< 缓存 sendPacket(EOS) 失败后被 codec 拒绝的 EOS 帧，在排空输出后重试
 
     std::atomic<bool> pendingOutput_{false};
     bool contextAttached_ = false;

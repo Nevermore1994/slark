@@ -134,8 +134,18 @@ void DecoderComponent::processPendingOutputs(Thread& thread) noexcept {
     if (!decoder_) {
         return;
     }
+    int32_t count = 0;
     while (decoder_->hasPendingOutput() && !thread.isExit()) {
-        if (decoder_->renderOutput() == Error::CodecAgain) {
+        count++;
+        auto res = decoder_->renderOutput();
+        if (res == Error::Success) {
+            LogD("processPendingOutputs: rendered frame count={}", count);
+        } else if (res == Error::CodecAgain) {
+            LogD("processPendingOutputs: CodecAgain after {} frames, clear pending", count);
+            decoder_->clearPendingOutput();
+            break;
+        } else {
+            LogW("processPendingOutputs: renderOutput failed {} after {} frames", toString(res), count);
             decoder_->clearPendingOutput();
             break;
         }
@@ -146,12 +156,14 @@ AVFrameRefPtr DecoderComponent::waitForFrame(Thread& thread) noexcept {
     auto exp = receiver_->receive();
     if (!exp.has_value()) {
         if (exp.error() == ChannelEventType::Awakened) {
+            LogD("waitForFrame: Awakened, process pending outputs");
             processPendingOutputs(thread);
         }
         return nullptr;
     }
     // flush 兜底：清空窗口期残帧
     if (flushed_.load(std::memory_order_acquire)) {
+        LogD("waitForFrame: flushed, drain channel");
         (void)receiver_->tryReceiveAll();
         flushed_.store(false, std::memory_order_release);
         return nullptr;
@@ -210,8 +222,10 @@ void DecoderComponent::runLoop(Thread& thread) noexcept {
         }
 
         if (frame->isEOS) {
-            (void)decoder_->decode(frame);
-            LogI("push eos frame");
+            auto res = decoder_->decode(frame);
+            LogI("push eos frame, res:{}", toString(res));
+            // 推送 EOS 后立即排空可能的残留输出（如 CSD config 帧触发 codec 产出的空输出）
+            processPendingOutputs(thread);
             continue;
         }
 
