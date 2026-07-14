@@ -123,10 +123,10 @@ void PlayPipeline::flush() noexcept {
 
     readiness_.liveVideoKeyframeSeen = false;
     readiness_.liveAudioPacketSeen = false;
-    readiness_.firstFrameRendered.store(false, std::memory_order_release);
 
     lastEnqueuedAudioPts_.store(0.0, std::memory_order_release);
     lastEnqueuedVideoPts_.store(0.0, std::memory_order_release);
+    eosInjected_.store(false, std::memory_order_release);
 
     if (bufferMonitor_) {
         bufferMonitor_->reset();
@@ -280,6 +280,7 @@ void PlayPipeline::performKeyframeSeek(CTime target, SeekStrategy strategy) noex
     if (videoDecoder_) {
         videoDecoder_->pause();
     }
+    pauseStream();
     flush();
     if (audioRender_) {
         audioRender_->seek(targetSec);
@@ -306,6 +307,7 @@ void PlayPipeline::performKeyframeSeek(CTime target, SeekStrategy strategy) noex
     if (videoDecoder_) {
         videoDecoder_->resume();
     }
+    resumeStream();
     LogI("seek to keyframe for {:.3f}s (strategy={}), epoch={}",
          targetSec,
          static_cast<int32_t>(strategy),
@@ -388,6 +390,12 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
     auto frame = popVideoFrame();
     if (!frame) {
         if (seekContext_->isSeekPending()) {
+            if (!seekContext_->isVideoSeeked()) {
+                auto dec = videoDecoder_ ? videoDecoder_->decoder() : nullptr;
+                if (dec && dec->isCompleted()) {
+                    onSeekFrameConsumed(TrackType::Video);
+                }
+            }
             auto preview = seekPreviewFrame();
             if (preview) {
                 return preview;
@@ -403,6 +411,11 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
         while (frame->isDiscard) {
             auto next = popVideoFrame();
             if (!next) {
+                // 所有帧均为 discard 且队列已空 → decoder 若已 EOF 则标记 seeked
+                auto dec = videoDecoder_ ? videoDecoder_->decoder() : nullptr;
+                if (dec && dec->isCompleted() && !seekContext_->isVideoSeeked()) {
+                    onSeekFrameConsumed(TrackType::Video);
+                }
                 return nullptr;
             }
             frame = std::move(next);
@@ -870,6 +883,11 @@ void PlayPipeline::onVideoDecoded(DecoderData data) noexcept {
     videoFrames_.withLock([&data](auto& m) {
         m.emplace(data.frame->pts, std::move(data.frame));
     });
+    if (seekContext_->isSeekPending() && !seekContext_->isVideoSeeked()) {
+        postToOwnerThread([this]() {
+            pushSeekFrames();
+        });
+    }
 }
 
 void PlayPipeline::setupVideoTrack(DecoderType type,
@@ -1098,6 +1116,9 @@ bool PlayPipeline::dispatchVideoFrames(AVFramePtrArray& frames, uint64_t epoch) 
 }
 
 void PlayPipeline::injectEosFrames() noexcept {
+    if (eosInjected_.exchange(true, std::memory_order_acq_rel)) {
+        return;
+    }
     if (audioFrameSender_) {
         auto eos = std::make_shared<AVFrame>(AVFrameType::Audio);
         eos->isEOS = true;
@@ -1323,6 +1344,20 @@ void PlayPipeline::pushSeekFrames() noexcept {
     if (!seekContext_->isSeekPending()) {
         return;
     }
+
+    if (!seekContext_->isVideoSeeked()) {
+        auto dec = videoDecoder_ ? videoDecoder_->decoder() : nullptr;
+        if (dec && dec->isCompleted()) {
+            onSeekFrameConsumed(TrackType::Video);
+        }
+    }
+    if (!seekContext_->isAudioSeeked()) {
+        auto dec = audioDecoder_ ? audioDecoder_->decoder() : nullptr;
+        if (dec && dec->isCompleted()) {
+            onSeekFrameConsumed(TrackType::Audio);
+        }
+    }
+
     auto target = seekContext_->targetSeekTime();
     if (!target.has_value()) {
         return;

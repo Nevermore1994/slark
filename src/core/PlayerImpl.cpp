@@ -89,12 +89,17 @@ void Player::Impl::seek(double time, bool isAccurate) noexcept {
         LogE("error!! not init");
         return;
     }
-    auto ptr = buildEvent(EventType::Seek);
-    PlayerSeekRequest req;
-    req.seekTime = time;
-    req.isAccurate = isAccurate;
-    ptr->data = req;
-    sender_->send(std::move(ptr));
+    if (isAccurate) {
+        auto ptr = buildEvent(EventType::Seek);
+        ptr->data = PlayerSeekRequest{.isAccurate = true, .seekTime = time};
+        sender_->send(std::move(ptr));
+        ownerThread_->start();
+        LogI("receive accurate seek:{}, isAccurate:{}", time, isAccurate);
+        return;
+    }
+    auto now = Time::nowTimeStamp();
+    pendingSeekTarget_.store(time, std::memory_order_release);
+    pendingSeekTimeUs_.store(now.point(), std::memory_order_release);
     ownerThread_->start();
     LogI("receive seek:{}, isAccurate:{}", time, isAccurate);
 }
@@ -433,6 +438,7 @@ void Player::Impl::process() noexcept {
         return;
     }
     pipeline->drainPendingTasks();
+    processPendingSeek();
 }
 
 void Player::Impl::doPlay() noexcept {
@@ -597,6 +603,7 @@ void Player::Impl::handleSettingUpdate(Event& t) noexcept {
 void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
     PlayerState changeState = PlayerState::Unknown;
     auto currentState = state();
+    bool hasPendingSeek = pendingSeekTarget_.load(std::memory_order_acquire) >= 0.0;
     for (auto& event : events) {
         if (!event) {
             continue;
@@ -616,6 +623,10 @@ void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
                 LogI("replay from completed, seek to 0");
                 doSeek(PlayerSeekRequest{.isAccurate = false, .seekTime = 0.0});
             }
+            if (hasPendingSeek && *state == PlayerState::Playing) {
+                stats_.resumeAfterBuffering = true;
+                continue;
+            }
             changeState = state.value();
         }
     }
@@ -623,6 +634,33 @@ void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
     if (changeState != PlayerState::Unknown) {
         setState(changeState);
     }
+}
+
+void Player::Impl::processPendingSeek() noexcept {
+    auto target = pendingSeekTarget_.load(std::memory_order_acquire);
+    if (target < 0.0) {
+        return;
+    }
+    if (!pipeline_ || isStopped_ || isReleased_) {
+        return;
+    }
+    if (seekRequest_.isValid()) {
+        return;
+    }
+    auto now = Time::nowTimeStamp().point();
+    auto seekTime = pendingSeekTimeUs_.load(std::memory_order_acquire);
+    if (now < seekTime + kSeekDebounceUs) {
+        return;
+    }
+
+    pendingSeekTarget_.store(-1.0, std::memory_order_release);
+
+    auto playedTime = currentPlayedTime();
+    if (isEqual(playedTime, target, kSeekThreshold)) {
+        LogI("pending seek skipped: target={:.3f} too close to current={:.3f}", target, playedTime);
+        return;
+    }
+    doSeek(PlayerSeekRequest{.isAccurate = false, .seekTime = target});
 }
 
 void Player::Impl::resumeFromBuffering() noexcept {

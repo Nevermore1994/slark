@@ -227,6 +227,13 @@ void DemuxerComponent::seekToPos(uint64_t pos) noexcept {
     demuxer->seekPos(pos);
     // HLS 的 pos 是 segment index，不能作为 byte offset 通知 IO 层
     if (demuxer->type() != DemuxerType::HLS) {
+        // IO 正处在 pause 状态，排空 flush→seekToPos 窗口期 IO 可能已写入的陈旧数据
+        if (receiver_) {
+            (void)receiver_->tryReceiveAll();
+        }
+        // pendingSeekVerifiedOffset_ 兜底过滤任何遗漏的过期包
+        pendingSeekVerifiedOffset_.store(pos, std::memory_order_release);
+        // 同步 IO seek → IO 从新位置发送的数据 offset 需匹配 expectedOffset
         invokeSeekFunc(Range(pos));
     }
 }

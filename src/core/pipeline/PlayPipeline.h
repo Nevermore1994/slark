@@ -309,6 +309,7 @@ private:
 
     std::atomic<double> lastEnqueuedAudioPts_{0.0};
     std::atomic<double> lastEnqueuedVideoPts_{0.0};
+    std::atomic<bool> eosInjected_{false};
 
     std::shared_ptr<DemuxerComponent> demuxer_;
     std::shared_ptr<DecoderComponent> audioDecoder_;

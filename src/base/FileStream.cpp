@@ -88,11 +88,12 @@ void FileStream::start() noexcept {
 }
 
 void FileStream::pause() noexcept {
-    if (state_ != StreamState::Reading) {
+    if (state_ != StreamState::Reading && state_ != StreamState::Completed) {
         return;
     }
 
     shouldPause_ = true;
+    eofReached_.store(false, std::memory_order_release);
     notifyThread();
     state_ = StreamState::Paused;
     isRunning_ = false;

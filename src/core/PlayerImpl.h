@@ -117,15 +117,22 @@ private:
 
     void resumeFromBuffering() noexcept;
 
+    void processPendingSeek() noexcept;
+
     bool setupDataProvider() noexcept;
 
     [[nodiscard]] double demuxedDuration() const noexcept;
 
 private:
+    static constexpr int64_t kSeekDebounceUs = 100000; // 100ms debounce for drag seek merge
+
     std::atomic_bool isStopped_ = false;
     std::atomic_bool isReleased_ = false;
     Synchronized<PlayerState, std::shared_mutex> state_;
     AtomicSharedPtr<PlayerSeekRequest> seekRequest_;
+
+    std::atomic<double> pendingSeekTarget_{-1.0};
+    std::atomic<uint64_t> pendingSeekTimeUs_{0};
     PlayerInfo info_;
     std::string playerId_;
     Synchronized<std::unique_ptr<PlayerParams>, std::shared_mutex> params_;
