@@ -66,8 +66,9 @@ private:
     bool bindHWBMemory() noexcept;
     void updateHWBDescriptor() noexcept;
 
-    void blitOESToHardwareBuffer(int32_t textureId, int32_t width, int32_t height) noexcept;
-    void doBlitOES(int32_t textureId, int32_t width, int32_t height) noexcept;
+    // surfaceW/surfaceH: HWB/display 尺寸，contentW/contentH: 内容（旋转后）尺寸，用于 letterbox
+    void blitOESToHardwareBuffer(int32_t textureId, int32_t surfaceW, int32_t surfaceH, int32_t contentW, int32_t contentH) noexcept;
+    void doBlitOES(int32_t textureId, int32_t surfaceW, int32_t surfaceH, int32_t contentW, int32_t contentH) noexcept;
     bool rebuildHWBResources(int32_t width, int32_t height) noexcept;
     void clearHWBDescriptor() noexcept;
     void renderHardwareBufferToSwapchain(uint32_t imageIndex) noexcept;
@@ -130,7 +131,6 @@ private:
     std::shared_ptr<AndroidEGLContext> eglContext_;
     EGLSurface eglPbuffer_ = EGL_NO_SURFACE;
     EGLImageKHR eglImage_ = EGL_NO_IMAGE_KHR;
-    bool eglContextBound_ = false;
     GLuint fbo_ = 0;
     GLuint fboTexture_ = 0;
     GLuint oesProgram_ = 0;

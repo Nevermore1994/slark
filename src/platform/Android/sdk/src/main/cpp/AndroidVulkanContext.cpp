@@ -638,7 +638,6 @@ bool AndroidVulkanContext::initEGLInterop(void* sharedEGLContext) noexcept {
     eglPbuffer_ = pbuffer;
     // 绑定到当前线程以便后续 loadEGLExtensions 和 GL 初始化
     eglContext_->attachContext(eglPbuffer_);
-    eglContextBound_ = true;
     if (!loadEGLExtensions()) {
         return false;
     }
@@ -842,46 +841,61 @@ void AndroidVulkanContext::updateHWBDescriptor() noexcept {
     vkUpdateDescriptorSets(device_, 1, &write, 0, nullptr);
 }
 
-void AndroidVulkanContext::doBlitOES(int32_t textureId, int32_t width, int32_t height) noexcept {
-    static const float kVerts[] = {-1, -1, 1, -1, -1, 1, 1, 1};
+void AndroidVulkanContext::doBlitOES(int32_t textureId, int32_t surfaceW, int32_t surfaceH, int32_t contentW, int32_t contentH) noexcept {
+    // 与 GLPreviewRenderer 一致的宽高比计算：content 在 surface 内保持比例居中显示
+    const float contentAspect = static_cast<float>(contentW) / static_cast<float>(contentH);
+    const float surfaceAspect = static_cast<float>(surfaceW) / static_cast<float>(surfaceH);
+    float normX, normY;
+    if (contentAspect > surfaceAspect) {
+        // content 更宽 → 撑满宽度，上下 letterbox
+        normX = 1.0f;
+        normY = surfaceAspect / contentAspect;
+    } else {
+        // surface 更宽 → 撑满高度，左右 letterbox
+        normX = contentAspect / surfaceAspect;
+        normY = 1.0f;
+    }
+    const float kVerts[] = {-normX, -normY, normX, -normY, -normX, normY, normX, normY};
 
     // 根据 rotation_ 计算纹理坐标，与 GLPreviewRenderer 一致
     // TRIANGLE_STRIP: BL, BR, TL, TR
+    // 注意：GL 坐标系 V 轴朝上(0=底,1=顶)，Vulkan 坐标系 V 轴朝下(0=顶,1=底)。
+    // AHardwareBuffer 经 GL 写入后由 Vulkan shader 采样，需翻转 V 轴补偿坐标系差异。
     float kUVs[8];
     switch (rotation_) {
         case 90:
-            kUVs[0] = 1; kUVs[1] = 0; kUVs[2] = 1; kUVs[3] = 1;
-            kUVs[4] = 0; kUVs[5] = 0; kUVs[6] = 0; kUVs[7] = 1;
+            kUVs[0] = 1; kUVs[1] = 1; kUVs[2] = 1; kUVs[3] = 0;
+            kUVs[4] = 0; kUVs[5] = 1; kUVs[6] = 0; kUVs[7] = 0;
             break;
         case 180:
-            kUVs[0] = 1; kUVs[1] = 1; kUVs[2] = 0; kUVs[3] = 1;
-            kUVs[4] = 1; kUVs[5] = 0; kUVs[6] = 0; kUVs[7] = 0;
+            kUVs[0] = 1; kUVs[1] = 0; kUVs[2] = 0; kUVs[3] = 0;
+            kUVs[4] = 1; kUVs[5] = 1; kUVs[6] = 0; kUVs[7] = 1;
             break;
         case 270:
-            kUVs[0] = 0; kUVs[1] = 1; kUVs[2] = 0; kUVs[3] = 0;
-            kUVs[4] = 1; kUVs[5] = 1; kUVs[6] = 1; kUVs[7] = 0;
+            kUVs[0] = 0; kUVs[1] = 0; kUVs[2] = 0; kUVs[3] = 1;
+            kUVs[4] = 1; kUVs[5] = 0; kUVs[6] = 1; kUVs[7] = 1;
             break;
         default:
-            kUVs[0] = 0; kUVs[1] = 0; kUVs[2] = 1; kUVs[3] = 0;
-            kUVs[4] = 0; kUVs[5] = 1; kUVs[6] = 1; kUVs[7] = 1;
+            kUVs[0] = 0; kUVs[1] = 1; kUVs[2] = 1; kUVs[3] = 1;
+            kUVs[4] = 0; kUVs[5] = 0; kUVs[6] = 1; kUVs[7] = 0;
             break;
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
-    glViewport(0, 0, width, height);
+    glViewport(0, 0, surfaceW, surfaceH);
     glClear(GL_COLOR_BUFFER_BIT);
     glUseProgram(oesProgram_);
     glVertexAttribPointer(static_cast<GLuint>(oesPosAttr_), 2, GL_FLOAT, GL_FALSE, 0, kVerts);
-    glEnableVertexAttribArray(static_cast<GLuint>(oesPosAttr_));
     glVertexAttribPointer(static_cast<GLuint>(oesTexCoordAttr_), 2, GL_FLOAT, GL_FALSE, 0, kUVs);
+    glEnableVertexAttribArray(static_cast<GLuint>(oesPosAttr_));
     glEnableVertexAttribArray(static_cast<GLuint>(oesTexCoordAttr_));
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_EXTERNAL_OES, static_cast<GLuint>(textureId));
+    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(textureId));
     glUniform1i(oesTexUniform_, 0);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glDisableVertexAttribArray(static_cast<GLuint>(oesPosAttr_));
     glDisableVertexAttribArray(static_cast<GLuint>(oesTexCoordAttr_));
-    glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glFlush();
 }
@@ -897,33 +911,40 @@ bool AndroidVulkanContext::rebuildHWBResources(int32_t width, int32_t height) no
 }
 
 void AndroidVulkanContext::blitOESToHardwareBuffer(int32_t textureId,
-                                                   int32_t width,
-                                                   int32_t height) noexcept {
+                                                   int32_t surfaceW,
+                                                   int32_t surfaceH,
+                                                   int32_t contentW,
+                                                   int32_t contentH) noexcept {
     // 尺寸变化或 Vulkan 侧资源已销毁时重建（hwbImage_ 可能被 destroyHardwareBufferResources
     // 单独清理）
     bool needRebuild = !hardwareBuffer_ || hwbImage_ == VK_NULL_HANDLE;
     if (!needRebuild) {
         AHardwareBuffer_Desc desc{};
         AHardwareBuffer_describe(hardwareBuffer_, &desc);
-        needRebuild = (static_cast<int32_t>(desc.width) != width ||
-                       static_cast<int32_t>(desc.height) != height);
+        needRebuild = (static_cast<int32_t>(desc.width) != surfaceW ||
+                       static_cast<int32_t>(desc.height) != surfaceH);
     }
-    if (needRebuild && !rebuildHWBResources(width, height)) {
+    if (needRebuild && !rebuildHWBResources(surfaceW, surfaceH)) {
         return;
     }
 
-    doBlitOES(textureId, width, height);
+    doBlitOES(textureId, surfaceW, surfaceH, contentW, contentH);
     // EGL/GL 写入后 Vulkan 侧 layout 失效，重置为 UNDEFINED 确保下帧 barrier 做完整 transition
     hwbImageLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
 
     // GL 错误时销毁重建后重试一次
-    if (glGetError() != GL_NO_ERROR) {
-        LogW("blitOESToHardwareBuffer: GL error, rebuilding and retrying");
-        if (!rebuildHWBResources(width, height)) {
+    GLenum glErr = glGetError();
+    if (glErr != GL_NO_ERROR) {
+        LogW("blitOESToHardwareBuffer: GL error 0x{:x}, rebuilding and retrying", glErr);
+        if (!rebuildHWBResources(surfaceW, surfaceH)) {
             return;
         }
-        doBlitOES(textureId, width, height);
+        doBlitOES(textureId, surfaceW, surfaceH, contentW, contentH);
         hwbImageLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
+        glErr = glGetError();
+        if (glErr != GL_NO_ERROR) {
+            LogW("blitOESToHardwareBuffer: retry also failed, GL error 0x{:x}", glErr);
+        }
     }
 }
 
@@ -932,10 +953,9 @@ void AndroidVulkanContext::drawFrame(int32_t textureId, int32_t width, int32_t h
         return;
     }
 
-    // EGL context 是线程绑定的，只在首次或 context 丢失时重新绑定，避免每帧 eglMakeCurrent 开销
-    if (eglContext_ && !eglContextBound_) {
+    // EGL context 是线程绑定的，每帧重新绑定（无需缓存标志，避免多线程/重建后的 stale 状态）
+    if (eglContext_) {
         eglContext_->attachContext(eglPbuffer_);
-        eglContextBound_ = true;
     }
 
     // 90/270 旋转需要交换宽高，保持内容宽高比
@@ -943,7 +963,9 @@ void AndroidVulkanContext::drawFrame(int32_t textureId, int32_t width, int32_t h
     const int32_t renderW = swapWH ? height : width;
     const int32_t renderH = swapWH ? width : height;
 
-    blitOESToHardwareBuffer(textureId, renderW, renderH);
+    // HWB 用屏幕尺寸，避免 Vulkan 侧拉伸（HWB 与 swapchain 同尺寸）。
+    // doBlitOES 内根据内容尺寸 renderW/renderH 做 letterbox。
+    blitOESToHardwareBuffer(textureId, frameWidth_, frameHeight_, renderW, renderH);
     // blit 失败（hwbImage_ 无效）时跳过本帧渲染，避免向 Vulkan 提交非法 image barrier
     if (hwbImage_ == VK_NULL_HANDLE) {
         return;
@@ -1129,7 +1151,6 @@ void AndroidVulkanContext::destroyEGLInterop() noexcept {
         eglImage_ = EGL_NO_IMAGE_KHR;
     }
     eglContext_->detachContext();
-    eglContextBound_ = false;
     if (eglPbuffer_ != EGL_NO_SURFACE) {
         eglContext_->releaseSurface(eglPbuffer_);
         eglPbuffer_ = EGL_NO_SURFACE;
