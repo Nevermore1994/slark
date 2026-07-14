@@ -6,9 +6,10 @@ package com.slark.sdk
 
 import android.os.Handler
 import android.os.HandlerThread
-import android.os.Looper
 import android.view.Choreographer
 import android.view.Surface
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class VulkanRenderThread(
     private val surface: Surface,
@@ -30,6 +31,9 @@ class VulkanRenderThread(
 
     @Volatile
     private var startPending = false
+
+    @Volatile
+    private var shutdownRequested = false
 
     @Volatile
     private var pendingTexture: RenderTexture = RenderTexture.default()
@@ -55,8 +59,12 @@ class VulkanRenderThread(
     override fun initContext() {
         handler.post {
             if (vulkanInitialized) return@post
+            if (shutdownRequested) {
+                SlarkLog.w(LOG_TAG, "initContext: shutdown requested, skip")
+                return@post
+            }
             if (playerId.isEmpty()) {
-                SlarkLog.e(LOG_TAG, "initContext: playerId is empty")
+                SlarkLog.w(LOG_TAG, "initContext: playerId is empty, thread may be discarded")
                 return@post
             }
             if (createVulkanContext(playerId, surface, width, height)) {
@@ -74,8 +82,12 @@ class VulkanRenderThread(
 
     override fun start() {
         if (vsyncActive) return
+        if (shutdownRequested) {
+            SlarkLog.w(LOG_TAG, "start: shutdown requested, skip")
+            return
+        }
         if (playerId.isEmpty()) {
-            SlarkLog.e(LOG_TAG, "start: playerId is empty")
+            SlarkLog.w(LOG_TAG, "start: playerId is empty, thread may be discarded")
             return
         }
         if (!vulkanInitialized) {
@@ -84,23 +96,19 @@ class VulkanRenderThread(
         }
         startPending = false
         vsyncActive = true
-        if (Looper.myLooper() != null) {
-            Choreographer.getInstance().postFrameCallback(vsyncCallback)
-        } else {
-            handler.post {
-                Choreographer.getInstance().postFrameCallback(vsyncCallback)
+        handler.post {
+            if (shutdownRequested) {
+                SlarkLog.w(LOG_TAG, "start: handler post after shutdown, skip")
+                return@post
             }
+            Choreographer.getInstance().postFrameCallback(vsyncCallback)
         }
     }
 
     override fun stop() {
         vsyncActive = false
-        if (Looper.myLooper() != null) {
+        handler.post {
             Choreographer.getInstance().removeFrameCallback(vsyncCallback)
-        } else {
-            handler.post {
-                Choreographer.getInstance().removeFrameCallback(vsyncCallback)
-            }
         }
     }
 
@@ -120,19 +128,31 @@ class VulkanRenderThread(
     }
 
     override fun shutdown() {
+        shutdownRequested = true
         stop()
+        val latch = CountDownLatch(1)
         handler.post {
             if (vulkanInitialized) {
                 renderer.release()
                 destroyVulkanContext(playerId)
                 vulkanInitialized = false
             }
+            latch.countDown()
+        }
+        // 超时 3s 防止 Vulkan fence 阻塞导致 shutdown 卡死
+        if (!latch.await(3, TimeUnit.SECONDS)) {
+            SlarkLog.w(LOG_TAG, "shutdown: destroyVulkanContext timed out, force quit")
         }
         handlerThread.quitSafely()
     }
 
     override fun join() {
-        handlerThread.join()
+        handlerThread.join(3000)
+        if (handlerThread.isAlive) {
+            SlarkLog.w(LOG_TAG, "join: handlerThread did not terminate within 3s, force interrupt")
+            handlerThread.interrupt()
+            handlerThread.join(1000)
+        }
     }
 
     override fun setRotation(rotation: Int) {
@@ -160,6 +180,7 @@ class VulkanRenderThread(
         this.height = height
         handler.post {
             renderer.setSurfaceSize(width, height)
+            resizeVulkanSurface(playerId, width, height)
         }
     }
 
@@ -179,18 +200,21 @@ class VulkanRenderThread(
 
     private fun drawAndPresent() {
         if (!vulkanInitialized) return
-        if (renderer.drawFrame(pendingTexture)) {
-            presentVulkanFrame(playerId, if (pendingTexture.isBackup) 0 else pendingTexture.textureId)
-        } else {
-            SlarkLog.e(LOG_TAG, "drawAndPresent: render error: {0}", pendingTexture.textureId)
+        if (!pendingTexture.isValid()) {
+            SlarkLog.w(LOG_TAG, "drawAndPresent: skip invalid texture: $pendingTexture")
+            return
         }
+        drawFrame(playerId, pendingTexture.textureId, pendingTexture.width, pendingTexture.height)
+        presentVulkanFrame(playerId, if (pendingTexture.isBackup) 0 else pendingTexture.textureId)
     }
 
     private external fun createVulkanContext(playerId: String, surface: Surface, width: Int, height: Int): Boolean
     private external fun destroyVulkanContext(playerId: String)
+    private external fun drawFrame(playerId: String, textureId: Int, width: Int, height: Int)
     private external fun presentVulkanFrame(playerId: String, textureId: Int)
     private external fun getBackupTextureId(playerId: String): RenderTexture?
     private external fun rebuildVulkanSurface(playerId: String, surface: Surface)
+    private external fun resizeVulkanSurface(playerId: String, width: Int, height: Int)
     private external fun onVSync(playerId: String)
     private external fun setVulkanRotation(playerId: String, rotation: Int)
 

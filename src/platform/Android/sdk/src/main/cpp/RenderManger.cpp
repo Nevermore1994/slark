@@ -330,17 +330,6 @@ Java_com_slark_sdk_VulkanRenderThread_presentVulkanFrame(JNIEnv* env,
     }
 }
 
-extern "C" JNIEXPORT void JNICALL
-Java_com_slark_sdk_VulkanRenderThread_renderFrameComplete(JNIEnv* env,
-                                                          jobject /*thiz*/,
-                                                          jstring player_id,
-                                                          jint textureId) {
-    auto render = VideoRenderManager::shareInstance().find(JNI::FromJVM::str(env, player_id));
-    if (render) {
-        render->renderFrameComplete(textureId);
-    }
-}
-
 extern "C" JNIEXPORT jobject JNICALL
 Java_com_slark_sdk_VulkanRenderThread_getBackupTextureId(JNIEnv* env,
                                                          jobject /*thiz*/,

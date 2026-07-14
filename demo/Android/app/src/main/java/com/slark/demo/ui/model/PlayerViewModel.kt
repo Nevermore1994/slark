@@ -145,12 +145,11 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
     }
 
     fun switchRenderBackend() {
+        SlarkLog.i("PlayerViewModel", "switchRenderBackend: {} -> {}", graphicsBackend, if (graphicsBackend == GraphicsBackend.OpenGL) "Vulkan" else "OpenGL")
         val next = if (graphicsBackend == GraphicsBackend.OpenGL) GraphicsBackend.Vulkan
                    else GraphicsBackend.OpenGL
         (player as? SlarkPlayerImpl)?.switchGraphicsBackend(next)
         graphicsBackend = next
-        // 重新触发 Surface 绑定，让新后端的 RenderThread 接管
-        currentRenderTarget?.let { setRenderTarget(it) }
     }
 
     fun prepare() {
