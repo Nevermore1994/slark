@@ -29,6 +29,11 @@ public:
     }
 
     void receiveDecodedData(DataPtr data, int64_t pts, bool isCompleted) noexcept override;
+
+private:
+    void retryPendingEOS() noexcept;
+
+    AVFrameRefPtr pendingEOSFrame_; ///< 缓存 sendPacket(EOS) 失败后被 codec 拒绝的 EOS 帧，在 receiveDecodedData 回调后重试
 };
 
 } // namespace slark
