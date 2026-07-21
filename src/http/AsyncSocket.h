@@ -73,7 +73,8 @@ public:
     TLSTransport(Socket fd, const std::string& hostname);
     ~TLSTransport();
 
-    Coroutine<void> performHandshake(std::chrono::milliseconds timeout);
+    /// @return true 表示握手成功，false 表示失败（不抛异常）
+    Coroutine<bool> performHandshake(std::chrono::milliseconds timeout);
 
     ssize_t write(const void* data, size_t size) noexcept override;
     ssize_t read(void* buffer, size_t size) noexcept override;

@@ -8,13 +8,6 @@ namespace slark::http::detail {
 void dispatchResponse(HttpResponse& response,
                       const RequestInfo& requestInfo,
                       HttpResponseHandler& handler) {
-    if (!response.isSuccess()) {
-        if (handler.onError) {
-            handler.onError(requestInfo, response.error);
-        }
-        return;
-    }
-
     if (handler.onConnected) {
         handler.onConnected(requestInfo);
     }
@@ -31,8 +24,14 @@ void dispatchResponse(HttpResponse& response,
         handler.onData(requestInfo, std::move(response.body));
     }
 
-    if (handler.onCompleted) {
-        handler.onCompleted(requestInfo);
+    if (response.isSuccess()) {
+        if (handler.onCompleted) {
+            handler.onCompleted(requestInfo);
+        }
+    } else {
+        if (handler.onError) {
+            handler.onError(requestInfo, response.error);
+        }
     }
 }
 

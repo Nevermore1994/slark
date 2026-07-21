@@ -50,9 +50,9 @@ private:
     [[nodiscard]] static ParsedRequest parseUrl(const std::string& urlStr);
 
     // 发送请求 body
-    static Coroutine<ResultCode> sendRequestBody(PooledConnection& conn,
-                                                 const RequestInfo& requestInfo,
-                                                 CancellationToken& token);
+    static Coroutine<Error> sendRequestBody(PooledConnection& conn,
+                                            const RequestInfo& requestInfo,
+                                            CancellationToken& token);
 
     RedirectPolicy redirectPolicy_;
 };

@@ -38,7 +38,7 @@ bool decodeChunkedBody(const void* data,
     ChunkParseCallbacks callbacks;
     bool hasError = false;
 
-    callbacks.onError = [&hasError](ResultCode, int32_t) {
+    callbacks.onError = [&hasError](Error, int32_t) {
         hasError = true;
     };
     callbacks.onData = [&decoded](DataPtr chunk) {
@@ -174,7 +174,7 @@ bool parseChunkData(DataPtr& data,
 
             auto chunkSizeResult = StringUtil::fromChars<int64_t>(sizeStr, 16);
             if (!chunkSizeResult) {
-                callbacks.onError(ResultCode::ChunkSizeError, 0);
+                callbacks.onError(slark::Error::HttpChunkedError, 0);
                 return false;
             }
             context.chunkSize = *chunkSizeResult;

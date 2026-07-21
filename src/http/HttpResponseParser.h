@@ -6,6 +6,7 @@
 
 #include "Data.h"
 #include "DataView.hpp"
+#include "Log.hpp"
 #include "StringUtil.h"
 #include "Type.h"
 
@@ -35,7 +36,7 @@ public:
         std::function<void(std::unordered_map<std::string, std::string>&&)> onHeaders;
         std::function<void(const Byte*, size_t)> onBodyData;
         std::function<void()> onCompleted;
-        std::function<void(ResultCode)> onError;
+        std::function<void(Error)> onError;
     };
 
     explicit HttpResponseParser(Callbacks callbacks) : callbacks_(std::move(callbacks)) {}
@@ -60,17 +61,26 @@ public:
             return;
         }
 
+        LogI("[HttpResponseParser::onEof] state={} bodyReceived={} contentLength={}",
+             stateName(state_),
+             bodyReceived_,
+             contentLength_);
+
         // 仅对未知长度的 body 以 EOF 作为结束标志
         if (state_ == State::BodyFixed && contentLength_ < 0) {
             complete();
         } else if (state_ == State::StatusLine || state_ == State::Headers) {
-            // 头部未完整接收即断开
-            fail(ResultCode::Disconnected);
-        }
-        // 其他状态（如 chunked 中途断开）视为错误
-        else if (state_ != State::Completed) {
-            fail(ResultCode::Disconnected);
-        }
+        // 头部未完整接收即断开
+        LogE("[HttpResponseParser::onEof] EOF before headers complete: state={}", stateName(state_));
+        fail(slark::Error::ConnectionReset);
+    }
+    // 其他状态（如 chunked 中途断开）视为错误
+    else if (state_ != State::Completed) {
+        LogE("[HttpResponseParser::onEof] unexpected EOF: state={} bodyReceived={}",
+             stateName(state_),
+             bodyReceived_);
+        fail(slark::Error::ConnectionReset);
+    }
     }
 
     [[nodiscard]] State state() const noexcept {
@@ -83,6 +93,12 @@ public:
 
     [[nodiscard]] bool hasError() const noexcept {
         return state_ == State::Error;
+    }
+
+    // 4xx/5xx 错误响应：上层应立即放弃读取 body，避免无谓的带宽与延迟
+    [[nodiscard]] bool isHttpError() const noexcept {
+        auto code = static_cast<uint16_t>(statusCode_);
+        return code >= 400 && code < 600;
     }
 
     [[nodiscard]] bool shouldCloseConnection() const noexcept {
@@ -107,10 +123,12 @@ private:
     void processChunkData();
     void processChunkTrailer();
 
+    static std::string_view stateName(State s) noexcept;
+
     std::string findHeader(std::string_view key) const;
 
     // 统一失败出口，避免重复的状态设置和回调调用
-    void fail(ResultCode code) noexcept {
+    void fail(Error code) noexcept {
         state_ = State::Error;
         if (callbacks_.onError) {
             callbacks_.onError(code);
@@ -167,6 +185,9 @@ private:
 
     // 性能统计
     RequestPerf* perf_ = nullptr;
+
+    // 协议层日志限频：上次日志时的 bodyReceived_ 累计值
+    int64_t lastLoggedBodyReceived_ = 0;
 
 private:
     // 获取当前可读数据

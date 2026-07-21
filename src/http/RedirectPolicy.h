@@ -120,7 +120,7 @@ private:
 
         // scheme
         result.append(url.scheme);
-        result.append(":");
+        result.append("://");
 
         // userInfo（如果有）
         if (!url.userInfo.empty()) {

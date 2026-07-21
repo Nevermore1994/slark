@@ -166,6 +166,7 @@ Coroutine<void> AsyncSocket::asyncConnect(const AddressInfoPtr& address,
                                           std::chrono::milliseconds timeout) {
     socket_ = createAndConfigureSocket(address->ai_family);
     if (socket_ == kInvalidSocket) {
+        LogE("[AsyncSocket::asyncConnect] create socket failed: family={}", static_cast<int>(address->ai_family));
         throw std::runtime_error("Failed to create socket");
     }
 
@@ -175,6 +176,8 @@ Coroutine<void> AsyncSocket::asyncConnect(const AddressInfoPtr& address,
     });
     co_await tcpConnect(socket_, address, timeout);
     guard.dismiss();
+
+    LogI("[AsyncSocket::asyncConnect] tcp connect ok: fd={} timeoutMs={}", socket_, timeout.count());
 
     // 如果没有预设 transport，默认使用 PlainTransport
     if (!transport_) {
@@ -230,11 +233,16 @@ Coroutine<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data
                 if (perf_) {
                     perf_->transport.timeoutSource = TimeoutSource::Write;
                 }
+                LogW("[AsyncSocket::asyncSend] write timeout: sent={}/{}", totalSent, data.size());
                 co_return std::unexpected(Error::ConnectionTimeout);
             }
             continue;
         }
 
+        LogE("[AsyncSocket::asyncSend] broken pipe: sent={}/{} errno={}",
+             totalSent,
+             data.size(),
+             errno);
         co_return std::unexpected(Error::BrokenPipe);
     }
 
@@ -283,6 +291,7 @@ Coroutine<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
         }
 
         if (result == 0) {
+            LogW("[AsyncSocket::asyncReceive] peer closed (EOF)");
             co_return std::unexpected(Error::ConnectionReset);
         }
 
@@ -299,11 +308,13 @@ Coroutine<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
                 if (perf_) {
                     perf_->transport.timeoutSource = TimeoutSource::ReadIdle;
                 }
+                LogW("[AsyncSocket::asyncReceive] read timeout");
                 co_return std::unexpected(Error::ConnectionTimeout);
             }
             continue;
         }
 
+        LogE("[AsyncSocket::asyncReceive] read error: errno={}", errno);
         co_return std::unexpected(Error::ConnectionReset);
     }
 }
@@ -452,20 +463,23 @@ TLSTransport::~TLSTransport() {
     shutdown();
 }
 
-Coroutine<void> TLSTransport::performHandshake(std::chrono::milliseconds timeout) {
+Coroutine<bool> TLSTransport::performHandshake(std::chrono::milliseconds timeout) {
     if (!sslPtr_) {
-        throw std::runtime_error("Failed to create SSL");
+        LogW("TLS handshake failed: SSL create failed");
+        co_return false;
     }
 
     Time::Deadline deadline(timeout);
     while (true) {
         if (deadline.isExpired()) {
-            throw TimeoutException("TLS handshake timeout");
+            LogW("TLS handshake timeout");
+            co_return false;
         }
 
         int32_t result = SSL_connect(sslPtr_.get());
         if (result == 1) {
-            co_return;
+            LogI("[TLSTransport::performHandshake] TLS handshake ok");
+            co_return true;
         }
 
         int32_t sslError = SSL_get_error(sslPtr_.get(), result);
@@ -474,10 +488,14 @@ Coroutine<void> TLSTransport::performHandshake(std::chrono::milliseconds timeout
                                                               : FdReadyAwaiter::Interest::Write;
             bool ready = co_await waitFdReadyWithTimeout(fd_, interest, deadline);
             if (!ready) {
-                throw TimeoutException("TLS handshake timeout");
+                LogW("TLS handshake failed: waitFdReady timeout");
+                co_return false;
             }
         } else {
-            throw std::runtime_error("TLS handshake failed");
+            const char* errStr = ERR_reason_error_string(ERR_get_error());
+            LogW("TLS handshake failed: sslError={}, errStr={}, errno={}",
+                 sslError, errStr ? errStr : "unknown", errno);
+            co_return false;
         }
     }
 }

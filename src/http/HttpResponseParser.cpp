@@ -4,9 +4,17 @@
 #include "HttpResponseParser.h"
 
 #include "DataView.hpp"
+#include "Error.h"
+#include "Log.hpp"
+#include "LogConfig.h"
+#include "StringUtil.h"
 #include "Time.hpp"
 
 namespace slark::http {
+
+namespace {
+inline int64_t parserLogChunkBytes() { return static_cast<int64_t>(getLogConfig().progressLogBytes); }
+} // namespace
 
 void HttpResponseParser::feed(const Byte* data, size_t size) {
     if (state_ == State::Completed || state_ == State::Error) {
@@ -19,7 +27,10 @@ void HttpResponseParser::feed(const Byte* data, size_t size) {
     constexpr size_t kMaxHeaderBufferSize = 64 * 1024;
     if (state_ == State::StatusLine || state_ == State::Headers) {
         if (buffer_.size() + size > kMaxHeaderBufferSize) {
-            fail(ResultCode::Failed);
+            LogE("[HttpResponseParser::feed] header buffer overflow: size={} state={}",
+                 buffer_.size() + size,
+                 stateName(state_));
+            fail(slark::Error::HttpResponseInvalid);
             return;
         }
     }
@@ -79,6 +90,22 @@ void HttpResponseParser::reset() noexcept {
     currentChunkSize_ = 0;
     chunkBytesRead_ = 0;
     trailerBytesRead_ = 0;
+    lastLoggedBodyReceived_ = 0;
+}
+
+std::string_view HttpResponseParser::stateName(State s) noexcept {
+    switch (s) {
+        case State::StatusLine:   return "StatusLine";
+        case State::Headers:      return "Headers";
+        case State::BodyFixed:    return "BodyFixed";
+        case State::BodyChunked:  return "BodyChunked";
+        case State::ChunkSize:    return "ChunkSize";
+        case State::ChunkData:    return "ChunkData";
+        case State::ChunkTrailer: return "ChunkTrailer";
+        case State::Completed:    return "Completed";
+        case State::Error:        return "Error";
+    }
+    return "Unknown";
 }
 
 void HttpResponseParser::processStatusLine() {
@@ -93,20 +120,26 @@ void HttpResponseParser::processStatusLine() {
     // "HTTP/1.1 200 OK"
     constexpr std::string_view kHTTPFlag = "HTTP/";
     if (line.find(kHTTPFlag) == std::string_view::npos) {
-        fail(ResultCode::Failed);
+        LogE("[HttpResponseParser::processStatusLine] missing HTTP/ flag, line={}",
+             StringUtil::toSafeLogString(line));
+        fail(slark::Error::HttpResponseInvalid);
         return;
     }
 
     auto firstSpace = line.find(' ');
     if (firstSpace == std::string_view::npos) {
-        fail(ResultCode::Failed);
+        LogE("[HttpResponseParser::processStatusLine] malformed status line, line={}",
+             StringUtil::toSafeLogString(line));
+        fail(slark::Error::HttpResponseInvalid);
         return;
     }
 
     auto afterVersion = line.substr(firstSpace + 1);
     auto secondSpace = afterVersion.find(' ');
     if (secondSpace == std::string_view::npos) {
-        fail(ResultCode::Failed);
+        LogE("[HttpResponseParser::processStatusLine] missing reason phrase, line={}",
+             StringUtil::toSafeLogString(line));
+        fail(slark::Error::HttpResponseInvalid);
         return;
     }
 
@@ -115,13 +148,20 @@ void HttpResponseParser::processStatusLine() {
 
     auto codeResult = StringUtil::fromChars<int32_t>(statusCodeStr);
     if (!codeResult) {
-        fail(ResultCode::Failed);
+        LogE("[HttpResponseParser::processStatusLine] invalid status code: {}",
+             StringUtil::toSafeLogString(statusCodeStr));
+        fail(slark::Error::HttpResponseInvalid);
         return;
     }
 
     statusCode_ = static_cast<HttpStatusCode>(*codeResult);
     consume(pos + kCRLF.size());
     state_ = State::Headers;
+
+    LogI("[HttpResponseParser::processStatusLine] status={} reason={} -> {}",
+         static_cast<int>(statusCode_),
+         std::string(reasonPhrase),
+         stateName(state_));
 
     if (callbacks_.onStatusLine) {
         callbacks_.onStatusLine(statusCode_, std::string(reasonPhrase));
@@ -171,25 +211,38 @@ void HttpResponseParser::processHeaders() {
     if (!transferEncoding.empty() &&
         StringUtil::toLower(transferEncoding).find("chunked") != std::string::npos) {
         state_ = State::ChunkSize;
+        LogI("[HttpResponseParser::processHeaders] headers done: count={} transferEncoding=chunked shouldClose={} -> {}",
+             headers_.size(),
+             shouldClose_,
+             stateName(state_));
     } else {
         auto contentLengthStr = findHeader("Content-Length");
         if (!contentLengthStr.empty()) {
             auto clResult = StringUtil::fromChars<int64_t>(contentLengthStr);
-            if (!clResult || *clResult < 0) {
-                fail(ResultCode::Failed);
-                return;
-            }
+        if (!clResult || *clResult < 0) {
+            LogE("[HttpResponseParser::processHeaders] invalid Content-Length: {}", contentLengthStr);
+            fail(slark::Error::HttpResponseInvalid);
+            return;
+        }
             contentLength_ = *clResult;
         }
 
         // RFC 7230: 特定状态码和请求方法无 body
         if (shouldSkipBody()) {
+            LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength={} shouldSkipBody=true -> Completed",
+                 headers_.size(),
+                 contentLength_);
             complete();
         } else if (contentLength_ == 0) {
-            // 无 body
+            LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength=0 -> Completed",
+                 headers_.size());
             complete();
         } else {
             state_ = State::BodyFixed;
+            LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength={} shouldClose={} -> BodyFixed",
+                 headers_.size(),
+                 contentLength_,
+                 shouldClose_);
         }
     }
 
@@ -221,7 +274,15 @@ void HttpResponseParser::processBodyFixed() {
         consume(static_cast<size_t>(toConsume));
 
         if (bodyReceived_ >= contentLength_) {
+            LogI("[HttpResponseParser::processBodyFixed] complete: bodyReceived={}/{}",
+                 bodyReceived_,
+                 contentLength_);
             complete();
+        } else if (bodyReceived_ - lastLoggedBodyReceived_ >= parserLogChunkBytes()) {
+            LogI("[HttpResponseParser::processBodyFixed] progress: bodyReceived={}/{}",
+                 bodyReceived_,
+                 contentLength_);
+            lastLoggedBodyReceived_ = bodyReceived_;
         }
     } else {
         // Content-Length 未知，消费所有可用数据
@@ -230,6 +291,12 @@ void HttpResponseParser::processBodyFixed() {
         }
         bodyReceived_ += available;
         consume(data.size());
+
+        if (bodyReceived_ - lastLoggedBodyReceived_ >= parserLogChunkBytes()) {
+            LogI("[HttpResponseParser::processBodyFixed] progress (unknown length): bodyReceived={}",
+                 bodyReceived_);
+            lastLoggedBodyReceived_ = bodyReceived_;
+        }
     }
 }
 
@@ -257,7 +324,8 @@ void HttpResponseParser::processChunkSize() {
 
     auto chunkSizeResult = StringUtil::fromChars<int64_t>(sizeStr, 16);
     if (!chunkSizeResult) {
-        fail(ResultCode::ChunkSizeError);
+        LogE("[HttpResponseParser::processChunkSize] invalid chunk size: {}", std::string(sizeStr));
+        fail(slark::Error::HttpChunkedError);
         return;
     }
     auto chunkSize = *chunkSizeResult;
@@ -265,6 +333,8 @@ void HttpResponseParser::processChunkSize() {
     consume(pos + kCRLF.size());
 
     if (chunkSize == 0) {
+        LogI("[HttpResponseParser::processChunkSize] last chunk, entering trailer, totalChunks={}",
+             perf_ ? perf_->parser.chunkCount : 0);
         // 最后一个 chunk，进入 trailer 处理
         state_ = State::ChunkTrailer;
     } else {
@@ -306,7 +376,10 @@ void HttpResponseParser::processChunkTrailer() {
 
     // 累计长度超限时直接 fail，防止 OOM
     if (trailerBytesRead_ + data.size() > kMaxTrailerSize) {
-        fail(ResultCode::Failed);
+        LogE("[HttpResponseParser::processChunkTrailer] trailer overflow: trailerBytes={} chunk={}",
+             trailerBytesRead_,
+             data.size());
+        fail(slark::Error::HttpResponseInvalid);
         return;
     }
 
@@ -320,6 +393,8 @@ void HttpResponseParser::processChunkTrailer() {
     if (pos == 0) {
         // 空行，trailer 结束
         consume(kCRLF.size());
+        LogI("[HttpResponseParser::processChunkTrailer] complete after trailer, totalChunks={}",
+             perf_ ? perf_->parser.chunkCount : 0);
         complete();
     } else {
         // 跳过 trailer header

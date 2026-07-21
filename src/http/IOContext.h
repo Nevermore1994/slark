@@ -1,7 +1,6 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-
 #pragma once
 
 #include "AsyncIOOperation.hpp"
@@ -42,7 +41,6 @@ public:
 private:
     IOContext() {
         // 确保 CoroutineScheduler 先于 IOContext 构造
-        // 这样 IOContext 会先于 CoroutineScheduler 析构，避免悬空引用
         (void)CoroutineScheduler::instance();
     }
 
@@ -51,10 +49,8 @@ private:
         if (eventThread_.joinable()) {
             eventThread_.join();
         }
-        // 清理所有残留的 continuations，避免悬空句柄
     }
 
-    // 延迟启动事件循环线程
     void ensureRunning() noexcept {
         if (!isRunning()) {
             std::call_once(startFlag_, [this]() {
@@ -81,10 +77,8 @@ public:
             s == slark::detail::CompletionState::TimedOut) {
             return std::unexpected(getError().value_or(Error::NetworkError));
         }
-        // 异步连接完成时，必须通过 getsockopt(SO_ERROR) 校验实际连接结果
         // fd 可写只代表连接尝试完成，不代表连接成功
-        // Completed: 立即连接成功 或 EINPROGRESS 后 fd 可写
-        // Pending: EINPROGRESS 后 fd 可写（协程恢复但 state 未更新）
+        // 需通过 getsockopt(SO_ERROR) 校验实际结果
         if (s == slark::detail::CompletionState::Completed ||
             s == slark::detail::CompletionState::Pending) {
             int32_t soError = 0;
@@ -99,7 +93,6 @@ public:
 
 protected:
     void startOperation() noexcept override {
-        // 尝试 IPv4
         sockaddr_in addr4{};
         addr4.sin_family = AF_INET;
         addr4.sin_port = htons(port_);
@@ -108,7 +101,6 @@ protected:
             return;
         }
 
-        // 尝试 IPv6
         sockaddr_in6 addr6{};
         addr6.sin6_family = AF_INET6;
         addr6.sin6_port = htons(port_);
@@ -124,14 +116,14 @@ private:
     void doConnect(sockaddr* addr, socklen_t addrLen) noexcept {
         int32_t result = ::connect(fd_, addr, addrLen);
         if (result == 0) {
-            // 立即连接成功（罕见），直接标记完成
-            // await_resume() 仍会通过 SO_ERROR 二次校验
             complete();
         } else if (errno == EINPROGRESS) {
-            // 异步连接中，注册写事件等待可写
-            // 保持 state 为 Pending，让协程挂起等待
-            // 当 fd 可写时，协程恢复，在 await_resume 中通过 SO_ERROR 判断最终结果
-            IOContext::instance().registerContinuation(fd_, FdInterest::Write, getHandle());
+            // cleanup 只捕获 fd（值类型），不捕获 this：complete/fail 可能在定时器线程延迟触发
+            auto fd = fd_;
+            setCleanup([fd]() {
+                IOContext::instance().unregisterContinuation(fd, FdInterest::Write);
+            });
+            IOContext::instance().registerContinuation(fd_, FdInterest::Write, getSharedHandle());
             IOContext::instance().setWritable(fd_, true);
         } else {
             fail(Error::ConnectionRefused);
@@ -156,7 +148,11 @@ protected:
         } else if (result == 0) {
             fail(Error::ConnectionReset);
         } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            IOContext::instance().registerContinuation(fd_, FdInterest::Read, getHandle());
+            const auto fd = fd_;
+            setCleanup([fd]() {
+                IOContext::instance().unregisterContinuation(fd, FdInterest::Read);
+            });
+            IOContext::instance().registerContinuation(fd_, FdInterest::Read, getSharedHandle());
             IOContext::instance().setReadable(fd_, true);
         } else {
             fail(Error::NetworkError);
@@ -180,7 +176,11 @@ protected:
         if (result >= 0) {
             complete(static_cast<size_t>(result));
         } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            IOContext::instance().registerContinuation(fd_, FdInterest::Write, getHandle());
+            const auto fd = fd_;
+            setCleanup([fd]() {
+                IOContext::instance().unregisterContinuation(fd, FdInterest::Write);
+            });
+            IOContext::instance().registerContinuation(fd_, FdInterest::Write, getSharedHandle());
             IOContext::instance().setWritable(fd_, true);
         } else {
             fail(Error::BrokenPipe);
@@ -192,38 +192,36 @@ private:
     size_t size_;
 };
 
-// fd 就绪 awaiter：注册 fd 事件，就绪时恢复协程（替代 TimerAwaiter 轮询）
 class FdReadyAwaiter {
 public:
     enum class Interest : uint8_t { Read, Write };
 
     FdReadyAwaiter(int32_t fd, Interest interest) noexcept : fd_(fd), interest_(interest) {}
 
-    // NOLINTNEXTLINE(readability-identifier-naming)
-    bool await_ready() const noexcept {
-        return false;
-    }
+    bool await_ready() const noexcept { return false; }
 
-    // NOLINTNEXTLINE(readability-identifier-naming)
-    void await_suspend(std::coroutine_handle<> handle) noexcept {
+    template <typename Promise>
+    bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
         auto fdInterest = (interest_ == Interest::Read) ? FdInterest::Read : FdInterest::Write;
-        IOContext::instance().registerContinuation(fd_, fdInterest, handle);
+        resumeHandle_ = handle.promise().makeResumeHandle();
+        token_ = IOContext::instance().registerContinuation(fd_, fdInterest, resumeHandle_);
         if (interest_ == Interest::Read) {
             IOContext::instance().setReadable(fd_, true);
         } else {
             IOContext::instance().setWritable(fd_, true);
         }
+        return resumeHandle_ && resumeHandle_->suspend();
     }
 
-    // NOLINTNEXTLINE(readability-identifier-naming)
     void await_resume() noexcept {}
 
 private:
+    EventLoop::RegistrationToken token_;
+    std::shared_ptr<SharedCoroutineHandle> resumeHandle_;
     int32_t fd_;
     Interest interest_;
 };
 
-// 支持取消的 fd 就绪 awaiter：取消时主动唤醒协程
 class CancellableFdReadyAwaiter {
 public:
     enum class Interest : uint8_t { Read, Write };
@@ -233,50 +231,40 @@ public:
                               const CancellationToken& token) noexcept
         : fd_(fd), interest_(interest), token_(token) {}
 
-    // NOLINTNEXTLINE(readability-identifier-naming)
-    bool await_ready() const noexcept {
-        return token_.isCancelled();
-    }
+    bool await_ready() const noexcept { return token_.isCancelled(); }
 
-    // NOLINTNEXTLINE(readability-identifier-naming)
-    void await_suspend(std::coroutine_handle<> handle) noexcept {
-        auto fdInterest = (interest_ == Interest::Read) ? FdInterest::Read : FdInterest::Write;
-
-        // 先注册 continuation，确保 fd 注册完成后再注册取消回调
-        // 这样取消回调触发时，一定能在 event loop 中找到并移除 continuation
-        IOContext::instance().registerContinuation(fd_, fdInterest, handle);
+    template <typename Promise>
+    bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
+        const auto fdInterest = (interest_ == Interest::Read) ? FdInterest::Read : FdInterest::Write;
+        resumeHandle_ = handle.promise().makeResumeHandle();
+        fdToken_ = IOContext::instance().registerContinuation(fd_, fdInterest, resumeHandle_);
         if (interest_ == Interest::Read) {
             IOContext::instance().setReadable(fd_, true);
         } else {
             IOContext::instance().setWritable(fd_, true);
         }
 
-        // 注册取消回调，取消时恢复协程
-        registration_ = token_.registerCallback([fd = fd_, interest = interest_, handle]() {
-            // 取消时先移除 fd 注册，再恢复协程
-            auto fdInterest = (interest == Interest::Read) ? FdInterest::Read : FdInterest::Write;
-            IOContext::instance().unregisterContinuation(fd, fdInterest);
-            CoroutineScheduler::instance().schedule(handle);
+        auto fdToken = std::make_shared<EventLoop::RegistrationToken>(std::move(fdToken_));
+        registration_ = token_.registerCallback([fdToken = std::move(fdToken)]() mutable {
+            fdToken->cancel();
         });
 
         if (!registration_.isValid()) {
-            // 已经取消，需要先移除刚注册的 continuation，再恢复协程
             IOContext::instance().unregisterContinuation(fd_, fdInterest);
-            CoroutineScheduler::instance().schedule(handle);
-            return;
+            return false;
         }
+        return resumeHandle_ && resumeHandle_->suspend();
     }
 
-    // NOLINTNEXTLINE(readability-identifier-naming)
-    bool await_resume() noexcept {
-        return !token_.isCancelled();
-    }
+    bool await_resume() noexcept { return !token_.isCancelled(); }
 
 private:
     int32_t fd_;
     Interest interest_;
     const CancellationToken& token_;
-    CancellationTokenRegistration registration_; // 持有注册句柄，确保生命周期覆盖等待过程
+    CancellationTokenRegistration registration_;
+    EventLoop::RegistrationToken fdToken_;
+    std::shared_ptr<SharedCoroutineHandle> resumeHandle_;
 };
 
 } // namespace slark::http

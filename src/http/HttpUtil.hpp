@@ -74,7 +74,7 @@ struct ChunkParseContext {
 };
 
 struct ChunkParseCallbacks {
-    std::function<void(ResultCode, int32_t)> onError;
+    std::function<void(Error, int32_t)> onError;
     std::function<void(DataPtr)> onData;
 };
 
@@ -103,7 +103,7 @@ struct ParsedResponse {
         response.headers = std::move(headers);
         response.reasonPhrase = std::move(reasonPhrase);
         response.body = std::move(body);
-        response.error = ErrorInfo{ResultCode::Success, 0};
+        response.error = ErrorInfo{slark::Error::Success};
         return response;
     }
 };

@@ -5,6 +5,7 @@
 #pragma once
 
 #include "Data.h"
+#include "Error.h"
 
 #include <chrono>
 #include <cstdint>
@@ -118,32 +119,6 @@ enum class HttpStatusCode : uint16_t {
     NetworkAuthenticationRequired = 511,
 };
 
-enum class ResultCode {
-    Success = 0,
-    Failed,
-    Cancelled,
-    CreateSocketFailed,
-    GetFlagsFailed,
-    SetFlagsFailed,
-    SetNoSigPipeFailed,
-    ConnectAddressError,
-    ConnectTypeInconsistent,
-    ConnectGenericError,
-    Retry,
-    RetryReachMaxCount,
-    Timeout,
-    UrlInvalid,
-    SchemeNotSupported,
-    GetAddressFailed,
-    MethodError,
-    Disconnected,
-    Completed,
-    RedirectError,
-    RedirectReachMaxCount,
-    SchemeDowngradeBlocked,
-    ChunkSizeError,
-};
-
 // 超时来源类型
 enum class TimeoutSource : uint8_t {
     None,
@@ -160,7 +135,7 @@ struct ConnectionPoolPerf {
     bool reuseSucceeded = false;
     int64_t connectTimeMs = 0;
     int64_t tlsHandshakeTimeMs = 0;
-    ResultCode connectResult = ResultCode::Success;
+    Error connectResult = Error::Success;
 };
 
 // 传输层性能统计
@@ -176,7 +151,7 @@ struct TransportPerf {
 struct ParserPerf {
     int64_t headerParseTimeUs = 0;
     int32_t chunkCount = 0;
-    ResultCode parseResult = ResultCode::Success;
+    Error parseResult = Error::Success;
     int64_t bodySize = 0;
 };
 
@@ -234,12 +209,15 @@ struct RequestInfo {
 using RequestInfoPtr = std::unique_ptr<RequestInfo>;
 
 struct ErrorInfo {
-    ResultCode retCode = ResultCode::Success;
-    int32_t errorCode{};
+    slark::Error retCode = slark::Error::Success;
+    int32_t originErrorCode = 0;
 
     ErrorInfo() = default;
 
-    ErrorInfo(ResultCode resultCode, int32_t error) : retCode(resultCode), errorCode(error) {}
+    explicit ErrorInfo(slark::Error error) : retCode(error) {}
+
+    ErrorInfo(slark::Error error, int32_t origin)
+        : retCode(error), originErrorCode(origin) {}
 };
 
 struct ResponseHeader {
@@ -267,7 +245,7 @@ struct HttpResponse {
     RequestPerf perf;
 
     [[nodiscard]] bool isSuccess() const noexcept {
-        return error.retCode == ResultCode::Success;
+        return error.retCode == slark::Error::Success;
     }
 
     [[nodiscard]] bool isOk() const noexcept {
@@ -292,7 +270,7 @@ struct StreamChunk {
     std::unordered_map<std::string, std::string> headers; // 响应头（首个块携带）
 
     [[nodiscard]] bool hasError() const noexcept {
-        return error.retCode != ResultCode::Success;
+        return error.retCode != slark::Error::Success;
     }
 
     [[nodiscard]] bool hasData() const noexcept {

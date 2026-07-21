@@ -25,9 +25,12 @@ Coroutine<AddressInfoPtr> DnsResolver::resolveAsync(const std::string& host,
     {
         std::lock_guard<std::mutex> lock(cacheMutex_);
         if (auto cached = lookupCache(key)) {
+            LogI("[DnsResolver::resolveAsync] cache hit: {}:{} ipv={}", host, port, static_cast<int>(ipVersion));
             co_return cached;
         }
     }
+
+    LogI("[DnsResolver::resolveAsync] resolving: {}:{} ipv={}", host, port, static_cast<int>(ipVersion));
 
     auto awaiter = std::make_shared<CompletionAwaiter<AddressInfoPtr>>();
 
@@ -57,6 +60,9 @@ Coroutine<AddressInfoPtr> DnsResolver::resolveAsync(const std::string& host,
     if (resolved) {
         std::lock_guard<std::mutex> lock(cacheMutex_);
         insertCache(key, resolved);
+        LogI("[DnsResolver::resolveAsync] resolved & cached: {}:{}", host, port);
+    } else {
+        LogE("[DnsResolver::resolveAsync] resolve returned null: {}:{}", host, port);
     }
 
     co_return resolved;
