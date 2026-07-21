@@ -5,15 +5,21 @@
 #include "HLSStream.h"
 
 #include "Coroutine.hpp"
+#include "CoroutineScheduler.hpp"
 #include "DataView.hpp"
 #include "HttpUtil.hpp"
 #include "Log.hpp"
+#include "LogConfig.h"
 #include "M3U8Parser.h"
 
 #include <algorithm>
 #include <unordered_set>
 
 namespace slark {
+
+namespace {
+inline uint64_t logProgressBytes() { return getLogConfig().progressLogBytes; }
+} // namespace
 
 HLSStream::HLSStream() = default;
 
@@ -24,7 +30,6 @@ HLSStream::~HLSStream() {
 StreamResult<StreamInfo> HLSStream::open(const OpenParams& params) {
     params_ = params;
 
-    // 将 OpenParams 的 onMetadata 接到内部 metadataCallback_，打通 live 识别链路
     if (params.onMetadata) {
         metadataCallback_ = params.onMetadata;
     }
@@ -44,6 +49,10 @@ StreamResult<StreamInfo> HLSStream::open(const OpenParams& params) {
 }
 
 void HLSStream::close() noexcept {
+    LogI("[HLSStream::close] url={} pos={} state={}",
+         params_.uri,
+         position_.load(),
+         static_cast<int>(state_.load()));
     if (request_) {
         request_->cancel();
         request_.reset();
@@ -54,15 +63,31 @@ void HLSStream::close() noexcept {
     isCompleted_ = false;
 }
 
+void HLSStream::storeCoroutine(Coroutine<void>&& coroutine) noexcept {
+    // 清理已完成的协程，避免 vector 无限增长
+    pendingCoroutines_.erase(
+        std::remove_if(pendingCoroutines_.begin(),
+                       pendingCoroutines_.end(),
+                       [](const Coroutine<void>& c) {
+                           return c.isDone();
+                       }),
+        pendingCoroutines_.end());
+    pendingCoroutines_.push_back(std::move(coroutine));
+}
+
 void HLSStream::start() noexcept {
     if (state_ != StreamState::Ready && state_ != StreamState::Paused &&
         state_ != StreamState::Opening) {
+        LogI("[HLSStream::start] skip, state={}", static_cast<int>(state_.load()));
         return;
     }
 
+    // 立即标记 Reading，防止并发重复启动
+    state_ = StreamState::Reading;
     isPaused_ = false;
     isRunning_ = true;
-    state_ = StreamState::Reading;
+
+    LogI("[HLSStream::start] url={}", params_.uri);
 
     request_ = std::make_shared<http::HttpRequest>();
 
@@ -80,34 +105,34 @@ void HLSStream::start() noexcept {
         if (response.isOk()) {
             stream->handlePlaylistResponse(std::move(response));
         } else {
-            if (stream->params_.onError) {
-                stream->params_.onError(Error::NetworkError);
-            }
-            stream->state_ = StreamState::Error;
-            stream->isRunning_ = false;
+            stream->reportHttpError(response);
         }
     };
 
-    (void)fetchPlaylistTask(request_, requestInfo, self);
+    auto coroutine = fetchPlaylistTask(request_, requestInfo, self);
+    storeCoroutine(std::move(coroutine));
+    CoroutineScheduler::instance().schedule(pendingCoroutines_.back().makeResumeHandle());
 }
 
 void HLSStream::pause() noexcept {
     if (state_ != StreamState::Reading) {
+        LogI("[HLSStream::pause] noop, state={}", static_cast<int>(state_.load()));
         return;
     }
 
     isPaused_ = true;
     state_ = StreamState::Paused;
     isRunning_ = false;
+
+    LogI("[HLSStream::pause] pos={}", position_.load());
 }
 
 StreamResult<void> HLSStream::seek(uint64_t /*position*/) {
-    // HLS \u4f7f\u7528 seekByTime \u8fdb\u884c\u65f6\u95f4\u8bed\u4e49\u7684
-    // seek\uff0c\u4e0d\u652f\u6301 byte offset seek
     return std::unexpected(Error::InvalidOperation);
 }
 
 StreamResult<void> HLSStream::seekByTime(double timeSec) {
+    LogI("[HLSStream::seekByTime] time={}", timeSec);
     if (!playlist_ || playlist_->segments().empty()) {
         return std::unexpected(Error::StreamInvalidData);
     }
@@ -120,8 +145,6 @@ StreamResult<void> HLSStream::seekByTime(double timeSec) {
     }
     currentSegmentIndex_.store(*segOpt);
     position_ = 0;
-    // \u53d6\u6d88\u5f53\u524d segment \u4e0b\u8f7d\uff0c\u91cd\u65b0\u62c9\u53d6\u76ee\u6807
-    // segment
     if (request_) {
         request_->cancel();
         request_.reset();
@@ -135,9 +158,13 @@ StreamResult<void> HLSStream::seekByTime(double timeSec) {
 void HLSStream::updateRange(Range) noexcept {}
 
 void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
+    LogI("[HLSStream::handlePlaylistResponse] received: status={} bodySize={}",
+         static_cast<int>(response.statusCode),
+         response.body ? response.body->size() : 0);
+
     if (!response.body) {
         if (params_.onError) {
-            params_.onError(Error::StreamInvalidData);
+            params_.onError(Error::StreamInvalidData, 0);
         }
         state_ = StreamState::Error;
         return;
@@ -150,8 +177,9 @@ void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
     }
 
     if (!parser_->parse(content)) {
+        LogE("[HLSStream::handlePlaylistResponse] M3U8 parse failed: bodySize={}", content.size());
         if (params_.onError) {
-            params_.onError(Error::StreamInvalidData);
+            params_.onError(Error::StreamInvalidData, 0);
         }
         state_ = StreamState::Error;
         return;
@@ -160,16 +188,18 @@ void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
     playlist_ = parser_->playlist();
 
     if (parser_->isMasterPlaylist()) {
+        LogI("[HLSStream::handlePlaylistResponse] master playlist parsed, selecting variant");
         auto variantUri = selectVariantUri(0);
         if (!variantUri) {
+            LogE("[HLSStream::handlePlaylistResponse] no variant available");
             state_ = StreamState::Error;
             return;
         }
 
         auto variantUrl = resolveUrl(*variantUri);
         mediaPlaylistUrl_ = variantUrl;
+        LogI("[HLSStream::handlePlaylistResponse] variant selected: {}", variantUrl);
 
-        // 创建新的 parser 解析 media playlist
         parser_.reset();
         request_ = std::make_shared<http::HttpRequest>();
 
@@ -187,18 +217,22 @@ void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
             if (response.isOk()) {
                 stream->handlePlaylistResponse(std::move(response));
             } else {
-                if (stream->params_.onError) {
-                    stream->params_.onError(Error::NetworkError);
-                }
-                stream->state_ = StreamState::Error;
+                stream->reportHttpError(response);
             }
         };
 
-        (void)fetchVariantTask(request_, requestInfo, self);
+        auto coroutine = fetchVariantTask(request_, requestInfo, self);
+        storeCoroutine(std::move(coroutine));
+        CoroutineScheduler::instance().schedule(pendingCoroutines_.back().makeResumeHandle());
     } else {
         info_.isLive = playlist_->isLive();
         info_.isSeekable = !playlist_->isLive();
         info_.totalSize = static_cast<uint64_t>(playlist_->totalDuration() * 1000);
+
+        LogI("[HLSStream::handlePlaylistResponse] media playlist parsed: segments={} isLive={} totalDuration={}",
+             playlist_->segments().size(),
+             info_.isLive,
+             playlist_->totalDuration());
 
         if (metadataCallback_) {
             metadataCallback_(std::static_pointer_cast<void>(playlist_));
@@ -247,6 +281,7 @@ void HLSStream::downloadSegments() {
             refreshPlaylist();
             return;
         }
+        LogI("[HLSStream::downloadSegments] all segments done, total={}", segments.size());
         isCompleted_ = true;
         state_ = StreamState::Completed;
         isRunning_ = false;
@@ -271,6 +306,10 @@ void HLSStream::downloadSegmentWithRetry(uint32_t segIndex, int32_t retryLeft) {
     }
 
     const auto& segment = playlist_->segments()[segIndex];
+    LogI("[HLSStream::downloadSegmentWithRetry] start: segIndex={} retryLeft={} url={}",
+         segIndex,
+         retryLeft,
+         resolveUrl(segment.uri));
     request_ = std::make_shared<http::HttpRequest>();
 
     http::RequestInfo requestInfo;
@@ -284,7 +323,7 @@ void HLSStream::downloadSegmentWithRetry(uint32_t segIndex, int32_t retryLeft) {
                            std::shared_ptr<HLSStream> stream,
                            uint32_t segIdx,
                            int32_t left) -> Coroutine<void> {
-        auto gen = req->streamingExecute(info);
+        auto gen = req->streamingExecute(info, req->cancelToken());
         bool hasError = false;
 
         while (true) {
@@ -299,6 +338,8 @@ void HLSStream::downloadSegmentWithRetry(uint32_t segIndex, int32_t retryLeft) {
 
             if (chunk->hasError()) {
                 hasError = true;
+            stream->lastErrorOriginCode_.store(chunk->error.originErrorCode,
+                                                   std::memory_order_release);
                 break;
             }
 
@@ -312,7 +353,9 @@ void HLSStream::downloadSegmentWithRetry(uint32_t segIndex, int32_t retryLeft) {
             } else {
                 LogE("HLSStream: segment {} download failed after all retries", segIdx);
                 if (stream->params_.onError) {
-                    stream->params_.onError(Error::NetworkError);
+                stream->params_.onError(Error::NetworkError,
+                                            stream->lastErrorOriginCode_.load(
+                                                std::memory_order_acquire));
                 }
                 stream->state_ = StreamState::Error;
             }
@@ -320,10 +363,13 @@ void HLSStream::downloadSegmentWithRetry(uint32_t segIndex, int32_t retryLeft) {
         }
 
         stream->currentSegmentIndex_.fetch_add(1, std::memory_order_relaxed);
+        LogI("[HLSStream] segment {} done, next={}", segIdx, segIdx + 1);
         stream->downloadSegments();
     };
 
-    (void)downloadTask(request_, requestInfo, self, segIndex, retryLeft);
+    auto coroutine = downloadTask(request_, requestInfo, self, segIndex, retryLeft);
+    storeCoroutine(std::move(coroutine));
+    CoroutineScheduler::instance().schedule(pendingCoroutines_.back().makeResumeHandle());
 }
 
 void HLSStream::handleSegmentChunk(http::StreamChunk&& chunk, uint32_t segmentIndex) {
@@ -342,7 +388,41 @@ void HLSStream::handleSegmentChunk(http::StreamChunk&& chunk, uint32_t segmentIn
         }
 
         position_ += chunkSize;
+
+        if (position_.load() / logProgressBytes()
+            != (position_.load() - chunkSize) / logProgressBytes()) {
+            LogI("[HLSStream::handleSegmentChunk] progress: segIndex={} pos={} chunk={}",
+                 segmentIndex,
+                 position_.load(),
+                 chunkSize);
+        }
     }
+}
+
+void HLSStream::reportHttpError(const http::HttpResponse& response) {
+    if (!params_.onError) {
+        state_ = StreamState::Error;
+        isRunning_ = false;
+        return;
+    }
+    Error err = Error::NetworkError;
+    switch (response.error.retCode) {
+        case slark::Error::ConnectionTimeout:
+        case slark::Error::HttpError:
+        case slark::Error::Cancelled:
+        case slark::Error::DnsResolveFailed:
+        case slark::Error::ConnectionFailed:
+            err = response.error.retCode;
+            break;
+        default:
+            break;
+    }
+    LogE("[HLSStream::reportHttpError] err={} originCode={}",
+         static_cast<int>(err),
+         response.error.originErrorCode);
+    params_.onError(err, response.error.originErrorCode);
+    state_ = StreamState::Error;
+    isRunning_ = false;
 }
 
 std::string HLSStream::resolveUrl(const std::string& relativeUrl) const {
@@ -354,6 +434,7 @@ void HLSStream::refreshPlaylist() {
         return;
     }
 
+    LogI("[HLSStream::refreshPlaylist] url={}", mediaPlaylistUrl_);
     request_ = std::make_shared<http::HttpRequest>();
 
     http::RequestInfo requestInfo;
@@ -370,15 +451,13 @@ void HLSStream::refreshPlaylist() {
         if (response.isOk()) {
             stream->handlePlaylistResponse(std::move(response));
         } else {
-            if (stream->params_.onError) {
-                stream->params_.onError(Error::NetworkError);
-            }
-            stream->state_ = StreamState::Error;
-            stream->isRunning_ = false;
+            stream->reportHttpError(response);
         }
     };
 
-    (void)fetchTask(request_, requestInfo, self);
+    auto coroutine = fetchTask(request_, requestInfo, self);
+    storeCoroutine(std::move(coroutine));
+    CoroutineScheduler::instance().schedule(pendingCoroutines_.back().makeResumeHandle());
 }
 
 } // namespace slark

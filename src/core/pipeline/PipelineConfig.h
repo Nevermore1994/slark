@@ -73,7 +73,7 @@ struct BackpressureConfig {
         cfg.audioDecoderLowWatermarkFrames = 2;
         cfg.videoDecoderHighWatermarkFrames = 4;
         cfg.videoDecoderLowWatermarkFrames = 1;
-        cfg.maxDropPerVsync = 4; // 直播追帧更保守，避免画面跳跃
+        cfg.maxDropPerVsync = 4;
         cfg.avSyncThresholdSec = 0.08;
         cfg.isLiveSource = true;
         cfg.isNetworkSource = true;

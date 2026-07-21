@@ -7,10 +7,12 @@
 #include "Base.h"
 #include "DecoderConfig.h"
 #include "GLContextManager.h"
+#include "HttpStream.h"
 #include "Log.hpp"
 #include "MediaUtil.h"
 #include "PlayerStateMachine.h"
 #include "Random.hpp"
+#include "StringUtil.h"
 #include "VideoInfo.h"
 
 #include <algorithm>
@@ -21,7 +23,7 @@
 namespace slark {
 
 namespace {
-constexpr double kSeekThreshold = 0.05; // 50ms 内跳过 seek
+static constexpr double kSeekThreshold = 0.05;
 
 BackpressureConfig buildBackpressureConfig(StreamType type, bool isLive) {
     if (isLive || type == StreamType::HLS) {
@@ -97,9 +99,9 @@ void Player::Impl::seek(double time, bool isAccurate) noexcept {
         LogI("receive accurate seek:{}, isAccurate:{}", time, isAccurate);
         return;
     }
-    auto now = Time::nowTimeStamp();
+    // 拖拽 seek：写 pendingSeekTarget_，由 processPendingSeek 消费
+    // 不更新 pendingSeekTimeUs_（debounce 只在第一次触发时有用，后续由 seek in progress 控制）
     pendingSeekTarget_.store(time, std::memory_order_release);
-    pendingSeekTimeUs_.store(now.point(), std::memory_order_release);
     ownerThread_->start();
     LogI("receive seek:{}, isAccurate:{}", time, isAccurate);
 }
@@ -205,13 +207,21 @@ bool Player::Impl::setupDataProvider() noexcept {
         (void)self->dataPacketSender_->send(std::move(data));
     };
 
-    auto onError = [weak](bool isNetwork) {
+    auto onError = [weak, path](Error err, int32_t originErrorCode) {
         auto self = weak.lock();
         if (!self || self->isStopped_) {
             return;
         }
-        const auto err = isNetwork ? Error::NetworkError : Error::IOError;
-        self->notifyPlayerEvent(PlayerEvent::OnError, std::to_string(static_cast<uint32_t>(err)));
+        std::string host;
+        if (auto* httpStream = dynamic_cast<HttpStream*>(self->mediaSourceManager_.rawStream())) {
+            host = httpStream->host();
+        }
+        if (host.empty()) {
+            host = StringUtil::extractHostFromUri(path);
+        }
+        self->notifyPlayerEvent(
+            PlayerEvent::OnError,
+            self->formatErrorValue(err, originErrorCode, host));
         // 切 Error 会 doStop() 销毁 pipeline_，投递到 ownerThread 串行执行避免并发 UAF
         if (self->sender_) {
             self->sender_->send(buildEvent(EventType::ReadError));
@@ -231,10 +241,11 @@ bool Player::Impl::setupDataProvider() noexcept {
                                   std::move(onComplete))) {
         LogE("open media source failed, path:{}", path);
         setState(PlayerState::Error);
-        const bool isNet = isNetworkLink(path);
-        auto errorCode = isNet ? std::to_string(static_cast<uint32_t>(Error::NetworkError))
-                               : std::to_string(static_cast<uint32_t>(Error::IOError));
-        notifyPlayerEvent(PlayerEvent::OnError, errorCode);
+        // open 失败时没有 originErrorCode，host 从 URI 解析
+        const Error err = isNetworkLink(path) ? Error::NetworkError : Error::IOError;
+        notifyPlayerEvent(
+            PlayerEvent::OnError,
+            formatErrorValue(err, 0, StringUtil::extractHostFromUri(path)));
         return false;
     }
     return true;
@@ -252,8 +263,6 @@ bool Player::Impl::createDemuxerComponent() noexcept {
         return false;
     }
     const auto filePath = config.filePath;
-
-    config.fileSize = mediaSourceManager_.streamInfo().totalSize;
 
     auto [sender, receiver] = Channel<DataPacket>::create();
     dataPacketSender_ = std::move(sender);
@@ -506,10 +515,17 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
         LogI("discard seek:{} (too close to current pos {:.3f})", seekTime, playedTime);
         return;
     }
+
+    // 非精准 seek in-flight merge：直接更新 target 到 pipeline，不切状态
     if (!seekRequest.isAccurate && seekRequest_.isValid()) {
-        LogI("discard non-accurate seek:{} (seek in progress)", seekTime);
+        LogI("in-flight drag seek merge to {:.3f}s", seekTime);
+        if (auto req = seekRequest_.load()) {
+            req->seekTime = seekTime;
+        }
+        pipeline_->seek(CTime(seekTime), false);
         return;
     }
+
     auto nowState = state();
     setState(PlayerState::Pause);
     if (nowState == PlayerState::Playing) {
@@ -644,22 +660,22 @@ void Player::Impl::processPendingSeek() noexcept {
     if (!pipeline_ || isStopped_ || isReleased_) {
         return;
     }
+
+    // 精准 seek 进行中时保留 pending，等完成后消费
     if (seekRequest_.isValid()) {
-        return;
+        if (auto req = seekRequest_.load(); req && req->isAccurate) {
+            return;
+        }
+        // 非精准 seek 进行中：继续往下走，doSeek 中会走 in-flight merge
     }
-    auto now = Time::nowTimeStamp().point();
-    auto seekTime = pendingSeekTimeUs_.load(std::memory_order_acquire);
-    if (now < seekTime + kSeekDebounceUs) {
+
+    // 同一 tick 内精准 seek 刚完成时跳过，等下一 tick 再处理拖拽 seek
+    bool expected = true;
+    if (seekJustCompleted_.compare_exchange_strong(expected, false, std::memory_order_acq_rel)) {
         return;
     }
 
     pendingSeekTarget_.store(-1.0, std::memory_order_release);
-
-    auto playedTime = currentPlayedTime();
-    if (isEqual(playedTime, target, kSeekThreshold)) {
-        LogI("pending seek skipped: target={:.3f} too close to current={:.3f}", target, playedTime);
-        return;
-    }
     doSeek(PlayerSeekRequest{.isAccurate = false, .seekTime = target});
 }
 
@@ -681,7 +697,6 @@ void Player::Impl::handlePipelineEvent(PipelineEvent event,
                                        std::optional<PipelineError> error) noexcept {
     switch (event) {
         case PipelineEvent::DemuxHeaderParsed:
-            // 直接在 ownerThread 上准备，无需绕行 sender_
             preparePlayerInfo();
             break;
         case PipelineEvent::PipelineReady:
@@ -709,6 +724,9 @@ void Player::Impl::handlePipelineEvent(PipelineEvent event,
                 LogI("seek done, cost time:{}",
                      (Time::nowTimeStamp() - seekRequest->startTime).toMilliSeconds());
                 seekRequest_.reset();
+                if (seekRequest->isAccurate) {
+                    seekJustCompleted_.store(true, std::memory_order_release);
+                }
                 notifyPlayerEvent(PlayerEvent::SeekDone);
             }
             resumeFromBuffering();
@@ -765,6 +783,13 @@ void Player::Impl::handlePipelineEvent(PipelineEvent event,
 
 void Player::Impl::notifyPlayerEvent(PlayerEvent event, std::string value) noexcept {
     notifyCenter_.notifyPlayerEvent(event, std::move(value));
+}
+
+std::string Player::Impl::formatErrorValue(Error err, int32_t originErrorCode,
+                                            std::string_view host) noexcept {
+    // value = "slarkError|originErrorCode|host"，上层按 `|` 切分
+    return std::to_string(static_cast<uint32_t>(err)) + "|" +
+           std::to_string(originErrorCode) + "|" + std::string(host);
 }
 
 void Player::Impl::notifyPlayerState(PlayerState state) noexcept {

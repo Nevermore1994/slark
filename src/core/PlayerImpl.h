@@ -89,6 +89,9 @@ private:
 
     void notifyPlayerEvent(PlayerEvent event, std::string value = {}) noexcept;
 
+    static std::string formatErrorValue(Error err, int32_t originErrorCode,
+                                        std::string_view host) noexcept;
+
     void notifyPlayerState(PlayerState state) noexcept;
 
     void notifyPlayedTime(bool isEndTime = false) noexcept;
@@ -124,7 +127,7 @@ private:
     [[nodiscard]] double demuxedDuration() const noexcept;
 
 private:
-    static constexpr int64_t kSeekDebounceUs = 100000; // 100ms debounce for drag seek merge
+    static constexpr int64_t kSeekDebounceUs = 100000;
 
     std::atomic_bool isStopped_ = false;
     std::atomic_bool isReleased_ = false;
@@ -133,6 +136,7 @@ private:
 
     std::atomic<double> pendingSeekTarget_{-1.0};
     std::atomic<uint64_t> pendingSeekTimeUs_{0};
+    std::atomic<bool> seekJustCompleted_{false};
     PlayerInfo info_;
     std::string playerId_;
     Synchronized<std::unique_ptr<PlayerParams>, std::shared_mutex> params_;

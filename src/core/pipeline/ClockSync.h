@@ -43,6 +43,10 @@ public:
         videoTime_.store(t.point(), std::memory_order_release);
     }
 
+    void setVideoTimeOnly(Time::TimePoint t) noexcept {
+        videoTime_.store(t.point(), std::memory_order_release);
+    }
+
     [[nodiscard]] Time::TimePoint audioTime() const noexcept {
         return Time::TimePoint(audioTime_.load(std::memory_order_acquire));
     }
@@ -81,8 +85,6 @@ public:
         return Time::TimePoint(audioPts);
     }
 
-    // 契约：完全复位到初始状态（时间归零、暂停），并清空 playbackRate/videoFps 等配置。
-    // 仅用于 teardown / 重新初始化，不可用于 seek 定位（否则会丢失媒体 fps 与用户倍速）。
     void reset() noexcept {
         audioEpoch_.fetch_add(1, std::memory_order_acq_rel);
         clockRunning_.store(false, std::memory_order_release);
@@ -97,8 +99,6 @@ public:
         vsyncDurationUs_.store(0, std::memory_order_relaxed);
     }
 
-    // 契约：将主时钟重定位到目标位置，audioTime/videoTime 均置为 t，并递增 epoch 使旧回调失效。
-    // 不变量：必须保留 playbackRate 与 videoFps（seek 不改变媒体固有帧率与用户倍速）。
     void seekTo(Time::TimePoint t) noexcept {
         audioEpoch_.fetch_add(1, std::memory_order_acq_rel);
         audioTime_.store(t.point(), std::memory_order_release);

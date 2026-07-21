@@ -261,8 +261,6 @@ private:
     /// SeekToKeyframe：暂停-flush-重定位-恢复
     void performKeyframeSeek(CTime target, SeekStrategy strategy) noexcept;
 
-    [[nodiscard]] AVFrameRefPtr seekPreviewFrame() noexcept;
-
     [[nodiscard]] AVFrameRefPtr popVideoFrame() noexcept;
 
     void dropOldestFrames() noexcept;

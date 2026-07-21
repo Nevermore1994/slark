@@ -37,27 +37,21 @@ class BufferMonitor {
 public:
     BufferMonitor(const BackpressureConfig& config, IBufferMonitorDelegate& delegate) noexcept;
 
-    // demux 侧：有新的已解封装数据入队时调用
     void onDemuxedDataEnqueued() noexcept;
 
-    // decoder 侧：有新的已解码帧入队时调用
     void onDecodedDataEnqueued() noexcept;
 
     void onHeartbeat() noexcept;
 
-    // DemuxHeaderParsed 后调用，进入预缓冲状态
     void startPrebuffering() noexcept;
 
-    // seek 后重置状态
     void reset() noexcept;
 
-    // 快速推帧期间暂停背压（demux 侧不受水位线限制）
     void pauseBackpressure() noexcept {
         backpressurePaused_ = true;
         resumeStream();
     }
 
-    // 快速推帧结束后恢复背压
     void resumeBackpressure() noexcept {
         backpressurePaused_ = false;
     }
@@ -70,7 +64,6 @@ public:
         }
     }
 
-    // 解码器输入耗尽时通知，停止 decoder 背压
     void setDecoderEof() noexcept {
         decoderEof_ = true;
     }

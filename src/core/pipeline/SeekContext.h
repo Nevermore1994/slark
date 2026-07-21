@@ -41,13 +41,16 @@ public:
         isSeekPending_.store(true, std::memory_order_release);
         isVideoSeeked_.store(false, std::memory_order_release);
         isAudioSeeked_.store(false, std::memory_order_release);
-        isPreviewPushed_.store(false, std::memory_order_release);
         return superseded;
     }
 
     void updateGOPRange(double keyframePts, double gopEndPts) noexcept {
         gopKeyframePts_.store(keyframePts, std::memory_order_release);
         gopEndPts_.store(gopEndPts, std::memory_order_release);
+    }
+
+    void updateTarget(double sec) noexcept {
+        activeSeekTimeSec_.store(sec, std::memory_order_release);
     }
 
     [[nodiscard]] SeekStrategy strategy() const noexcept {
@@ -96,11 +99,6 @@ public:
         return isVideoSeeked_.compare_exchange_strong(expected, true, std::memory_order_acq_rel);
     }
 
-    [[nodiscard]] bool tryMarkPreviewPushed() noexcept {
-        bool expected = false;
-        return isPreviewPushed_.compare_exchange_strong(expected, true, std::memory_order_acq_rel);
-    }
-
     void markAudioSeeked() noexcept {
         isAudioSeeked_.store(true, std::memory_order_release);
     }
@@ -118,7 +116,6 @@ public:
                (!hasAudio || isAudioSeeked_.load(std::memory_order_acquire));
     }
 
-    /// 捕获时的 epoch 与当前不一致，说明已发生新 seek
     [[nodiscard]] bool isEpochStale(uint64_t capturedEpoch) const noexcept {
         return capturedEpoch != seekEpoch_.load(std::memory_order_acquire);
     }
@@ -142,7 +139,6 @@ private:
     std::atomic<bool> isSeekPending_{false};
     std::atomic<bool> isVideoSeeked_{false};
     std::atomic<bool> isAudioSeeked_{false};
-    std::atomic<bool> isPreviewPushed_{false};
     std::atomic<int32_t> maxSkipFrames_{0};
 };
 

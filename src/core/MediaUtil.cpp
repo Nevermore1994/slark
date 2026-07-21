@@ -7,7 +7,7 @@
 #include "Log.hpp"
 #include "VideoInfo.h"
 
-#include <regex>
+#include <algorithm>
 
 #define ReadUINT8(view, offset, count) static_cast<uint8_t>(Golomb::readBits(view, offset, count))
 
@@ -16,14 +16,30 @@ namespace slark {
 constexpr uint32_t kInvalidPos = static_cast<uint32_t>(std::string_view::npos);
 
 bool isNetworkLink(const std::string& path) noexcept {
-    constexpr std::string_view kHttpRegex = "^(http|https):\\/\\/.*";
-    std::regex regex(kHttpRegex.data());
-    return std::regex_match(path, regex);
+    // starts_with 替代 std::regex：noexcept 函数内 regex 抛异常是 UB
+    std::string_view view(path);
+    return view.starts_with("http://") || view.starts_with("https://");
 }
 
 bool isHlsLink(const std::string& url) noexcept {
-    const std::regex hlsRegex(R"(^(http|https)://.*\.m3u8(\?.*)?$)", std::regex::icase);
-    return std::regex_match(url, hlsRegex);
+    std::string_view view(url);
+    if (!view.starts_with("http://") && !view.starts_with("https://")) {
+        return false;
+    }
+    // 移除查询参数后检查扩展名
+    auto queryPos = view.find('?');
+    auto path = (queryPos != std::string_view::npos) ? view.substr(0, queryPos) : view;
+    auto endsWithIcase = [path](std::string_view suffix) {
+        if (path.size() < suffix.size()) {
+            return false;
+        }
+        auto sub = path.substr(path.size() - suffix.size());
+        return std::equal(sub.begin(), sub.end(), suffix.begin(), suffix.end(), [](char a, char b) {
+            return std::tolower(static_cast<unsigned char>(a)) ==
+                   std::tolower(static_cast<unsigned char>(b));
+        });
+    };
+    return endsWithIcase(".m3u8") || endsWithIcase(".m3u");
 }
 
 AudioProfile getAudioProfile(uint8_t profile) noexcept {
@@ -95,7 +111,7 @@ bool findNaluUnit(DataView dataView, Range& range) noexcept {
 std::tuple<uint32_t, uint32_t> parseAvcSliceType(DataView naluView) noexcept {
     using namespace Util;
     int32_t offset = 0;
-    auto sliceView = naluView.substr(1); // skip nalu header
+    auto sliceView = naluView.substr(1);
     uint32_t firstMBInSlice = Golomb::readUe(sliceView, offset);
     uint32_t sliceType = Golomb::readUe(sliceView, offset);
     return {firstMBInSlice, sliceType};
@@ -104,17 +120,13 @@ std::tuple<uint32_t, uint32_t> parseAvcSliceType(DataView naluView) noexcept {
 std::tuple<uint32_t, uint32_t> parseHevcSliceType(DataView naluView, uint8_t naluType) noexcept {
     using namespace Util;
     int32_t offset = 0;
-    auto sliceView = naluView.substr(2); // skip NALU header (2 bytes)
-    // first_slice_segment_in_pic_flag (1 bit)
-    Golomb::readBits(sliceView, offset, 1);
-    // no_output_of_prior_pics_flag (1 bit, only for IDR)
+    auto sliceView = naluView.substr(2);
+    Golomb::readBits(sliceView, offset, 1); // first_slice_segment_in_pic_flag
     if (naluType == 19 || naluType == 20) {
-        Golomb::readBits(sliceView, offset, 1);
+        Golomb::readBits(sliceView, offset, 1); // no_output_of_prior_pics_flag（仅 IDR）
     }
-    // slice_segment_address (UE)
-    uint32_t sliceSegmentAddr = Golomb::readUe(sliceView, offset);
-    // slice_type (UE)
-    uint32_t sliceType = Golomb::readUe(sliceView, offset);
+    uint32_t sliceSegmentAddr = Golomb::readUe(sliceView, offset); // slice_segment_address
+    uint32_t sliceType = Golomb::readUe(sliceView, offset);         // slice_type
     return {sliceSegmentAddr, sliceType};
 }
 
@@ -209,13 +221,12 @@ double parseH264Vui(DataView bitstream, int32_t& offset) {
     return fps;
 }
 
-// Modify parseSps to call parseVui
 void parseH264Sps(DataView bitstream, const std::shared_ptr<VideoInfo>& videoInfo) noexcept {
     using namespace Util;
-    bitstream = bitstream.substr(1); // skip header
+    bitstream = bitstream.substr(1);
     int32_t offset = 0;
     auto profileIdc = ReadUINT8(bitstream, offset, 8);
-    offset += 8; // skip flags + reserved
+    offset += 8; // flags + reserved
     videoInfo->profile = profileIdc;
     [[maybe_unused]] auto levelIdc = ReadUINT8(bitstream, offset, 8);
     videoInfo->level = levelIdc;
@@ -287,7 +298,7 @@ void parseH264Sps(DataView bitstream, const std::shared_ptr<VideoInfo>& videoInf
     if (frameMbsOnlyFlag == 0) {
         offset += 1;
     }
-    offset += 1; // skip direct_8x8_inference_flag
+    offset += 1; // direct_8x8_inference_flag
     auto cropFlag = Golomb::readBits(bitstream, offset, 1);
     if (cropFlag) {
         auto leftOffset = Golomb::readUe(bitstream, offset);
@@ -297,17 +308,13 @@ void parseH264Sps(DataView bitstream, const std::shared_ptr<VideoInfo>& videoInf
 
         uint32_t subWidth = 2;
         uint32_t subHeight = 2;
-        // default 420
-        if (0 == chromaFormatIdc) // monochrome
-        {
+        if (0 == chromaFormatIdc) {
             subWidth = 1;
             subHeight = 2 - frameMbsOnlyFlag;
         } else if (2 == chromaFormatIdc) {
-            // 4:2:2
             subWidth = 2;
             subHeight = 2 - frameMbsOnlyFlag;
         } else if (3 == chromaFormatIdc) {
-            // 4:4:4
             subWidth = 1;
             subHeight = 2 - frameMbsOnlyFlag;
         }
@@ -316,7 +323,6 @@ void parseH264Sps(DataView bitstream, const std::shared_ptr<VideoInfo>& videoInf
         videoInfo->height =
             (2 - frameMbsOnlyFlag) * videoInfo->height - subHeight * (topOffset + bottomOffset);
     }
-    // Parse VUI for FPS
     LogI("width:{}, height:{}", width, height);
     videoInfo->fps = static_cast<uint16_t>(parseH264Vui(bitstream, offset));
 }
@@ -434,7 +440,6 @@ void parseH265Sps(DataView bitstream, const std::shared_ptr<VideoInfo>& videoInf
     }
     videoInfo->width = picWidthInMbsMinus;
     videoInfo->height = picHeightInMapUnitsMinus;
-    // Parse VUI for FPS
     videoInfo->fps = static_cast<uint16_t>(parseH265Vui(bitstream, offset));
 }
 

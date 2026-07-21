@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "Coroutine.hpp"
 #include "HttpRequest.h"
 #include "IStream.h"
 #include "M3U8Parser.h"
@@ -12,6 +13,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <vector>
 
 namespace slark {
 
@@ -66,8 +68,14 @@ private:
 
     void handlePlaylistResponse(http::HttpResponse&& response);
     void handleSegmentChunk(http::StreamChunk&& chunk, uint32_t segmentIndex);
+    void reportHttpError(const http::HttpResponse& response);
 
     [[nodiscard]] std::string resolveUrl(const std::string& relativeUrl) const;
+
+    // 播放列表/分片下载均会递归触发新协程（如 master->variant、分片重试），
+    // 不能用单个成员存储：移动赋值会 destroy() 仍在运行中的旧协程（UB）。
+    // 用 vector 只追加存储，插入时顺便清理已完成的协程。
+    void storeCoroutine(Coroutine<void>&& coroutine) noexcept;
 
 private:
     std::unique_ptr<M3U8Parser> parser_;
@@ -79,6 +87,8 @@ private:
     std::string mediaPlaylistUrl_;
     std::atomic<uint32_t> currentSegmentIndex_{0};
 
+    std::vector<Coroutine<void>> pendingCoroutines_;
+
     StreamInfo info_;
 
     std::atomic<StreamState> state_{StreamState::Idle};
@@ -86,6 +96,7 @@ private:
     std::atomic<bool> isRunning_{false};
     std::atomic<bool> isCompleted_{false};
     std::atomic<bool> isPaused_{false};
+    std::atomic<int32_t> lastErrorOriginCode_{0};
 
     MetadataCallback metadataCallback_;
     std::mutex mutex_;

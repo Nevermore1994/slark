@@ -18,7 +18,7 @@ namespace slark {
 struct DataPacket;
 
 using StreamDataCallback = std::function<void(DataPacket)>;
-using StreamErrorCallback = std::function<void(bool /*isNetwork*/)>;
+using StreamErrorCallback = std::function<void(Error /*err*/, int32_t /*originErrorCode*/)>;
 using StreamCompleteCallback = std::function<void()>;
 
 class MediaSourceManager : public NonCopyMovable {
@@ -45,6 +45,11 @@ public:
             return stream_->info();
         }
         return streamInfo_;
+    }
+
+    [[nodiscard]] IStream* rawStream() const noexcept {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return stream_.get();
     }
 
     [[nodiscard]] StreamType streamType() const noexcept {

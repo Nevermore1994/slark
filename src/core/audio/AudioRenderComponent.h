@@ -79,8 +79,6 @@ public:
 
     void renderEnd() noexcept;
 
-    /// 标记音频解码已完成，后续不会有新数据写入 ring buffer。
-    /// 此时 provider 可用 `readUpTo` 放行残片并补零，避免残片卡住完成检测。
     void setDecoderCompleted() noexcept {
         decoderCompleted_.store(true, std::memory_order_release);
     }

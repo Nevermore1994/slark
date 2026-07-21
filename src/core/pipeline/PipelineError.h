@@ -14,7 +14,7 @@ namespace slark {
 
 struct PipelineError {
     Error error = Error::Success;
-    int32_t nativeCode = 0; // 原始错误码（如 HTTP 状态码、系统 errno 等）
+    int32_t nativeCode = 0;
 };
 
 using PipelineEventCallback = std::function<void(PipelineEvent, std::optional<PipelineError>)>;

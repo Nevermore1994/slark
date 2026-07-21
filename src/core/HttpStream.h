@@ -4,8 +4,10 @@
 
 #pragma once
 
+#include "Coroutine.hpp"
 #include "HttpRequest.h"
 #include "IStream.h"
+#include "StringUtil.h"
 
 #include <atomic>
 #include <memory>
@@ -44,6 +46,14 @@ public:
         return isCompleted_.load();
     }
 
+    [[nodiscard]] int32_t lastErrorOriginCode() const noexcept {
+        return lastErrorOriginCode_.load(std::memory_order_acquire);
+    }
+
+    [[nodiscard]] std::string host() const noexcept {
+        return StringUtil::extractHostFromUri(params_.uri);
+    }
+
 private:
     void handleChunk(http::StreamChunk&& chunk) noexcept;
     void handleError(const http::ErrorInfo& error) noexcept;
@@ -55,6 +65,8 @@ private:
     uint64_t contentLength_ = 0;
     bool acceptRanges_ = false;
 
+    Coroutine<void> streamCoroutine_;
+
     StreamInfo info_;
 
     std::atomic<StreamState> state_{StreamState::Idle};
@@ -62,6 +74,7 @@ private:
     std::atomic<bool> isRunning_{false};
     std::atomic<bool> isCompleted_{false};
     std::atomic<bool> isPaused_{false};
+    std::atomic<int32_t> lastErrorOriginCode_{0};
 };
 
 } // namespace slark

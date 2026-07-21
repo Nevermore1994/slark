@@ -396,10 +396,6 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
                     onSeekFrameConsumed(TrackType::Video);
                 }
             }
-            auto preview = seekPreviewFrame();
-            if (preview) {
-                return preview;
-            }
         }
         LogI("requestVideoFrame SKIP: video queue empty (starvation), masterTime={:.3f} videoTime={:.3f} cacheEndTime={:.3f}",
              masterTime, videoTime, cacheEnd);
@@ -601,6 +597,12 @@ void PlayPipeline::onDropOldest() noexcept {
 }
 
 void PlayPipeline::onBufferEvent(PipelineEvent event, std::optional<PipelineError> error) noexcept {
+    if (!isOnOwnerThread()) {
+        postToOwnerThread([this, event, error = std::move(error)]() mutable {
+            fireEvent(event, std::move(error));
+        });
+        return;
+    }
     fireEvent(event, std::move(error));
 }
 
@@ -1400,39 +1402,6 @@ void PlayPipeline::pushSeekFrames() noexcept {
         onSeekFrameConsumed(TrackType::Video);
         LogI("video seek completed via pushSeekFrames");
     }
-}
-
-AVFrameRefPtr PlayPipeline::seekPreviewFrame() noexcept {
-    constexpr int32_t kPreviewFrameStep = 3;
-    AVFrameRefPtr previewFrame;
-
-    videoFrames_.withTryLock([&](auto& m) {
-        if (m.empty()) {
-            return;
-        }
-        const auto strategy = seekContext_->strategy();
-        if (strategy == SeekStrategy::FastForwardInGOP) {
-            int32_t idx = 0;
-            auto it = m.begin();
-            while (it != m.end()) {
-                if (idx % kPreviewFrameStep == 0) {
-                    previewFrame = it->second;
-                }
-                ++idx;
-                it = m.erase(it);
-            }
-        } else {
-            for (auto it = m.rbegin(); it != m.rend(); ++it) {
-                const auto& f = it->second;
-                if (f && f->isDiscard && f->info && f->info->isKeyFrame()) {
-                    previewFrame = f;
-                    m.erase(m.begin(), it.base());
-                    break;
-                }
-            }
-        }
-    });
-    return previewFrame;
 }
 
 void PlayPipeline::onSeekFrameConsumed(TrackType track) noexcept {

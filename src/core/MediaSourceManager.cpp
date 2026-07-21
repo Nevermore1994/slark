@@ -19,6 +19,9 @@ bool MediaSourceManager::open(const std::string& uri,
         return false;
     }
 
+    auto detectedType = StreamFactory::detectStreamType(uri);
+    LogI("[MediaSourceManager::open] uri={} detectedType={}", uri, static_cast<int>(detectedType));
+
     auto result = StreamFactory::createStream(uri);
     if (!result.has_value()) {
         LogE("MediaSourceManager createStream failed: {}", result.error().message);
@@ -26,13 +29,11 @@ bool MediaSourceManager::open(const std::string& uri,
     }
     stream_ = std::move(result.value());
 
-    // 提前判断是否网络流，open 后 streamInfo_ 才填充
-    const bool isNetworkStream = StreamFactory::isHttp(uri) || StreamFactory::isHLS(uri);
+    LogI("[MediaSourceManager::open] stream created: type={}", static_cast<int>(stream_->info().type));
 
     OpenParams params;
     params.uri = uri;
 
-    // DataChunk → DataPacket 转换，零拷贝：直接从 DataChunk.data 构造 Data
     params.onData = [onData = std::move(onData)](DataChunk chunk) {
         if (!onData || chunk.empty()) {
             return;
@@ -43,9 +44,9 @@ bool MediaSourceManager::open(const std::string& uri,
         onData(std::move(packet));
     };
 
-    params.onError = [onError = std::move(onError), isNetworkStream](const Error&) {
+    params.onError = [onError = std::move(onError)](Error err, int32_t originErrorCode) {
         if (onError) {
-            onError(isNetworkStream);
+            onError(err, originErrorCode);
         }
     };
 
@@ -59,12 +60,16 @@ bool MediaSourceManager::open(const std::string& uri,
     }
     streamInfo_ = openResult.value();
     streamInfo_.uri = uri;
+    LogI("[MediaSourceManager::open] stream open ok: totalSize={} isSeekable={}",
+         streamInfo_.totalSize,
+         streamInfo_.isSeekable);
     return true;
 }
 
 void MediaSourceManager::start() noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     if (stream_) {
+        LogI("[MediaSourceManager::start]");
         stream_->start();
     }
 }
@@ -79,6 +84,7 @@ void MediaSourceManager::pause() noexcept {
 void MediaSourceManager::close() noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     if (stream_) {
+        LogI("[MediaSourceManager::close]");
         stream_->close();
         stream_.reset();
     }
