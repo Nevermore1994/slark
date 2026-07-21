@@ -83,8 +83,7 @@ public:
         });
     }
 
-    // 移除所有待执行任务，并异步触发取消回调
-    // 取消回调在独立线程中执行，避免阻塞调用线程
+    // 移除所有待执行任务，同步执行取消回调
     void clear() noexcept {
         std::vector<Job> jobsToCancel;
         {
@@ -92,15 +91,10 @@ public:
             jobsToCancel = std::move(jobs_);
             jobs_.clear();
         }
-        // 异步执行取消回调，避免阻塞调用线程
-        if (!jobsToCancel.empty()) {
-            postJob([jobs = std::move(jobsToCancel)]() {
-                for (auto& job : jobs) {
-                    if (job.cancel) {
-                        job.cancel();
-                    }
-                }
-            });
+        for (auto& job : jobsToCancel) {
+            if (job.cancel) {
+                job.cancel();
+            }
         }
     }
 

@@ -116,7 +116,6 @@ auto FileStream::seek(uint64_t position) -> StreamResult<void> {
     pendingSeekFlag_.store(true, std::memory_order_release);
     notifyThread();
 
-    // 同步等待 IO 线程完成 seek，确保后续读取从新位置开始
     {
         std::unique_lock lock(mutex_);
         if (!cv_.wait_for(lock, std::chrono::seconds(5), [this] { return seekCompleted_; })) {
@@ -232,7 +231,7 @@ void FileStream::readLoop() noexcept {
         if (!buffer || buffer->capacity() == 0) {
             LogE("readLoop: buffer alloc failed, chunkSize={}", chunkSize);
             if (params_.onError) {
-                params_.onError(Error::OutOfMemory);
+                params_.onError(Error::OutOfMemory, 0);
             }
             break;
         }
@@ -243,7 +242,6 @@ void FileStream::readLoop() noexcept {
             buffer->setSize(*readResult);
         }
 
-        // 读取期间如有 seek 请求，丢弃当前数据（来自老位置）
         if (pendingSeekFlag_.load(std::memory_order_acquire)) {
             continue;
         }

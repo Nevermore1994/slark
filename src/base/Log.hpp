@@ -3,6 +3,7 @@
 //
 #pragma once
 
+#include "LogConfig.h"
 #include "LogOutput.h"
 
 #include <cinttypes>
@@ -31,7 +32,7 @@ void printLog(LogType type, const std::string& log);
 template <typename... Args>
 void outputLog(LogType level, std::string_view format, Args&&... args) {
     auto logStr = std::vformat(format, std::make_format_args(args...));
-    if (level != LogType::Print) {
+    if (level != LogType::Print && static_cast<int>(level) >= getLogConfig().minLogLevel) {
         LogOutput::shareInstance().write(logStr);
     }
     if (level == LogType::Record) {

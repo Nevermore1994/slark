@@ -230,11 +230,14 @@ public:
         }
         std::lock_guard<std::mutex> lock(channel_->mutex_);
         if (!channel_->isClosed_ && !box.empty()) {
-            if constexpr (std::is_rvalue_reference_v<decltype(box)>) {
-                std::move(box.begin(), box.end(), std::back_inserter(channel_->messages_));
-            } else {
+            if constexpr (std::is_lvalue_reference_v<decltype(box)>) {
                 for (const auto& v : std::views::all(box)) {
                     channel_->messages_.push_back(v);
+                }
+            } else {
+                // rvalue range: move elements
+                for (auto& v : box) {
+                    channel_->messages_.emplace_back(std::move(v));
                 }
             }
             channel_->cond_.notify_one();
@@ -384,8 +387,10 @@ private:
                 channel_->messages_.pop_front();
                 return value;
             }
-            // Awakened 优先于 Closed：让 flush 在 stop 期间也能完整生效
-            // 代价：worker 退出会晚一轮（先收到 Awakened 走一圈循环，下一次 receive 才看到 Closed）
+            // Closed 优先于 Awakened：done() + wakeup() 并发时 worker 直接退出
+            if (channel_->isClosed_) {
+                return std::unexpected(ChannelEventType::Closed);
+            }
             if (channel_->awakened_) {
                 channel_->awakened_ = false;
                 return std::unexpected(ChannelEventType::Awakened);
@@ -570,15 +575,12 @@ public:
     }
 
     inline auto operator==(const ReceiverIterator& iter) const noexcept -> bool {
+        // 输入迭代器：只有都到达末尾（Closed）时才相等
         const auto& lvalue = value_;
         const auto& rvalue = iter.value_;
-        if (lvalue.has_value() && rvalue.has_value()) {
-            return &lvalue.value() == &rvalue.value();
-        }
-        if (lvalue.has_value() || rvalue.has_value()) {
-            return false;
-        }
-        return lvalue.error() == rvalue.error();
+        return !lvalue.has_value() && !rvalue.has_value() &&
+               lvalue.error() == ChannelEventType::Closed &&
+               rvalue.error() == ChannelEventType::Closed;
     }
 
     inline auto operator!=(const ReceiverIterator& iter) const noexcept -> bool {

@@ -55,38 +55,44 @@ TimerManager::~TimerManager() {
 
 void TimerManager::tickLoop() {
     while (!stopRequested_.load()) {
-        {
-            std::unique_lock lock(mutex_);
-            auto waitTime = timerPool_.peekWaitTime();
-            cond_.wait_for(lock, waitTime, [this] {
-                return hasNewTimer_ || stopRequested_.load();
-            });
-            hasNewTimer_ = false;
-        }
-
-        if (stopRequested_.load()) {
-            break;
-        }
-
-        std::vector<TimerEntry> expired;
-        {
-            std::lock_guard lock(mutex_);
-            timerPool_.collectExpired(expired);
-        }
-
-        for (auto& entry : expired) {
-            if (!entry.isValid) {
-                continue;
+        try {
+            {
+                std::unique_lock lock(mutex_);
+                auto waitTime = timerPool_.peekWaitTime();
+                cond_.wait_for(lock, waitTime, [this] {
+                    return hasNewTimer_ || stopRequested_.load();
+                });
+                hasNewTimer_ = false;
             }
-            if (entry.isLoop) {
-                processLoopTask(entry);
-            } else if (entry.task) {
-                postTaskToPool(
-                    [task = std::move(entry.task)]() mutable {
-                        task();
-                    },
-                    entry.id);
+
+            if (stopRequested_.load()) {
+                break;
             }
+
+            std::vector<TimerEntry> expired;
+            {
+                std::lock_guard lock(mutex_);
+                timerPool_.collectExpired(expired);
+            }
+
+            for (auto& entry : expired) {
+                if (!entry.isValid) {
+                    continue;
+                }
+                if (entry.isLoop) {
+                    processLoopTask(entry);
+                } else if (entry.task) {
+                    postTaskToPool(
+                        [task = std::move(entry.task)]() mutable {
+                            task();
+                        },
+                        entry.id);
+                }
+            }
+        } catch (const std::exception& e) {
+            LogE("Timer tickLoop exception: {}", e.what());
+        } catch (...) {
+            LogE("Timer tickLoop unknown exception");
         }
     }
 }

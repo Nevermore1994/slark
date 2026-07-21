@@ -123,6 +123,12 @@ std::string_view toString(Error error) noexcept {
             return "Pipeline decode error";
         case Error::PipelineRenderError:
             return "Pipeline render error";
+        case Error::Failed:
+            return "Generic failure";
+        case Error::SchemeNotSupported:
+            return "Scheme not supported";
+        case Error::SchemeDowngradeBlocked:
+            return "Scheme downgrade blocked";
         default:
             return "Unknown error";
     }

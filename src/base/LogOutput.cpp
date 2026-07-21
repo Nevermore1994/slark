@@ -4,33 +4,44 @@
 #include "LogOutput.h"
 
 #include "Log.hpp"
+#include "LogConfig.h"
 #include "Time.hpp"
 
 #include <algorithm>
+#include <filesystem>
 #include <memory>
 #include <ranges>
 
 namespace slark {
 
-static std::string logFileName() {
+static std::string defaultLogDir() {
     using namespace slark::File;
     const std::string logDir = cachePath() + "/logs";
     if (!isDirExist(logDir) && !createDir(logDir)) {
         LogP("create log folder failed.");
         return "";
     }
-    return logDir + "/" + Time::localShortTimeStr() + ".log";
+    return logDir;
 }
 
-static constexpr uint32_t kMaxWriteLogCount = 80 * 1024;
-
 LogOutput& LogOutput::shareInstance() {
-    static std::unique_ptr<LogOutput> instance;
-    static std::once_flag flag;
-    std::call_once(flag, [] {
-        instance = std::make_unique<LogOutput>();
-    });
+    static LogOutput* instance = new LogOutput();
     return *instance;
+}
+
+void LogOutput::shutdown() noexcept {
+    auto& self = shareInstance();
+    self.alive_.store(false, std::memory_order_release);
+    self.sortThreadRunning_.store(false, std::memory_order_release);
+    self.sortCond_.notify_one();
+    if (self.sortThread_.joinable()) {
+        self.sortThread_.join();
+    }
+    self.writer_.withLock([](auto& writer) {
+        if (writer) {
+            writer->close();
+        }
+    });
 }
 
 LogOutput::ThreadBuffer::ThreadBuffer() {
@@ -50,7 +61,7 @@ void LogOutput::ThreadBuffer::append(uint64_t seq, std::string_view str) {
 }
 
 void LogOutput::ThreadBuffer::flush() {
-    if (entries.empty() || !owner || !owner->alive_.load(std::memory_order_acquire)) {
+    if (entries.empty()) {
         return;
     }
     owner->submitEntries(std::move(entries));
@@ -60,23 +71,18 @@ void LogOutput::ThreadBuffer::flush() {
 }
 
 LogOutput::LogOutput() {
-    writer_.withLock([](auto& writer) {
+    pruneOldLogs();
+    writer_.withLock([this](auto& writer) {
         writer = std::make_unique<Writer>();
         recreateFile(writer);
     });
     sortThread_ = std::thread(&LogOutput::sortAndWriteLoop, this);
 }
 
-LogOutput::~LogOutput() {
-    alive_.store(false, std::memory_order_release);
-    sortThreadRunning_.store(false, std::memory_order_release);
-    sortCond_.notify_one();
-    if (sortThread_.joinable()) {
-        sortThread_.join();
-    }
-}
-
 void LogOutput::write(std::string_view str) noexcept {
+    if (!alive_.load(std::memory_order_acquire)) {
+        return;
+    }
     auto seq = globalSeq_.fetch_add(1, std::memory_order_relaxed);
     getThreadBuffer().append(seq, str);
 }
@@ -90,6 +96,9 @@ LogOutput::ThreadBuffer& LogOutput::getThreadBuffer() noexcept {
 }
 
 void LogOutput::submitEntries(std::vector<LogEntry> entries) {
+    if (!alive_.load(std::memory_order_acquire)) {
+        return;
+    }
     entryQueue_.push(std::move(entries));
     sortCond_.notify_one();
 }
@@ -123,34 +132,130 @@ void LogOutput::sortAndWriteLoop() {
         std::ranges::sort(merged, {}, &LogEntry::seq);
 
         // 合并为单个 Data 批量写入
+        // 注意：不能用 Data(totalSize) + append()，因为 Data(totalSize) 的 length_=totalSize
+        // 再 append 会触发扩容，结果变成 totalSize 个 0 + 实际内容。
+        // 改用 fromString 构造空 Data 后直接 append，或一次性复制。
         uint64_t totalSize = 0;
         for (const auto& entry : merged) {
             totalSize += entry.data.length();
         }
-        Data mergedData(totalSize);
-        for (const auto& entry : merged) {
-            mergedData.append(entry.data);
-        }
+        Data mergedData(totalSize, [&merged](Byte* buffer) -> uint64_t {
+            uint64_t offset = 0;
+            for (const auto& entry : merged) {
+                auto len = entry.data.length();
+                std::copy_n(entry.data.data(), len, buffer + offset);
+                offset += len;
+            }
+            return offset;
+        });
 
         writer_.withLock([&](auto& writer) {
             if (!writer) [[unlikely]] {
                 return;
             }
             writer->write(mergedData.detachData());
-            if (writer->writeCount() >= kMaxWriteLogCount) {
-                recreateFile(writer);
-            }
+            currentFileWriteSize_ += totalSize;
+            rotateIfNeeded(writer);
         });
     }
 }
 
+std::string LogOutput::logFilePath() const {
+    const auto& config = getLogConfig();
+    const std::string dir = config.logDir.empty() ? defaultLogDir() : config.logDir;
+    if (dir.empty()) {
+        return "";
+    }
+    const std::string fileName = config.logFileName.empty()
+                                     ? (Time::localShortTimeStr() + ".log")
+                                     : (config.logFileName + "_" + Time::localShortTimeStr() + ".log");
+    return dir + "/" + fileName;
+}
+
+void LogOutput::rotateIfNeeded(std::unique_ptr<Writer>& writer) noexcept {
+    const auto& config = getLogConfig();
+    if (currentFileWriteSize_ < config.maxLogFileSize) {
+        return;
+    }
+
+    writer->close();
+
+    const std::string basePath = logFilePath();
+    if (basePath.empty()) {
+        return;
+    }
+
+    try {
+        // 轮转：basePath → .1，.1 → .2 ... .(N-1) → .N，删除 .N
+        // 最终保留当前文件 + .1 ~ .(N-1)，共 N 个文件
+        const uint32_t maxNum = config.maxLogFileCount - 1;
+        std::filesystem::remove(basePath + "." + std::to_string(maxNum));
+        for (uint32_t i = maxNum; i > 0; --i) {
+            const std::string oldPath = basePath + "." + std::to_string(i - 1);
+            const std::string newPath = basePath + "." + std::to_string(i);
+            if (std::filesystem::exists(oldPath)) {
+                std::filesystem::rename(oldPath, newPath);
+            }
+        }
+        std::filesystem::rename(basePath, basePath + ".1");
+    } catch (...) {
+        // 轮转失败不阻塞日志写入
+    }
+
+    recreateFile(writer);
+}
+
 void LogOutput::recreateFile(std::unique_ptr<Writer>& writer) noexcept {
-    auto path = logFileName();
+    currentFileWriteSize_ = 0;
+    auto path = logFilePath();
     if (path.empty()) {
         LogP("log file path is empty");
         return;
     }
+    if (!std::filesystem::exists(std::filesystem::path(path).parent_path())) {
+        std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+    }
     writer->open(path);
+}
+
+void LogOutput::pruneOldLogs() noexcept {
+    const auto& config = getLogConfig();
+    const std::string dir = config.logDir.empty() ? defaultLogDir() : config.logDir;
+    if (dir.empty()) {
+        return;
+    }
+
+    // 文件名前缀用于匹配待清理的日志文件
+    const std::string prefix = config.logFileName;
+
+    try {
+        for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+            if (!entry.is_regular_file()) continue;
+            auto stem = entry.path().stem().string();     // e.g. "slark_20260717" 或 "20260717"
+            auto ext = entry.path().extension().string(); // e.g. ".log" 或 ".1"
+
+            // 仅处理带编号的轮转文件
+            if (ext.size() <= 1 || ext[1] < '0' || ext[1] > '9') continue;
+
+            // 检查文件名是否匹配前缀
+            bool matched = false;
+            if (prefix.empty()) {
+                // 无前缀：默认格式 时间.log.N
+                matched = true;
+            } else {
+                // 有前缀：前缀_时间.log.N
+                matched = stem.starts_with(prefix + "_");
+            }
+            if (!matched) continue;
+
+            uint32_t num = std::stoul(ext.substr(1));
+            if (num > config.maxLogFileCount - 1) {
+                std::filesystem::remove(entry.path());
+            }
+        }
+    } catch (...) {
+        // 文件系统操作失败不阻塞日志
+    }
 }
 
 } // namespace slark

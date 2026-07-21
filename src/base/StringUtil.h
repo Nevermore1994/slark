@@ -40,6 +40,12 @@ struct StringUtil {
         return str;
     }
 
+    [[nodiscard]] static std::string extractHostFromUri(std::string_view uri) noexcept;
+
+    // 安全日志字符串：将非法字节替换为十六进制转义，避免 JNI NewStringUTF SIGABRT
+    [[nodiscard]] static std::string toSafeLogString(std::string_view sv,
+                                                      size_t maxLen = 256) noexcept;
+
     [[nodiscard]] static bool iequals(std::string_view a, std::string_view b) noexcept {
         if (a.size() != b.size()) {
             return false;

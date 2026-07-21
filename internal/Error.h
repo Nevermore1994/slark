@@ -76,6 +76,10 @@ enum class Error : uint16_t {
     PipelineDemuxError = 602,
     PipelineDecodeError = 603,
     PipelineRenderError = 604,
+
+    Failed = 700,
+    SchemeNotSupported = 712,
+    SchemeDowngradeBlocked = 719,
 };
 
 std::string_view toString(Error error) noexcept;

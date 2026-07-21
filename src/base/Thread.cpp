@@ -190,6 +190,7 @@ void Thread::process() noexcept {
 
     if (customWork_) {
         customWork_(*this);
+        stopRequested_.store(true, std::memory_order_release);
     } else {
         while (!stopRequested_.load(std::memory_order_acquire)) {
             if (!isInit_) {
@@ -226,12 +227,14 @@ void Thread::process() noexcept {
             if (waitTime == std::chrono::milliseconds::max()) {
                 ScopedInactive guard;
                 cond_.wait(lock, [this] {
-                    return stopRequested_.load(std::memory_order_acquire) || !isRunning_;
+                    return stopRequested_.load(std::memory_order_acquire) || !isRunning_
+                           || !taskQueue_.empty();
                 });
-            } else {
+            } else if (waitTime > 0ms) {
                 ScopedInactive guard;
                 cond_.wait_for(lock, waitTime, [this] {
-                    return stopRequested_.load(std::memory_order_acquire) || !isRunning_;
+                    return stopRequested_.load(std::memory_order_acquire) || !isRunning_
+                           || !taskQueue_.empty();
                 });
             }
         }

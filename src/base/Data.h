@@ -28,7 +28,6 @@ using DataPtr = std::unique_ptr<Data>;
 using DataRefPtr = std::shared_ptr<Data>;
 using DataSpan = std::span<const uint8_t>;
 
-// 二进制数据管理类
 class Data {
 public:
     Data() = default;
@@ -398,7 +397,6 @@ private:
     std::unique_ptr<Byte[]> rawData_;
 };
 
-// 数据包结构
 struct DataPacket {
     DataPtr data = nullptr;
     int64_t offset = 0;

@@ -70,7 +70,7 @@ using DataCallback = std::function<void(DataChunk)>;
 
 using MetadataCallback = std::function<void(std::shared_ptr<void>)>;
 
-using ErrorCallback = std::function<void(Error)>;
+using ErrorCallback = std::function<void(Error /*err*/, int32_t /*originErrorCode*/)>;
 
 using CompletionCallback = std::function<void()>;
 

@@ -18,9 +18,14 @@ public:
     static LogOutput& shareInstance();
 
     LogOutput();
-    ~LogOutput();
+    ~LogOutput() = delete;
 
     void write(std::string_view str) noexcept;
+
+    /// 关闭日志系统：刷新所有缓存日志后停止排序线程。
+    /// shutdown 后可继续调用 write（日志将被丢弃）。
+    /// 幂等，可多次调用。
+    static void shutdown() noexcept;
 
 private:
     struct LogEntry {
@@ -46,11 +51,15 @@ private:
     ThreadBuffer& getThreadBuffer() noexcept;
     void submitEntries(std::vector<LogEntry> entries);
     void sortAndWriteLoop();
-    static void recreateFile(std::unique_ptr<Writer>& writer) noexcept;
+    void recreateFile(std::unique_ptr<Writer>& writer) noexcept;
+    void rotateIfNeeded(std::unique_ptr<Writer>& writer) noexcept;
+    void pruneOldLogs() noexcept;
+    std::string logFilePath() const;
 
     std::atomic<bool> alive_{true};
     std::atomic<bool> sortThreadRunning_{true};
     std::atomic<uint64_t> globalSeq_{0};
+    uint64_t currentFileWriteSize_ = 0;
     Synchronized<std::unique_ptr<Writer>> writer_;
 
     MPSCQueue<std::vector<LogEntry>> entryQueue_;
