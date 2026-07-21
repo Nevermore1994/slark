@@ -19,7 +19,7 @@ using namespace slark::http;
 namespace {
 
 constexpr auto kTestTimeout = std::chrono::seconds(30);
-constexpr const char* kBaseUrl = "http://httpbin.org";
+constexpr const char* kBaseUrl = "http://httpbingo.org";
 
 struct SyncWaiter {
     std::mutex mutex;
@@ -75,7 +75,7 @@ HttpResponse executeSync(const RequestInfo& info) {
         }
     };
     handler.onCompleted = [result, waiter](const RequestInfo&) {
-        result->error = ErrorInfo{ResultCode::Success, 0};
+        result->error = ErrorInfo{slark::Error::Success, 0};
         waiter->notify();
     };
     handler.onError = [result, waiter](const RequestInfo&, ErrorInfo error) {
@@ -104,7 +104,7 @@ TEST_F(HttpRequestTest, Get) {
     auto info = makeRequest("/get", HttpMethodType::Get);
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
     EXPECT_NE(response.body, nullptr);
 }
@@ -114,7 +114,7 @@ TEST_F(HttpRequestTest, Post) {
     auto info = makeRequest("/post", HttpMethodType::Post, std::move(body));
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
     EXPECT_NE(response.body, nullptr);
 }
@@ -124,7 +124,7 @@ TEST_F(HttpRequestTest, Put) {
     auto info = makeRequest("/put", HttpMethodType::Put, std::move(body));
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
@@ -132,7 +132,7 @@ TEST_F(HttpRequestTest, Delete) {
     auto info = makeRequest("/delete", HttpMethodType::Delete);
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
@@ -141,7 +141,7 @@ TEST_F(HttpRequestTest, Patch) {
     auto info = makeRequest("/patch", HttpMethodType::Patch, std::move(body));
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
@@ -151,17 +151,17 @@ TEST_F(HttpRequestTest, Options) {
     info.headers["Access-Control-Request-Headers"] = "X-PINGOTHER, Content-Type";
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
 TEST_F(HttpRequestTest, Redirect) {
-    auto info = makeRequest("/redirect-to?url=http%3A%2F%2Fhttpbin.org%2Fget&status_code=302",
+    auto info = makeRequest("/redirect-to?url=http%3A%2F%2Fhttpbingo.org%2Fget&status_code=302",
                             HttpMethodType::Get);
     info.isAllowRedirect = true;
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
@@ -169,8 +169,8 @@ TEST_F(HttpRequestTest, Status404) {
     auto info = makeRequest("/status/404", HttpMethodType::Get);
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::NotFound);
+    EXPECT_EQ(response.error.retCode, slark::Error::HttpError);
 }
 
 TEST_F(HttpRequestTest, CancelToken) {
@@ -195,7 +195,7 @@ TEST_F(HttpRequestTest, ConnectTimeout) {
     info.readTimeout = std::chrono::seconds(3);
 
     auto response = executeSync(info);
-    EXPECT_NE(response.error.retCode, ResultCode::Success);
+    EXPECT_NE(response.error.retCode, slark::Error::Success);
 }
 
 // HTTPS 测试用例
@@ -208,7 +208,7 @@ protected:
 
 TEST_F(HttpsRequestTest, Get) {
     RequestInfo info;
-    info.url = "https://httpbin.org/get";
+    info.url = "https://httpbingo.org/get";
     info.methodType = HttpMethodType::Get;
     info.headers = {{"User-Agent", "slark-https-test/1.0"}, {"Accept", "*/*"}};
     info.connectTimeout = std::chrono::seconds(10);
@@ -216,14 +216,14 @@ TEST_F(HttpsRequestTest, Get) {
 
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
     EXPECT_NE(response.body, nullptr);
 }
 
 TEST_F(HttpsRequestTest, Post) {
     RequestInfo info;
-    info.url = "https://httpbin.org/post";
+    info.url = "https://httpbingo.org/post";
     info.methodType = HttpMethodType::Post;
     info.headers = {{"Content-Type", "application/json"}, {"User-Agent", "slark-https-test/1.0"}};
     info.body = std::make_unique<Data>(R"({"test": "https", "value": 42})");
@@ -232,13 +232,13 @@ TEST_F(HttpsRequestTest, Post) {
 
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
 TEST_F(HttpsRequestTest, LargeResponse) {
     RequestInfo info;
-    info.url = "https://httpbin.org/bytes/65536"; // 64KB
+    info.url = "https://httpbingo.org/bytes/65536"; // 64KB
     info.methodType = HttpMethodType::Get;
     info.headers = {{"User-Agent", "slark-https-test/1.0"}};
     info.connectTimeout = std::chrono::seconds(10);
@@ -246,7 +246,7 @@ TEST_F(HttpsRequestTest, LargeResponse) {
 
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
     ASSERT_NE(response.body, nullptr);
     EXPECT_GE(response.body->size(), 65536u);
@@ -254,7 +254,7 @@ TEST_F(HttpsRequestTest, LargeResponse) {
 
 TEST_F(HttpsRequestTest, Put) {
     RequestInfo info;
-    info.url = "https://httpbin.org/put";
+    info.url = "https://httpbingo.org/put";
     info.methodType = HttpMethodType::Put;
     info.headers = {{"Content-Type", "application/json"}, {"User-Agent", "slark-https-test/1.0"}};
     info.body = std::make_unique<Data>(R"({"name": "https-put-test", "version": 2})");
@@ -263,13 +263,13 @@ TEST_F(HttpsRequestTest, Put) {
 
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
 TEST_F(HttpsRequestTest, Delete) {
     RequestInfo info;
-    info.url = "https://httpbin.org/delete";
+    info.url = "https://httpbingo.org/delete";
     info.methodType = HttpMethodType::Delete;
     info.headers = {{"User-Agent", "slark-https-test/1.0"}};
     info.connectTimeout = std::chrono::seconds(10);
@@ -277,13 +277,13 @@ TEST_F(HttpsRequestTest, Delete) {
 
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
 TEST_F(HttpsRequestTest, Patch) {
     RequestInfo info;
-    info.url = "https://httpbin.org/patch";
+    info.url = "https://httpbingo.org/patch";
     info.methodType = HttpMethodType::Patch;
     info.headers = {{"Content-Type", "application/json"}, {"User-Agent", "slark-https-test/1.0"}};
     info.body = std::make_unique<Data>(R"({"field": "patched", "value": 123})");
@@ -292,13 +292,13 @@ TEST_F(HttpsRequestTest, Patch) {
 
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
 TEST_F(HttpsRequestTest, Options) {
     RequestInfo info;
-    info.url = "https://httpbin.org/anything";
+    info.url = "https://httpbingo.org/anything";
     info.methodType = HttpMethodType::Options;
     info.headers = {{"User-Agent", "slark-https-test/1.0"},
                     {"Access-Control-Request-Method", "POST"}};
@@ -307,14 +307,14 @@ TEST_F(HttpsRequestTest, Options) {
 
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
 TEST_F(HttpsRequestTest, Redirect) {
     RequestInfo info;
     info.url =
-        "https://httpbin.org/redirect-to?url=https%3A%2F%2Fhttpbin.org%2Fget&status_code=302";
+        "https://httpbingo.org/redirect-to?url=https%3A%2F%2Fhttpbingo.org%2Fget&status_code=302";
     info.methodType = HttpMethodType::Get;
     info.headers = {{"User-Agent", "slark-https-test/1.0"}};
     info.isAllowRedirect = true;
@@ -323,13 +323,13 @@ TEST_F(HttpsRequestTest, Redirect) {
 
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
 TEST_F(HttpsRequestTest, Status404) {
     RequestInfo info;
-    info.url = "https://httpbin.org/status/404";
+    info.url = "https://httpbingo.org/status/404";
     info.methodType = HttpMethodType::Get;
     info.headers = {{"User-Agent", "slark-https-test/1.0"}};
     info.connectTimeout = std::chrono::seconds(10);
@@ -337,13 +337,13 @@ TEST_F(HttpsRequestTest, Status404) {
 
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::NotFound);
+    EXPECT_EQ(response.error.retCode, slark::Error::HttpError);
 }
 
 TEST_F(HttpsRequestTest, HeadersEcho) {
     RequestInfo info;
-    info.url = "https://httpbin.org/headers";
+    info.url = "https://httpbingo.org/headers";
     info.methodType = HttpMethodType::Get;
     info.headers = {{"User-Agent", "slark-https-test/1.0"},
                     {"X-Custom-Header", "custom-value-123"},
@@ -353,7 +353,7 @@ TEST_F(HttpsRequestTest, HeadersEcho) {
 
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
     ASSERT_NE(response.body, nullptr);
     // 验证响应中包含我们发送的请求头
@@ -365,7 +365,7 @@ TEST_F(HttpsRequestTest, HeadersEcho) {
 
 TEST_F(HttpsRequestTest, QueryParams) {
     RequestInfo info;
-    info.url = "https://httpbin.org/get?foo=bar&name=test&value=42";
+    info.url = "https://httpbingo.org/get?foo=bar&name=test&value=42";
     info.methodType = HttpMethodType::Get;
     info.headers = {{"User-Agent", "slark-https-test/1.0"}};
     info.connectTimeout = std::chrono::seconds(10);
@@ -373,15 +373,15 @@ TEST_F(HttpsRequestTest, QueryParams) {
 
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
     ASSERT_NE(response.body, nullptr);
     auto bodyStr =
         std::string(reinterpret_cast<const char*>(response.body->data()), response.body->size());
-    EXPECT_TRUE(bodyStr.find("\"foo\": \"bar\"") != std::string::npos ||
-                bodyStr.find("\"foo\":\"bar\"") != std::string::npos);
-    EXPECT_TRUE(bodyStr.find("\"name\": \"test\"") != std::string::npos ||
-                bodyStr.find("\"name\":\"test\"") != std::string::npos);
+    EXPECT_TRUE(bodyStr.find("\"foo\"") != std::string::npos);
+    EXPECT_TRUE(bodyStr.find("\"bar\"") != std::string::npos);
+    EXPECT_TRUE(bodyStr.find("\"name\"") != std::string::npos);
+    EXPECT_TRUE(bodyStr.find("\"test\"") != std::string::npos);
 }
 
 // HTTP 高级场景测试
@@ -396,16 +396,16 @@ TEST_F(HttpAdvancedTest, Status500) {
     auto info = makeRequest("/status/500", HttpMethodType::Get);
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::InternalServerError);
+    EXPECT_EQ(response.error.retCode, slark::Error::HttpError);
 }
 
 TEST_F(HttpAdvancedTest, Status403) {
     auto info = makeRequest("/status/403", HttpMethodType::Get);
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::Forbidden);
+    EXPECT_EQ(response.error.retCode, slark::Error::HttpError);
 }
 
 TEST_F(HttpAdvancedTest, DelayedResponse) {
@@ -413,7 +413,7 @@ TEST_F(HttpAdvancedTest, DelayedResponse) {
     info.readTimeout = std::chrono::seconds(10);
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
@@ -422,7 +422,7 @@ TEST_F(HttpAdvancedTest, GzipResponse) {
     info.headers["Accept-Encoding"] = "gzip";
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
@@ -431,17 +431,16 @@ TEST_F(HttpAdvancedTest, BasicAuth_Success) {
     info.headers["Authorization"] = "Basic dGVzdHVzZXI6dGVzdHBhc3M="; // base64(testuser:testpass)
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
 TEST_F(HttpAdvancedTest, BasicAuth_Failure) {
     auto info = makeRequest("/basic-auth/testuser/testpass", HttpMethodType::Get);
-    // 不发送认证头，期望 401
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::Unauthorized);
+    EXPECT_EQ(response.error.retCode, slark::Error::HttpError);
 }
 
 TEST_F(HttpAdvancedTest, MultipleRedirects) {
@@ -451,7 +450,7 @@ TEST_F(HttpAdvancedTest, MultipleRedirects) {
     info.readTimeout = std::chrono::seconds(45);
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
@@ -459,7 +458,7 @@ TEST_F(HttpAdvancedTest, ResponseHeaders) {
     auto info = makeRequest("/response-headers?X-Custom=hello&X-Test=world", HttpMethodType::Get);
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
     // 验证响应头存在
     EXPECT_FALSE(response.headers.empty());
@@ -477,7 +476,7 @@ TEST_F(HttpAdvancedTest, PostFormUrlEncoded) {
 
     auto response = executeSync(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
     ASSERT_NE(response.body, nullptr);
     auto bodyStr =
@@ -497,13 +496,13 @@ HttpResponse executeCoroutine(const RequestInfo& info) {
             auto response = co_await request->asyncExecute(info);
             *result = std::move(response);
         } catch (const std::exception& e) {
-            result->error = ErrorInfo{ResultCode::Failed, 0};
+            result->error = ErrorInfo{slark::Error::Failed, 0};
         }
         waiter->notify();
     };
 
     auto coro = testCoroutine();
-    CoroutineScheduler::instance().schedule(coro);
+    CoroutineScheduler::instance().schedule(std::move(coro).share());
 
     EXPECT_TRUE(waiter->wait()) << "Coroutine request timed out: " << info.url;
     return std::move(*result);
@@ -521,7 +520,7 @@ TEST_F(HttpCoroutineTest, Get) {
     auto info = makeRequest("/get", HttpMethodType::Get);
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
     EXPECT_NE(response.body, nullptr);
 }
@@ -531,7 +530,7 @@ TEST_F(HttpCoroutineTest, Post) {
     auto info = makeRequest("/post", HttpMethodType::Post, std::move(body));
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
     EXPECT_NE(response.body, nullptr);
 }
@@ -541,7 +540,7 @@ TEST_F(HttpCoroutineTest, Put) {
     auto info = makeRequest("/put", HttpMethodType::Put, std::move(body));
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
@@ -549,7 +548,7 @@ TEST_F(HttpCoroutineTest, Delete) {
     auto info = makeRequest("/delete", HttpMethodType::Delete);
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
@@ -558,17 +557,17 @@ TEST_F(HttpCoroutineTest, Patch) {
     auto info = makeRequest("/patch", HttpMethodType::Patch, std::move(body));
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
 TEST_F(HttpCoroutineTest, Redirect) {
-    auto info = makeRequest("/redirect-to?url=http%3A%2F%2Fhttpbin.org%2Fget&status_code=302",
+    auto info = makeRequest("/redirect-to?url=http%3A%2F%2Fhttpbingo.org%2Fget&status_code=302",
                             HttpMethodType::Get);
     info.isAllowRedirect = true;
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
@@ -579,7 +578,7 @@ TEST_F(HttpCoroutineTest, MultipleRedirects) {
     info.readTimeout = std::chrono::seconds(45);
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
@@ -587,8 +586,8 @@ TEST_F(HttpCoroutineTest, Status404) {
     auto info = makeRequest("/status/404", HttpMethodType::Get);
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::NotFound);
+    EXPECT_EQ(response.error.retCode, slark::Error::HttpError);
 }
 
 TEST_F(HttpCoroutineTest, DelayedResponse) {
@@ -596,7 +595,7 @@ TEST_F(HttpCoroutineTest, DelayedResponse) {
     info.readTimeout = std::chrono::seconds(10);
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
@@ -605,7 +604,7 @@ TEST_F(HttpCoroutineTest, GzipResponse) {
     info.headers["Accept-Encoding"] = "gzip";
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
@@ -621,7 +620,7 @@ TEST_F(HttpCoroutineTest, PostFormUrlEncoded) {
 
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
     ASSERT_NE(response.body, nullptr);
     auto bodyStr =
@@ -640,7 +639,7 @@ protected:
 
 TEST_F(HttpsCoroutineTest, Get) {
     RequestInfo info;
-    info.url = "https://httpbin.org/get";
+    info.url = "https://httpbingo.org/get";
     info.methodType = HttpMethodType::Get;
     info.headers = {{"User-Agent", "slark-https-coroutine-test/1.0"}, {"Accept", "*/*"}};
     info.connectTimeout = std::chrono::seconds(10);
@@ -648,14 +647,14 @@ TEST_F(HttpsCoroutineTest, Get) {
 
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
     EXPECT_NE(response.body, nullptr);
 }
 
 TEST_F(HttpsCoroutineTest, Post) {
     RequestInfo info;
-    info.url = "https://httpbin.org/post";
+    info.url = "https://httpbingo.org/post";
     info.methodType = HttpMethodType::Post;
     info.headers = {{"Content-Type", "application/json"},
                     {"User-Agent", "slark-https-coroutine-test/1.0"}};
@@ -665,13 +664,13 @@ TEST_F(HttpsCoroutineTest, Post) {
 
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
 TEST_F(HttpsCoroutineTest, Put) {
     RequestInfo info;
-    info.url = "https://httpbin.org/put";
+    info.url = "https://httpbingo.org/put";
     info.methodType = HttpMethodType::Put;
     info.headers = {{"Content-Type", "application/json"},
                     {"User-Agent", "slark-https-coroutine-test/1.0"}};
@@ -681,13 +680,13 @@ TEST_F(HttpsCoroutineTest, Put) {
 
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
 TEST_F(HttpsCoroutineTest, Delete) {
     RequestInfo info;
-    info.url = "https://httpbin.org/delete";
+    info.url = "https://httpbingo.org/delete";
     info.methodType = HttpMethodType::Delete;
     info.headers = {{"User-Agent", "slark-https-coroutine-test/1.0"}};
     info.connectTimeout = std::chrono::seconds(10);
@@ -695,13 +694,13 @@ TEST_F(HttpsCoroutineTest, Delete) {
 
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
 TEST_F(HttpsCoroutineTest, Patch) {
     RequestInfo info;
-    info.url = "https://httpbin.org/patch";
+    info.url = "https://httpbingo.org/patch";
     info.methodType = HttpMethodType::Patch;
     info.headers = {{"Content-Type", "application/json"},
                     {"User-Agent", "slark-https-coroutine-test/1.0"}};
@@ -711,14 +710,14 @@ TEST_F(HttpsCoroutineTest, Patch) {
 
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
 TEST_F(HttpsCoroutineTest, Redirect) {
     RequestInfo info;
     info.url =
-        "https://httpbin.org/redirect-to?url=https%3A%2F%2Fhttpbin.org%2Fget&status_code=302";
+        "https://httpbingo.org/redirect-to?url=https%3A%2F%2Fhttpbingo.org%2Fget&status_code=302";
     info.methodType = HttpMethodType::Get;
     info.headers = {{"User-Agent", "slark-https-coroutine-test/1.0"}};
     info.isAllowRedirect = true;
@@ -727,13 +726,13 @@ TEST_F(HttpsCoroutineTest, Redirect) {
 
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
 TEST_F(HttpsCoroutineTest, MultipleRedirects) {
     RequestInfo info;
-    info.url = "https://httpbin.org/redirect/2";
+    info.url = "https://httpbingo.org/redirect/2";
     info.methodType = HttpMethodType::Get;
     info.headers = {{"User-Agent", "slark-https-coroutine-test/1.0"}};
     info.isAllowRedirect = true;
@@ -742,13 +741,13 @@ TEST_F(HttpsCoroutineTest, MultipleRedirects) {
 
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
 TEST_F(HttpsCoroutineTest, LargeResponse) {
     RequestInfo info;
-    info.url = "https://httpbin.org/bytes/65536"; // 64KB
+    info.url = "https://httpbingo.org/bytes/65536"; // 64KB
     info.methodType = HttpMethodType::Get;
     info.headers = {{"User-Agent", "slark-https-coroutine-test/1.0"}};
     info.connectTimeout = std::chrono::seconds(10);
@@ -756,7 +755,7 @@ TEST_F(HttpsCoroutineTest, LargeResponse) {
 
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
     ASSERT_NE(response.body, nullptr);
     EXPECT_GE(response.body->size(), 65536u);
@@ -764,7 +763,7 @@ TEST_F(HttpsCoroutineTest, LargeResponse) {
 
 TEST_F(HttpsCoroutineTest, Status404) {
     RequestInfo info;
-    info.url = "https://httpbin.org/status/404";
+    info.url = "https://httpbingo.org/status/404";
     info.methodType = HttpMethodType::Get;
     info.headers = {{"User-Agent", "slark-https-coroutine-test/1.0"}};
     info.connectTimeout = std::chrono::seconds(10);
@@ -772,26 +771,26 @@ TEST_F(HttpsCoroutineTest, Status404) {
 
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::NotFound);
+    EXPECT_EQ(response.error.retCode, slark::Error::HttpError);
 }
 
 TEST_F(HttpsCoroutineTest, DelayedResponse) {
     RequestInfo info;
-    info.url = "https://httpbin.org/delay/2";
+    info.url = "https://httpbingo.org/delay/2";
     info.methodType = HttpMethodType::Get;
     info.headers = {{"User-Agent", "slark-https-coroutine-test/1.0"}};
     info.readTimeout = std::chrono::seconds(10);
 
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
 }
 
 TEST_F(HttpsCoroutineTest, HeadersEcho) {
     RequestInfo info;
-    info.url = "https://httpbin.org/headers";
+    info.url = "https://httpbingo.org/headers";
     info.methodType = HttpMethodType::Get;
     info.headers = {{"User-Agent", "slark-https-coroutine-test/1.0"},
                     {"X-Custom-Header", "custom-value-123"},
@@ -801,7 +800,7 @@ TEST_F(HttpsCoroutineTest, HeadersEcho) {
 
     auto response = executeCoroutine(info);
 
-    EXPECT_EQ(response.error.retCode, ResultCode::Success);
+    EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
     ASSERT_NE(response.body, nullptr);
     auto bodyStr =

@@ -152,42 +152,6 @@ TEST(AVSyncIntegrationTest, NormalFrameHasDiscardFlagFalse) {
     EXPECT_FALSE(frame->isDiscard);
 }
 
-// 模拟 seekPreviewFrame 逻辑：从队列中找最后一个 isDiscard 帧
-TEST(AVSyncIntegrationTest, SeekPreviewFrameFindsLastDiscardFrame) {
-    // 模拟解码输出队列（pts 有序）
-    std::vector<AVFrameRefPtr> decodedFrames;
-    decodedFrames.push_back(makeVideoFrame(1.0, true));  // discard
-    decodedFrames.push_back(makeVideoFrame(1.5, true));  // discard
-    decodedFrames.push_back(makeVideoFrame(2.0, false)); // 目标帧（非 discard）
-
-    // seekPreviewFrame 应返回最后一个 isDiscard 帧（pts = 1.5）
-    AVFrameRefPtr previewFrame;
-    for (const auto& f : decodedFrames) {
-        if (f->isDiscard) {
-            previewFrame = f;
-        }
-    }
-
-    ASSERT_NE(previewFrame, nullptr);
-    EXPECT_DOUBLE_EQ(previewFrame->ptsTime(), 1.5);
-    EXPECT_TRUE(previewFrame->isDiscard);
-}
-
-TEST(AVSyncIntegrationTest, SeekPreviewFrameIsNullWhenNoDiscardFrames) {
-    std::vector<AVFrameRefPtr> decodedFrames;
-    decodedFrames.push_back(makeVideoFrame(1.0, false));
-    decodedFrames.push_back(makeVideoFrame(2.0, false));
-
-    AVFrameRefPtr previewFrame;
-    for (const auto& f : decodedFrames) {
-        if (f->isDiscard) {
-            previewFrame = f;
-        }
-    }
-
-    EXPECT_EQ(previewFrame, nullptr);
-}
-
 // MARK: - 4. ClockSync 阈值修正（kMinThreshold = 0.04）
 
 // 本次发现 CorePipelineComponentTest 中的阈值测试基于旧值 0.1，

@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
+#include "CoroutineControlBlock.hpp"
 #include "EventLoop.h"
 
 #include <atomic>
@@ -82,7 +83,8 @@ TEST_F(EventLoopTest, RegisterContinuation) {
     EventLoop loop;
     loop.registerFd(readFd_);
 
-    std::coroutine_handle<> handle = std::noop_coroutine();
+    auto control = std::make_shared<CoroutineControlBlock>(std::noop_coroutine());
+    auto handle = std::make_shared<SharedCoroutineHandle>(control);
     EXPECT_NO_THROW(loop.registerContinuation(readFd_, FdInterest::Read, handle));
     EXPECT_NO_THROW(loop.unregisterContinuation(readFd_, FdInterest::Read));
 
@@ -104,7 +106,8 @@ TEST_F(EventLoopTest, EventInterestConvergence) {
     });
 
     // 注册读事件关注
-    std::coroutine_handle<> handle = std::noop_coroutine();
+    auto control = std::make_shared<CoroutineControlBlock>(std::noop_coroutine());
+    auto handle = std::make_shared<SharedCoroutineHandle>(control);
     loop.registerContinuation(readFd_, FdInterest::Read, handle);
     loop.setReadable(readFd_, true);
 
@@ -121,8 +124,10 @@ TEST_F(EventLoopTest, MultipleInterests) {
     EventLoop loop;
     loop.registerFd(readFd_);
 
-    std::coroutine_handle<> readHandle = std::noop_coroutine();
-    std::coroutine_handle<> writeHandle = std::noop_coroutine();
+    auto readControl = std::make_shared<CoroutineControlBlock>(std::noop_coroutine());
+    auto writeControl = std::make_shared<CoroutineControlBlock>(std::noop_coroutine());
+    auto readHandle = std::make_shared<SharedCoroutineHandle>(readControl);
+    auto writeHandle = std::make_shared<SharedCoroutineHandle>(writeControl);
 
     // 同时注册读写事件
     EXPECT_NO_THROW(loop.registerContinuation(readFd_, FdInterest::Read, readHandle));
@@ -141,8 +146,10 @@ TEST_F(EventLoopTest, UnregisterAllContinuations) {
     EventLoop loop;
     loop.registerFd(readFd_);
 
-    std::coroutine_handle<> readHandle = std::noop_coroutine();
-    std::coroutine_handle<> writeHandle = std::noop_coroutine();
+    auto readControl = std::make_shared<CoroutineControlBlock>(std::noop_coroutine());
+    auto writeControl = std::make_shared<CoroutineControlBlock>(std::noop_coroutine());
+    auto readHandle = std::make_shared<SharedCoroutineHandle>(readControl);
+    auto writeHandle = std::make_shared<SharedCoroutineHandle>(writeControl);
 
     loop.registerContinuation(readFd_, FdInterest::Read, readHandle);
     loop.registerContinuation(readFd_, FdInterest::Write, writeHandle);
@@ -157,6 +164,22 @@ TEST_F(EventLoopTest, NativeFd) {
     EventLoop loop;
     int32_t fd = loop.nativeFd();
     EXPECT_GE(fd, 0);
+}
+
+TEST_F(EventLoopTest, RegistrationTokenCancel) {
+    EventLoop loop;
+    loop.registerFd(readFd_);
+
+    // 创建一个挂起的协程（模拟）
+    auto control = std::make_shared<CoroutineControlBlock>(std::noop_coroutine());
+    auto handle = std::make_shared<SharedCoroutineHandle>(control);
+    auto token = loop.registerContinuation(readFd_, FdInterest::Read, handle);
+
+    EXPECT_TRUE(token.valid());
+    EXPECT_NO_THROW(token.cancel());
+    EXPECT_FALSE(token.valid());
+
+    loop.unregisterFd(readFd_);
 }
 
 TEST_F(EventLoopTest, StopIdempotent) {

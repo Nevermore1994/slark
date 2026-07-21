@@ -23,6 +23,7 @@ TEST(Timer, delay) {
         ASSERT_GE(t, 10.0);
     });
     std::this_thread::sleep_for(0.5s);
+    TimerManager::shareInstance().clear();
 }
 
 TEST(Timer, loop) {
@@ -36,10 +37,15 @@ TEST(Timer, loop) {
     });
     std::this_thread::sleep_for(3s);
     TimerManager::shareInstance().cancel(timerId);
+    TimerManager::shareInstance().clear();
 }
 
 TEST(Timer, exceptionDoesNotKillThread) {
     // 异常不应导致 TimerManager 线程终止
+    // 清理之前测试残留的定时器，防止干扰
+    TimerManager::shareInstance().clear();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
     std::atomic<int32_t> counter{0};
 
     // 第一个定时器会抛出异常
@@ -66,6 +72,9 @@ TEST(Timer, exceptionDoesNotKillThread) {
 
     std::this_thread::sleep_for(100ms);
     EXPECT_TRUE(thirdExecuted.load());
+
+    // 清理定时器，避免后续测试被残留回调干扰
+    TimerManager::shareInstance().clear();
 }
 
 namespace {

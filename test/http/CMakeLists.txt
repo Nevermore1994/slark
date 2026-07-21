@@ -8,6 +8,7 @@ set(HTTP_TEST_FILES
         RequestTest.cpp
         UrlParseTest.cpp
         DnsResolverTest.cpp
+        HttpProcessorTest.cpp
 )
 
 add_executable(http_test ${HTTP_TEST_FILES})

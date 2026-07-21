@@ -52,22 +52,32 @@ TEST(M3U8ParserTest, ParseMasterPlaylist) {
 TEST(M3U8ParserTest, ByteRangeSupport) {
     constexpr std::string_view kM3U8 = "#EXTM3U\n"
                                        "#EXTINF:4.0,\n"
-                                       "segment.ts\n"
+                                       "segment0.ts\n"
                                        "#EXT-X-BYTERANGE:1000@200\n"
                                        "#EXTINF:4.0,\n"
-                                       "segment.ts\n"
+                                       "segment1.ts\n"
                                        "#EXT-X-BYTERANGE:500\n"
+                                       "#EXTINF:4.0,\n"
+                                       "segment2.ts\n"
                                        "#EXT-X-ENDLIST\n";
 
     M3U8Parser parser("https://example.com/live");
     ASSERT_TRUE(parser.parse(std::string(kM3U8)));
 
     const auto& segments = parser.playlist()->segments();
-    ASSERT_EQ(segments.size(), 2u);
+    ASSERT_EQ(segments.size(), 3u);
 
-    EXPECT_TRUE(segments[0].byteRange.has_value());
-    EXPECT_EQ(segments[0].byteRange->pos, 200u);
-    EXPECT_EQ(segments[0].byteRange->size, 1000u);
+    // #EXT-X-BYTERANGE applies to the following URI (segment)
+    // segment0 has no preceding BYTERANGE
+    EXPECT_FALSE(segments[0].byteRange.has_value());
+    // segment1 has #EXT-X-BYTERANGE:1000@200
+    EXPECT_TRUE(segments[1].byteRange.has_value());
+    EXPECT_EQ(segments[1].byteRange->pos, 200u);
+    EXPECT_EQ(segments[1].byteRange->size, 1000u);
+    // segment2 has #EXT-X-BYTERANGE:500 (offset = 200 + 1000 = 1200)
+    EXPECT_TRUE(segments[2].byteRange.has_value());
+    EXPECT_EQ(segments[2].byteRange->pos, 1200u);
+    EXPECT_EQ(segments[2].byteRange->size, 500u);
 }
 
 TEST(M3U8ParserTest, StreamInfParsesBandwidth) {

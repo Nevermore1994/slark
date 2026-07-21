@@ -279,7 +279,7 @@ TEST(TypeTest, HttpResponseDefaults) {
 TEST(TypeTest, HttpResponseSuccess) {
     HttpResponse response;
     response.statusCode = HttpStatusCode::OK;
-    response.error = ErrorInfo{ResultCode::Success, 0};
+    response.error = ErrorInfo{slark::Error::Success, 0};
 
     EXPECT_TRUE(response.isSuccess());
     EXPECT_TRUE(response.isOk());
@@ -294,14 +294,14 @@ TEST(TypeTest, HttpResponseRedirect) {
 
 TEST(TypeTest, ErrorInfoDefault) {
     ErrorInfo error;
-    EXPECT_EQ(error.retCode, ResultCode::Success);
-    EXPECT_EQ(error.errorCode, 0);
+    EXPECT_EQ(error.retCode, slark::Error::Success);
+    EXPECT_EQ(error.originErrorCode, 0);
 }
 
 TEST(TypeTest, ErrorInfoConstruct) {
-    ErrorInfo error(ResultCode::Timeout, 5000);
-    EXPECT_EQ(error.retCode, ResultCode::Timeout);
-    EXPECT_EQ(error.errorCode, 5000);
+    ErrorInfo error(slark::Error::ConnectionTimeout, 5000);
+    EXPECT_EQ(error.retCode, slark::Error::ConnectionTimeout);
+    EXPECT_EQ(error.originErrorCode, 5000);
 }
 
 // RedirectPolicy Tests
@@ -338,15 +338,32 @@ TEST(RedirectPolicyTest, ExtractRedirectLocation) {
 
 TEST(RedirectPolicyTest, BuildRedirectRequest) {
     RequestInfo original;
+    original.url = "http://example.com/old";
+    original.methodType = HttpMethodType::Get;
+    original.headers["Authorization"] = "Bearer token";
+
+    // 同域重定向：headers 应保留（跨域才剥离）
+    auto redirect = RedirectPolicy::buildRedirectRequest(original, "http://example.com/new");
+
+    ASSERT_TRUE(redirect.has_value());
+    EXPECT_EQ(redirect->url, "http://example.com/new");
+    EXPECT_EQ(redirect->methodType, HttpMethodType::Get);
+    EXPECT_EQ(redirect->headers["Authorization"], "Bearer token");
+}
+
+TEST(RedirectPolicyTest, CrossDomainStripsSensitiveHeaders) {
+    RequestInfo original;
     original.url = "http://old.example.com/old";
     original.methodType = HttpMethodType::Get;
     original.headers["Authorization"] = "Bearer token";
 
     auto redirect = RedirectPolicy::buildRedirectRequest(original, "http://new.example.com/new");
 
-    EXPECT_EQ(redirect.url, "http://new.example.com/new");
-    EXPECT_EQ(redirect.methodType, HttpMethodType::Get);
-    EXPECT_EQ(redirect.headers["Authorization"], "Bearer token");
+    ASSERT_TRUE(redirect.has_value());
+    EXPECT_EQ(redirect->url, "http://new.example.com/new");
+    // 跨域应剥离敏感 headers
+    EXPECT_TRUE(redirect->headers.find("Authorization") == redirect->headers.end() ||
+                redirect->headers["Authorization"].empty());
 }
 
 // HttpStatusCode Tests

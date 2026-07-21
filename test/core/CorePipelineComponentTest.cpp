@@ -21,7 +21,7 @@ TEST(BackpressureConfigTest, ForLocalDefaultsAreValid) {
     EXPECT_TRUE(cfg.isValid());
     EXPECT_FALSE(cfg.isLiveSource);
     EXPECT_EQ(cfg.demuxHighWatermarkDuration, 30.0);
-    EXPECT_EQ(cfg.demuxLowWatermarkDuration, 5.0);
+    EXPECT_EQ(cfg.demuxLowWatermarkDuration, 2.0);
     EXPECT_EQ(cfg.startBufferDuration, 0.0);
 }
 
@@ -291,8 +291,7 @@ TEST(PlayerStateMachineCoreTest, InvalidTransitions) {
         {PlayerState::Stop, PlayerState::Playing},
         {PlayerState::Stop, PlayerState::Initializing},
         {PlayerState::Error, PlayerState::Playing},
-        {PlayerState::Completed, PlayerState::Playing},
-        {PlayerState::Completed, PlayerState::Pause},
+        {PlayerState::Completed, PlayerState::Error},
     };
 
     for (const auto& [from, to] : invalidTransitions) {

@@ -81,13 +81,20 @@ TEST(BufferMonitorTest, PausesStreamWhenDurationExceedsHighWatermark) {
     auto cfg = BackpressureConfig::forNetwork();
     // demuxHighWatermarkDuration = 10.0
 
-    EXPECT_CALL(delegate, demuxedDuration()).WillRepeatedly(Return(12.0));
+    EXPECT_CALL(delegate, demuxedDuration())
+        .WillOnce(Return(0.0))          // prebuffer check: 0.0 < 2.0 → not yet
+        .WillOnce(Return(3.0))          // prebuffer check: 3.0 >= 2.0 → complete → readyFired_=true
+        .WillRepeatedly(Return(12.0));  // regulateDataFlow: 12.0 >= 10.0 → pauseStream
+    EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);
     EXPECT_CALL(delegate, pauseStream()).Times(AtLeast(1));
     EXPECT_CALL(delegate, audioDecodedFrameCount()).WillRepeatedly(Return(0));
     EXPECT_CALL(delegate, videoDecodedFrameCount()).WillRepeatedly(Return(0));
 
     BufferMonitor monitor(cfg, delegate);
-    monitor.onHeartbeat();
+    monitor.startPrebuffering(); // startBufferDuration=2.0
+    monitor.onHeartbeat();       // check 1: 0.0 < 2.0 → still prebuffering
+    monitor.onHeartbeat();       // check 2: 3.0 >= 2.0 → prebuffer complete → readyFired_=true
+    monitor.onHeartbeat();       // regulateDataFlow: 12.0 >= 10.0 → pauseStream
 }
 
 TEST(BufferMonitorTest, ResumesStreamWhenDurationDropsBelowLowWatermark) {
@@ -95,18 +102,23 @@ TEST(BufferMonitorTest, ResumesStreamWhenDurationDropsBelowLowWatermark) {
     auto cfg = BackpressureConfig::forNetwork();
     // demuxLowWatermarkDuration = 3.0
 
-    // 先触发 pause，再触发 resume
     EXPECT_CALL(delegate, demuxedDuration())
-        .WillOnce(Return(12.0))       // pause
-        .WillRepeatedly(Return(1.0)); // resume
+        .WillOnce(Return(0.0))        // prebuffer check: 0.0 < 2.0
+        .WillOnce(Return(3.0))        // prebuffer check: 3.0 >= 2.0 → complete
+        .WillOnce(Return(12.0))       // regulateDataFlow: 12.0 >= 10.0 → pause
+        .WillRepeatedly(Return(1.0)); // regulateDataFlow: 1.0 <= 3.0 → resume
+    EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);
     EXPECT_CALL(delegate, pauseStream()).Times(1);
     EXPECT_CALL(delegate, resumeStream()).Times(1);
     EXPECT_CALL(delegate, audioDecodedFrameCount()).WillRepeatedly(Return(0));
     EXPECT_CALL(delegate, videoDecodedFrameCount()).WillRepeatedly(Return(0));
 
     BufferMonitor monitor(cfg, delegate);
-    monitor.onHeartbeat(); // pause
-    monitor.onHeartbeat(); // resume
+    monitor.startPrebuffering();
+    monitor.onHeartbeat();       // prebuffer not yet
+    monitor.onHeartbeat();       // prebuffer complete → readyFired_=true
+    monitor.onHeartbeat();       // pause
+    monitor.onHeartbeat();       // resume
 }
 
 // MARK: - 重缓冲
@@ -136,19 +148,17 @@ TEST(BufferMonitorTest, RebufferingStartsWhenStreamRunningAndDurationDropsBelowL
 TEST(BufferMonitorTest, RebufferingEndsWhenStreamResumesAndDurationRecovered) {
     MockDelegate delegate;
     auto cfg = BackpressureConfig::forNetwork();
-    // startBufferDuration = 2.0, rebufferScale = 1.5 → rebufferThreshold = 3.0
 
-    // 场景：高水位 pause → 低水位 resume → checkRebufferComplete 触发 BufferingEnd
-    // 注意：BufferingStart 由 onStarvation 触发（绕过 streamPaused_ 约束）
+    // heartbeat 1: prebuffer check (3.0 >= 2.0) → complete → readyFired_=true
+    // heartbeat 2: regulateDataFlow (12.0 >= 10.0) → pause
+    // heartbeat 3: regulateDataFlow (3.0 <= 3.0) + streamPaused_ → resume + checkRebufferComplete
     EXPECT_CALL(delegate, demuxedDuration())
-        .WillOnce(Return(3.0))  // heartbeat 1: prebuffer complete
-        .WillOnce(Return(12.0)) // heartbeat 2: high watermark → pause
-        .WillRepeatedly(
-            Return(3.0)); // heartbeat 3: low watermark，streamPaused_=true → resume + BufferingEnd
+        .WillOnce(Return(3.0))
+        .WillOnce(Return(12.0))
+        .WillRepeatedly(Return(3.0));
     EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);
     EXPECT_CALL(delegate, pauseStream()).Times(1);
     EXPECT_CALL(delegate, resumeStream()).Times(1);
-    // 通过 onStarvation 触发 BufferingStart（不依赖 streamPaused_ 状态）
     EXPECT_CALL(delegate, onBufferEvent(PipelineEvent::BufferingStart, testing::Eq(std::nullopt)))
         .Times(1);
     EXPECT_CALL(delegate, onBufferEvent(PipelineEvent::BufferingEnd, testing::Eq(std::nullopt)))
@@ -160,15 +170,13 @@ TEST(BufferMonitorTest, RebufferingEndsWhenStreamResumesAndDurationRecovered) {
     monitor.startPrebuffering();
     monitor.onHeartbeat(); // prebuffer complete
     monitor.onHeartbeat(); // pause
-    // 手动触发 rebuffering 状态（模拟 starvation 路径）
     monitor.onStarvation(false);
     monitor.onStarvation(false);
     monitor.onStarvation(false);
     monitor.onStarvation(false);
     monitor.onStarvation(false); // 第 5 次 → BufferingStart
     EXPECT_TRUE(monitor.isRebuffering());
-    monitor.onHeartbeat(); // duration=3.0，streamPaused_=true → resumeStream +
-                           // checkRebufferComplete → BufferingEnd
+    monitor.onHeartbeat(); // resume + BufferingEnd
     EXPECT_FALSE(monitor.isRebuffering());
 }
 
@@ -274,20 +282,25 @@ TEST(BufferMonitorTest, BackpressurePausedResumesStreamWhenPreviouslyPaused) {
     MockDelegate delegate;
     auto cfg = BackpressureConfig::forNetwork();
 
-    // 先触发 pause，再 pauseBackpressure → 此时 streamPaused_ = true → 调用 resumeStream
     EXPECT_CALL(delegate, demuxedDuration())
-        .WillOnce(Return(12.0))        // 第一次 heartbeat：高水位 → pause
-        .WillRepeatedly(Return(25.0)); // 之后：背压暂停，跳过
+        .WillOnce(Return(0.0))         // prebuffer check: 0.0 < 2.0
+        .WillOnce(Return(3.0))         // prebuffer check: 3.0 >= 2.0 → complete
+        .WillOnce(Return(12.0))        // regulateDataFlow: 12.0 >= 10.0 → pause
+        .WillRepeatedly(Return(25.0)); // after pauseBackpressure: backpressurePaused_=true, skip
+    EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);
     EXPECT_CALL(delegate, pauseStream()).Times(1);
-    EXPECT_CALL(delegate, resumeStream()).Times(1); // pauseBackpressure 触发
+    EXPECT_CALL(delegate, resumeStream()).Times(1);
     EXPECT_CALL(delegate, onDropOldest()).Times(0);
     EXPECT_CALL(delegate, audioDecodedFrameCount()).WillRepeatedly(Return(0));
     EXPECT_CALL(delegate, videoDecodedFrameCount()).WillRepeatedly(Return(0));
 
     BufferMonitor monitor(cfg, delegate);
+    monitor.startPrebuffering();
+    monitor.onHeartbeat();       // prebuffer not yet
+    monitor.onHeartbeat();       // prebuffer complete → readyFired_=true
     monitor.onHeartbeat();       // pause
     monitor.pauseBackpressure(); // resumeStream
-    monitor.onHeartbeat();       // 背压暂停，跳过
+    monitor.onHeartbeat();       // backpressurePaused_=true → skip
 }
 
 // MARK: - reset

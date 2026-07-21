@@ -197,7 +197,6 @@ protected:
         ASSERT_NE(demuxer_, nullptr);
         DemuxerConfig config;
         config.filePath = kMp4Path;
-        config.fileSize = fileSize_;
         demuxer_->init(config);
     }
 
@@ -428,7 +427,6 @@ protected:
         ASSERT_NE(demuxer_, nullptr);
         DemuxerConfig config;
         config.filePath = kWavPath;
-        config.fileSize = fileSize_;
         demuxer_->init(config);
     }
 
@@ -507,7 +505,6 @@ protected:
         ASSERT_NE(demuxer_, nullptr);
         DemuxerConfig config;
         config.filePath = kFmp4Path;
-        config.fileSize = fileSize_;
         demuxer_->init(config);
     }
 
@@ -546,7 +543,7 @@ TEST_F(Fmp4DemuxerFileTest, AudioInfoIsValid) {
 
 TEST_F(Fmp4DemuxerFileTest, TotalDurationIsPositive) {
     ASSERT_TRUE(demuxer_->open(probeBuffer_));
-    EXPECT_GT(demuxer_->totalDuration().second(), 0.0);
+    EXPECT_GT(demuxer_->computeTotalDuration().second(), 0.0);
 }
 
 TEST_F(Fmp4DemuxerFileTest, ParseDataProducesFrames) {
@@ -559,7 +556,7 @@ TEST_F(Fmp4DemuxerFileTest, ParseDataProducesFrames) {
 
 TEST_F(Fmp4DemuxerFileTest, SeekToMidpointProducesKeyFrame) {
     ASSERT_TRUE(demuxer_->open(probeBuffer_));
-    double duration = demuxer_->totalDuration().second();
+    double duration = demuxer_->computeTotalDuration().second();
     ASSERT_GT(duration, 0.0);
 
     uint64_t seekPos = demuxer_->getSeekToPos(duration / 2.0);

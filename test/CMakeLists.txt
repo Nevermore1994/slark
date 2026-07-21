@@ -7,4 +7,7 @@ if(NOT DISABLE_HTTP)
     add_subdirectory(http)
 endif()
 
+add_subdirectory(platform)
+add_subdirectory(fuzz)
+
 get_property(LIBRARY_TYPE GLOBAL PROPERTY "LIBRARY_TYPE")

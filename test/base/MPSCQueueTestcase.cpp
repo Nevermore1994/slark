@@ -166,7 +166,8 @@ TEST(MPSCQueueTest, LargeVolume) {
     for (int i = 0; i < kN; ++i) {
         queue.push(i);
     }
-    int sum = 0, out;
+    int64_t sum = 0;
+    int out;
     for (int i = 0; i < kN; ++i) {
         EXPECT_TRUE(queue.tryPop(out));
         sum += out;

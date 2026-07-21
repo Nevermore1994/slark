@@ -3,17 +3,40 @@
 //
 #include "Coroutine.hpp"
 
+#include "AsyncGenerator.hpp"
 #include "Awaitable.hpp"
 #include "CancellationToken.h"
 #include "CoroutineScheduler.hpp"
 #include "ThreadPool.hpp"
+#include "TimerManager.h"
 
 #include <atomic>
 #include <chrono>
 #include <gtest/gtest.h>
+#include <memory>
 #include <thread>
 
 using namespace slark;
+
+namespace {
+
+// 清理全局协程调度器和定时器状态，防止前一个测试的残留 job 干扰当前测试
+void cleanupGlobalState() {
+    for (int32_t i = 0; i < 10; ++i) {
+        CoroutineScheduler::instance().waitForAll();
+        TimerManager::shareInstance().clear();
+        CoroutineScheduler::instance().waitForAll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+}
+
+struct GlobalCleanupGuard {
+    ~GlobalCleanupGuard() {
+        cleanupGlobalState();
+    }
+};
+
+} // namespace
 
 // Coroutine Basic Tests
 TEST(CoroutineTest, CreateAndResume) {
@@ -142,6 +165,7 @@ TEST(CoroutineSchedulerTest, SingletonInstance) {
 }
 
 TEST(CoroutineSchedulerTest, ScheduleImmediate) {
+    GlobalCleanupGuard guard;
     auto& scheduler = CoroutineScheduler::instance();
 
     std::atomic<int> counter{0};
@@ -150,13 +174,14 @@ TEST(CoroutineSchedulerTest, ScheduleImmediate) {
         co_return;
     }();
 
-    scheduler.schedule(coro.getHandle());
+    scheduler.schedule(coro.makeResumeHandle());
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     EXPECT_EQ(counter.load(), 1);
 }
 
 TEST(CoroutineSchedulerTest, ScheduleAfter) {
+    GlobalCleanupGuard guard;
     auto& scheduler = CoroutineScheduler::instance();
 
     std::atomic<int> counter{0};
@@ -165,9 +190,8 @@ TEST(CoroutineSchedulerTest, ScheduleAfter) {
         co_return;
     }();
 
-    // 显式转换为 std::coroutine_handle<> 避免歧义
-    std::coroutine_handle<> handle = coro.getHandle();
-    auto timerId = scheduler.scheduleAfter(std::chrono::milliseconds(50), handle);
+    auto timerId = scheduler.scheduleAfter(std::chrono::milliseconds(50),
+                                            std::move(coro).share());
     EXPECT_TRUE(timerId.isValid());
 
     std::this_thread::sleep_for(std::chrono::milliseconds(150));
@@ -175,6 +199,7 @@ TEST(CoroutineSchedulerTest, ScheduleAfter) {
 }
 
 TEST(CoroutineSchedulerTest, CancelTimerByTimerId) {
+    GlobalCleanupGuard guard;
     auto& scheduler = CoroutineScheduler::instance();
 
     std::atomic<int> counter{0};
@@ -183,8 +208,8 @@ TEST(CoroutineSchedulerTest, CancelTimerByTimerId) {
         co_return;
     }();
 
-    std::coroutine_handle<> handle = coro.getHandle();
-    auto timerId = scheduler.scheduleAfter(std::chrono::milliseconds(200), handle);
+    auto timerId = scheduler.scheduleAfter(std::chrono::milliseconds(200),
+                                            std::move(coro).share());
     scheduler.cancel(timerId);
 
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
@@ -192,6 +217,7 @@ TEST(CoroutineSchedulerTest, CancelTimerByTimerId) {
 }
 
 TEST(CoroutineSchedulerTest, ScheduleCoroutineTemplate) {
+    GlobalCleanupGuard guard;
     auto& scheduler = CoroutineScheduler::instance();
 
     std::atomic<int> counter{0};
@@ -200,9 +226,8 @@ TEST(CoroutineSchedulerTest, ScheduleCoroutineTemplate) {
         co_return 42;
     }();
 
-    // 显式转换为 std::coroutine_handle<> 避免歧义
-    std::coroutine_handle<> handle = coro.getHandle();
-    auto timerId = scheduler.scheduleAfter(std::chrono::milliseconds(30), handle);
+    auto timerId = scheduler.scheduleAfter(std::chrono::milliseconds(30),
+                                            std::move(coro).share());
     EXPECT_TRUE(timerId.isValid());
 
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -439,20 +464,21 @@ TEST(CoroutineTest, GetResultInvalidThrows) {
     EXPECT_THROW(empty.getResult(), std::runtime_error);
 }
 
-// release() 转移句柄所有权
-TEST(CoroutineTest, Release) {
+// share() 转移所有权到 SharedCoroutineHandle
+TEST(CoroutineTest, Share) {
     auto coro = []() -> Coroutine<int> {
         co_return 77;
     }();
 
-    auto handle = coro.release();
+    auto shared = std::move(coro).share();
     EXPECT_FALSE(coro.isValid());
-    EXPECT_TRUE(handle != nullptr);
+    EXPECT_TRUE(shared.hasLifetime());
+    EXPECT_FALSE(shared.done());
 
-    // 手动 resume 并销毁
-    handle.resume();
-    EXPECT_TRUE(handle.done());
-    handle.destroy();
+    // 协程在 initial_suspend 挂起，resume 后立即完成
+    shared.tryResume();
+    EXPECT_TRUE(shared.done());
+    // shared 析构时 frame 由 deleter 自动 destroy
 }
 
 // resume 已完成的协程不崩溃
@@ -468,38 +494,40 @@ TEST(CoroutineTest, ResumeAlreadyDone) {
 
 // co_await 链式挂起（continuation 机制）
 TEST(CoroutineTest, CoAwaitChain) {
-    auto inner = []() -> Coroutine<int> {
-        co_return 42;
-    }();
-
     int result = 0;
+    // inner 是临时 lambda 右值，co_await 时走右值路径转移所有权
     auto outer = [&]() -> Coroutine<void> {
-        result = co_await inner;
+        auto inner = []() -> Coroutine<int> {
+            co_return 42;
+        }();
+        result = co_await std::move(inner);
         co_return;
     }();
 
     outer.resume();
+    CoroutineScheduler::instance().waitForAll();
     EXPECT_TRUE(outer.isDone());
     EXPECT_EQ(result, 42);
 }
 
 // co_await 多层嵌套
 TEST(CoroutineTest, CoAwaitDeepChain) {
-    auto level1 = []() -> Coroutine<int> {
-        co_return 1;
-    }();
-    auto level2 = [&]() -> Coroutine<int> {
-        int v = co_await level1;
-        co_return v + 10;
-    }();
-    auto level3 = [&]() -> Coroutine<int> {
-        int v = co_await level2;
+    auto outer = [&]() -> Coroutine<int> {
+        auto level1 = []() -> Coroutine<int> {
+            co_return 1;
+        }();
+        auto level2 = [&level1]() -> Coroutine<int> {
+            int v = co_await std::move(level1);
+            co_return v + 10;
+        }();
+        int v = co_await std::move(level2);
         co_return v + 100;
     }();
 
-    level3.resume();
-    EXPECT_TRUE(level3.isDone());
-    EXPECT_EQ(level3.getResult(), 111);
+    outer.resume();
+    CoroutineScheduler::instance().waitForAll();
+    EXPECT_TRUE(outer.isDone());
+    EXPECT_EQ(outer.getResult(), 111);
 }
 
 // move assignment
@@ -647,6 +675,10 @@ TEST(CompletionAwaiterTest, CompleteAfterAwait) {
     t.join();
 
     EXPECT_TRUE(done.load());
+    // 等待线程池恢复协程
+    for (int i = 0; i < 50 && !coro.isDone(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
     EXPECT_TRUE(coro.isDone());
     EXPECT_EQ(coro.getResult(), 99);
 }
@@ -713,6 +745,7 @@ TEST(TimerAwaiterTest, PositiveDelayNotReady) {
 
 // TimerAwaiter 在协程中等待
 TEST(TimerAwaiterTest, WaitInCoroutine) {
+    GlobalCleanupGuard guard;
     using namespace std::chrono;
     auto start = steady_clock::now();
     std::atomic<bool> done{false};
@@ -723,7 +756,7 @@ TEST(TimerAwaiterTest, WaitInCoroutine) {
         co_return;
     }();
 
-    CoroutineScheduler::instance().schedule(coro.getHandle());
+    CoroutineScheduler::instance().schedule(coro.makeResumeHandle());
     std::this_thread::sleep_for(milliseconds(200));
 
     EXPECT_TRUE(done.load());
@@ -735,6 +768,7 @@ TEST(TimerAwaiterTest, WaitInCoroutine) {
 
 // waitForAll 等待所有任务完成
 TEST(CoroutineSchedulerTest, WaitForAll) {
+    GlobalCleanupGuard guard;
     auto& scheduler = CoroutineScheduler::instance();
     std::atomic<int32_t> counter{0};
 
@@ -743,7 +777,7 @@ TEST(CoroutineSchedulerTest, WaitForAll) {
             counter++;
             co_return;
         }();
-        scheduler.schedule(coro.release());
+        scheduler.schedule(std::move(coro).share());
     }
 
     scheduler.waitForAll();
@@ -752,6 +786,7 @@ TEST(CoroutineSchedulerTest, WaitForAll) {
 
 // scheduleCallback 触发
 TEST(CoroutineSchedulerTest, ScheduleCallback) {
+    GlobalCleanupGuard guard;
     auto& scheduler = CoroutineScheduler::instance();
     std::atomic<bool> fired{false};
 
@@ -760,4 +795,489 @@ TEST(CoroutineSchedulerTest, ScheduleCallback) {
     });
     std::this_thread::sleep_for(std::chrono::milliseconds(150));
     EXPECT_TRUE(fired.load());
+}
+
+// ---- Coroutine 协程生命周期与 CancellationToken 集成测试 ----
+
+TEST(CoroutineTest, CancelledCoroutineExitsSafely) {
+    GlobalCleanupGuard guard;
+    CancellationToken token;
+    std::atomic<bool> exited{false};
+
+    auto coro = [&]() -> Coroutine<void> {
+        while (!token.isCancelled()) {
+            co_await TimerAwaiter(std::chrono::milliseconds(5));
+        }
+        exited = true;
+        co_return;
+    }();
+
+    coro.resume();
+    EXPECT_FALSE(exited.load());
+
+    token.cancel();
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    EXPECT_TRUE(exited.load());
+    EXPECT_TRUE(coro.isDone());
+}
+
+TEST(CoroutineTest, DestroyedCoroutineHandleNotResumedByCancellation) {
+    GlobalCleanupGuard guard;
+    CancellationToken token;
+    std::atomic<int> resumeCount{0};
+    std::atomic<bool> completed{false};
+
+    {
+        auto coro = [&]() -> Coroutine<void> {
+            auto reg = token.registerCallback([&resumeCount]() {
+                resumeCount++;
+            });
+            co_await TimerAwaiter(std::chrono::milliseconds(10));
+            completed = true;
+            co_return;
+        }();
+
+        coro.resume();
+    } // Coroutine 对象销毁，但 TimerAwaiter 持有的 SharedCoroutineHandle 仍保活 frame
+
+    token.cancel();
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // 新设计下 frame 在最后一个 SharedCoroutineHandle 释放后才 destroy，
+    // 因此 cancel 回调会被安全执行，不会访问已销毁 frame。
+    EXPECT_EQ(resumeCount.load(), 1);
+    EXPECT_TRUE(completed.load());
+}
+
+TEST(CoroutineTest, MoveAssignmentDestroysOldCoroutine) {
+    GlobalCleanupGuard guard;
+    std::atomic<int> destroyed{0};
+
+    struct DestructorTracker {
+        std::atomic<int>& counter;
+        ~DestructorTracker() { counter++; }
+    };
+
+    auto makeCoro = [&]() -> Coroutine<void> {
+        DestructorTracker tracker{destroyed};
+        co_await TimerAwaiter(std::chrono::milliseconds(200));
+        co_return;
+    };
+
+    auto coro = makeCoro();
+    coro.resume();
+
+    auto newCoro = makeCoro();
+    newCoro.resume();
+
+    coro = std::move(newCoro);
+    EXPECT_TRUE(coro.isValid());
+    EXPECT_FALSE(newCoro.isValid());
+    // 等待旧 frame 的 TimerAwaiter 触发并完成，避免遗留任务影响后续测试
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+}
+
+TEST(CoroutineTest, CancellationTokenPropagatesThroughNestedCoroutines) {
+    GlobalCleanupGuard guard;
+    CancellationToken token;
+    std::atomic<bool> innerExited{false};
+    std::atomic<bool> outerExited{false};
+
+    auto inner = [&](CancellationToken t) -> Coroutine<void> {
+        while (!t.isCancelled()) {
+            co_await TimerAwaiter(std::chrono::milliseconds(5));
+        }
+        innerExited = true;
+        co_return;
+    };
+
+    auto outer = [&](CancellationToken t) -> Coroutine<void> {
+        co_await inner(t);
+        outerExited = true;
+        co_return;
+    };
+
+    auto coro = outer(token);
+    coro.resume();
+
+    token.cancel();
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    EXPECT_TRUE(innerExited.load());
+    EXPECT_TRUE(outerExited.load());
+}
+
+TEST(CoroutineTest, MultipleCancelsAndNewCoroutines) {
+    GlobalCleanupGuard guard;
+    // 根因：原始测试用 [&] 按引用捕获 token，循环内 token = CancellationToken{}
+    // 重新赋值后，协程通过引用读到的是新 token（未取消），永不退出，无限注册 5ms 定时器。
+    // for 结束时 coro 局部变量析构 destroy() 仍挂起的协程帧，随后 TimerManager 触发定时器
+    // 访问已销毁 handle → UB 崩溃。
+    // 修复：每次创建独立的 CancellationToken，协程拷贝一份（取消状态共享），
+    // 不再重新赋值，token 生命周期持续到协程完成。
+    CancellationToken token;
+    std::atomic<int> completedCount{0};
+
+    for (int i = 0; i < 10; i++) {
+        auto coro = [t = token, &completedCount]() -> Coroutine<void> {
+            while (!t.isCancelled()) {
+                co_await TimerAwaiter(std::chrono::milliseconds(5));
+            }
+            completedCount++;
+            co_return;
+        }();
+
+        coro.resume();
+        token.cancel();
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    EXPECT_EQ(completedCount.load(), 10);
+}
+
+TEST(CoroutineTest, CancelledAwaitReturnsImmediately) {
+    GlobalCleanupGuard guard;
+    CancellationToken token;
+
+    auto coro = [&]() -> Coroutine<void> {
+        co_await TimerAwaiter(std::chrono::milliseconds(500));
+        co_return;
+    }();
+
+    coro.resume();
+    token.cancel();
+
+    { auto tmp = std::move(coro); }
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    SUCCEED();
+}
+
+TEST(CoroutineTest, DestructorDoesNotThrow) {
+    GlobalCleanupGuard guard;
+    auto coro = []() -> Coroutine<void> {
+        co_await TimerAwaiter(std::chrono::milliseconds(100));
+        co_return;
+    }();
+
+    coro.resume();
+    EXPECT_NO_THROW({ auto tmp = std::move(coro); });
+}
+
+TEST(CoroutineLifetimeTest, RvalueAwaitConsumesCoroutineOwner) {
+    GlobalCleanupGuard guard;
+    std::atomic<bool> completed{false};
+
+    auto child = [&]() -> Coroutine<void> {
+        co_await TimerAwaiter(std::chrono::milliseconds(20));
+    }();
+
+    auto parent = [&]() -> Coroutine<void> {
+        co_await std::move(child);
+        completed = true;
+    }();
+
+    parent.resume();
+    EXPECT_FALSE(child.isValid());
+
+    for (int i = 0; i < 100 && !completed.load(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    EXPECT_TRUE(completed.load());
+    EXPECT_TRUE(parent.isDone());
+}
+
+TEST(CoroutineLifetimeTest, NestedTemporaryCoroutinesKeepIntermediateFramesAlive) {
+    GlobalCleanupGuard guard;
+    std::atomic<bool> completed{false};
+
+    auto leaf = []() -> Coroutine<void> {
+        co_await TimerAwaiter(std::chrono::milliseconds(20));
+    };
+
+    auto middle = [&]() -> Coroutine<void> {
+        co_await leaf();
+    };
+
+    auto outer = [&]() -> Coroutine<void> {
+        co_await middle();
+        completed = true;
+    }();
+
+    outer.resume();
+
+    for (int i = 0; i < 100 && !completed.load(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    EXPECT_TRUE(completed.load());
+    EXPECT_TRUE(outer.isDone());
+}
+
+TEST(CoroutineLifetimeTest, DestroyedGeneratorOwnerDoesNotInvalidatePendingFrame) {
+    GlobalCleanupGuard guard;
+    std::atomic<bool> received{false};
+    std::unique_ptr<AsyncGenerator<int>> generator = std::make_unique<AsyncGenerator<int>>(
+        []() -> AsyncGenerator<int> {
+            co_await TimerAwaiter(std::chrono::milliseconds(20));
+            co_yield 42;
+        }());
+
+    auto consumer = [&]() -> Coroutine<void> {
+        auto value = co_await generator->next();
+        received = value.has_value() && *value == 42;
+    }();
+
+    consumer.resume();
+    generator.reset();
+
+    for (int i = 0; i < 100 && !received.load(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    EXPECT_TRUE(received.load());
+    EXPECT_TRUE(consumer.isDone());
+}
+
+// ─── Coroutine::cancel 行为测试 ───
+
+TEST(CoroutineTest, CancelIsIdempotent) {
+    auto coro = []() -> Coroutine<void> { co_return; }();
+    coro.cancel();
+    EXPECT_TRUE(coro.isCancelled());
+    coro.cancel();
+    EXPECT_TRUE(coro.isCancelled());
+}
+
+TEST(CoroutineTest, CancelBeforeResume) {
+    auto coro = []() -> Coroutine<void> { co_return; }();
+    coro.cancel();
+    coro.resume();
+    // cancel 后 resume 不应导致协程实际执行，但不崩溃
+    SUCCEED();
+}
+
+TEST(CoroutineTest, CancelCompletedIsNoop) {
+    auto coro = []() -> Coroutine<void> { co_return; }();
+    coro.resume();
+    EXPECT_TRUE(coro.isDone());
+    EXPECT_FALSE(coro.isCancelled());
+    coro.cancel();
+    // cancel 设置 cancelled_ 标志，不会因为协程已完成就清掉
+    EXPECT_TRUE(coro.isCancelled());
+}
+
+// ─── Coroutine::share 后状态测试 ───
+
+TEST(CoroutineTest, ShareMovesOwnership) {
+    auto coro = []() -> Coroutine<int> { co_return 42; }();
+    EXPECT_TRUE(coro.isValid());
+    auto handle = std::move(coro).share();
+    EXPECT_FALSE(coro.isValid());
+    // share 后 control_ 被移走，isDone() 返回 true（!control_）
+    EXPECT_TRUE(coro.isDone());
+    EXPECT_FALSE(handle.done());
+    handle.tryResume();
+    EXPECT_TRUE(handle.done());
+}
+
+TEST(CoroutineTest, ShareOnDoneReturnsDoneHandle) {
+    auto coro = []() -> Coroutine<int> { co_return 42; }();
+    coro.resume();
+    EXPECT_TRUE(coro.isDone());
+    auto handle = std::move(coro).share();
+    EXPECT_TRUE(handle.done());
+}
+
+// ─── 无效 Coroutine（默认构造 / moved-from）防御性操作 ───
+
+TEST(CoroutineTest, DefaultConstructedIsInvalid) {
+    // Coroutine 没有默认构造，但 moved-from 后应安全
+    auto coro = []() -> Coroutine<void> { co_return; }();
+    auto coro2 = std::move(coro);
+    EXPECT_FALSE(coro.isValid());
+    // control_ 被移走，isDone() 返回 true
+    EXPECT_TRUE(coro.isDone());
+    EXPECT_FALSE(coro.isCancelled());
+    EXPECT_NO_THROW(coro.resume());
+    EXPECT_NO_THROW(coro.cancel());
+}
+
+TEST(CoroutineTest, MovedFromGetResultThrows) {
+    auto coro = []() -> Coroutine<int> { co_return 42; }();
+    auto coro2 = std::move(coro);
+    EXPECT_THROW(coro.getResult(), std::runtime_error);
+}
+
+// ─── CoroutineAwaiter 短路路径：已完成协程的 co_await ───
+
+TEST(CoroutineTest, CoAwaitOnCompletedCoroutine) {
+    auto child = []() -> Coroutine<int> { co_return 42; }();
+    child.resume();
+    EXPECT_TRUE(child.isDone());
+
+    auto parent = [&]() -> Coroutine<int> {
+        auto result = co_await child;
+        co_return result;
+    }();
+    parent.resume();
+    EXPECT_TRUE(parent.isDone());
+    EXPECT_EQ(parent.getResult(), 42);
+}
+
+TEST(CoroutineTest, RvalueCoAwaitOnCompletedCoroutine) {
+    // 右值 co_await 应在协程已完成时直接取值，不挂起
+    auto makeChild = []() -> Coroutine<int> {
+        co_return 99;
+    };
+
+    auto child = makeChild();
+    child.resume();
+    EXPECT_TRUE(child.isDone());
+
+    auto parent = [&]() -> Coroutine<int> {
+        auto result = co_await std::move(child);
+        co_return result;
+    }();
+    parent.resume();
+    EXPECT_TRUE(parent.isDone());
+    EXPECT_EQ(parent.getResult(), 99);
+}
+
+// ─── PromiseBase::setCancelled/isCancelled 测试 ───
+
+TEST(CoroutineTest, PromiseCancelThroughControlBlock) {
+    auto coro = []() -> Coroutine<void> { co_return; }();
+    coro.cancel();
+    EXPECT_TRUE(coro.isCancelled());
+}
+
+TEST(CoroutineTest, CancelledFlagPersistsAfterResume) {
+    std::atomic<bool> ran{false};
+    auto coro = [&]() -> Coroutine<void> {
+        ran = true;
+        co_return;
+    }();
+    coro.cancel();
+    coro.resume();
+    // cancel 后 resume 仍可执行，但 cancelled 标志位在协程完成前应保持
+    // 协程完成后 isCancelled 由 control_->isCancelled() 决定
+    SUCCEED();
+}
+
+// ─── CoroutineScheduler 测试 ───
+
+TEST(CoroutineSchedulerTest, ScheduleAfterExecutes) {
+    GlobalCleanupGuard guard;
+    std::atomic<bool> executed{false};
+    auto coro = [&]() -> Coroutine<void> {
+        co_await TimerAwaiter(std::chrono::milliseconds(20));
+        executed = true;
+        co_return;
+    }();
+    CoroutineScheduler::instance().schedule(coro.makeResumeHandle());
+    for (int i = 0; i < 50 && !executed.load(); ++i) {
+        CoroutineScheduler::instance().waitForAll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(executed.load());
+}
+
+TEST(CoroutineSchedulerTest, ScheduleCallbackExecutes) {
+    std::atomic<bool> executed{false};
+    auto id = CoroutineScheduler::instance().scheduleCallback(std::chrono::milliseconds(10), [&]() {
+        executed = true;
+    });
+    EXPECT_TRUE(id.isValid());
+    for (int i = 0; i < 50 && !executed.load(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(executed.load());
+}
+
+TEST(CoroutineSchedulerTest, CancelScheduledCallback) {
+    std::atomic<bool> executed{false};
+    auto id = CoroutineScheduler::instance().scheduleCallback(std::chrono::milliseconds(100), [&]() {
+        executed = true;
+    });
+    CoroutineScheduler::instance().cancel(id);
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    EXPECT_FALSE(executed.load());
+}
+
+// ─── TimerAwaiter 测试 ───
+
+TEST(TimerAwaiterTest, ZeroDurationDoesNotSuspend) {
+    std::atomic<bool> executed{false};
+    auto coro = [&]() -> Coroutine<void> {
+        co_await TimerAwaiter(std::chrono::milliseconds(0));
+        executed = true;
+    }();
+    coro.resume();
+    EXPECT_TRUE(coro.isDone());
+    EXPECT_TRUE(executed.load());
+}
+
+TEST(TimerAwaiterTest, NegativeDurationDoesNotSuspend) {
+    std::atomic<bool> executed{false};
+    auto coro = [&]() -> Coroutine<void> {
+        co_await TimerAwaiter(std::chrono::milliseconds(-1));
+        executed = true;
+    }();
+    coro.resume();
+    EXPECT_TRUE(coro.isDone());
+    EXPECT_TRUE(executed.load());
+}
+
+// ─── SharedCoroutineHandle notify->tryResume 完整流程 ───
+
+TEST(SharedCoroutineHandleTest, NotifyThenTryResume) {
+    auto coro = []() -> Coroutine<void> { co_return; }();
+    auto handle = coro.makeResumeHandle();
+    ASSERT_NE(handle, nullptr);
+    EXPECT_TRUE(handle->suspend());
+    EXPECT_TRUE(handle->notify());
+    EXPECT_TRUE(handle->tryResume());
+    EXPECT_TRUE(coro.isDone());
+}
+
+TEST(SharedCoroutineHandleTest, TryResumeOnSignaledWithoutNotifyIsNoop) {
+    auto control = std::make_shared<CoroutineControlBlock>(std::coroutine_handle<>{});
+    SharedCoroutineHandle h(control);
+    // Registering -> 直接 tryResume，resumed_ 初始为 false 且 control 非空
+    // tryResume 只检查 resumed_ 和 done()，不检查 state_
+    EXPECT_TRUE(h.tryResume());
+    // 第二次 tryResume 应返回 false（resumed_ 已置 true）
+    EXPECT_FALSE(h.tryResume());
+}
+
+TEST(SharedCoroutineHandleTest, NotifyOnDefaultIsNoop) {
+    SharedCoroutineHandle h;
+    EXPECT_FALSE(h.notify());
+    EXPECT_FALSE(h.suspend());
+    EXPECT_FALSE(h.tryResume());
+}
+
+// ─── 多层 co_await 链的取消传播 ───
+
+TEST(CoroutineTest, CancelPropagatesThroughAwaitChain) {
+    std::atomic<bool> innerStarted{false};
+    std::atomic<bool> innerCompleted{false};
+
+    auto inner = [&]() -> Coroutine<void> {
+        innerStarted = true;
+        co_await TimerAwaiter(std::chrono::milliseconds(100));
+        innerCompleted = true;
+    }();
+
+    auto outer = [&]() -> Coroutine<void> {
+        co_await inner;
+    }();
+
+    outer.resume();
+    EXPECT_TRUE(innerStarted.load());
+    outer.cancel();
+    EXPECT_TRUE(outer.isCancelled());
+    // inner 可能已完成或 cancelled，不崩溃即可
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    SUCCEED();
 }

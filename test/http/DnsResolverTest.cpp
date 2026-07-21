@@ -26,9 +26,9 @@ protected:
                               const std::string& host,
                               IPVersion ver = IPVersion::V4) {
         auto coro = r.resolveAsync(host, "80", ver);
-        CoroutineScheduler::instance().schedule(coro);
-        for (int32_t i = 0; i < 50 && !coro.isDone(); ++i) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        CoroutineScheduler::instance().schedule(coro.makeResumeHandle());
+        for (int32_t i = 0; i < 200 && !coro.isDone(); ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         return coro.isDone() ? coro.getResult() : makeAddressInfo(nullptr);
     }
@@ -89,16 +89,13 @@ TEST_F(DnsResolverTest, CacheExpiredAfterTtl) {
 }
 
 TEST_F(DnsResolverTest, LruEvictsOldestWhenFull) {
-    // maxCacheSize=4，解析 5 个不同 host，不崩溃且最新的仍可命中
     for (int32_t i = 0; i < 5; ++i) {
-        // 使用 localhost 的不同端口 key 来模拟不同条目
         auto coro = resolver_->resolveAsync("localhost", std::to_string(8000 + i), IPVersion::V4);
-        CoroutineScheduler::instance().schedule(coro);
-        for (int32_t j = 0; j < 50 && !coro.isDone(); ++j) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        CoroutineScheduler::instance().schedule(coro.makeResumeHandle());
+        for (int32_t j = 0; j < 100 && !coro.isDone(); ++j) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
-    // 最后一次解析仍应成功
     EXPECT_NE(runAndWait(*resolver_, "localhost").get(), nullptr);
 }
 
@@ -107,6 +104,28 @@ TEST_F(DnsResolverTest, DifferentIpVersionCachedSeparately) {
     auto v6 = runAndWait(*resolver_, "localhost", IPVersion::V6);
 
     EXPECT_NE(v4.get(), nullptr);
-    // V6 在部分 CI 环境可能不支持，只验证不崩溃
     (void)v6;
+}
+
+TEST_F(DnsResolverTest, ConcurrentResolveSameHost) {
+    std::atomic<int32_t> successCount{0};
+    std::vector<std::thread> threads;
+    for (int i = 0; i < 4; ++i) {
+        threads.emplace_back([&]() {
+            auto result = runAndWait(*resolver_, "localhost");
+            if (result) successCount++;
+        });
+    }
+    for (auto& t : threads) t.join();
+    EXPECT_EQ(successCount.load(), 4);
+}
+
+TEST_F(DnsResolverTest, ResolveWithTimeout) {
+    auto coro = resolver_->resolveAsync("localhost", "80", IPVersion::V4);
+    CoroutineScheduler::instance().schedule(coro.makeResumeHandle());
+    for (int i = 0; i < 200 && !coro.isDone(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    EXPECT_TRUE(coro.isDone());
+    EXPECT_NE(coro.getResult().get(), nullptr);
 }

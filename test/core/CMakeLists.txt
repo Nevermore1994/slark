@@ -15,6 +15,10 @@ file(GLOB TEST_FILES CONFIGURE_DEPENDS
 list(REMOVE_ITEM TEST_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/PlayerIntegrationTest.cpp
 )
+# Fuzz 测试移到 test/fuzz/ 统一管理
+list(REMOVE_ITEM TEST_FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/M3U8ParserFuzzTest.cpp
+)
 
 # 直接包含需要的源文件，避免编译整个 slark_core
 set(CORE_TEST_SOURCES
@@ -78,42 +82,44 @@ add_custom_target(run_core_test_parallel
 )
 
 # ─── Player 对外接口集成测试（链接完整 slark_core）───────────────────────────
-project(CoreIntegration_test)
+if(NOT DISABLE_CORE)
+    project(CoreIntegration_test)
 
-add_executable(${PROJECT_NAME}
-    ${CMAKE_CURRENT_SOURCE_DIR}/PlayerIntegrationTest.cpp
-)
+    add_executable(${PROJECT_NAME}
+        ${CMAKE_CURRENT_SOURCE_DIR}/PlayerIntegrationTest.cpp
+    )
 
-target_include_directories(${PROJECT_NAME}
-    PRIVATE
-    ${CORE_SRC_DIR}
-    ${CORE_SRC_DIR}/demuxer
-    ${CORE_SRC_DIR}/pipeline
-    ${CORE_SRC_DIR}/audio
-    ${CORE_SRC_DIR}/codec
-    ${CORE_SRC_DIR}/perf
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/http
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../internal
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../include
-)
+    target_include_directories(${PROJECT_NAME}
+        PRIVATE
+        ${CORE_SRC_DIR}
+        ${CORE_SRC_DIR}/demuxer
+        ${CORE_SRC_DIR}/pipeline
+        ${CORE_SRC_DIR}/audio
+        ${CORE_SRC_DIR}/codec
+        ${CORE_SRC_DIR}/perf
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/http
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../internal
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../include
+    )
 
-target_link_libraries(${PROJECT_NAME}
-    slark_core
-    slark_base
-    slark_internal
-    gtest_main
-    gmock
-    pthread)
+    target_link_libraries(${PROJECT_NAME}
+        slark_core
+        slark_base
+        slark_internal
+        gtest_main
+        gmock
+        pthread)
 
-if(NOT DISABLE_HTTP)
-    target_link_libraries(${PROJECT_NAME} slark_http)
+    if(NOT DISABLE_HTTP)
+        target_link_libraries(${PROJECT_NAME} slark_http)
+    endif()
+
+    add_test(NAME PlayerIntegrationTest
+        COMMAND ${PROJECT_NAME}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    set_tests_properties(PlayerIntegrationTest PROPERTIES
+        TIMEOUT 300
+        LABELS "integration"
+    )
 endif()
-
-add_test(NAME PlayerIntegrationTest
-    COMMAND ${PROJECT_NAME}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-)
-set_tests_properties(PlayerIntegrationTest PROPERTIES
-    TIMEOUT 300
-    LABELS "integration"
-)

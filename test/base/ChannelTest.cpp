@@ -312,3 +312,166 @@ TEST(ChannelTest, ImplicitConversion) {
     sp->done();
     t1.join();
 }
+
+TEST(ChannelTest, Emplace) {
+    using type = std::pair<int, std::string>;
+    auto [sp, rp] = Channel<type>::create();
+    std::thread t([rp = std::move(rp)] {
+        for (int i = 0;; i++) {
+            if (auto res = rp->receive(); res.has_value()) {
+                EXPECT_EQ(res->first, i);
+                EXPECT_EQ(res->second, std::to_string(i));
+            } else {
+                break;
+            }
+        }
+    });
+    for (int i = 0; i < 5; i++) {
+        EXPECT_TRUE(sp->emplace(i, std::to_string(i)));
+    }
+    sp->done();
+    t.join();
+}
+
+TEST(ChannelTest, TryReceiveAll) {
+    auto [sp, rp] = Channel<int>::create();
+    for (int i = 0; i < 10; i++) {
+        sp << i;
+    }
+    auto msgs = rp->tryReceiveAll();
+    EXPECT_EQ(msgs.size(), 10u);
+    int expected = 0;
+    for (auto& v : msgs) {
+        EXPECT_EQ(v, expected++);
+    }
+    EXPECT_TRUE(rp->empty());
+    EXPECT_EQ(rp->size(), 0u);
+}
+
+TEST(ChannelTest, Wakeup) {
+    auto [sp, rp] = Channel<int>::create();
+    std::thread t([rp = rp.get()] {
+        auto res = rp->receive();
+        ASSERT_FALSE(res.has_value());
+        EXPECT_EQ(res.error(), ChannelEventType::Awakened);
+    });
+    std::this_thread::sleep_for(10ms);
+    rp->wakeup();
+    t.join();
+}
+
+TEST(ChannelTest, WakeupThenDataThenClosed) {
+    auto [sp, rp] = Channel<int>::create();
+    std::thread t([rp = rp.get(), sp = sp.get()] {
+        // wakeup 后应该能继续正常接收数据
+        auto res = rp->receive();
+        ASSERT_FALSE(res.has_value());
+        EXPECT_EQ(res.error(), ChannelEventType::Awakened);
+        res = rp->receive();
+        ASSERT_TRUE(res.has_value());
+        EXPECT_EQ(*res, 42);
+        sp->done();
+    });
+    std::this_thread::sleep_for(10ms);
+    rp->wakeup();
+    std::this_thread::sleep_for(10ms);
+    sp << 42;
+    t.join();
+}
+
+TEST(ChannelTest, TryReceiveOnEmpty) {
+    auto [sp, rp] = Channel<int>::create();
+    auto res = rp->tryReceive();
+    ASSERT_FALSE(res.has_value());
+    EXPECT_EQ(res.error(), ChannelEventType::None);
+    sp << 1;
+    res = rp->tryReceive();
+    ASSERT_TRUE(res.has_value());
+    EXPECT_EQ(*res, 1);
+}
+
+TEST(ChannelTest, ReceiveOnClosedEmpty) {
+    auto [sp, rp] = Channel<int>::create();
+    sp->done();
+    auto res = rp->receive();
+    ASSERT_FALSE(res.has_value());
+    EXPECT_EQ(res.error(), ChannelEventType::Closed);
+}
+
+TEST(ChannelTest, EmptyRangeSend) {
+    auto [sp, rp] = Channel<int>::create();
+    std::vector<int> empty;
+    EXPECT_TRUE(sp->send(empty));
+    EXPECT_EQ(rp->size(), 0u);
+    sp->done();
+}
+
+TEST(ChannelTest, SendRvalueRange) {
+    auto [sp, rp] = Channel<std::string>::create();
+    std::vector<std::string> data = {"a", "b", "c"};
+    // std::move(data) 匹配 const I& 重载，元素被拷贝而非移动
+    // 此处仅验证 send 成功、数据正确送达
+    EXPECT_TRUE(sp->send(std::move(data)));
+    EXPECT_TRUE(rp->receive().has_value());
+    EXPECT_TRUE(rp->receive().has_value());
+    EXPECT_TRUE(rp->receive().has_value());
+    sp->done();
+}
+
+TEST(ChannelTest, SizeAndEmpty) {
+    auto [sp, rp] = Channel<int>::create();
+    EXPECT_TRUE(rp->empty());
+    EXPECT_EQ(rp->size(), 0u);
+    sp << 1;
+    EXPECT_FALSE(rp->empty());
+    EXPECT_EQ(rp->size(), 1u);
+    sp << 2 << 3;
+    EXPECT_EQ(rp->size(), 3u);
+    (void)rp->tryReceiveAll();
+    EXPECT_TRUE(rp->empty());
+    EXPECT_EQ(rp->size(), 0u);
+    sp->done();
+}
+
+TEST(ChannelTest, WakeupDoesNotClose) {
+    auto [sp, rp] = Channel<int>::create();
+    rp->wakeup();
+    EXPECT_FALSE(sp->isDone());
+    EXPECT_TRUE(sp->send(1));
+    auto res = rp->tryReceive();
+    ASSERT_TRUE(res.has_value());
+    EXPECT_EQ(*res, 1);
+    sp->done();
+}
+
+TEST(ChannelTest, MultipleWakeups) {
+    auto [sp, rp] = Channel<int>::create();
+    rp->wakeup();
+    rp->wakeup(); // 第二次 wakeup 覆盖第一次
+    // 只消费一次 Awakened
+    auto res = rp->receive();
+    ASSERT_FALSE(res.has_value());
+    EXPECT_EQ(res.error(), ChannelEventType::Awakened);
+    sp->done();
+}
+
+TEST(ChannelTest, EmplaceAfterClosed) {
+    auto [sp, rp] = Channel<int>::create();
+    sp->done();
+    EXPECT_FALSE(sp->emplace(1));
+}
+
+TEST(ChannelTest, SendRvalueRangeWithNonCopyable) {
+    auto [sp, rp] = Channel<std::unique_ptr<int>>::create();
+    std::vector<std::unique_ptr<int>> data;
+    data.push_back(std::make_unique<int>(1));
+    data.push_back(std::make_unique<int>(2));
+    EXPECT_TRUE(sp->send(std::move(data)));
+    auto res1 = rp->receive();
+    ASSERT_TRUE(res1.has_value());
+    EXPECT_EQ(**res1, 1);
+    auto res2 = rp->receive();
+    ASSERT_TRUE(res2.has_value());
+    EXPECT_EQ(**res2, 2);
+    sp->done();
+}

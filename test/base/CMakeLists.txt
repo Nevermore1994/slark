@@ -10,6 +10,10 @@ set(TEST_FILE_LISTS
         PlayerStateMachineTest.cpp
 )
 file(GLOB TEST_FILES ${TEST_FILE_LISTS})
+# 排除 fuzz 测试，移到 test/fuzz/ 统一管理
+list(REMOVE_ITEM TEST_FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/CoroutineStateMachineFuzzTest.cpp
+)
 add_executable(${PROJECT_NAME} ${TEST_FILES})
 
 target_link_libraries(${PROJECT_NAME}

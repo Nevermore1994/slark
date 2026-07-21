@@ -6,23 +6,36 @@
 #include "Coroutine.hpp"
 #include "CoroutineScheduler.hpp"
 #include "HttpRequest.h"
-#include "ThreadPool.hpp"
 
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <gtest/gtest.h>
+#include <memory>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 using namespace slark;
 using namespace slark::http;
+
+namespace {
+
+void resumeAndWait(Coroutine<void>& coro) {
+    coro.resume();
+    for (int32_t i = 0; i < 200 && !coro.isDone(); ++i) {
+        CoroutineScheduler::instance().waitForAll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+}
+
+} // namespace
 
 // HTTP 协程异步请求测试
 TEST(HttpAsyncRequestTest, AsyncExecuteWithCoroutine) {
     auto coro = []() -> Coroutine<void> {
         RequestInfo info;
-        info.url = "http://httpbin.org/get";
+        info.url = "http://httpbingo.org/get";
         info.methodType = HttpMethodType::Get;
         info.readTimeout = std::chrono::milliseconds(5000);
 
@@ -34,14 +47,14 @@ TEST(HttpAsyncRequestTest, AsyncExecuteWithCoroutine) {
         EXPECT_TRUE(response.body != nullptr);
     }();
 
-    coro.resume();
+    resumeAndWait(coro);
     EXPECT_TRUE(coro.isDone());
 }
 
 TEST(HttpAsyncRequestTest, AsyncExecuteWithPost) {
     auto coro = []() -> Coroutine<void> {
         RequestInfo info;
-        info.url = "http://httpbin.org/post";
+        info.url = "http://httpbingo.org/post";
         info.methodType = HttpMethodType::Post;
         info.readTimeout = std::chrono::milliseconds(5000);
         info.headers["Content-Type"] = "application/json";
@@ -54,7 +67,7 @@ TEST(HttpAsyncRequestTest, AsyncExecuteWithPost) {
         EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
     }();
 
-    coro.resume();
+    resumeAndWait(coro);
     EXPECT_TRUE(coro.isDone());
 }
 
@@ -63,7 +76,7 @@ TEST(HttpAsyncRequestTest, AsyncExecuteWithCancellation) {
 
     auto coro = [&token]() -> Coroutine<void> {
         RequestInfo info;
-        info.url = "http://httpbin.org/delay/5";
+        info.url = "http://httpbingo.org/delay/5";
         info.methodType = HttpMethodType::Get;
         info.readTimeout = std::chrono::milliseconds(10000);
 
@@ -71,7 +84,7 @@ TEST(HttpAsyncRequestTest, AsyncExecuteWithCancellation) {
         auto response = co_await request.asyncExecute(info, token);
 
         EXPECT_FALSE(response.isSuccess());
-        EXPECT_EQ(response.error.retCode, ResultCode::Cancelled);
+        EXPECT_EQ(response.error.retCode, slark::Error::Cancelled);
     }();
 
     std::thread canceller([&token]() {
@@ -79,7 +92,7 @@ TEST(HttpAsyncRequestTest, AsyncExecuteWithCancellation) {
         token.cancel();
     });
 
-    coro.resume();
+    resumeAndWait(coro);
     EXPECT_TRUE(coro.isDone());
 
     canceller.join();
@@ -88,7 +101,7 @@ TEST(HttpAsyncRequestTest, AsyncExecuteWithCancellation) {
 TEST(HttpAsyncRequestTest, AsyncExecuteWithTimeout) {
     auto coro = []() -> Coroutine<void> {
         RequestInfo info;
-        info.url = "http://httpbin.org/delay/10";
+        info.url = "http://httpbingo.org/delay/10";
         info.methodType = HttpMethodType::Get;
         info.readTimeout = std::chrono::milliseconds(1000);
 
@@ -96,10 +109,10 @@ TEST(HttpAsyncRequestTest, AsyncExecuteWithTimeout) {
         auto response = co_await request.asyncExecute(info);
 
         EXPECT_FALSE(response.isSuccess());
-        EXPECT_EQ(response.error.retCode, ResultCode::Timeout);
+        EXPECT_EQ(response.error.retCode, slark::Error::ConnectionTimeout);
     }();
 
-    coro.resume();
+    resumeAndWait(coro);
     EXPECT_TRUE(coro.isDone());
 }
 
@@ -114,17 +127,17 @@ TEST(HttpAsyncRequestTest, AsyncExecuteInvalidUrl) {
         auto response = co_await request.asyncExecute(info);
 
         EXPECT_FALSE(response.isSuccess());
-        EXPECT_NE(response.error.retCode, ResultCode::Success);
+        EXPECT_NE(response.error.retCode, slark::Error::Success);
     }();
 
-    coro.resume();
+    resumeAndWait(coro);
     EXPECT_TRUE(coro.isDone());
 }
 
 TEST(HttpAsyncRequestTest, AsyncExecuteHttps) {
     auto coro = []() -> Coroutine<void> {
         RequestInfo info;
-        info.url = "https://httpbin.org/get";
+        info.url = "https://httpbingo.org/get";
         info.methodType = HttpMethodType::Get;
         info.readTimeout = std::chrono::milliseconds(5000);
 
@@ -135,7 +148,7 @@ TEST(HttpAsyncRequestTest, AsyncExecuteHttps) {
         EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
     }();
 
-    coro.resume();
+    resumeAndWait(coro);
     EXPECT_TRUE(coro.isDone());
 }
 
@@ -147,7 +160,7 @@ TEST(HttpAsyncRequestTest, CallbackExecute) {
     HttpResponse storedResponse;
 
     RequestInfo info;
-    info.url = "http://httpbin.org/get";
+    info.url = "http://httpbingo.org/get";
     info.methodType = HttpMethodType::Get;
     info.readTimeout = std::chrono::milliseconds(5000);
 
@@ -196,7 +209,7 @@ TEST(HttpAsyncRequestTest, CallbackExecuteWithCreate) {
     HttpResponse storedResponse;
 
     RequestInfo info;
-    info.url = "http://httpbin.org/get";
+    info.url = "http://httpbingo.org/get";
     info.methodType = HttpMethodType::Get;
     info.readTimeout = std::chrono::milliseconds(5000);
 
@@ -240,7 +253,7 @@ TEST(HttpAsyncRequestTest, CallbackExecuteWithCancel) {
     HttpResponse storedResponse;
 
     RequestInfo info;
-    info.url = "http://httpbin.org/delay/5";
+    info.url = "http://httpbingo.org/delay/5";
     info.methodType = HttpMethodType::Get;
     info.readTimeout = std::chrono::milliseconds(10000);
 
@@ -269,14 +282,14 @@ TEST(HttpAsyncRequestTest, CallbackExecuteWithCancel) {
         return completed;
     });
     EXPECT_TRUE(result);
-    EXPECT_EQ(storedResponse.error.retCode, ResultCode::Cancelled);
+    EXPECT_EQ(storedResponse.error.retCode, slark::Error::Cancelled);
 }
 
 // HTTP 流式请求测试
 TEST(HttpAsyncRequestTest, StreamingExecute) {
     auto coro = []() -> Coroutine<void> {
         RequestInfo info;
-        info.url = "http://httpbin.org/stream-bytes/1024";
+        info.url = "http://httpbingo.org/stream-bytes/1024";
         info.methodType = HttpMethodType::Get;
         info.readTimeout = std::chrono::milliseconds(10000);
 
@@ -301,21 +314,19 @@ TEST(HttpAsyncRequestTest, StreamingExecute) {
         EXPECT_EQ(totalBytes, 1024u);
     }();
 
-    coro.resume();
+    resumeAndWait(coro);
     EXPECT_TRUE(coro.isDone());
 }
 
 TEST(HttpAsyncRequestTest, StreamingExecuteWithCancellation) {
-    CancellationToken token;
-
-    auto coro = [&token]() -> Coroutine<void> {
+    auto coro = []() -> Coroutine<void> {
         RequestInfo info;
-        info.url = "http://httpbin.org/stream-bytes/10240";
+        info.url = "http://httpbingo.org/stream-bytes/10240";
         info.methodType = HttpMethodType::Get;
         info.readTimeout = std::chrono::milliseconds(10000);
 
         HttpRequest request;
-        auto gen = request.streamingExecute(info, token);
+        auto gen = request.streamingExecute(info);
 
         size_t receivedBytes = 0;
         int32_t chunkCount = 0;
@@ -331,30 +342,30 @@ TEST(HttpAsyncRequestTest, StreamingExecuteWithCancellation) {
             chunkCount++;
 
             if (chunkCount >= 2) {
-                token.cancel();
+                request.cancel();
             }
         }
 
         EXPECT_LT(receivedBytes, 10240u);
     }();
 
-    coro.resume();
+    resumeAndWait(coro);
     EXPECT_TRUE(coro.isDone());
 }
 
 // 并发请求测试
 TEST(HttpAsyncRequestTest, ConcurrentRequests) {
-    ThreadPool pool(ThreadPoolConfig{4});
     std::atomic<int32_t> successCount{0};
     std::atomic<int32_t> failCount{0};
 
     constexpr int32_t kRequestCount = 5;
+    std::vector<std::shared_ptr<Coroutine<void>>> coroutines;
 
     for (int32_t i = 0; i < kRequestCount; ++i) {
-        pool.postJob([&successCount, &failCount]() {
-            auto coro = [&successCount, &failCount]() -> Coroutine<void> {
+        auto coro = std::make_shared<Coroutine<void>>(
+            [&successCount, &failCount]() -> Coroutine<void> {
                 RequestInfo info;
-                info.url = "http://httpbin.org/get";
+                info.url = "http://httpbingo.org/get";
                 info.methodType = HttpMethodType::Get;
                 info.readTimeout = std::chrono::milliseconds(10000);
 
@@ -366,13 +377,15 @@ TEST(HttpAsyncRequestTest, ConcurrentRequests) {
                 } else {
                     failCount++;
                 }
-            }();
-
-            coro.resume();
-        });
+            }());
+        coroutines.push_back(coro);
+        CoroutineScheduler::instance().schedule(coro->makeResumeHandle());
     }
 
-    pool.waitForAll();
+    for (int32_t i = 0; i < 200 && successCount.load() + failCount.load() < kRequestCount; ++i) {
+        CoroutineScheduler::instance().waitForAll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
 
     EXPECT_EQ(successCount.load() + failCount.load(), kRequestCount);
     EXPECT_GT(successCount.load(), 0);
@@ -382,7 +395,7 @@ TEST(HttpAsyncRequestTest, ConcurrentRequests) {
 TEST(HttpAsyncRequestTest, RedirectFollowing) {
     auto coro = []() -> Coroutine<void> {
         RequestInfo info;
-        info.url = "http://httpbin.org/redirect/2";
+        info.url = "http://httpbingo.org/redirect/2";
         info.methodType = HttpMethodType::Get;
         info.readTimeout = std::chrono::milliseconds(5000);
         info.isAllowRedirect = true;
@@ -394,14 +407,14 @@ TEST(HttpAsyncRequestTest, RedirectFollowing) {
         EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
     }();
 
-    coro.resume();
+    resumeAndWait(coro);
     EXPECT_TRUE(coro.isDone());
 }
 
 TEST(HttpAsyncRequestTest, RedirectDisabled) {
     auto coro = []() -> Coroutine<void> {
         RequestInfo info;
-        info.url = "http://httpbin.org/redirect/1";
+        info.url = "http://httpbingo.org/redirect/1";
         info.methodType = HttpMethodType::Get;
         info.readTimeout = std::chrono::milliseconds(5000);
         info.isAllowRedirect = false;
@@ -412,7 +425,7 @@ TEST(HttpAsyncRequestTest, RedirectDisabled) {
         EXPECT_TRUE(response.isNeedRedirect());
     }();
 
-    coro.resume();
+    resumeAndWait(coro);
     EXPECT_TRUE(coro.isDone());
 }
 
@@ -420,7 +433,7 @@ TEST(HttpAsyncRequestTest, RedirectDisabled) {
 TEST(HttpAsyncRequestTest, CustomHeaders) {
     auto coro = []() -> Coroutine<void> {
         RequestInfo info;
-        info.url = "http://httpbin.org/headers";
+        info.url = "http://httpbingo.org/headers";
         info.methodType = HttpMethodType::Get;
         info.readTimeout = std::chrono::milliseconds(5000);
         info.headers["X-Custom-Header"] = "TestValue";
@@ -440,7 +453,7 @@ TEST(HttpAsyncRequestTest, CustomHeaders) {
         }
     }();
 
-    coro.resume();
+    resumeAndWait(coro);
     EXPECT_TRUE(coro.isDone());
 }
 
@@ -448,7 +461,7 @@ TEST(HttpAsyncRequestTest, CustomHeaders) {
 TEST(HttpAsyncRequestTest, UserAgent) {
     auto coro = []() -> Coroutine<void> {
         RequestInfo info;
-        info.url = "http://httpbin.org/user-agent";
+        info.url = "http://httpbingo.org/user-agent";
         info.methodType = HttpMethodType::Get;
         info.readTimeout = std::chrono::milliseconds(5000);
         info.headers["User-Agent"] = "SlarkTest/1.0";
@@ -466,7 +479,7 @@ TEST(HttpAsyncRequestTest, UserAgent) {
         }
     }();
 
-    coro.resume();
+    resumeAndWait(coro);
     EXPECT_TRUE(coro.isDone());
 }
 
@@ -474,7 +487,7 @@ TEST(HttpAsyncRequestTest, UserAgent) {
 TEST(HttpAsyncRequestTest, PutMethod) {
     auto coro = []() -> Coroutine<void> {
         RequestInfo info;
-        info.url = "http://httpbin.org/put";
+        info.url = "http://httpbingo.org/put";
         info.methodType = HttpMethodType::Put;
         info.readTimeout = std::chrono::milliseconds(5000);
         info.headers["Content-Type"] = "application/json";
@@ -487,14 +500,14 @@ TEST(HttpAsyncRequestTest, PutMethod) {
         EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
     }();
 
-    coro.resume();
+    resumeAndWait(coro);
     EXPECT_TRUE(coro.isDone());
 }
 
 TEST(HttpAsyncRequestTest, PatchMethod) {
     auto coro = []() -> Coroutine<void> {
         RequestInfo info;
-        info.url = "http://httpbin.org/patch";
+        info.url = "http://httpbingo.org/patch";
         info.methodType = HttpMethodType::Patch;
         info.readTimeout = std::chrono::milliseconds(5000);
         info.headers["Content-Type"] = "application/json";
@@ -507,14 +520,14 @@ TEST(HttpAsyncRequestTest, PatchMethod) {
         EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
     }();
 
-    coro.resume();
+    resumeAndWait(coro);
     EXPECT_TRUE(coro.isDone());
 }
 
 TEST(HttpAsyncRequestTest, DeleteMethod) {
     auto coro = []() -> Coroutine<void> {
         RequestInfo info;
-        info.url = "http://httpbin.org/delete";
+        info.url = "http://httpbingo.org/delete";
         info.methodType = HttpMethodType::Delete;
         info.readTimeout = std::chrono::milliseconds(5000);
 
@@ -525,7 +538,7 @@ TEST(HttpAsyncRequestTest, DeleteMethod) {
         EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
     }();
 
-    coro.resume();
+    resumeAndWait(coro);
     EXPECT_TRUE(coro.isDone());
 }
 
@@ -533,7 +546,7 @@ TEST(HttpAsyncRequestTest, DeleteMethod) {
 TEST(HttpAsyncRequestTest, NotFoundStatus) {
     auto coro = []() -> Coroutine<void> {
         RequestInfo info;
-        info.url = "http://httpbin.org/status/404";
+        info.url = "http://httpbingo.org/status/404";
         info.methodType = HttpMethodType::Get;
         info.readTimeout = std::chrono::milliseconds(5000);
 
@@ -543,14 +556,14 @@ TEST(HttpAsyncRequestTest, NotFoundStatus) {
         EXPECT_EQ(response.statusCode, HttpStatusCode::NotFound);
     }();
 
-    coro.resume();
+    resumeAndWait(coro);
     EXPECT_TRUE(coro.isDone());
 }
 
 TEST(HttpAsyncRequestTest, ServerErrorStatus) {
     auto coro = []() -> Coroutine<void> {
         RequestInfo info;
-        info.url = "http://httpbin.org/status/500";
+        info.url = "http://httpbingo.org/status/500";
         info.methodType = HttpMethodType::Get;
         info.readTimeout = std::chrono::milliseconds(5000);
 
@@ -560,19 +573,17 @@ TEST(HttpAsyncRequestTest, ServerErrorStatus) {
         EXPECT_EQ(response.statusCode, HttpStatusCode::InternalServerError);
     }();
 
-    coro.resume();
+    resumeAndWait(coro);
     EXPECT_TRUE(coro.isDone());
 }
 
 // 集成测试：协程调度器与HTTP请求
 TEST(HttpAsyncRequestIntegrationTest, ScheduledHttpRequest) {
-    auto& scheduler = CoroutineScheduler::instance();
-
     std::atomic<bool> completed{false};
 
     auto coro = [&]() -> Coroutine<void> {
         RequestInfo info;
-        info.url = "http://httpbin.org/get";
+        info.url = "http://httpbingo.org/get";
         info.methodType = HttpMethodType::Get;
         info.readTimeout = std::chrono::milliseconds(5000);
 
@@ -583,13 +594,7 @@ TEST(HttpAsyncRequestIntegrationTest, ScheduledHttpRequest) {
         completed = true;
     }();
 
-    scheduler.schedule(coro.getHandle());
-
-    int32_t waitCount = 0;
-    while (!completed.load() && waitCount < 100) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        waitCount++;
-    }
-
+    resumeAndWait(coro);
+    EXPECT_TRUE(coro.isDone());
     EXPECT_TRUE(completed.load());
 }
