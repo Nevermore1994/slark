@@ -57,6 +57,10 @@ config.json
 build_*/
 .review/
 test/base/cache/
+test/core/cache/
+test/http/cache/
+test/platform/cache/
+test/fuzz/cache/
 test/**/cmake_test_discovery_*.json
 compile_commands.json
 
@@ -87,3 +91,9 @@ test/base/test2.txt
 .plan
 t.log
 *.log
+cmake-build-debug-test
+cmake-build-test
+cmake-build--L-test
+
+# Test output
+test/output/
