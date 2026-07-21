@@ -40,9 +40,16 @@ std::expected<BoxInfo, bool> Box::tryParseBoxInfo(Buffer& buffer) noexcept {
     }
     info.symbol = Util::toStringBE<uint32_t>(info.type);
     // 警告但不拒绝：非可打印 ASCII 的 box type 可能是垃圾数据，仍尝试跳过
+    // 注意：box type 可能含非法 UTF-8 字节（如 0xff），直接 LogW("{}") 会通过
+    // JNI NewStringUTF 传给 Android 日志系统导致 SIGABRT，必须转义
     for (auto c : info.symbol) {
         if (c < 0x20 || c > 0x7E) {
-            LogW("tryParseBoxInfo: invalid box type '{}' at pos:{}", info.symbol, info.start);
+            LogW("tryParseBoxInfo: invalid box type 0x{:02X}{:02X}{:02X}{:02X} at pos:{}",
+                 static_cast<uint8_t>(info.symbol[0]),
+                 static_cast<uint8_t>(info.symbol[1]),
+                 static_cast<uint8_t>(info.symbol[2]),
+                 static_cast<uint8_t>(info.symbol[3]),
+                 info.start);
             break;
         }
     }

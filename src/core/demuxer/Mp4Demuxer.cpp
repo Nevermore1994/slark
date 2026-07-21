@@ -299,6 +299,7 @@ void TrackContext::reset() noexcept {
     index = 0;
     isCompleted = false;
     fragSampleIndex = 0;
+    fragmentDurationTicks = 0;
 }
 
 void TrackContext::advanceStscState() noexcept {
@@ -838,7 +839,7 @@ bool Mp4Demuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
     if (rootBox_ == nullptr) {
         BoxInfo info;
         info.start = 0;
-        info.size = config_.fileSize;
+        info.size = 0;
         rootBox_ = std::make_shared<Box>(std::move(info));
     }
     auto res = false;
@@ -878,16 +879,10 @@ bool Mp4Demuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
                     }
                     continue;
                 }
-                // moov 不在 buffer 中：如果文件大小已知且 mdat 后有数据，
-                // 直接跳到 mdat 末尾解析 moov，避免逐 chunk 累积数据
-                if (config_.fileSize > 0) {
-                    uint64_t mdatEnd = box->info.start + box->info.size;
-                    if (config_.fileSize > mdatEnd) {
-                        pendingSeekPos_ = mdatEnd;
-                        eof = true;
-                        break;
-                    }
-                }
+                uint64_t mdatEnd = box->info.start + box->info.size;
+                pendingSeekPos_ = mdatEnd;
+                eof = true;
+                break;
             }
         } else if (box->info.symbol == "sidx") {
             auto sidxBox = std::dynamic_pointer_cast<BoxSidx>(box);
@@ -895,6 +890,7 @@ bool Mp4Demuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
                 sidxBox->decode(*buffer);
                 uint64_t segOffset = box->info.end() + sidxBox->firstOffset;
                 uint64_t segTime = sidxBox->earliestPresentationTime;
+                uint64_t totalSegDuration = 0;
                 for (auto& [codecId, track] : tracks_) {
                     track->sidxSegments.clear();
                 }
@@ -909,6 +905,19 @@ bool Mp4Demuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
                         }
                         segOffset += entry.referencedSize;
                         segTime += entry.subsegmentDuration;
+                        totalSegDuration += entry.subsegmentDuration;
+                    }
+                }
+                // fMP4 的 mvhd.duration 可能为 0，从 sidx 总 duration 补算
+                if (totalDuration_.second() <= 0.0 && !tracks_.empty()) {
+                    auto& firstTrack = tracks_.begin()->second;
+                    if (firstTrack->mdhd) {
+                        double dur = static_cast<double>(totalSegDuration) /
+                                     static_cast<double>(firstTrack->mdhd->timeScale);
+                        if (dur > 0.0) {
+                            totalDuration_ = CTime(dur);
+                            LogI("fMP4 duration computed from sidx: {:.3f}s", dur);
+                        }
                     }
                 }
             }
@@ -939,7 +948,7 @@ bool Mp4Demuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
              headerInfo_ ? headerInfo_->headerLength : 0,
              headerInfo_ ? headerInfo_->headerLength + headerInfo_->dataSize : 0);
     } else {
-        LogI("open: moov parsed, fileSize:{}", config_.fileSize);
+        LogI("open: moov parsed");
         initData();
     }
     return res;
@@ -1003,7 +1012,6 @@ void Mp4Demuxer::initAudioTrack(const std::shared_ptr<TrackContext>& track) noex
     audioInfo_->sampleRate = stsdBox->sampleRate;
     audioInfo_->bitsPerSample = stsdBox->sampleSize;
     audioInfo_->timeScale = track->mdhd->timeScale;
-    // TODO: support more format
     audioInfo_->mediaInfo =
         track->codecId == CodecId::AAC ? MEDIA_MIMETYPE_AUDIO_AAC : MEDIA_MIMETYPE_UNKNOWN;
 
@@ -1104,6 +1112,7 @@ void Mp4Demuxer::initData() noexcept {
     auto mvhdBox = std::dynamic_pointer_cast<BoxMvhd>(rootBox_->getChild("moov")->getChild("mvhd"));
     totalDuration_ =
         CTime(static_cast<double>(mvhdBox->duration) / static_cast<double>(mvhdBox->timeScale));
+    // fMP4 的 mvhd.duration 可能为 0，后面 parse 到 sidx 后会补算
     for (auto& [codecId, track] : tracks_) {
         initTrack(track);
         if (!track->stsd) {
@@ -1122,6 +1131,37 @@ void Mp4Demuxer::initData() noexcept {
          totalDuration_.second(),
          static_cast<int32_t>(tracks_.size()),
          isFragmented_);
+}
+
+CTime Mp4Demuxer::computeTotalDuration() const noexcept {
+    if (totalDuration_.second() > 0.0) {
+        return totalDuration_;
+    }
+    if (!isFragmented_) {
+        return totalDuration_;
+    }
+    // fMP4: 优先从 sidx segment 计算
+    double maxDuration = 0.0;
+    for (const auto& [codecId, track] : tracks_) {
+        double timeScale = static_cast<double>(track->mdhd ? track->mdhd->timeScale : 1);
+        uint64_t totalTicks = 0;
+        // 从 sidx segment 累加
+        for (const auto& seg : track->sidxSegments) {
+            totalTicks = std::max(totalTicks, seg.startTime + seg.duration);
+        }
+        // 从 fragment sample 累加
+        if (totalTicks == 0 && track->fragmentDurationTicks > 0) {
+            totalTicks = track->fragmentDurationTicks;
+        }
+        if (totalTicks > 0) {
+            double trackDuration = static_cast<double>(totalTicks) / timeScale;
+            maxDuration = std::max(maxDuration, trackDuration);
+        }
+    }
+    if (maxDuration > 0.0) {
+        return CTime(maxDuration);
+    }
+    return totalDuration_;
 }
 
 void Mp4Demuxer::flush() noexcept {
@@ -1464,6 +1504,11 @@ void TrackContext::appendFragmentSamples(const BoxRefPtr& moofBox, uint64_t moof
             }
             baseDecodeTime = currentDts;
         }
+    }
+    // 更新 fragment 总 duration（取最大 dts + duration）
+    if (!fragSamples.empty()) {
+        uint64_t lastEnd = static_cast<uint64_t>(fragSamples.back().dts + fragSamples.back().duration);
+        fragmentDurationTicks = std::max(fragmentDurationTicks, lastEnd);
     }
     isCompleted = fragSamples.empty();
 }

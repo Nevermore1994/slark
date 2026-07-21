@@ -159,6 +159,7 @@ AVFrameRefPtr DecoderComponent::waitForFrame(Thread& thread) noexcept {
             LogD("waitForFrame: Awakened, process pending outputs");
             processPendingOutputs(thread);
         }
+        flushed_.store(false, std::memory_order_release);
         return nullptr;
     }
     // flush 兜底：清空窗口期残帧
@@ -222,11 +223,20 @@ void DecoderComponent::runLoop(Thread& thread) noexcept {
         }
 
         if (frame->isEOS) {
+            // EOS 帧也设置 epoch，确保回调时 epoch 正确
+            if (decoder_) {
+                decoder_->setCurrentSeekEpoch(frame->seekEpoch);
+            }
             auto res = decoder_->decode(frame);
             LogI("push eos frame, res:{}", toString(res));
             // 推送 EOS 后立即排空可能的残留输出（如 CSD config 帧触发 codec 产出的空输出）
             processPendingOutputs(thread);
             continue;
+        }
+
+        // 在 decode 前设置当前 epoch，decoder 回调时将其注入 DecoderData
+        if (decoder_) {
+            decoder_->setCurrentSeekEpoch(frame->seekEpoch);
         }
 
         if (!decodeFrame(frame, thread)) {

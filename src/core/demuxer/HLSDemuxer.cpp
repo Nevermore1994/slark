@@ -70,7 +70,6 @@ bool TSDemuxer::parsePacket(DataView data, uint32_t tsIndex, DemuxerResult& resu
             if (videoInfo_->mediaInfo == MEDIA_MIMETYPE_VIDEO_AVC) {
                 packH264VideoPacket(tsIndex, result.videoFrames);
             }
-            // TODO: pack h265
         }
         parseTSPes(data, header.payloadUinitIndicator, videoESFrame_);
     } else if (header.pid == pmt_.audioPid) {

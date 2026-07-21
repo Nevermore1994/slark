@@ -26,7 +26,6 @@ enum class DemuxerType {
 };
 
 struct DemuxerConfig {
-    uint64_t fileSize = 0;
     std::string filePath;
 };
 
@@ -76,7 +75,6 @@ public:
         audioInfo_.reset();
     }
 
-    /// 刷新 demuxer 内部状态，清除缓冲区中的残留数据
     virtual void flush() noexcept {
         isCompleted_ = false;
         if (buffer_) {
@@ -94,7 +92,6 @@ public:
 
     virtual DemuxerResult parseData(DataPacket& packet) noexcept = 0;
 
-    /// In HLS, what you get is the TS index, while in other cases, it’s the file offset.
     [[nodiscard]] virtual uint64_t getSeekToPos(double) noexcept = 0;
 
     [[nodiscard]] bool isOpened() const noexcept {
@@ -129,6 +126,10 @@ public:
         if (!isOpened_) {
             return {};
         }
+        return totalDuration_;
+    }
+
+    virtual CTime computeTotalDuration() const noexcept {
         return totalDuration_;
     }
 
@@ -169,5 +170,3 @@ protected:
 };
 
 } // end namespace slark
-
-/* IDemuxer_hpp */

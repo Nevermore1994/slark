@@ -38,6 +38,7 @@ struct DecoderConfig {
 struct DecoderData {
     AVFrameRefPtr frame;
     Error error = Error::Success;
+    uint64_t seekEpoch{0}; ///< dispatch 时捕获的 seek epoch，回调时用于 stale 判断
 };
 
 using DecoderReceiveFunc = std::function<void(DecoderData)>;
@@ -90,17 +91,14 @@ public:
 
     virtual Error decode(AVFrameRefPtr& frame) noexcept = 0;
 
-    /// 解码器是否有待处理的输出帧（Texture 模式专用，默认无）
     virtual bool hasPendingOutput() const noexcept {
         return false;
     }
 
-    /// 渲染并递送待处理的输出帧（Texture 模式专用，默认 no-op）
     virtual Error renderOutput() noexcept {
         return Error::CodecError;
     }
 
-    /// 清除待处理输出标记（Texture 模式专用，默认 no-op）
     virtual void clearPendingOutput() noexcept {
     }
 
@@ -130,6 +128,10 @@ public:
         }
     }
 
+    void setCurrentSeekEpoch(uint64_t epoch) noexcept {
+        currentSeekEpoch_ = epoch;
+    }
+
 protected:
     std::atomic_bool isOpen_ = false;
     std::atomic_bool isCompleted_ = false;
@@ -137,11 +139,11 @@ protected:
     WakeupCallback wakeupCallback_;
     DecoderType decoderType_ = DecoderType::Unknown;
     std::shared_ptr<DecoderConfig> config_;
+    uint64_t currentSeekEpoch_ = 0;
 };
 
 } // namespace slark
 
-// 为 decoder 子类提供静态类型信息，避免重复实现 type() 方法
 #define SLARK_DECODER_INFO(cls, decoderType)                 \
     static constexpr DecoderType kDecoderType = decoderType; \
     static constexpr std::string_view kDecoderName = #cls;

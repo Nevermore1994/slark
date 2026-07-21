@@ -74,6 +74,8 @@ public:
     };
 
     std::vector<SidxSegment> sidxSegments;
+    // fMP4: 从所有 fragment sample 累加的总 duration（timeScale 单位 ticks）
+    uint64_t fragmentDurationTicks = 0;
     int32_t rotationDegrees = 0;
 
 public:
@@ -150,6 +152,8 @@ public:
     DemuxerResult parseData(DataPacket& packet) noexcept override;
 
     [[nodiscard]] uint64_t getSeekToPos(double time) noexcept override;
+
+    [[nodiscard]] CTime computeTotalDuration() const noexcept override;
 
     inline static const DemuxerInfo& info() noexcept {
         static DemuxerInfo info = {DemuxerType::MP4,

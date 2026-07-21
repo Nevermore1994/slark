@@ -4,6 +4,7 @@
 
 #include "DemuxerComponent.h"
 
+#include "Log.hpp"
 #include "Mp4Demuxer.h"
 
 #ifdef SLARK_PERF_ENABLED
@@ -20,6 +21,7 @@ DemuxerComponent::~DemuxerComponent() {
 }
 
 void DemuxerComponent::stop() noexcept {
+    LogI("[DemuxerComponent::stop] stopping");
     if (receiver_) {
         receiver_->wakeup();
     }
@@ -51,6 +53,7 @@ void DemuxerComponent::start() noexcept {
         worker_->start();
         return;
     }
+    LogI("[DemuxerComponent::start] starting DemuxerWorker");
     worker_ = Thread::createWithLoop("DemuxerWorker", [this](Thread& thread) {
         runLoop(thread);
     });
@@ -99,6 +102,7 @@ void DemuxerComponent::runLoop(Thread& thread) noexcept {
             if (exp.error() == ChannelEventType::Awakened) {
                 continue;
             }
+            LogI("[DemuxerComponent::runLoop] receiver closed, exiting loop");
             break;
         }
         DataPacket packet = std::move(*exp);
@@ -132,8 +136,16 @@ void DemuxerComponent::runLoop(Thread& thread) noexcept {
         auto durationUs = static_cast<int64_t>(Time::nowTimeStamp().point() - t0);
         SLARK_TRACE_RECORD(session.get(), "demux", durationUs);
 #endif
+        if (result.resultCode != DemuxerResultCode::Normal) {
+            LogI("[DemuxerComponent::runLoop] parseData: resultCode={} videoFrames={} audioFrames={} offset={}",
+                 static_cast<int>(result.resultCode),
+                 result.videoFrames.size(),
+                 result.audioFrames.size(),
+                 packet.offset);
+        }
         invokeHandleResultFunc(std::move(result));
     }
+    LogI("[DemuxerComponent::runLoop] loop exited");
 }
 
 bool DemuxerComponent::open() noexcept {
@@ -155,6 +167,10 @@ bool DemuxerComponent::open() noexcept {
         }
         return false;
     }
+
+    LogI("[DemuxerComponent::open] demuxer opened: type={} probeRemain={}",
+         static_cast<int32_t>(demuxer->type()),
+         probeBuffer_ ? probeBuffer_->length() : 0);
 
     if (auto headerInfo = demuxer->headerInfo(); headerInfo && headerInfo->headerLength > 0) {
         demuxer->seekPos(headerInfo->headerLength);
@@ -212,6 +228,9 @@ bool DemuxerComponent::createDemuxer() noexcept {
     }
     demuxer->init(config_);
     demuxer_.reset(demuxer);
+    LogI("[DemuxerComponent::createDemuxer] created: type={} probeSize={}",
+         static_cast<int32_t>(demuxerType),
+         dataView.size());
     return true;
 }
 

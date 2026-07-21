@@ -38,11 +38,8 @@ public:
 
     void close() noexcept override;
 
-    /// 停止 worker 线程并释放 demuxer 资源（teardown 路径专用，等价于析构里的清理）。
-    /// 调用后 isRunning() 应返回 false。
     void stop() noexcept;
 
-    /// 启动 worker 线程（生命周期接口，构造后调一次）
     void start() noexcept override;
 
     void pause() noexcept override;
@@ -57,7 +54,6 @@ public:
 
     void seekToPos(uint64_t pos) noexcept;
 
-    /// 将定位操作投递到 worker 线程串行执行，避免与 parseData 并发改写 demuxer 内部状态
     void seekToTime(double time) noexcept;
 
     /// In HLS, what you get is the TS index, while in other cases, it's the file offset.
@@ -158,10 +154,8 @@ public:
 private:
     void runLoop(Thread& thread) noexcept;
 
-    /// 在 worker 线程排空并执行已投递的 demuxer 操作（flush/seek 等）
     void drainWorkerTasks() noexcept;
 
-    /// 投递一个 demuxer 操作到 worker 线程，与 parseData 串行执行
     void postToWorker(Task task) noexcept;
 
     void invokeHandleResultFunc(DemuxerResult&& result) noexcept {

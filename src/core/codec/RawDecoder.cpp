@@ -34,7 +34,7 @@ Error RawDecoder::decode(AVFrameRefPtr& frame) noexcept {
     if (frame->info && frame->info->isEndOfStream) {
         isCompleted_ = true;
     } else {
-        invokeReceiveFunc(DecoderData{std::move(frame)});
+        invokeReceiveFunc(DecoderData{std::move(frame), Error::Success, currentSeekEpoch_});
     }
     return Error::Success;
 }
