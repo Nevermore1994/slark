@@ -4,9 +4,13 @@
 
 package com.slark.demo.ui.model
 
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.view.Surface
 import android.view.SurfaceView
 import android.view.TextureView
+import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -23,7 +27,10 @@ import com.slark.sdk.GraphicsBackend
 import com.slark.sdk.SlarkLog
 import com.slark.sdk.SlarkPlayerImpl
 
-class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
+class PlayerViewModel(
+    private var player: SlarkPlayer?,
+    private val appContext: Context? = null
+) : ViewModel() {
     var isPlaying by mutableStateOf(false)
     var currentTime by mutableStateOf(0.0)
     var totalTime by mutableStateOf(0.0)
@@ -83,19 +90,56 @@ class PlayerViewModel(private var player: SlarkPlayer?) : ViewModel() {
             when (event) {
                 SlarkPlayerEvent.UpdateCacheTime -> cacheTime = value.toDouble()
                 SlarkPlayerEvent.OnError -> {
-                    SlarkLog.e("PlayerViewModel", "Player error: $value")
-                    errorMessage = when (SlarkPlayerErrorCode.entries.firstOrNull { it.value == value.toIntOrNull() }) {
+                    // OnError value 格式："slarkError|originErrorCode|host"
+                    // - slarkError：slark::Error 大分类（300 网络/400 HTTP/500 媒体/600 pipeline/700 通用）
+                    // - originErrorCode：真实子码（HTTP statusCode / errno / 解码器错误码）
+                    // - host：URI host（用于诊断具体域名/CDN）
+                    val parts = value.split("|", limit = 3)
+                    val slarkCode = parts.getOrNull(0)?.toIntOrNull()
+                    val originCode = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                    val host = parts.getOrNull(2).orEmpty()
+                    SlarkLog.e(
+                        "PlayerViewModel",
+                        "Player error: slarkError=$slarkCode originErrorCode=$originCode host=$host"
+                    )
+                    val err = SlarkPlayerErrorCode.entries.firstOrNull { it.value == slarkCode }
+                    val shortMessage = when (err) {
                         SlarkPlayerErrorCode.MediaOpenFailed,
                         SlarkPlayerErrorCode.PipelineOpenFailed -> "Failed to open file"
                         SlarkPlayerErrorCode.NetworkError,
                         SlarkPlayerErrorCode.ConnectionFailed,
-                        SlarkPlayerErrorCode.ConnectionTimeout -> "Network error"
+                        SlarkPlayerErrorCode.ConnectionTimeout,
+                        SlarkPlayerErrorCode.DnsResolveFailed,
+                        SlarkPlayerErrorCode.SocketError,
+                        SlarkPlayerErrorCode.SocketClosed,
+                        SlarkPlayerErrorCode.ConnectionRefused,
+                        SlarkPlayerErrorCode.ConnectionReset,
+                        SlarkPlayerErrorCode.BrokenPipe -> "Network error"
+                        SlarkPlayerErrorCode.HttpError,
+                        SlarkPlayerErrorCode.HttpTimeout,
+                        SlarkPlayerErrorCode.HttpRedirectError,
+                        SlarkPlayerErrorCode.HttpRedirectTooMany,
+                        SlarkPlayerErrorCode.HttpResponseInvalid,
+                        SlarkPlayerErrorCode.HttpChunkedError,
+                        SlarkPlayerErrorCode.HttpSslError,
+                        SlarkPlayerErrorCode.HttpSslHandshakeFailed -> "HTTP error"
                         SlarkPlayerErrorCode.PipelineFormatNotSupported,
                         SlarkPlayerErrorCode.CodecUnsupportedFormat -> "Format not supported"
                         SlarkPlayerErrorCode.PipelineDemuxError -> "Demuxing error"
                         SlarkPlayerErrorCode.PipelineDecodeError -> "Decoding error"
                         SlarkPlayerErrorCode.PipelineRenderError -> "Rendering error"
                         else -> "Unknown error"
+                    }
+                    // originCode 携带 HTTP 真实子码（如 404/500），拼接到 message 让用户可见
+                    val detail = if (originCode > 0) "$shortMessage ($originCode)" else shortMessage
+                    val fullMessage = if (host.isNotEmpty()) "$detail · $host" else detail
+                    errorMessage = fullMessage
+                    // Toast 让用户直接看到具体错误码和 host
+                    // notifyEvent 在后台线程回调，Toast.show() 必须在主线程
+                    if (appContext != null) {
+                        Handler(Looper.getMainLooper()).post {
+                            Toast.makeText(appContext, fullMessage, Toast.LENGTH_LONG).show()
+                        }
                     }
                 }
                 else -> {}

@@ -49,7 +49,10 @@ class SharedViewModel : ViewModel() {
         val uri = _selectedVideoUris[0]
         val path = resolveUri(context, uri)
         val config = SlarkPlayerConfig(path)
-        playerViewModel = PlayerViewModel(SlarkPlayerFactory.createPlayer(config))
+        playerViewModel = PlayerViewModel(
+            SlarkPlayerFactory.createPlayer(config),
+            context.applicationContext
+        )
     }
 
     fun releasePlayer() {

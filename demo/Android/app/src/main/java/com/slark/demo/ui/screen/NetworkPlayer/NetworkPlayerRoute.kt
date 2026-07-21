@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import com.slark.api.SlarkPlayer
 import com.slark.api.SlarkPlayerConfig
@@ -22,6 +23,7 @@ import com.slark.demo.ui.screen.LocalPlayer.SharedViewModel
 
 @Composable
 fun NetworkPlayerScreenRoute(navController: NavHostController, sharedViewModel: SharedViewModel) {
+    val context = LocalContext.current
     var playerViewModel by remember { mutableStateOf<PlayerViewModel?>(null) }
 
     LaunchedEffect(sharedViewModel.uriVersion) {
@@ -29,7 +31,7 @@ fun NetworkPlayerScreenRoute(navController: NavHostController, sharedViewModel: 
         val uri = sharedViewModel.firstUri ?: return@LaunchedEffect
         val config = SlarkPlayerConfig(uri.toString())
         val slarkPlayer: SlarkPlayer? = SlarkPlayerFactory.createPlayer(config)
-        playerViewModel = PlayerViewModel(slarkPlayer)
+        playerViewModel = PlayerViewModel(slarkPlayer, context.applicationContext)
     }
 
     DisposableEffect(Unit) {

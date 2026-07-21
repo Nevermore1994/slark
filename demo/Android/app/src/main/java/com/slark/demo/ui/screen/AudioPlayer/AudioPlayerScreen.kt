@@ -80,7 +80,7 @@ fun AudioPlayerScreenRoute(navController: NavHostController) {
         if (path != null) {
             val config = SlarkPlayerConfig(path)
             val player: SlarkPlayer? = SlarkPlayerFactory.createPlayer(config)
-            playerViewModel = PlayerViewModel(player)
+            playerViewModel = PlayerViewModel(player, context.applicationContext)
         }
     }
 
