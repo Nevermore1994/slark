@@ -83,7 +83,7 @@ void AACHardwareDecoder::receiveDecodedData(DataPtr data, int64_t pts, bool isCo
     audioInfo->channels = audioConfig->channels;
     audioInfo->bitsPerSample = audioConfig->bitsPerSample;
     frame->info = audioInfo;
-    invokeReceiveFunc(DecoderData{std::move(frame)});
+    invokeReceiveFunc(DecoderData{std::move(frame), Error::Success, currentSeekEpoch_});
 }
 
 } // namespace slark

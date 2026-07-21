@@ -14,8 +14,19 @@ import com.slark.sdk.SlarkNativeBridge
 class SlarkSdk {
     companion object {
         @JvmStatic
-        fun init(app: Application) {
+        @JvmOverloads
+        fun init(app: Application, logConfig: SlarkLogConfig? = null) {
             SlarkNativeBridge.setContext(app.applicationContext)
+            logConfig?.let {
+                SlarkNativeBridge.setLogConfig(
+                    it.progressLogBytes,
+                    it.maxLogFileSize,
+                    it.maxLogFileCount,
+                    it.minLogLevel.value,
+                    it.logDir,
+                    it.logFileName
+                )
+            }
             MediaCodecDecoderPool.warmUpAsync()
         }
     }

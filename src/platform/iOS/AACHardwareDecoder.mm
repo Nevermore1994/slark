@@ -147,7 +147,7 @@ Error AACHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
     if (!spareBuffer_ || spareBuffer_->capacity() < bufferCapacity) {
         spareBuffer_ = Data::create(bufferCapacity);
     }
-    invokeReceiveFunc(DecoderData{std::move(decodingFrame_)});
+    invokeReceiveFunc(DecoderData{std::move(decodingFrame_), Error::Success, currentSeekEpoch_});
     return Error::Success;
 }
 

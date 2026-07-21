@@ -26,6 +26,7 @@ target_include_directories(slark_jni PUBLIC
     ${SLARK_PROJECT_PATH}/src/core/codec
     ${SLARK_PROJECT_PATH}/src/core/pipeline
     ${SLARK_PROJECT_PATH}/src/core/perf
+    ${SLARK_PROJECT_PATH}/src/http
     ${SLARK_PROJECT_PATH}/include
     ${SLARK_PROJECT_PATH}/internal
 )
@@ -51,3 +52,18 @@ target_link_libraries(slark_jni
     aaudio
     vulkan
 )
+
+# OpenSSL include 路径：AndroidPlatformInit.cpp 需要 openssl/ssl.h
+# slark_jni 是静态库，只需要头文件，链接由顶层 slark 共享库负责
+if(NOT DISABLE_HTTP)
+    include(${SLARK_PROJECT_PATH}/cmake/OpenSSL.cmake)
+    # create_openssl_target() 内部定义 OPENSSL_INSTALL_DIR 和 slark::openssl
+    # 这里只借 include 路径，不 link
+    if(NOT TARGET slark::openssl)
+        create_openssl_target()
+    endif()
+    get_target_property(_ssl_inc_dir slark::openssl INTERFACE_INCLUDE_DIRECTORIES)
+    if(_ssl_inc_dir)
+        target_include_directories(slark_jni PUBLIC ${_ssl_inc_dir})
+    endif()
+endif()

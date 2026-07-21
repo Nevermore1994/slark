@@ -44,5 +44,14 @@ class SlarkNativeBridge {
         }
 
         external fun setContext(context: Context?)
+
+        external fun setLogConfig(
+            progressLogBytes: Long,
+            maxLogFileSize: Long,
+            maxLogFileCount: Int,
+            minLogLevel: Int,
+            logDir: String,
+            logFileName: String
+        )
     }
 }

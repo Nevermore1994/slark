@@ -109,7 +109,7 @@ void VideoHardwareDecoder::receiveDecodedData(DataPtr data,
         videoFrameInfo->width = videoConfig->width;
         videoFrameInfo->height = videoConfig->height;
         frame->info = std::move(videoFrameInfo);
-        invokeReceiveFunc(DecoderData{std::move(frame)});
+        invokeReceiveFunc(DecoderData{std::move(frame), Error::Success, currentSeekEpoch_});
         retryPendingEOS();
     } else {
         LogD("receiveDecodedData: Texture mode, pendingOutput_ -> true, pts={:.6f}", static_cast<double>(pts) / 1000000.0);
@@ -255,7 +255,7 @@ Error VideoHardwareDecoder::renderOutput() noexcept {
         auto discardFrame = buildOutputFrame(glFb, pts, curWidth, curHeight);
         if (discardFrame) {
             discardFrame->isDiscard = true;
-            invokeReceiveFunc(DecoderData{std::move(discardFrame)});
+            invokeReceiveFunc(DecoderData{std::move(discardFrame), Error::Success, currentSeekEpoch_});
         } else {
             restoreTexture(glFb ? glFb->detachTexture() : nullptr);
         }
@@ -268,7 +268,7 @@ Error VideoHardwareDecoder::renderOutput() noexcept {
         LogE("renderOutput: buildOutputFrame failed, pts:{:.6f}", static_cast<double>(pts) / 1000000.0);
         return Error::CodecError;
     }
-    invokeReceiveFunc(DecoderData{std::move(outputFrame)});
+    invokeReceiveFunc(DecoderData{std::move(outputFrame), Error::Success, currentSeekEpoch_});
     retryPendingEOS();
     return Error::Success;
 }

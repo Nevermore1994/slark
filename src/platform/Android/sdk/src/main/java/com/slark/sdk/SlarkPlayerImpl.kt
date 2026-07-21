@@ -218,7 +218,7 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
     }
 
     private fun onSurfaceAvailable(surface: Surface, width: Int, height: Int) {
-        SlarkLog.i(LOG_TAG, "onSurfaceAvailable: {}x{}, switching={}", width, height, isSwitchingBackend)
+        SlarkLog.i(LOG_TAG, "onSurfaceAvailable: " + width + "x" + height + ", switching=" + isSwitchingBackend)
         if (isSwitchingBackend) {
             SlarkLog.w(LOG_TAG, "onSurfaceAvailable: skip during backend switch")
             return

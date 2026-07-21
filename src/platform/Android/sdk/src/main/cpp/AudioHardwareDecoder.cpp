@@ -116,7 +116,7 @@ void AudioHardwareDecoder::receiveDecodedData(DataPtr data,
     audioFrameInfo->channels = audioConfig->channels;
     audioFrameInfo->bitsPerSample = audioConfig->bitsPerSample;
     frame->info = std::move(audioFrameInfo);
-    invokeReceiveFunc(DecoderData{std::move(frame)});
+    invokeReceiveFunc(DecoderData{std::move(frame), Error::Success, currentSeekEpoch_});
     retryPendingEOS();
 }
 

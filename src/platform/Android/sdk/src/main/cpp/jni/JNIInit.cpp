@@ -4,7 +4,9 @@
 
 #include "JNIBase.h"
 #include "JNICache.h"
+#include "JNIMarshal.h"
 #include "Log.hpp"
+#include "LogConfig.h"
 
 namespace slark::JNI {
 
@@ -80,8 +82,30 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* /* reserved */)
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_slark_sdk_SlarkNativeBridge_00024Companion_setContext(JNIEnv* env,
-                                                               jobject /*thiz*/,
-                                                               jobject context) {
+Java_com_slark_sdk_SlarkNativeBridge_00024Companion_setContext(JNIEnv *env,
+        jobject /*thiz*/,
+        jobject context) {
     slark::JNI::setApplicationContext(env, context);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_slark_sdk_SlarkNativeBridge_00024Companion_setLogConfig(JNIEnv *env, jobject /*thiz*/,
+        jlong progressLogBytes,
+        jlong maxLogFileSize,
+        jint maxLogFileCount,
+        jint minLogLevel,
+        jstring logDir,
+        jstring logFileName) {
+    slark::LogConfig config;
+    config.progressLogBytes = static_cast<uint64_t>(progressLogBytes);
+    config.maxLogFileSize = static_cast<uint64_t>(maxLogFileSize);
+    config.maxLogFileCount = static_cast<uint32_t>(maxLogFileCount);
+    config.minLogLevel = minLogLevel;
+    if (logDir) {
+        config.logDir = slark::JNI::FromJVM::str(env, logDir);
+    }
+    if (logFileName) {
+        config.logFileName = slark::JNI::FromJVM::str(env, logFileName);
+    }
+    slark::setLogConfig(config);
 }
