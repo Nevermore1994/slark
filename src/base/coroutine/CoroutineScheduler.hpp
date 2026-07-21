@@ -3,11 +3,12 @@
 //
 #pragma once
 
-#include "Awaitable.hpp"
-#include "Coroutine.hpp"
+#include "NonCopyable.h"
+#include "SharedCoroutineHandle.hpp"
 #include "ThreadPool.hpp"
 #include "TimerManager.h"
 
+#include <atomic>
 #include <chrono>
 #include <coroutine>
 #include <functional>
@@ -22,33 +23,39 @@ public:
         return scheduler;
     }
 
-    void schedule(std::coroutine_handle<> handle) {
-        if (handle && !handle.done()) {
-            threadPool_.postJob([handle]() {
-                if (handle && !handle.done()) {
-                    handle.resume();
-                }
+    void schedule(SharedCoroutineHandle handle) {
+        if (!handle.done()) {
+            auto shared = std::make_shared<SharedCoroutineHandle>(std::move(handle));
+            threadPool_.postJob([shared]() {
+                shared->tryResume();
             });
         }
     }
 
-    template <typename T>
-    void schedule(Coroutine<T>& coroutine) {
-        if (coroutine.isValid() && !coroutine.isDone()) {
-            schedule(coroutine.getHandle());
+    void schedule(std::shared_ptr<SharedCoroutineHandle> shared) {
+        if (shared && !shared->done()) {
+            threadPool_.postJob([shared]() {
+                shared->tryResume();
+            });
         }
     }
 
-    TimerId scheduleAfter(std::chrono::milliseconds delay, std::coroutine_handle<> handle) {
-        return TimerManager::shareInstance().runAfter(delay, [this, handle]() {
-            schedule(handle);
-        });
+    TimerId scheduleAfter(std::chrono::milliseconds delay, SharedCoroutineHandle handle) {
+        if (!handle.done()) {
+            auto shared = std::make_shared<SharedCoroutineHandle>(std::move(handle));
+            return TimerManager::shareInstance().runAfter(delay, [shared]() {
+                CoroutineScheduler::instance().schedule(std::move(shared));
+            });
+        }
+        return TimerId::kInvalidTimerId;
     }
 
-    template <typename T>
-    TimerId scheduleAfter(std::chrono::milliseconds delay, Coroutine<T>& coroutine) {
-        if (coroutine.isValid()) {
-            return scheduleAfter(delay, coroutine.getHandle());
+    TimerId scheduleAfter(std::chrono::milliseconds delay,
+                          std::shared_ptr<SharedCoroutineHandle> shared) {
+        if (shared && !shared->done()) {
+            return TimerManager::shareInstance().runAfter(delay, [shared]() {
+                CoroutineScheduler::instance().schedule(std::move(shared));
+            });
         }
         return TimerId::kInvalidTimerId;
     }
@@ -65,27 +72,19 @@ public:
         return TimerManager::shareInstance().runAfter(delay, std::forward<Func>(callback));
     }
 
-    void waitForAll() noexcept {
-        threadPool_.waitForAll();
-    }
+    void waitForAll() noexcept { threadPool_.waitForAll(); }
 
-    void shutdown() noexcept {
-        threadPool_.clear();
-    }
+    void shutdown() noexcept { threadPool_.clear(); }
 
 private:
     CoroutineScheduler() : threadPool_(ThreadPoolConfig{4}) {}
 
     ~CoroutineScheduler() {
+        threadPool_.waitForAll();
         threadPool_.clear();
     }
 
     ThreadPool threadPool_;
 };
-
-// TimerAwaiter 实现（依赖 CoroutineScheduler）
-inline void TimerAwaiter::await_suspend(std::coroutine_handle<> handle) noexcept {
-    CoroutineScheduler::instance().scheduleAfter(duration_, handle);
-}
 
 } // namespace slark

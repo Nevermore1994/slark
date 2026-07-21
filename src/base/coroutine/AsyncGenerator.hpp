@@ -6,6 +6,7 @@
 #include "Coroutine.hpp"
 #include "NonCopyable.h"
 
+#include <atomic>
 #include <coroutine>
 #include <exception>
 #include <optional>
@@ -36,8 +37,8 @@ public:
     }
 
     std::coroutine_handle<> await_suspend(std::coroutine_handle<>) noexcept {
-        if (auto consumer = promise_.waitingConsumer(); consumer) {
-            return consumer;
+        if (auto consumer = promise_.takeWaitingConsumer()) {
+            consumer.resume();
         }
         return std::noop_coroutine();
     }
@@ -59,8 +60,8 @@ public:
     std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> h) noexcept {
         auto& promise = h.promise();
         promise.setCompleted();
-        if (auto consumer = promise.waitingConsumer(); consumer) {
-            return consumer;
+        if (auto consumer = promise.takeWaitingConsumer()) {
+            consumer.resume();
         }
         return std::noop_coroutine();
     }
@@ -76,6 +77,18 @@ public:
 
     AsyncGeneratorPromise() noexcept = default;
 
+    void setControl(std::shared_ptr<CoroutineControlBlock> control) noexcept {
+        control_ = std::move(control);
+    }
+
+    [[nodiscard]] std::shared_ptr<SharedCoroutineHandle> makeResumeHandle() const noexcept {
+        auto control = control_.lock();
+        if (!control) {
+            return nullptr;
+        }
+        return std::make_shared<SharedCoroutineHandle>(std::move(control));
+    }
+
     std::suspend_always initial_suspend() noexcept {
         return {};
     }
@@ -86,11 +99,11 @@ public:
 
     void unhandled_exception() noexcept {
         exception_ = std::current_exception();
-        completed_ = true;
+        setCompleted();
     }
 
     void return_void() noexcept {
-        completed_ = true;
+        setCompleted();
     }
 
     AsyncGeneratorYieldAwaiter<AsyncGeneratorPromise<T>> yield_value(T value) noexcept(
@@ -124,22 +137,36 @@ public:
     }
 
     bool isCompleted() const noexcept {
-        return completed_;
+        return completed.load(std::memory_order_acquire);
     }
 
     void setCompleted() noexcept {
-        completed_ = true;
+        completed.store(true, std::memory_order_release);
+        if (auto control = control_.lock()) {
+            control->markCompleted();
+        }
     }
 
-    void setWaitingConsumer(std::coroutine_handle<> consumer) noexcept {
+    ~AsyncGeneratorPromise() noexcept = default;
+
+    void setWaitingConsumer(std::coroutine_handle<> consumer,
+                            std::shared_ptr<CoroutineControlBlock> consumerControl) noexcept {
         consumerHandle_ = consumer;
+        consumerControl_ = consumerControl;
         consumerState_ = ConsumerState::Waiting;
     }
 
-    std::coroutine_handle<> waitingConsumer() noexcept {
-        if (consumerState_ == ConsumerState::Waiting && consumerHandle_) {
+    std::coroutine_handle<> takeWaitingConsumer() noexcept {
+        if (consumerState_ == ConsumerState::Waiting) {
             consumerState_ = ConsumerState::Resumed;
-            return std::exchange(consumerHandle_, nullptr);
+            auto h = std::exchange(consumerHandle_, nullptr);
+            // 检查 consumer frame 是否仍存活
+            if (auto control = consumerControl_.lock()) {
+                (void)control;
+            } else {
+                return nullptr;
+            }
+            return h;
         }
         return nullptr;
     }
@@ -153,9 +180,64 @@ public:
 private:
     std::optional<T> value_;
     std::exception_ptr exception_;
-    bool completed_ = false;
-    std::coroutine_handle<> consumerHandle_;
+    std::weak_ptr<CoroutineControlBlock> control_;
+    std::coroutine_handle<> consumerHandle_ = nullptr;
+    std::weak_ptr<CoroutineControlBlock> consumerControl_;
     ConsumerState consumerState_ = ConsumerState::None;
+
+public:
+    std::atomic<bool> completed{false};
+};
+
+template <typename T>
+class AsyncGeneratorNextAwaiter {
+public:
+    using promise_type = AsyncGeneratorPromise<T>;
+    using handle_type = std::coroutine_handle<promise_type>;
+
+    AsyncGeneratorNextAwaiter(std::shared_ptr<CoroutineControlBlock> control,
+                              handle_type handle) noexcept
+        : control_(std::move(control)), handle_(handle) {}
+
+    bool await_ready() noexcept {
+        if (!control_) {
+            return true;
+        }
+        auto& promise = handle_.promise();
+        return promise.hasValue() || promise.isCompleted();
+    }
+
+    template <typename ConsumerPromise>
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<ConsumerPromise> consumer) noexcept {
+        auto& promise = handle_.promise();
+        if (promise.hasValue() || promise.isCompleted()) {
+            return consumer;
+        }
+        auto consumerControl = consumer.promise().makeResumeHandle();
+        auto consumerControlBlock = consumerControl ? consumerControl->controlBlock() : nullptr;
+        promise.setWaitingConsumer(consumer, std::move(consumerControlBlock));
+        return handle_;
+    }
+
+    std::optional<T> await_resume() {
+        if (!control_) {
+            return std::nullopt;
+        }
+        auto& promise = handle_.promise();
+        if (promise.hasException()) {
+            promise.rethrowIfException();
+        }
+        if (promise.hasValue()) {
+            auto value = std::move(promise.value());
+            promise.clearValue();
+            return value;
+        }
+        return std::nullopt;
+    }
+
+private:
+    std::shared_ptr<CoroutineControlBlock> control_;
+    handle_type handle_ = nullptr;
 };
 
 } // namespace detail
@@ -167,78 +249,48 @@ public:
     using promise_type = detail::AsyncGeneratorPromise<T>;
     using handle_type = std::coroutine_handle<promise_type>;
 
-    explicit AsyncGenerator(handle_type handle) noexcept : handle_(handle) {}
+    explicit AsyncGenerator(handle_type handle) noexcept : handle_(handle) {
+        if (handle_) {
+            control_ = std::make_shared<CoroutineControlBlock>(handle_);
+            handle_.promise().setControl(control_);
+        }
+    }
+
+    // nullptr_t 构造函数：创建一个空的（已释放的）AsyncGenerator，用于赋值释放
+    /* implicit */ AsyncGenerator(std::nullptr_t) noexcept {} // NOLINT
 
     AsyncGenerator(AsyncGenerator&& other) noexcept
-        : handle_(std::exchange(other.handle_, nullptr)) {}
+        : control_(std::move(other.control_)), handle_(std::exchange(other.handle_, nullptr)) {}
 
     AsyncGenerator& operator=(AsyncGenerator&& other) noexcept {
         if (this != &other) {
-            if (handle_) {
-                handle_.destroy();
-            }
+            control_ = std::move(other.control_);
             handle_ = std::exchange(other.handle_, nullptr);
         }
         return *this;
     }
 
-    ~AsyncGenerator() {
-        if (handle_) {
-            handle_.destroy();
-        }
-    }
+    ~AsyncGenerator() = default;
 
     bool isValid() const noexcept {
         return handle_ != nullptr;
     }
 
     bool isDone() const noexcept {
-        return handle_ && handle_.done();
+        return !control_ || control_->isDone();
     }
 
     handle_type getHandle() const noexcept {
         return handle_;
     }
 
-    auto next() noexcept {
-        struct NextAwaiter {
-            handle_type generatorHandle;
+    auto next() & noexcept {
+        return detail::AsyncGeneratorNextAwaiter<T>{control_, handle_};
+    }
 
-            bool await_ready() noexcept {
-                if (!generatorHandle) {
-                    return true;
-                }
-                auto& p = generatorHandle.promise();
-                return p.hasValue() || p.isCompleted();
-            }
-
-            std::coroutine_handle<> await_suspend(std::coroutine_handle<> consumer) noexcept {
-                auto& p = generatorHandle.promise();
-                if (p.hasValue() || p.isCompleted()) {
-                    return consumer;
-                }
-                p.setWaitingConsumer(consumer);
-                return generatorHandle;
-            }
-
-            std::optional<T> await_resume() {
-                if (!generatorHandle) {
-                    return std::nullopt;
-                }
-                auto& p = generatorHandle.promise();
-                if (p.hasException()) {
-                    p.rethrowIfException();
-                }
-                if (p.hasValue()) {
-                    auto value = std::move(p.value());
-                    p.clearValue();
-                    return value;
-                }
-                return std::nullopt;
-            }
-        };
-
-        return NextAwaiter{handle_};
+    auto next() && noexcept {
+        return detail::AsyncGeneratorNextAwaiter<T>{std::move(control_),
+                                                    std::exchange(handle_, nullptr)};
     }
 
     template <typename Func>
@@ -279,7 +331,8 @@ public:
     Coroutine<Container<T>> collect();
 
 private:
-    handle_type handle_;
+    std::shared_ptr<CoroutineControlBlock> control_;
+    handle_type handle_ = nullptr;
 };
 
 namespace detail {

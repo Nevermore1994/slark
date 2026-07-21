@@ -1,9 +1,12 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
+
 #pragma once
 
 #include "NonCopyable.h"
+#include "CoroutineScheduler.hpp"
+#include "SharedCoroutineHandle.hpp"
 
 #include <atomic>
 #include <coroutine>
@@ -20,44 +23,84 @@ class Coroutine;
 
 namespace detail {
 
-struct FinalAwaiter {
-    bool await_ready() const noexcept {
+struct PromiseBase {
+    std::shared_ptr<SharedCoroutineHandle> continuation_;
+    std::weak_ptr<CoroutineControlBlock> control_;
+    std::atomic<bool> completed{false};
+
+    void setControl(std::shared_ptr<CoroutineControlBlock> control) noexcept {
+        control_ = std::move(control);
+    }
+
+    [[nodiscard]] std::shared_ptr<SharedCoroutineHandle> makeResumeHandle() const noexcept {
+        auto control = control_.lock();
+        if (!control) {
+            return nullptr;
+        }
+        return std::make_shared<SharedCoroutineHandle>(std::move(control));
+    }
+
+    void setContinuation(std::shared_ptr<SharedCoroutineHandle> continuation) noexcept {
+        continuation_ = std::move(continuation);
+    }
+
+    [[nodiscard]] std::shared_ptr<SharedCoroutineHandle> takeContinuation() noexcept {
+        return std::exchange(continuation_, nullptr);
+    }
+
+    void markCompleted() noexcept {
+        completed.store(true, std::memory_order_release);
+        if (auto control = control_.lock()) {
+            control->markCompleted();
+        }
+    }
+
+    void setCancelled() noexcept {
+        if (auto control = control_.lock()) {
+            control->cancel();
+        }
+    }
+
+    [[nodiscard]] bool isCancelled() const noexcept {
+        if (auto control = control_.lock()) {
+            return control->isCancelled();
+        }
         return false;
     }
-
-    template <typename Promise>
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> h) noexcept {
-        if (auto cont = h.promise().continuation(); cont) {
-            return cont;
-        }
-        return std::noop_coroutine();
-    }
-
-    void await_resume() noexcept {}
 };
 
 template <typename T>
-class CoroutinePromise {
+class CoroutinePromise : public PromiseBase {
 public:
     CoroutinePromise() noexcept = default;
+    ~CoroutinePromise() noexcept = default;
 
     Coroutine<T> get_return_object() noexcept;
 
-    std::suspend_always initial_suspend() noexcept {
-        return {};
-    }
+    std::suspend_always initial_suspend() noexcept { return {}; }
 
-    FinalAwaiter final_suspend() noexcept {
-        return {};
-    }
+    struct FinalAwaiter {
+        bool await_ready() const noexcept { return false; }
+
+        template <typename Promise>
+        void await_suspend(std::coroutine_handle<Promise> handle) noexcept {
+            auto& promise = handle.promise();
+            promise.markCompleted();
+            if (auto continuation = promise.takeContinuation(); continuation && continuation->notify()) {
+                CoroutineScheduler::instance().schedule(std::move(continuation));
+            }
+        }
+
+        void await_resume() noexcept {}
+    };
+
+    FinalAwaiter final_suspend() noexcept { return {}; }
 
     void return_value(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
         value_.emplace(std::move(value));
     }
 
-    void unhandled_exception() noexcept {
-        exception_ = std::current_exception();
-    }
+    void unhandled_exception() noexcept { exception_ = std::current_exception(); }
 
     T getResult() {
         if (exception_) {
@@ -66,57 +109,43 @@ public:
         return std::move(*value_);
     }
 
-    bool hasResult() const noexcept {
-        return value_.has_value();
-    }
-
-    bool hasException() const noexcept {
-        return exception_ != nullptr;
-    }
-
-    void setContinuation(std::coroutine_handle<> cont) noexcept {
-        continuation_ = cont;
-    }
-
-    std::coroutine_handle<> continuation() const noexcept {
-        return continuation_;
-    }
-
-    void setCancelled() noexcept {
-        cancelled_.store(true, std::memory_order_release);
-    }
-
-    bool isCancelled() const noexcept {
-        return cancelled_.load(std::memory_order_acquire);
-    }
+    [[nodiscard]] bool hasException() const noexcept { return exception_ != nullptr; }
 
 private:
     std::optional<T> value_;
     std::exception_ptr exception_;
-    std::coroutine_handle<> continuation_;
-    std::atomic<bool> cancelled_{false};
 };
 
 template <>
-class CoroutinePromise<void> {
+class CoroutinePromise<void> : public PromiseBase {
 public:
     CoroutinePromise() noexcept = default;
+    ~CoroutinePromise() noexcept = default;
 
     Coroutine<void> get_return_object() noexcept;
 
-    std::suspend_always initial_suspend() noexcept {
-        return {};
-    }
+    std::suspend_always initial_suspend() noexcept { return {}; }
 
-    FinalAwaiter final_suspend() noexcept {
-        return {};
-    }
+    struct FinalAwaiter {
+        bool await_ready() const noexcept { return false; }
+
+        template <typename Promise>
+        void await_suspend(std::coroutine_handle<Promise> handle) noexcept {
+            auto& promise = handle.promise();
+            promise.markCompleted();
+            if (auto continuation = promise.takeContinuation(); continuation && continuation->notify()) {
+                CoroutineScheduler::instance().schedule(std::move(continuation));
+            }
+        }
+
+        void await_resume() noexcept {}
+    };
+
+    FinalAwaiter final_suspend() noexcept { return {}; }
 
     void return_void() noexcept {}
 
-    void unhandled_exception() noexcept {
-        exception_ = std::current_exception();
-    }
+    void unhandled_exception() noexcept { exception_ = std::current_exception(); }
 
     void getResult() {
         if (exception_) {
@@ -124,30 +153,37 @@ public:
         }
     }
 
-    bool hasException() const noexcept {
-        return exception_ != nullptr;
-    }
-
-    void setContinuation(std::coroutine_handle<> cont) noexcept {
-        continuation_ = cont;
-    }
-
-    std::coroutine_handle<> continuation() const noexcept {
-        return continuation_;
-    }
-
-    void setCancelled() noexcept {
-        cancelled_.store(true, std::memory_order_release);
-    }
-
-    bool isCancelled() const noexcept {
-        return cancelled_.load(std::memory_order_acquire);
-    }
+    [[nodiscard]] bool hasException() const noexcept { return exception_ != nullptr; }
 
 private:
     std::exception_ptr exception_;
-    std::coroutine_handle<> continuation_;
-    std::atomic<bool> cancelled_{false};
+};
+
+template <typename T>
+class CoroutineAwaiter {
+public:
+    using promise_type = CoroutinePromise<T>;
+    using handle_type = std::coroutine_handle<promise_type>;
+
+    CoroutineAwaiter(std::shared_ptr<CoroutineControlBlock> control, handle_type handle) noexcept
+        : control_(std::move(control)), handle_(handle) {}
+
+    bool await_ready() const noexcept { return !control_ || control_->isDone(); }
+
+    template <typename ParentPromise>
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<ParentPromise> awaiting) noexcept {
+        if (auto parent = awaiting.promise().makeResumeHandle()) {
+            (void)parent->suspend();
+            handle_.promise().setContinuation(std::move(parent));
+        }
+        return handle_;
+    }
+
+    T await_resume() { return handle_.promise().getResult(); }
+
+private:
+    std::shared_ptr<CoroutineControlBlock> control_;
+    handle_type handle_ = nullptr;
 };
 
 } // namespace detail
@@ -158,37 +194,39 @@ public:
     using promise_type = detail::CoroutinePromise<T>;
     using handle_type = std::coroutine_handle<promise_type>;
 
-    explicit Coroutine(handle_type handle) noexcept : handle_(handle) {}
+    explicit Coroutine(handle_type handle) noexcept : handle_(handle) {
+        if (handle_) {
+            control_ = std::make_shared<CoroutineControlBlock>(handle_);
+            handle_.promise().setControl(control_);
+        }
+    }
 
-    Coroutine(Coroutine&& other) noexcept : handle_(std::exchange(other.handle_, nullptr)) {}
+    Coroutine(Coroutine&& other) noexcept
+        : control_(std::move(other.control_)), handle_(std::exchange(other.handle_, nullptr)) {}
 
     Coroutine& operator=(Coroutine&& other) noexcept {
         if (this != &other) {
-            if (handle_) {
-                handle_.destroy();
-            }
+            control_ = std::move(other.control_);
             handle_ = std::exchange(other.handle_, nullptr);
         }
         return *this;
     }
 
-    ~Coroutine() {
-        if (handle_) {
-            handle_.destroy();
-        }
+    ~Coroutine() = default;
+
+    SharedCoroutineHandle share() && noexcept {
+        auto control = std::move(control_);
+        handle_ = nullptr;
+        return SharedCoroutineHandle(std::move(control));
     }
 
-    bool isValid() const noexcept {
-        return handle_ != nullptr;
-    }
+    [[nodiscard]] bool isValid() const noexcept { return control_ != nullptr; }
 
-    bool isDone() const noexcept {
-        return handle_ && handle_.done();
-    }
+    [[nodiscard]] bool isDone() const noexcept { return !control_ || control_->isDone(); }
 
-    void resume() {
-        if (handle_ && !handle_.done()) {
-            handle_.resume();
+    void resume() noexcept {
+        if (control_) {
+            control_->resume();
         }
     }
 
@@ -200,82 +238,48 @@ public:
     }
 
     void cancel() noexcept {
-        if (handle_) {
-            handle_.promise().setCancelled();
+        if (control_) {
+            control_->cancel();
         }
     }
 
-    bool isCancelled() const noexcept {
-        return handle_ && handle_.promise().isCancelled();
+    [[nodiscard]] bool isCancelled() const noexcept {
+        return control_ && control_->isCancelled();
     }
 
-    handle_type getHandle() const noexcept {
-        return handle_;
+    [[nodiscard]] handle_type getHandle() const noexcept { return handle_; }
+
+    [[nodiscard]] std::shared_ptr<SharedCoroutineHandle> makeResumeHandle() const noexcept {
+        if (!control_) {
+            return nullptr;
+        }
+        return std::make_shared<SharedCoroutineHandle>(control_);
     }
 
-    handle_type release() noexcept {
-        return std::exchange(handle_, nullptr);
+    auto operator co_await() const& noexcept {
+        return detail::CoroutineAwaiter<T>{control_, handle_};
     }
 
-    // co_await 支持（左值引用）
-    auto operator co_await() & noexcept {
-        struct Awaiter {
-            handle_type handle;
-
-            bool await_ready() const noexcept {
-                return handle.done();
-            }
-
-            std::coroutine_handle<> await_suspend(std::coroutine_handle<> awaiting) noexcept {
-                handle.promise().setContinuation(awaiting);
-                return handle;
-            }
-
-            T await_resume() {
-                return handle.promise().getResult();
-            }
-        };
-
-        return Awaiter{handle_};
-    }
-
-    // co_await 支持（右值引用，支持 co_await someFunc() 临时对象）
-    // 右值版本必须转移所有权，避免临时对象析构时销毁句柄
     auto operator co_await() && noexcept {
-        struct Awaiter {
-            handle_type handle;
-
-            bool await_ready() const noexcept {
-                return handle.done();
-            }
-
-            std::coroutine_handle<> await_suspend(std::coroutine_handle<> awaiting) noexcept {
-                handle.promise().setContinuation(awaiting);
-                return handle;
-            }
-
-            T await_resume() {
-                return handle.promise().getResult();
-            }
-        };
-
-        // 转移所有权到 Awaiter，防止临时对象析构时销毁句柄
-        return Awaiter{std::exchange(handle_, nullptr)};
+        return detail::CoroutineAwaiter<T>{std::move(control_), std::exchange(handle_, nullptr)};
     }
 
 private:
-    handle_type handle_;
+    std::shared_ptr<CoroutineControlBlock> control_;
+    handle_type handle_ = nullptr;
 };
 
 namespace detail {
 
 template <typename T>
-Coroutine<T> CoroutinePromise<T>::get_return_object() noexcept {
-    return Coroutine<T>{std::coroutine_handle<CoroutinePromise<T>>::from_promise(*this)};
+inline Coroutine<T> CoroutinePromise<T>::get_return_object() noexcept {
+    auto handle = std::coroutine_handle<CoroutinePromise<T>>::from_promise(*this);
+    return Coroutine<T>(handle);
 }
 
 inline Coroutine<void> CoroutinePromise<void>::get_return_object() noexcept {
-    return Coroutine<void>{std::coroutine_handle<CoroutinePromise<void>>::from_promise(*this)};
+    auto handle = std::coroutine_handle<CoroutinePromise<void>>::from_promise(*this);
+    return Coroutine<void>(handle);
 }
 
 } // namespace detail
