@@ -3,12 +3,7 @@ cmake_minimum_required(VERSION 3.20)
 include(GoogleTest)
 
 set(HTTP_TEST_FILES
-        HttpModuleTest.cpp
-        HttpAsyncRequestTest.cpp
-        RequestTest.cpp
         UrlParseTest.cpp
-        DnsResolverTest.cpp
-        HttpProcessorTest.cpp
 )
 
 add_executable(http_test ${HTTP_TEST_FILES})

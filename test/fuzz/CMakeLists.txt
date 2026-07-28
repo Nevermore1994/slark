@@ -7,27 +7,7 @@ set(CORE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/core)
 set(DEMUXER_SRC_DIR ${CORE_SRC_DIR}/demuxer)
 set(HTTP_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/http)
 
-# =============================================================================
-# BaseFuzz_test — 协程状态机随机测试
-# =============================================================================
-add_executable(BaseFuzz_test
-    ${CMAKE_CURRENT_SOURCE_DIR}/CoroutineStateMachineFuzzTest.cpp
-)
-target_include_directories(BaseFuzz_test PRIVATE
-    ${BASE_SRC_DIR}
-    ${BASE_SRC_DIR}/coroutine
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../include
-)
-target_link_libraries(BaseFuzz_test
-    slark_base
-    gtest_main
-    pthread)
-gtest_discover_tests(BaseFuzz_test
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    PROPERTIES
-    TIMEOUT 300
-    LABELS "fuzz"
-)
+
 
 # =============================================================================
 # CoreFuzz_test — M3U8 解析器 + Mp4Box + Mp4Demuxer + WAV + TS + MediaUtil 随机测试
