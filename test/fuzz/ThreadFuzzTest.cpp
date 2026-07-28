@@ -1,11 +1,12 @@
-#include "Thread.h"
-
 #include <gtest/gtest.h>
+
 #include <atomic>
 #include <chrono>
 #include <random>
 #include <thread>
 #include <vector>
+
+#include "Thread.h"
 
 using namespace slark;
 
@@ -66,7 +67,8 @@ TEST(ThreadFuzzTest, PostAfterStopNoCrash) {
     thread->join();
     // stop 后 postTask 不应崩溃
     EXPECT_NO_THROW({
-        auto result = thread->postTask([]() {});
+        auto result = thread->postTask([]() {
+        });
         (void)result;
     });
     SUCCEED();

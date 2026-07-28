@@ -4,12 +4,12 @@
 
 #include "M3U8Parser.h"
 
-#include "HttpUtil.hpp"
-#include "Log.hpp"
-
 #include <regex>
 #include <sstream>
 #include <utility>
+
+#include "HttpUtil.hpp"
+#include "Log.hpp"
 
 namespace slark {
 
@@ -31,7 +31,7 @@ void M3U8Parser::reset() noexcept {
 }
 
 bool M3U8Parser::parse(const std::string& content) noexcept {
-    constexpr size_t kMaxM3U8Size = 1 * 1024 * 1024; // 1MB
+    constexpr size_t kMaxM3U8Size = 1 * 1024 * 1024;  // 1MB
     if (content.size() > kMaxM3U8Size) {
         LogE("M3U8Parser: content too large: {} bytes", content.size());
         return false;
@@ -104,7 +104,9 @@ bool M3U8Parser::parseMediaPlaylist(const std::string& content) noexcept {
         if (line.find("#EXTINF:") == 0) {
             // 解析 duration 和 uri
             std::smatch match;
-            if (!std::regex_match(line, match, std::regex(R"(#EXTINF:([\d.]+)\s*(?:,([^\n]*))?)"))) {
+            if (!std::regex_match(line,
+                                  match,
+                                  std::regex(R"(#EXTINF:([\d.]+)\s*(?:,([^\n]*))?)"))) {
                 continue;
             }
             auto durResult = StringUtil::fromChars<double>(match[1].str());
@@ -219,4 +221,4 @@ std::string M3U8Parser::resolveUrl(const std::string& baseUrl,
     return base + url;
 }
 
-} // namespace slark
+}  // namespace slark

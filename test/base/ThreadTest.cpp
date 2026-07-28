@@ -3,15 +3,16 @@
 //
 #include "Thread.h"
 
-#include "Util.h"
+#include <gtest/gtest.h>
 
 #include <algorithm>
 #include <atomic>
 #include <format>
-#include <gtest/gtest.h>
 #include <latch>
 #include <thread>
 #include <vector>
+
+#include "Util.h"
 
 using namespace slark;
 
@@ -69,11 +70,11 @@ TEST(Thread, postTaskWhenPaused) {
     ASSERT_TRUE(result.has_value());
 
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    ASSERT_EQ(counter.load(), 0); // pause 期间不执行
+    ASSERT_EQ(counter.load(), 0);  // pause 期间不执行
 
     thread->start();
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    ASSERT_EQ(counter.load(), 1); // start 后执行
+    ASSERT_EQ(counter.load(), 1);  // start 后执行
     thread->stop();
 }
 
@@ -91,7 +92,7 @@ TEST(Thread, pauseBlocksRepeatTask) {
 
     thread->pause();
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    ASSERT_EQ(counter.load(), countBeforePause); // pause 期间不增加
+    ASSERT_EQ(counter.load(), countBeforePause);  // pause 期间不增加
     thread->stop();
 }
 
@@ -278,11 +279,11 @@ TEST(Thread, repeatTaskResumesAfterStart) {
     ASSERT_GE(countAtPause, 1);
 
     std::this_thread::sleep_for(50ms);
-    ASSERT_EQ(counter.load(), countAtPause); // pause 期间不增加
+    ASSERT_EQ(counter.load(), countAtPause);  // pause 期间不增加
 
     thread->start();
     std::this_thread::sleep_for(35ms);
-    ASSERT_GT(counter.load(), countAtPause); // start 后继续增加
+    ASSERT_GT(counter.load(), countAtPause);  // start 后继续增加
     thread->stop();
 }
 
@@ -317,7 +318,7 @@ TEST(Thread, setThreadName) {
 // custom loop 模式下 shouldStop/pause/resume 正常工作
 TEST(Thread, createWithLoopShouldStopPauseResume) {
     using namespace std::chrono;
-    std::atomic<int> state{0}; // 0=init, 1=running, 2=paused, 3=resumed, 4=stopped
+    std::atomic<int> state{0};  // 0=init, 1=running, 2=paused, 3=resumed, 4=stopped
     std::latch loopEntered{1};
 
     auto thread = Thread::createWithLoop("testLoop", [&](Thread& t) {
@@ -386,15 +387,15 @@ TEST(Thread, createWithLoopDrainPendingWorkNoop) {
 
     auto thread = Thread::createWithLoop("testNoop", [&](Thread& t) {
         while (!t.shouldStop()) {
-            t.drainPendingWork(); // 空队列，应该快速返回
+            t.drainPendingWork();  // 空队列，应该快速返回
             loopExited.store(true);
-            break; // 只跑一轮
+            break;  // 只跑一轮
         }
     });
 
     std::this_thread::sleep_for(30ms);
     ASSERT_TRUE(loopExited.load());
-    ASSERT_TRUE(thread->isExit()); // loop 已退出，thread 已 stop
+    ASSERT_TRUE(thread->isExit());  // loop 已退出，thread 已 stop
 }
 
 // postTask 在 shouldStop() 返回 true 后被拒绝
@@ -410,7 +411,8 @@ TEST(Thread, createWithLoopPostTaskAfterStop) {
     std::this_thread::sleep_for(30ms);
     ASSERT_TRUE(thread->isExit());
 
-    auto result = thread->postTask([]() {});
+    auto result = thread->postTask([]() {
+    });
     ASSERT_FALSE(result.has_value());
 }
 
@@ -420,7 +422,9 @@ TEST(Thread, createModeStillWorks) {
     auto thread = Thread::create(Util::genRandomName("thread"));
     thread->start();
 
-    thread->postTask([&]() { counter.fetch_add(1); });
+    thread->postTask([&]() {
+        counter.fetch_add(1);
+    });
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     ASSERT_EQ(counter.load(), 1);
 
@@ -433,11 +437,15 @@ TEST(Thread, createModeStillWorks) {
 
     // 用 latch 确认 thread 已恢复运行
     std::latch latch(1);
-    thread->postTask([&]() { latch.count_down(); });
+    thread->postTask([&]() {
+        latch.count_down();
+    });
     latch.wait();
     ASSERT_EQ(counter.load(), 1);
 
-    thread->postTask([&]() { counter.fetch_add(1); });
+    thread->postTask([&]() {
+        counter.fetch_add(1);
+    });
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     ASSERT_EQ(counter.load(), 2);
 

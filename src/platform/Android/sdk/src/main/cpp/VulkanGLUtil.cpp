@@ -3,10 +3,10 @@
 //
 #include "VulkanGLUtil.h"
 
-#include "Log.hpp"
-
 #include <GLES2/gl2.h>
 #include <vulkan/vulkan.h>
+
+#include "Log.hpp"
 
 namespace slark {
 
@@ -67,4 +67,4 @@ VkShaderModule createShaderModule(VkDevice device, const uint32_t* code, size_t 
     return mod;
 }
 
-} // namespace slark
+}  // namespace slark

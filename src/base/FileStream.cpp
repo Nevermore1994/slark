@@ -118,7 +118,9 @@ auto FileStream::seek(uint64_t position) -> StreamResult<void> {
 
     {
         std::unique_lock lock(mutex_);
-        if (!cv_.wait_for(lock, std::chrono::seconds(5), [this] { return seekCompleted_; })) {
+        if (!cv_.wait_for(lock, std::chrono::seconds(5), [this] {
+                return seekCompleted_;
+            })) {
             LogW("seek: wait for completion timeout, pos={}", pendingSeekPos_);
         }
     }
@@ -208,7 +210,8 @@ void FileStream::readLoop() noexcept {
         if (shouldPause_) {
             std::unique_lock lock(mutex_);
             cv_.wait(lock, [this] {
-                return !shouldPause_ || shouldStop_ || pendingSeekFlag_.load(std::memory_order_acquire);
+                return !shouldPause_ || shouldStop_ ||
+                       pendingSeekFlag_.load(std::memory_order_acquire);
             });
             continue;
         }
@@ -259,4 +262,4 @@ void FileStream::notifyThread() noexcept {
     cv_.notify_all();
 }
 
-} // namespace slark
+}  // namespace slark

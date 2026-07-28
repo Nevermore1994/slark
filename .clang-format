@@ -2,14 +2,14 @@
 # clang-format 配置文件
 # 基于 C++ 开发规则定制
 
-# 基础语言设置
-Language: Cpp
-Standard: c++20
+# 基础语言设置（不限制 Language，由 clang-format 按扩展名自动识别 C++/ObjC）
+Standard: c++17
+# 缩进设置
 IndentWidth: 4
 TabWidth: 4
 UseTab: Never
 NamespaceIndentation: None
-AccessModifierOffset: -4
+AccessModifierOffset: -3
 
 # 花括号风格 - 所有花括号不换行
 BreakBeforeBraces: Custom
@@ -77,13 +77,35 @@ SeparateDefinitionBlocks: Always
 
 # 注释对齐
 AlignTrailingComments: true
+# 代码与注释之间至少 2 个空格 (CPPLINT whitespace/comments)
+SpacesBeforeTrailingComments: 2
 
 # 宏定义续行符对齐 - 靠左对齐
 AlignEscapedNewlines: Left
 
-# 包含头文件排序
+# 包含头文件排序 (Google C++ Style)
 SortIncludes: true
 IncludeBlocks: Regroup
+# include 顺序: 关联头文件(自动0) → C系统头文件 → C++标准库 → 第三方库 → 项目头文件
+IncludeCategories:
+  # C 系统头文件 (如 <stdio.h>, <stdlib.h>, <sys/types.h>)
+  - Regex: '^<.*\.h>$'
+    Priority: 1
+  # C++ 标准库头文件: 纯标识符，不含/和. (如 <vector>, <string>, <memory>, <cstdio>)
+  - Regex: '^<[a-zA-Z_][a-zA-Z0-9_]*>$'
+    Priority: 2
+  # 第三方角括号库: 含/或.的非标准库 (如 <nlohmann/json.hpp>, <opencv2/core.hpp>)
+  - Regex: '^<[^>]*[/.]'
+    Priority: 3
+  # 第三方双引号测试框架头文件 (如 "gtest/gtest.h", "gmock/...")
+  - Regex: '^"(gtest|gmock|benchmark)/'
+    Priority: 4
+  # 其他角括号库头文件
+  - Regex: '^<'
+    Priority: 5
+  # 本项目内头文件
+  - Regex: '^"'
+    Priority: 6
 
 # 其他格式设置
 AllowShortBlocksOnASingleLine: Never
@@ -101,85 +123,3 @@ FixNamespaceComments: true
 IndentCaseLabels: true
 IndentPPDirectives: None
 ReflowComments: true
----
-Language: ObjC
-IndentWidth: 4
-TabWidth: 4
-UseTab: Never
-ColumnLimit: 100
-PointerAlignment: Left
-ReferenceAlignment: Left
-AccessModifierOffset: -4
-NamespaceIndentation: None
-
-BreakBeforeBraces: Custom
-BraceWrapping:
-  AfterCaseLabel: false
-  AfterClass: false
-  AfterControlStatement: Never
-  AfterEnum: false
-  AfterFunction: false
-  AfterNamespace: false
-  AfterUnion: false
-  BeforeCatch: false
-  BeforeElse: false
-  IndentBraces: false
-  SplitEmptyFunction: false
-  SplitEmptyRecord: true
-
-BinPackArguments: false
-BinPackParameters: false
-AlignAfterOpenBracket: Align
-AllowAllArgumentsOnNextLine: false
-AllowAllParametersOfDeclarationOnNextLine: false
-
-SpaceBeforeAssignmentOperators: true
-SpaceBeforeParens: ControlStatements
-SpaceInEmptyParentheses: false
-SpacesInAngles: false
-SpacesInContainerLiterals: false
-SpacesInCStyleCastParentheses: false
-SpacesInParentheses: false
-SpacesInSquareBrackets: false
-
-MaxEmptyLinesToKeep: 1
-KeepEmptyLinesAtTheStartOfBlocks: false
-SeparateDefinitionBlocks: Always
-
-AlwaysBreakAfterReturnType: None
-AlwaysBreakTemplateDeclarations: Yes
-BreakBeforeBinaryOperators: None
-BreakBeforeTernaryOperators: true
-BreakConstructorInitializers: BeforeColon
-BreakInheritanceList: BeforeColon
-
-AlignTrailingComments: true
-AlignEscapedNewlines: Left
-SortIncludes: true
-IncludeBlocks: Regroup
-
-AllowShortBlocksOnASingleLine: Never
-AllowShortCaseLabelsOnASingleLine: false
-AllowShortFunctionsOnASingleLine: Empty
-AllowShortIfStatementsOnASingleLine: Never
-AllowShortLoopsOnASingleLine: false
-AllowShortLambdasOnASingleLine: None
-LambdaBodyIndentation: Signature
-
-InsertBraces: true
-AlwaysBreakBeforeMultilineStrings: false
-CompactNamespaces: false
-ConstructorInitializerAllOnOneLineOrOnePerLine: true
-Cpp11BracedListStyle: true
-FixNamespaceComments: true
-IndentCaseLabels: true
-IndentPPDirectives: None
-ReflowComments: true
-
-PenaltyBreakBeforeFirstCallParameter: 1
-PenaltyReturnTypeOnItsOwnLine: 1000
-
-ObjCBlockIndentWidth: 4
-ObjCSpaceAfterProperty: true
-ObjCSpaceBeforeProtocolList: true
-ObjCBreakBeforeNestedBlockParam: true

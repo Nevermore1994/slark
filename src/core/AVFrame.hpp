@@ -4,14 +4,14 @@
 
 #pragma once
 
+#include <cstdint>
+#include <memory>
+#include <ranges>
+
 #include "Assert.hpp"
 #include "Data.h"
 #include "DataView.hpp"
 #include "Log.hpp"
-
-#include <cstdint>
-#include <memory>
-#include <ranges>
 
 namespace slark {
 
@@ -60,7 +60,7 @@ struct AudioFrameInfo : public FrameInfo {
 
     ~AudioFrameInfo() override = default;
 
-public:
+ public:
     uint16_t channels = 0;
     uint16_t bitsPerSample = 0;
     uint64_t sampleRate = 0;
@@ -105,7 +105,7 @@ struct VideoFrameInfo : public FrameInfo {
 
     ~VideoFrameInfo() override = default;
 
-public:
+ public:
     bool isIDRFrame = false;
     VideoFrameType frameType = VideoFrameType::Unknown;
     uint32_t width = 0;
@@ -120,13 +120,13 @@ struct AVFrame {
     bool isFastPush = false;
     bool isEOS = false;
     AVFrameType frameType = AVFrameType::Unknown;
-    uint32_t duration = 0; // ms
+    uint32_t duration = 0;  // ms
     uint64_t timeScale = 1;
     uint64_t index = 0;
     int64_t pts = 0;
     int64_t dts = 0;
     uint64_t offset = 0;
-    uint64_t seekEpoch = 0; ///< dispatch 时捕获的 seek epoch，回调时用于 stale 判断
+    uint64_t seekEpoch = 0;  ///< dispatch 时捕获的 seek epoch，回调时用于 stale 判断
     std::unique_ptr<Data> data;
     void* opaque = nullptr;
     std::shared_ptr<FrameInfo> info;
@@ -231,4 +231,4 @@ using AVFramePtr = std::unique_ptr<AVFrame>;
 using AVFrameRefPtr = std::shared_ptr<AVFrame>;
 using AVFrameRef = AVFrame&;
 using AVFramePtrArray = std::vector<AVFramePtr>;
-} // namespace slark
+}  // namespace slark

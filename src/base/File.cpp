@@ -3,11 +3,11 @@
 //
 #include "File.h"
 
-#include "ByteUtils.hpp"
-#include "Log.hpp"
-
 #include <array>
 #include <utility>
+
+#include "ByteUtils.hpp"
+#include "Log.hpp"
 
 namespace slark::File {
 
@@ -201,4 +201,4 @@ void ReadFile::close() noexcept {
     FileBase::close();
 }
 
-} // namespace slark::File
+}  // namespace slark::File

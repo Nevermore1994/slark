@@ -1,5 +1,7 @@
 #include "FileUtil.h"
+
 #include <gtest/gtest.h>
+
 #include <string>
 
 using namespace slark;

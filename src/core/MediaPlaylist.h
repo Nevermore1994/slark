@@ -4,11 +4,11 @@
 
 #pragma once
 
-#include "Range.h"
-
 #include <optional>
 #include <string>
 #include <vector>
+
+#include "Range.h"
 
 namespace slark {
 
@@ -34,7 +34,7 @@ struct Variant {
 };
 
 class MediaPlaylist {
-public:
+ public:
     [[nodiscard]] const std::vector<Segment>& segments() const noexcept {
         return segments_;
     }
@@ -81,11 +81,11 @@ public:
         isLive_ = live;
     }
 
-private:
+ private:
     std::vector<Segment> segments_;
     std::vector<Variant> variants_;
     double totalDuration_ = 0.0;
     bool isLive_ = false;
 };
 
-} // namespace slark
+}  // namespace slark

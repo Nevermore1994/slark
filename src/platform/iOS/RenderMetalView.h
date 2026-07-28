@@ -4,9 +4,9 @@
 
 #pragma once
 
-#import "IRenderView.h"
-
 #import <UIKit/UIKit.h>
+
+#import "IRenderView.h"
 
 /**
  * Metal-backed render view.
@@ -19,6 +19,6 @@
 - (instancetype)initWithFrame:(CGRect)frame hdrEnabled:(BOOL)hdrEnabled;
 
 /// YES when initialized with hdrEnabled:YES and the device supports EDR.
-@property (nonatomic, assign, readonly) BOOL supportsHDR;
+@property(nonatomic, assign, readonly) BOOL supportsHDR;
 
 @end

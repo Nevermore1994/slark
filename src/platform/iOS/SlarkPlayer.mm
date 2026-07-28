@@ -105,28 +105,28 @@ struct PlayerObserver final : public slark::IPlayerObserver {
         __weak __typeof(self) weakSelf = self;
         _observer->notifyTimeFunc = [weakSelf](NSString* playerId, long double time) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                __strong __typeof(weakSelf) strongSelf = weakSelf;
-                if ([strongSelf.delegate respondsToSelector:@selector(notifyTime:time:)]) {
-                    [strongSelf.delegate notifyTime:playerId time:time];
-                }
+              __strong __typeof(weakSelf) strongSelf = weakSelf;
+              if ([strongSelf.delegate respondsToSelector:@selector(notifyTime:time:)]) {
+                  [strongSelf.delegate notifyTime:playerId time:time];
+              }
             });
         };
         _observer->notifyStateFunc = [weakSelf](NSString* playerId, SlarkPlayerState state) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                __strong __typeof(weakSelf) strongSelf = weakSelf;
-                if ([strongSelf.delegate respondsToSelector:@selector(notifyState:state:)]) {
-                    [strongSelf.delegate notifyState:playerId state:state];
-                }
+              __strong __typeof(weakSelf) strongSelf = weakSelf;
+              if ([strongSelf.delegate respondsToSelector:@selector(notifyState:state:)]) {
+                  [strongSelf.delegate notifyState:playerId state:state];
+              }
             });
         };
         _observer->notifyEventFunc = [weakSelf](NSString* playerId,
                                                 SlarkPlayerEvent evnt,
                                                 NSString* value) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                __strong __typeof(weakSelf) strongSelf = weakSelf;
-                if ([strongSelf.delegate respondsToSelector:@selector(notifyEvent:event:value:)]) {
-                    [strongSelf.delegate notifyEvent:playerId event:evnt value:value];
-                }
+              __strong __typeof(weakSelf) strongSelf = weakSelf;
+              if ([strongSelf.delegate respondsToSelector:@selector(notifyEvent:event:value:)]) {
+                  [strongSelf.delegate notifyEvent:playerId event:evnt value:value];
+              }
             });
         };
     }

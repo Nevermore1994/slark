@@ -41,4 +41,4 @@ using EventPtr = std::unique_ptr<Event>;
 EventPtr buildEvent(PlayerState state);
 EventPtr buildEvent(EventType type);
 std::string_view EventTypeToString(EventType type);
-} // namespace slark
+}  // namespace slark

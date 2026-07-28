@@ -4,9 +4,9 @@
 
 #include "AndroidEGLContext.h"
 
-#include "Log.hpp"
-
 #include <cassert>
+
+#include "Log.hpp"
 
 namespace slark {
 
@@ -187,4 +187,4 @@ IEGLContextRefPtr createMainGLContext() noexcept {
     return context;
 }
 
-} // namespace slark
+}  // namespace slark

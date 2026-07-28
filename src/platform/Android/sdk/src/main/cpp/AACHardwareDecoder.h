@@ -10,7 +10,7 @@ namespace slark {
 
 class AACHardwareDecoder : public NativeDecoder,
                            public std::enable_shared_from_this<AACHardwareDecoder> {
-public:
+ public:
     AACHardwareDecoder() : NativeDecoder(DecoderType::AACHardwareDecoder) {}
 
     ~AACHardwareDecoder() override = default;
@@ -31,4 +31,4 @@ public:
     void receiveDecodedData(DataPtr data, int64_t pts, bool isCompleted) noexcept override;
 };
 
-} // namespace slark
+}  // namespace slark

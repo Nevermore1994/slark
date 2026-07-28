@@ -48,4 +48,4 @@ std::string_view EventTypeToString(EventType type) {
     }
 }
 
-} // end of namespace slark
+}  // end of namespace slark

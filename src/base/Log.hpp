@@ -3,19 +3,19 @@
 //
 #pragma once
 
-#include "LogConfig.h"
-#include "LogOutput.h"
-
 #include <cinttypes>
 #include <cstdio>
 #include <format>
 #include <print>
 #include <string_view>
 
+#include "LogConfig.h"
+#include "LogOutput.h"
+
 namespace slark {
 
 enum class LogType {
-    Print = 0, /// only show console
+    Print = 0,  /// only show console
     Debug = 1,
     Info,
     Warning,
@@ -76,4 +76,4 @@ void outputLog(LogType level, std::string_view format, Args&&... args) {
 #pragma clang diagnostic pop
 #endif
 
-} // namespace slark
+}  // namespace slark

@@ -10,7 +10,7 @@
 namespace slark {
 
 class NativeDecoder : public IDecoder {
-public:
+ public:
     explicit NativeDecoder(DecoderType type) : IDecoder(type) {}
 
     ~NativeDecoder() override = default;
@@ -29,10 +29,10 @@ public:
 
     virtual void onVideoSizeChanged(uint32_t /*width*/, uint32_t /*height*/) noexcept {}
 
-protected:
+ protected:
     std::string decoderId_;
 };
 
 using NativeDecoderManager = Manager<NativeDecoder>;
 
-} // namespace slark
+}  // namespace slark

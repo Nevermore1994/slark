@@ -330,4 +330,4 @@ VideoFrameResult NativeHardwareDecoder::requestVideoFrame(std::string_view decod
     return VideoFrameResult::unpack(packed);
 }
 
-} // namespace slark
+}  // namespace slark

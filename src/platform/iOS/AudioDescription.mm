@@ -23,4 +23,4 @@ AudioStreamBasicDescription convertInfo2Description(const AudioInfo& info) {
     return description;
 }
 
-} // namespace slark
+}  // namespace slark

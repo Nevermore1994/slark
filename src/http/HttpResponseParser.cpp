@@ -13,8 +13,10 @@
 namespace slark::http {
 
 namespace {
-inline int64_t parserLogChunkBytes() { return static_cast<int64_t>(getLogConfig().progressLogBytes); }
-} // namespace
+inline int64_t parserLogChunkBytes() {
+    return static_cast<int64_t>(getLogConfig().progressLogBytes);
+}
+}  // namespace
 
 void HttpResponseParser::feed(const Byte* data, size_t size) {
     if (state_ == State::Completed || state_ == State::Error) {
@@ -95,15 +97,24 @@ void HttpResponseParser::reset() noexcept {
 
 std::string_view HttpResponseParser::stateName(State s) noexcept {
     switch (s) {
-        case State::StatusLine:   return "StatusLine";
-        case State::Headers:      return "Headers";
-        case State::BodyFixed:    return "BodyFixed";
-        case State::BodyChunked:  return "BodyChunked";
-        case State::ChunkSize:    return "ChunkSize";
-        case State::ChunkData:    return "ChunkData";
-        case State::ChunkTrailer: return "ChunkTrailer";
-        case State::Completed:    return "Completed";
-        case State::Error:        return "Error";
+        case State::StatusLine:
+            return "StatusLine";
+        case State::Headers:
+            return "Headers";
+        case State::BodyFixed:
+            return "BodyFixed";
+        case State::BodyChunked:
+            return "BodyChunked";
+        case State::ChunkSize:
+            return "ChunkSize";
+        case State::ChunkData:
+            return "ChunkData";
+        case State::ChunkTrailer:
+            return "ChunkTrailer";
+        case State::Completed:
+            return "Completed";
+        case State::Error:
+            return "Error";
     }
     return "Unknown";
 }
@@ -211,7 +222,8 @@ void HttpResponseParser::processHeaders() {
     if (!transferEncoding.empty() &&
         StringUtil::toLower(transferEncoding).find("chunked") != std::string::npos) {
         state_ = State::ChunkSize;
-        LogI("[HttpResponseParser::processHeaders] headers done: count={} transferEncoding=chunked shouldClose={} -> {}",
+        LogI("[HttpResponseParser::processHeaders] headers done: count={} transferEncoding=chunked "
+             "shouldClose={} -> {}",
              headers_.size(),
              shouldClose_,
              stateName(state_));
@@ -219,27 +231,31 @@ void HttpResponseParser::processHeaders() {
         auto contentLengthStr = findHeader("Content-Length");
         if (!contentLengthStr.empty()) {
             auto clResult = StringUtil::fromChars<int64_t>(contentLengthStr);
-        if (!clResult || *clResult < 0) {
-            LogE("[HttpResponseParser::processHeaders] invalid Content-Length: {}", contentLengthStr);
-            fail(slark::Error::HttpResponseInvalid);
-            return;
-        }
+            if (!clResult || *clResult < 0) {
+                LogE("[HttpResponseParser::processHeaders] invalid Content-Length: {}",
+                     contentLengthStr);
+                fail(slark::Error::HttpResponseInvalid);
+                return;
+            }
             contentLength_ = *clResult;
         }
 
         // RFC 7230: 特定状态码和请求方法无 body
         if (shouldSkipBody()) {
-            LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength={} shouldSkipBody=true -> Completed",
+            LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength={} "
+                 "shouldSkipBody=true -> Completed",
                  headers_.size(),
                  contentLength_);
             complete();
         } else if (contentLength_ == 0) {
-            LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength=0 -> Completed",
+            LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength=0 -> "
+                 "Completed",
                  headers_.size());
             complete();
         } else {
             state_ = State::BodyFixed;
-            LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength={} shouldClose={} -> BodyFixed",
+            LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength={} "
+                 "shouldClose={} -> BodyFixed",
                  headers_.size(),
                  contentLength_,
                  shouldClose_);
@@ -293,8 +309,9 @@ void HttpResponseParser::processBodyFixed() {
         consume(data.size());
 
         if (bodyReceived_ - lastLoggedBodyReceived_ >= parserLogChunkBytes()) {
-            LogI("[HttpResponseParser::processBodyFixed] progress (unknown length): bodyReceived={}",
-                 bodyReceived_);
+            LogI(
+                "[HttpResponseParser::processBodyFixed] progress (unknown length): bodyReceived={}",
+                bodyReceived_);
             lastLoggedBodyReceived_ = bodyReceived_;
         }
     }
@@ -413,4 +430,4 @@ std::string HttpResponseParser::findHeader(std::string_view key) const {
     return {};
 }
 
-} // namespace slark::http
+}  // namespace slark::http

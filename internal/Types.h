@@ -25,9 +25,9 @@ template <typename T>
 concept ByteContainer = requires(T t) {
     typename T::value_type;
     requires ByteLike<typename T::value_type>;
-    { t.data() } -> std::convertible_to<const Byte*>;
-    { t.size() } -> std::convertible_to<std::size_t>;
-    { t.empty() } -> std::convertible_to<bool>;
+    {t.data()}->std::convertible_to<const Byte*>;
+    {t.size()}->std::convertible_to<std::size_t>;
+    {t.empty()}->std::convertible_to<bool>;
 };
 
 template <typename T>
@@ -36,8 +36,8 @@ concept ByteRange = std::ranges::range<T> && ByteLike<std::ranges::range_value_t
 template <typename T>
 concept ConvertibleToByteSpan = std::convertible_to<T, ConstByteSpan> ||
                                 std::convertible_to<T, std::string_view> || requires(T t) {
-                                    { t.data() } -> std::convertible_to<const Byte*>;
-                                    { t.size() } -> std::convertible_to<std::size_t>;
-                                };
+    {t.data()}->std::convertible_to<const Byte*>;
+    {t.size()}->std::convertible_to<std::size_t>;
+};
 
-} // namespace slark
+}  // namespace slark

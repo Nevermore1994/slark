@@ -4,10 +4,10 @@
 
 #include "VideoDecodeResource.h"
 
+#include <utility>
+
 #include "GLContextManager.h"
 #include "Log.hpp"
-
-#include <utility>
 
 namespace slark {
 
@@ -65,4 +65,4 @@ void VideoDecodeResource::releaseSurface(EGLSurface surface) noexcept {
     }
 }
 
-} // namespace slark
+}  // namespace slark

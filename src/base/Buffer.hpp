@@ -4,17 +4,17 @@
 
 #pragma once
 
+#include <expected>
+#include <string>
+
 #include "Data.h"
 #include "DataView.hpp"
 #include "NonCopyable.h"
 
-#include <expected>
-#include <string>
-
 namespace slark {
 
 class Buffer : public NonCopyable {
-public:
+ public:
     Buffer() = default;
 
     explicit Buffer(uint64_t size) : totalSize_(size) {}
@@ -227,7 +227,7 @@ public:
         return offset() + totalLength();
     }
 
-private:
+ private:
     template <typename T>
     bool readNumber(T& value, uint32_t bytes, bool bigEndian) noexcept {
         static_assert(std::is_unsigned_v<T>);
@@ -242,7 +242,7 @@ private:
         return ok;
     }
 
-private:
+ private:
     DataPtr data_ = nullptr;
     uint64_t readPos_ = 0;
     uint64_t offset_ = 0;
@@ -251,7 +251,7 @@ private:
 };
 
 class BitReadView {
-public:
+ public:
     explicit BitReadView(Buffer& buffer) : buffer_(buffer) {}
 
     uint8_t readBit() noexcept {
@@ -280,10 +280,10 @@ public:
         return value;
     }
 
-private:
+ private:
     Buffer& buffer_;
     uint8_t bitBuffer_ = 0;
     uint8_t bitPos_ = 0;
 };
 
-} // namespace slark
+}  // namespace slark

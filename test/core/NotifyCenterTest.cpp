@@ -4,13 +4,14 @@
 
 #include "NotifyCenter.h"
 
-#include "Player.h"
-#include "PlayerObserver.h"
-
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+
 #include <memory>
 #include <string>
+
+#include "Player.h"
+#include "PlayerObserver.h"
 
 using namespace slark;
 using ::testing::_;
@@ -20,7 +21,7 @@ using ::testing::InSequence;
 // MARK: - Mock Observer
 
 class MockObserver : public IPlayerObserver {
-public:
+ public:
     MOCK_METHOD(void,
                 notifyPlayerState,
                 (std::string_view playerId, PlayerState state),

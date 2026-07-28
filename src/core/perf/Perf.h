@@ -6,11 +6,11 @@
 
 #ifdef SLARK_PERF_ENABLED
 
+#include <optional>
+
 #include "PerfMonitor.h"
 #include "PerfTypes.h"
 #include "PlaySession.h"
-
-#include <optional>
 
 #define SLARK_PERF_CONCAT_INNER(a, b) a##b
 #define SLARK_PERF_CONCAT(a, b) SLARK_PERF_CONCAT_INNER(a, b)
@@ -55,11 +55,11 @@
         }                                                                                  \
     } while (0)
 
-#else // SLARK_PERF_ENABLED not defined
+#else  // SLARK_PERF_ENABLED not defined
 
 #define SLARK_TRACE_SPAN(tracePtr, spanName) (void)0
 #define SLARK_TRACE_NODE(data, nodeName) (void)0
 #define SLARK_TRACE_MILESTONE(session, label) (void)0
 #define SLARK_TRACE_RECORD(session, stage, durationUs) (void)0
 
-#endif // SLARK_PERF_ENABLED
+#endif  // SLARK_PERF_ENABLED

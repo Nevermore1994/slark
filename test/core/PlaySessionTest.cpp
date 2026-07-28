@@ -4,19 +4,20 @@
 
 #include "perf/PlaySession.h"
 
-#include "PerfTypes.h"
-#include "pipeline/PipelineConfig.h"
-
 #include <gtest/gtest.h>
+
 #include <thread>
 #include <vector>
+
+#include "PerfTypes.h"
+#include "pipeline/PipelineConfig.h"
 
 using namespace slark::perf;
 
 // perfMonitorReportSession 的空实现，避免链接到 PerfMonitor 单例
 namespace slark::perf {
 void perfMonitorReportSession(PlaySession& /*session*/) {}
-} // namespace slark::perf
+}  // namespace slark::perf
 
 // MARK: - 构造与基本属性
 
@@ -55,7 +56,7 @@ TEST(PlaySessionTest, MarkFirstFrameIsIdempotent) {
     double first = session.firstFrameMs();
 
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    session.markFirstFrame(); // 第二次调用不应更新
+    session.markFirstFrame();  // 第二次调用不应更新
     EXPECT_DOUBLE_EQ(session.firstFrameMs(), first);
 }
 
@@ -91,7 +92,7 @@ TEST(PlaySessionTest, FinishSetsIsFinishedAndSuccess) {
 TEST(PlaySessionTest, FinishIsIdempotent) {
     PlaySession session("sess-008", "file://local.mp4");
     session.finish(true);
-    session.finish(false); // 第二次调用不应改变 success
+    session.finish(false);  // 第二次调用不应改变 success
     EXPECT_TRUE(session.isSuccess());
     EXPECT_TRUE(session.isFinished());
 }
@@ -162,7 +163,7 @@ TEST(PlaySessionTest, RecordDropsWhenExceedsMaxStageCount) {
 
 TEST(PlaySessionTest, RecordFrameAccumulatesStats) {
     PlaySession session("sess-014", "file://local.mp4");
-    session.recordFrame(16667); // ~60fps
+    session.recordFrame(16667);  // ~60fps
     session.recordFrame(16667);
     session.recordFrame(16667);
 
@@ -281,7 +282,7 @@ TEST(BackpressureConfigTest, ForLiveIsValid) {
 
 TEST(BackpressureConfigTest, InvalidConfigDetected) {
     auto cfg = slark::BackpressureConfig::forNetwork();
-    cfg.demuxLowWatermarkDuration = cfg.demuxHighWatermarkDuration + 1.0; // 低水位 > 高水位
+    cfg.demuxLowWatermarkDuration = cfg.demuxHighWatermarkDuration + 1.0;  // 低水位 > 高水位
     EXPECT_FALSE(cfg.isValid());
 }
 

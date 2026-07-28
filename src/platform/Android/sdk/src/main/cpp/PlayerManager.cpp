@@ -19,7 +19,7 @@ namespace slark {
 using PlayerManager = Manager<Player>;
 using PlayerObserverManager = Manager<PlayerObserver>;
 
-} // namespace slark
+}  // namespace slark
 
 using namespace slark;
 using namespace slark::JNI;

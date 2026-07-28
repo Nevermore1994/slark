@@ -5,6 +5,9 @@
 
 #import "interface/SlarkViewController.h"
 
+#import <AVFoundation/AVFoundation.h>
+#import <Foundation/Foundation.h>
+
 #import "GLContextManager.h"
 #import "IRenderView.h"
 #import "Player.h"
@@ -12,19 +15,16 @@
 #import "RenderMetalView.h"
 #import "interface/SlarkGraphicsConfig.h"
 
-#import <AVFoundation/AVFoundation.h>
-#import <Foundation/Foundation.h>
-
 @interface SlarkPlayer (Render)
 - (void)setRenderImpl:(void*)ptr;
 - (void)setRotationCallback:(void (^)(double))callback;
 @end
 
 @interface SlarkViewController ()
-@property (nonatomic, strong) UIView<IRenderView>* renderView;
-@property (nonatomic, strong) SlarkPlayer* player;
-@property (nonatomic, assign) BOOL isActive;
-@property (nonatomic, assign) SlarkGraphicsBackend currentBackend;
+@property(nonatomic, strong) UIView<IRenderView>* renderView;
+@property(nonatomic, strong) SlarkPlayer* player;
+@property(nonatomic, assign) BOOL isActive;
+@property(nonatomic, assign) SlarkGraphicsBackend currentBackend;
 @end
 
 @implementation SlarkViewController
@@ -43,10 +43,10 @@
         [self.player setRenderImpl:[self.renderView renderImpl]];
         __weak __typeof(self) weakSelf = self;
         [self.player setRotationCallback:^(double degrees) {
-            __strong __typeof(weakSelf) strongSelf = weakSelf;
-            if (strongSelf) {
-                strongSelf.renderView.rotation = degrees;
-            }
+          __strong __typeof(weakSelf) strongSelf = weakSelf;
+          if (strongSelf) {
+              strongSelf.renderView.rotation = degrees;
+          }
         }];
         self.view = self.renderView;
         [self setupNotifications];
@@ -175,10 +175,10 @@
     [self.player setRenderImpl:[newView renderImpl]];
     __weak __typeof(self) weakSelf = self;
     [self.player setRotationCallback:^(double degrees) {
-        __strong __typeof(weakSelf) strongSelf = weakSelf;
-        if (strongSelf) {
-            strongSelf.renderView.rotation = degrees;
-        }
+      __strong __typeof(weakSelf) strongSelf = weakSelf;
+      if (strongSelf) {
+          strongSelf.renderView.rotation = degrees;
+      }
     }];
     self.renderView = newView;
     self.view = newView;

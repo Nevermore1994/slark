@@ -4,20 +4,20 @@
 
 #pragma once
 
-#include "AudioInfo.h"
-#include "IDecoder.h"
-#include "IEGLContext.h"
-
 #include <functional>
 #include <unordered_map>
 #include <vector>
+
+#include "AudioInfo.h"
+#include "IDecoder.h"
+#include "IEGLContext.h"
 
 namespace slark {
 
 // Platform capability registry — decouples core from platform implementations.
 // Platform adapter layers (slark_ios / slark_android) call register*() at init time.
 class PlatformRegistry {
-public:
+ public:
     using AudioRenderFactory =
         std::function<std::shared_ptr<IAudioRender>(const std::shared_ptr<AudioInfo>&)>;
     using GLContextFactory = std::function<IEGLContextRefPtr()>;
@@ -94,7 +94,7 @@ public:
         return it != mediaInfo_.end() ? it->second : DecoderType::Unknown;
     }
 
-private:
+ private:
     PlatformRegistry() = default;
     ~PlatformRegistry() = default;
 
@@ -104,4 +104,4 @@ private:
     std::unordered_map<std::string, DecoderType> mediaInfo_;
 };
 
-} // namespace slark
+}  // namespace slark

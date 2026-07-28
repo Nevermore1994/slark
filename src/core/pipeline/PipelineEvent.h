@@ -22,4 +22,4 @@ enum class PipelineEvent : uint8_t {
     RenderEnd
 };
 
-} // namespace slark
+}  // namespace slark

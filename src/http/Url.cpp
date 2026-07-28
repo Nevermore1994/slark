@@ -134,4 +134,4 @@ void Url::parse(std::string_view url) noexcept {
     error_ = UrlError::None;
 }
 
-} // namespace slark::http
+}  // namespace slark::http

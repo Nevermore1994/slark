@@ -28,7 +28,7 @@ struct RenderInfo {
 };
 
 class VideoRender : public IVideoRender, public std::enable_shared_from_this<VideoRender> {
-public:
+ public:
     VideoRender();
 
     ~VideoRender() noexcept override;
@@ -56,7 +56,7 @@ public:
         return backupRenderInfo_.texture;
     }
 
-private:
+ private:
     void requestRenderFrame() noexcept;
 
     void renderFrame(const AVFrameRefPtr& frame) noexcept;
@@ -71,4 +71,4 @@ private:
 
 using VideoRenderManager = Manager<VideoRender>;
 
-} // namespace slark
+}  // namespace slark

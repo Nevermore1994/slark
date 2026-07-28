@@ -83,4 +83,4 @@ static const uint32_t kFragSpirv[] = {
     0x0000000e, 0x00000012, 0x0003003e, 0x00000009, 0x00000013, 0x000100fd, 0x00010038,
 };
 
-} // namespace slark
+}  // namespace slark

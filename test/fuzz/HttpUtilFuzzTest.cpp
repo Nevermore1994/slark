@@ -1,10 +1,11 @@
-#include "HttpUtil.hpp"
-#include "Data.h"
-
 #include <gtest/gtest.h>
+
 #include <random>
 #include <string>
 #include <vector>
+
+#include "Data.h"
+#include "HttpUtil.hpp"
 
 using namespace slark::http::Util;
 
@@ -20,9 +21,7 @@ TEST(HttpUtilFuzzTest, RandomResponseDataDoesNotCrash) {
             b = byteDist(rng);
         }
         ParsedResponse response;
-        EXPECT_NO_THROW({
-            parseRawResponse(data.data(), data.size(), response);
-        });
+        EXPECT_NO_THROW({ parseRawResponse(data.data(), data.size(), response); });
     }
 }
 
@@ -30,7 +29,8 @@ TEST(HttpUtilFuzzTest, ChunkedEncodingVariants) {
     std::vector<std::string> chunkedInputs = {
         // 各种合法的 chunked
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nHello\r\n0\r\n\r\n",
-        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nHello\r\n5\r\nWorld\r\n0\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: "
+        "chunked\r\n\r\n5\r\nHello\r\n5\r\nWorld\r\n0\r\n\r\n",
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
         // 带 chunk-extension
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5;ext=1\r\nHello\r\n0\r\n\r\n",
@@ -42,19 +42,20 @@ TEST(HttpUtilFuzzTest, ChunkedEncodingVariants) {
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\n",
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n",
         // 尾部额外数据
-        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nHello\r\n0\r\n\r\ntrailer:val\r\n",
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: "
+        "chunked\r\n\r\n5\r\nHello\r\n0\r\n\r\ntrailer:val\r\n",
         // chunked 中混合 Content-Length（冲突）
-        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Length: 5\r\n\r\n5\r\nHello\r\n0\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Length: "
+        "5\r\n\r\n5\r\nHello\r\n0\r\n\r\n",
         // 超大 chunk size
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nFFFFFFF\r\nHello\r\n0\r\n\r\n",
         // 随机二进制 chunked
-        std::string("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n") + std::string(100, '\x00') + "\r\n0\r\n\r\n",
+        std::string("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n") +
+            std::string(100, '\x00') + "\r\n0\r\n\r\n",
     };
     for (const auto& input : chunkedInputs) {
         ParsedResponse response;
-        EXPECT_NO_THROW({
-            parseRawResponse(input.data(), input.size(), response);
-        });
+        EXPECT_NO_THROW({ parseRawResponse(input.data(), input.size(), response); });
     }
 }
 
@@ -86,9 +87,7 @@ TEST(HttpUtilFuzzTest, MalformedStatusLines) {
     };
     for (const auto& input : malformedInputs) {
         ParsedResponse response;
-        EXPECT_NO_THROW({
-            parseRawResponse(input.data(), input.size(), response);
-        });
+        EXPECT_NO_THROW({ parseRawResponse(input.data(), input.size(), response); });
     }
 }
 
@@ -102,9 +101,7 @@ TEST(HttpUtilFuzzTest, LargeHeaders) {
         input += "X-Large: " + headerValue + "\r\n";
         input += "Content-Length: 0\r\n\r\n";
         ParsedResponse response;
-        EXPECT_NO_THROW({
-            parseRawResponse(input.data(), input.size(), response);
-        });
+        EXPECT_NO_THROW({ parseRawResponse(input.data(), input.size(), response); });
     }
 }
 
@@ -115,7 +112,5 @@ TEST(HttpUtilFuzzTest, RepeatedHeaders) {
     }
     input += "Content-Length: 0\r\n\r\n";
     ParsedResponse response;
-    EXPECT_NO_THROW({
-        parseRawResponse(input.data(), input.size(), response);
-    });
+    EXPECT_NO_THROW({ parseRawResponse(input.data(), input.size(), response); });
 }

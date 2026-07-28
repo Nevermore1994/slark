@@ -4,8 +4,9 @@
 #pragma once
 
 #include <GLES2/gl2.h>
-#include <cstdint>
 #include <vulkan/vulkan.h>
+
+#include <cstdint>
 
 namespace slark {
 
@@ -15,4 +16,4 @@ GLuint createGLProgram(const char* vert, const char* frag) noexcept;
 
 VkShaderModule createShaderModule(VkDevice device, const uint32_t* code, size_t size) noexcept;
 
-} // namespace slark
+}  // namespace slark

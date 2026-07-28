@@ -4,6 +4,10 @@
 
 #pragma once
 
+#include <atomic>
+#include <memory>
+#include <mutex>
+
 #include "Channel.hpp"
 #include "DemuxerComponent.h"
 #include "DemuxerManager.h"
@@ -15,10 +19,6 @@
 #include "Timer.h"
 #include "pipeline/PlayPipeline.h"
 
-#include <atomic>
-#include <memory>
-#include <mutex>
-
 namespace slark {
 
 struct PlayerSeekRequest {
@@ -29,7 +29,7 @@ struct PlayerSeekRequest {
 };
 
 class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
-public:
+ public:
     explicit Impl(std::unique_ptr<PlayerParams> params);
 
     ~Impl();
@@ -38,7 +38,7 @@ public:
 
     Impl& operator=(const Impl&) = delete;
 
-public:
+ public:
     void init() noexcept;
 
     void updateState(PlayerState state) noexcept;
@@ -57,7 +57,7 @@ public:
 
     void setRenderImpl(std::weak_ptr<IVideoRender> render) noexcept;
 
-public:
+ public:
     [[nodiscard]] inline PlayerInfo info() const noexcept {
         return info_;
     }
@@ -74,7 +74,7 @@ public:
 
     [[nodiscard]] AVFrameRefPtr requestRender() noexcept;
 
-private:
+ private:
     void buildPipeline() noexcept;
 
     void handlePipelineEvent(PipelineEvent event, std::optional<PipelineError> error) noexcept;
@@ -89,7 +89,8 @@ private:
 
     void notifyPlayerEvent(PlayerEvent event, std::string value = {}) noexcept;
 
-    static std::string formatErrorValue(Error err, int32_t originErrorCode,
+    static std::string formatErrorValue(Error err,
+                                        int32_t originErrorCode,
                                         std::string_view host) noexcept;
 
     void notifyPlayerState(PlayerState state) noexcept;
@@ -107,7 +108,7 @@ private:
     void createVideoComponent(const PlayerSetting& setting) noexcept;
 
     void doPlay() noexcept;
-    
+
     void doPause() noexcept;
 
     void doStop() noexcept;
@@ -126,7 +127,7 @@ private:
 
     [[nodiscard]] double demuxedDuration() const noexcept;
 
-private:
+ private:
     static constexpr int64_t kSeekDebounceUs = 100000;
 
     std::atomic_bool isStopped_ = false;
@@ -172,4 +173,4 @@ private:
     std::once_flag bindOwnerThreadFlag_;
 };
 
-} // namespace slark
+}  // namespace slark

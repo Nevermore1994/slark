@@ -46,6 +46,6 @@ struct IOSPlatformRegistrar {
 // 静态实例，程序启动时自动执行注册
 static IOSPlatformRegistrar iosPlatformRegistrar;
 
-} // namespace
+}  // namespace
 
-} // namespace slark
+}  // namespace slark

@@ -5,6 +5,7 @@
 #pragma once
 
 #include <jni.h>
+
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -21,7 +22,7 @@ using JNIEnvPtr = JNIEnv*;
 
 template <typename T>
 class JNIReference {
-public:
+ public:
     JNIReference() noexcept : env_(nullptr), ref_(nullptr) {}
 
     JNIReference(JNIEnv* env, T ref) noexcept : env_(env), ref_(ref) {}
@@ -84,7 +85,7 @@ public:
         return tag_;
     }
 
-private:
+ private:
     void release() noexcept {
         if (env_ && ref_) {
             // 所有 jobject 派生类型都需要 DeleteLocalRef
@@ -109,7 +110,7 @@ private:
 
 template <>
 class JNIReference<jmethodID> {
-public:
+ public:
     JNIReference() noexcept : env_(nullptr), methodId_(nullptr) {}
 
     JNIReference(JNIEnv* env, jmethodID methodId) noexcept : env_(env), methodId_(methodId) {}
@@ -132,7 +133,7 @@ public:
 
     ~JNIReference() noexcept = default;
 
-private:
+ private:
     JNIEnvPtr env_;
     jmethodID methodId_;
 };
@@ -144,4 +145,4 @@ using StringReference = JNIReference<jstring>;
 using ByteArrayReference = JNIReference<jbyteArray>;
 using IntArrayReference = JNIReference<jintArray>;
 
-} // namespace slark::JNI
+}  // namespace slark::JNI

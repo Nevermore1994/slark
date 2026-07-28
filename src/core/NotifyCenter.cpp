@@ -100,4 +100,4 @@ void NotifyCenter::resetNotifyState() noexcept {
     lastNotifyCacheTime_ = 0;
 }
 
-} // namespace slark
+}  // namespace slark

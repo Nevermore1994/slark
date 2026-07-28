@@ -4,15 +4,15 @@
 
 #pragma once
 
-#include "DataView.hpp"
-#include "Error.h"
-#include "Types.h"
-
 #include <bit>
 #include <cstdint>
 #include <format>
 #include <memory>
 #include <string>
+
+#include "DataView.hpp"
+#include "Error.h"
+#include "Types.h"
 
 namespace slark::Util {
 
@@ -27,8 +27,7 @@ Expected<uint64_t> getWeakPtrAddress(const std::weak_ptr<T>& ptr) noexcept {
 std::string genRandomName(std::string_view prefix) noexcept;
 
 template <typename T>
-    requires std::is_unsigned_v<T>
-std::string toStringLE(T value) noexcept {
+requires std::is_unsigned_v<T> std::string toStringLE(T value) noexcept {
     std::string ret(sizeof(T), '\0');
     auto bytes = std::bit_cast<std::array<char, sizeof(T)>>(value);
     if constexpr (std::endian::native == std::endian::little) {
@@ -40,8 +39,7 @@ std::string toStringLE(T value) noexcept {
 }
 
 template <typename T>
-    requires std::is_unsigned_v<T>
-std::string toStringBE(T value) noexcept {
+requires std::is_unsigned_v<T> std::string toStringBE(T value) noexcept {
     std::string ret(sizeof(T), '\0');
     auto bytes = std::bit_cast<std::array<char, sizeof(T)>>(value);
     if constexpr (std::endian::native == std::endian::big) {
@@ -60,4 +58,4 @@ struct Golomb {
     static uint32_t readUe(DataView view, int32_t& offset) noexcept;
 };
 
-} // namespace slark::Util
+}  // namespace slark::Util

@@ -76,10 +76,10 @@ struct IVideoRender : public IPipelineComponent {
         videoTimeUpdater_ = std::move(updater);
     }
 
-protected:
+ protected:
     AtomicSharedPtr<RequestRenderFunc> requestRenderFunc_;
     std::string playerId_;
     std::function<void(Time::TimePoint)> videoTimeUpdater_;
 };
 
-} // namespace slark
+}  // namespace slark

@@ -1,10 +1,13 @@
 #include "TimerPool.h"
-#include "Timer.h"
-#include "Time.hpp"
+
 #include <gtest/gtest.h>
-#include <chrono>
+
 #include <atomic>
+#include <chrono>
 #include <thread>
+
+#include "Time.hpp"
+#include "Timer.h"
 
 using namespace slark;
 
@@ -15,7 +18,7 @@ Time::TimePoint futureTime(uint64_t msFromNow) noexcept {
         std::chrono::milliseconds(Time::nowTimeStamp().toMilliSeconds().count() + msFromNow));
 }
 
-} // namespace
+}  // namespace
 
 TEST(TimerPoolTest, AddAndExpire) {
     TimerPool pool;
@@ -23,7 +26,9 @@ TEST(TimerPoolTest, AddAndExpire) {
     TimerEntry entry;
     entry.id = TimerId::next();
     entry.expireTime = futureTime(20);
-    entry.task = [&] { fired = true; };
+    entry.task = [&] {
+        fired = true;
+    };
     pool.addTimer(std::move(entry));
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     std::vector<TimerEntry> expired;
@@ -37,7 +42,9 @@ TEST(TimerPoolTest, CancelPreventsExpire) {
     TimerEntry entry;
     entry.id = TimerId::next();
     entry.expireTime = futureTime(100);
-    entry.task = [&] { fired = true; };
+    entry.task = [&] {
+        fired = true;
+    };
     auto id = pool.addTimer(std::move(entry));
     pool.cancel(id);
     std::this_thread::sleep_for(std::chrono::milliseconds(150));
@@ -53,7 +60,9 @@ TEST(TimerPoolTest, MultipleTimers) {
         TimerEntry entry;
         entry.id = TimerId::next();
         entry.expireTime = futureTime(ms);
-        entry.task = [&] { count++; };
+        entry.task = [&] {
+            count++;
+        };
         pool.addTimer(std::move(entry));
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(80));
@@ -68,7 +77,8 @@ TEST(TimerPoolTest, PeekWaitTime) {
     TimerEntry entry;
     entry.id = TimerId::next();
     entry.expireTime = futureTime(50);
-    entry.task = []{};
+    entry.task = [] {
+    };
     pool.addTimer(std::move(entry));
     auto wait = pool.peekWaitTime();
     EXPECT_GT(wait.count(), 0);
@@ -81,7 +91,8 @@ TEST(TimerPoolTest, Clear) {
         TimerEntry entry;
         entry.id = TimerId::next();
         entry.expireTime = futureTime(ms);
-        entry.task = []{};
+        entry.task = [] {
+        };
         pool.addTimer(std::move(entry));
     }
     pool.clear();

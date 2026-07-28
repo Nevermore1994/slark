@@ -35,4 +35,4 @@ void dispatchResponse(HttpResponse& response,
     }
 }
 
-} // namespace slark::http::detail
+}  // namespace slark::http::detail

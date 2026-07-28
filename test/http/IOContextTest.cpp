@@ -1,9 +1,11 @@
 #include "IOContext.h"
-#include "SharedCoroutineHandle.hpp"
-#include "CoroutineControlBlock.hpp"
+
 #include <gtest/gtest.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+#include "CoroutineControlBlock.hpp"
+#include "SharedCoroutineHandle.hpp"
 
 using namespace slark;
 using namespace slark::http;

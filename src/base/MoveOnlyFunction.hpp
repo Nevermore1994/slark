@@ -11,7 +11,7 @@
 namespace slark {
 template <typename Sig>
 using MoveOnlyFunction = std::move_only_function<Sig>;
-} // namespace slark
+}  // namespace slark
 #else
 
 #include <memory>
@@ -25,15 +25,15 @@ class MoveOnlyFunction;
 
 template <typename R, typename... Args>
 class MoveOnlyFunction<R(Args...)> {
-public:
+ public:
     MoveOnlyFunction() noexcept = default;
 
     MoveOnlyFunction(std::nullptr_t) noexcept {}
 
     template <typename F>
-        requires(!std::is_same_v<std::decay_t<F>, MoveOnlyFunction> &&
-                 std::is_invocable_r_v<R, F, Args...>)
-    MoveOnlyFunction(F&& f) : impl_(std::make_unique<Model<std::decay_t<F>>>(std::forward<F>(f))) {}
+    requires(!std::is_same_v<std::decay_t<F>, MoveOnlyFunction> &&
+             std::is_invocable_r_v<R, F, Args...>) MoveOnlyFunction(F&& f)
+        : impl_(std::make_unique<Model<std::decay_t<F>>>(std::forward<F>(f))) {}
 
     MoveOnlyFunction(MoveOnlyFunction&&) noexcept = default;
     MoveOnlyFunction& operator=(MoveOnlyFunction&&) noexcept = default;
@@ -58,7 +58,7 @@ public:
         return *this;
     }
 
-private:
+ private:
     struct Concept {
         virtual ~Concept() = default;
         virtual R invoke(Args... args) = 0;
@@ -80,6 +80,6 @@ private:
     std::unique_ptr<Concept> impl_;
 };
 
-} // namespace slark
+}  // namespace slark
 
 #endif

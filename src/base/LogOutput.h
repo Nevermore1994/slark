@@ -2,8 +2,6 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #pragma once
-#include "Writer.h"
-
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -11,10 +9,12 @@
 #include <thread>
 #include <vector>
 
+#include "Writer.h"
+
 namespace slark {
 
 class LogOutput : public NonCopyMovable {
-public:
+ public:
     static LogOutput& shareInstance();
 
     LogOutput();
@@ -27,7 +27,7 @@ public:
     /// 幂等，可多次调用。
     static void shutdown() noexcept;
 
-private:
+ private:
     struct LogEntry {
         uint64_t seq = 0;
         Data data;
@@ -68,4 +68,4 @@ private:
     std::thread sortThread_;
 };
 
-} // namespace slark
+}  // namespace slark

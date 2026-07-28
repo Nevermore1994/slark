@@ -4,10 +4,10 @@
 
 #include "TimerManager.h"
 
+#include <exception>
+
 #include "Log.hpp"
 #include "ThreadPool.hpp"
-
-#include <exception>
 
 namespace slark {
 using namespace std::chrono_literals;
@@ -30,7 +30,7 @@ void postTaskToPool(F&& task, TimerId timerId) {
         }
     });
 }
-} // namespace
+}  // namespace
 
 TimerManager& TimerManager::shareInstance() {
     static TimerManager instance;
@@ -168,7 +168,7 @@ TimerId TimerManager::runLoop(std::chrono::milliseconds interval, TimerTask func
         TimerEntry entry{
             .id = id,
             .expireTime = Time::nowTimeStamp() + interval,
-            .task = nullptr, // 循环任务不在此存储
+            .task = nullptr,  // 循环任务不在此存储
             .isLoop = true,
             .loopInterval = interval,
             .isValid = true,
@@ -192,4 +192,4 @@ void TimerManager::clear() noexcept {
     loopTasks_.clear();
 }
 
-} // end namespace slark
+}  // end namespace slark

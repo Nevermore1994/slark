@@ -3,18 +3,19 @@
 //
 #include "DnsResolver.h"
 
-#include "CoroutineScheduler.hpp"
-
 #include <arpa/inet.h>
 #include <gtest/gtest.h>
 #include <netinet/in.h>
+
 #include <thread>
+
+#include "CoroutineScheduler.hpp"
 
 using namespace slark;
 using namespace slark::http;
 
 class DnsResolverTest : public ::testing::Test {
-protected:
+ protected:
     void SetUp() override {
         DnsResolver::Config cfg;
         cfg.maxCacheSize = 4;
@@ -113,10 +114,14 @@ TEST_F(DnsResolverTest, ConcurrentResolveSameHost) {
     for (int i = 0; i < 4; ++i) {
         threads.emplace_back([&]() {
             auto result = runAndWait(*resolver_, "localhost");
-            if (result) successCount++;
+            if (result) {
+                successCount++;
+            }
         });
     }
-    for (auto& t : threads) t.join();
+    for (auto& t : threads) {
+        t.join();
+    }
     EXPECT_EQ(successCount.load(), 4);
 }
 

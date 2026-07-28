@@ -4,10 +4,10 @@
 
 #include "AAudioRender.h"
 
-#include "Log.hpp"
-
 #include <algorithm>
 #include <thread>
+
+#include "Log.hpp"
 
 namespace slark {
 
@@ -114,7 +114,7 @@ void AAudioRender::play() noexcept {
     AAudioStream_waitForStateChange(stream_,
                                     AAUDIO_STREAM_STATE_STARTING,
                                     &nextState,
-                                    200'000'000LL); // 200ms timeout
+                                    200'000'000LL);  // 200ms timeout
     status_ = RenderStatus::Playing;
 }
 
@@ -205,7 +205,8 @@ Time::TimeDelta AAudioRender::getHardwareLatency() noexcept {
     int64_t timeNs = 0;
     if (AAudioStream_getTimestamp(stream_, CLOCK_MONOTONIC, &framePosition, &timeNs) == AAUDIO_OK) {
         const int64_t framesWritten = AAudioStream_getFramesWritten(stream_);
-        const int64_t pendingFrames = (framesWritten - flushBaseFrames_.load(std::memory_order_acquire)) - framePosition;
+        const int64_t pendingFrames =
+            (framesWritten - flushBaseFrames_.load(std::memory_order_acquire)) - framePosition;
         if (pendingFrames > 0) {
             return Time::TimeDelta(pendingFrames * 1'000'000LL / sampleRate);
         }
@@ -214,4 +215,4 @@ Time::TimeDelta AAudioRender::getHardwareLatency() noexcept {
     return Time::TimeDelta(static_cast<int64_t>(burst) * 1'000'000LL / sampleRate);
 }
 
-} // namespace slark
+}  // namespace slark

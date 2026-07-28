@@ -3,8 +3,6 @@
 //
 #pragma once
 
-#include "RingBufferUtil.hpp"
-
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -12,16 +10,17 @@
 #include <cstdint>
 #include <type_traits>
 
+#include "RingBufferUtil.hpp"
+
 namespace slark {
 
 template <typename T, size_t N>
-    requires std::is_trivially_copyable_v<T>
-class SPSCRingBuffer {
+requires std::is_trivially_copyable_v<T> class SPSCRingBuffer {
     // 牺牲一个槽位区分空/满，实际可用容量 = kCapacity - 1
     static constexpr size_t kCapacity = std::bit_ceil((N == 0) ? 2 : (N + 1));
     static constexpr size_t kMask = kCapacity - 1;
 
-public:
+ public:
     SPSCRingBuffer() = default;
     SPSCRingBuffer(const SPSCRingBuffer&) = delete;
     SPSCRingBuffer& operator=(const SPSCRingBuffer&) = delete;
@@ -99,10 +98,10 @@ public:
         return static_cast<uint32_t>(data_.size()) - 1;
     }
 
-private:
+ private:
     std::array<T, kCapacity> data_;
     alignas(64) std::atomic<uint32_t> readPos_ = 0;
     alignas(64) std::atomic<uint32_t> writePos_ = 0;
 };
 
-} // namespace slark
+}  // namespace slark

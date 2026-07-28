@@ -2,6 +2,10 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
+#include <dirent.h>
+#include <limits.h>
+#include <sys/stat.h>
+
 #include "AACHardwareDecoder.h"
 #include "AAudioRender.h"
 #include "AndroidEGLContext.h"
@@ -11,10 +15,6 @@
 #include "MediaDefs.h"
 #include "PlatformRegistry.h"
 #include "VideoHardwareDecoder.h"
-
-#include <dirent.h>
-#include <limits.h>
-#include <sys/stat.h>
 
 DISABLE_WARNINGS
 #include <openssl/ssl.h>
@@ -118,10 +118,10 @@ struct AndroidPlatformRegistrar {
 
 static AndroidPlatformRegistrar androidPlatformRegistrar;
 
-} // namespace
+}  // namespace
 
 std::shared_ptr<IAudioRender> createAudioRender(const std::shared_ptr<AudioInfo>& audioInfo) {
     return PlatformRegistry::instance().createAudioRender(audioInfo);
 }
 
-} // namespace slark
+}  // namespace slark

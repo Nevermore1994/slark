@@ -4,27 +4,28 @@
 
 #import "RenderMetalView.h"
 
-#include "Clock.h"
-#include "VideoInfo.h"
-#import "interface/SlarkGraphicsConfig.h"
-
 #import <AVFoundation/AVUtilities.h>
 #import <Metal/Metal.h>
 #import <MetalKit/MetalKit.h>
 #import <QuartzCore/CAMetalLayer.h>
+#import <simd/simd.h>
+
 #import <atomic>
 #import <cmath>
 #import <functional>
 #import <limits>
 #import <memory>
-#import <simd/simd.h>
+
+#include "Clock.h"
+#include "VideoInfo.h"
+#import "interface/SlarkGraphicsConfig.h"
 
 namespace slark {
 struct IVideoRender;
 struct VideoInfo;
 struct AVFrame;
 using AVFrameRefPtr = std::shared_ptr<AVFrame>;
-} // namespace slark
+}  // namespace slark
 
 using namespace slark;
 
@@ -196,11 +197,11 @@ struct MetalVideoRender : public IVideoRender {
     BOOL _hdrEnabled;
 }
 
-@property (atomic, assign) BOOL isActive;
-@property (nonatomic, assign, readwrite) BOOL supportsHDR;
-@property (nonatomic, assign) NSInteger renderInterval;
-@property (nonatomic, strong) CADisplayLink* displayLink;
-@property (nonatomic, strong) dispatch_queue_t renderQueue;
+@property(atomic, assign) BOOL isActive;
+@property(nonatomic, assign, readwrite) BOOL supportsHDR;
+@property(nonatomic, assign) NSInteger renderInterval;
+@property(nonatomic, strong) CADisplayLink* displayLink;
+@property(nonatomic, strong) dispatch_queue_t renderQueue;
 @end
 
 @implementation RenderMetalView
@@ -223,7 +224,7 @@ struct MetalVideoRender : public IVideoRender {
         [self setupRenderDelegate];
         [self setupLayer];
         dispatch_async(_renderQueue, ^{
-            [self setupMetal];
+          [self setupMetal];
         });
     }
     return self;
@@ -237,12 +238,12 @@ struct MetalVideoRender : public IVideoRender {
         dispatch_queue_t q = _renderQueue;
         __block RenderMetalView* strongSelf = self;
         dispatch_async(q, ^{
-            [strongSelf cleanupMetal];
-            if (strongSelf->_preRenderBuffer) {
-                CVPixelBufferRelease(strongSelf->_preRenderBuffer);
-                strongSelf->_preRenderBuffer = NULL;
-            }
-            strongSelf = nil;
+          [strongSelf cleanupMetal];
+          if (strongSelf->_preRenderBuffer) {
+              CVPixelBufferRelease(strongSelf->_preRenderBuffer);
+              strongSelf->_preRenderBuffer = NULL;
+          }
+          strongSelf = nil;
         });
     }
 }
@@ -274,10 +275,10 @@ struct MetalVideoRender : public IVideoRender {
 
     _videoRenderImpl->notifyVideoInfoFunc = [weakSelf](std::shared_ptr<VideoInfo> info) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            __strong __typeof(weakSelf) strongSelf = weakSelf;
-            if (strongSelf && info && info->fps > 0) {
-                strongSelf.renderInterval = info->fps;
-            }
+          __strong __typeof(weakSelf) strongSelf = weakSelf;
+          if (strongSelf && info && info->fps > 0) {
+              strongSelf.renderInterval = info->fps;
+          }
         });
     };
     _videoRenderImpl->startFunc = [weakSelf]() {
@@ -300,12 +301,12 @@ struct MetalVideoRender : public IVideoRender {
         }
         CVPixelBufferRetain(pixelBuffer);
         dispatch_async(strongSelf->_renderQueue, ^{
-            __strong __typeof(weakSelf) s = weakSelf;
-            if (s) {
-                [s displayPixelBuffer:pixelBuffer];
-                [s saveAsPreRenderBuffer:pixelBuffer];
-            }
-            CVPixelBufferRelease(pixelBuffer);
+          __strong __typeof(weakSelf) s = weakSelf;
+          if (s) {
+              [s displayPixelBuffer:pixelBuffer];
+              [s saveAsPreRenderBuffer:pixelBuffer];
+          }
+          CVPixelBufferRelease(pixelBuffer);
         });
     };
 }
@@ -361,8 +362,8 @@ struct MetalVideoRender : public IVideoRender {
     // 避免死锁
     id<MTLDevice> device = _device;
     dispatch_async(dispatch_get_main_queue(), ^{
-        CAMetalLayer* layer = static_cast<CAMetalLayer*>(self.layer);
-        layer.device = device;
+      CAMetalLayer* layer = static_cast<CAMetalLayer*>(self.layer);
+      layer.device = device;
     });
     _commandQueue = [_device newCommandQueue];
     return YES;
@@ -513,7 +514,7 @@ struct MetalVideoRender : public IVideoRender {
         layer.drawableSize = CGSizeMake(newW, newH);
 
         dispatch_async(_renderQueue, ^{
-            [self renderPreBufferIfNeeded];
+          [self renderPreBufferIfNeeded];
         });
     }
 }
@@ -525,7 +526,7 @@ struct MetalVideoRender : public IVideoRender {
         return;
     }
     dispatch_async(_renderQueue, ^{
-        [self renderFrame];
+      [self renderFrame];
     });
 }
 

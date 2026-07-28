@@ -174,4 +174,4 @@ void TimerPool::cancel(TimerId id) noexcept {
     }
 }
 
-} // end namespace slark
+}  // end namespace slark

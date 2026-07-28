@@ -117,4 +117,4 @@ IEGLContextRefPtr createGLContext() noexcept {
     return std::make_shared<iOSEGLContext>();
 }
 
-} // namespace slark
+}  // namespace slark

@@ -86,7 +86,8 @@ static void decompressionOutputCallback(void* decompressionOutputRefCon,
         auto videoInfo = std::make_shared<VideoFrameInfo>();
         videoInfo->format = FrameFormat::VideoToolBox;
         frame->info = videoInfo;
-        decoder->invokeReceiveFunc(DecoderData{std::move(frame), Error::Success, decoder->currentSeekEpoch_});
+        decoder->invokeReceiveFunc(
+            DecoderData{std::move(frame), Error::Success, decoder->currentSeekEpoch_});
     }
 }
 
@@ -285,4 +286,4 @@ void VideoHardwareDecoder::close() noexcept {
     config_.reset();
 }
 
-} // namespace slark
+}  // namespace slark

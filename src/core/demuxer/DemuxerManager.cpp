@@ -63,4 +63,4 @@ std::shared_ptr<IDemuxer> DemuxerManager::create(DemuxerType type) const noexcep
     return Reflection::shareInstance().create<IDemuxer>(it->second.demuxerName);
 }
 
-} // namespace slark
+}  // namespace slark

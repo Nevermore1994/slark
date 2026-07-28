@@ -4,16 +4,16 @@
 
 #pragma once
 
-#include "JNIBase.h"
-#include "JNICache.h"
-#include "JNIMarshal.h"
-#include "JNISignature.h"
-
 #include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
+
+#include "JNIBase.h"
+#include "JNICache.h"
+#include "JNIMarshal.h"
+#include "JNISignature.h"
 
 namespace slark::JNI {
 
@@ -39,7 +39,7 @@ struct JObjectWithSig {
         return obj != nullptr;
     }
 
-private:
+ private:
     StringReference ownedStrRef_;
     ObjectReference ownedObjRef_;
     ByteArrayReference ownedByteArrayRef_;
@@ -142,7 +142,7 @@ auto argValue(T&& v) {
 }
 
 class JNICall {
-public:
+ public:
     template <typename R, typename... Args>
     static auto callStatic(JNIEnv* env,
                            std::string_view cls,
@@ -309,7 +309,7 @@ public:
         }
     }
 
-private:
+ private:
     template <typename R>
     static auto emptyResult() {
         if constexpr (std::is_same_v<R, void>) {
@@ -508,4 +508,4 @@ private:
     }
 };
 
-} // namespace slark::JNI
+}  // namespace slark::JNI

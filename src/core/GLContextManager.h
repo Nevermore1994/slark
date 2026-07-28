@@ -3,23 +3,23 @@
 //
 
 #pragma once
+#include <string>
+#include <unordered_map>
+
 #include "IEGLContext.h"
 #include "NonCopyable.h"
 #include "Synchronized.hpp"
 
-#include <string>
-#include <unordered_map>
-
 namespace slark {
 
 class GLContextManager : public NonCopyMovable {
-public:
+ public:
     static GLContextManager& shareInstance() noexcept;
 
-private:
+ private:
     GLContextManager() = default;
 
-public:
+ public:
     ~GLContextManager() = default;
 
     void addMainContext(const std::string& id, IEGLContextRefPtr context);
@@ -30,8 +30,8 @@ public:
 
     IEGLContextRefPtr createShareContextWithId(const std::string& id) noexcept;
 
-private:
+ private:
     Synchronized<std::unordered_map<std::string, IEGLContextRefPtr>, std::shared_mutex> contexts_;
 };
 
-} // namespace slark
+}  // namespace slark

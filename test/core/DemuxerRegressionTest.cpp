@@ -2,14 +2,15 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
+#include <gtest/gtest.h>
+
+#include <fstream>
+#include <memory>
+#include <string_view>
+
 #include "M3U8Parser.h"
 #include "MediaPlaylist.h"
 #include "demuxer/DemuxerManager.h"
-
-#include <fstream>
-#include <gtest/gtest.h>
-#include <memory>
-#include <string_view>
 
 using namespace slark;
 

@@ -4,11 +4,11 @@
 
 #pragma once
 
-#include "Error.h"
-#include "PipelineEvent.h"
-
 #include <functional>
 #include <optional>
+
+#include "Error.h"
+#include "PipelineEvent.h"
 
 namespace slark {
 
@@ -19,4 +19,4 @@ struct PipelineError {
 
 using PipelineEventCallback = std::function<void(PipelineEvent, std::optional<PipelineError>)>;
 
-} // namespace slark
+}  // namespace slark

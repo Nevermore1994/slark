@@ -3,19 +3,20 @@
 //
 #pragma once
 
+#include <netdb.h>
+
+#include <sstream>
+#include <string_view>
+#include <tuple>
+
 #include "Socket.hpp"
 #include "StringUtil.h"
 #include "Type.h"
 #include "Url.h"
 
-#include <netdb.h>
-#include <sstream>
-#include <string_view>
-#include <tuple>
-
 namespace slark::http {
 struct RequestInfo;
-} // namespace slark::http
+}  // namespace slark::http
 
 namespace slark::http::Util {
 
@@ -110,4 +111,4 @@ struct ParsedResponse {
 
 bool parseRawResponse(const void* data, size_t size, ParsedResponse& out) noexcept;
 
-} // namespace slark::http::Util
+}  // namespace slark::http::Util

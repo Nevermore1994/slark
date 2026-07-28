@@ -4,11 +4,11 @@
 
 #pragma once
 
-#include "DataView.hpp"
-
 #include <cstdint>
 #include <string>
 #include <string_view>
+
+#include "DataView.hpp"
 
 namespace slark::http {
 
@@ -87,7 +87,7 @@ struct Url {
         return *result;
     }
 
-private:
+ private:
     void parse(std::string_view url) noexcept;
 
     UrlError error_ = UrlError::None;
@@ -98,4 +98,4 @@ inline void freeUrl(Url* url) noexcept {
     delete url;
 }
 
-} // namespace slark::http
+}  // namespace slark::http

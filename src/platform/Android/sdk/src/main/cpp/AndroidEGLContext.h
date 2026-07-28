@@ -4,15 +4,15 @@
 
 #pragma once
 
-#include "IEGLContext.h"
-
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
+
+#include "IEGLContext.h"
 
 namespace slark {
 
 class AndroidEGLContext : public IEGLContext {
-public:
+ public:
     AndroidEGLContext();
 
     ~AndroidEGLContext() noexcept override;
@@ -39,16 +39,16 @@ public:
         return display_;
     }
 
-private:
+ private:
     EGLConfig getConfig(int version) noexcept;
 
     void destroy() noexcept;
 
-private:
+ private:
     bool isInit_ = false;
     EGLConfig config_ = nullptr;
     EGLContext context_ = EGL_NO_CONTEXT;
     EGLDisplay display_ = EGL_NO_DISPLAY;
 };
 
-} // namespace slark
+}  // namespace slark

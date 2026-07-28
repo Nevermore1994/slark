@@ -72,4 +72,4 @@ UIImage* imageFromPixelBuffer(CVPixelBufferRef pixelBuffer) {
     return image;
 }
 
-} // namespace slark
+}  // namespace slark

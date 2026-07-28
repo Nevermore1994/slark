@@ -4,6 +4,11 @@
 
 #include "PlayerImpl.h"
 
+#include <algorithm>
+#include <chrono>
+#include <optional>
+#include <utility>
+
 #include "Base.h"
 #include "DecoderConfig.h"
 #include "GLContextManager.h"
@@ -14,11 +19,6 @@
 #include "Random.hpp"
 #include "StringUtil.h"
 #include "VideoInfo.h"
-
-#include <algorithm>
-#include <chrono>
-#include <optional>
-#include <utility>
 
 namespace slark {
 
@@ -34,7 +34,7 @@ BackpressureConfig buildBackpressureConfig(StreamType type, bool isLive) {
     }
     return BackpressureConfig::forLocal();
 }
-}
+}  // namespace
 
 Player::Impl::Impl(std::unique_ptr<PlayerParams> params)
     : playerId_(Random::uuid()), notifyCenter_(playerId_) {
@@ -219,9 +219,8 @@ bool Player::Impl::setupDataProvider() noexcept {
         if (host.empty()) {
             host = StringUtil::extractHostFromUri(path);
         }
-        self->notifyPlayerEvent(
-            PlayerEvent::OnError,
-            self->formatErrorValue(err, originErrorCode, host));
+        self->notifyPlayerEvent(PlayerEvent::OnError,
+                                self->formatErrorValue(err, originErrorCode, host));
         // 切 Error 会 doStop() 销毁 pipeline_，投递到 ownerThread 串行执行避免并发 UAF
         if (self->sender_) {
             self->sender_->send(buildEvent(EventType::ReadError));
@@ -243,9 +242,8 @@ bool Player::Impl::setupDataProvider() noexcept {
         setState(PlayerState::Error);
         // open 失败时没有 originErrorCode，host 从 URI 解析
         const Error err = isNetworkLink(path) ? Error::NetworkError : Error::IOError;
-        notifyPlayerEvent(
-            PlayerEvent::OnError,
-            formatErrorValue(err, 0, StringUtil::extractHostFromUri(path)));
+        notifyPlayerEvent(PlayerEvent::OnError,
+                          formatErrorValue(err, 0, StringUtil::extractHostFromUri(path)));
         return false;
     }
     return true;
@@ -785,11 +783,12 @@ void Player::Impl::notifyPlayerEvent(PlayerEvent event, std::string value) noexc
     notifyCenter_.notifyPlayerEvent(event, std::move(value));
 }
 
-std::string Player::Impl::formatErrorValue(Error err, int32_t originErrorCode,
-                                            std::string_view host) noexcept {
+std::string Player::Impl::formatErrorValue(Error err,
+                                           int32_t originErrorCode,
+                                           std::string_view host) noexcept {
     // value = "slarkError|originErrorCode|host"，上层按 `|` 切分
-    return std::to_string(static_cast<uint32_t>(err)) + "|" +
-           std::to_string(originErrorCode) + "|" + std::string(host);
+    return std::to_string(static_cast<uint32_t>(err)) + "|" + std::to_string(originErrorCode) +
+           "|" + std::string(host);
 }
 
 void Player::Impl::notifyPlayerState(PlayerState state) noexcept {
@@ -909,4 +908,4 @@ void Player::Impl::setRenderImpl(std::weak_ptr<IVideoRender> render) noexcept {
     }
 }
 
-}
+}  // namespace slark

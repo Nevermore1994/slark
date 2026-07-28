@@ -20,7 +20,7 @@ inline constexpr const char* VideoDecoderConfig = "com/slark/sdk/VideoDecoderCon
 inline constexpr const char* DecodeMode = "com/slark/sdk/DecodeMode";
 inline constexpr const char* AndroidContext = "android/content/Context";
 inline constexpr const char* JavaFile = "java/io/File";
-} // namespace JavaClass
+}  // namespace JavaClass
 
 namespace JavaMethod {
 inline constexpr const char* Logout = "logout";
@@ -38,7 +38,7 @@ inline constexpr const char* RequestVideoFrame = "requestVideoFrame";
 inline constexpr const char* GetFilesDir = "getFilesDir";
 inline constexpr const char* GetCacheDir = "getCacheDir";
 inline constexpr const char* GetPath = "getPath";
-} // namespace JavaMethod
+}  // namespace JavaMethod
 
 namespace JavaEnumValue {
 inline constexpr const char* Texture = "Texture";
@@ -49,7 +49,7 @@ inline constexpr const char* Flush = "Flush";
 inline constexpr const char* Release = "Release";
 inline constexpr const char* Rate = "Rate";
 inline constexpr const char* Volume = "Volume";
-} // namespace JavaEnumValue
+}  // namespace JavaEnumValue
 
 namespace JavaSignature {
 inline constexpr const char* NotifyPlayerState =
@@ -59,7 +59,7 @@ inline constexpr const char* NotifyPlayerEvent =
 inline constexpr const char* NotifyPlayerTime = "(Ljava/lang/String;D)V";
 inline constexpr const char* GetFileDir = "()Ljava/io/File;";
 inline constexpr const char* GetPath = "()Ljava/lang/String;";
-} // namespace JavaSignature
+}  // namespace JavaSignature
 
 struct JavaMethodPreloadInfo {
     const char* className;
@@ -106,6 +106,6 @@ inline constexpr std::array Methods = {
                           false},
     JavaMethodPreloadInfo{JavaClass::JavaFile, JavaMethod::GetPath, JavaSignature::GetPath, false},
 };
-} // namespace JavaPreload
+}  // namespace JavaPreload
 
-} // namespace slark::JNI
+}  // namespace slark::JNI

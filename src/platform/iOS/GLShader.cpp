@@ -37,4 +37,4 @@ const std::string_view fragmentShader =
     "    gl_FragColor = vec4(rgb, 1);"
     "}";
 
-} // namespace slark::GLShader
+}  // namespace slark::GLShader

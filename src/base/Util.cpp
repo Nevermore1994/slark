@@ -37,4 +37,4 @@ uint32_t Golomb::readUe(DataView view, int32_t& offset) noexcept {
     return value;
 }
 
-} // namespace slark::Util
+}  // namespace slark::Util

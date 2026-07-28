@@ -4,17 +4,17 @@
 
 #pragma once
 
+#include <AudioToolbox/AudioToolbox.h>
+
 #include "AVFrame.hpp"
 #include "Data.h"
 #include "DecoderConfig.h"
 #include "IDecoder.h"
 
-#include <AudioToolbox/AudioToolbox.h>
-
 namespace slark {
 
 class AACHardwareDecoder : public IDecoder {
-public:
+ public:
     AACHardwareDecoder();
     ~AACHardwareDecoder() override;
 
@@ -31,14 +31,14 @@ public:
         return info;
     }
 
-private:
+ private:
     friend OSStatus AACDecodeInputDataProc(AudioConverterRef,
                                            UInt32*,
                                            AudioBufferList*,
                                            AudioStreamPacketDescription**,
                                            void*);
 
-public:
+ public:
     AVFrameRefPtr getDecodingFrame() noexcept {
         return decodingFrame_;
     }
@@ -47,13 +47,13 @@ public:
         inputData_ = std::move(data);
     }
 
-private:
+ private:
     AudioConverterRef decodeSession_ = nullptr;
     AVFrameRefPtr decodingFrame_ = nullptr;
     std::unique_ptr<Data> inputData_;
     std::unique_ptr<AudioBufferList> outputData_;
-    DataPtr outputBuffer_; // 预分配的输出 PCM buffer，跨帧复用
-    DataPtr spareBuffer_;  // 双缓冲备用
+    DataPtr outputBuffer_;  // 预分配的输出 PCM buffer，跨帧复用
+    DataPtr spareBuffer_;   // 双缓冲备用
 };
 
-} // namespace slark
+}  // namespace slark

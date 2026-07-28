@@ -20,7 +20,7 @@ inline std::mt19937& engine() noexcept {
     return gen;
 }
 
-} // namespace detail
+}  // namespace detail
 
 template <typename T>
 T random(T min, T max) {
@@ -56,4 +56,4 @@ std::string uniqueId() noexcept;
 
 std::string uuid() noexcept;
 
-} // end namespace slark::Random
+}  // end namespace slark::Random

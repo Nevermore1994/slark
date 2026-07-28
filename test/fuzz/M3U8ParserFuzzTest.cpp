@@ -1,9 +1,10 @@
-#include "M3U8Parser.h"
-
 #include <gtest/gtest.h>
+
 #include <random>
 #include <string>
 #include <vector>
+
+#include "M3U8Parser.h"
 
 using namespace slark;
 

@@ -9,7 +9,7 @@
 namespace slark::JNI {
 
 class JNIEnvGuard {
-public:
+ public:
     explicit JNIEnvGuard(JavaVM* jvm) noexcept : jvm_(jvm), env_(nullptr), needDetach_(false) {
         if (!jvm_) {
             return;
@@ -75,10 +75,10 @@ public:
         return env_ != nullptr;
     }
 
-private:
+ private:
     JavaVM* jvm_;
     JNIEnvPtr env_;
     bool needDetach_;
 };
 
-} // namespace slark::JNI
+}  // namespace slark::JNI

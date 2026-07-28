@@ -5,10 +5,10 @@
 
 #include "SSLManager.h"
 
-#include "Log.hpp"
-
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+
+#include "Log.hpp"
 
 namespace slark::http {
 
@@ -88,6 +88,6 @@ SSLPtr SSLManager::create(Socket socket, const std::string& hostname) noexcept {
     return res;
 }
 
-} // namespace slark::http
+}  // namespace slark::http
 
 #endif

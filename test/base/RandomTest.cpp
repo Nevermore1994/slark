@@ -3,8 +3,9 @@
 //
 #include "Random.hpp"
 
-#include <algorithm>
 #include <gtest/gtest.h>
+
+#include <algorithm>
 #include <set>
 #include <string>
 #include <unordered_set>

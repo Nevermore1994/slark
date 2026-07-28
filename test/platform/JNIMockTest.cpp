@@ -2,8 +2,9 @@
 // 测试 JNI 辅助类的逻辑，通过模拟 JNIEnv 接口
 
 #include <gtest/gtest.h>
-#include <string>
+
 #include <memory>
+#include <string>
 
 // 模拟 JNI 类型（桌面环境没有 jni.h）
 using jobject = void*;
@@ -24,13 +25,21 @@ struct JNIEnv {
 TEST(JNIMockTest, ClassNameToPath) {
     // Java 类名 com.example.Foo → com/example/Foo
     std::string input = "com.example.Foo";
-    for (auto& c : input) if (c == '.') c = '/';
+    for (auto& c : input) {
+        if (c == '.') {
+            c = '/';
+        }
+    }
     EXPECT_EQ(input, "com/example/Foo");
 }
 
 TEST(JNIMockTest, PathToClassName) {
     std::string input = "com/example/Foo";
-    for (auto& c : input) if (c == '/') c = '.';
+    for (auto& c : input) {
+        if (c == '/') {
+            c = '.';
+        }
+    }
     EXPECT_EQ(input, "com.example.Foo");
 }
 
@@ -48,8 +57,13 @@ TEST(JNIMockTest, ParseMethodSignature) {
 TEST(JNIMockTest, ReferenceCounting) {
     // 模拟 JNI 的 NewGlobalRef / DeleteGlobalRef
     int refCount = 0;
-    auto newRef = [&]() { refCount++; return (jobject)(uintptr_t)0x42; };
-    auto deleteRef = [&](jobject) { refCount--; };
+    auto newRef = [&]() {
+        refCount++;
+        return (jobject)(uintptr_t)0x42;
+    };
+    auto deleteRef = [&](jobject) {
+        refCount--;
+    };
 
     auto ref1 = newRef();
     EXPECT_EQ(refCount, 1);
@@ -66,6 +80,6 @@ TEST(JNIMockTest, StringConversion) {
     std::string utf8 = "Hello 世界";
     // 模拟 GetStringUTFChars / NewStringUTF
     // 这里只测试 C++ 侧的字符串处理逻辑
-    EXPECT_EQ(utf8.size(), 12u); // 7 ASCII + 6 UTF-8 bytes for 2 Chinese chars
+    EXPECT_EQ(utf8.size(), 12u);  // 7 ASCII + 6 UTF-8 bytes for 2 Chinese chars
     EXPECT_EQ(utf8.substr(0, 5), "Hello");
 }

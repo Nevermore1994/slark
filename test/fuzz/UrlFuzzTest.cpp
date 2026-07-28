@@ -1,9 +1,10 @@
-#include "Url.h"
-
 #include <gtest/gtest.h>
+
 #include <random>
 #include <string>
 #include <vector>
+
+#include "Url.h"
 
 using namespace slark::http;
 

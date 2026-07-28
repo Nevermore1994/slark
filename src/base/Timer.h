@@ -4,22 +4,22 @@
 
 #pragma once
 
-#include "MoveOnlyFunction.hpp"
-#include "Time.hpp"
-
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+
+#include "MoveOnlyFunction.hpp"
+#include "Time.hpp"
 
 namespace slark {
 
 using TimerTask = MoveOnlyFunction<void()>;
 
 struct TimerId {
-private:
+ private:
     uint64_t id_ = kInvalidTimerId;
 
-public:
+ public:
     static constexpr uint64_t kInvalidTimerId = 0;
 
     TimerId() = default;
@@ -62,7 +62,7 @@ struct TimerEntry {
     bool isValid = true;
 };
 
-} // namespace slark
+}  // namespace slark
 
 template <>
 struct std::hash<slark::TimerId> {

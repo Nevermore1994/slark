@@ -15,4 +15,4 @@ const LogConfig& getLogConfig() {
     return gLogConfig;
 }
 
-} // namespace slark
+}  // namespace slark

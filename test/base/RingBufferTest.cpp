@@ -13,7 +13,7 @@ class RingBufferTest : public testing::Test {
 protected:
     // N=10 会被 bit_ceil 对齐到 16
     RingBuffer<int, 10> buffer;
-    static constexpr uint32_t TEST_CAPACITY = 16;
+    static constexpr int TEST_CAPACITY = 16;
 
     void SetUp() override {}
 };
@@ -61,8 +61,8 @@ TEST_F(RingBufferTest, ReadExactFail) {
 
 TEST_F(RingBufferTest, WrapAround) {
     std::vector<int> data(TEST_CAPACITY - 2);
-    for (int i = 0; i < TEST_CAPACITY - 2; ++i) {
-        data[i] = i;
+    for (size_t i = 0; i < TEST_CAPACITY - 2; ++i) {
+        data[i] = static_cast<int>(i);
     }
 
     EXPECT_TRUE(buffer.writeExact(data.data(), static_cast<uint32_t>(data.size())));
@@ -89,8 +89,8 @@ TEST_F(RingBufferTest, EdgeCases) {
     EXPECT_TRUE(buffer.readExact(data, 0));
 
     std::vector<int> fillData(TEST_CAPACITY);
-    for (int i = 0; i < TEST_CAPACITY; ++i) {
-        fillData[i] = i;
+    for (size_t i = 0; i < TEST_CAPACITY; ++i) {
+        fillData[i] = static_cast<int>(i);
     }
     EXPECT_TRUE(buffer.writeExact(fillData.data(), TEST_CAPACITY));
     EXPECT_TRUE(buffer.isFull());
@@ -122,8 +122,8 @@ TEST_F(RingBufferTest, Reset) {
 
 TEST_F(RingBufferTest, FullBuffer) {
     std::vector<int> data(TEST_CAPACITY);
-    for (int i = 0; i < TEST_CAPACITY; ++i) {
-        data[i] = i;
+    for (size_t i = 0; i < TEST_CAPACITY; ++i) {
+        data[i] = static_cast<int>(i);
     }
 
     EXPECT_TRUE(buffer.writeExact(data.data(), TEST_CAPACITY));
@@ -184,8 +184,8 @@ TEST_F(SyncRingBufferTest, ReadExactFail) {
 TEST_F(SyncRingBufferTest, WrapAround) {
     constexpr uint32_t CAP = 1024;
     std::vector<int> data(CAP - 2);
-    for (int i = 0; i < CAP - 2; ++i) {
-        data[i] = i;
+    for (size_t i = 0; i < CAP - 2; ++i) {
+        data[i] = static_cast<int>(i);
     }
 
     EXPECT_TRUE(buffer.writeExact(data.data(), static_cast<uint32_t>(data.size())));
@@ -225,8 +225,8 @@ TEST_F(SyncRingBufferTest, Reset) {
 
 TEST_F(SyncRingBufferTest, FullBuffer) {
     std::vector<int> data(1024);
-    for (int i = 0; i < 1024; ++i) {
-        data[i] = i;
+    for (size_t i = 0; i < 1024; ++i) {
+        data[i] = static_cast<int>(i);
     }
 
     EXPECT_TRUE(buffer.writeExact(data.data(), 1024));
@@ -289,8 +289,8 @@ TEST_F(SyncRingBufferTest, SPSCBatchReadWrite) {
         }
         std::vector<int> data(BATCH_SIZE);
         for (int batch = 0; batch < NUM_BATCHES; ++batch) {
-            for (int i = 0; i < BATCH_SIZE; ++i) {
-                data[i] = batch * BATCH_SIZE + i + 1;
+            for (size_t i = 0; i < BATCH_SIZE; ++i) {
+                data[i] = static_cast<int>(batch * BATCH_SIZE + i + 1);
             }
             while (!buffer.writeExact(data.data(), BATCH_SIZE)) {
                 std::this_thread::yield();
@@ -375,8 +375,8 @@ TEST_F(SyncRingBufferTest, MultiThreadedReadWrite) {
         producers.emplace_back([&, p]() {
             while (!startFlag.load()) {
             }
-            for (int i = 0; i < ITEMS_PER_PRODUCER; ++i) {
-                int value = p * ITEMS_PER_PRODUCER + i + 1;
+            for (size_t i = 0; i < ITEMS_PER_PRODUCER; ++i) {
+                int value = static_cast<int>(p * ITEMS_PER_PRODUCER + i + 1);
                 while (!buffer.writeExact(&value, 1)) {
                     std::this_thread::yield();
                 }
@@ -419,7 +419,6 @@ TEST_F(SyncRingBufferTest, ResetDuringUse) {
     std::atomic<bool> stopFlag{false};
     std::atomic<uint64_t> totalWritten{0};
     std::atomic<uint64_t> totalRead{0};
-    std::atomic<uint64_t> totalDiscard{0};
 
     std::thread producer([&]() {
         while (!startFlag.load()) {
@@ -466,7 +465,7 @@ TEST_F(RingBufferTest, SpanWriteAndRead) {
 
     std::vector<int> readData(5);
     EXPECT_TRUE(buffer.readExact(std::span<int>(readData)));
-    for (int32_t i = 0; i < 5; ++i) {
+    for (size_t i = 0; i < 5; ++i) {
         EXPECT_EQ(readData[i], data[i]);
     }
 }
@@ -484,7 +483,7 @@ TEST_F(RingBufferTest, PeekDoesNotMoveReadPointer) {
 
     int readData[5] = {0};
     EXPECT_TRUE(buffer.readExact(readData, 5));
-    for (int32_t i = 0; i < 5; ++i) {
+    for (size_t i = 0; i < 5; ++i) {
         EXPECT_EQ(readData[i], data[i]);
     }
 }

@@ -60,4 +60,4 @@ void Texture::releaseResource(std::unique_ptr<Texture> texture) noexcept {
     }
 }
 
-} // namespace slark
+}  // namespace slark

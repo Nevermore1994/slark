@@ -35,4 +35,4 @@ bool removeDir(std::string_view path) noexcept;
 
 bool copyFile(std::string_view from, std::string_view to) noexcept;
 
-} // namespace slark::File
+}  // namespace slark::File

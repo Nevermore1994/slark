@@ -4,16 +4,16 @@
 
 #pragma once
 
-#include "Data.h"
-#include "DataView.hpp"
-#include "Error.h"
-#include "Range.h"
-
 #include <expected>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <string>
+
+#include "Data.h"
+#include "DataView.hpp"
+#include "Error.h"
+#include "Range.h"
 
 namespace slark {
 
@@ -86,7 +86,7 @@ struct OpenParams {
 };
 
 class IStream {
-public:
+ public:
     virtual ~IStream() = default;
 
     virtual auto open(const OpenParams& params) -> StreamResult<StreamInfo> = 0;
@@ -111,4 +111,4 @@ public:
 
 using StreamPtr = std::unique_ptr<IStream>;
 
-} // namespace slark
+}  // namespace slark

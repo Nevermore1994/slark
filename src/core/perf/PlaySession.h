@@ -4,9 +4,6 @@
 
 #pragma once
 
-#include "PerfTypes.h"
-#include "Time.hpp"
-
 #include <atomic>
 #include <cstdint>
 #include <list>
@@ -15,6 +12,9 @@
 #include <shared_mutex>
 #include <unordered_map>
 #include <vector>
+
+#include "PerfTypes.h"
+#include "Time.hpp"
 
 namespace slark::perf {
 
@@ -25,7 +25,7 @@ namespace slark::perf {
  * finish() 保证幂等，多次调用只有第一次生效。
  */
 class PlaySession : public std::enable_shared_from_this<PlaySession> {
-public:
+ public:
     static constexpr size_t kMaxStageCount = 128;
 
     /**
@@ -86,7 +86,7 @@ public:
         return finished_.load(std::memory_order_acquire);
     }
 
-private:
+ private:
     std::string sessionId_;
     std::string url_;
     int64_t startUs_{0};
@@ -108,4 +108,4 @@ private:
     ResourceStats resourceStats_;
 };
 
-} // namespace slark::perf
+}  // namespace slark::perf

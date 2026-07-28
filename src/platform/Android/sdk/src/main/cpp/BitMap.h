@@ -17,7 +17,7 @@ enum class BitMapFormat : uint8_t {
 };
 
 class BitMap {
-public:
+ public:
     BitMap(BitMapFormat format, uint32_t width, uint32_t height, DataPtr data)
         : format_(format), width_(width), height_(height), data_(std::move(data)) {}
 
@@ -80,7 +80,7 @@ public:
         return 4;
     }
 
-private:
+ private:
     BitMapFormat format_;
     uint32_t width_ = 0;
     uint32_t height_ = 0;
@@ -89,4 +89,4 @@ private:
 
 using BitMapPtr = std::unique_ptr<BitMap>;
 using BitMapRefPtr = std::shared_ptr<BitMap>;
-} // namespace slark
+}  // namespace slark

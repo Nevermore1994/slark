@@ -12,7 +12,7 @@
 namespace slark {
 
 class Writer : public NonCopyMovable {
-public:
+ public:
     Writer();
     ~Writer();
 
@@ -35,7 +35,7 @@ public:
         return isOpen_.load(std::memory_order_acquire);
     }
 
-private:
+ private:
     bool checkState() noexcept;
     void process() noexcept;
     void closeFile() noexcept;
@@ -47,4 +47,4 @@ private:
     std::shared_ptr<Thread> worker_;
 };
 
-} // namespace slark
+}  // namespace slark

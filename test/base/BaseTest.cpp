@@ -3,8 +3,9 @@
 //
 #include "Base.h"
 
-#include <cmath>
 #include <gtest/gtest.h>
+
+#include <cmath>
 #include <limits>
 
 using namespace slark;

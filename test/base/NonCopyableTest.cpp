@@ -8,7 +8,7 @@
 namespace slark::test {
 
 class CopyableOnly : public NonCopyable {
-public:
+ public:
     CopyableOnly() = default;
 
     explicit CopyableOnly(int32_t v) : value(v) {}
@@ -17,7 +17,7 @@ public:
 };
 
 class NoCopyNoMove : public NonCopyMovable {
-public:
+ public:
     NoCopyNoMove() = default;
 
     explicit NoCopyNoMove(int32_t v) : value(v) {}
@@ -50,4 +50,4 @@ TEST(NonCopyMovableTest, DisallowCopyAndMove) {
     EXPECT_EQ(a.value, 42);
 }
 
-} // namespace slark::test
+}  // namespace slark::test

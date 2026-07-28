@@ -4,8 +4,6 @@
 
 #pragma once
 
-#include "PerfTypes.h"
-
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -13,6 +11,8 @@
 #include <mutex>
 #include <thread>
 #include <vector>
+
+#include "PerfTypes.h"
 
 namespace slark::perf {
 
@@ -24,7 +24,7 @@ class PlaySession;
  * 线程安全：start/stop/register/unregister 均可跨线程调用。
  */
 class ResourceSampler {
-public:
+ public:
     explicit ResourceSampler(uint32_t intervalMs = 1000);
     ~ResourceSampler();
 
@@ -39,7 +39,7 @@ public:
     void registerSession(std::weak_ptr<PlaySession> session);
     void unregisterSession(const std::string& sessionId);
 
-private:
+ private:
     void sampleLoop();
     ResourceSnapshot sampleOnce();
     double calcCpuUsage();
@@ -64,4 +64,4 @@ private:
 #endif
 };
 
-} // namespace slark::perf
+}  // namespace slark::perf

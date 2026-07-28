@@ -29,7 +29,8 @@ bool MediaSourceManager::open(const std::string& uri,
     }
     stream_ = std::move(result.value());
 
-    LogI("[MediaSourceManager::open] stream created: type={}", static_cast<int>(stream_->info().type));
+    LogI("[MediaSourceManager::open] stream created: type={}",
+         static_cast<int>(stream_->info().type));
 
     OpenParams params;
     params.uri = uri;
@@ -114,4 +115,4 @@ void MediaSourceManager::updateRange(Range range) noexcept {
     }
 }
 
-} // namespace slark
+}  // namespace slark

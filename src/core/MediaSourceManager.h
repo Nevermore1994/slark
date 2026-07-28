@@ -4,14 +4,14 @@
 
 #pragma once
 
+#include <functional>
+#include <memory>
+#include <mutex>
+
 #include "Error.h"
 #include "IStream.h"
 #include "NonCopyable.h"
 #include "StreamFactory.hpp"
-
-#include <functional>
-#include <memory>
-#include <mutex>
 
 namespace slark {
 
@@ -22,7 +22,7 @@ using StreamErrorCallback = std::function<void(Error /*err*/, int32_t /*originEr
 using StreamCompleteCallback = std::function<void()>;
 
 class MediaSourceManager : public NonCopyMovable {
-public:
+ public:
     MediaSourceManager() = default;
     ~MediaSourceManager() = default;
 
@@ -69,10 +69,10 @@ public:
         return stream_ != nullptr;
     }
 
-private:
+ private:
     mutable std::mutex mutex_;
     std::shared_ptr<IStream> stream_;
     StreamInfo streamInfo_;
 };
 
-} // namespace slark
+}  // namespace slark

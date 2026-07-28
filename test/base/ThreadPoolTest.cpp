@@ -3,19 +3,20 @@
 //
 #include "ThreadPool.hpp"
 
-#include "Error.h"
+#include <gtest/gtest.h>
 
 #include <atomic>
 #include <chrono>
-#include <gtest/gtest.h>
 #include <latch>
 #include <vector>
+
+#include "Error.h"
 
 using namespace slark;
 using namespace std::chrono_literals;
 
 class ThreadPoolTest : public ::testing::Test {
-protected:
+ protected:
     void SetUp() override {
         ThreadPoolConfig config;
         config.threadCount = 4;
@@ -150,9 +151,9 @@ TEST_F(ThreadPoolTest, SubmitWithPriority) {
 
     std::lock_guard lock(mtx);
     ASSERT_EQ(order.size(), 3u);
-    EXPECT_EQ(order[0], 1); // High
-    EXPECT_EQ(order[1], 2); // Normal
-    EXPECT_EQ(order[2], 3); // Low
+    EXPECT_EQ(order[0], 1);  // High
+    EXPECT_EQ(order[1], 2);  // Normal
+    EXPECT_EQ(order[2], 3);  // Low
 }
 
 TEST_F(ThreadPoolTest, PostJobFireAndForget) {
@@ -184,7 +185,7 @@ TEST_F(ThreadPoolTest, PostJobWithPriority) {
 TEST_F(ThreadPoolTest, PostJobAfterShutdown) {
     // 通过 reset 触发析构后，submit 应返回错误
     auto localPool = std::make_unique<ThreadPool>();
-    localPool.reset(); // 析构
+    localPool.reset();  // 析构
 
     // 新建一个 pool 验证 shutdown 后 submit 失败
     ThreadPool pool2;

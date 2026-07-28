@@ -4,10 +4,10 @@
 
 #include "Mp4Box.h"
 
+#include <format>
+
 #include "Log.hpp"
 #include "Util.h"
-
-#include <format>
 
 namespace slark {
 
@@ -488,7 +488,7 @@ bool BoxStsc::decode(Buffer& buffer) noexcept {
     if (!buffer.require(8)) {
         return false;
     }
-    buffer.skip(1 + 3); // version + flags
+    buffer.skip(1 + 3);  // version + flags
 
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
@@ -516,7 +516,7 @@ bool BoxStsz::decode(Buffer& buffer) noexcept {
     if (!buffer.require(12)) {
         return false;
     }
-    buffer.skip(1 + 3); // version + flags
+    buffer.skip(1 + 3);  // version + flags
 
     uint32_t defaultSampleSize = 0;
     buffer.read4ByteBE(defaultSampleSize);
@@ -549,7 +549,7 @@ bool BoxStco::decode(Buffer& buffer) noexcept {
     if (!buffer.require(8)) {
         return false;
     }
-    buffer.skip(1 + 3); // version + flags
+    buffer.skip(1 + 3);  // version + flags
 
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
@@ -575,7 +575,7 @@ bool BoxCo64::decode(Buffer& buffer) noexcept {
     if (!buffer.require(8)) {
         return false;
     }
-    buffer.skip(1 + 3); // version + flags
+    buffer.skip(1 + 3);  // version + flags
 
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
@@ -601,7 +601,7 @@ bool BoxStts::decode(Buffer& buffer) noexcept {
     if (!buffer.require(8)) {
         return false;
     }
-    buffer.skip(1 + 3); // version + flags
+    buffer.skip(1 + 3);  // version + flags
 
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
@@ -631,7 +631,7 @@ bool BoxCtts::decode(Buffer& buffer) noexcept {
         return false;
     }
     buffer.readByte(version);
-    buffer.skip(3); // flags
+    buffer.skip(3);  // flags
 
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
@@ -654,7 +654,7 @@ bool BoxStss::decode(Buffer& buffer) noexcept {
     if (!buffer.require(8)) {
         return false;
     }
-    buffer.skip(1 + 3); // version + flags
+    buffer.skip(1 + 3);  // version + flags
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
     for (uint32_t i = 0; i < entryCount; i++) {
@@ -678,26 +678,26 @@ bool BoxEsds::decode(Buffer& buffer) noexcept {
     if (!buffer.require(static_cast<uint32_t>(info.size - info.headerSize))) {
         return false;
     }
-    buffer.skip(1 + 3); // version + flags
+    buffer.skip(1 + 3);  // version + flags
 
     uint8_t esDescTag = 0;
     buffer.readByte(esDescTag);
     [[maybe_unused]] auto descLen = getDescrLen(buffer);
 
     if (esDescTag == 0x03) {
-        buffer.skip(2); // ES_ID
+        buffer.skip(2);  // ES_ID
 
         uint8_t esFlags = 0;
         buffer.readByte(esFlags);
-        if (esFlags & 0x01) { // streamDependenceFlag
+        if (esFlags & 0x01) {  // streamDependenceFlag
             buffer.skip(2);
         }
-        if (esFlags & 0x02) { // URL_Flag
+        if (esFlags & 0x02) {  // URL_Flag
             uint8_t len = 0;
             buffer.readByte(len);
             buffer.skip(len);
         }
-        if (esFlags & 0x04) { // OCRstreamFlag
+        if (esFlags & 0x04) {  // OCRstreamFlag
             buffer.skip(2);
         }
     } else {
@@ -1128,7 +1128,7 @@ bool BoxTkhd::decode(Buffer& buffer) noexcept {
         buffer.read8ByteBE(creationTime);
         buffer.read8ByteBE(modificationTime);
         buffer.read4ByteBE(trackId);
-        buffer.skip(4); // reserved
+        buffer.skip(4);  // reserved
         buffer.read8ByteBE(duration);
     } else {
         uint32_t tmp = 0;
@@ -1137,15 +1137,16 @@ bool BoxTkhd::decode(Buffer& buffer) noexcept {
         buffer.read4ByteBE(tmp);
         modificationTime = tmp;
         buffer.read4ByteBE(trackId);
-        buffer.skip(4); // reserved
+        buffer.skip(4);  // reserved
         buffer.read4ByteBE(tmp);
         duration = tmp;
     }
-    buffer.skip(4 + 4 + 4 + 2 + 2); // reserved(4) + layer(2) + alternate_group(2) + volume(2) + reserved(2)
+    buffer.skip(4 + 4 + 4 + 2 +
+                2);  // reserved(4) + layer(2) + alternate_group(2) + volume(2) + reserved(2)
     buffer.read2ByteBE(reinterpret_cast<uint16_t&>(layer));
     buffer.read2ByteBE(reinterpret_cast<uint16_t&>(alternateGroup));
     buffer.readByte(reinterpret_cast<uint8_t&>(volume));
-    buffer.skip(1 + 2); // reserved(1) + matrix 前 8 个值
+    buffer.skip(1 + 2);  // reserved(1) + matrix 前 8 个值
     for (auto& m : matrix) {
         uint32_t v = 0;
         buffer.read4ByteBE(v);
@@ -1168,7 +1169,7 @@ bool BoxHdlr::decode(Buffer& buffer) noexcept {
     }
     buffer.readByte(version);
     buffer.read3ByteBE(flags);
-    buffer.skip(4); // pre_defined
+    buffer.skip(4);  // pre_defined
     buffer.readString(4, handlerType);
     // reserved(12) + name
     auto remaining = static_cast<uint32_t>(info.size - info.headerSize - 12);
@@ -1184,7 +1185,7 @@ bool BoxVmhd::decode(Buffer& buffer) noexcept {
     }
     buffer.readByte(version);
     buffer.read3ByteBE(flags);
-    buffer.skip(4); // graphicsmode + opcolor
+    buffer.skip(4);  // graphicsmode + opcolor
     return true;
 }
 
@@ -1194,8 +1195,8 @@ bool BoxSmhd::decode(Buffer& buffer) noexcept {
     }
     buffer.readByte(version);
     buffer.read3ByteBE(flags);
-    buffer.skip(2); // balance
-    buffer.skip(2); // reserved
+    buffer.skip(2);  // balance
+    buffer.skip(2);  // reserved
     return true;
 }
 
@@ -1222,4 +1223,4 @@ bool BoxDref::decode(Buffer& buffer) noexcept {
     return true;
 }
 
-} // namespace slark
+}  // namespace slark

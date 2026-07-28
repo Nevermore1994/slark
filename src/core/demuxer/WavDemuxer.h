@@ -3,9 +3,9 @@
 //
 #pragma once
 
-#include "IDemuxer.h"
-
 #include <string_view>
+
+#include "IDemuxer.h"
 
 namespace slark {
 
@@ -18,7 +18,7 @@ enum class WaveFormat : uint16_t {
 };
 
 class WAVDemuxer : public IDemuxer {
-public:
+ public:
     WAVDemuxer();
 
     ~WAVDemuxer() override;
@@ -41,7 +41,7 @@ public:
         return info;
     }
 
-private:
+ private:
     struct FmtChunk {
         WaveFormat format = WaveFormat::PCM;
         uint16_t channels = 0;
@@ -61,4 +61,4 @@ private:
     uint32_t parsedFrameCount_ = 0;
 };
 
-} // namespace slark
+}  // namespace slark

@@ -3,8 +3,9 @@
 //
 #include "Synchronized.hpp"
 
-#include <condition_variable>
 #include <gtest/gtest.h>
+
+#include <condition_variable>
 #include <latch>
 #include <numeric>
 #include <shared_mutex>

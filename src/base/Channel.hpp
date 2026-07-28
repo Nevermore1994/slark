@@ -20,7 +20,7 @@ class Thread;
 namespace _channel_detail {
 // 将当前 Thread（若存在）标记为活跃/非活跃，由 Thread.cpp 实现
 void setCurrentThreadActive(bool active) noexcept;
-} // namespace _channel_detail
+}  // namespace _channel_detail
 
 template <typename T>
 struct IsSTLStringImpl : public std::false_type {};
@@ -32,13 +32,16 @@ template <typename T>
 inline constexpr auto IsSTLString = IsSTLStringImpl<T>::value;
 
 template <typename C>
-concept IsRange = std::ranges::viewable_range<C> && (!IsSTLString<C>) && requires(C&& c) {
+concept IsRange = std::ranges::viewable_range<C> && (!IsSTLString<C>) && requires(C && c) {
     std::forward<C>(c).empty();
     typename decltype(c.begin())::value_type;
 };
 
 template <typename I>
-    requires requires(I&&) { typename std::remove_cvref_t<I>::element_type::ValueType; }
+requires requires(I&&) {
+    typename std::remove_cvref_t<I>::element_type::ValueType;
+}
+
 struct GetChannelTypeImpl {
     using type = std::remove_cvref_t<I>::element_type::ValueType;
 };
@@ -62,7 +65,7 @@ template <typename T>
 inline constexpr auto IsSender = IsSenderImpl<T>::value;
 
 template <typename T>
-concept IsSenderPtr = requires(T&& t) {
+concept IsSenderPtr = requires(T && t) {
     typename T::element_type::ValueType;
     IsSender<typename T::element_type>;
 };
@@ -77,17 +80,17 @@ template <typename T>
 inline constexpr auto IsReceiver = IsReceiverImpl<T>::value;
 
 template <typename T>
-concept IsReceiverPtr = requires(T&& t) {
+concept IsReceiverPtr = requires(T && t) {
     typename T::element_type::ValueType;
     IsReceiver<typename T::element_type>;
 };
 
 template <IsSenderPtr S>
 struct SenderAdaptorClosure {
-private:
+ private:
     S& sender_;
 
-public:
+ public:
     constexpr explicit SenderAdaptorClosure(S& sender) : sender_(sender) {}
 
     template <std::ranges::viewable_range InputView>
@@ -118,13 +121,12 @@ enum class ChannelEventType {
     Success [[maybe_unused]],
     Closed,
     None,
-    Awakened, // 被 wakeup() 主动唤醒（用于 flush 等场景）
+    Awakened,  // 被 wakeup() 主动唤醒（用于 flush 等场景）
 };
 
 template <typename T, typename = std::enable_if_t<!std::is_reference_v<T>>>
-    requires(std::movable<T>)
-class Channel {
-public:
+requires(std::movable<T>) class Channel {
+ public:
     friend class Sender<T>;
 
     friend class Receiver<T>;
@@ -164,14 +166,14 @@ public:
 
     auto operator=(Channel&&) -> Channel& = delete;
 
-private:
+ private:
     Channel() = default;
 
     ~Channel() = default;
 
-private:
+ private:
     bool isClosed_ = false;
-    bool awakened_ = false; // 旁路标志，被 receive 消费一次后清零
+    bool awakened_ = false;  // 旁路标志，被 receive 消费一次后清零
     std::list<T> messages_;
     std::mutex mutex_;
     std::condition_variable cond_;
@@ -179,7 +181,7 @@ private:
 
 template <typename T>
 class Sender final {
-public:
+ public:
     using ValueType = T;
 
     explicit Sender(std::shared_ptr<Channel<T>> channel) : channel_(channel) {}
@@ -190,9 +192,7 @@ public:
     }
 
     template <typename... Args>
-    inline auto emplace(Args&&... args) -> bool
-        requires std::constructible_from<T, Args...>
-    {
+    inline auto emplace(Args&&... args) -> bool requires std::constructible_from<T, Args...> {
         std::lock_guard<std::mutex> lock(channel_->mutex_);
         if (!channel_->isClosed_) {
             channel_->messages_.emplace_back(std::forward<Args>(args)...);
@@ -203,10 +203,8 @@ public:
     }
 
     template <typename I>
-    inline auto send(const I& box) noexcept -> bool
-        requires IsRange<I> && std::copyable<T> &&
-                 std::is_convertible_v<typename decltype(box.begin())::value_type, T>
-    {
+    inline auto send(const I& box) noexcept -> bool requires IsRange<I>&& std::copyable<
+        T>&& std::is_convertible_v<typename decltype(box.begin())::value_type, T> {
         if (box.empty()) {
             return true;
         }
@@ -222,9 +220,8 @@ public:
     }
 
     template <typename I>
-    inline auto send(I&& box) noexcept -> bool
-        requires IsRange<I> && std::is_convertible_v<typename decltype(box.begin())::value_type, T>
-    {
+    inline auto send(I&& box) noexcept -> bool requires
+        IsRange<I>&& std::is_convertible_v<typename decltype(box.begin())::value_type, T> {
         if (box.empty()) {
             return true;
         }
@@ -247,9 +244,8 @@ public:
     }
 
     template <typename U>
-    inline auto send(const U& message) noexcept -> bool
-        requires std::copy_constructible<T> && std::is_convertible_v<U, T>
-    {
+    inline auto send(const U& message) noexcept
+        -> bool requires std::copy_constructible<T>&& std::is_convertible_v<U, T> {
         std::lock_guard<std::mutex> lock(channel_->mutex_);
         if (!channel_->isClosed_) {
             channel_->messages_.push_back(message);
@@ -260,9 +256,7 @@ public:
     }
 
     template <typename U>
-    inline auto send(U&& message) noexcept -> bool
-        requires std::is_convertible_v<U, T>
-    {
+    inline auto send(U&& message) noexcept -> bool requires std::is_convertible_v<U, T> {
         std::lock_guard<std::mutex> lock(channel_->mutex_);
         if (!channel_->isClosed_) {
             channel_->messages_.emplace_back(std::forward<U>(message));
@@ -280,7 +274,7 @@ public:
         return channel_->isDone();
     }
 
-private:
+ private:
     std::shared_ptr<Channel<T>> channel_;
 };
 
@@ -288,12 +282,11 @@ namespace _detail {
 inline auto closedHandler = [] {
     throw std::runtime_error("can't send message to closed channel.");
 };
-} // namespace _detail
+}  // namespace _detail
 
 template <typename U>
-auto operator<<(const IsSenderPtr auto& sender, U&& message) -> const IsSenderPtr auto&
-    requires std::movable<U> && std::is_convertible_v<U, GetChannelType<decltype(sender)>>
-{
+auto operator<<(const IsSenderPtr auto& sender, U&& message) -> const IsSenderPtr
+    auto& requires std::movable<U>&& std::is_convertible_v<U, GetChannelType<decltype(sender)>> {
     if (!sender->send(std::forward<U>(message))) {
         _detail::closedHandler();
     }
@@ -301,9 +294,8 @@ auto operator<<(const IsSenderPtr auto& sender, U&& message) -> const IsSenderPt
 }
 
 template <typename U>
-auto operator<<(const IsSenderPtr auto& sender, const U& message) -> const IsSenderPtr auto&
-    requires std::copyable<U> && std::is_convertible_v<U, GetChannelType<decltype(sender)>>
-{
+auto operator<<(const IsSenderPtr auto& sender, const U& message) -> const IsSenderPtr
+    auto& requires std::copyable<U>&& std::is_convertible_v<U, GetChannelType<decltype(sender)>> {
     if (!sender->send(message)) {
         _detail::closedHandler();
     }
@@ -311,10 +303,9 @@ auto operator<<(const IsSenderPtr auto& sender, const U& message) -> const IsSen
 }
 
 template <typename U>
-auto operator<<(const IsSenderPtr auto& sender, const U& box) -> const IsSenderPtr auto&
-    requires IsRange<U> && std::is_convertible_v<typename decltype(box.begin())::value_type,
-                                                 GetChannelType<decltype(sender)>>
-{
+auto operator<<(const IsSenderPtr auto& sender, const U& box) -> const IsSenderPtr
+    auto& requires IsRange<U>&& std::is_convertible_v<typename decltype(box.begin())::value_type,
+                                                      GetChannelType<decltype(sender)>> {
     if (!sender->send(box)) {
         _detail::closedHandler();
     }
@@ -322,10 +313,9 @@ auto operator<<(const IsSenderPtr auto& sender, const U& box) -> const IsSenderP
 }
 
 template <typename U>
-auto operator<<(const IsSenderPtr auto& sender, U&& box) -> const IsSenderPtr auto&
-    requires IsRange<U> && std::is_convertible_v<typename decltype(box.begin())::value_type,
-                                                 GetChannelType<decltype(sender)>>
-{
+auto operator<<(const IsSenderPtr auto& sender, U&& box) -> const IsSenderPtr
+    auto& requires IsRange<U>&& std::is_convertible_v<typename decltype(box.begin())::value_type,
+                                                      GetChannelType<decltype(sender)>> {
     if (!sender->send(std::forward<U>(box))) {
         _detail::closedHandler();
     }
@@ -340,13 +330,13 @@ class ConstReceiverIterator;
 
 template <typename T>
 class Receiver final {
-private:
+ private:
     friend class ReceiverIterator<T>;
     friend class ConstReceiverIterator<T>;
 
-private:
+ private:
     class ReceiverImpl {
-    public:
+     public:
         friend class Channel<T>;
 
         friend class ReceiverIterator<T>;
@@ -371,9 +361,8 @@ private:
 
         ReceiverImpl(ReceiverImpl&& src) noexcept : channel_(std::move(src.channel_)) {}
 
-        inline auto receive() noexcept -> std::expected<T, ChannelEventType>
-            requires std::movable<T>
-        {
+        inline auto receive() noexcept
+            -> std::expected<T, ChannelEventType> requires std::movable<T> {
             std::unique_lock<std::mutex> lock(channel_->mutex_);
             // 进入 wait 前自动置 inactive；返回时恢复 active 并刷新 lastRunTimeStamp_
             // 非 Thread 上下文调用无副作用
@@ -436,13 +425,13 @@ private:
             channel_->wakeup();
         }
 
-    private:
+     private:
         std::shared_ptr<Channel<T>> channel_;
-    }; // end of class ReceiverImpl
+    };  // end of class ReceiverImpl
 
     std::shared_ptr<ReceiverImpl> impl_;
 
-public:
+ public:
     using ValueType = T;
 
     explicit Receiver(std::shared_ptr<Channel<T>> channel)
@@ -497,12 +486,11 @@ public:
     inline auto wakeup() noexcept -> void {
         impl_->wakeup();
     }
-}; // end of class Receiver
+};  // end of class Receiver
 
 template <typename U>
-auto operator>>(const IsReceiverPtr auto& receiver, U& value) -> const IsReceiverPtr auto&
-    requires std::movable<U> && std::is_convertible_v<GetChannelType<decltype(receiver)>, U>
-{
+auto operator>>(const IsReceiverPtr auto& receiver, U& value) -> const IsReceiverPtr
+    auto& requires std::movable<U>&& std::is_convertible_v<GetChannelType<decltype(receiver)>, U> {
     auto res = receiver->receive();
     if (res.has_value()) {
         value = std::move(*res);
@@ -513,10 +501,9 @@ auto operator>>(const IsReceiverPtr auto& receiver, U& value) -> const IsReceive
 }
 
 template <typename U>
-auto operator>>(const IsReceiverPtr auto& receiver, U& value) -> const IsReceiverPtr auto&
-    requires std::is_copy_assignable_v<U> &&
-             (!std::movable<U>) && std::is_convertible_v<GetChannelType<decltype(receiver)>, U>
-{
+    auto operator>>(const IsReceiverPtr auto& receiver, U& value) -> const IsReceiverPtr
+    auto& requires std::is_copy_assignable_v<U> &&
+    (!std::movable<U>) && std::is_convertible_v<GetChannelType<decltype(receiver)>, U> {
     auto res = receiver->receive();
     if (res.has_value()) {
         value = *res;
@@ -530,11 +517,11 @@ template <typename T>
 class ReceiverIterator {
     friend class Receiver<T>;
 
-protected:
+ protected:
     std::shared_ptr<typename Receiver<T>::ReceiverImpl> receiverImpl_;
     mutable std::expected<T, ChannelEventType> value_;
 
-public:
+ public:
     using iterator_category = std::input_iterator_tag;
     using value_type = T;
     using difference_type = std::ptrdiff_t;
@@ -548,8 +535,8 @@ public:
     ReceiverIterator()
         : receiverImpl_(nullptr), value_(std::unexpected(ChannelEventType::Closed)) {}
 
-    [[maybe_unused]] ReceiverIterator(const ReceiverIterator& src) noexcept
-        requires std::copyable<T>
+    [[maybe_unused]] ReceiverIterator(
+        const ReceiverIterator& src) noexcept requires std::copyable<T>
         : receiverImpl_(src.receiverImpl_), value_(src.value_) {}
 
     inline auto operator=(const ReceiverIterator& src) noexcept -> ReceiverIterator& {
@@ -586,12 +573,12 @@ public:
     inline auto operator!=(const ReceiverIterator& iter) const noexcept -> bool {
         return !operator==(iter);
     }
-}; // end of class ReceiverIterator
+};  // end of class ReceiverIterator
 
-} // end of namespace slark
+}  // end of namespace slark
 
-namespace std::ranges::views { // NOLINT(cert-dcl58-cpp)
+namespace std::ranges::views {  // NOLINT(cert-dcl58-cpp)
 
 inline constexpr slark::SendView sender;
 
-} // end of namespace std::ranges::views
+}  // end of namespace std::ranges::views

@@ -4,6 +4,7 @@
 #include "MoveOnlyFunction.hpp"
 
 #include <gtest/gtest.h>
+
 #include <memory>
 #include <numeric>
 #include <string>

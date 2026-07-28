@@ -4,9 +4,9 @@
 
 #include "NativeDecoderManager.h"
 
-#include "NativeHardwareDecoder.h"
-
 #include <utility>
+
+#include "NativeHardwareDecoder.h"
 
 namespace slark {
 
@@ -28,4 +28,4 @@ void NativeDecoder::close() noexcept {
     decoderId_.clear();
 }
 
-} // namespace slark
+}  // namespace slark

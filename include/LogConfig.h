@@ -12,7 +12,7 @@ namespace slark {
 // 日志等级，与 Log.hpp 中 LogType 保持同步
 enum class LogType : int;
 
-constexpr int kMinLogLevelDefault = 1; // LogType::Debug
+constexpr int kMinLogLevelDefault = 1;  // LogType::Debug
 
 struct LogConfig {
     // 进度日志限频：单次累计接收/产出超过此字节数才打一次 progress
@@ -39,4 +39,4 @@ struct LogConfig {
 void setLogConfig(const LogConfig& config);
 const LogConfig& getLogConfig();
 
-} // namespace slark
+}  // namespace slark

@@ -19,4 +19,4 @@ std::string DataView::removeSpace() const noexcept {
     return StringUtil::removeSpace(toStringView());
 }
 
-} // namespace slark
+}  // namespace slark

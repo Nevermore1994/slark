@@ -6,25 +6,25 @@
 
 #pragma once
 
-#include "Player.h"
-
 #include <cstddef>
+
+#include "Player.h"
 
 namespace slark {
 
 // PlayerState 枚举名称映射表，与 C++ 枚举、Kotlin 枚举一一对应
 inline constexpr const char* kPlayerStateNames[] = {
-    "NotInited",    // 0
-    "Initializing",    // 1
-    "Prepared",    // 2
-    "Buffering",    // 3
-    "Ready",    // 4
-    "Playing",    // 5
-    "Pause",    // 6
-    "Stop",    // 7
-    "Error",    // 8
-    "Completed",    // 9
-    "Unknown"    // 10
+    "NotInited",     // 0
+    "Initializing",  // 1
+    "Prepared",      // 2
+    "Buffering",     // 3
+    "Ready",         // 4
+    "Playing",       // 5
+    "Pause",         // 6
+    "Stop",          // 7
+    "Error",         // 8
+    "Completed",     // 9
+    "Unknown"        // 10
 };
 
 constexpr size_t kPlayerStateCount = std::size(kPlayerStateNames);
@@ -35,11 +35,11 @@ static_assert(kPlayerStateCount == static_cast<size_t>(PlayerState::Unknown) + 1
 
 // PlayerEvent 枚举名称映射表，与 C++ 枚举、Kotlin 枚举一一对应
 inline constexpr const char* kPlayerEventNames[] = {
-    "FirstFrameRendered",    // 0
-    "SeekDone",    // 1
-    "PlayEnd",    // 2
-    "UpdateCacheTime",    // 3
-    "OnError"    // 4
+    "FirstFrameRendered",  // 0
+    "SeekDone",            // 1
+    "PlayEnd",             // 2
+    "UpdateCacheTime",     // 3
+    "OnError"              // 4
 };
 
 constexpr size_t kPlayerEventCount = std::size(kPlayerEventNames);
@@ -48,4 +48,4 @@ constexpr size_t kPlayerEventCount = std::size(kPlayerEventNames);
 static_assert(kPlayerEventCount == static_cast<size_t>(PlayerEvent::OnError) + 1,
               "kPlayerEventNames size must match PlayerEvent enum count");
 
-} // namespace slark
+}  // namespace slark

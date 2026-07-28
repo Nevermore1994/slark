@@ -1,16 +1,17 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-#include "TimerManager.h"
-#include "TimerPool.h"
-#include "Util.h"
+#include <gtest/gtest.h>
 
 #include <atomic>
 #include <chrono>
 #include <format>
-#include <gtest/gtest.h>
 #include <latch>
 #include <vector>
+
+#include "TimerManager.h"
+#include "TimerPool.h"
+#include "Util.h"
 
 using namespace slark;
 using namespace std::chrono_literals;
@@ -122,7 +123,7 @@ void tickPool(TimerPool& pool) {
     }
 }
 
-} // anonymous namespace
+}  // anonymous namespace
 
 TEST(TimerPool, runAfter) {
     TimerPool pool;

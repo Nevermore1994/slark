@@ -148,4 +148,4 @@ bool Writer::write(std::string_view str) noexcept {
     return write(std::make_unique<Data>(str));
 }
 
-} // namespace slark
+}  // namespace slark

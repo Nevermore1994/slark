@@ -1,17 +1,18 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
+#include <gtest/gtest.h>
+
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+
 #include "CancellationToken.h"
 #include "CoroutineScheduler.hpp"
 #include "Data.h"
 #include "HttpRequest.h"
 #include "Type.h"
-
-#include <atomic>
-#include <chrono>
-#include <condition_variable>
-#include <gtest/gtest.h>
-#include <mutex>
 
 using namespace slark;
 using namespace slark::http;
@@ -91,10 +92,10 @@ HttpResponse executeSync(const RequestInfo& info) {
     return std::move(*result);
 }
 
-} // namespace
+}  // namespace
 
 class HttpRequestTest : public ::testing::Test {
-protected:
+ protected:
     void SetUp() override {}
 
     void TearDown() override {}
@@ -183,7 +184,7 @@ TEST_F(HttpRequestTest, CancelToken) {
 
     // 验证 HttpRequest::cancel() 接口存在且可调用
     HttpRequest request;
-    request.cancel(); // 无 bridge 时不崩溃
+    request.cancel();  // 无 bridge 时不崩溃
 }
 
 TEST_F(HttpRequestTest, ConnectTimeout) {
@@ -200,7 +201,7 @@ TEST_F(HttpRequestTest, ConnectTimeout) {
 
 // HTTPS 测试用例
 class HttpsRequestTest : public ::testing::Test {
-protected:
+ protected:
     void SetUp() override {}
 
     void TearDown() override {}
@@ -238,7 +239,7 @@ TEST_F(HttpsRequestTest, Post) {
 
 TEST_F(HttpsRequestTest, LargeResponse) {
     RequestInfo info;
-    info.url = "https://httpbingo.org/bytes/65536"; // 64KB
+    info.url = "https://httpbingo.org/bytes/65536";  // 64KB
     info.methodType = HttpMethodType::Get;
     info.headers = {{"User-Agent", "slark-https-test/1.0"}};
     info.connectTimeout = std::chrono::seconds(10);
@@ -386,7 +387,7 @@ TEST_F(HttpsRequestTest, QueryParams) {
 
 // HTTP 高级场景测试
 class HttpAdvancedTest : public ::testing::Test {
-protected:
+ protected:
     void SetUp() override {}
 
     void TearDown() override {}
@@ -428,7 +429,7 @@ TEST_F(HttpAdvancedTest, GzipResponse) {
 
 TEST_F(HttpAdvancedTest, BasicAuth_Success) {
     auto info = makeRequest("/basic-auth/testuser/testpass", HttpMethodType::Get);
-    info.headers["Authorization"] = "Basic dGVzdHVzZXI6dGVzdHBhc3M="; // base64(testuser:testpass)
+    info.headers["Authorization"] = "Basic dGVzdHVzZXI6dGVzdHBhc3M=";  // base64(testuser:testpass)
     auto response = executeSync(info);
 
     EXPECT_EQ(response.error.retCode, slark::Error::Success);
@@ -510,7 +511,7 @@ HttpResponse executeCoroutine(const RequestInfo& info) {
 
 // 协程式HTTP测试
 class HttpCoroutineTest : public ::testing::Test {
-protected:
+ protected:
     void SetUp() override {}
 
     void TearDown() override {}
@@ -631,7 +632,7 @@ TEST_F(HttpCoroutineTest, PostFormUrlEncoded) {
 
 // 协程式HTTPS测试
 class HttpsCoroutineTest : public ::testing::Test {
-protected:
+ protected:
     void SetUp() override {}
 
     void TearDown() override {}
@@ -747,7 +748,7 @@ TEST_F(HttpsCoroutineTest, MultipleRedirects) {
 
 TEST_F(HttpsCoroutineTest, LargeResponse) {
     RequestInfo info;
-    info.url = "https://httpbingo.org/bytes/65536"; // 64KB
+    info.url = "https://httpbingo.org/bytes/65536";  // 64KB
     info.methodType = HttpMethodType::Get;
     info.headers = {{"User-Agent", "slark-https-coroutine-test/1.0"}};
     info.connectTimeout = std::chrono::seconds(10);

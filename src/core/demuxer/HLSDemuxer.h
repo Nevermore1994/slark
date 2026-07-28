@@ -13,20 +13,20 @@
 namespace slark {
 
 struct TSHeader {
-    uint8_t syncbyte = 0;               // 8 bit
-    uint8_t errorIndicator = 0;         // 1 bit
-    uint8_t payloadUinitIndicator = 0;  // 1 bit
-    uint8_t priority = 0;               // 1 bit
-    uint8_t scarmblingControl = 0;      // 2 bit
-    uint8_t adaptationFieldControl = 0; // 2 bit
-    uint8_t continuityCounter = 0;      // 4 bit
-    uint16_t pid = 0;                   // 13 bit
+    uint8_t syncbyte = 0;                // 8 bit
+    uint8_t errorIndicator = 0;          // 1 bit
+    uint8_t payloadUinitIndicator = 0;   // 1 bit
+    uint8_t priority = 0;                // 1 bit
+    uint8_t scarmblingControl = 0;       // 2 bit
+    uint8_t adaptationFieldControl = 0;  // 2 bit
+    uint8_t continuityCounter = 0;       // 4 bit
+    uint16_t pid = 0;                    // 13 bit
 };
 
 struct TSPAT {
-    uint8_t currentNextIndicator = 0; // 1 bit
-    uint8_t section = 0;              // 8 bit
-    uint16_t sectionLength = 0;       // 12 bit
+    uint8_t currentNextIndicator = 0;  // 1 bit
+    uint8_t section = 0;               // 8 bit
+    uint16_t sectionLength = 0;        // 12 bit
     uint16_t pmtPid = 0;
 };
 
@@ -112,7 +112,7 @@ struct AACAdtsHeader {
 };
 
 class TSDemuxer {
-public:
+ public:
     TSDemuxer(std::shared_ptr<AudioInfo>& audioInfo, std::shared_ptr<VideoInfo>& videoInfo)
         : audioInfo_(audioInfo), videoInfo_(videoInfo) {}
 
@@ -120,7 +120,7 @@ public:
 
     bool parseData(Buffer& buffer, uint32_t tsIndex, DemuxerResult& result) noexcept;
 
-private:
+ private:
     static bool checkPacket(Buffer& buffer, uint64_t& pos) noexcept;
 
     bool parsePacket(DataView data, uint32_t tsIndex, DemuxerResult& result) noexcept;
@@ -152,7 +152,7 @@ private:
 
     void recalculatePtsDts(int64_t& pts, int64_t& dts, bool isAudio) noexcept;
 
-private:
+ private:
     static constexpr uint32_t kPacketSize = 188;
     TSPAT pat_;
     TSPMT pmt_;
@@ -166,7 +166,7 @@ private:
 };
 
 class HLSDemuxer : public IDemuxer {
-public:
+ public:
     HLSDemuxer() {
         type_ = DemuxerType::HLS;
     }
@@ -203,7 +203,7 @@ public:
         return mainParser_->playlist()->variants();
     }
 
-private:
+ private:
     static constexpr uint64_t kInvalidTSIndex = UINT64_MAX;
     uint64_t seekTsIndex_ = kInvalidTSIndex;
     std::unique_ptr<M3U8Parser> mainParser_;
@@ -212,4 +212,4 @@ private:
     std::string baseUrl_;
 };
 
-} // namespace slark
+}  // namespace slark

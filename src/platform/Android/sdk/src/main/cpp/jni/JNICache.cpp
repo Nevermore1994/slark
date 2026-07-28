@@ -28,7 +28,7 @@ std::string makeMethodKey(std::string_view classTag,
     return key;
 }
 
-} // namespace
+}  // namespace
 
 ClassReference JNICache::getClass(JNIEnv* env, std::string_view className) noexcept {
     if (!env) {
@@ -240,4 +240,4 @@ void JNICache::clear() {
     }
 }
 
-} // namespace slark::JNI
+}  // namespace slark::JNI

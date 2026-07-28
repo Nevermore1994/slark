@@ -4,11 +4,12 @@
 
 #include "M3U8Parser.h"
 
-#include "MediaPlaylist.h"
-
 #include <gtest/gtest.h>
+
 #include <memory>
 #include <string>
+
+#include "MediaPlaylist.h"
 
 using namespace slark;
 

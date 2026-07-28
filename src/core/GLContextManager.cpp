@@ -3,9 +3,10 @@
 //
 
 #include "GLContextManager.h"
-#include "Log.hpp"
 
 #include <mutex>
+
+#include "Log.hpp"
 
 namespace slark {
 
@@ -57,4 +58,4 @@ IEGLContextRefPtr createGLContext() noexcept {
 }
 #endif
 
-} // namespace slark
+}  // namespace slark

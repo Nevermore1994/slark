@@ -3,6 +3,8 @@
 //
 #pragma once
 
+#include <functional>
+
 #include "AudioInfo.h"
 #include "Clock.h"
 #include "IPipelineComponent.h"
@@ -12,15 +14,13 @@
 #include "Synchronized.hpp"
 #include "Time.hpp"
 
-#include <functional>
-
 namespace slark {
 
 class AudioRenderComponent : public IPipelineComponent,
                              public slark::NonCopyMovable,
                              public InputNode,
                              public std::enable_shared_from_this<AudioRenderComponent> {
-public:
+ public:
     explicit AudioRenderComponent(std::shared_ptr<AudioInfo> info);
 
     ~AudioRenderComponent();
@@ -87,12 +87,12 @@ public:
         return decoderCompleted_.load(std::memory_order_acquire);
     }
 
-private:
+ private:
     void init() noexcept;
 
     static constexpr uint32_t kAudioBufferSize = 262144;
 
-private:
+ private:
     std::shared_ptr<AudioInfo> audioInfo_;
     std::unique_ptr<SPSCRingBuffer<uint8_t, kAudioBufferSize>> audioBuffer_;
 
@@ -108,4 +108,4 @@ private:
     std::function<void()> renderEndCallback_;
 };
 
-} // namespace slark
+}  // namespace slark

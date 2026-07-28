@@ -9,4 +9,4 @@ namespace slark::GLShader {
 extern const std::string_view vertexShader;
 extern const std::string_view fragmentShader;
 
-} // namespace slark::GLShader
+}  // namespace slark::GLShader

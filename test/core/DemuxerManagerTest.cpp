@@ -1,7 +1,8 @@
 #include "demuxer/DemuxerManager.h"
-#include "demuxer/IDemuxer.h"
 
 #include <gtest/gtest.h>
+
+#include "demuxer/IDemuxer.h"
 
 using namespace slark;
 

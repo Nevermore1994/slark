@@ -112,7 +112,8 @@ void VideoHardwareDecoder::receiveDecodedData(DataPtr data,
         invokeReceiveFunc(DecoderData{std::move(frame), Error::Success, currentSeekEpoch_});
         retryPendingEOS();
     } else {
-        LogD("receiveDecodedData: Texture mode, pendingOutput_ -> true, pts={:.6f}", static_cast<double>(pts) / 1000000.0);
+        LogD("receiveDecodedData: Texture mode, pendingOutput_ -> true, pts={:.6f}",
+             static_cast<double>(pts) / 1000000.0);
         pendingOutput_.store(true, std::memory_order_release);
         notifyWakeup();
     }
@@ -187,11 +188,11 @@ VideoHardwareDecoder::~VideoHardwareDecoder() noexcept {
 
 bool VideoHardwareDecoder::tryAquireFrame(int64_t& pts, bool& isCompleted) noexcept {
     constexpr uint64_t kRenderTimeoutMs = 1;
-    auto result = NativeHardwareDecoder::requestVideoFrame(
-        decoderId_,
-        kRenderTimeoutMs,
-        renderWidth_.load(std::memory_order_acquire),
-        renderHeight_.load(std::memory_order_acquire));
+    auto result =
+        NativeHardwareDecoder::requestVideoFrame(decoderId_,
+                                                 kRenderTimeoutMs,
+                                                 renderWidth_.load(std::memory_order_acquire),
+                                                 renderHeight_.load(std::memory_order_acquire));
     isCompleted = result.isCompleted;
     pts = result.pts;
     return result.isAvailable;
@@ -199,7 +200,9 @@ bool VideoHardwareDecoder::tryAquireFrame(int64_t& pts, bool& isCompleted) noexc
 
 Error VideoHardwareDecoder::renderOutput() noexcept {
     if (mode_ != DecodeMode::Texture || !resource_ || !resource_->isValid()) {
-        LogD("renderOutput: skip, mode={} resource={}", static_cast<int>(mode_), resource_ ? resource_->isValid() : false);
+        LogD("renderOutput: skip, mode={} resource={}",
+             static_cast<int>(mode_),
+             resource_ ? resource_->isValid() : false);
         return Error::CodecError;
     }
     if (!pendingOutput_.load(std::memory_order_acquire)) {
@@ -235,11 +238,14 @@ Error VideoHardwareDecoder::renderOutput() noexcept {
     if (!tryAquireFrame(pts, isCompleted)) {
         frameBuffer->unbind(true);
         retryPendingEOS();
-        LogD("renderOutput: tryAquireFrame no frame available, pendingOutput_={}", pendingOutput_.load());
+        LogD("renderOutput: tryAquireFrame no frame available, pendingOutput_={}",
+             pendingOutput_.load());
         return Error::CodecAgain;
     }
     LogI("renderOutput: acquired frame pts={:.6f}, isCompleted={}, isDiscard={}",
-         static_cast<double>(pts) / 1000000.0, isCompleted, discardPackets_.contains(pts));
+         static_cast<double>(pts) / 1000000.0,
+         isCompleted,
+         discardPackets_.contains(pts));
     frameBuffer->unbind(true);
 
     if (isCompleted) {
@@ -255,7 +261,8 @@ Error VideoHardwareDecoder::renderOutput() noexcept {
         auto discardFrame = buildOutputFrame(glFb, pts, curWidth, curHeight);
         if (discardFrame) {
             discardFrame->isDiscard = true;
-            invokeReceiveFunc(DecoderData{std::move(discardFrame), Error::Success, currentSeekEpoch_});
+            invokeReceiveFunc(
+                DecoderData{std::move(discardFrame), Error::Success, currentSeekEpoch_});
         } else {
             restoreTexture(glFb ? glFb->detachTexture() : nullptr);
         }
@@ -265,7 +272,8 @@ Error VideoHardwareDecoder::renderOutput() noexcept {
 
     auto outputFrame = buildOutputFrame(glFb, pts, curWidth, curHeight);
     if (!outputFrame) {
-        LogE("renderOutput: buildOutputFrame failed, pts:{:.6f}", static_cast<double>(pts) / 1000000.0);
+        LogE("renderOutput: buildOutputFrame failed, pts:{:.6f}",
+             static_cast<double>(pts) / 1000000.0);
         return Error::CodecError;
     }
     invokeReceiveFunc(DecoderData{std::move(outputFrame), Error::Success, currentSeekEpoch_});
@@ -358,4 +366,4 @@ std::shared_ptr<AVFrame> VideoHardwareDecoder::buildOutputFrame(FrameBuffer* glF
     return frame;
 }
 
-} // namespace slark
+}  // namespace slark

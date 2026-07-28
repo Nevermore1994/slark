@@ -4,18 +4,18 @@
 
 #pragma once
 
-#include "File.h"
-#include "IStream.h"
-
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
 
+#include "File.h"
+#include "IStream.h"
+
 namespace slark {
 
 class FileStream : public IStream {
-public:
+ public:
     FileStream();
     ~FileStream() override;
 
@@ -46,12 +46,12 @@ public:
         return isCompleted_.load();
     }
 
-private:
+ private:
     void readLoop() noexcept;
     void notifyThread() noexcept;
     bool deliverData(std::shared_ptr<Data> buffer, bool eof) noexcept;
 
-private:
+ private:
     std::unique_ptr<File::ReadFile> file_;
     std::unique_ptr<std::thread> thread_;
     std::mutex mutex_;
@@ -75,4 +75,4 @@ private:
     bool seekCompleted_ = false;
 };
 
-} // namespace slark
+}  // namespace slark

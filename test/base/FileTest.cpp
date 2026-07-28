@@ -4,10 +4,10 @@
 
 #include "File.h"
 
+#include <gtest/gtest.h>
+
 #include "FileUtil.h"
 #include "Writer.h"
-
-#include <gtest/gtest.h>
 
 using namespace slark;
 

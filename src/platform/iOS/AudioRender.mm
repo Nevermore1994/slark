@@ -5,14 +5,14 @@
 
 #include "AudioRender.h"
 
+#import <AVFoundation/AVFoundation.h>
+#import <AudioToolbox/AudioToolbox.h>
+
 #include "AudioDescription.h"
 #include "Base.h"
 #include "Log.hpp"
 #include "MediaDefs.h"
 #include "TimerManager.h"
-
-#import <AVFoundation/AVFoundation.h>
-#import <AudioToolbox/AudioToolbox.h>
 
 #define VOLUME_UNIT_INPUT_BUS0 0
 
@@ -328,4 +328,4 @@ bool AudioRender::setupAudioComponent() noexcept {
            checkOSStatus(AudioUnitInitialize(renderUnit_), "init render audio unit error");
 }
 
-} // namespace slark
+}  // namespace slark

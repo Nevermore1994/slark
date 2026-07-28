@@ -4,12 +4,12 @@
 
 #include "HLSDemuxer.h"
 
+#include <utility>
+
 #include "DataView.hpp"
 #include "HLSDemuxer.h"
 #include "MediaUtil.h"
 #include "Util.h"
-
-#include <utility>
 
 namespace slark {
 
@@ -28,7 +28,7 @@ bool TSDemuxer::checkPacket(Buffer& buffer, uint64_t& pos) noexcept {
 }
 
 bool TSDemuxer::parsePacket(DataView data, uint32_t tsIndex, DemuxerResult& result) noexcept {
-    TSHeader header; // 4byte
+    TSHeader header;  // 4byte
     data.readNumberLE(header.syncbyte, 1);
     header.payloadUinitIndicator = (static_cast<uint8_t>(data[1]) & 0x40) >> 6;
     header.errorIndicator = (static_cast<uint8_t>(data[1]) & 0x80) >> 7;
@@ -221,7 +221,7 @@ bool TSDemuxer::parseTSPes(DataView data, uint8_t payloadIndicator, TSPESFrame& 
         } else {
             pes.dts = pes.pts;
         }
-        dataOffset = 6 + 3 + headerDataLength; // pes header(6) + flags(3) + header data
+        dataOffset = 6 + 3 + headerDataLength;  // pes header(6) + flags(3) + header data
     } else if (streamId != 0xbe) {
         dataOffset = 6;
     }
@@ -352,7 +352,7 @@ bool TSDemuxer::packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) n
                 parseInfo_.calculatedFps =
                     static_cast<uint32_t>(round(1000.0 / static_cast<double>(frame->duration)));
             } else {
-                frame->duration = 33; // default 33ms
+                frame->duration = 33;  // default 33ms
             }
         } else {
             frame->duration = 1000 / parseInfo_.calculatedFps;
@@ -399,7 +399,7 @@ bool parseAdtsHeader(DataView dataView, AACAdtsHeader& header) noexcept {
     }
     header.id = (dataView[1] >> 3) & 0x1;
     header.layer = (dataView[1] >> 1) & 0x3;
-    header.hasCRC = !(dataView[1] & 0x1); // 1 no CRC data
+    header.hasCRC = !(dataView[1] & 0x1);  // 1 no CRC data
     header.profile = (dataView[2] >> 6) & 0x3;
     header.samplingIndex = (dataView[2] >> 2) & 0xF;
     header.channel = static_cast<uint8_t>(((dataView[2] & 0x1) << 2) | ((dataView[3] >> 6) & 0x3));
@@ -438,7 +438,7 @@ void TSDemuxer::initAudioInfoIfNeeded(const AACAdtsHeader& header, uint64_t samp
         return;
     }
     audioInfo_->channels = header.channel;
-    audioInfo_->profile = getAudioProfile(header.profile + 1); // adts profile starts at 0
+    audioInfo_->profile = getAudioProfile(header.profile + 1);  // adts profile starts at 0
     audioInfo_->sampleRate = sampleRate;
     audioInfo_->timeScale = 90000;
     audioInfo_->bitsPerSample = 16;
@@ -484,7 +484,7 @@ bool TSDemuxer::packAudioPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexc
         info->refIndex = tsIndex;
         auto frame = std::make_unique<AVFrame>(AVFrameType::Audio);
         frame->data = std::make_unique<Data>(dataView);
-        frame->duration = 1024 * 1000 / sampleRate; // ms
+        frame->duration = 1024 * 1000 / sampleRate;  // ms
         frame->info = info;
         frame->timeScale = 90000;
         frame->pts = audioESFrame_.pts;
@@ -550,7 +550,7 @@ DemuxerResult HLSDemuxer::parseData(DataPacket& packet) noexcept {
         LogI("[seek info], seek index:{} expired data:{},", seekTsIndex_, tsIndex);
         return result;
     } else {
-        seekTsIndex_ = kInvalidTSIndex; // reset
+        seekTsIndex_ = kInvalidTSIndex;  // reset
     }
 
     if (!buffer_->append(static_cast<uint64_t>(packet.offset), std::move(packet.data))) {
@@ -667,4 +667,4 @@ const std::vector<Segment>& HLSDemuxer::getTSInfos() const noexcept {
     return mainParser_->playlist()->segments();
 }
 
-} // namespace slark
+}  // namespace slark

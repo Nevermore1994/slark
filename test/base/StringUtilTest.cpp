@@ -3,8 +3,9 @@
 //
 #include "StringUtil.h"
 
-#include <algorithm>
 #include <gtest/gtest.h>
+
+#include <algorithm>
 
 using namespace slark;
 

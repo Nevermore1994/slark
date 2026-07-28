@@ -9,7 +9,7 @@
 namespace slark {
 
 class FrameBuffer {
-public:
+ public:
     explicit FrameBuffer(TexturePtr texture);
 
     ~FrameBuffer();
@@ -46,12 +46,12 @@ public:
         return p;
     }
 
-private:
+ private:
     bool init() noexcept;
 
     void release() noexcept;
 
-private:
+ private:
     GLint prevFrameBufferId_ = 0;
     GLuint frameBufferId_ = 0;
     TexturePtr texture_;
@@ -59,4 +59,4 @@ private:
 
 using FrameBufferRefPtr = std::shared_ptr<FrameBuffer>;
 
-} // namespace slark
+}  // namespace slark

@@ -43,4 +43,4 @@ std::string localShortTimeStr() noexcept {
     return std::format("{:%Y-%m-%d %H:%M:%S}", tp);
 }
 
-} // namespace slark::Time
+}  // namespace slark::Time

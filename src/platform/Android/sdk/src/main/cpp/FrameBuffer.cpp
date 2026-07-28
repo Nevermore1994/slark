@@ -4,10 +4,10 @@
 
 #include "FrameBuffer.h"
 
+#include <utility>
+
 #include "Log.hpp"
 #include "TexturePool.h"
-
-#include <utility>
 
 namespace slark {
 
@@ -96,4 +96,4 @@ void FrameBuffer::unbind(bool isRollback) noexcept {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 }
-} // namespace slark
+}  // namespace slark

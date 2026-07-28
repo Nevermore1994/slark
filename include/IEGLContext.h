@@ -13,7 +13,7 @@
 namespace slark {
 
 class IEGLContext {
-public:
+ public:
     virtual ~IEGLContext() = default;
 
     virtual bool init(void* context) = 0;
@@ -38,4 +38,4 @@ using IEGLContextRefPtr = std::shared_ptr<IEGLContext>;
 IEGLContextRefPtr createGLContext() noexcept;
 IEGLContextRefPtr createMainGLContext() noexcept;
 
-} // namespace slark
+}  // namespace slark

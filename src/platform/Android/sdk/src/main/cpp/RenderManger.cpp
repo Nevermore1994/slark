@@ -2,6 +2,8 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
+#include <android/native_window_jni.h>
+
 #include "AndroidEGLContext.h"
 #include "AndroidVulkanContext.h"
 #include "GLContextManager.h"
@@ -13,8 +15,6 @@
 #include "Log.hpp"
 #include "Manager.hpp"
 #include "VideoRender.h"
-
-#include <android/native_window_jni.h>
 
 namespace slark {
 
@@ -378,4 +378,4 @@ Java_com_slark_sdk_VulkanRenderThread_rebuildVulkanSurface(JNIEnv* env,
     ANativeWindow_release(window);
 }
 
-} // namespace slark
+}  // namespace slark

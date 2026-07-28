@@ -35,7 +35,7 @@ void loadClassCache(JNIEnv* env) {
     }
 }
 
-} // namespace
+}  // namespace
 
 JavaVM* getJavaVM() noexcept {
     return g_javaVM;
@@ -55,7 +55,7 @@ void setApplicationContext(JNIEnv* env, jobject context) noexcept {
     g_applicationContext = env->NewGlobalRef(context);
 }
 
-} // namespace slark::JNI
+}  // namespace slark::JNI
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* /* reserved */) {
     using namespace slark;
@@ -82,20 +82,21 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* /* reserved */)
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_slark_sdk_SlarkNativeBridge_00024Companion_setContext(JNIEnv *env,
-        jobject /*thiz*/,
-        jobject context) {
+Java_com_slark_sdk_SlarkNativeBridge_00024Companion_setContext(JNIEnv* env,
+                                                               jobject /*thiz*/,
+                                                               jobject context) {
     slark::JNI::setApplicationContext(env, context);
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_slark_sdk_SlarkNativeBridge_00024Companion_setLogConfig(JNIEnv *env, jobject /*thiz*/,
-        jlong progressLogBytes,
-        jlong maxLogFileSize,
-        jint maxLogFileCount,
-        jint minLogLevel,
-        jstring logDir,
-        jstring logFileName) {
+Java_com_slark_sdk_SlarkNativeBridge_00024Companion_setLogConfig(JNIEnv* env,
+                                                                 jobject /*thiz*/,
+                                                                 jlong progressLogBytes,
+                                                                 jlong maxLogFileSize,
+                                                                 jint maxLogFileCount,
+                                                                 jint minLogLevel,
+                                                                 jstring logDir,
+                                                                 jstring logFileName) {
     slark::LogConfig config;
     config.progressLogBytes = static_cast<uint64_t>(progressLogBytes);
     config.maxLogFileSize = static_cast<uint64_t>(maxLogFileSize);

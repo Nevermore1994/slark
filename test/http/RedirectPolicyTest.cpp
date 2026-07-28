@@ -1,8 +1,9 @@
 #include "RedirectPolicy.h"
-#include "Type.h"
-#include "StringUtil.h"
 
 #include <gtest/gtest.h>
+
+#include "StringUtil.h"
+#include "Type.h"
 
 using namespace slark;
 using namespace slark::http;
@@ -91,7 +92,8 @@ TEST(RedirectPolicyTest, SeeOtherChangesMethodToGet) {
 TEST(RedirectPolicyTest, RejectHttpsDowngrade) {
     RequestInfo req;
     req.url = "https://example.com/old";
-    auto result = RedirectPolicy::buildRedirectRequest(req, HttpStatusCode::Found, "http://other.com/new");
+    auto result =
+        RedirectPolicy::buildRedirectRequest(req, HttpStatusCode::Found, "http://other.com/new");
     EXPECT_FALSE(result.has_value());
 }
 
@@ -99,7 +101,8 @@ TEST(RedirectPolicyTest, CrossOriginStripsSensitiveHeaders) {
     RequestInfo req;
     req.url = "http://example.com/old";
     req.headers["Authorization"] = "Bearer token";
-    auto result = RedirectPolicy::buildRedirectRequest(req, HttpStatusCode::Found, "http://other.com/new");
+    auto result =
+        RedirectPolicy::buildRedirectRequest(req, HttpStatusCode::Found, "http://other.com/new");
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->headers.count("Authorization"), 0u);
 }
@@ -108,7 +111,8 @@ TEST(RedirectPolicyTest, SameOriginKeepsHeaders) {
     RequestInfo req;
     req.url = "http://example.com/old";
     req.headers["Authorization"] = "Bearer token";
-    auto result = RedirectPolicy::buildRedirectRequest(req, HttpStatusCode::Found, "http://example.com/new");
+    auto result =
+        RedirectPolicy::buildRedirectRequest(req, HttpStatusCode::Found, "http://example.com/new");
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->headers["Authorization"], "Bearer token");
 }
@@ -140,7 +144,8 @@ TEST(RedirectPolicyTest, ResolveWithPort) {
 TEST(RedirectPolicyTest, ResolveProtocolRelative) {
     RequestInfo req;
     req.url = "https://example.com/old";
-    auto result = RedirectPolicy::buildRedirectRequest(req, HttpStatusCode::Found, "//other.com/new");
+    auto result =
+        RedirectPolicy::buildRedirectRequest(req, HttpStatusCode::Found, "//other.com/new");
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->url, "https://other.com/new");
 }

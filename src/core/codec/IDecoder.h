@@ -2,13 +2,13 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #pragma once
+#include <utility>
+
 #include "AVFrame.hpp"
 #include "Error.h"
 #include "NonCopyable.h"
 #include "Reflection.hpp"
 #include "Synchronized.hpp"
-
-#include <utility>
 
 namespace slark {
 
@@ -38,20 +38,20 @@ struct DecoderConfig {
 struct DecoderData {
     AVFrameRefPtr frame;
     Error error = Error::Success;
-    uint64_t seekEpoch{0}; ///< dispatch 时捕获的 seek epoch，回调时用于 stale 判断
+    uint64_t seekEpoch{0};  ///< dispatch 时捕获的 seek epoch，回调时用于 stale 判断
 };
 
 using DecoderReceiveFunc = std::function<void(DecoderData)>;
 
 class IDecoder : public NonCopyMovable {
-public:
+ public:
     explicit IDecoder(DecoderType type) : decoderType_(type) {}
 
     virtual ~IDecoder() {
         setReceiveFunc(nullptr);
     }
 
-public:
+ public:
     [[nodiscard]] DecoderType type() const noexcept {
         return decoderType_;
     }
@@ -99,8 +99,7 @@ public:
         return Error::CodecError;
     }
 
-    virtual void clearPendingOutput() noexcept {
-    }
+    virtual void clearPendingOutput() noexcept {}
 
     using WakeupCallback = std::function<void()>;
 
@@ -132,7 +131,7 @@ public:
         currentSeekEpoch_ = epoch;
     }
 
-protected:
+ protected:
     std::atomic_bool isOpen_ = false;
     std::atomic_bool isCompleted_ = false;
     AtomicSharedPtr<DecoderReceiveFunc> receiveFunc_;
@@ -142,7 +141,7 @@ protected:
     uint64_t currentSeekEpoch_ = 0;
 };
 
-} // namespace slark
+}  // namespace slark
 
 #define SLARK_DECODER_INFO(cls, decoderType)                 \
     static constexpr DecoderType kDecoderType = decoderType; \

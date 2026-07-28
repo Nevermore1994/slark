@@ -4,20 +4,20 @@
 
 #pragma once
 
-#include "NonCopyable.h"
-#include "Timer.h"
-
 #include <array>
 #include <chrono>
 #include <list>
 #include <unordered_map>
 #include <vector>
 
+#include "NonCopyable.h"
+#include "Timer.h"
+
 namespace slark {
 
 /// 纯时间轮数据结构
 class TimerPool : public NonCopyMovable {
-public:
+ public:
     TimerPool() = default;
     ~TimerPool();
 
@@ -29,11 +29,11 @@ public:
     void clear() noexcept;
     [[nodiscard]] bool empty() const noexcept;
 
-private:
+ private:
     static constexpr uint32_t kWheelSize = 256;
-    static constexpr uint32_t kLevel1RangeMs = kWheelSize;                 // 256ms
-    static constexpr uint32_t kLevel2TickMs = kLevel1RangeMs;              // 256ms
-    static constexpr uint32_t kLevel2RangeMs = kWheelSize * kLevel2TickMs; // 65536ms
+    static constexpr uint32_t kLevel1RangeMs = kWheelSize;                  // 256ms
+    static constexpr uint32_t kLevel2TickMs = kLevel1RangeMs;               // 256ms
+    static constexpr uint32_t kLevel2RangeMs = kWheelSize * kLevel2TickMs;  // 65536ms
 
     struct WheelEntry {
         uint64_t timerId;
@@ -49,7 +49,7 @@ private:
     void redistributeOverflow() noexcept;
     void refreshEarliestExpire() noexcept;
 
-private:
+ private:
     uint64_t currentTick_ = 0;
     uint64_t startMs_ = 0;
     uint64_t earliestExpireMs_ = UINT64_MAX;
@@ -60,4 +60,4 @@ private:
     std::unordered_map<uint64_t, TimerEntry> timers_;
 };
 
-} // namespace slark
+}  // namespace slark

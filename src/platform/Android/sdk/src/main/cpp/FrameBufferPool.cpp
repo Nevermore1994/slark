@@ -61,4 +61,4 @@ FrameBufferRefPtr FrameBufferPool::acquire(uint32_t width, uint32_t height) noex
     }
     return frameBuffer;
 }
-} // namespace slark
+}  // namespace slark

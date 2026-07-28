@@ -2,13 +2,13 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
+#include <string>
+
 #include "JNICache.h"
 #include "JNICall.h"
 #include "JNIEnvGuard.h"
 #include "JNIMarshal.h"
 #include "Log.hpp"
-
-#include <string>
 
 using namespace slark;
 using namespace slark::JNI;
@@ -39,4 +39,4 @@ void printLog(LogType type, const std::string& logStr) {
                                                 jMessage.get());
 }
 
-} // namespace slark
+}  // namespace slark

@@ -6,11 +6,11 @@
 namespace slark {
 
 class NonCopyable {
-protected:
+ protected:
     NonCopyable() = default;
     ~NonCopyable() = default;
 
-public:
+ public:
     NonCopyable(const NonCopyable&) = delete;
     NonCopyable& operator=(const NonCopyable&) = delete;
 
@@ -19,11 +19,11 @@ public:
 };
 
 class NonCopyMovable {
-protected:
+ protected:
     NonCopyMovable() = default;
     ~NonCopyMovable() = default;
 
-public:
+ public:
     NonCopyMovable(const NonCopyMovable&) = delete;
     NonCopyMovable& operator=(const NonCopyMovable&) = delete;
 
@@ -31,4 +31,4 @@ public:
     NonCopyMovable& operator=(NonCopyMovable&&) = delete;
 };
 
-} // namespace slark
+}  // namespace slark

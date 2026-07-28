@@ -15,7 +15,7 @@ enum class GraphicsBackendType : int32_t {
 };
 
 class ITexture {
-public:
+ public:
     virtual ~ITexture() = default;
 
     virtual uint32_t width() const noexcept = 0;
@@ -29,7 +29,7 @@ using ITexturePtr = std::unique_ptr<ITexture>;
 using ITextureRefPtr = std::shared_ptr<ITexture>;
 
 class IFrameBuffer {
-public:
+ public:
     virtual ~IFrameBuffer() = default;
 
     virtual bool bind(bool isRebinding = false) noexcept = 0;
@@ -43,7 +43,7 @@ public:
 using IFrameBufferRefPtr = std::shared_ptr<IFrameBuffer>;
 
 class IGraphicsSurface {
-public:
+ public:
     virtual ~IGraphicsSurface() = default;
 
     virtual void* nativeSurface() const noexcept = 0;
@@ -54,7 +54,7 @@ using IGraphicsSurfacePtr = std::unique_ptr<IGraphicsSurface>;
 using IGraphicsSurfaceRefPtr = std::shared_ptr<IGraphicsSurface>;
 
 class IGraphicsContext {
-public:
+ public:
     virtual ~IGraphicsContext() = default;
 
     virtual GraphicsBackendType backend() const noexcept = 0;
@@ -77,4 +77,4 @@ public:
 using IGraphicsContextPtr = std::unique_ptr<IGraphicsContext>;
 using IGraphicsContextRefPtr = std::shared_ptr<IGraphicsContext>;
 
-} // namespace slark
+}  // namespace slark

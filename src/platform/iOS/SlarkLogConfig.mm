@@ -3,8 +3,9 @@
 //
 
 #import "interface/SlarkLogConfig.h"
-#import "LogConfig.h"
+
 #import "Log.hpp"
+#import "LogConfig.h"
 
 @implementation SlarkLogConfig
 
@@ -18,8 +19,10 @@
     return self;
 }
 
-+ (void)setLogConfig:(SlarkLogConfig *)config {
-    if (!config) return;
++ (void)setLogConfig:(SlarkLogConfig*)config {
+    if (!config) {
+        return;
+    }
 
     slark::LogConfig cppConfig;
     cppConfig.progressLogBytes = config.progressLogBytes;

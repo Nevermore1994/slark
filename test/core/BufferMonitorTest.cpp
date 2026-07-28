@@ -15,7 +15,7 @@ using ::testing::Return;
 // MARK: - Mock delegate
 
 class MockDelegate : public IBufferMonitorDelegate {
-public:
+ public:
     MOCK_METHOD(double, demuxedDuration, (), (const, noexcept, override));
     MOCK_METHOD(void, pauseStream, (), (noexcept, override));
     MOCK_METHOD(void, resumeStream, (), (noexcept, override));
@@ -57,8 +57,8 @@ TEST(BufferMonitorTest, StartPrebufferingWaitsUntilDurationReached) {
 
     EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);
     EXPECT_CALL(delegate, demuxedDuration())
-        .WillOnce(Return(1.0))        // 未达到
-        .WillRepeatedly(Return(3.0)); // 达到
+        .WillOnce(Return(1.0))         // 未达到
+        .WillRepeatedly(Return(3.0));  // 达到
     EXPECT_CALL(delegate, audioDecodedFrameCount()).WillRepeatedly(Return(0));
     EXPECT_CALL(delegate, videoDecodedFrameCount()).WillRepeatedly(Return(0));
 
@@ -66,11 +66,11 @@ TEST(BufferMonitorTest, StartPrebufferingWaitsUntilDurationReached) {
     monitor.startPrebuffering();
     EXPECT_TRUE(monitor.isPrebuffering());
 
-    monitor.onDemuxedDataEnqueued(); // 1.0 → 未完成
+    monitor.onDemuxedDataEnqueued();  // 1.0 → 未完成
     EXPECT_TRUE(monitor.isPrebuffering());
 
     // 绕过节流：直接调用 heartbeat
-    monitor.onHeartbeat(); // 3.0 → 完成
+    monitor.onHeartbeat();  // 3.0 → 完成
     EXPECT_FALSE(monitor.isPrebuffering());
 }
 
@@ -91,10 +91,10 @@ TEST(BufferMonitorTest, PausesStreamWhenDurationExceedsHighWatermark) {
     EXPECT_CALL(delegate, videoDecodedFrameCount()).WillRepeatedly(Return(0));
 
     BufferMonitor monitor(cfg, delegate);
-    monitor.startPrebuffering(); // startBufferDuration=2.0
-    monitor.onHeartbeat();       // check 1: 0.0 < 2.0 → still prebuffering
-    monitor.onHeartbeat();       // check 2: 3.0 >= 2.0 → prebuffer complete → readyFired_=true
-    monitor.onHeartbeat();       // regulateDataFlow: 12.0 >= 10.0 → pauseStream
+    monitor.startPrebuffering();  // startBufferDuration=2.0
+    monitor.onHeartbeat();        // check 1: 0.0 < 2.0 → still prebuffering
+    monitor.onHeartbeat();        // check 2: 3.0 >= 2.0 → prebuffer complete → readyFired_=true
+    monitor.onHeartbeat();        // regulateDataFlow: 12.0 >= 10.0 → pauseStream
 }
 
 TEST(BufferMonitorTest, ResumesStreamWhenDurationDropsBelowLowWatermark) {
@@ -103,10 +103,10 @@ TEST(BufferMonitorTest, ResumesStreamWhenDurationDropsBelowLowWatermark) {
     // demuxLowWatermarkDuration = 3.0
 
     EXPECT_CALL(delegate, demuxedDuration())
-        .WillOnce(Return(0.0))        // prebuffer check: 0.0 < 2.0
-        .WillOnce(Return(3.0))        // prebuffer check: 3.0 >= 2.0 → complete
-        .WillOnce(Return(12.0))       // regulateDataFlow: 12.0 >= 10.0 → pause
-        .WillRepeatedly(Return(1.0)); // regulateDataFlow: 1.0 <= 3.0 → resume
+        .WillOnce(Return(0.0))         // prebuffer check: 0.0 < 2.0
+        .WillOnce(Return(3.0))         // prebuffer check: 3.0 >= 2.0 → complete
+        .WillOnce(Return(12.0))        // regulateDataFlow: 12.0 >= 10.0 → pause
+        .WillRepeatedly(Return(1.0));  // regulateDataFlow: 1.0 <= 3.0 → resume
     EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);
     EXPECT_CALL(delegate, pauseStream()).Times(1);
     EXPECT_CALL(delegate, resumeStream()).Times(1);
@@ -115,10 +115,10 @@ TEST(BufferMonitorTest, ResumesStreamWhenDurationDropsBelowLowWatermark) {
 
     BufferMonitor monitor(cfg, delegate);
     monitor.startPrebuffering();
-    monitor.onHeartbeat();       // prebuffer not yet
-    monitor.onHeartbeat();       // prebuffer complete → readyFired_=true
-    monitor.onHeartbeat();       // pause
-    monitor.onHeartbeat();       // resume
+    monitor.onHeartbeat();  // prebuffer not yet
+    monitor.onHeartbeat();  // prebuffer complete → readyFired_=true
+    monitor.onHeartbeat();  // pause
+    monitor.onHeartbeat();  // resume
 }
 
 // MARK: - 重缓冲
@@ -128,10 +128,11 @@ TEST(BufferMonitorTest, RebufferingStartsWhenStreamRunningAndDurationDropsBelowL
     auto cfg = BackpressureConfig::forNetwork();
     // startBufferDuration = 2.0, rebufferScale = 1.5 → rebufferThreshold = 3.0
 
-    // 场景：prebuffer 完成后，stream 正在运行（未 pause），duration 降到 rebufferThreshold 以下 → BufferingStart
+    // 场景：prebuffer 完成后，stream 正在运行（未 pause），duration 降到 rebufferThreshold 以下 →
+    // BufferingStart
     EXPECT_CALL(delegate, demuxedDuration())
-        .WillOnce(Return(3.0))        // heartbeat 1: prebuffer complete
-        .WillRepeatedly(Return(1.0)); // heartbeat 2+: low watermark，stream 未 pause
+        .WillOnce(Return(3.0))         // heartbeat 1: prebuffer complete
+        .WillRepeatedly(Return(1.0));  // heartbeat 2+: low watermark，stream 未 pause
     EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);
     EXPECT_CALL(delegate, onBufferEvent(PipelineEvent::BufferingStart, testing::Eq(std::nullopt)))
         .Times(1);
@@ -140,8 +141,8 @@ TEST(BufferMonitorTest, RebufferingStartsWhenStreamRunningAndDurationDropsBelowL
 
     BufferMonitor monitor(cfg, delegate);
     monitor.startPrebuffering();
-    monitor.onHeartbeat(); // prebuffer complete
-    monitor.onHeartbeat(); // duration=1.0，stream 未 pause → BufferingStart
+    monitor.onHeartbeat();  // prebuffer complete
+    monitor.onHeartbeat();  // duration=1.0，stream 未 pause → BufferingStart
     EXPECT_TRUE(monitor.isRebuffering());
 }
 
@@ -168,15 +169,15 @@ TEST(BufferMonitorTest, RebufferingEndsWhenStreamResumesAndDurationRecovered) {
 
     BufferMonitor monitor(cfg, delegate);
     monitor.startPrebuffering();
-    monitor.onHeartbeat(); // prebuffer complete
-    monitor.onHeartbeat(); // pause
+    monitor.onHeartbeat();  // prebuffer complete
+    monitor.onHeartbeat();  // pause
     monitor.onStarvation(false);
     monitor.onStarvation(false);
     monitor.onStarvation(false);
     monitor.onStarvation(false);
-    monitor.onStarvation(false); // 第 5 次 → BufferingStart
+    monitor.onStarvation(false);  // 第 5 次 → BufferingStart
     EXPECT_TRUE(monitor.isRebuffering());
-    monitor.onHeartbeat(); // resume + BufferingEnd
+    monitor.onHeartbeat();  // resume + BufferingEnd
     EXPECT_FALSE(monitor.isRebuffering());
 }
 
@@ -203,15 +204,15 @@ TEST(BufferMonitorTest, ResumesAudioDecoderAtLowWatermark) {
 
     EXPECT_CALL(delegate, demuxedDuration()).WillRepeatedly(Return(5.0));
     EXPECT_CALL(delegate, audioDecodedFrameCount())
-        .WillOnce(Return(cfg.audioDecoderHighWatermarkFrames))       // pause
-        .WillRepeatedly(Return(cfg.audioDecoderLowWatermarkFrames)); // resume
+        .WillOnce(Return(cfg.audioDecoderHighWatermarkFrames))        // pause
+        .WillRepeatedly(Return(cfg.audioDecoderLowWatermarkFrames));  // resume
     EXPECT_CALL(delegate, videoDecodedFrameCount()).WillRepeatedly(Return(0));
     EXPECT_CALL(delegate, pauseAudioDecoder()).Times(1);
     EXPECT_CALL(delegate, resumeAudioDecoder()).Times(1);
 
     BufferMonitor monitor(cfg, delegate);
-    monitor.onHeartbeat(); // pause
-    monitor.onHeartbeat(); // resume
+    monitor.onHeartbeat();  // pause
+    monitor.onHeartbeat();  // resume
 }
 
 TEST(BufferMonitorTest, PausesVideoDecoderAtHighWatermark) {
@@ -267,8 +268,8 @@ TEST(BufferMonitorTest, BackpressurePausedSkipsDataFlowRegulation) {
     // 初始状态 streamPaused_ = false，所以不会调用 resumeStream
     // 背压暂停后 regulateDataFlow 跳过，不应调用 pauseStream/onDropOldest
     EXPECT_CALL(delegate, demuxedDuration()).WillRepeatedly(Return(25.0));
-    EXPECT_CALL(delegate, resumeStream()).Times(0); // 初始未 pause，不会调用
-    EXPECT_CALL(delegate, pauseStream()).Times(0);  // 背压暂停期间跳过
+    EXPECT_CALL(delegate, resumeStream()).Times(0);  // 初始未 pause，不会调用
+    EXPECT_CALL(delegate, pauseStream()).Times(0);   // 背压暂停期间跳过
     EXPECT_CALL(delegate, onDropOldest()).Times(0);
     EXPECT_CALL(delegate, audioDecodedFrameCount()).WillRepeatedly(Return(0));
     EXPECT_CALL(delegate, videoDecodedFrameCount()).WillRepeatedly(Return(0));
@@ -283,10 +284,10 @@ TEST(BufferMonitorTest, BackpressurePausedResumesStreamWhenPreviouslyPaused) {
     auto cfg = BackpressureConfig::forNetwork();
 
     EXPECT_CALL(delegate, demuxedDuration())
-        .WillOnce(Return(0.0))         // prebuffer check: 0.0 < 2.0
-        .WillOnce(Return(3.0))         // prebuffer check: 3.0 >= 2.0 → complete
-        .WillOnce(Return(12.0))        // regulateDataFlow: 12.0 >= 10.0 → pause
-        .WillRepeatedly(Return(25.0)); // after pauseBackpressure: backpressurePaused_=true, skip
+        .WillOnce(Return(0.0))          // prebuffer check: 0.0 < 2.0
+        .WillOnce(Return(3.0))          // prebuffer check: 3.0 >= 2.0 → complete
+        .WillOnce(Return(12.0))         // regulateDataFlow: 12.0 >= 10.0 → pause
+        .WillRepeatedly(Return(25.0));  // after pauseBackpressure: backpressurePaused_=true, skip
     EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);
     EXPECT_CALL(delegate, pauseStream()).Times(1);
     EXPECT_CALL(delegate, resumeStream()).Times(1);
@@ -296,11 +297,11 @@ TEST(BufferMonitorTest, BackpressurePausedResumesStreamWhenPreviouslyPaused) {
 
     BufferMonitor monitor(cfg, delegate);
     monitor.startPrebuffering();
-    monitor.onHeartbeat();       // prebuffer not yet
-    monitor.onHeartbeat();       // prebuffer complete → readyFired_=true
-    monitor.onHeartbeat();       // pause
-    monitor.pauseBackpressure(); // resumeStream
-    monitor.onHeartbeat();       // backpressurePaused_=true → skip
+    monitor.onHeartbeat();        // prebuffer not yet
+    monitor.onHeartbeat();        // prebuffer complete → readyFired_=true
+    monitor.onHeartbeat();        // pause
+    monitor.pauseBackpressure();  // resumeStream
+    monitor.onHeartbeat();        // backpressurePaused_=true → skip
 }
 
 // MARK: - reset
@@ -316,7 +317,7 @@ TEST(BufferMonitorTest, ResetClearsAllState) {
 
     BufferMonitor monitor(cfg, delegate);
     monitor.startPrebuffering();
-    monitor.onHeartbeat(); // complete prebuffer
+    monitor.onHeartbeat();  // complete prebuffer
 
     monitor.reset();
     EXPECT_FALSE(monitor.isPrebuffering());
@@ -338,7 +339,7 @@ TEST(BufferMonitorTest, StarvationTriggersRebufferingAfterThreshold) {
 
     BufferMonitor monitor(cfg, delegate);
     monitor.startPrebuffering();
-    monitor.onHeartbeat(); // prebuffer complete
+    monitor.onHeartbeat();  // prebuffer complete
 
     // kStarvationThreshold = 5
     for (int32_t i = 0; i < 5; ++i) {
@@ -358,7 +359,7 @@ TEST(BufferMonitorTest, StarvationIgnoredForLocalSource) {
     EXPECT_CALL(delegate, onBufferEvent(_, _)).Times(0);
 
     BufferMonitor monitor(cfg, delegate);
-    monitor.startPrebuffering(); // startBufferDuration = 0 → immediate
+    monitor.startPrebuffering();  // startBufferDuration = 0 → immediate
 
     for (int32_t i = 0; i < 10; ++i) {
         monitor.onStarvation(true);

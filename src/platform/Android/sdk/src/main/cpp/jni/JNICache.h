@@ -4,17 +4,17 @@
 
 #pragma once
 
-#include "JNIBase.h"
-
 #include <shared_mutex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 
+#include "JNIBase.h"
+
 namespace slark::JNI {
 
 class JNICache {
-public:
+ public:
     static JNICache& instance() noexcept {
         static JNICache cache;
         return cache;
@@ -36,7 +36,7 @@ public:
 
     void clear();
 
-private:
+ private:
     JNICache() = default;
 
     ~JNICache() {
@@ -71,4 +71,4 @@ private:
     mutable std::shared_mutex enumFieldCacheMutex_;
 };
 
-} // namespace slark::JNI
+}  // namespace slark::JNI

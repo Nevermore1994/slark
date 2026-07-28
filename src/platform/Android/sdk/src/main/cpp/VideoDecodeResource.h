@@ -11,7 +11,7 @@
 namespace slark {
 
 class VideoDecodeResource {
-public:
+ public:
     explicit VideoDecodeResource(std::string playerId);
 
     ~VideoDecodeResource() noexcept;
@@ -32,7 +32,7 @@ public:
 
     void init() noexcept;
 
-private:
+ private:
     std::string playerId_;
     std::shared_ptr<AndroidEGLContext> context_;
     std::unique_ptr<FrameBufferPool> frameBufferPool_;
@@ -40,4 +40,4 @@ private:
 
 using VideoDecodeResourceManager = Manager<VideoDecodeResource>;
 
-} // namespace slark
+}  // namespace slark

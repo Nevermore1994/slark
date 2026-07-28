@@ -4,11 +4,11 @@
 
 #include "AudioRenderComponent.h"
 
-#include "Log.hpp"
-
 #include <algorithm>
 #include <memory>
 #include <utility>
+
+#include "Log.hpp"
 
 namespace slark {
 
@@ -63,7 +63,11 @@ void AudioRenderComponent::init() noexcept {
             (*updater)(played);
         }
         LogI("request audio data, size:{} read:{} rendered:{} clockTime:{:.6f} played:{:.6f}",
-             size, read, rendered, clockTime.second(), played.second());
+             size,
+             read,
+             rendered,
+             clockTime.second(),
+             played.second());
         return size;
     });
     pimpl_.reset(std::move(pimpl));
@@ -158,8 +162,7 @@ void AudioRenderComponent::seek(double time) noexcept {
         audioBuffer_->reset();
     }
     renderedDataLength_.store(0, std::memory_order_release);
-    maxPlayedTimeUs_.store(Time::TimePoint::fromSeconds(time).point(),
-                           std::memory_order_release);
+    maxPlayedTimeUs_.store(Time::TimePoint::fromSeconds(time).point(), std::memory_order_release);
     offsetTime_ = Time::TimePoint::fromSeconds(time);
     clock_.setTime(offsetTime_);
     if (auto pimpl = pimpl_.load()) {
@@ -181,14 +184,17 @@ Time::TimePoint AudioRenderComponent::playedTime() noexcept {
         }
     }
     auto prev = maxPlayedTimeUs_.load(std::memory_order_acquire);
-    while (result.point() > prev &&
-           !maxPlayedTimeUs_.compare_exchange_weak(prev,
-                                                   result.point(),
-                                                   std::memory_order_acq_rel)) {
+    while (
+        result.point() > prev &&
+        !maxPlayedTimeUs_.compare_exchange_weak(prev, result.point(), std::memory_order_acq_rel)) {
     }
     auto finalTime = std::max(result.point(), prev);
     LogI("playedTime clock:{:.6f} latency:{}us result:{:.6f} prev:{:.6f} final:{:.6f}",
-         t.second(), latencyUs, result.second(), Time::TimePoint(prev).second(), Time::TimePoint(finalTime).second());
+         t.second(),
+         latencyUs,
+         result.second(),
+         Time::TimePoint(prev).second(),
+         Time::TimePoint(finalTime).second());
     return Time::TimePoint(finalTime);
 }
 
@@ -208,4 +214,4 @@ bool AudioRenderComponent::isRunning() const noexcept {
     return false;
 }
 
-} // namespace slark
+}  // namespace slark

@@ -1,9 +1,10 @@
+#include <gtest/gtest.h>
+
+#include <string>
+
 #include "Data.h"
 #include "File.h"
 #include "FileUtil.h"
-
-#include <gtest/gtest.h>
-#include <string>
 
 using namespace slark;
 

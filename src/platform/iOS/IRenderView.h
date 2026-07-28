@@ -11,7 +11,7 @@ namespace slark {
 struct IVideoRender;
 using IVideoRenderWeakPtr = std::weak_ptr<IVideoRender>;
 
-} // namespace slark
+}  // namespace slark
 
 #import <UIKit/UIKit.h>
 
@@ -20,9 +20,9 @@ using IVideoRenderWeakPtr = std::weak_ptr<IVideoRender>;
  */
 @protocol IRenderView <NSObject>
 
-@property (atomic, assign, readonly) BOOL isActive;
-@property (nonatomic, assign) double rotation;
-@property (nonatomic, assign, readonly) BOOL supportsHDR;
+@property(atomic, assign, readonly) BOOL isActive;
+@property(nonatomic, assign) double rotation;
+@property(nonatomic, assign, readonly) BOOL supportsHDR;
 
 - (void)start;
 - (void)stop;

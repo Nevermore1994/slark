@@ -4,12 +4,13 @@
 
 #include "MediaUtil.h"
 
+#include <gtest/gtest.h>
+
+#include <vector>
+
 #include "AudioInfo.h"
 #include "DataView.hpp"
 #include "Range.h"
-
-#include <gtest/gtest.h>
-#include <vector>
 
 using namespace slark;
 
@@ -117,7 +118,7 @@ TEST(MediaUtilTest, FindNaluUnitAnnexB3ByteStartCode) {
     DataView view(reinterpret_cast<const Byte*>(data.data()), data.size());
     Range range;
     EXPECT_TRUE(findNaluUnit(view, range));
-    EXPECT_EQ(range.size, 2u); // 65 AA
+    EXPECT_EQ(range.size, 2u);  // 65 AA
 }
 
 TEST(MediaUtilTest, FindNaluUnitNoStartCodeReturnsFalse) {
@@ -133,7 +134,7 @@ TEST(MediaUtilTest, FindNaluUnitSingleNaluToEnd) {
     DataView view(reinterpret_cast<const Byte*>(data.data()), data.size());
     Range range;
     EXPECT_TRUE(findNaluUnit(view, range));
-    EXPECT_EQ(range.size, 4u); // 65 AA BB CC
+    EXPECT_EQ(range.size, 4u);  // 65 AA BB CC
 }
 
 TEST(MediaUtilTest, FindNaluUnitEmptyDataReturnsFalse) {

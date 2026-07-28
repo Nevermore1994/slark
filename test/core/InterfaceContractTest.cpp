@@ -1,10 +1,10 @@
-#include "IStream.h"
-#include "AudioInfo.h"
-#include "VideoInfo.h"
-#include "Data.h"
-#include "Range.h"
-
 #include <gtest/gtest.h>
+
+#include "AudioInfo.h"
+#include "Data.h"
+#include "IStream.h"
+#include "Range.h"
+#include "VideoInfo.h"
 
 using namespace slark;
 

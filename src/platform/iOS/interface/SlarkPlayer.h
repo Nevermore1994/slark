@@ -108,15 +108,15 @@ typedef NS_ENUM(NSUInteger, SlarkPlayerRotation) {
 @end
 
 @interface SlarkPlayer : NSObject
-@property (nonatomic, assign) BOOL isLoop;
-@property (nonatomic, assign) BOOL isMute;
-@property (nonatomic, assign) CGFloat volume;
-@property (nonatomic, assign) SlarkPlayerRotation rotation;
-@property (nonatomic, assign, readonly) SlarkPlayerState currentState;
-@property (nonatomic, assign, readonly) NSString* playerId;
-@property (nonatomic, assign, readonly) CMTime totalDuration;
-@property (nonatomic, assign, readonly) CMTime currentTime;
-@property (nonatomic, weak) id<ISlarkPlayerObserver> delegate;
+@property(nonatomic, assign) BOOL isLoop;
+@property(nonatomic, assign) BOOL isMute;
+@property(nonatomic, assign) CGFloat volume;
+@property(nonatomic, assign) SlarkPlayerRotation rotation;
+@property(nonatomic, assign, readonly) SlarkPlayerState currentState;
+@property(nonatomic, assign, readonly) NSString* playerId;
+@property(nonatomic, assign, readonly) CMTime totalDuration;
+@property(nonatomic, assign, readonly) CMTime currentTime;
+@property(nonatomic, weak) id<ISlarkPlayerObserver> delegate;
 
 - (instancetype)init:(NSString*)path;
 

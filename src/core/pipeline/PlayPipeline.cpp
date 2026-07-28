@@ -4,6 +4,12 @@
 
 #include "PlayPipeline.h"
 
+#include <algorithm>
+#include <array>
+#include <cassert>
+#include <chrono>
+#include <map>
+
 #include "AudioRenderComponent.h"
 #include "BufferMonitor.h"
 #include "DecoderComponent.h"
@@ -14,17 +20,11 @@
 #include "Thread.h"
 #include "perf/Perf.h"
 
-#include <algorithm>
-#include <array>
-#include <cassert>
-#include <chrono>
-#include <map>
-
 namespace slark {
 
 namespace {
 constexpr auto kTeardownTimeout = std::chrono::milliseconds(2000);
-} // namespace
+}  // namespace
 
 PlayPipeline::PlayPipeline(BackpressureConfig config) noexcept : config_(std::move(config)) {
     assert(config_.isValid() && "BackpressureConfig is invalid");
@@ -68,7 +68,7 @@ void PlayPipeline::start() noexcept {
     if (cur == PipelineState::Playing) {
         return;
     }
-    
+
     if (cur == PipelineState::Paused || cur == PipelineState::Built) {
         if (demuxer_) {
             demuxer_->start();
@@ -188,7 +188,10 @@ SeekStrategy PlayPipeline::resolveSeekStrategy(double targetSec) const noexcept 
     const double currentSec = clockSync_->masterTime().second();
     auto strategy = canFastForward ? SeekStrategy::FastForwardInGOP : SeekStrategy::SeekToKeyframe;
     LogI("resolveSeekStrategy, current={:.3f} target={:.3f} canFastForward={} -> strategy={}",
-        currentSec, targetSec, canFastForward, static_cast<int32_t>(strategy));
+         currentSec,
+         targetSec,
+         canFastForward,
+         static_cast<int32_t>(strategy));
     return strategy;
 }
 
@@ -209,7 +212,10 @@ void PlayPipeline::seek(CTime target, bool isAccurate) noexcept {
         postToOwnerThread([this] {
             fireEvent(PipelineEvent::SeekCompleted);
         });
-        LogI("seek distance too small, skip seek and notify completed: target={:.3f}s, current={:.3f}s", targetSec, currentSec);
+        LogI("seek distance too small, skip seek and notify completed: target={:.3f}s, "
+             "current={:.3f}s",
+             targetSec,
+             currentSec);
         return;
     }
 
@@ -222,9 +228,12 @@ void PlayPipeline::seek(CTime target, bool isAccurate) noexcept {
     [[maybe_unused]] const bool seekStarted = seekContext_->beginSeek(target, strategy);
     {
         double fps = clockSync_->videoFps();
-        int32_t maxSkip = (fps > 0.0)
-            ? std::max(1, static_cast<int32_t>(fps * static_cast<double>(config_.seekFastForwardMs) / 1000.0))
-            : 1;
+        int32_t maxSkip =
+            (fps > 0.0)
+                ? std::max(1,
+                           static_cast<int32_t>(
+                               fps * static_cast<double>(config_.seekFastForwardMs) / 1000.0))
+                : 1;
         seekContext_->setMaxSkipFrames(maxSkip);
     }
     SLARK_TRACE_MILESTONE(playSession_.lock().get(), "seek_start");
@@ -272,7 +281,9 @@ void PlayPipeline::performKeyframeSeek(CTime target, SeekStrategy strategy) noex
     assert(isOnOwnerThread());
     const double targetSec = target.second();
     LogI("performKeyframeSeek ENTER target={:.3f} strategy={} epoch={}",
-         targetSec, static_cast<int32_t>(strategy), seekContext_->currentEpoch());
+         targetSec,
+         static_cast<int32_t>(strategy),
+         seekContext_->currentEpoch());
     pause();
     if (audioDecoder_) {
         audioDecoder_->pause();
@@ -382,8 +393,13 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
         if (isDecodeCompleted()) {
             checkPlaybackComplete();
         }
-        LogI("requestVideoFrame HOLD, diff={:.3f}, masterTime={:.3f}, videoTime={:.3f}, cacheEndTime={:.3f}, playbackRate={:.3f}",
-             diff, masterTime, videoTime, cacheEnd, playbackRate);
+        LogI("requestVideoFrame HOLD, diff={:.3f}, masterTime={:.3f}, videoTime={:.3f}, "
+             "cacheEndTime={:.3f}, playbackRate={:.3f}",
+             diff,
+             masterTime,
+             videoTime,
+             cacheEnd,
+             playbackRate);
         return nullptr;
     }
 
@@ -397,8 +413,11 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
                 }
             }
         }
-        LogI("requestVideoFrame SKIP: video queue empty (starvation), masterTime={:.3f} videoTime={:.3f} cacheEndTime={:.3f}",
-             masterTime, videoTime, cacheEnd);
+        LogI("requestVideoFrame SKIP: video queue empty (starvation), masterTime={:.3f} "
+             "videoTime={:.3f} cacheEndTime={:.3f}",
+             masterTime,
+             videoTime,
+             cacheEnd);
         bufferMonitor_->onStarvation(!config_.isLiveSource && config_.startBufferDuration == 0.0);
         return nullptr;
     }
@@ -418,8 +437,15 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
         }
     }
 
-    LogI("requestVideoFrame POP pts={:.3f} dts={:.3f} isDiscard={}, masterTime={:.3f}, videoTime={:.3f}, cacheEndTime={:.3f}, diff={:.3f}",
-         frame->ptsTime(), frame->dtsTime(), frame->isDiscard, masterTime, videoTime, cacheEnd, diff);
+    LogI("requestVideoFrame POP pts={:.3f} dts={:.3f} isDiscard={}, masterTime={:.3f}, "
+         "videoTime={:.3f}, cacheEndTime={:.3f}, diff={:.3f}",
+         frame->ptsTime(),
+         frame->dtsTime(),
+         frame->isDiscard,
+         masterTime,
+         videoTime,
+         cacheEnd,
+         diff);
     bufferMonitor_->resetStarvationCount();
     clockSync_->setVideoTime(Time::TimePoint::fromSeconds(frame->ptsTime()));
 
@@ -500,8 +526,7 @@ void PlayPipeline::chaseVideoFrames(AVFrameRefPtr& frame,
         if (chaseLimit > 0 && dropCount >= chaseLimit) {
             break;
         }
-        diff =
-            clockSync_->masterTime().second() - clockSync_->videoTime().second();
+        diff = clockSync_->masterTime().second() - clockSync_->videoTime().second();
     }
 
     if (dropCount > 0) {
@@ -624,7 +649,7 @@ void PlayPipeline::checkPlaybackComplete() noexcept {
         if (state >= PipelineState::Ended || state >= PipelineState::TearingDown) {
             return;
         }
-    
+
         if (state != PipelineState::Playing && state != PipelineState::Paused) {
             return;
         }
@@ -637,14 +662,16 @@ void PlayPipeline::checkPlaybackComplete() noexcept {
             if (!dec || !dec->isCompleted()) {
                 bool canForceAudioComplete = false;
                 if (videoDecoder_) {
-                    if (auto videoDec = videoDecoder_->decoder(); videoDec && videoDec->isCompleted()) {
+                    if (auto videoDec = videoDecoder_->decoder();
+                        videoDec && videoDec->isCompleted()) {
                         bool audioQueueEmpty = true;
                         audioFrames_.withLock([&audioQueueEmpty](auto& q) {
                             audioQueueEmpty = q.empty();
                         });
                         if (audioQueueEmpty && audioRender_ && audioRender_->readable() == 0) {
                             canForceAudioComplete = true;
-                            LogW("audio decoder not completed but video done and data drained, force complete");
+                            LogW("audio decoder not completed but video done and data drained, "
+                                 "force complete");
                         }
                     }
                 }
@@ -874,7 +901,9 @@ void PlayPipeline::onVideoDecoded(DecoderData data) noexcept {
         return;
     }
     LogI("onVideoDecoded pts:{:.6f}, isDiscard:{}, isSeekPending:{}",
-         data.frame->ptsTime(), data.frame->isDiscard, seekContext_->isSeekPending());
+         data.frame->ptsTime(),
+         data.frame->isDiscard,
+         seekContext_->isSeekPending());
 
     if (!readiness_.firstFrameRendered.load(std::memory_order_acquire) &&
         !seekContext_->isSeekPending()) {
@@ -1316,13 +1345,17 @@ void PlayPipeline::pushAudioFrames() noexcept {
         hasPushed = true;
         const auto pushMasterTime = clockSync_->masterTime().second();
         if (!audioRender_->process(frame)) {
-            LogD("pushAudioFrames: render process failed, pts={:.3f}, masterTime={:.3f}", frame->ptsTime(), pushMasterTime);
+            LogD("pushAudioFrames: render process failed, pts={:.3f}, masterTime={:.3f}",
+                 frame->ptsTime(),
+                 pushMasterTime);
             audioFrames_.withLock([&frame](auto& q) {
                 q.emplace_front(std::move(frame));
             });
             break;
         }
-        LogD("pushAudioFrames: pushed frame pts={:.3f}, masterTime={:.3f}", frame->ptsTime(), pushMasterTime);
+        LogD("pushAudioFrames: pushed frame pts={:.3f}, masterTime={:.3f}",
+             frame->ptsTime(),
+             pushMasterTime);
     }
     if (!hasPushed) {
         const auto masterTime = clockSync_->masterTime().second();
@@ -1332,8 +1365,11 @@ void PlayPipeline::pushAudioFrames() noexcept {
                     audioRender_->setDecoderCompleted();
                 }
             } else if (!q.empty()) {
-                LogD("pushAudioFrames: queue not empty, render unavailable, masterTime={:.3f}, queueSize={}, readable={}",
-                     masterTime, q.size(), audioRender_->readable());
+                LogD("pushAudioFrames: queue not empty, render unavailable, masterTime={:.3f}, "
+                     "queueSize={}, readable={}",
+                     masterTime,
+                     q.size(),
+                     audioRender_->readable());
             }
         });
         if (audioRender_->readable() == 0) {
@@ -1422,4 +1458,4 @@ void PlayPipeline::onSeekFrameConsumed(TrackType track) noexcept {
     });
 }
 
-} // namespace slark
+}  // namespace slark

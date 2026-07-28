@@ -14,7 +14,6 @@ DecoderComponent::DecoderComponent(ReceiverPtr<AVFrameRefPtr> receiver,
                                    DecoderComponentConfig config)
     : config_(std::move(config)), receiver_(std::move(receiver)) {}
 
-
 DecoderComponent::~DecoderComponent() {
     stop();
 }
@@ -145,7 +144,9 @@ void DecoderComponent::processPendingOutputs(Thread& thread) noexcept {
             decoder_->clearPendingOutput();
             break;
         } else {
-            LogW("processPendingOutputs: renderOutput failed {} after {} frames", toString(res), count);
+            LogW("processPendingOutputs: renderOutput failed {} after {} frames",
+                 toString(res),
+                 count);
             decoder_->clearPendingOutput();
             break;
         }
@@ -182,7 +183,9 @@ bool DecoderComponent::decodeFrame(AVFrameRefPtr& frame, Thread& thread) noexcep
         if (res == Error::CodecNotProcessed || res == Error::CodecAgain) {
             retryCount++;
             if (retryCount > kMaxDecodeRetry) {
-                LogE("decode retry exhausted after {} retries, pts:{}", kMaxDecodeRetry, frame->pts);
+                LogE("decode retry exhausted after {} retries, pts:{}",
+                     kMaxDecodeRetry,
+                     frame->pts);
                 if (config_.onError) {
                     config_.onError(Error::CodecResourceExhausted);
                 }
@@ -193,8 +196,7 @@ bool DecoderComponent::decodeFrame(AVFrameRefPtr& frame, Thread& thread) noexcep
             std::this_thread::sleep_for(backoff);
             processPendingOutputs(thread);
         } else {
-            if (thread.isExit() &&
-                res == Error::CodecNotStarted) {
+            if (thread.isExit() && res == Error::CodecNotStarted) {
                 break;
             }
             LogE("decode error: {}", toString(res));
@@ -204,7 +206,7 @@ bool DecoderComponent::decodeFrame(AVFrameRefPtr& frame, Thread& thread) noexcep
             return false;
         }
     }
-    return true; // stop requested, not an error
+    return true;  // stop requested, not an error
 }
 
 void DecoderComponent::runLoop(Thread& thread) noexcept {
@@ -247,4 +249,4 @@ void DecoderComponent::runLoop(Thread& thread) noexcept {
     }
 }
 
-} // namespace slark
+}  // namespace slark

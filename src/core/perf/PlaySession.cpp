@@ -4,10 +4,10 @@
 
 #include "PlaySession.h"
 
+#include <format>
+
 #include "Log.hpp"
 #include "Time.hpp"
-
-#include <format>
 
 namespace slark::perf {
 
@@ -138,4 +138,4 @@ double PlaySession::firstFrameMs() const noexcept {
     return static_cast<double>(ts - startUs_) / 1000.0;
 }
 
-} // namespace slark::perf
+}  // namespace slark::perf

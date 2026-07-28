@@ -4,17 +4,17 @@
 
 #pragma once
 
-#include "Synchronized.hpp"
-
 #include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
 
+#include "Synchronized.hpp"
+
 namespace slark {
 
 class Reflection {
-public:
+ public:
     using Factory = std::function<std::shared_ptr<void>()>;
 
     static Reflection& shareInstance() noexcept {
@@ -50,7 +50,7 @@ public:
         return name;
     }
 
-private:
+ private:
     Reflection() = default;
     ~Reflection() = default;
 
@@ -62,4 +62,4 @@ private:
     static inline const std::string cls##_registered_ = \
         ::slark::Reflection::enroll<cls>(SLARK_GET_CLASS_NAME(cls))
 
-} // namespace slark
+}  // namespace slark

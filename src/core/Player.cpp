@@ -4,10 +4,10 @@
 
 #include "Player.h"
 
+#include <utility>
+
 #include "Log.hpp"
 #include "PlayerImpl.h"
-
-#include <utility>
 
 namespace slark {
 
@@ -191,4 +191,4 @@ void Player::setRenderImpl(std::weak_ptr<IVideoRender> render) noexcept {
     pimpl_->setRenderImpl(render);
 }
 
-} // namespace slark
+}  // namespace slark

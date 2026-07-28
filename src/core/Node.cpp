@@ -4,11 +4,11 @@
 
 #include "Node.h"
 
-#include "Util.h"
-
 #include <functional>
 #include <ranges>
 #include <utility>
+
+#include "Util.h"
 
 namespace slark {
 
@@ -57,4 +57,4 @@ bool Node::send(std::shared_ptr<AVFrame> frame) noexcept {
     return true;
 }
 
-} // end namespace slark
+}  // end namespace slark

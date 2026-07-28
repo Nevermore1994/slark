@@ -4,6 +4,14 @@
 
 #pragma once
 
+#include <atomic>
+#include <deque>
+#include <functional>
+#include <map>
+#include <memory>
+#include <optional>
+#include <thread>
+
 #include "AVFrame.hpp"
 #include "AudioInfo.h"
 #include "BufferMonitor.h"
@@ -23,14 +31,6 @@
 #include "Synchronized.hpp"
 #include "Time.hpp"
 #include "perf/PlaySession.h"
-
-#include <atomic>
-#include <deque>
-#include <functional>
-#include <map>
-#include <memory>
-#include <optional>
-#include <thread>
 
 namespace slark {
 
@@ -54,9 +54,9 @@ enum class PipelineState : uint8_t {
     Built,
     Playing,
     Paused,
-    TearingDown, // teardown 已发起，等待组件退出
-    Ended,       // 正常播放结束（RenderEnd 已触发）
-    Faulted,     // 不可恢复错误，终态
+    TearingDown,  // teardown 已发起，等待组件退出
+    Ended,        // 正常播放结束（RenderEnd 已触发）
+    Faulted,      // 不可恢复错误，终态
 };
 
 struct ReadinessTracker {
@@ -65,11 +65,11 @@ struct ReadinessTracker {
     bool liveVideoKeyframeSeen = false;
     bool liveAudioPacketSeen = false;
     bool readyFired = false;
-    std::atomic<bool> firstFrameRendered{false}; ///< 首帧已渲染，之后才启用 AV Sync 和背压 Hold
+    std::atomic<bool> firstFrameRendered{false};  ///< 首帧已渲染，之后才启用 AV Sync 和背压 Hold
 };
 
 class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
-public:
+ public:
     explicit PlayPipeline(BackpressureConfig config) noexcept;
 
     ~PlayPipeline();
@@ -101,7 +101,6 @@ public:
     [[nodiscard]] double cacheEndTime() const noexcept;
 
     [[nodiscard]] AVFrameRefPtr requestVideoFrame() noexcept;
-
 
     void drainPendingTasks() noexcept;
 
@@ -185,7 +184,7 @@ public:
         return seekContext_->currentEpoch();
     }
 
-private:
+ private:
     [[nodiscard]] double demuxedDuration() const noexcept override;
 
     void pauseStream() noexcept override;
@@ -290,7 +289,7 @@ private:
 
     void registerComponents() noexcept;
 
-private:
+ private:
     BackpressureConfig config_;
     std::thread::id ownerThreadId_;
     PipelineEventCallback onEvent_;
@@ -338,7 +337,6 @@ private:
     std::vector<std::shared_ptr<IPipelineComponent>> components_;
 
     std::chrono::steady_clock::time_point lastVsyncTime_{};
-
 };
 
-} // namespace slark
+}  // namespace slark

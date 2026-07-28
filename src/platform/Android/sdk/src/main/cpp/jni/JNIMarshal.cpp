@@ -54,7 +54,7 @@ std::unique_ptr<slark::Data> bytes(JNIEnv* env, jobject byteBuffer) noexcept {
                                          reinterpret_cast<const Byte*>(ptr));
 }
 
-} // namespace FromJVM
+}  // namespace FromJVM
 
 namespace ToJVM {
 
@@ -134,6 +134,6 @@ ByteArrayReference naluBytes(JNIEnv* env,
     return {env, arr};
 }
 
-} // namespace ToJVM
+}  // namespace ToJVM
 
-} // namespace slark::JNI
+}  // namespace slark::JNI

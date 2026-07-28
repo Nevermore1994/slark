@@ -4,9 +4,9 @@
 
 #pragma once
 
-#include "PerfTypes.h"
-
 #include <memory>
+
+#include "PerfTypes.h"
 
 namespace slark::perf {
 
@@ -28,4 +28,4 @@ struct IPerfReporter {
     virtual ~IPerfReporter() = default;
 };
 
-} // namespace slark::perf
+}  // namespace slark::perf

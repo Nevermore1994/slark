@@ -39,4 +39,4 @@ void TexturePool::restore(TexturePtr texture) {
     }
 }
 
-} // namespace slark
+}  // namespace slark

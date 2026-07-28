@@ -4,16 +4,16 @@
 
 #pragma once
 
+#include <memory>
+#include <optional>
+#include <tuple>
+
 #include "AVFrame.hpp"
 #include "AudioInfo.h"
 #include "Buffer.hpp"
 #include "NonCopyable.h"
 #include "Reflection.hpp"
 #include "VideoInfo.h"
-
-#include <memory>
-#include <optional>
-#include <tuple>
 
 namespace slark {
 
@@ -58,10 +58,10 @@ struct DemuxerResult {
 };
 
 class IDemuxer : public NonCopyMovable {
-public:
+ public:
     virtual ~IDemuxer() = default;
 
-public:
+ public:
     virtual bool open(std::unique_ptr<Buffer>&) noexcept = 0;
 
     virtual void close() noexcept = 0;
@@ -156,7 +156,7 @@ public:
         pendingSeekPos_.reset();
     }
 
-protected:
+ protected:
     bool isOpened_ = false;
     bool isCompleted_ = false;
     DemuxerConfig config_;
@@ -169,4 +169,4 @@ protected:
     std::optional<uint64_t> pendingSeekPos_;
 };
 
-} // end namespace slark
+}  // end namespace slark

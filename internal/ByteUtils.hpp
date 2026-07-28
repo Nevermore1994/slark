@@ -4,9 +4,9 @@
 
 #pragma once
 
-#include "Types.h"
-
 #include <string_view>
+
+#include "Types.h"
 
 namespace slark {
 
@@ -25,4 +25,4 @@ inline std::string_view toStringView(ConstByteSpan span) noexcept {
     return std::string_view(reinterpret_cast<const char*>(span.data()), span.size());
 }
 
-} // namespace slark
+}  // namespace slark

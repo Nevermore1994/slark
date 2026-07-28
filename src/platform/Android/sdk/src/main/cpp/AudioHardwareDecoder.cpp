@@ -24,7 +24,7 @@ Error AudioHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
     auto res = NativeHardwareDecoder::sendPacket(
         decoderId_,
         frame->data,
-        int64_t(frame->ptsTime() * 1000000), // convert to microseconds
+        int64_t(frame->ptsTime() * 1000000),  // convert to microseconds
         flag,
         PacketType::Audio);
     if (res == Error::Success || res == Error::CodecAgain || res == Error::CodecNotProcessed) {
@@ -56,12 +56,11 @@ void AudioHardwareDecoder::retryPendingEOS() noexcept {
         pendingEOSFrame_.reset();
         return;
     }
-    auto res = NativeHardwareDecoder::sendPacket(
-        decoderId_,
-        pendingEOSFrame_->data,
-        int64_t(pendingEOSFrame_->ptsTime() * 1000000),
-        NativeDecodeFlag::EndOfStream,
-        PacketType::Audio);
+    auto res = NativeHardwareDecoder::sendPacket(decoderId_,
+                                                 pendingEOSFrame_->data,
+                                                 int64_t(pendingEOSFrame_->ptsTime() * 1000000),
+                                                 NativeDecodeFlag::EndOfStream,
+                                                 PacketType::Audio);
     if (res == Error::Success) {
         isCompleted_ = true;
         LogI("pending audio EOS retry success, mark completed");
@@ -109,7 +108,7 @@ void AudioHardwareDecoder::receiveDecodedData(DataPtr data,
     auto frame = std::make_unique<AVFrame>(AVFrameType::Audio);
     frame->pts = pts;
     frame->dts = pts;
-    frame->timeScale = 1000000; // us
+    frame->timeScale = 1000000;  // us
     frame->data = std::move(data);
     auto audioFrameInfo = std::make_shared<AudioFrameInfo>();
     audioFrameInfo->sampleRate = audioConfig->sampleRate;
@@ -120,4 +119,4 @@ void AudioHardwareDecoder::receiveDecodedData(DataPtr data,
     retryPendingEOS();
 }
 
-} // namespace slark
+}  // namespace slark

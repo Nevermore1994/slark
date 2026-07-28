@@ -78,4 +78,4 @@ void Clock::setSpeed(double speed) noexcept {
     speed_.store(speed, std::memory_order_relaxed);
 }
 
-} // namespace slark
+}  // namespace slark

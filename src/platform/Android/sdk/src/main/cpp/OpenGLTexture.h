@@ -12,7 +12,7 @@ namespace slark {
 // OpenGL texture implementing ITexture interface,
 // wraps existing Texture
 class OpenGLTexture : public ITexture {
-public:
+ public:
     explicit OpenGLTexture(TextureRefPtr texture) : texture_(std::move(texture)) {}
 
     uint32_t width() const noexcept override {
@@ -43,8 +43,8 @@ public:
         return texture_;
     }
 
-private:
+ private:
     TextureRefPtr texture_;
 };
 
-} // namespace slark
+}  // namespace slark

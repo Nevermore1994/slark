@@ -35,45 +35,45 @@ struct BoxInfo {
 };
 
 class Box {
-public:
+ public:
     std::vector<BoxRefPtr> childs;
     BoxInfo info;
 
-public:
+ public:
     Box(BoxInfo&& boxInfo) : info(boxInfo) {}
 
     virtual ~Box() = default;
 
-public:
+ public:
     virtual bool decode(Buffer&) noexcept;
     [[nodiscard]] virtual std::string description(const std::string&) const noexcept;
 
     void append(std::shared_ptr<Box> child) noexcept;
     [[nodiscard]] virtual BoxRefPtr getChild(std::string_view type) const noexcept;
 
-public:
+ public:
     static BoxRefPtr createBox(Buffer&);
     static std::expected<BoxInfo, bool> tryParseBoxInfo(Buffer&) noexcept;
 };
 
 class BoxFtyp : public Box {
-public:
+ public:
     std::string majorBrand{};
     uint32_t minorVersion{};
     std::string compatibleBrands{};
 
-public:
+ public:
     BoxFtyp(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxFtyp() override = default;
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
     std::string description(const std::string&) const noexcept override;
 };
 
 class BoxMvhd : public Box {
-public:
+ public:
     uint8_t version{};
     uint32_t flags{};
     uint64_t creationTime{};
@@ -92,21 +92,21 @@ public:
     uint32_t currentTime{};
     uint32_t nextTrackId{};
 
-public:
+ public:
     BoxMvhd(BoxInfo&& boxInfo) : Box(std::move(boxInfo)), matrix(9, 0) {}
 
     ~BoxMvhd() override = default;
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
     std::string description(const std::string&) const noexcept override;
 
-private:
+ private:
     std::string matrixString(const std::string&) const noexcept;
 };
 
 class BoxMdhd : public Box {
-public:
+ public:
     uint8_t version{};
     uint32_t flags{};
     uint64_t creationTime{};
@@ -116,19 +116,19 @@ public:
     uint16_t language{};
     uint16_t quality{};
 
-public:
+ public:
     BoxMdhd(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxMdhd() override = default;
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
     std::string description(const std::string&) const noexcept override;
 };
 
 // Sample Description
 class BoxStsd : public Box {
-public:
+ public:
     bool isAudio = false;
     bool isVideo = false;
     uint8_t version{};
@@ -148,17 +148,17 @@ public:
     uint16_t packetSize{};
     uint16_t sampleRate{};
 
-public:
+ public:
     BoxStsd(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxStsd() override = default;
 
     std::tuple<CodecId, std::string> getCodecId();
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
 
-private:
+ private:
     void decodeAudioEntry(Buffer& buffer, std::string_view symbol) noexcept;
     void decodeVideoEntry(Buffer& buffer, std::string_view symbol) noexcept;
 };
@@ -171,57 +171,57 @@ struct StscEntry {
 
 // Sample - to - Chunk
 class BoxStsc : public Box {
-public:
+ public:
     std::vector<StscEntry> entrys;
 
-public:
+ public:
     BoxStsc(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxStsc() override = default;
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
 };
 
 // Sample Size
 class BoxStsz : public Box {
-public:
+ public:
     std::vector<uint64_t> sampleSizes;
 
-public:
+ public:
     BoxStsz(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxStsz() override = default;
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
 };
 
 // Chunk Offset
 class BoxStco : public Box {
-public:
+ public:
     std::vector<uint64_t> chunkOffsets;
 
-public:
+ public:
     BoxStco(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxStco() override = default;
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
 };
 
 // 64-bit Chunk Offset (for files > 4GB)
 class BoxCo64 : public Box {
-public:
+ public:
     std::vector<uint64_t> chunkOffsets;
 
-public:
+ public:
     BoxCo64(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxCo64() override = default;
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
 };
 
@@ -232,15 +232,15 @@ struct SttsEntry {
 
 // Time - to - Sample
 class BoxStts : public Box {
-public:
+ public:
     std::vector<SttsEntry> entrys;
 
-public:
+ public:
     BoxStts(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxStts() override = default;
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
     uint32_t sampleSize() const noexcept;
 };
@@ -251,29 +251,29 @@ struct CttsEntry {
 };
 
 class BoxCtts : public Box {
-public:
+ public:
     uint8_t version{};
     std::vector<CttsEntry> entrys;
 
-public:
+ public:
     BoxCtts(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxCtts() override = default;
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
 };
 
 class BoxStss : public Box {
-public:
+ public:
     std::vector<uint32_t> keyIndexs;
 
-public:
+ public:
     BoxStss(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxStss() override = default;
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
 };
 
@@ -286,7 +286,7 @@ struct AudioSpecificConfig {
 };
 
 class BoxEsds : public Box {
-public:
+ public:
     uint8_t objectTypeId{};
     CodecId codecId{};
     AudioSpecificConfig audioSpecConfig;
@@ -294,36 +294,36 @@ public:
     uint32_t maxBitRate{};
     uint32_t avgBitRate{};
 
-public:
+ public:
     BoxEsds(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxEsds() override = default;
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
     std::string description(const std::string&) const noexcept override;
 
-private:
+ private:
     void decodeAudioSpecificConfig(Buffer&) noexcept;
     int32_t getDescrLen(Buffer&) noexcept;
 };
 
 class BoxMeta : public Box {
-public:
+ public:
     uint8_t version{};
     uint32_t flags{};
 
-public:
+ public:
     BoxMeta(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxMeta() override = default;
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
 };
 
 class BoxAvcc : public Box {
-public:
+ public:
     uint8_t version{};
     uint8_t profileIdc{};
     uint8_t profileCompatibility{};
@@ -333,18 +333,18 @@ public:
     std::vector<DataRefPtr> sps;
     std::vector<DataRefPtr> pps;
 
-public:
+ public:
     BoxAvcc(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxAvcc() override = default;
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
     std::string description(const std::string&) const noexcept override;
 };
 
 class BoxHvcc : public Box {
-public:
+ public:
     uint8_t version{};
     uint8_t profileSpace{};
     uint8_t tierFlag{};
@@ -358,12 +358,12 @@ public:
     std::vector<DataRefPtr> pps;
     std::vector<DataRefPtr> vps;
 
-public:
+ public:
     BoxHvcc(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxHvcc() override = default;
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
     std::string description(const std::string&) const noexcept override;
 };
@@ -376,23 +376,23 @@ struct ElstEntry {
 };
 
 class BoxElst : public Box {
-public:
+ public:
     uint8_t version{};
     std::vector<ElstEntry> entries;
 
-public:
+ public:
     BoxElst(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxElst() override = default;
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
     [[nodiscard]] int64_t mediaTimeOffset() const noexcept;
     [[nodiscard]] bool hasEmptyEdit() const noexcept;
 };
 
 class BoxTkhd : public Box {
-public:
+ public:
     uint8_t version{};
     uint32_t flags{};
     uint64_t creationTime{};
@@ -406,71 +406,76 @@ public:
     uint32_t width{};
     uint32_t height{};
 
-public:
+ public:
     BoxTkhd(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
+
     ~BoxTkhd() override = default;
 
     bool decode(Buffer&) noexcept override;
 };
 
 class BoxHdlr : public Box {
-public:
+ public:
     uint8_t version{};
     uint32_t flags{};
-    std::string handlerType; // "vide", "soun", "hint", etc.
+    std::string handlerType;  // "vide", "soun", "hint", etc.
 
-public:
+ public:
     BoxHdlr(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
+
     ~BoxHdlr() override = default;
 
     bool decode(Buffer&) noexcept override;
 };
 
 class BoxVmhd : public Box {
-public:
+ public:
     uint8_t version{};
     uint32_t flags{};
 
-public:
+ public:
     BoxVmhd(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
+
     ~BoxVmhd() override = default;
 
     bool decode(Buffer&) noexcept override;
 };
 
 class BoxSmhd : public Box {
-public:
+ public:
     uint8_t version{};
     uint32_t flags{};
 
-public:
+ public:
     BoxSmhd(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
+
     ~BoxSmhd() override = default;
 
     bool decode(Buffer&) noexcept override;
 };
 
 class BoxDref : public Box {
-public:
+ public:
     uint8_t version{};
     uint32_t flags{};
 
-public:
+ public:
     BoxDref(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
+
     ~BoxDref() override = default;
 
     bool decode(Buffer&) noexcept override;
 };
 
 class BoxMvex : public Box {
-public:
+ public:
     BoxMvex(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxMvex() override = default;
 };
 
 class BoxTrex : public Box {
-public:
+ public:
     uint8_t version{};
     uint32_t trackId{};
     uint32_t defaultSampleDescriptionIndex{1};
@@ -478,45 +483,45 @@ public:
     uint32_t defaultSampleSize{};
     uint32_t defaultSampleFlags{};
 
-public:
+ public:
     BoxTrex(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxTrex() override = default;
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
 };
 
 class BoxMoof : public Box {
-public:
+ public:
     BoxMoof(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxMoof() override = default;
 };
 
 class BoxMfhd : public Box {
-public:
+ public:
     uint8_t version{};
     uint32_t sequenceNumber{};
 
-public:
+ public:
     BoxMfhd(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxMfhd() override = default;
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
 };
 
 class BoxTraf : public Box {
-public:
+ public:
     BoxTraf(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxTraf() override = default;
 };
 
 class BoxTfhd : public Box {
-public:
+ public:
     static constexpr uint32_t kBaseDataOffsetPresent = 0x000001;
     static constexpr uint32_t kSampleDescriptionIndexPresent = 0x000002;
     static constexpr uint32_t kDefaultSampleDurationPresent = 0x000008;
@@ -534,26 +539,26 @@ public:
     uint32_t defaultSampleSize{};
     uint32_t defaultSampleFlags{};
 
-public:
+ public:
     BoxTfhd(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxTfhd() override = default;
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
 };
 
 class BoxTfdt : public Box {
-public:
+ public:
     uint8_t version{};
     uint64_t baseMediaDecodeTime{};
 
-public:
+ public:
     BoxTfdt(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxTfdt() override = default;
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
 };
 
@@ -565,7 +570,7 @@ struct TrunSample {
 };
 
 class BoxTrun : public Box {
-public:
+ public:
     static constexpr uint32_t kDataOffsetPresent = 0x000001;
     static constexpr uint32_t kFirstSampleFlagsPresent = 0x000004;
     static constexpr uint32_t kSampleDurationPresent = 0x000100;
@@ -580,12 +585,12 @@ public:
     uint32_t firstSampleFlags{};
     std::vector<TrunSample> samples;
 
-public:
+ public:
     BoxTrun(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxTrun() override = default;
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
 };
 
@@ -599,7 +604,7 @@ struct SidxEntry {
 };
 
 class BoxSidx : public Box {
-public:
+ public:
     uint8_t version{};
     uint32_t referenceId{};
     uint32_t timeScale{};
@@ -607,13 +612,13 @@ public:
     uint64_t firstOffset{};
     std::vector<SidxEntry> entries;
 
-public:
+ public:
     BoxSidx(BoxInfo&& boxInfo) : Box(std::move(boxInfo)) {}
 
     ~BoxSidx() override = default;
 
-public:
+ public:
     bool decode(Buffer&) noexcept override;
 };
 
-} // namespace slark
+}  // namespace slark

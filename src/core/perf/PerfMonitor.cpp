@@ -4,10 +4,10 @@
 
 #include "PerfMonitor.h"
 
+#include <algorithm>
+
 #include "Log.hpp"
 #include "PlaySession.h"
-
-#include <algorithm>
 
 namespace slark::perf {
 
@@ -260,4 +260,4 @@ PerfConfig PerfMonitor::config() const noexcept {
     return config_;
 }
 
-} // namespace slark::perf
+}  // namespace slark::perf

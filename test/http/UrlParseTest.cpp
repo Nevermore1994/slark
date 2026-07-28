@@ -1,10 +1,11 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-#include "Url.h"
-
 #include <gtest/gtest.h>
+
 #include <iostream>
+
+#include "Url.h"
 
 using namespace slark::http;
 

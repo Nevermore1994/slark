@@ -95,4 +95,4 @@ bool copyFile(std::string_view from, std::string_view to) noexcept {
     return !error;
 }
 
-} // namespace slark::File
+}  // namespace slark::File

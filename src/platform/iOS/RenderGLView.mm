@@ -7,18 +7,19 @@
 
 #import "RenderGLView.h"
 
+#import <AVFoundation/AVUtilities.h>
+#import <OpenGLES/ES2/gl.h>
+#import <OpenGLES/ES2/glext.h>
+
+#import <atomic>
+#import <functional>
+#import <memory>
+
 #include "Clock.h"
 #include "GLProgram.h"
 #include "GLShader.h"
 #include "VideoInfo.h"
 #include "iOSEGLContext.h"
-
-#import <AVFoundation/AVUtilities.h>
-#import <OpenGLES/ES2/gl.h>
-#import <OpenGLES/ES2/glext.h>
-#import <atomic>
-#import <functional>
-#import <memory>
 
 namespace slark {
 struct IVideoRender;
@@ -27,7 +28,7 @@ struct AVFrame;
 using AVFrameRefPtr = std::shared_ptr<AVFrame>;
 using IEGLContextRefPtr = std::shared_ptr<class IEGLContext>;
 class GLProgram;
-} // namespace slark
+}  // namespace slark
 
 using namespace slark;
 
@@ -165,7 +166,7 @@ static const GLfloat kColorConversion709FullRange[] = {
     const GLfloat* _preferredConversion;
     GLfloat _yOffset;
     CVOpenGLESTextureCacheRef _videoTextureCache;
-    CAEAGLLayer* _eaglLayer; // 主线程 cache，避免 renderQueue→main 的 sync 调用
+    CAEAGLLayer* _eaglLayer;  // 主线程 cache，避免 renderQueue→main 的 sync 调用
 
     // 实例级 uniform/attribute 位置，避免多实例并存时全局数组互相覆盖
     GLint _uniforms[NUM_UNIFORMS];
@@ -181,18 +182,18 @@ static const GLfloat kColorConversion709FullRange[] = {
     CVOpenGLESTextureRef _renderTexture;
 }
 
-@property (atomic, assign) BOOL isActive;
-@property (nonatomic, assign) NSInteger renderInterval;
-@property (nonatomic, strong) CADisplayLink* displayLink;
-@property (nonatomic, strong) dispatch_queue_t renderQueue;
-@property (nonatomic, assign) GLint width;
-@property (nonatomic, assign) GLint height;
-@property (nonatomic, assign) GLuint frameBuffer;
-@property (nonatomic, assign) GLuint renderBuffer;
-@property (nonatomic, assign) CVPixelBufferRef preRenderBuffer;
+@property(atomic, assign) BOOL isActive;
+@property(nonatomic, assign) NSInteger renderInterval;
+@property(nonatomic, strong) CADisplayLink* displayLink;
+@property(nonatomic, strong) dispatch_queue_t renderQueue;
+@property(nonatomic, assign) GLint width;
+@property(nonatomic, assign) GLint height;
+@property(nonatomic, assign) GLuint frameBuffer;
+@property(nonatomic, assign) GLuint renderBuffer;
+@property(nonatomic, assign) CVPixelBufferRef preRenderBuffer;
 // For screen rotation
-@property (nonatomic, assign) GLuint vertexCoordinateBuffer;
-@property (nonatomic, assign) GLuint textureCoordinateBuffer;
+@property(nonatomic, assign) GLuint vertexCoordinateBuffer;
+@property(nonatomic, assign) GLuint textureCoordinateBuffer;
 @end
 
 @implementation RenderGLView
@@ -225,19 +226,19 @@ static const GLfloat kColorConversion709FullRange[] = {
         dispatch_queue_t q = _renderQueue;
         __strong RenderGLView* strongSelf = self;
         dispatch_async(q, ^{
-            [strongSelf cleanupOpenGL];
-            if (strongSelf->_vertexCoordinateBuffer) {
-                glDeleteBuffers(1, &strongSelf->_vertexCoordinateBuffer);
-                strongSelf->_vertexCoordinateBuffer = 0;
-            }
-            if (strongSelf->_textureCoordinateBuffer) {
-                glDeleteBuffers(1, &strongSelf->_textureCoordinateBuffer);
-                strongSelf->_textureCoordinateBuffer = 0;
-            }
-            if (strongSelf->_preRenderBuffer) {
-                CVPixelBufferRelease(strongSelf->_preRenderBuffer);
-                strongSelf->_preRenderBuffer = NULL;
-            }
+          [strongSelf cleanupOpenGL];
+          if (strongSelf->_vertexCoordinateBuffer) {
+              glDeleteBuffers(1, &strongSelf->_vertexCoordinateBuffer);
+              strongSelf->_vertexCoordinateBuffer = 0;
+          }
+          if (strongSelf->_textureCoordinateBuffer) {
+              glDeleteBuffers(1, &strongSelf->_textureCoordinateBuffer);
+              strongSelf->_textureCoordinateBuffer = 0;
+          }
+          if (strongSelf->_preRenderBuffer) {
+              CVPixelBufferRelease(strongSelf->_preRenderBuffer);
+              strongSelf->_preRenderBuffer = NULL;
+          }
         });
     }
 }
@@ -278,10 +279,10 @@ static const GLfloat kColorConversion709FullRange[] = {
 
     _videoRenderImpl->notifyVideoInfoFunc = [weakSelf](std::shared_ptr<VideoInfo> info) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            __strong __typeof(weakSelf) strongSelf = weakSelf;
-            if (strongSelf && info && info->fps > 0) {
-                strongSelf.renderInterval = info->fps;
-            }
+          __strong __typeof(weakSelf) strongSelf = weakSelf;
+          if (strongSelf && info && info->fps > 0) {
+              strongSelf.renderInterval = info->fps;
+          }
         });
     };
 
@@ -306,12 +307,12 @@ static const GLfloat kColorConversion709FullRange[] = {
         }
         CVPixelBufferRetain(pixelBuffer);
         dispatch_async(strongSelf->_renderQueue, ^{
-            __strong __typeof(weakSelf) s = weakSelf;
-            if (s) {
-                [s displayPixelBuffer:pixelBuffer];
-                [s saveAsPreRenderBuffer:pixelBuffer];
-            }
-            CVPixelBufferRelease(pixelBuffer);
+          __strong __typeof(weakSelf) s = weakSelf;
+          if (s) {
+              [s displayPixelBuffer:pixelBuffer];
+              [s saveAsPreRenderBuffer:pixelBuffer];
+          }
+          CVPixelBufferRelease(pixelBuffer);
         });
     };
 }
@@ -331,7 +332,7 @@ static const GLfloat kColorConversion709FullRange[] = {
 - (void)setContext:(slark::IEGLContextRefPtr)context {
     _context = context;
     dispatch_async(_renderQueue, ^{
-        [self setupOpenGL];
+      [self setupOpenGL];
     });
 }
 
@@ -401,9 +402,9 @@ static const GLfloat kColorConversion709FullRange[] = {
         NSLog(@"Screen rotation detected, new size: %d x %d", _width, _height);
 
         dispatch_async(_renderQueue, ^{
-            [self rebuildFramebuffer];
-            // Render the last frame after screen rotation
-            [self renderPreBufferIfNeeded];
+          [self rebuildFramebuffer];
+          // Render the last frame after screen rotation
+          [self renderPreBufferIfNeeded];
         });
     }
 }
@@ -416,7 +417,7 @@ static const GLfloat kColorConversion709FullRange[] = {
     }
 
     dispatch_async(_renderQueue, ^{
-        [self renderFrame];
+      [self renderFrame];
     });
 }
 
@@ -637,7 +638,7 @@ static const GLfloat kColorConversion709FullRange[] = {
     }
 
     [self cleanupTextures];
-    _program->detach(); // 先 detach program，再 detach context
+    _program->detach();  // 先 detach program，再 detach context
     _context->detachContext();
 }
 
@@ -701,8 +702,8 @@ static const GLfloat kColorConversion709FullRange[] = {
                                                        NULL,
                                                        GL_TEXTURE_2D,
                                                        GL_RG_EXT,
-                                                       frameWidth / 2,  // NOLINT
-                                                       frameHeight / 2, // NOLINT
+                                                       frameWidth / 2,   // NOLINT
+                                                       frameHeight / 2,  // NOLINT
                                                        GL_RG_EXT,
                                                        GL_UNSIGNED_BYTE,
                                                        1,
@@ -829,4 +830,4 @@ static const GLfloat kColorConversion709FullRange[] = {
 
 @end
 
-#endif // !TARGET_IPHONE_SIMULATOR
+#endif  // !TARGET_IPHONE_SIMULATOR

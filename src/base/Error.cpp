@@ -134,4 +134,4 @@ std::string_view toString(Error error) noexcept {
     }
 }
 
-} // namespace slark
+}  // namespace slark

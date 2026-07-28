@@ -39,4 +39,4 @@ Error RawDecoder::decode(AVFrameRefPtr& frame) noexcept {
     return Error::Success;
 }
 
-} // namespace slark
+}  // namespace slark

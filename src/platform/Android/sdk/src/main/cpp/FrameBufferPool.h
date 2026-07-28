@@ -4,12 +4,12 @@
 
 #pragma once
 
+#include <list>
+#include <unordered_map>
+
 #include "FrameBuffer.h"
 #include "NonCopyable.h"
 #include "TexturePool.h"
-
-#include <list>
-#include <unordered_map>
 
 namespace slark {
 using FrameBufferRefPtrList = std::list<FrameBufferRefPtr>;
@@ -30,7 +30,7 @@ struct FrameBufferNode {
 };
 
 class FrameBufferPool : public NonCopyMovable {
-public:
+ public:
     explicit FrameBufferPool(uint8_t maxSlotCount = kMaxFrameBufferCount)
         : maxFrameBufferCount_(maxSlotCount), texturePool_(std::make_shared<TexturePool>()) {}
 
@@ -38,10 +38,10 @@ public:
 
     FrameBufferRefPtr acquire(uint32_t width, uint32_t height) noexcept;
 
-private:
+ private:
     uint8_t maxFrameBufferCount_ = kMaxFrameBufferCount;
     std::unordered_map<std::string, FrameBufferNode> frameBufferPool_;
     std::shared_ptr<TexturePool> texturePool_;
 };
 
-} // namespace slark
+}  // namespace slark

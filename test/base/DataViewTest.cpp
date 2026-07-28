@@ -3,8 +3,9 @@
 //
 #include "DataView.hpp"
 
-#include <array>
 #include <gtest/gtest.h>
+
+#include <array>
 #include <string>
 #include <vector>
 

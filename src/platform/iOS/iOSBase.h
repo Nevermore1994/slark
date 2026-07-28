@@ -5,6 +5,7 @@
 #define slark_iOS_Base_h
 
 #import <Foundation/NSString.h>
+
 #include <string>
 #include <string_view>
 

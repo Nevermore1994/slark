@@ -4,11 +4,11 @@
 
 #pragma once
 
+#include <string>
+
 #include "Data.h"
 #include "DecoderConfig.h"
 #include "Error.h"
-
-#include <string>
 
 namespace slark {
 
@@ -64,4 +64,4 @@ struct NativeHardwareDecoder {
                                               uint32_t height);
 };
 
-} // namespace slark
+}  // namespace slark

@@ -2,15 +2,15 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #pragma once
-#include "Time.hpp"
-
 #include <atomic>
 #include <mutex>
+
+#include "Time.hpp"
 
 namespace slark {
 
 class Clock {
-public:
+ public:
     Clock() = default;
     ~Clock() = default;
 
@@ -36,7 +36,7 @@ public:
         return isPaused_.load(std::memory_order_relaxed);
     }
 
-private:
+ private:
     std::atomic<uint64_t> pts_{0};
     std::atomic<uint64_t> lastUpdated_{0};
     std::atomic<double> speed_{1.0};
@@ -45,7 +45,7 @@ private:
 };
 
 class ThreadSafeClock {
-public:
+ public:
     ThreadSafeClock() = default;
     ~ThreadSafeClock() = default;
 
@@ -94,9 +94,9 @@ public:
         return clock_.isPaused();
     }
 
-private:
+ private:
     mutable std::mutex mutex_;
     Clock clock_;
 };
 
-} // namespace slark
+}  // namespace slark

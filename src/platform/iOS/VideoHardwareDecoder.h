@@ -4,15 +4,15 @@
 
 #pragma once
 
+#include <VideoToolbox/VideoToolbox.h>
+
 #include "IDecoder.h"
 #include "MediaDefs.h"
-
-#include <VideoToolbox/VideoToolbox.h>
 
 namespace slark {
 
 class VideoHardwareDecoder : public IDecoder {
-public:
+ public:
     VideoHardwareDecoder() : IDecoder(DecoderType::VideoHardwareDecoder) {}
 
     ~VideoHardwareDecoder() override;
@@ -30,12 +30,12 @@ public:
         return info;
     }
 
-private:
+ private:
     bool createDecodeSession() noexcept;
 
-private:
+ private:
     VTDecompressionSessionRef decodeSession_ = nullptr;
     CMFormatDescriptionRef videoFormatDescription_ = nullptr;
 };
 
-} // namespace slark
+}  // namespace slark

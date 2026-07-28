@@ -2,6 +2,12 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
+#include <gtest/gtest.h>
+
+#include <fstream>
+#include <memory>
+#include <string_view>
+
 #include "AVFrame.hpp"
 #include "AudioInfo.h"
 #include "Buffer.hpp"
@@ -10,11 +16,6 @@
 #include "demuxer/HLSDemuxer.h"
 #include "demuxer/IDemuxer.h"
 #include "demuxer/Mp4Demuxer.h"
-
-#include <fstream>
-#include <gtest/gtest.h>
-#include <memory>
-#include <string_view>
 
 using namespace slark;
 
@@ -96,7 +97,7 @@ ParseResult feedAllData(IDemuxer& demuxer,
     return result;
 }
 
-} // namespace
+}  // namespace
 
 // ─── probeDemuxType unit tests ───────────────────────────────────────────────
 
@@ -187,7 +188,7 @@ TEST(DemuxerManagerTest, DoesNotContainUnknown) {
 // ─── MP4 integration tests ───────────────────────────────────────────────────
 
 class Mp4DemuxerFileTest : public ::testing::Test {
-protected:
+ protected:
     void SetUp() override {
         probeBuffer_ = loadFile(kMp4Path, fileSize_);
         if (!probeBuffer_) {
@@ -288,7 +289,7 @@ TEST_F(Mp4DemuxerFileTest, SeekToBeginningProducesKeyFrame) {
 // ─── TS integration tests ────────────────────────────────────────────────────
 
 class TsDemuxerFileTest : public ::testing::Test {
-protected:
+ protected:
     void SetUp() override {
         if (uint64_t sz = 0; !loadFile(kTsPath, sz)) {
             GTEST_SKIP() << "segment-0.ts not found, skipping";
@@ -417,7 +418,7 @@ TEST_F(TsDemuxerFileTest, TsDemuxerResetClearsState) {
 // ─── WAV integration tests ───────────────────────────────────────────────────
 
 class WavDemuxerFileTest : public ::testing::Test {
-protected:
+ protected:
     void SetUp() override {
         probeBuffer_ = loadFile(kWavPath, fileSize_);
         if (!probeBuffer_) {
@@ -492,10 +493,10 @@ TEST_F(WavDemuxerFileTest, SeekToMidpointWorks) {
 
 namespace {
 constexpr const char* kFmp4Path = "../../test_sample/Sample_fmp4.mp4";
-} // namespace
+}  // namespace
 
 class Fmp4DemuxerFileTest : public ::testing::Test {
-protected:
+ protected:
     void SetUp() override {
         probeBuffer_ = loadFile(kFmp4Path, fileSize_);
         if (!probeBuffer_) {

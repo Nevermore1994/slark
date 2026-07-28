@@ -4,32 +4,31 @@
 
 #pragma once
 
+#include <atomic>
+#include <unordered_set>
+
 #include "DecoderConfig.h"
 #include "FrameBuffer.h"
 #include "NativeDecoderManager.h"
 #include "VideoDecodeResource.h"
 
-#include <atomic>
-#include <unordered_set>
-
 namespace slark {
 
 class VideoHardwareDecoder : public NativeDecoder,
                              public std::enable_shared_from_this<VideoHardwareDecoder> {
-public:
+ public:
     explicit VideoHardwareDecoder(DecodeMode mode = DecodeMode::Texture)
         : NativeDecoder(DecoderType::VideoHardwareDecoder), mode_(mode) {}
 
     ~VideoHardwareDecoder() noexcept override;
 
-public:
+ public:
     bool open(std::shared_ptr<DecoderConfig> config) noexcept override;
 
     Error decode(AVFrameRefPtr& frame) noexcept override;
 
     bool hasPendingOutput() const noexcept override {
-        return mode_ == DecodeMode::Texture &&
-               pendingOutput_.load(std::memory_order_acquire);
+        return mode_ == DecodeMode::Texture && pendingOutput_.load(std::memory_order_acquire);
     }
 
     Error renderOutput() noexcept override;
@@ -55,7 +54,7 @@ public:
 
     void stop() noexcept;
 
-private:
+ private:
     Error sendPacket(AVFrameRefPtr& frame) noexcept;
 
     bool tryAquireFrame(int64_t& pts, bool& isCompleted) noexcept;
@@ -71,12 +70,13 @@ private:
 
     void retryPendingEOS() noexcept;
 
-private:
+ private:
     DecodeMode mode_;
     EGLSurface surface_ = nullptr;
     std::shared_ptr<VideoDecodeResource> resource_ = nullptr;
     std::unordered_set<int64_t> discardPackets_;
-    AVFrameRefPtr pendingEOSFrame_; ///< 缓存 sendPacket(EOS) 失败后被 codec 拒绝的 EOS 帧，在排空输出后重试
+    AVFrameRefPtr
+        pendingEOSFrame_;  ///< 缓存 sendPacket(EOS) 失败后被 codec 拒绝的 EOS 帧，在排空输出后重试
 
     std::atomic<bool> pendingOutput_{false};
     bool contextAttached_ = false;
@@ -84,4 +84,4 @@ private:
     std::atomic<uint32_t> renderHeight_{0};
 };
 
-} // namespace slark
+}  // namespace slark

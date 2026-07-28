@@ -6,15 +6,16 @@
 //   2. videoTimeUpdater 回调链路（Android renderFrameComplete → ClockSync::videoTime_）
 //   3. isDiscard 帧标志传递（seek preview 帧可用性）
 
+#include <gtest/gtest.h>
+
+#include <atomic>
+#include <memory>
+#include <thread>
+
 #include "AVFrame.hpp"
 #include "VideoInfo.h"
 #include "pipeline/ClockSync.h"
 #include "pipeline/SeekContext.h"
-
-#include <atomic>
-#include <gtest/gtest.h>
-#include <memory>
-#include <thread>
 
 using namespace slark;
 
@@ -225,8 +226,8 @@ TEST(AVSyncIntegrationTest, KeyframeSeekAlignsMasterClockToTarget) {
     // 修复前 offset=0 → masterBase=0（错误）；修复后 offset=kTarget → masterBase=kTarget。
     double audioRenderOffset = 0.0;
     auto simulatePerformKeyframeSeekFix = [&](double target) {
-        audioRenderOffset = target;                                   // audioRender_->seek(target)
-        clockSync.seekTo(Time::TimePoint::fromSeconds(target));       // 替代 reset()
+        audioRenderOffset = target;                              // audioRender_->seek(target)
+        clockSync.seekTo(Time::TimePoint::fromSeconds(target));  // 替代 reset()
     };
 
     simulatePerformKeyframeSeekFix(kTarget);
@@ -257,6 +258,5 @@ TEST(AVSyncIntegrationTest, KeyframeSeekBuggyBehaviorWouldHoldVideo) {
     // 视频帧在真实位置 kTarget，master=0 → diff = -1.434 → 远超阈值 → HOLD（视频冻结）
     clockSync.setVideoTime(Time::TimePoint::fromSeconds(kTarget));
     const double diff = clockSync.masterTime().second() - clockSync.videoTime().second();
-    EXPECT_EQ(ClockSync::evaluateAVSync(diff, 1.0, ClockSync::kEarlyTolerance),
-              AVSyncAction::Hold);
+    EXPECT_EQ(ClockSync::evaluateAVSync(diff, 1.0, ClockSync::kEarlyTolerance), AVSyncAction::Hold);
 }

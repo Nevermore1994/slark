@@ -29,4 +29,4 @@ void wrapCopyFrom(const T* srcArray, size_t capacity, size_t pos, T* dst, uint32
     }
 }
 
-} // namespace slark::detail
+}  // namespace slark::detail

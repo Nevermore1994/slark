@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
 # Slark Code Format Script
-# 代码格式检查（clang-format）
+# 代码格式检查（clang-format + ktlint）
 # =============================================================================
 
 set -e
@@ -25,6 +25,9 @@ if [ -z "${CLANG_FORMAT}" ]; then
 fi
 CLANG_FORMAT="${CLANG_FORMAT:-clang-format}"
 
+# 自动查找可用的 ktlint
+KTLINT="${KTLINT:-ktlint}"
+
 # 默认配置
 FIX_FORMAT="${FIX_FORMAT:-OFF}"
 VERBOSE="${VERBOSE:-ON}"
@@ -36,16 +39,17 @@ SOURCE_DIRS=(
     "${PROJECT_DIR}/test"
     "${PROJECT_DIR}/include"
     "${PROJECT_DIR}/internal"
-    "${PROJECT_DIR}/demo"
 )
 
 # 排除的目录模式
 EXCLUDE_PATTERNS=(
     "*/thirdParty/*"
     "*/build/*"
+    "*/.cxx/*"
     "*/.fetchcontent_cache/*"
     "*/Masonry/*"
     "*/EXTScope/*"
+    "*/cmake-build-*/*"
 )
 
 # 颜色输出
@@ -175,12 +179,7 @@ check_clang_format() {
 
 # 代码风格检查
 run_format_check() {
-    print_info "========================================"
-    print_info "Starting code format check..."
-    print_info "========================================"
-    
     check_clang_format
-    
     collect_source_files
     local files=("${SOURCE_FILES[@]}")
 
@@ -188,75 +187,119 @@ run_format_check() {
         print_warn "No source files found."
         return 0
     fi
-    
-    print_info "Found ${#files[@]} source files to check format."
-    echo ""
-    
-    local format_failed=0
+
+    # --fix 模式：先批量格式化，再验证
+    if [ "${FIX_FORMAT}" = "ON" ]; then
+        print_info "========================================"
+        print_info "Fixing code format (${#files[@]} files)..."
+        print_info "========================================"
+        "${CLANG_FORMAT}" -i "${files[@]}"
+        echo ""
+    else
+        print_info "========================================"
+        print_info "Checking code format (${#files[@]} files)..."
+        print_info "========================================"
+        echo ""
+    fi
+
+    # 统一用 check 模式验证
     local format_issues=()
-    local format_fixed=0
-    
-    # 逐个文件处理并显示结果
     for file in "${files[@]}"; do
         local file_path=$(format_file_path "${file}")
-        
-        if [ "${FIX_FORMAT}" = "ON" ]; then
-            # 自动修复模式
-            if "${CLANG_FORMAT}" -i "${file}"; then
-                format_fixed=$((format_fixed + 1))
-                print_detail "✅ Fixed format: ${file_path}"
-            else
-                format_failed=1
-                format_issues+=("${file}")
-                print_error "❌ Failed to fix format: ${file_path}"
+        if "${CLANG_FORMAT}" --dry-run --Werror "${file}" 2>/tmp/clang_format_err_$$; then
+            if [ "${VERBOSE}" = "ON" ]; then
+                print_detail "✅ Format OK: ${file_path}"
             fi
         else
-            # 检查模式
-            if "${CLANG_FORMAT}" --dry-run --Werror "${file}" 2>/tmp/clang_format_err_$$; then
-                if [ "${VERBOSE}" = "ON" ]; then
-                    print_detail "✅ Format OK: ${file_path}"
-                fi
-            else
-                format_failed=1
-                format_issues+=("${file}")
-                print_error "❌ Format issue: ${file_path}"
-                
-                # 显示具体的格式错误
-                print_error "   Error details:"
-                cat /tmp/clang_format_err_$$ | sed 's/^/   /'
-                echo ""
-            fi
+            format_issues+=("${file}")
+            print_error "❌ Format issue: ${file_path}"
+            print_error "   Error details:"
+            cat /tmp/clang_format_err_$$ | sed 's/^/   /'
+            echo ""
         fi
     done
-    
-    # 清理临时文件
     rm -f /tmp/clang_format_err_$$
-    
+
     # 输出汇总
     echo ""
     print_info "========================================"
-    print_info "Code Format Check Summary:"
+    print_info "Code Format Summary:"
     print_info "========================================"
-    
-    if [ "${FIX_FORMAT}" = "ON" ]; then
-        print_info "✅ Successfully fixed: ${format_fixed} files"
-    else
-        print_info "✅ Format OK: $(( ${#files[@]} - ${#format_issues[@]} )) files"
-    fi
-    
+    print_info "✅ Format OK: $(( ${#files[@]} - ${#format_issues[@]} )) files"
+
     if [ ${#format_issues[@]} -gt 0 ]; then
         print_error "❌ Format issues: ${#format_issues[@]} files"
-        print_error "   Issue files list:"
         for file in "${format_issues[@]}"; do
             echo "   - $(format_file_path "${file}")"
         done
         echo ""
-        print_info "💡 Run with --fix to auto-fix format issues, or execute: clang-format -i <file>"
+        if [ "${FIX_FORMAT}" = "ON" ]; then
+            print_error "❌ clang-format cannot auto-fix these files. Manual review needed."
+        else
+            print_info "💡 Run with --fix to auto-fix format issues."
+        fi
         return 1
     else
         print_info "🎉 All files passed format check!"
         return 0
     fi
+}
+
+# Kotlin 代码风格检查（ktlint）
+run_ktlint_check() {
+    if ! command -v "${KTLINT}" &>/dev/null; then
+        print_warn "ktlint not found, skipping Kotlin format check."
+        print_info "  Install: brew install ktlint"
+        return 0
+    fi
+
+    # 收集存在 .kt 文件的目录
+    local kt_dirs=()
+    for dir in "${SOURCE_DIRS[@]}"; do
+        if [ -d "${dir}" ]; then
+            local has_kt=false
+            while IFS= read -r -d '' _; do
+                has_kt=true
+                break
+            done < <(find "${dir}" -type f -name "*.kt" -print0 2>/dev/null)
+            if [ "${has_kt}" = true ]; then
+                kt_dirs+=("${dir}")
+            fi
+        fi
+    done
+
+    if [ ${#kt_dirs[@]} -eq 0 ]; then
+        print_info "No Kotlin files found, skipping ktlint."
+        return 0
+    fi
+
+    print_info "========================================"
+    print_info "Starting Kotlin format check (ktlint)..."
+    print_info "========================================"
+    print_info "Using ktlint: $(${KTLINT} --version 2>/dev/null || echo 'unknown')"
+
+    local ktlint_args=()
+    if [ "${FIX_FORMAT}" = "ON" ]; then
+        ktlint_args+=("-F")
+    fi
+
+    cd "${PROJECT_DIR}"
+    local ktlint_exit=0
+    "${KTLINT}" "${ktlint_args[@]}" "${kt_dirs[@]}" || ktlint_exit=$?
+
+    if [ "${ktlint_exit}" -ne 0 ]; then
+        echo ""
+        if [ "${FIX_FORMAT}" != "ON" ]; then
+            print_error "❌ Kotlin format issues found."
+            print_info "  Run with --fix to auto-fix Kotlin format issues."
+        else
+            print_error "❌ ktlint exited with errors."
+        fi
+        return 1
+    fi
+
+    print_info "🎉 Kotlin format check passed!"
+    return 0
 }
 
 # 主函数
@@ -274,6 +317,12 @@ main() {
     local exit_code=0
     
     if ! run_format_check; then
+        exit_code=1
+    fi
+    
+    echo ""
+
+    if ! run_ktlint_check; then
         exit_code=1
     fi
     

@@ -2,16 +2,18 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #include "LogConfig.h"
-#include "Log.hpp"
+
+#include <gtest/gtest.h>
 
 #include <filesystem>
-#include <gtest/gtest.h>
 #include <string>
+
+#include "Log.hpp"
 
 using namespace slark;
 
 class LogConfigTest : public ::testing::Test {
-protected:
+ protected:
     void TearDown() override {
         // 恢复默认配置，避免测试间污染
         setLogConfig(LogConfig{});

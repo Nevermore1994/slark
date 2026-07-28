@@ -4,9 +4,9 @@
 
 #include "ThreadManager.h"
 
-#include "Log.hpp"
-
 #include <vector>
+
+#include "Log.hpp"
 
 namespace slark {
 using namespace std::chrono_literals;
@@ -116,4 +116,4 @@ void ThreadManager::reportRunInfo() noexcept {
     }
 }
 
-} // end namespace slark
+}  // end namespace slark

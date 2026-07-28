@@ -19,4 +19,4 @@ struct HttpsHelper {
     static std::function<void(SSLContextPtr&)> configContext;
 };
 
-} // namespace slark::http
+}  // namespace slark::http

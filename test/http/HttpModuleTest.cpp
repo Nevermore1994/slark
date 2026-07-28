@@ -1,6 +1,13 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
+#include <chrono>
+#include <condition_variable>
+#include <thread>
+
 #include "CancellationToken.h"
 #include "HttpRequest.h"
 #include "HttpResponseParser.h"
@@ -8,12 +15,6 @@
 #include "ThreadPool.hpp"
 #include "Type.h"
 #include "Url.h"
-
-#include <chrono>
-#include <condition_variable>
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
-#include <thread>
 
 using namespace slark;
 using namespace slark::http;
@@ -62,7 +63,7 @@ TEST(UrlTest, ParseUrlWithUserInfo) {
 
 // HttpResponseParser Tests
 class HttpResponseParserTest : public ::testing::Test {
-protected:
+ protected:
     void SetUp() override {
         parser_ = std::make_unique<HttpResponseParser>(HttpResponseParser::Callbacks{});
     }
@@ -316,7 +317,7 @@ TEST(RedirectPolicyTest, ShouldRedirect) {
 
     EXPECT_TRUE(policy.shouldRedirect(response, request, 0));
     EXPECT_TRUE(policy.shouldRedirect(response, request, 5));
-    EXPECT_FALSE(policy.shouldRedirect(response, request, 10)); // max redirect
+    EXPECT_FALSE(policy.shouldRedirect(response, request, 10));  // max redirect
 
     response.statusCode = HttpStatusCode::OK;
     EXPECT_FALSE(policy.shouldRedirect(response, request, 0));

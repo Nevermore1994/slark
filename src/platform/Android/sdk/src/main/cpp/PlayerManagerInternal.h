@@ -3,18 +3,18 @@
 //
 #pragma once
 
+#include <memory>
+#include <string>
+
 #include "JNINames.h"
 #include "Manager.hpp"
 #include "Player.h"
 #include "PlayerObserver.h"
 
-#include <memory>
-#include <string>
-
 namespace slark {
 
 class PlayerObserver : public IPlayerObserver {
-public:
+ public:
     PlayerObserver() = default;
 
     void notifyPlayedTime(std::string_view playerId, double time) override;
@@ -23,7 +23,7 @@ public:
                            slark::PlayerEvent event,
                            std::string value) override;
 
-private:
+ private:
     static constexpr const char* kPlayerManagerClass = JNI::JavaClass::SlarkPlayerManager;
     static constexpr const char* kPlayerStateClass = JNI::JavaClass::SlarkPlayerState;
     static constexpr const char* kPlayerEventClass = JNI::JavaClass::SlarkPlayerEvent;
@@ -37,4 +37,4 @@ enum class Action : int32_t { Prepare = 0, Play, Pause, Release };
 /// 异步创建解码资源（Share Context 延迟到首次使用时初始化）
 void asyncCreateDecoderResource(const std::string& playerId) noexcept;
 
-} // namespace slark
+}  // namespace slark

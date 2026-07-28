@@ -72,4 +72,4 @@ std::expected<PlayerState, bool> PlayerStateMachine::getStateFromPipelineEvent(
     }
 }
 
-} // namespace slark
+}  // namespace slark

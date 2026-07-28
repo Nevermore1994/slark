@@ -4,13 +4,14 @@
 
 #pragma once
 
-#include "BitMap.h"
-
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
+
 #include <mutex>
 #include <vector>
+
+#include "BitMap.h"
 
 namespace slark {
 
@@ -35,7 +36,7 @@ struct TextureConfig {
 };
 
 class Texture {
-public:
+ public:
     Texture(uint32_t width, uint32_t height, TextureConfig config = {}, DataPtr data = nullptr);
 
     ~Texture();
@@ -80,7 +81,7 @@ public:
 
     static void releaseResource(std::unique_ptr<Texture> texture) noexcept;
 
-private:
+ private:
     uint32_t width_;
     uint32_t height_;
     TextureConfig config_;
@@ -91,4 +92,4 @@ private:
 using TexturePtr = std::unique_ptr<Texture>;
 using TextureRefPtr = std::shared_ptr<Texture>;
 
-} // namespace slark
+}  // namespace slark

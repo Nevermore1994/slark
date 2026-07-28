@@ -12,23 +12,23 @@ DISABLE_WARNINGS
 #include "openssl/err.h"
 ENABLE_WARNINGS
 
+#include <mutex>
+
 #include "HttpsHelper.h"
 #include "Socket.hpp"
-
-#include <mutex>
 
 namespace slark::http {
 
 class SSLManager {
-public:
+ public:
     static SSLContextPtr& shareContext();
     static SSLPtr create(Socket socket, const std::string& hostname) noexcept;
 
-private:
+ private:
     SSLManager();
     ~SSLManager();
 };
 
-} // namespace slark::http
+}  // namespace slark::http
 
 #endif

@@ -82,7 +82,7 @@ build_aar() {
     "${gradlew}" -p "${android_dir}" ":sdk:assemble${variant}" --no-daemon
     print_success "AAR 编译完成"
 
-    local aar_dir="${android_dir}/sdk/build/outputs/aar"
+    local aar_dir="${script_dir}/build/android/sdk/outputs/aar"
     local aar_file
     local variant_lower
     variant_lower=$(echo "$variant" | tr '[:upper:]' '[:lower:]')

@@ -2,15 +2,16 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
+#include <gtest/gtest.h>
+
+#include <chrono>
+#include <memory>
+
 #include "AVFrame.hpp"
 #include "PipelineConfig.h"
 #include "PlayerStateMachine.h"
 #include "Time.hpp"
 #include "pipeline/ClockSync.h"
-
-#include <chrono>
-#include <gtest/gtest.h>
-#include <memory>
 
 using namespace slark;
 
@@ -300,4 +301,3 @@ TEST(PlayerStateMachineCoreTest, InvalidTransitions) {
             << " should return false";
     }
 }
-

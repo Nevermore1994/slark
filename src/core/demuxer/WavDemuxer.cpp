@@ -3,14 +3,14 @@
 //
 #include "WavDemuxer.h"
 
+#include <bit>
+
 #include "AVFrame.hpp"
 #include "DataView.hpp"
 #include "IDemuxer.h"
 #include "Log.hpp"
 #include "MediaDefs.h"
 #include "Util.h"
-
-#include <bit>
 
 namespace slark {
 
@@ -212,7 +212,7 @@ uint64_t WAVDemuxer::getSeekToPos(double time) noexcept {
     }
     auto sampleCount =
         static_cast<uint64_t>(floor(time * static_cast<double>(audioInfo_->sampleRate)));
-    return headerInfo_->headerLength + sampleCount * audioInfo_->bytePerSample(); // byte
+    return headerInfo_->headerLength + sampleCount * audioInfo_->bytePerSample();  // byte
 }
 
 AVFramePtr WAVDemuxer::makeAudioFrame(uint64_t dataLength,
@@ -285,4 +285,4 @@ void WAVDemuxer::reset() noexcept {
     parsedFrameCount_ = 0;
 }
 
-} // end namespace slark
+}  // end namespace slark

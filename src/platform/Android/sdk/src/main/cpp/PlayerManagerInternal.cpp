@@ -4,14 +4,14 @@
 
 #include "PlayerManagerInternal.h"
 
+#include <thread>
+
 #include "JNICache.h"
 #include "JNICall.h"
 #include "JNIEnvGuard.h"
 #include "Log.hpp"
 #include "PlayerStateNames.h"
 #include "VideoDecodeResource.h"
-
-#include <thread>
 
 namespace slark {
 
@@ -34,9 +34,8 @@ void PlayerObserver::notifyPlayerState(std::string_view playerId, PlayerState st
         LogE("notifyPlayerState: invalid state index {}", stateIdx);
         return;
     }
-    auto stateEnum = JNICache::instance().getEnumField(env,
-                                                       kPlayerStateClass,
-                                                       kPlayerStateNames[stateIdx]);
+    auto stateEnum =
+        JNICache::instance().getEnumField(env, kPlayerStateClass, kPlayerStateNames[stateIdx]);
     JNICall::callStatic<void>(env,
                               kPlayerManagerClass,
                               "notifyPlayerState",
@@ -47,12 +46,9 @@ void PlayerObserver::notifyPlayerState(std::string_view playerId, PlayerState st
                                   kPlayerManagerClass,
                                   "startRendering",
                                   std::string(playerId));
-    } else if (state == PlayerState::Pause || state == PlayerState::Completed || 
-        state == PlayerState::Stop || state == PlayerState::Error) {
-        JNICall::callStatic<void>(env,
-                                  kPlayerManagerClass,
-                                  "stopRendering",
-                                  std::string(playerId));
+    } else if (state == PlayerState::Pause || state == PlayerState::Completed ||
+               state == PlayerState::Stop || state == PlayerState::Error) {
+        JNICall::callStatic<void>(env, kPlayerManagerClass, "stopRendering", std::string(playerId));
     }
 }
 
@@ -91,4 +87,4 @@ void asyncCreateDecoderResource(const std::string& playerId) noexcept {
     }).detach();
 }
 
-} // namespace slark
+}  // namespace slark

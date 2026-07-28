@@ -80,4 +80,4 @@ void checkAndThrow(JNIEnv* env) {
     throw JniException(std::move(className), std::move(message));
 }
 
-} // namespace slark::JNI
+}  // namespace slark::JNI

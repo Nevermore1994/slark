@@ -3,11 +3,11 @@
 //
 #pragma once
 
-#include "IStream.h"
-
 #include <expected>
 #include <memory>
 #include <string>
+
+#include "IStream.h"
 
 namespace slark {
 
@@ -20,7 +20,7 @@ template <typename T>
 using FactoryResult = std::expected<T, FactoryError>;
 
 class StreamFactory {
-public:
+ public:
     static FactoryResult<std::shared_ptr<IStream>> createStream(const std::string& uri);
 
     static FactoryResult<std::shared_ptr<IStream>> createFileStream(const std::string& uri);
@@ -38,4 +38,4 @@ public:
     [[nodiscard]] static bool isHttp(const std::string& uri) noexcept;
 };
 
-} // namespace slark
+}  // namespace slark

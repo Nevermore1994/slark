@@ -4,13 +4,13 @@
 
 #pragma once
 
+#include <string>
+#include <tuple>
+
 #include "AudioInfo.h"
 #include "DataView.hpp"
 #include "Range.h"
 #include "Util.h"
-
-#include <string>
-#include <tuple>
 
 namespace slark {
 
@@ -34,4 +34,4 @@ AudioProfile getAudioProfile(uint8_t profile) noexcept;
 
 int32_t getAACSamplingRate(int32_t index) noexcept;
 
-} // namespace slark
+}  // namespace slark

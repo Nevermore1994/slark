@@ -4,16 +4,16 @@
 
 #pragma once
 
-#include "IGraphicsContext.h"
-
 #include <EGL/egl.h>
+
+#include "IGraphicsContext.h"
 
 namespace slark {
 
 // OpenGL surface implementing IGraphicsSurface,
 // wraps EGLSurface
 class OpenGLSurface : public IGraphicsSurface {
-public:
+ public:
     OpenGLSurface(EGLSurface surface, EGLDisplay display) : surface_(surface), display_(display) {}
 
     ~OpenGLSurface() override = default;
@@ -30,9 +30,9 @@ public:
         return surface_;
     }
 
-private:
+ private:
     EGLSurface surface_;
     EGLDisplay display_;
 };
 
-} // namespace slark
+}  // namespace slark

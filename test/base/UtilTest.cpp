@@ -3,8 +3,9 @@
 //
 #include "Util.h"
 
-#include <array>
 #include <gtest/gtest.h>
+
+#include <array>
 #include <set>
 #include <string>
 
@@ -124,14 +125,14 @@ TEST(Golomb, ReadBit) {
     DataView view(data, 1);
     int32_t offset = 0;
 
-    EXPECT_TRUE(Util::Golomb::readBit(view, offset));  // 1
-    EXPECT_FALSE(Util::Golomb::readBit(view, offset)); // 0
-    EXPECT_TRUE(Util::Golomb::readBit(view, offset));  // 1
-    EXPECT_FALSE(Util::Golomb::readBit(view, offset)); // 0
-    EXPECT_FALSE(Util::Golomb::readBit(view, offset)); // 0
-    EXPECT_TRUE(Util::Golomb::readBit(view, offset));  // 1
-    EXPECT_FALSE(Util::Golomb::readBit(view, offset)); // 0
-    EXPECT_TRUE(Util::Golomb::readBit(view, offset));  // 1
+    EXPECT_TRUE(Util::Golomb::readBit(view, offset));   // 1
+    EXPECT_FALSE(Util::Golomb::readBit(view, offset));  // 0
+    EXPECT_TRUE(Util::Golomb::readBit(view, offset));   // 1
+    EXPECT_FALSE(Util::Golomb::readBit(view, offset));  // 0
+    EXPECT_FALSE(Util::Golomb::readBit(view, offset));  // 0
+    EXPECT_TRUE(Util::Golomb::readBit(view, offset));   // 1
+    EXPECT_FALSE(Util::Golomb::readBit(view, offset));  // 0
+    EXPECT_TRUE(Util::Golomb::readBit(view, offset));   // 1
     EXPECT_EQ(offset, 8);
 }
 
@@ -162,7 +163,7 @@ TEST(Golomb, ReadBitsMultiByte) {
 
 TEST(Golomb, ReadUeZero) {
     // Exp-Golomb code for 0: "1" -> bit pattern: 1xxxxxxx
-    uint8_t data[] = {0x80}; // 10000000
+    uint8_t data[] = {0x80};  // 10000000
     DataView view(data, 1);
     int32_t offset = 0;
 
@@ -173,7 +174,7 @@ TEST(Golomb, ReadUeZero) {
 
 TEST(Golomb, ReadUeOne) {
     // Exp-Golomb code for 1: "010" -> bit pattern: 010xxxxx
-    uint8_t data[] = {0x40}; // 01000000
+    uint8_t data[] = {0x40};  // 01000000
     DataView view(data, 1);
     int32_t offset = 0;
 
@@ -184,7 +185,7 @@ TEST(Golomb, ReadUeOne) {
 
 TEST(Golomb, ReadUeTwo) {
     // Exp-Golomb code for 2: "011" -> bit pattern: 011xxxxx
-    uint8_t data[] = {0x60}; // 01100000
+    uint8_t data[] = {0x60};  // 01100000
     DataView view(data, 1);
     int32_t offset = 0;
 
@@ -195,7 +196,7 @@ TEST(Golomb, ReadUeTwo) {
 
 TEST(Golomb, ReadUeThree) {
     // Exp-Golomb code for 3: "00100" -> bit pattern: 00100xxx
-    uint8_t data[] = {0x20}; // 00100000
+    uint8_t data[] = {0x20};  // 00100000
     DataView view(data, 1);
     int32_t offset = 0;
 
@@ -207,7 +208,7 @@ TEST(Golomb, ReadUeThree) {
 TEST(Golomb, ReadUeSeven) {
     // Exp-Golomb code for 7: "00010 00" -> 3 leading zeros, then 1, then 000
     // = 0001000x -> 0x10
-    uint8_t data[] = {0x10}; // 00010000
+    uint8_t data[] = {0x10};  // 00010000
     DataView view(data, 1);
     int32_t offset = 0;
 

@@ -89,9 +89,11 @@ TEST(PlayerStateMachineTest, PauseValidTargets) {
 }
 
 TEST(PlayerStateMachineTest, CompletedValidTransitions) {
-    EXPECT_TRUE(PlayerStateMachine::isValidTransition(PlayerState::Completed, PlayerState::Playing));
+    EXPECT_TRUE(
+        PlayerStateMachine::isValidTransition(PlayerState::Completed, PlayerState::Playing));
     EXPECT_TRUE(PlayerStateMachine::isValidTransition(PlayerState::Completed, PlayerState::Pause));
-    EXPECT_TRUE(PlayerStateMachine::isValidTransition(PlayerState::Completed, PlayerState::Buffering));
+    EXPECT_TRUE(
+        PlayerStateMachine::isValidTransition(PlayerState::Completed, PlayerState::Buffering));
     EXPECT_TRUE(PlayerStateMachine::isValidTransition(PlayerState::Completed, PlayerState::Stop));
     EXPECT_FALSE(PlayerStateMachine::isValidTransition(PlayerState::Completed, PlayerState::Error));
 }

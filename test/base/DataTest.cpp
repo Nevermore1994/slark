@@ -3,10 +3,10 @@
 //
 #include "Data.h"
 
+#include <gtest/gtest.h>
+
 #include "DataView.hpp"
 #include "Error.h"
-
-#include <gtest/gtest.h>
 
 using namespace slark;
 

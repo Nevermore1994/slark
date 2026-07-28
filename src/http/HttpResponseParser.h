@@ -4,21 +4,21 @@
 
 #pragma once
 
+#include <cstdint>
+#include <functional>
+#include <string>
+#include <unordered_map>
+
 #include "Data.h"
 #include "DataView.hpp"
 #include "Log.hpp"
 #include "StringUtil.h"
 #include "Type.h"
 
-#include <cstdint>
-#include <functional>
-#include <string>
-#include <unordered_map>
-
 namespace slark::http {
 
 class HttpResponseParser {
-public:
+ public:
     enum class State : uint8_t {
         StatusLine,
         Headers,
@@ -70,17 +70,18 @@ public:
         if (state_ == State::BodyFixed && contentLength_ < 0) {
             complete();
         } else if (state_ == State::StatusLine || state_ == State::Headers) {
-        // 头部未完整接收即断开
-        LogE("[HttpResponseParser::onEof] EOF before headers complete: state={}", stateName(state_));
-        fail(slark::Error::ConnectionReset);
-    }
-    // 其他状态（如 chunked 中途断开）视为错误
-    else if (state_ != State::Completed) {
-        LogE("[HttpResponseParser::onEof] unexpected EOF: state={} bodyReceived={}",
-             stateName(state_),
-             bodyReceived_);
-        fail(slark::Error::ConnectionReset);
-    }
+            // 头部未完整接收即断开
+            LogE("[HttpResponseParser::onEof] EOF before headers complete: state={}",
+                 stateName(state_));
+            fail(slark::Error::ConnectionReset);
+        }
+        // 其他状态（如 chunked 中途断开）视为错误
+        else if (state_ != State::Completed) {
+            LogE("[HttpResponseParser::onEof] unexpected EOF: state={} bodyReceived={}",
+                 stateName(state_),
+                 bodyReceived_);
+            fail(slark::Error::ConnectionReset);
+        }
     }
 
     [[nodiscard]] State state() const noexcept {
@@ -115,7 +116,7 @@ public:
 
     void reset() noexcept;
 
-private:
+ private:
     void processStatusLine();
     void processHeaders();
     void processBodyFixed();
@@ -164,13 +165,13 @@ private:
 
     static constexpr std::string_view kCRLF = "\r\n";
     static constexpr std::string_view kHeaderEnd = "\r\n\r\n";
-    static constexpr size_t kCompactionThreshold = 8192; // 碎片化阈值
-    static constexpr size_t kMaxTrailerSize = 16384;     // trailer 最大累计长度
+    static constexpr size_t kCompactionThreshold = 8192;  // 碎片化阈值
+    static constexpr size_t kMaxTrailerSize = 16384;      // trailer 最大累计长度
 
     State state_ = State::StatusLine;
     Callbacks callbacks_;
     std::string buffer_;
-    size_t readPos_ = 0; // 逻辑消费位置，避免频繁 erase
+    size_t readPos_ = 0;  // 逻辑消费位置，避免频繁 erase
     std::unordered_map<std::string, std::string> headers_;
     HttpStatusCode statusCode_ = HttpStatusCode::Unknown;
     bool shouldClose_ = false;
@@ -189,7 +190,7 @@ private:
     // 协议层日志限频：上次日志时的 bodyReceived_ 累计值
     int64_t lastLoggedBodyReceived_ = 0;
 
-private:
+ private:
     // 获取当前可读数据
     [[nodiscard]] std::string_view readableData() const noexcept {
         return std::string_view(buffer_).substr(readPos_);
@@ -218,4 +219,4 @@ private:
     }
 };
 
-} // namespace slark::http
+}  // namespace slark::http

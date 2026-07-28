@@ -4,16 +4,16 @@
 
 #pragma once
 
+#include <optional>
+
 #include "IDemuxer.h"
 #include "MediaDefs.h"
 #include "Mp4Box.h"
 
-#include <optional>
-
 namespace slark {
 
 class TrackContext {
-public:
+ public:
     bool isCompleted = false;
     TrackType type = TrackType::Unknown;
     CodecId codecId = CodecId::Unknown;
@@ -78,7 +78,7 @@ public:
     uint64_t fragmentDurationTicks = 0;
     int32_t rotationDegrees = 0;
 
-public:
+ public:
     bool isInRange(Buffer& buffer, uint64_t* outOffset = nullptr) const noexcept;
 
     void reset() noexcept;
@@ -103,7 +103,7 @@ public:
 
     void appendFragmentSamples(const BoxRefPtr& moofBox, uint64_t moofOffset) noexcept;
 
-private:
+ private:
     using NaluClassifier = std::function<std::pair<bool, VideoFrameType>(uint8_t naluType)>;
 
     AVFramePtrArray parseNaluFrames(AVFramePtr frame,
@@ -134,7 +134,7 @@ private:
 };
 
 class Mp4Demuxer : public IDemuxer {
-public:
+ public:
     Mp4Demuxer() {
         type_ = DemuxerType::MP4;
     }
@@ -168,7 +168,7 @@ public:
     /// debug info
     [[nodiscard]] std::string description() const noexcept;
 
-private:
+ private:
     bool parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept;
 
     bool parseMoofBox(Buffer& buffer, const BoxRefPtr& moofBox) noexcept;
@@ -192,11 +192,11 @@ private:
                          std::shared_ptr<BoxMdhd>& mdhdBox,
                          std::stack<BoxRefPtr>& parentBox) noexcept;
 
-private:
+ private:
     BoxRefPtr rootBox_;
     std::unordered_map<CodecId, std::shared_ptr<TrackContext>> tracks_;
     bool isFragmented_ = false;
     std::unordered_map<uint32_t, int32_t> trackRotations_;
 };
 
-} // namespace slark
+}  // namespace slark

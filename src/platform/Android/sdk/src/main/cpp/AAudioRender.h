@@ -3,16 +3,17 @@
 //
 #pragma once
 
-#include "AudioInfo.h"
-
 #include <aaudio/AAudio.h>
+
 #include <atomic>
 #include <memory>
+
+#include "AudioInfo.h"
 
 namespace slark {
 
 class AAudioRender : public IAudioRender, public std::enable_shared_from_this<AAudioRender> {
-public:
+ public:
     explicit AAudioRender(std::shared_ptr<AudioInfo> audioInfo);
     ~AAudioRender() override;
 
@@ -26,7 +27,7 @@ public:
 
     [[nodiscard]] Time::TimeDelta getHardwareLatency() noexcept override;
 
-private:
+ private:
     static aaudio_data_callback_result_t dataCallback(AAudioStream* stream,
                                                       void* userData,
                                                       void* audioData,
@@ -37,10 +38,10 @@ private:
     void initStream() noexcept;
     void releaseStream() noexcept;
 
-private:
+ private:
     AAudioStream* stream_ = nullptr;
     AAudioStreamBuilder* builder_ = nullptr;
     std::atomic<int64_t> flushBaseFrames_{0};
 };
 
-} // namespace slark
+}  // namespace slark

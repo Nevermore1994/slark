@@ -30,9 +30,8 @@ std::string StringUtil::extractHostFromUri(std::string_view uri) noexcept {
     }
     auto start = sep + 3;
     auto end = uri.find_first_of("/?#", start);
-    return std::string(uri.substr(start, end == std::string_view::npos
-                                          ? std::string_view::npos
-                                          : end - start));
+    return std::string(
+        uri.substr(start, end == std::string_view::npos ? std::string_view::npos : end - start));
 }
 
 std::string StringUtil::removeSpace(std::string_view view) noexcept {
@@ -69,7 +68,7 @@ std::string StringUtil::toSafeLogString(std::string_view sv, size_t maxLen) noex
             result.push_back('x');
             result.push_back(kHex[uc >> 4]);
             result.push_back(kHex[uc & 0x0F]);
-            i += 3; // 额外补偿 \x 的 3 个字符
+            i += 3;  // 额外补偿 \x 的 3 个字符
         }
         ++i;
     }
@@ -80,4 +79,4 @@ std::string StringUtil::toSafeLogString(std::string_view sv, size_t maxLen) noex
     return result;
 }
 
-} // namespace slark
+}  // namespace slark

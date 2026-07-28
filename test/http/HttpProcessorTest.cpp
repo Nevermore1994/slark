@@ -1,13 +1,15 @@
 #include "HttpProcessor.h"
+
+#include <gtest/gtest.h>
+
+#include <atomic>
+#include <chrono>
+#include <memory>
+
 #include "CancellationToken.h"
 #include "Coroutine.hpp"
 #include "CoroutineScheduler.hpp"
 #include "ThreadPool.hpp"
-
-#include <atomic>
-#include <chrono>
-#include <gtest/gtest.h>
-#include <memory>
 
 using namespace slark;
 using namespace slark::http;
@@ -38,7 +40,7 @@ HttpResponse executeSync(const RequestInfo& info) {
     return result;
 }
 
-} // namespace
+}  // namespace
 
 TEST(HttpProcessorTest, ProcessGetReturnsSuccess) {
     RequestInfo info;
@@ -131,8 +133,12 @@ TEST(HttpProcessorTest, StreamingGetReturnsChunks) {
         auto gen = processor.processStreaming(info);
         while (true) {
             auto chunk = co_await gen.next();
-            if (!chunk.has_value()) break;
-            if (chunk->hasData()) totalBytes += chunk->data->length();
+            if (!chunk.has_value()) {
+                break;
+            }
+            if (chunk->hasData()) {
+                totalBytes += chunk->data->length();
+            }
             chunkCount++;
         }
         done = true;

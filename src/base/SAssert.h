@@ -34,10 +34,10 @@ namespace slark {
 
 #define SAssert(result, format, ...) /*nothing*/
 
-#endif // DEBUG
+#endif  // DEBUG
 
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
 
-} // namespace slark
+}  // namespace slark

@@ -54,4 +54,4 @@ std::string RequestPerf::summary() const {
     return oss.str();
 }
 
-} // namespace slark::http
+}  // namespace slark::http

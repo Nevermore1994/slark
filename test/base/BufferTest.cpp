@@ -5,6 +5,7 @@
 #include "Buffer.hpp"
 
 #include <gtest/gtest.h>
+
 #include <string_view>
 
 using namespace slark;

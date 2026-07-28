@@ -210,4 +210,4 @@ void AACHardwareDecoder::close() noexcept {
     reset();
     config_.reset();
 }
-} // namespace slark
+}  // namespace slark

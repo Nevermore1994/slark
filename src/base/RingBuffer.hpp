@@ -3,8 +3,6 @@
 //
 #pragma once
 
-#include "RingBufferUtil.hpp"
-
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -15,6 +13,8 @@
 #include <span>
 #include <type_traits>
 
+#include "RingBufferUtil.hpp"
+
 namespace slark {
 
 namespace detail {
@@ -24,15 +24,14 @@ constexpr size_t calcCapacity(size_t n) noexcept {
     return std::bit_ceil(n);
 }
 
-} // namespace detail
+}  // namespace detail
 
 template <typename T, size_t N>
-    requires std::is_trivially_copyable_v<T>
-class RingBuffer {
+requires std::is_trivially_copyable_v<T> class RingBuffer {
     static constexpr size_t kCapacity = std::bit_ceil(N);
     static constexpr size_t kMask = kCapacity - 1;
 
-public:
+ public:
     RingBuffer() = default;
     RingBuffer(const RingBuffer&) = delete;
     RingBuffer& operator=(const RingBuffer&) = delete;
@@ -141,20 +140,19 @@ public:
         return static_cast<uint32_t>(kCapacity);
     }
 
-private:
+ private:
     std::array<T, kCapacity> data_;
     size_t readPos_ = 0;
     size_t writePos_ = 0;
-    size_t size_ = 0; // 追踪实际数据量，正确区分空/满
+    size_t size_ = 0;  // 追踪实际数据量，正确区分空/满
 };
 
 template <typename T, size_t N>
-    requires std::is_trivially_copyable_v<T>
-class SyncRingBuffer {
+requires std::is_trivially_copyable_v<T> class SyncRingBuffer {
     static constexpr size_t kCapacity = std::bit_ceil(N);
     static constexpr size_t kMask = kCapacity - 1;
 
-public:
+ public:
     SyncRingBuffer() = default;
     SyncRingBuffer(const SyncRingBuffer&) = delete;
     SyncRingBuffer& operator=(const SyncRingBuffer&) = delete;
@@ -314,7 +312,7 @@ public:
         return std::forward<F>(func)(*this);
     }
 
-private:
+ private:
     uint32_t availableUnsafe() const noexcept {
         return static_cast<uint32_t>(kCapacity) - size_;
     }
@@ -327,4 +325,4 @@ private:
     uint32_t size_ = 0;
 };
 
-} // namespace slark
+}  // namespace slark

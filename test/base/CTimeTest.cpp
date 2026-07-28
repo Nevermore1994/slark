@@ -2,9 +2,9 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
-#include "Time.hpp"
-
 #include <gtest/gtest.h>
+
+#include "Time.hpp"
 
 using namespace slark;
 

@@ -2,17 +2,17 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #pragma once
-#include "NonCopyable.h"
-
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+
+#include "NonCopyable.h"
 
 namespace slark {
 
 template <typename T>
 class Manager : public NonCopyMovable {
-public:
+ public:
     using RefPtr = std::shared_ptr<T>;
 
     static Manager& shareInstance() noexcept {
@@ -22,7 +22,7 @@ public:
 
     ~Manager() = default;
 
-public:
+ public:
     RefPtr find(const std::string& itemId) noexcept {
         std::lock_guard lock(mutex_);
         if (manager_.contains(itemId)) {
@@ -41,12 +41,12 @@ public:
         manager_.erase(itemId);
     }
 
-private:
+ private:
     Manager() = default;
 
-private:
+ private:
     std::mutex mutex_;
     std::unordered_map<std::string, RefPtr> manager_;
 };
 
-} // namespace slark
+}  // namespace slark

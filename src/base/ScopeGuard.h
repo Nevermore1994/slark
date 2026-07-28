@@ -2,16 +2,16 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
-#include "Log.hpp"
-
 #include <exception>
 #include <functional>
 #include <utility>
 
+#include "Log.hpp"
+
 namespace slark {
 
 class ScopeGuard {
-public:
+ public:
     template <typename F>
     explicit ScopeGuard(F&& fn) : fn_(std::forward<F>(fn)) {}
 
@@ -39,12 +39,12 @@ public:
             fn_();
         }
         active_ = false;
-        fn_ = nullptr; // 防止double free
+        fn_ = nullptr;  // 防止double free
     }
 
-private:
+ private:
     std::function<void()> fn_;
     bool active_{true};
 };
 
-} // namespace slark
+}  // namespace slark

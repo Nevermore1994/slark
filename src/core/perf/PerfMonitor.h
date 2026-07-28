@@ -4,10 +4,6 @@
 
 #pragma once
 
-#include "IPerfReporter.h"
-#include "PerfTypes.h"
-#include "ResourceSampler.h"
-
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -17,6 +13,10 @@
 #include <unordered_map>
 #include <vector>
 
+#include "IPerfReporter.h"
+#include "PerfTypes.h"
+#include "ResourceSampler.h"
+
 namespace slark::perf {
 
 class PlaySession;
@@ -25,7 +25,7 @@ class PlaySession;
  * @brief 性能监控全局单例，统一管理 perf 配置、会话注册和数据上报
  */
 class PerfMonitor {
-public:
+ public:
     static PerfMonitor& instance();
 
     void configure(const PerfConfig& config);
@@ -59,7 +59,7 @@ public:
 
     [[nodiscard]] PerfConfig config() const noexcept;
 
-private:
+ private:
     PerfMonitor() = default;
     ~PerfMonitor();
 
@@ -83,4 +83,4 @@ private:
     std::atomic<uint64_t> sessionIdCounter_{0};
 };
 
-} // namespace slark::perf
+}  // namespace slark::perf

@@ -2,11 +2,6 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #pragma once
-#include "Error.h"
-#include "Log.hpp"
-#include "MoveOnlyFunction.hpp"
-#include "NonCopyable.h"
-
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
@@ -14,6 +9,11 @@
 #include <mutex>
 #include <thread>
 #include <vector>
+
+#include "Error.h"
+#include "Log.hpp"
+#include "MoveOnlyFunction.hpp"
+#include "NonCopyable.h"
 
 namespace slark {
 
@@ -28,7 +28,7 @@ struct ThreadPoolConfig {
 };
 
 class ThreadPool : public NonCopyMovable {
-public:
+ public:
     explicit ThreadPool(const ThreadPoolConfig& config = ThreadPoolConfig{});
 
     ~ThreadPool() {
@@ -58,16 +58,16 @@ public:
     }
 
     template <class F, typename... Args>
-        requires std::is_invocable_v<F, Args...>
-    Expected<void> postJob(F&& f, Args&&... args) {
+    requires std::is_invocable_v<F, Args...> Expected<void> postJob(F&& f, Args&&... args) {
         return postJobWithPriority(JobPriority::Normal,
                                    std::forward<F>(f),
                                    std::forward<Args>(args)...);
     }
 
     template <class F, typename... Args>
-        requires std::is_invocable_v<F, Args...>
-    Expected<void> postJob(JobPriority priority, F&& f, Args&&... args) {
+    requires std::is_invocable_v<F, Args...> Expected<void> postJob(JobPriority priority,
+                                                                    F&& f,
+                                                                    Args&&... args) {
         return postJobWithPriority(priority, std::forward<F>(f), std::forward<Args>(args)...);
     }
 
@@ -106,12 +106,12 @@ public:
         return shutdown_;
     }
 
-private:
+ private:
     struct Job {
         JobPriority priority;
         uint64_t sequence;
         MoveOnlyFunction<void()> func;
-        MoveOnlyFunction<void()> cancel; // 取消回调，用于让 future 返回
+        MoveOnlyFunction<void()> cancel;  // 取消回调，用于让 future 返回
 
         bool operator>(const Job& other) const noexcept {
             if (priority != other.priority) {
@@ -126,8 +126,10 @@ private:
         -> Expected<std::future<std::invoke_result_t<F, Args...>>>;
 
     template <class F, typename... Args>
-        requires std::is_invocable_v<F, Args...>
-    Expected<void> postJobWithPriority(JobPriority priority, F&& f, Args&&... args);
+    requires std::is_invocable_v<F, Args...> Expected<void> postJobWithPriority(
+        JobPriority priority,
+        F&& f,
+        Args&&... args);
 
     void workThread();
 
@@ -234,8 +236,10 @@ auto ThreadPool::submitWithPriority(JobPriority priority, F&& f, Args&&... args)
 }
 
 template <class F, typename... Args>
-    requires std::is_invocable_v<F, Args...>
-Expected<void> ThreadPool::postJobWithPriority(JobPriority priority, F&& f, Args&&... args) {
+requires std::is_invocable_v<F, Args...> Expected<void> ThreadPool::postJobWithPriority(
+    JobPriority priority,
+    F&& f,
+    Args&&... args) {
     {
         std::unique_lock<std::mutex> lock(mutex_);
         if (shutdown_) {
@@ -258,4 +262,4 @@ Expected<void> ThreadPool::postJobWithPriority(JobPriority priority, F&& f, Args
     return {};
 }
 
-} // namespace slark
+}  // namespace slark

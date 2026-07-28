@@ -4,6 +4,7 @@
 #include "Reflection.hpp"
 
 #include <gtest/gtest.h>
+
 #include <string>
 
 using namespace slark;
@@ -25,7 +26,7 @@ struct AnotherWidget {
 
 SLARK_REGISTER_CLASS(AnotherWidget);
 
-} // namespace
+}  // namespace
 
 TEST(Reflection, RegisterAndCreate) {
     Reflection::enroll<TestWidget>("TestWidget");

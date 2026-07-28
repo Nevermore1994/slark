@@ -99,12 +99,14 @@ void Native_SetVideoRotation(const std::string& playerId, int32_t rotationDegree
         return;
     }
     auto methodSig = JNI::makeSignature(JNI::Sig::Void, JNI::Sig::String, JNI::Sig::Int);
-    auto methodId = JNICache::instance().getStaticMethod(playerClass, "setVideoRotation", methodSig);
+    auto methodId =
+        JNICache::instance().getStaticMethod(playerClass, "setVideoRotation", methodSig);
     if (!methodId) {
         LogE("not found setVideoRotation method");
         return;
     }
-    env.get()->CallStaticVoidMethod(playerClass.get(), methodId.get(),
+    env.get()->CallStaticVoidMethod(playerClass.get(),
+                                    methodId.get(),
                                     JNI::ToJVM::str(env.get(), playerId).get(),
                                     static_cast<jint>(rotationDegrees));
 }
@@ -170,4 +172,4 @@ void VideoRender::renderEnd() noexcept {
     LogI("VideoRender renderEnd, playerId:{}", playerId_);
 }
 
-} // namespace slark
+}  // namespace slark

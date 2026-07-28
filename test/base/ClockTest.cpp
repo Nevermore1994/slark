@@ -1,10 +1,11 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-#include "Clock.h" // Replace with the correct header for the Clock class
+#include "Clock.h"  // Replace with the correct header for the Clock class
+
+#include <gtest/gtest.h>
 
 #include <chrono>
-#include <gtest/gtest.h>
 #include <thread>
 
 using namespace std::chrono;
@@ -28,11 +29,11 @@ TEST(ClockTest, StartPauseReset) {
     Clock clock;
     clock.setTime(Time::TimePoint::fromMilliSeconds(5000ms));
     clock.start();
-    std::this_thread::sleep_for(milliseconds(2000)); // 7000
+    std::this_thread::sleep_for(milliseconds(2000));  // 7000
     EXPECT_GE(clock.time().toMilliSeconds(), milliseconds(6500));
-    clock.pause(); // 7000
+    clock.pause();  // 7000
     EXPECT_GE(clock.time().toMilliSeconds(), milliseconds(6500));
-    std::this_thread::sleep_for(milliseconds(1000)); // 7000
+    std::this_thread::sleep_for(milliseconds(1000));  // 7000
     EXPECT_GE(clock.time().toMilliSeconds(), milliseconds(6500));
     clock.start();
     std::this_thread::sleep_for(milliseconds(1000));
@@ -53,7 +54,7 @@ TEST(ClockTest, MultiThreadedStartPause) {
     std::thread resumeThread([&]() {
         std::this_thread::sleep_for(milliseconds(1000));
         EXPECT_GE(clock.time().toMilliSeconds(), milliseconds(990));
-        clock.start(); // reset start
+        clock.start();  // reset start
     });
 
     pauseThread.join();

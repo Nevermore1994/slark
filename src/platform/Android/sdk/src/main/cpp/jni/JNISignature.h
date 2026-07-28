@@ -24,7 +24,7 @@ inline constexpr std::string_view ByteArray = "[B";
 inline constexpr std::string_view IntArray = "[I";
 inline constexpr std::string_view ByteBuffer = "Ljava/nio/ByteBuffer;";
 inline constexpr std::string_view Object = "Ljava/lang/Object;";
-} // namespace Sig
+}  // namespace Sig
 
 inline std::string makeArray(std::string_view type) {
     return std::string("[").append(type);
@@ -42,4 +42,4 @@ std::string makeSignature(std::string_view ret, Args&&... args) {
     return result;
 }
 
-} // namespace slark::JNI
+}  // namespace slark::JNI

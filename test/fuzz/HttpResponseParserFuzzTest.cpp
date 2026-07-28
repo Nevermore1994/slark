@@ -1,10 +1,11 @@
-#include "HttpResponseParser.h"
-#include "Data.h"
-
 #include <gtest/gtest.h>
+
 #include <random>
 #include <string>
 #include <vector>
+
+#include "Data.h"
+#include "HttpResponseParser.h"
 
 using namespace slark;
 using namespace slark::http;
@@ -15,7 +16,7 @@ void fuzzFeed(HttpResponseParser& parser, const std::string& data) {
     parser.feed(reinterpret_cast<const Byte*>(data.data()), data.size());
 }
 
-} // namespace
+}  // namespace
 
 // 随机乱序 chunk 投喂
 TEST(HttpResponseParserFuzzTest, RandomChunkedInput) {
@@ -43,7 +44,9 @@ TEST(HttpResponseParserFuzzTest, RandomChunkedInput) {
 TEST(HttpResponseParserFuzzTest, InvalidInputDoesNotCrash) {
     HttpResponseParser::Callbacks callbacks;
     bool errored = false;
-    callbacks.onError = [&](Error) { errored = true; };
+    callbacks.onError = [&](Error) {
+        errored = true;
+    };
     HttpResponseParser parser(callbacks);
 
     std::vector<std::string> invalidInputs = {
@@ -91,7 +94,9 @@ TEST(HttpResponseParserFuzzTest, RandomChunkedEncoding) {
 TEST(HttpResponseParserFuzzTest, LargeContentLength) {
     HttpResponseParser::Callbacks callbacks;
     bool errored = false;
-    callbacks.onError = [&](Error) { errored = true; };
+    callbacks.onError = [&](Error) {
+        errored = true;
+    };
     HttpResponseParser parser(callbacks);
 
     fuzzFeed(parser, "HTTP/1.1 200 OK\r\nContent-Length: 99999999\r\n\r\n");
@@ -116,7 +121,9 @@ TEST(HttpResponseParserFuzzTest, RepeatedResetAndFeed) {
 TEST(HttpResponseParserFuzzTest, TruncatedHeaders) {
     HttpResponseParser::Callbacks callbacks;
     bool errored = false;
-    callbacks.onError = [&](Error e) { errored = true; };
+    callbacks.onError = [&](Error e) {
+        errored = true;
+    };
     HttpResponseParser parser(callbacks);
 
     fuzzFeed(parser, "HTTP/1.1 200 OK\r\nContent-");
@@ -128,7 +135,9 @@ TEST(HttpResponseParserFuzzTest, TruncatedHeaders) {
 TEST(HttpResponseParserFuzzTest, ManyHeaders) {
     HttpResponseParser::Callbacks callbacks;
     int headerCount = 0;
-    callbacks.onHeaders = [&](auto&& h) { headerCount = h.size(); };
+    callbacks.onHeaders = [&](auto&& h) {
+        headerCount = h.size();
+    };
     HttpResponseParser parser(callbacks);
 
     std::string response = "HTTP/1.1 200 OK\r\n";
@@ -138,5 +147,5 @@ TEST(HttpResponseParserFuzzTest, ManyHeaders) {
     response += "Content-Length: 0\r\n\r\n";
     fuzzFeed(parser, response);
     EXPECT_TRUE(parser.isCompleted());
-    EXPECT_EQ(headerCount, 101); // 100 custom + Content-Length
+    EXPECT_EQ(headerCount, 101);  // 100 custom + Content-Length
 }

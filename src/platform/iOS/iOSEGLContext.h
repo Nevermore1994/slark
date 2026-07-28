@@ -9,7 +9,7 @@
 namespace slark {
 
 class iOSEGLContext : public IEGLContext {
-public:
+ public:
     iOSEGLContext();
 
     ~iOSEGLContext() override;
@@ -24,11 +24,11 @@ public:
 
     virtual void* nativeContext() override;
 
-private:
+ private:
     bool inited_ = false;
     void* context_ = nullptr;
 };
 
-} // namespace slark
+}  // namespace slark
 
 #endif /* iOSEGLContext_hpp */

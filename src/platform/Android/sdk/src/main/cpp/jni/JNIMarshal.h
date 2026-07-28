@@ -4,13 +4,13 @@
 
 #pragma once
 
-#include "Data.h"
-#include "JNIBase.h"
-
 #include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "Data.h"
+#include "JNIBase.h"
 
 namespace slark::JNI {
 
@@ -24,7 +24,7 @@ std::unique_ptr<slark::Data> bytes(JNIEnv* env, jobject byteBuffer) noexcept;
 
 std::vector<int32_t> ints(JNIEnv* env, jintArray arr) noexcept;
 
-} // namespace FromJVM
+}  // namespace FromJVM
 
 namespace ToJVM {
 
@@ -40,6 +40,6 @@ ByteArrayReference naluBytes(JNIEnv* env,
                              const slark::Data& data,
                              bool skipExistingHeader = true) noexcept;
 
-} // namespace ToJVM
+}  // namespace ToJVM
 
-} // namespace slark::JNI
+}  // namespace slark::JNI

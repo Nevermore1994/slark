@@ -3,6 +3,11 @@
 //
 
 #pragma once
+#include <atomic>
+#include <condition_variable>
+#include <functional>
+#include <mutex>
+
 #include "Channel.hpp"
 #include "DecoderManager.h"
 #include "Error.h"
@@ -10,11 +15,6 @@
 #include "IPipelineComponent.h"
 #include "Thread.h"
 #include "ThreadManager.h"
-
-#include <atomic>
-#include <condition_variable>
-#include <functional>
-#include <mutex>
 
 namespace slark {
 
@@ -27,7 +27,7 @@ struct DecoderComponentConfig {
 
 class DecoderComponent : public IPipelineComponent,
                          public std::enable_shared_from_this<DecoderComponent> {
-public:
+ public:
     explicit DecoderComponent(ReceiverPtr<AVFrameRefPtr> receiver, DecoderComponentConfig config);
 
     ~DecoderComponent() override;
@@ -52,7 +52,7 @@ public:
         return decoder_;
     }
 
-private:
+ private:
     void runLoop(Thread& thread) noexcept;
 
     void processPendingOutputs(Thread& thread) noexcept;
@@ -61,11 +61,11 @@ private:
 
     [[nodiscard]] bool decodeFrame(AVFrameRefPtr& frame, Thread& thread) noexcept;
 
-private:
+ private:
     static constexpr int kMaxDecodeRetry = 100;
     static constexpr auto kMaxDecodeBackoff = std::chrono::milliseconds(16);
 
-private:
+ private:
     std::atomic<bool> flushed_{false};
 
     DecoderComponentConfig config_;
@@ -74,4 +74,4 @@ private:
     ReceiverPtr<AVFrameRefPtr> receiver_;
 };
 
-} // namespace slark
+}  // namespace slark

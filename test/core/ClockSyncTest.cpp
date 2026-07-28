@@ -4,11 +4,12 @@
 
 #include "pipeline/ClockSync.h"
 
-#include "Time.hpp"
-
 #include <gtest/gtest.h>
+
 #include <thread>
 #include <vector>
+
+#include "Time.hpp"
 
 using namespace slark;
 

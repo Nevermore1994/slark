@@ -117,8 +117,8 @@ TEST(SPSCRingBufferTest, WrapAroundWrite) {
     SPSCRingBuffer<int, 8> buf; // bit_ceil(8+1)=16, capacity=15
     // 写满再读一部分，触发写指针回绕
     std::vector<int> data(15);
-    for (int i = 0; i < 15; ++i) {
-        data[i] = i;
+    for (size_t i = 0; i < 15; ++i) {
+        data[i] = static_cast<int>(i);
     }
     buf.writeExact(data.data(), 15);
 
@@ -127,7 +127,7 @@ TEST(SPSCRingBufferTest, WrapAroundWrite) {
 
     // 再写 5 个，写指针回绕
     std::vector<int> newData(5);
-    for (int i = 0; i < 5; ++i) {
+    for (size_t i = 0; i < 5; ++i) {
         newData[i] = 100 + i;
     }
     EXPECT_TRUE(buf.writeExact(newData.data(), 5));
@@ -139,11 +139,11 @@ TEST(SPSCRingBufferTest, WrapAroundWrite) {
     int allData[15];
     buf.readExact(allData, 15);
     // 前 10 个是原来的 data[5..14]
-    for (int i = 0; i < 10; ++i) {
+    for (size_t i = 0; i < 10; ++i) {
         EXPECT_EQ(allData[i], 5 + i);
     }
     // 后 5 个是 newData
-    for (int i = 0; i < 5; ++i) {
+    for (size_t i = 0; i < 5; ++i) {
         EXPECT_EQ(allData[10 + i], 100 + i);
     }
 }
@@ -152,8 +152,8 @@ TEST(SPSCRingBufferTest, WrapAroundRead) {
     SPSCRingBuffer<int, 8> buf;
     // 写入 8 个，读出 3 个，再写入 3 个触发回绕，然后验证读出顺序正确
     std::vector<int> data(8);
-    for (int i = 0; i < 8; ++i) {
-        data[i] = i;
+    for (size_t i = 0; i < 8; ++i) {
+        data[i] = static_cast<int>(i);
     }
     buf.writeExact(data.data(), 8);
 
@@ -161,7 +161,7 @@ TEST(SPSCRingBufferTest, WrapAroundRead) {
     buf.readExact(readData, 3); // readPos 前进 3
 
     std::vector<int> newData(3);
-    for (int i = 0; i < 3; ++i) {
+    for (size_t i = 0; i < 3; ++i) {
         newData[i] = 100 + i;
     }
     buf.writeExact(newData.data(), 3); // 写指针回绕
@@ -172,7 +172,7 @@ TEST(SPSCRingBufferTest, WrapAroundRead) {
     EXPECT_EQ(allData[0], 3);
     EXPECT_EQ(allData[4], 7);
     // 后 3 个是 newData
-    for (int i = 0; i < 3; ++i) {
+    for (size_t i = 0; i < 3; ++i) {
         EXPECT_EQ(allData[5 + i], 100 + i);
     }
 }
@@ -295,7 +295,7 @@ TEST(SPSCRingBufferTest, MemoryOrdering) {
 TEST(SPSCRingBufferTest, Uint8Specialization) {
     SPSCRingBuffer<uint8_t, 256> buf; // bit_ceil(257)=512, capacity=511
     std::vector<uint8_t> data(511);
-    for (int i = 0; i < 511; ++i) {
+    for (size_t i = 0; i < 511; ++i) {
         data[i] = static_cast<uint8_t>(i);
     }
 
@@ -304,7 +304,7 @@ TEST(SPSCRingBufferTest, Uint8Specialization) {
 
     std::vector<uint8_t> readData(511);
     EXPECT_TRUE(buf.readExact(readData.data(), 511));
-    for (int i = 0; i < 511; ++i) {
+    for (size_t i = 0; i < 511; ++i) {
         EXPECT_EQ(readData[i], static_cast<uint8_t>(i));
     }
 }
@@ -313,8 +313,8 @@ TEST(SPSCRingBufferTest, Uint8Specialization) {
 TEST(SPSCRingBufferTest, ResetAndReuse) {
     SPSCRingBuffer<int, 8> buf; // bit_ceil(8+1)=16, capacity=15
     std::vector<int> data(15);
-    for (int i = 0; i < 15; ++i) {
-        data[i] = i;
+    for (size_t i = 0; i < 15; ++i) {
+        data[i] = static_cast<int>(i);
     }
     buf.writeExact(data.data(), 15);
     EXPECT_TRUE(buf.isFull());

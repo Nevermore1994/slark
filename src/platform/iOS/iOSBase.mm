@@ -3,13 +3,13 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
-#include "FileUtil.h"
-#include "Log.hpp"
-
 #import <Foundation/NSObjCRuntime.h>
 #import <Foundation/NSPathUtilities.h>
 #import <Foundation/NSString.h>
 #import <os/log.h>
+
+#include "FileUtil.h"
+#include "Log.hpp"
 
 namespace slark {
 
@@ -18,19 +18,29 @@ void printLog(LogType type, const std::string& log) {
         NSString* str = [NSString stringWithUTF8String:log.data()];
         os_log_type_t logType = OS_LOG_TYPE_DEFAULT;
         switch (type) {
-            case LogType::Error:   logType = OS_LOG_TYPE_ERROR;   break;
-            case LogType::Warning: logType = OS_LOG_TYPE_FAULT;   break;
-            case LogType::Info:    logType = OS_LOG_TYPE_INFO;    break;
-            case LogType::Debug:   logType = OS_LOG_TYPE_DEBUG;   break;
+            case LogType::Error:
+                logType = OS_LOG_TYPE_ERROR;
+                break;
+            case LogType::Warning:
+                logType = OS_LOG_TYPE_FAULT;
+                break;
+            case LogType::Info:
+                logType = OS_LOG_TYPE_INFO;
+                break;
+            case LogType::Debug:
+                logType = OS_LOG_TYPE_DEBUG;
+                break;
             case LogType::Print:
             case LogType::Record:
-            default:               logType = OS_LOG_TYPE_DEFAULT; break;
+            default:
+                logType = OS_LOG_TYPE_DEFAULT;
+                break;
         }
         os_log_with_type(OS_LOG_DEFAULT, logType, "%{public}s", log.data());
         str = nil;
     }
 }
-} // namespace slark
+}  // namespace slark
 
 NSString* stringViewToNSString(std::string_view view) {
     return [[NSString alloc] initWithBytes:view.data()
@@ -71,4 +81,4 @@ std::string cachePath() noexcept {
     return res;
 }
 
-} // namespace slark::File
+}  // namespace slark::File

@@ -13,8 +13,8 @@ typedef NS_ENUM(NSUInteger, SlarkGraphicsBackend) {
 
 @interface SlarkGraphicsConfig : NSObject
 
-@property (nonatomic, assign) SlarkGraphicsBackend backend;
-@property (nonatomic, assign) BOOL hdrEnabled;
+@property(nonatomic, assign) SlarkGraphicsBackend backend;
+@property(nonatomic, assign) BOOL hdrEnabled;
 
 + (instancetype)defaultConfig;
 + (instancetype)configWithBackend:(SlarkGraphicsBackend)backend;

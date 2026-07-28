@@ -1,12 +1,13 @@
-#include "FileStream.h"
-#include "IStream.h"
-
 #include <gtest/gtest.h>
+
 #include <atomic>
 #include <chrono>
 #include <random>
 #include <thread>
 #include <vector>
+
+#include "FileStream.h"
+#include "IStream.h"
 
 using namespace slark;
 

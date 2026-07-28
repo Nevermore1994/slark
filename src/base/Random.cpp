@@ -73,4 +73,4 @@ std::string uuid() noexcept {
     return result;
 }
 
-} // end namespace slark::Random
+}  // end namespace slark::Random

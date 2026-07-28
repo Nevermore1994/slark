@@ -3,28 +3,28 @@
 //
 
 #pragma once
-#include "AVFrame.hpp"
-
 #include <memory>
 #include <unordered_map>
+
+#include "AVFrame.hpp"
 
 namespace slark {
 
 class INode {
-public:
+ public:
     INode() = default;
     virtual ~INode() = default;
     virtual bool process(std::shared_ptr<AVFrame> frame) noexcept = 0;
 };
 
 class InputNode : public virtual INode {
-public:
+ public:
     ~InputNode() override = default;
     virtual bool send(std::shared_ptr<AVFrame> frame) noexcept = 0;
 };
 
 class OutputNode : public virtual INode {
-public:
+ public:
     ~OutputNode() override = default;
 
     virtual void receive(std::shared_ptr<AVFrame> frame) noexcept;
@@ -32,17 +32,17 @@ public:
     bool removeTarget(const std::weak_ptr<InputNode>& node) noexcept;
     void removeAllTarget() noexcept;
 
-protected:
+ protected:
     void notifyTargets(std::shared_ptr<AVFrame> frame) noexcept;
 
-protected:
+ protected:
     std::unordered_map<uint64_t, std::weak_ptr<InputNode>> targets_;
 };
 
 class Node : public InputNode, public OutputNode {
-public:
+ public:
     ~Node() override = default;
     bool send(AVFrameRefPtr frame) noexcept override;
     bool process(AVFrameRefPtr frame) noexcept override;
 };
-} // namespace slark
+}  // namespace slark

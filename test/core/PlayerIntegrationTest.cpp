@@ -6,16 +6,17 @@
 //   1. 纯防御性保护测试（不依赖 prepare/媒体文件，任何环境均可运行）
 //   2. 生命周期测试（依赖 prepare 后的状态，通过 GTEST_SKIP 在无媒体环境跳过）
 
-#include "Player.h"
-#include "PlayerObserver.h"
-#include "VideoInfo.h"
-
-#include <chrono>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+
+#include <chrono>
 #include <memory>
 #include <string>
 #include <thread>
+
+#include "Player.h"
+#include "PlayerObserver.h"
+#include "VideoInfo.h"
 
 using namespace slark;
 using ::testing::_;

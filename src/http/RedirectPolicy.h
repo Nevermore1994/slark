@@ -4,19 +4,20 @@
 
 #pragma once
 
-#include "Type.h"
-#include "Url.h"
-
 #include <StringUtil.h>
+
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <unordered_map>
 
+#include "Type.h"
+#include "Url.h"
+
 namespace slark::http {
 
 class RedirectPolicy {
-public:
+ public:
     static constexpr int32_t kMaxRedirectCount = 10;
 
     [[nodiscard]] bool shouldRedirect(const HttpResponse& response,
@@ -61,15 +62,15 @@ public:
             case HttpStatusCode::SeeOther:
                 // 303：方法必须改为 GET
                 redirectRequest.methodType = HttpMethodType::Get;
-                redirectRequest.body = nullptr; // 303 不应携带 body
+                redirectRequest.body = nullptr;  // 303 不应携带 body
                 break;
-            case HttpStatusCode::MovedPermanently: // 301
-            case HttpStatusCode::Found:            // 302
+            case HttpStatusCode::MovedPermanently:  // 301
+            case HttpStatusCode::Found:             // 302
                 // 历史原因，很多客户端对 301/302 的 POST 请求也改为 GET
                 // 这里保持原方法，由调用方决定是否修改
                 break;
-            case HttpStatusCode::TemporaryRedirect: // 307
-            case HttpStatusCode::PermanentRedirect: // 308
+            case HttpStatusCode::TemporaryRedirect:  // 307
+            case HttpStatusCode::PermanentRedirect:  // 308
                 // 必须保持原方法和 body
                 break;
             default:
@@ -86,7 +87,7 @@ public:
         return buildRedirectRequest(original, HttpStatusCode::Found, location);
     }
 
-private:
+ private:
     // 解析重定向URL，处理相对路径；https→http 降级时返回 nullopt
     [[nodiscard]] static std::optional<std::string> resolveRedirectUrl(std::string_view originalUrl,
                                                                        std::string_view location) {
@@ -175,4 +176,4 @@ private:
     }
 };
 
-} // namespace slark::http
+}  // namespace slark::http

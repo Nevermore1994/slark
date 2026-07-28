@@ -4,19 +4,20 @@
 
 #include "AndroidVulkanContext.h"
 
-#include "Log.hpp"
-#include "VulkanGLUtil.h"
-#include "VulkanShaders.h"
-
 #include <EGL/eglext.h>
 #include <GLES2/gl2ext.h>
-#include <algorithm>
 #include <android/hardware_buffer.h>
+
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <functional>
 #include <set>
 #include <vector>
+
+#include "Log.hpp"
+#include "VulkanGLUtil.h"
+#include "VulkanShaders.h"
 
 namespace slark {
 AndroidVulkanContext::~AndroidVulkanContext() noexcept {
@@ -841,7 +842,11 @@ void AndroidVulkanContext::updateHWBDescriptor() noexcept {
     vkUpdateDescriptorSets(device_, 1, &write, 0, nullptr);
 }
 
-void AndroidVulkanContext::doBlitOES(int32_t textureId, int32_t surfaceW, int32_t surfaceH, int32_t contentW, int32_t contentH) noexcept {
+void AndroidVulkanContext::doBlitOES(int32_t textureId,
+                                     int32_t surfaceW,
+                                     int32_t surfaceH,
+                                     int32_t contentW,
+                                     int32_t contentH) noexcept {
     // 与 GLPreviewRenderer 一致的宽高比计算：content 在 surface 内保持比例居中显示
     const float contentAspect = static_cast<float>(contentW) / static_cast<float>(contentH);
     const float surfaceAspect = static_cast<float>(surfaceW) / static_cast<float>(surfaceH);
@@ -864,20 +869,44 @@ void AndroidVulkanContext::doBlitOES(int32_t textureId, int32_t surfaceW, int32_
     float kUVs[8];
     switch (rotation_) {
         case 90:
-            kUVs[0] = 1; kUVs[1] = 1; kUVs[2] = 1; kUVs[3] = 0;
-            kUVs[4] = 0; kUVs[5] = 1; kUVs[6] = 0; kUVs[7] = 0;
+            kUVs[0] = 1;
+            kUVs[1] = 1;
+            kUVs[2] = 1;
+            kUVs[3] = 0;
+            kUVs[4] = 0;
+            kUVs[5] = 1;
+            kUVs[6] = 0;
+            kUVs[7] = 0;
             break;
         case 180:
-            kUVs[0] = 1; kUVs[1] = 0; kUVs[2] = 0; kUVs[3] = 0;
-            kUVs[4] = 1; kUVs[5] = 1; kUVs[6] = 0; kUVs[7] = 1;
+            kUVs[0] = 1;
+            kUVs[1] = 0;
+            kUVs[2] = 0;
+            kUVs[3] = 0;
+            kUVs[4] = 1;
+            kUVs[5] = 1;
+            kUVs[6] = 0;
+            kUVs[7] = 1;
             break;
         case 270:
-            kUVs[0] = 0; kUVs[1] = 0; kUVs[2] = 0; kUVs[3] = 1;
-            kUVs[4] = 1; kUVs[5] = 0; kUVs[6] = 1; kUVs[7] = 1;
+            kUVs[0] = 0;
+            kUVs[1] = 0;
+            kUVs[2] = 0;
+            kUVs[3] = 1;
+            kUVs[4] = 1;
+            kUVs[5] = 0;
+            kUVs[6] = 1;
+            kUVs[7] = 1;
             break;
         default:
-            kUVs[0] = 0; kUVs[1] = 1; kUVs[2] = 1; kUVs[3] = 1;
-            kUVs[4] = 0; kUVs[5] = 0; kUVs[6] = 1; kUVs[7] = 0;
+            kUVs[0] = 0;
+            kUVs[1] = 1;
+            kUVs[2] = 1;
+            kUVs[3] = 1;
+            kUVs[4] = 0;
+            kUVs[5] = 0;
+            kUVs[6] = 1;
+            kUVs[7] = 0;
             break;
     }
 
@@ -1085,7 +1114,7 @@ void AndroidVulkanContext::renderHardwareBufferToSwapchain(uint32_t imageIndex) 
                             &descriptorSet_,
                             0,
                             nullptr);
-    vkCmdDraw(cmd, 6, 1, 0, 0); // 全屏两个三角形
+    vkCmdDraw(cmd, 6, 1, 0, 0);  // 全屏两个三角形
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
 }
@@ -1240,4 +1269,4 @@ void AndroidVulkanContext::destroyDeviceResources() noexcept {
     device_ = VK_NULL_HANDLE;
 }
 
-} // namespace slark
+}  // namespace slark

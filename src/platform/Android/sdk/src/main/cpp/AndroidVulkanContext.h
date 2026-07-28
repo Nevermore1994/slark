@@ -4,28 +4,32 @@
 
 #pragma once
 
-#include "AndroidEGLContext.h"
-
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 #include <android/hardware_buffer.h>
 #include <android/native_window.h>
+#include <vulkan/vulkan.h>
+#include <vulkan/vulkan_android.h>
+
 #include <cstdint>
 #include <memory>
 #include <vector>
-#include <vulkan/vulkan.h>
-#include <vulkan/vulkan_android.h>
+
+#include "AndroidEGLContext.h"
 
 namespace slark {
 
 class AndroidVulkanContext {
-public:
+ public:
     AndroidVulkanContext() = default;
     ~AndroidVulkanContext() noexcept;
 
-    bool init(ANativeWindow* window, int32_t width, int32_t height, void* sharedEGLContext = nullptr) noexcept;
+    bool init(ANativeWindow* window,
+              int32_t width,
+              int32_t height,
+              void* sharedEGLContext = nullptr) noexcept;
 
     bool recreateSwapchain(ANativeWindow* window, int32_t width, int32_t height) noexcept;
 
@@ -41,7 +45,7 @@ public:
         return isInit_;
     }
 
-private:
+ private:
     bool createInstance() noexcept;
     bool createSurface(ANativeWindow* window) noexcept;
     bool selectPhysicalDevice() noexcept;
@@ -67,8 +71,16 @@ private:
     void updateHWBDescriptor() noexcept;
 
     // surfaceW/surfaceH: HWB/display 尺寸，contentW/contentH: 内容（旋转后）尺寸，用于 letterbox
-    void blitOESToHardwareBuffer(int32_t textureId, int32_t surfaceW, int32_t surfaceH, int32_t contentW, int32_t contentH) noexcept;
-    void doBlitOES(int32_t textureId, int32_t surfaceW, int32_t surfaceH, int32_t contentW, int32_t contentH) noexcept;
+    void blitOESToHardwareBuffer(int32_t textureId,
+                                 int32_t surfaceW,
+                                 int32_t surfaceH,
+                                 int32_t contentW,
+                                 int32_t contentH) noexcept;
+    void doBlitOES(int32_t textureId,
+                   int32_t surfaceW,
+                   int32_t surfaceH,
+                   int32_t contentW,
+                   int32_t contentH) noexcept;
     bool rebuildHWBResources(int32_t width, int32_t height) noexcept;
     void clearHWBDescriptor() noexcept;
     void renderHardwareBufferToSwapchain(uint32_t imageIndex) noexcept;
@@ -80,7 +92,7 @@ private:
 
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const noexcept;
 
-private:
+ private:
     bool isInit_ = false;
     int32_t rotation_ = 0;
     int32_t frameWidth_ = 0;
@@ -146,4 +158,4 @@ private:
     PFN_vkGetAndroidHardwareBufferPropertiesANDROID fnVkGetHWBProperties_ = nullptr;
 };
 
-} // namespace slark
+}  // namespace slark

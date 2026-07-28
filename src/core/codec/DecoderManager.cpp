@@ -75,4 +75,4 @@ bool DecoderManager::contains(DecoderType type) const noexcept {
     return decoderInfo_.contains(type);
 }
 
-} // namespace slark
+}  // namespace slark

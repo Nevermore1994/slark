@@ -4,16 +4,16 @@
 
 #pragma once
 
-#include "IEGLContext.h"
-#include "IPlayerObserver.h"
-#include "PerfTypes.h"
-
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "IEGLContext.h"
+#include "IPlayerObserver.h"
+#include "PerfTypes.h"
 
 namespace slark {
 
@@ -40,9 +40,9 @@ enum class PlayerEvent : uint8_t {
 };
 
 struct ResourceItem {
-    std::string path;           ///< local path or http url
-    double displayStart = 0;    ///< play start offset, seconds
-    double displayDuration = 0; ///< play duration, seconds
+    std::string path;            ///< local path or http url
+    double displayStart = 0;     ///< play start offset, seconds
+    double displayDuration = 0;  ///< play duration, seconds
 };
 
 struct PlayerSetting {
@@ -77,12 +77,12 @@ struct IVideoRender;
 class DemuxerHelper;
 
 class Player {
-public:
+ public:
     explicit Player(std::unique_ptr<PlayerParams> params);
 
     ~Player();
 
-public:
+ public:
     void prepare() noexcept;
 
     void play() noexcept;
@@ -105,7 +105,7 @@ public:
 
     void setRenderImpl(std::weak_ptr<IVideoRender> render) noexcept;
 
-public:
+ public:
     PlayerParams peek() noexcept;
 
     PlayerState state() noexcept;
@@ -116,9 +116,9 @@ public:
 
     [[nodiscard]] double currentPlayedTime() noexcept;
 
-private:
+ private:
     class Impl;
     std::shared_ptr<Impl> pimpl_;
 };
 
-} // namespace slark
+}  // namespace slark

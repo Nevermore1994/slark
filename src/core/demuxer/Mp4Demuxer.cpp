@@ -4,18 +4,18 @@
 
 #include "Mp4Demuxer.h"
 
-#include "IDemuxer.h"
-#include "MediaUtil.h"
-
 #include <optional>
 #include <ranges>
 #include <stack>
+
+#include "IDemuxer.h"
+#include "MediaUtil.h"
 
 namespace slark {
 
 bool isContainerBox(std::string_view symbol) noexcept {
     using namespace std::string_view_literals;
-        static const std::vector<std::string_view> kContainerBox = {
+    static const std::vector<std::string_view> kContainerBox = {
         "moov"sv,
         "trak"sv,
         "edts"sv,
@@ -178,7 +178,7 @@ void TrackContext::seek(uint64_t pos) noexcept {
         ++sampleInChunk;
     }
 
-    uint32_t sampleIndex = sampleBeforeChunk + sampleInChunk + 1; // 1-based
+    uint32_t sampleIndex = sampleBeforeChunk + sampleInChunk + 1;  // 1-based
     if (stss) {
         const auto& keyIndexs = stss->keyIndexs;
         auto keyIt = std::upper_bound(keyIndexs.begin(), keyIndexs.end(), sampleIndex);
@@ -215,7 +215,7 @@ std::optional<std::pair<uint32_t, uint32_t>> seekInRle(const std::vector<Entry>&
     return std::nullopt;
 }
 
-} // namespace
+}  // namespace
 
 void TrackContext::seekToSample(uint32_t targetSampleIndex) noexcept {
     const uint32_t idx = targetSampleIndex > 0 ? targetSampleIndex - 1 : 0;
@@ -272,11 +272,16 @@ void TrackContext::seekToSample(uint32_t targetSampleIndex) noexcept {
     }
 
     index = targetSampleIndex;
-    LogI("[debug] seekToSample {} done: idx={}, dts={}({:.3f}s), pts={}({:.3f}s), cttsIdx={}, cttsSample={}, cttsOffset={}",
+    LogI("[debug] seekToSample {} done: idx={}, dts={}({:.3f}s), pts={}({:.3f}s), cttsIdx={}, "
+         "cttsSample={}, cttsOffset={}",
          type == TrackType::Video ? "video" : "audio",
-         idx, dts, double(dts) / mdhd->timeScale,
-         pts, double(pts) / mdhd->timeScale,
-         cttsEntryIndex, cttsEntrySampleIndex,
+         idx,
+         dts,
+         double(dts) / mdhd->timeScale,
+         pts,
+         double(pts) / mdhd->timeScale,
+         cttsEntryIndex,
+         cttsEntrySampleIndex,
          ctts ? ctts->entrys[cttsEntryIndex].sampleOffset : 0);
 }
 
@@ -411,7 +416,7 @@ AVFramePtrArray TrackContext::parseNaluFrames(AVFramePtr frame,
         sizeView.readNumberBE(naluSize, headerSize);
         const uint32_t totalSize = naluSize + headerSize;
         if (pos + totalSize > rawView.length()) {
-            break; // 防止越界
+            break;  // 防止越界
         }
 
         uint8_t naluHeader = 0;
@@ -633,7 +638,9 @@ void Mp4Demuxer::handleBoxInMoov(const BoxRefPtr& box,
         auto stsdBox = std::dynamic_pointer_cast<BoxStsd>(box);
         SAssert(stsdBox != nullptr, "parse error");
         LogI("stsd: children={}, isAudio={}, isVideo={}",
-             stsdBox->childs.size(), stsdBox->isAudio, stsdBox->isVideo);
+             stsdBox->childs.size(),
+             stsdBox->isAudio,
+             stsdBox->isVideo);
         auto [codecId, mediaBoxName] = stsdBox->getCodecId();
         LogI("stsd: codecId={}, mediaBoxName={}", static_cast<int32_t>(codecId), mediaBoxName);
         if (codecId != CodecId::Unknown) {
@@ -675,7 +682,7 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
     bool res = true;
     std::shared_ptr<BoxMdhd> mdhdBox;
     uint32_t currentTrackId = 0;
-    std::unordered_map<uint32_t, std::shared_ptr<BoxElst>> pendingElst; // trackId -> elst
+    std::unordered_map<uint32_t, std::shared_ptr<BoxElst>> pendingElst;  // trackId -> elst
     while ((buffer.pos() - moovBox->info.start) < moovBox->info.size) {
         auto box = Box::createBox(buffer);
         if (!box) {
@@ -686,7 +693,10 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
         box->decode(buffer);
 
         LogD("parseMoovBox: box={}, start={}, size={}, trackCnt={}",
-             box->info.symbol, box->info.start, box->info.size, tracks_.size());
+             box->info.symbol,
+             box->info.start,
+             box->info.size,
+             tracks_.size());
 
         if (box->info.symbol == "tkhd") {
             const auto dataStart = static_cast<int64_t>(box->info.start + box->info.headerSize);
@@ -701,7 +711,8 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
                 buffer.skip(4 + 4);
             }
             buffer.read4ByteBE(currentTrackId);
-            // 跳到 matrix 字段: reserved(4) + duration(4/8) + reserved(8) + layer(2) + alternate_group(2) + volume(2) + reserved(2)
+            // 跳到 matrix 字段: reserved(4) + duration(4/8) + reserved(8) + layer(2) +
+            // alternate_group(2) + volume(2) + reserved(2)
             if (tkhdVersion == 1) {
                 buffer.skip(4 + 8 + 8 + 2 + 2 + 2 + 2);
             } else {
@@ -721,9 +732,11 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
             int32_t rotation = 0;
             if (matrix[0] == 0 && matrix[1] == kUnity && matrix[3] == -kUnity && matrix[4] == 0) {
                 rotation = 90;
-            } else if (matrix[0] == -kUnity && matrix[1] == 0 && matrix[3] == 0 && matrix[4] == -kUnity) {
+            } else if (matrix[0] == -kUnity && matrix[1] == 0 && matrix[3] == 0 &&
+                       matrix[4] == -kUnity) {
                 rotation = 180;
-            } else if (matrix[0] == 0 && matrix[1] == -kUnity && matrix[3] == kUnity && matrix[4] == 0) {
+            } else if (matrix[0] == 0 && matrix[1] == -kUnity && matrix[3] == kUnity &&
+                       matrix[4] == 0) {
                 rotation = 270;
             }
             trackRotations_[currentTrackId] = rotation;
@@ -754,10 +767,15 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
         // udta 在 moov 顶层时跳过深度遍历，避免其异常大的 size 吞掉后续 trak
         // udta/meta 在 moov 顶层时跳过深度遍历，避免异常大的 size 吞掉后续 trak
         if ((box->info.symbol == "udta" || box->info.symbol == "meta") && parentBox.size() == 1) {
-            LogD("parseMoovBox: skip '{}' as leaf at moov top level, size={}", box->info.symbol, box->info.size);
+            LogD("parseMoovBox: skip '{}' as leaf at moov top level, size={}",
+                 box->info.symbol,
+                 box->info.size);
             auto skipOffset = static_cast<int64_t>(box->info.start + box->info.size - buffer.pos());
             if (!buffer.skip(skipOffset)) {
-                LogW("parseMoovBox: skip '{}' failed at pos:{}, size:{}", box->info.symbol, buffer.pos(), box->info.size);
+                LogW("parseMoovBox: skip '{}' failed at pos:{}, size:{}",
+                     box->info.symbol,
+                     buffer.pos(),
+                     box->info.size);
                 if (tracks_.empty()) {
                     res = false;
                 }
@@ -768,11 +786,16 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
         if (isContainerBox(box->info.symbol)) {
             // 容器边界校验：子容器超出父容器范围时降级为 leaf skip
             if (box->info.end() > parentBox.top()->info.end()) {
-                LogW("parseMoovBox: container '{}' [{},{}) exceeds parent '{}' [{},{}), skip as leaf",
-                     box->info.symbol, box->info.start, box->info.end(),
+                LogW("parseMoovBox: container '{}' [{},{}) exceeds parent '{}' [{},{}), skip as "
+                     "leaf",
+                     box->info.symbol,
+                     box->info.start,
+                     box->info.end(),
                      parentBox.top()->info.symbol,
-                     parentBox.top()->info.start, parentBox.top()->info.end());
-                auto skipOffset = static_cast<int64_t>(box->info.start + box->info.size - buffer.pos());
+                     parentBox.top()->info.start,
+                     parentBox.top()->info.end());
+                auto skipOffset =
+                    static_cast<int64_t>(box->info.start + box->info.size - buffer.pos());
                 if (!buffer.skip(skipOffset)) {
                     break;
                 }
@@ -786,14 +809,20 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
         auto parentEnd = parentBox.top()->info.start + parentBox.top()->info.size;
         if (skipEnd > parentEnd) {
             LogW("parseMoovBox: leaf '{}' skip [{},{}) clamped to parent '{}' end {}",
-                 box->info.symbol, box->info.start, skipEnd,
-                 parentBox.top()->info.symbol, parentEnd);
+                 box->info.symbol,
+                 box->info.start,
+                 skipEnd,
+                 parentBox.top()->info.symbol,
+                 parentEnd);
             skipEnd = parentEnd;
         }
         auto skipOffset = static_cast<int64_t>(skipEnd - buffer.pos());
         if (!buffer.skip(skipOffset)) {
-            LogW("parseMoovBox: skip {} bytes failed at pos:{}, box:{}, parentDepth:{}", skipOffset,
-                 buffer.pos(), box->info.symbol, parentBox.size());
+            LogW("parseMoovBox: skip {} bytes failed at pos:{}, box:{}, parentDepth:{}",
+                 skipOffset,
+                 buffer.pos(),
+                 box->info.symbol,
+                 parentBox.size());
             // 恢复：向上弹出父容器，跳到最近的合法容器边界继续解析
             bool recovered = false;
             while (parentBox.size() > 1) {
@@ -802,7 +831,8 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
                     static_cast<int64_t>(container->info.start + container->info.size);
                 if (buffer.skipTo(containerEnd)) {
                     LogW("parseMoovBox: recovered to container '{}' end at pos:{}",
-                         container->info.symbol, containerEnd);
+                         container->info.symbol,
+                         containerEnd);
                     parentBox.pop();
                     recovered = true;
                     break;
@@ -1233,7 +1263,7 @@ DemuxerResult Mp4Demuxer::parseData(DataPacket& packet) noexcept {
     auto currentOffset = buffer_->pos();
     DemuxerResult result;
     while (!buffer_->empty()) {
-        uint64_t offset = INT64_MAX; // To find the earliest starting track
+        uint64_t offset = INT64_MAX;  // To find the earliest starting track
         std::shared_ptr<TrackContext> parseTrack;
         for (const auto& track : std::views::values(tracks_)) {
             uint64_t tOffset = INT64_MAX;
@@ -1250,7 +1280,7 @@ DemuxerResult Mp4Demuxer::parseData(DataPacket& packet) noexcept {
                 if (track->isCompleted || track->isFragmented) {
                     continue;
                 }
-                auto start = track->stco->chunkOffsets[track->chunkLogicIndex] + 
+                auto start = track->stco->chunkOffsets[track->chunkLogicIndex] +
                              static_cast<uint64_t>(track->sampleOffset);
                 auto end = start + track->stsz->sampleSizes[track->stszSampleSizeIndex];
                 if (end < buffer_->pos()) {
@@ -1259,7 +1289,7 @@ DemuxerResult Mp4Demuxer::parseData(DataPacket& packet) noexcept {
                 }
             }
             if (advanced) {
-                continue; // 跳过后被跳过的 sample，重新找在范围内的 track
+                continue;  // 跳过后被跳过的 sample，重新找在范围内的 track
             }
             break;
         }
@@ -1270,8 +1300,11 @@ DemuxerResult Mp4Demuxer::parseData(DataPacket& packet) noexcept {
         }
     }
     if (!result.audioFrames.empty() || !result.videoFrames.empty()) {
-        LogI("parseData: parsedLength {} - {}, audioFrameCount:{}, videoFrameCount:{}", 
-            currentOffset, buffer_->pos(), result.audioFrames.size(), result.videoFrames.size());
+        LogI("parseData: parsedLength {} - {}, audioFrameCount:{}, videoFrameCount:{}",
+             currentOffset,
+             buffer_->pos(),
+             result.audioFrames.size(),
+             result.videoFrames.size());
         buffer_->shrink();
     }
 
@@ -1436,7 +1469,7 @@ uint32_t resolveSampleFlags(const TrunSample& s,
     return trex ? trex->defaultSampleFlags : 0;
 }
 
-} // namespace
+}  // namespace
 
 void TrackContext::appendFragmentSamples(const BoxRefPtr& moofBox, uint64_t moofOffset) noexcept {
     for (const auto& trafChild : moofBox->childs) {
@@ -1507,7 +1540,8 @@ void TrackContext::appendFragmentSamples(const BoxRefPtr& moofBox, uint64_t moof
     }
     // 更新 fragment 总 duration（取最大 dts + duration）
     if (!fragSamples.empty()) {
-        uint64_t lastEnd = static_cast<uint64_t>(fragSamples.back().dts + fragSamples.back().duration);
+        uint64_t lastEnd =
+            static_cast<uint64_t>(fragSamples.back().dts + fragSamples.back().duration);
         fragmentDurationTicks = std::max(fragmentDurationTicks, lastEnd);
     }
     isCompleted = fragSamples.empty();
@@ -1554,4 +1588,4 @@ void Mp4Demuxer::parseMoofChildren(Buffer& buffer, const BoxRefPtr& moofBox) noe
     }
 }
 
-} // namespace slark
+}  // namespace slark

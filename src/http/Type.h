@@ -4,15 +4,15 @@
 
 #pragma once
 
-#include "Data.h"
-#include "Error.h"
-
 #include <chrono>
 #include <cstdint>
 #include <expected>
 #include <functional>
 #include <string>
 #include <unordered_map>
+
+#include "Data.h"
+#include "Error.h"
 
 namespace slark::http {
 
@@ -216,8 +216,7 @@ struct ErrorInfo {
 
     explicit ErrorInfo(slark::Error error) : retCode(error) {}
 
-    ErrorInfo(slark::Error error, int32_t origin)
-        : retCode(error), originErrorCode(origin) {}
+    ErrorInfo(slark::Error error, int32_t origin) : retCode(error), originErrorCode(origin) {}
 };
 
 struct ResponseHeader {
@@ -226,11 +225,11 @@ struct ResponseHeader {
     std::string reasonPhrase;
 
     [[nodiscard]] bool isNeedRedirect() const noexcept {
-        return httpStatusCode == HttpStatusCode::MovedPermanently ||  // 301
-               httpStatusCode == HttpStatusCode::Found ||             // 302
-               httpStatusCode == HttpStatusCode::SeeOther ||          // 303
-               httpStatusCode == HttpStatusCode::TemporaryRedirect || // 307
-               httpStatusCode == HttpStatusCode::PermanentRedirect;   // 308
+        return httpStatusCode == HttpStatusCode::MovedPermanently ||   // 301
+               httpStatusCode == HttpStatusCode::Found ||              // 302
+               httpStatusCode == HttpStatusCode::SeeOther ||           // 303
+               httpStatusCode == HttpStatusCode::TemporaryRedirect ||  // 307
+               httpStatusCode == HttpStatusCode::PermanentRedirect;    // 308
     }
 
     ResponseHeader() = default;
@@ -253,21 +252,21 @@ struct HttpResponse {
     }
 
     [[nodiscard]] bool isNeedRedirect() const noexcept {
-        return statusCode == HttpStatusCode::MovedPermanently ||  // 301
-               statusCode == HttpStatusCode::Found ||             // 302
-               statusCode == HttpStatusCode::SeeOther ||          // 303
-               statusCode == HttpStatusCode::TemporaryRedirect || // 307
-               statusCode == HttpStatusCode::PermanentRedirect;   // 308
+        return statusCode == HttpStatusCode::MovedPermanently ||   // 301
+               statusCode == HttpStatusCode::Found ||              // 302
+               statusCode == HttpStatusCode::SeeOther ||           // 303
+               statusCode == HttpStatusCode::TemporaryRedirect ||  // 307
+               statusCode == HttpStatusCode::PermanentRedirect;    // 308
     }
 };
 
 // 流式响应块：用于 Generator 流式返回
 struct StreamChunk {
-    DataPtr data;                                         // 数据块内容
-    bool isFinal = false;                                 // 是否为最后一个块（响应结束）
-    ErrorInfo error;                                      // 错误信息（仅在出错时有效）
-    HttpStatusCode statusCode = HttpStatusCode::Unknown;  // HTTP 状态码（首个块携带）
-    std::unordered_map<std::string, std::string> headers; // 响应头（首个块携带）
+    DataPtr data;                                          // 数据块内容
+    bool isFinal = false;                                  // 是否为最后一个块（响应结束）
+    ErrorInfo error;                                       // 错误信息（仅在出错时有效）
+    HttpStatusCode statusCode = HttpStatusCode::Unknown;   // HTTP 状态码（首个块携带）
+    std::unordered_map<std::string, std::string> headers;  // 响应头（首个块携带）
 
     [[nodiscard]] bool hasError() const noexcept {
         return error.retCode != slark::Error::Success;
@@ -313,4 +312,4 @@ struct HttpResponseHandler {
 
 using ResponseResult = std::expected<HttpResponse, ErrorInfo>;
 
-} // namespace slark::http
+}  // namespace slark::http

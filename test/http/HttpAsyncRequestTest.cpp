@@ -1,20 +1,21 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
+#include <gtest/gtest.h>
+
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <memory>
+#include <mutex>
+#include <thread>
+#include <vector>
+
 #include "AsyncGenerator.hpp"
 #include "CancellationToken.h"
 #include "Coroutine.hpp"
 #include "CoroutineScheduler.hpp"
 #include "HttpRequest.h"
-
-#include <atomic>
-#include <chrono>
-#include <condition_variable>
-#include <gtest/gtest.h>
-#include <memory>
-#include <mutex>
-#include <thread>
-#include <vector>
 
 using namespace slark;
 using namespace slark::http;
@@ -29,7 +30,7 @@ void resumeAndWait(Coroutine<void>& coro) {
     }
 }
 
-} // namespace
+}  // namespace
 
 // HTTP 协程异步请求测试
 TEST(HttpAsyncRequestTest, AsyncExecuteWithCoroutine) {
@@ -362,8 +363,8 @@ TEST(HttpAsyncRequestTest, ConcurrentRequests) {
     std::vector<std::shared_ptr<Coroutine<void>>> coroutines;
 
     for (int32_t i = 0; i < kRequestCount; ++i) {
-        auto coro = std::make_shared<Coroutine<void>>(
-            [&successCount, &failCount]() -> Coroutine<void> {
+        auto coro =
+            std::make_shared<Coroutine<void>>([&successCount, &failCount]() -> Coroutine<void> {
                 RequestInfo info;
                 info.url = "http://httpbingo.org/get";
                 info.methodType = HttpMethodType::Get;

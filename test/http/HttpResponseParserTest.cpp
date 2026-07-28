@@ -1,11 +1,13 @@
 #include "HttpResponseParser.h"
-#include "Data.h"
-#include "StringUtil.h"
 
 #include <gtest/gtest.h>
+
 #include <memory>
 #include <string>
 #include <unordered_map>
+
+#include "Data.h"
+#include "StringUtil.h"
 
 using namespace slark;
 using namespace slark::http;
@@ -22,7 +24,7 @@ struct ParseResult {
 };
 
 class ParserTestHelper {
-public:
+ public:
     HttpResponseParser::Callbacks callbacks;
     ParseResult result;
 
@@ -51,15 +53,20 @@ public:
         parser->feed(reinterpret_cast<const Byte*>(data.data()), data.size());
     }
 
-    bool isCompleted() const { return parser->isCompleted(); }
-    bool hasError() const { return parser->hasError(); }
+    bool isCompleted() const {
+        return parser->isCompleted();
+    }
 
-private:
+    bool hasError() const {
+        return parser->hasError();
+    }
+
+ private:
     std::unique_ptr<HttpResponseParser> parser;
     std::string reasonPhrase;
 };
 
-} // namespace
+}  // namespace
 
 TEST(HttpResponseParserTest, ParseSimpleResponse) {
     ParserTestHelper helper;
@@ -119,7 +126,8 @@ TEST(HttpResponseParserTest, Reset) {
 
 TEST(HttpResponseParserTest, ParseMultipleHeaders) {
     ParserTestHelper helper;
-    helper.feed("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nX-Custom: value\r\nContent-Length: 2\r\n\r\n{}");
+    helper.feed("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nX-Custom: "
+                "value\r\nContent-Length: 2\r\n\r\n{}");
     EXPECT_TRUE(helper.isCompleted());
     EXPECT_EQ(helper.result.headers["Content-Type"], "application/json");
     EXPECT_EQ(helper.result.headers["X-Custom"], "value");

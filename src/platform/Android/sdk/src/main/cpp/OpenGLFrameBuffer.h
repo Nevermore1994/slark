@@ -13,7 +13,7 @@ namespace slark {
 // OpenGL frame buffer implementing IFrameBuffer interface,
 // wraps existing FrameBuffer
 class OpenGLFrameBuffer : public IFrameBuffer {
-public:
+ public:
     explicit OpenGLFrameBuffer(FrameBufferRefPtr frameBuffer)
         : frameBuffer_(std::move(frameBuffer)) {}
 
@@ -59,8 +59,8 @@ public:
         return frameBuffer_->detachTexture();
     }
 
-private:
+ private:
     FrameBufferRefPtr frameBuffer_;
 };
 
-} // namespace slark
+}  // namespace slark

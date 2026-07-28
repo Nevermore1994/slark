@@ -7,7 +7,7 @@
 namespace slark {
 
 class IPipelineComponent {
-public:
+ public:
     virtual ~IPipelineComponent() = default;
 
     virtual void start() noexcept = 0;
@@ -19,4 +19,4 @@ public:
     [[nodiscard]] virtual bool isRunning() const noexcept = 0;
 };
 
-} // namespace slark
+}  // namespace slark

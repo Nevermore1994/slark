@@ -93,7 +93,7 @@ std::string getHeader(const std::unordered_map<std::string, std::string>& header
     return "";
 }
 
-} // anonymous namespace
+}  // anonymous namespace
 
 AddressInfoPtr resolveAddress(const std::string& host,
                               const std::string& port,
@@ -162,7 +162,7 @@ bool parseChunkData(DataPtr& data,
         if (context.chunkSize <= 0) {
             auto pos = dataView.find(kCRLF);
             if (pos == std::string_view::npos) {
-                break; // 数据不完整，等待更多数据
+                break;  // 数据不完整，等待更多数据
             }
 
             auto sizeStr = dataView.subview(0, pos).toString();
@@ -332,4 +332,4 @@ bool parseRawResponse(const void* data, size_t size, ParsedResponse& out) noexce
                             out.body);
 }
 
-} // namespace slark::http::Util
+}  // namespace slark::http::Util

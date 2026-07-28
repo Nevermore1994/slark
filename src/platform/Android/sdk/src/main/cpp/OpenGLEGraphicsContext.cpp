@@ -4,9 +4,9 @@
 
 #include "OpenGLEGraphicsContext.h"
 
-#include "Log.hpp"
-
 #include <utility>
+
+#include "Log.hpp"
 
 namespace slark {
 
@@ -107,4 +107,4 @@ void* OpenGLEGraphicsContext::nativeContext() noexcept {
     return context_ ? context_->nativeContext() : nullptr;
 }
 
-} // namespace slark
+}  // namespace slark

@@ -89,4 +89,4 @@ void GLProgram::deleteProgram() noexcept {
     program_ = 0;
 }
 
-} // namespace slark
+}  // namespace slark

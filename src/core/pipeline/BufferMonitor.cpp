@@ -136,7 +136,6 @@ void BufferMonitor::regulateDataFlow() noexcept {
             checkRebufferComplete();
         }
     }
-
 }
 
 void BufferMonitor::checkPrebufferComplete() noexcept {
@@ -160,7 +159,8 @@ void BufferMonitor::checkRebufferComplete() noexcept {
     if (demuxedDuration() >= rebufferThreshold) {
         isRebuffering_ = false;
         LogI("checkRebufferComplete -> BufferingEnd, demuxedDuration={:.3f} threshold={:.3f}",
-             demuxedDuration(), rebufferThreshold);
+             demuxedDuration(),
+             rebufferThreshold);
         fireEvent(PipelineEvent::BufferingEnd);
     }
 }
@@ -173,9 +173,10 @@ void BufferMonitor::onStarvation(bool isLocalSource) noexcept {
     if (starvationCount_ >= kStarvationThreshold && !isRebuffering_ && readyFired_) {
         isRebuffering_ = true;
         LogI("onStarvation -> BufferingStart, starvationCount={}, demuxedDuration={:.3f}",
-             starvationCount_, demuxedDuration());
+             starvationCount_,
+             demuxedDuration());
         fireEvent(PipelineEvent::BufferingStart);
     }
 }
 
-} // namespace slark
+}  // namespace slark

@@ -40,8 +40,8 @@ std::string getAppPath(const std::string& methodName) noexcept {
 
     // 优先使用 getCanonicalPath() 解析真实路径，避免 SELinux 拒绝符号链接访问
     // 失败时回退到 getPath()
-    auto canonicalPath = JNI::JNICall::call<std::string>(
-        env, fileObj.get(), kFileClass, "getCanonicalPath");
+    auto canonicalPath =
+        JNI::JNICall::call<std::string>(env, fileObj.get(), kFileClass, "getCanonicalPath");
     if (!canonicalPath.empty()) {
         return canonicalPath;
     }
@@ -49,7 +49,7 @@ std::string getAppPath(const std::string& methodName) noexcept {
     return path;
 }
 
-} // namespace
+}  // namespace
 
 std::string rootPath() noexcept {
     static std::string path;
@@ -101,4 +101,4 @@ std::string tmpPath() noexcept {
     return path;
 }
 
-} // namespace slark::File
+}  // namespace slark::File

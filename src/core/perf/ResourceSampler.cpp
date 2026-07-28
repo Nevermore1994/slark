@@ -4,10 +4,10 @@
 
 #include "ResourceSampler.h"
 
+#include <algorithm>
+
 #include "PlaySession.h"
 #include "Time.hpp"
-
-#include <algorithm>
 
 #if defined(__ANDROID__)
 #include <fstream>
@@ -252,4 +252,4 @@ void ResourceSampler::readMemoryInfo(int64_t& rssKB, int64_t& vmSizeKB) {
 
 #endif
 
-} // namespace slark::perf
+}  // namespace slark::perf

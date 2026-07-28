@@ -49,4 +49,4 @@ std::optional<uint32_t> MediaPlaylist::findSegmentByIndex(uint32_t index) const 
     return index;
 }
 
-} // namespace slark
+}  // namespace slark

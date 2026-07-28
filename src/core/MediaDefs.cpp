@@ -19,4 +19,4 @@ const std::string_view MEDIA_MIMETYPE_AUDIO_AAC = "audio/acc";
 const std::string_view MEDIA_MIMETYPE_AUDIO_RAW = "audio/raw";
 const std::string_view MEDIA_MIMETYPE_AUDIO_AAC_ADTS = "audio/aac-adts";
 
-} // end namespace slark
+}  // end namespace slark

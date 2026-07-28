@@ -3,14 +3,14 @@
 //
 
 #pragma once
+#include <functional>
+#include <utility>
+
 #include "AVFrame.hpp"
 #include "Log.hpp"
 #include "MediaDefs.h"
 #include "Synchronized.hpp"
 #include "Time.hpp"
-
-#include <functional>
-#include <utility>
 
 namespace slark {
 
@@ -78,7 +78,7 @@ class IAudioRender;
 using RequestAudioDataFunc = std::function<uint32_t(uint8_t*, uint32_t, AudioDataFlag&)>;
 
 class IAudioRender {
-public:
+ public:
     explicit IAudioRender(std::shared_ptr<AudioInfo> audioInfo)
         : audioInfo_(std::move(audioInfo)) {}
 
@@ -124,7 +124,7 @@ public:
         return audioInfo_;
     }
 
-protected:
+ protected:
     std::atomic<float> volume_{1.0f};
     std::shared_ptr<AudioInfo> audioInfo_;
     std::atomic<RenderStatus> status_{RenderStatus::Unknown};
@@ -139,4 +139,4 @@ inline std::shared_ptr<IAudioRender> createAudioRender(
     return nullptr;
 }
 #endif
-} // namespace slark
+}  // namespace slark

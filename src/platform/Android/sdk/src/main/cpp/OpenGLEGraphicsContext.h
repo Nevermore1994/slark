@@ -15,7 +15,7 @@ namespace slark {
 
 // OpenGL graphics context implementing IGraphicsContext
 class OpenGLEGraphicsContext : public IGraphicsContext {
-public:
+ public:
     OpenGLEGraphicsContext() = default;
     ~OpenGLEGraphicsContext() noexcept override;
 
@@ -43,9 +43,9 @@ public:
         return context_.get();
     }
 
-private:
+ private:
     std::shared_ptr<AndroidEGLContext> context_;
     std::unique_ptr<FrameBufferPool> frameBufferPool_;
 };
 
-} // namespace slark
+}  // namespace slark

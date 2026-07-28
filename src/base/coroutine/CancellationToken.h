@@ -18,7 +18,7 @@ namespace slark {
 class CancellationTokenRegistration;
 
 class CancellationToken {
-public:
+ public:
     using Callback = std::function<void()>;
     using TokenId = uint64_t;
 
@@ -29,7 +29,7 @@ public:
         {
             std::lock_guard<std::mutex> lock(state_->mutex);
             if (state_->cancelled.exchange(true, std::memory_order_acq_rel)) {
-                return; // 已经取消
+                return;  // 已经取消
             }
             // 从 callbackMap 中提取回调执行
             for (auto& [id, cb] : state_->callbackMap) {
@@ -67,7 +67,7 @@ public:
         return !isCancelled();
     }
 
-private:
+ private:
     friend class CancellationTokenRegistration;
 
     struct State {
@@ -82,7 +82,7 @@ private:
 
 // 回调注册句柄，可用于注销回调
 class CancellationTokenRegistration {
-public:
+ public:
     using TokenId = CancellationToken::TokenId;
 
     CancellationTokenRegistration() noexcept = default;
@@ -102,7 +102,7 @@ public:
         return tokenId_ != 0 && !weakState_.expired();
     }
 
-private:
+ private:
     friend class CancellationToken;
 
     CancellationTokenRegistration(std::weak_ptr<CancellationToken::State> state,
@@ -160,4 +160,4 @@ inline void CancellationTokenRegistration::unregister() noexcept {
     tokenId_ = 0;
 }
 
-} // namespace slark
+}  // namespace slark

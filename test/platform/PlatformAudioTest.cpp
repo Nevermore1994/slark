@@ -1,9 +1,10 @@
-#include "audio/AudioRenderComponent.h"
+#include <gtest/gtest.h>
+
+#include <memory>
+
 #include "AVFrame.hpp"
 #include "AudioInfo.h"
-
-#include <gtest/gtest.h>
-#include <memory>
+#include "audio/AudioRenderComponent.h"
 
 using namespace slark;
 

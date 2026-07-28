@@ -3,14 +3,14 @@
 //
 #pragma once
 
-#include "Data.h"
-#include "FileUtil.h"
-#include "NonCopyable.h"
-
 #include <cstdio>
 #include <filesystem>
 #include <memory>
 #include <string_view>
+
+#include "Data.h"
+#include "FileUtil.h"
+#include "NonCopyable.h"
 
 namespace slark::File {
 
@@ -22,7 +22,7 @@ enum class FileMode : uint8_t {
 };
 
 class FileBase : public NonCopyMovable {
-public:
+ public:
     explicit FileBase(std::filesystem::path path, FileMode mode);
 
     virtual ~FileBase();
@@ -45,7 +45,7 @@ public:
         return path_;
     }
 
-protected:
+ protected:
     std::filesystem::path path_;
     std::unique_ptr<FILE, decltype(&fclose)> file_{nullptr, &fclose};
     FileMode mode_ = FileMode::ReadMode;
@@ -54,7 +54,7 @@ protected:
 class WriteFile : public FileBase {
     static constexpr uint32_t kCheckCount = 512;
 
-public:
+ public:
     explicit WriteFile(std::filesystem::path path, bool isAppend = false);
 
     ~WriteFile() override;
@@ -79,7 +79,7 @@ public:
 
     void close() noexcept override;
 
-private:
+ private:
     uint32_t checkEveryN_ = kCheckCount;
     uint32_t checkCount_ = 0;
     uint64_t writeSize_ = 0;
@@ -87,7 +87,7 @@ private:
 };
 
 class ReadFile : public FileBase {
-public:
+ public:
     explicit ReadFile(std::filesystem::path path);
 
     ~ReadFile() override;
@@ -114,9 +114,9 @@ public:
 
     void close() noexcept override;
 
-private:
+ private:
     bool readOver_ = false;
     uint64_t readSize_ = 0;
 };
 
-} // namespace slark::File
+}  // namespace slark::File

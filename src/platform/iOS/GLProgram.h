@@ -5,6 +5,7 @@
 
 #include <OpenGLES/ES2/gl.h>
 #include <OpenGLES/ES2/glext.h>
+
 #include <memory>
 #include <string>
 #include <string_view>
@@ -17,7 +18,7 @@ enum class ShaderType {
 };
 
 class Shader {
-public:
+ public:
     Shader(ShaderType type, std::string_view source);
     ~Shader();
 
@@ -31,14 +32,14 @@ public:
 
     bool compile() noexcept;
 
-private:
+ private:
     ShaderType type_;
     std::string shaderString_;
     GLuint shader_;
 };
 
 class GLProgram {
-public:
+ public:
     GLProgram(std::string_view vertexShaderString, std::string_view fragmentShaderString);
     ~GLProgram();
 
@@ -46,7 +47,7 @@ public:
 
     void detach() noexcept;
 
-public:
+ public:
     bool isValid() const noexcept {
         return isValid_;
     }
@@ -66,14 +67,14 @@ public:
         return glGetUniformLocation(program_, name.data());
     }
 
-private:
+ private:
     bool compile() noexcept;
     void deleteProgram() noexcept;
 
-private:
+ private:
     bool isValid_ = false;
     std::string id_;
     GLuint program_;
 };
 
-} // namespace slark
+}  // namespace slark

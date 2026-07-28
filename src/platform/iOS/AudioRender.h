@@ -4,17 +4,18 @@
 
 #pragma once
 
+#include <AudioToolbox/AudioToolbox.h>
+
+#include <atomic>
+
 #include "AudioDescription.h"
 #include "AudioInfo.h"
 #include "Data.h"
 
-#include <AudioToolbox/AudioToolbox.h>
-#include <atomic>
-
 namespace slark {
 
 class AudioRender : public IAudioRender {
-public:
+ public:
     explicit AudioRender(std::shared_ptr<AudioInfo> audioInfo);
 
     ~AudioRender() override;
@@ -36,19 +37,19 @@ public:
     /// 返回 AudioUnit pipeline 延迟（MultiChannelMixer + RemoteIO 之和）
     [[nodiscard]] Time::TimeDelta getHardwareLatency() noexcept override;
 
-public:
+ public:
     bool isNeedRequestData() const noexcept;
 
-private:
+ private:
     bool checkFormat() const noexcept;
 
     bool setupAudioComponent() noexcept;
 
-private:
+ private:
     AudioUnit volumeUnit_ = nullptr;
     AudioUnit renderUnit_ = nullptr;
-    std::atomic<int64_t> latencyUs_{0}; // 单位 µs，定时器写，getHardwareLatency 读
+    std::atomic<int64_t> latencyUs_{0};  // 单位 µs，定时器写，getHardwareLatency 读
     TimerId timerId_ = TimerId::kInvalidTimerId;
 };
 
-} // namespace slark
+}  // namespace slark

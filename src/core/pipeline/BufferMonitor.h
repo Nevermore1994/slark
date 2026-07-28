@@ -4,14 +4,14 @@
 
 #pragma once
 
+#include <chrono>
+#include <functional>
+#include <optional>
+
 #include "PipelineConfig.h"
 #include "PipelineError.h"
 #include "PipelineEvent.h"
 #include "Time.hpp"
-
-#include <chrono>
-#include <functional>
-#include <optional>
 
 namespace slark {
 
@@ -34,7 +34,7 @@ struct IBufferMonitorDelegate {
 };
 
 class BufferMonitor {
-public:
+ public:
     BufferMonitor(const BackpressureConfig& config, IBufferMonitorDelegate& delegate) noexcept;
 
     void onDemuxedDataEnqueued() noexcept;
@@ -82,7 +82,7 @@ public:
         return isRebuffering_;
     }
 
-private:
+ private:
     void regulateDataFlow() noexcept;
     void regulateDecoderFlow() noexcept;
     void checkPrebufferComplete() noexcept;
@@ -139,7 +139,7 @@ private:
         delegate_.onBufferEvent(event, std::move(error));
     }
 
-private:
+ private:
     using Clock = std::chrono::steady_clock;
     using TimePoint = std::chrono::steady_clock::time_point;
 
@@ -151,7 +151,7 @@ private:
     // demux 侧状态
     bool streamPaused_ = false;
     bool demuxEof_ = false;
-    bool backpressurePaused_ = false; // 快速推帧期间跳过背压控制
+    bool backpressurePaused_ = false;  // 快速推帧期间跳过背压控制
 
     bool audioDecoderPaused_ = false;
     bool videoDecoderPaused_ = false;
@@ -167,4 +167,4 @@ private:
     std::optional<TimePoint> lastDecoderCheckTime_;
 };
 
-} // namespace slark
+}  // namespace slark

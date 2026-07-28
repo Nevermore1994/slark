@@ -10,7 +10,7 @@
 namespace slark {
 
 class RawDecoder : public IDecoder {
-public:
+ public:
     RawDecoder() : IDecoder(DecoderType::RAW) {}
 
     ~RawDecoder() override = default;
@@ -32,4 +32,4 @@ public:
     }
 };
 
-} // namespace slark
+}  // namespace slark

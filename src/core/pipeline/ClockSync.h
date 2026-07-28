@@ -4,10 +4,10 @@
 
 #pragma once
 
+#include <atomic>
+
 #include "NonCopyable.h"
 #include "Time.hpp"
-
-#include <atomic>
 
 namespace slark {
 
@@ -18,7 +18,7 @@ enum class AVSyncAction : uint8_t {
 };
 
 class ClockSync : public NonCopyMovable {
-public:
+ public:
     struct Metrics {
         int32_t dropCount = 0;
         int32_t chaseRoundCount = 0;
@@ -28,6 +28,7 @@ public:
     ClockSync() noexcept {
         audioLastUpdateUs_.store(Time::nowTimeStamp().point(), std::memory_order_release);
     }
+
     ~ClockSync() = default;
 
     void setAudioTime(Time::TimePoint t, uint64_t epoch = kDefaultEpoch) noexcept {
@@ -172,7 +173,7 @@ public:
         return AVSyncAction::Render;
     }
 
-private:
+ private:
     static constexpr double kMinPlaybackRate = 0.5;
     static constexpr double kMaxPlaybackRate = 2.0;
     static constexpr double kDefaultPlaybackRate = 1.0;
@@ -199,4 +200,4 @@ private:
     std::atomic<int64_t> vsyncDurationUs_{0};
 };
 
-} // namespace slark
+}  // namespace slark

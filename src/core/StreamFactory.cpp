@@ -4,12 +4,12 @@
 
 #include "StreamFactory.hpp"
 
+#include <algorithm>
+#include <string_view>
+
 #include "FileStream.h"
 #include "HLSStream.h"
 #include "HttpStream.h"
-
-#include <algorithm>
-#include <string_view>
 
 namespace slark {
 
@@ -107,4 +107,4 @@ bool StreamFactory::isHttp(const std::string& uri) noexcept {
     return prefix.starts_with("http:") || prefix.starts_with("https:");
 }
 
-} // namespace slark
+}  // namespace slark

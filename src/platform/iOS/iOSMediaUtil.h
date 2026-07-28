@@ -12,6 +12,6 @@ namespace slark {
 CMSampleBufferRef createSampleBuffer(CMFormatDescriptionRef fmtDesc, void* buff, size_t size);
 
 UIImage* imageFromPixelBuffer(CVPixelBufferRef pixelBuffer);
-} // namespace slark
+}  // namespace slark
 
 #endif /* iOSMediaUtil_h */

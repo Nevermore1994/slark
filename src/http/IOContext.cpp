@@ -10,4 +10,4 @@ IOContext& IOContext::instance() noexcept {
     return instance;
 }
 
-} // namespace slark::http
+}  // namespace slark::http

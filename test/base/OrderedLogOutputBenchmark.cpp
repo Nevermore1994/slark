@@ -1,12 +1,7 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-#include "Data.h"
-#include "FileUtil.h"
-#include "MPSCQueue.hpp"
-#include "Synchronized.hpp"
-#include "Time.hpp"
-#include "Writer.h"
+#include <gtest/gtest.h>
 
 #include <algorithm>
 #include <atomic>
@@ -14,7 +9,6 @@
 #include <condition_variable>
 #include <cstdint>
 #include <format>
-#include <gtest/gtest.h>
 #include <latch>
 #include <memory>
 #include <mutex>
@@ -24,6 +18,13 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#include "Data.h"
+#include "FileUtil.h"
+#include "MPSCQueue.hpp"
+#include "Synchronized.hpp"
+#include "Time.hpp"
+#include "Writer.h"
 
 using namespace slark;
 using namespace std::chrono;
@@ -65,7 +66,7 @@ struct SequencedLogEntry {
 
 // Baseline: 每次 write 加锁
 class BaselineLogOutput {
-public:
+ public:
     BaselineLogOutput() {
         writer_.withLock([](auto& w) {
             w = std::make_unique<Writer>();
@@ -94,7 +95,7 @@ public:
         });
     }
 
-private:
+ private:
     Synchronized<std::unique_ptr<Writer>> writer_;
 };
 
@@ -129,7 +130,7 @@ class UnorderedThreadLocalLogOutput {
         }
     };
 
-public:
+ public:
     UnorderedThreadLocalLogOutput() : alive_(std::make_shared<std::atomic<bool>>(true)) {
         writer_.withLock([](auto& w) {
             w = std::make_unique<Writer>();
@@ -168,7 +169,7 @@ public:
         });
     }
 
-private:
+ private:
     ThreadBuffer& getThreadBuffer() {
         thread_local ThreadBuffer tls;
         tls.owner = this;
@@ -234,7 +235,7 @@ class OrderedThreadLocalLogOutput {
         }
     };
 
-public:
+ public:
     OrderedThreadLocalLogOutput()
         : alive_(std::make_shared<std::atomic<bool>>(true)),
           globalSeq_(0),
@@ -286,7 +287,7 @@ public:
         });
     }
 
-private:
+ private:
     ThreadBuffer& getThreadBuffer() {
         thread_local ThreadBuffer tls;
         tls.owner = this;
@@ -474,10 +475,10 @@ BenchResult runBenchmark(const std::string& name,
     };
 }
 
-} // anonymous namespace
+}  // anonymous namespace
 
 class OrderedLogOutputBenchmark : public ::testing::Test {
-protected:
+ protected:
     void SetUp() override {
         cleanBenchDir();
     }

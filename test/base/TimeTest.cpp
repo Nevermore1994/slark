@@ -3,8 +3,9 @@
 //
 #include "Time.hpp"
 
-#include <chrono>
 #include <gtest/gtest.h>
+
+#include <chrono>
 #include <thread>
 
 using namespace slark;

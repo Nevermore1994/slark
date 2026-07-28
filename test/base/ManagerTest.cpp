@@ -4,6 +4,7 @@
 #include "Manager.hpp"
 
 #include <gtest/gtest.h>
+
 #include <latch>
 #include <string>
 #include <thread>
@@ -22,7 +23,7 @@ struct TestItem {
     TestItem(std::string n, int32_t v) : name(std::move(n)), value(v) {}
 };
 
-} // namespace
+}  // namespace
 
 TEST(Manager, AddAndFind) {
     auto& mgr = Manager<TestItem>::shareInstance();

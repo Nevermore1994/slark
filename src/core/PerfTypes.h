@@ -177,7 +177,7 @@ struct FrameTrace {
  * @brief RAII span，析构时自动记录结束时间
  */
 class ScopedSpan {
-public:
+ public:
     ScopedSpan(FrameTrace& trace, std::string name)
         : trace_(trace), name_(std::move(name)), startUs_(nowUs()) {}
 
@@ -188,7 +188,7 @@ public:
     ScopedSpan(const ScopedSpan&) = delete;
     ScopedSpan& operator=(const ScopedSpan&) = delete;
 
-private:
+ private:
     static int64_t nowUs() noexcept {
         return std::chrono::duration_cast<std::chrono::microseconds>(
                    std::chrono::steady_clock::now().time_since_epoch())
@@ -200,4 +200,4 @@ private:
     int64_t startUs_;
 };
 
-} // namespace slark::perf
+}  // namespace slark::perf

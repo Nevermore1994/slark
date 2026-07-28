@@ -4,10 +4,6 @@
 
 #pragma once
 
-#include "NonCopyable.h"
-#include "Timer.h"
-#include "TimerPool.h"
-
 #include <chrono>
 #include <condition_variable>
 #include <memory>
@@ -15,11 +11,15 @@
 #include <thread>
 #include <unordered_map>
 
+#include "NonCopyable.h"
+#include "Timer.h"
+#include "TimerPool.h"
+
 namespace slark {
 
 /// 全局定时器管理器，负责线程调度和同步
 class TimerManager final : public NonCopyMovable {
-public:
+ public:
     static TimerManager& shareInstance();
 
     ~TimerManager();
@@ -34,7 +34,7 @@ public:
 
     void clear() noexcept;
 
-private:
+ private:
     TimerManager();
 
     void tickLoop();
@@ -46,7 +46,7 @@ private:
                      bool isLoop,
                      std::chrono::milliseconds interval) noexcept;
 
-private:
+ private:
     // 循环任务包装器，支持 move-only callable
     struct LoopTaskWrapper {
         TimerTask task;
@@ -68,4 +68,4 @@ private:
     std::unordered_map<uint64_t, std::shared_ptr<LoopTaskWrapper>> loopTasks_;
 };
 
-} // namespace slark
+}  // namespace slark

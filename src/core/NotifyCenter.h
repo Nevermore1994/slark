@@ -4,16 +4,16 @@
 
 #pragma once
 
-#include "Player.h"
-#include "Synchronized.hpp"
-
 #include <shared_mutex>
 #include <string>
+
+#include "Player.h"
+#include "Synchronized.hpp"
 
 namespace slark {
 
 class NotifyCenter {
-public:
+ public:
     explicit NotifyCenter(std::string_view playerId) noexcept;
 
     void addObserver(IPlayerObserverPtr observer) noexcept;
@@ -30,7 +30,7 @@ public:
     void notifyCacheTime(double cachedDuration) noexcept;
     void resetNotifyState() noexcept;
 
-private:
+ private:
     std::string playerId_;
     Synchronized<IPlayerObserverPtr, std::shared_mutex> observer_;
     // 以下两个字段仅在 ownerThread 的 repeat task 中访问，依赖单线程串行语义，无需 atomic
@@ -44,4 +44,4 @@ private:
                                                    bool hasVideo) noexcept;
 };
 
-} // namespace slark
+}  // namespace slark

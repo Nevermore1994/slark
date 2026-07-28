@@ -103,9 +103,9 @@ inline constexpr T valueOr(const Expected<T>& result, T defaultValue) noexcept {
 }
 
 class TimeoutException : public std::runtime_error {
-public:
+ public:
     explicit TimeoutException(std::string_view message = "Timeout")
         : std::runtime_error(std::string(message)) {}
 };
 
-} // namespace slark
+}  // namespace slark

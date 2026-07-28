@@ -4,12 +4,12 @@
 
 #pragma once
 
-#include "NonCopyable.h"
-#include "Time.hpp"
-
 #include <atomic>
 #include <cstdint>
 #include <optional>
+
+#include "NonCopyable.h"
+#include "Time.hpp"
 
 namespace slark {
 
@@ -29,7 +29,7 @@ enum class SeekStrategy : uint8_t {
 }
 
 class SeekContext : public NonCopyMovable {
-public:
+ public:
     SeekContext() = default;
     ~SeekContext() = default;
 
@@ -128,7 +128,7 @@ public:
         return maxSkipFrames_.load(std::memory_order_acquire);
     }
 
-private:
+ private:
     static constexpr double kNoSeekTime = -1.0;
 
     std::atomic<uint64_t> seekEpoch_{0};
@@ -142,4 +142,4 @@ private:
     std::atomic<int32_t> maxSkipFrames_{0};
 };
 
-} // namespace slark
+}  // namespace slark

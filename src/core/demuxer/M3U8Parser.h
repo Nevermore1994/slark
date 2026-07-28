@@ -4,16 +4,16 @@
 
 #pragma once
 
-#include "MediaPlaylist.h"
-#include "NonCopyable.h"
-
 #include <memory>
 #include <string>
+
+#include "MediaPlaylist.h"
+#include "NonCopyable.h"
 
 namespace slark {
 
 class M3U8Parser : public NonCopyMovable {
-public:
+ public:
     explicit M3U8Parser(std::string baseUrl);
     ~M3U8Parser() = default;
 
@@ -35,7 +35,7 @@ public:
         return isCompleted_;
     }
 
-private:
+ private:
     bool parseMasterPlaylist(const std::string& content) noexcept;
     bool parseMediaPlaylist(const std::string& content) noexcept;
 
@@ -45,4 +45,4 @@ private:
     std::shared_ptr<MediaPlaylist> playlist_;
 };
 
-} // namespace slark
+}  // namespace slark
