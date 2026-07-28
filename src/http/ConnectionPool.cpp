@@ -84,8 +84,7 @@ Task<std::unique_ptr<PooledConnection>> co_acquire_connection(
         }
         socket->setTransport(std::move(tlsTransport));
 
-        LogI("[co_acquire_connection] TLS handshake ok: host={} elapsedMs={}",
-             host,
+        LogI("[co_acquire_connection] TLS handshake ok: host={} elapsedMs={}", host,
              (tlsEnd - tlsStart).toMilliSeconds().count());
     }
 #endif
@@ -94,11 +93,8 @@ Task<std::unique_ptr<PooledConnection>> co_acquire_connection(
         perf->connection.connectResult = slark::Error::Success;
     }
 
-    LogI("[co_acquire_connection] acquired: host={} port={} scheme={} connectMs={}",
-         host,
-         port,
-         scheme,
-         (connectEnd - connectStart).toMilliSeconds().count());
+    LogI("[co_acquire_connection] acquired: host={} port={} scheme={} connectMs={}", host, port,
+         scheme, (connectEnd - connectStart).toMilliSeconds().count());
 
     co_return std::make_unique<PooledConnection>(std::move(socket));
 }

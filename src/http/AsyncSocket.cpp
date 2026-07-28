@@ -176,8 +176,7 @@ Task<void> AsyncSocket::asyncConnect(const AddressInfoPtr& address,
     co_await tcpConnect(socket_, address, timeout);
     guard.dismiss();
 
-    LogI("[AsyncSocket::asyncConnect] tcp connect ok: fd={} timeoutMs={}",
-         socket_,
+    LogI("[AsyncSocket::asyncConnect] tcp connect ok: fd={} timeoutMs={}", socket_,
          timeout.count());
 
     // 如果没有预设 transport，默认使用 PlainTransport
@@ -223,10 +222,8 @@ Task<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data,
 
         if (transport_->needsRetry(result)) {
             retryCount++;
-            bool ready = co_await waitFdReadyWithTimeout(socket_,
-                                                         transport_->retryInterest(result),
-                                                         deadline,
-                                                         &token);
+            bool ready = co_await waitFdReadyWithTimeout(socket_, transport_->retryInterest(result),
+                                                         deadline, &token);
             if (!ready) {
                 if (token.isCancelled()) {
                     co_return std::unexpected(Error::Cancelled);
@@ -240,9 +237,7 @@ Task<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data,
             continue;
         }
 
-        LogE("[AsyncSocket::asyncSend] broken pipe: sent={}/{} errno={}",
-             totalSent,
-             data.size(),
+        LogE("[AsyncSocket::asyncSend] broken pipe: sent={}/{} errno={}", totalSent, data.size(),
              errno);
         co_return std::unexpected(Error::BrokenPipe);
     }
@@ -298,10 +293,8 @@ Task<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
 
         if (transport_->needsRetry(result)) {
             waitCount++;
-            bool ready = co_await waitFdReadyWithTimeout(socket_,
-                                                         transport_->retryInterest(result),
-                                                         deadline,
-                                                         &token);
+            bool ready = co_await waitFdReadyWithTimeout(socket_, transport_->retryInterest(result),
+                                                         deadline, &token);
             if (!ready) {
                 if (token.isCancelled()) {
                     co_return std::unexpected(Error::Cancelled);
@@ -362,8 +355,7 @@ Task<DataPtr> AsyncSocket::asyncReceiveAll(std::chrono::milliseconds timeout) {
 
         if (transport_->needsRetry(result)) {
             waitCount++;
-            bool ready = co_await waitFdReadyWithTimeout(socket_,
-                                                         transport_->retryInterest(result),
+            bool ready = co_await waitFdReadyWithTimeout(socket_, transport_->retryInterest(result),
                                                          deadline);
             if (!ready) {
                 if (perf_) {
@@ -422,10 +414,8 @@ Task<bool> AsyncSocket::asyncReceiveStreaming(HttpResponseParser& parser,
 
         if (transport_->needsRetry(result)) {
             waitCount++;
-            bool ready = co_await waitFdReadyWithTimeout(socket_,
-                                                         transport_->retryInterest(result),
-                                                         deadline,
-                                                         &token);
+            bool ready = co_await waitFdReadyWithTimeout(socket_, transport_->retryInterest(result),
+                                                         deadline, &token);
             if (!ready) {
                 if (perf_) {
                     perf_->transport.timeoutSource =
@@ -494,10 +484,8 @@ Task<bool> TLSTransport::performHandshake(std::chrono::milliseconds timeout) {
             }
         } else {
             const char* errStr = ERR_reason_error_string(ERR_get_error());
-            LogW("TLS handshake failed: sslError={}, errStr={}, errno={}",
-                 sslError,
-                 errStr ? errStr : "unknown",
-                 errno);
+            LogW("TLS handshake failed: sslError={}, errStr={}, errno={}", sslError,
+                 errStr ? errStr : "unknown", errno);
             co_return false;
         }
     }

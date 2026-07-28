@@ -50,11 +50,7 @@ class FdReadyAwaiterV2 {
         auto fdInterest =
             (interest_ == Interest::Read) ? slark::FdInterest::Read : slark::FdInterest::Write;
         auto token = eventLoop_->registerContinuation({
-            fd_,
-            fdInterest,
-            handle_,
-            aliveFlag_,
-            0 /* generation */
+            fd_, fdInterest, handle_, aliveFlag_, 0 /* generation */
         });
         registered_ = true;
 

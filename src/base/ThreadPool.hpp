@@ -46,8 +46,7 @@ class ThreadPool : public NonCopyMovable {
 
     template <class F, typename... Args>
     auto submit(F&& f, Args&&... args) -> Expected<std::future<std::invoke_result_t<F, Args...>>> {
-        return submitWithPriority(JobPriority::Normal,
-                                  std::forward<F>(f),
+        return submitWithPriority(JobPriority::Normal, std::forward<F>(f),
                                   std::forward<Args>(args)...);
     }
 
@@ -58,16 +57,15 @@ class ThreadPool : public NonCopyMovable {
     }
 
     template <class F, typename... Args>
-    requires std::is_invocable_v<F, Args...> Expected<void> postJob(F&& f, Args&&... args) {
-        return postJobWithPriority(JobPriority::Normal,
-                                   std::forward<F>(f),
+        requires std::is_invocable_v<F, Args...>
+    Expected<void> postJob(F&& f, Args&&... args) {
+        return postJobWithPriority(JobPriority::Normal, std::forward<F>(f),
                                    std::forward<Args>(args)...);
     }
 
     template <class F, typename... Args>
-    requires std::is_invocable_v<F, Args...> Expected<void> postJob(JobPriority priority,
-                                                                    F&& f,
-                                                                    Args&&... args) {
+        requires std::is_invocable_v<F, Args...>
+    Expected<void> postJob(JobPriority priority, F&& f, Args&&... args) {
         return postJobWithPriority(priority, std::forward<F>(f), std::forward<Args>(args)...);
     }
 
@@ -126,10 +124,8 @@ class ThreadPool : public NonCopyMovable {
         -> Expected<std::future<std::invoke_result_t<F, Args...>>>;
 
     template <class F, typename... Args>
-    requires std::is_invocable_v<F, Args...> Expected<void> postJobWithPriority(
-        JobPriority priority,
-        F&& f,
-        Args&&... args);
+        requires std::is_invocable_v<F, Args...>
+    Expected<void> postJobWithPriority(JobPriority priority, F&& f, Args&&... args);
 
     void workThread();
 
@@ -236,10 +232,8 @@ auto ThreadPool::submitWithPriority(JobPriority priority, F&& f, Args&&... args)
 }
 
 template <class F, typename... Args>
-requires std::is_invocable_v<F, Args...> Expected<void> ThreadPool::postJobWithPriority(
-    JobPriority priority,
-    F&& f,
-    Args&&... args) {
+    requires std::is_invocable_v<F, Args...>
+Expected<void> ThreadPool::postJobWithPriority(JobPriority priority, F&& f, Args&&... args) {
     {
         std::unique_lock<std::mutex> lock(mutex_);
         if (shutdown_) {

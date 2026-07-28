@@ -4,13 +4,14 @@
 #include "RingBuffer.hpp"
 
 #include <gtest/gtest.h>
+
 #include <thread>
 #include <vector>
 
 namespace slark {
 
 class RingBufferTest : public testing::Test {
-protected:
+ protected:
     // N=10 会被 bit_ceil 对齐到 16
     RingBuffer<int, 10> buffer;
     static constexpr int TEST_CAPACITY = 16;
@@ -137,7 +138,7 @@ TEST_F(RingBufferTest, FullBuffer) {
 // --- SyncRingBuffer Tests ---
 
 class SyncRingBufferTest : public ::testing::Test {
-protected:
+ protected:
     SyncRingBuffer<int, 1024> buffer;
 };
 
@@ -526,4 +527,4 @@ TEST_F(SyncRingBufferTest, CompileTimeCapacity) {
     EXPECT_EQ(srb.capacity(), 16u);
 }
 
-} // namespace slark
+}  // namespace slark

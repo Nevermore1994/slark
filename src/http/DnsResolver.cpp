@@ -25,17 +25,13 @@ Task<AddressInfoPtr> DnsResolver::resolveAsync(const std::string& host,
     {
         std::lock_guard<std::mutex> lock(cacheMutex_);
         if (auto cached = lookupCache(key)) {
-            LogI("[DnsResolver::resolveAsync] cache hit: {}:{} ipv={}",
-                 host,
-                 port,
+            LogI("[DnsResolver::resolveAsync] cache hit: {}:{} ipv={}", host, port,
                  static_cast<int>(ipVersion));
             co_return cached;
         }
     }
 
-    LogI("[DnsResolver::resolveAsync] resolving: {}:{} ipv={}",
-         host,
-         port,
+    LogI("[DnsResolver::resolveAsync] resolving: {}:{} ipv={}", host, port,
          static_cast<int>(ipVersion));
 
     auto awaiter = std::make_shared<CompletionAwaiter<AddressInfoPtr>>();
@@ -61,7 +57,7 @@ Task<AddressInfoPtr> DnsResolver::resolveAsync(const std::string& host,
     }
 
     // 挂起协程，等待 getaddrinfo 完成
-    AddressInfoPtr resolved = co_await * awaiter;
+    AddressInfoPtr resolved = co_await *awaiter;
 
     if (resolved) {
         std::lock_guard<std::mutex> lock(cacheMutex_);
@@ -131,12 +127,11 @@ void DnsResolver::insertCache(const std::string& key, const AddressInfoPtr& addr
 
     lruList_.push_front(key);
     cache_.insert_or_assign(
-        key,
-        CacheValue{
-            .entry = {.address = cloneAddrInfo(addr.get()),
-                      .expireAt = std::chrono::steady_clock::now() + config_.cacheTtl},
-            .lruIt = lruList_.begin(),
-        });
+        key, CacheValue{
+                 .entry = {.address = cloneAddrInfo(addr.get()),
+                           .expireAt = std::chrono::steady_clock::now() + config_.cacheTtl},
+                 .lruIt = lruList_.begin(),
+             });
 }
 
 AddressInfoPtr DnsResolver::cloneAddrInfo(const addrinfo* src) noexcept {

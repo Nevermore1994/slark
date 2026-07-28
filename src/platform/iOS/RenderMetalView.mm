@@ -458,9 +458,8 @@ struct MetalVideoRender : public IVideoRender {
     _displayLink = [CADisplayLink displayLinkWithTarget:self
                                                selector:@selector(displayLinkCallback)];
     if (@available(iOS 15.0, *)) {
-        _displayLink.preferredFrameRateRange = CAFrameRateRangeMake(MIN(_renderInterval, 24),
-                                                                    MAX(_renderInterval, 60),
-                                                                    _renderInterval);
+        _displayLink.preferredFrameRateRange = CAFrameRateRangeMake(
+            MIN(_renderInterval, 24), MAX(_renderInterval, 60), _renderInterval);
     } else {
         _displayLink.preferredFramesPerSecond = _renderInterval;
     }
@@ -489,9 +488,8 @@ struct MetalVideoRender : public IVideoRender {
     if (_renderInterval != renderInterval) {
         _renderInterval = renderInterval;
         if (@available(iOS 15.0, *)) {
-            _displayLink.preferredFrameRateRange = CAFrameRateRangeMake(MIN(renderInterval, 24),
-                                                                        MAX(renderInterval, 60),
-                                                                        renderInterval);
+            _displayLink.preferredFrameRateRange = CAFrameRateRangeMake(
+                MIN(renderInterval, 24), MAX(renderInterval, 60), renderInterval);
         } else {
             _displayLink.preferredFramesPerSecond = renderInterval;
         }
@@ -638,9 +636,9 @@ struct MetalVideoRender : public IVideoRender {
     uniforms.yOffset = isFullRange ? 0.0f : (16.0f / 255.0f);
 
     CFTypeRef colorAtt = CVBufferCopyAttachment(pixelBuffer, kCVImageBufferYCbCrMatrixKey, NULL);
-    bool is601 = colorAtt && CFStringCompare(static_cast<CFStringRef>(colorAtt),
-                                             kCVImageBufferYCbCrMatrix_ITU_R_601_4,
-                                             0) == kCFCompareEqualTo;
+    bool is601 =
+        colorAtt && CFStringCompare(static_cast<CFStringRef>(colorAtt),
+                                    kCVImageBufferYCbCrMatrix_ITU_R_601_4, 0) == kCFCompareEqualTo;
     if (colorAtt) {
         CFRelease(colorAtt);
     }
@@ -655,28 +653,16 @@ struct MetalVideoRender : public IVideoRender {
                              frameHeight:(size_t)frameHeight
                                  outTexY:(CVMetalTextureRef*)outTexY
                                 outTexUV:(CVMetalTextureRef*)outTexUV {
-    CVReturn ret = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault,
-                                                             _textureCache,
-                                                             pixelBuffer,
-                                                             nil,
-                                                             MTLPixelFormatR8Unorm,
-                                                             frameWidth,
-                                                             frameHeight,
-                                                             0,
-                                                             outTexY);
+    CVReturn ret = CVMetalTextureCacheCreateTextureFromImage(
+        kCFAllocatorDefault, _textureCache, pixelBuffer, nil, MTLPixelFormatR8Unorm, frameWidth,
+        frameHeight, 0, outTexY);
     if (ret != kCVReturnSuccess) {
         return NO;
     }
 
-    ret = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault,
-                                                    _textureCache,
-                                                    pixelBuffer,
-                                                    nil,
-                                                    MTLPixelFormatRG8Unorm,
-                                                    frameWidth / 2,
-                                                    frameHeight / 2,
-                                                    1,
-                                                    outTexUV);
+    ret = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, _textureCache, pixelBuffer,
+                                                    nil, MTLPixelFormatRG8Unorm, frameWidth / 2,
+                                                    frameHeight / 2, 1, outTexUV);
     if (ret != kCVReturnSuccess) {
         CFRelease(*outTexY);
         *outTexY = nil;
@@ -729,15 +715,9 @@ struct MetalVideoRender : public IVideoRender {
             cmdBuf:(id<MTLCommandBuffer>)cmdBuf
           drawable:(id<CAMetalDrawable>)drawable {
     CVMetalTextureRef cvTex = nil;
-    CVReturn ret = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault,
-                                                             _textureCache,
-                                                             pixelBuffer,
-                                                             nil,
-                                                             MTLPixelFormatBGRA8Unorm,
-                                                             frameWidth,
-                                                             frameHeight,
-                                                             0,
-                                                             &cvTex);
+    CVReturn ret = CVMetalTextureCacheCreateTextureFromImage(
+        kCFAllocatorDefault, _textureCache, pixelBuffer, nil, MTLPixelFormatBGRA8Unorm, frameWidth,
+        frameHeight, 0, &cvTex);
     if (ret != kCVReturnSuccess) {
         [enc endEncoding];
         [cmdBuf commit];

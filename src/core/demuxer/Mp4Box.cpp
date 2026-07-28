@@ -45,10 +45,8 @@ std::expected<BoxInfo, bool> Box::tryParseBoxInfo(Buffer& buffer) noexcept {
     for (auto c : info.symbol) {
         if (c < 0x20 || c > 0x7E) {
             LogW("tryParseBoxInfo: invalid box type 0x{:02X}{:02X}{:02X}{:02X} at pos:{}",
-                 static_cast<uint8_t>(info.symbol[0]),
-                 static_cast<uint8_t>(info.symbol[1]),
-                 static_cast<uint8_t>(info.symbol[2]),
-                 static_cast<uint8_t>(info.symbol[3]),
+                 static_cast<uint8_t>(info.symbol[0]), static_cast<uint8_t>(info.symbol[1]),
+                 static_cast<uint8_t>(info.symbol[2]), static_cast<uint8_t>(info.symbol[3]),
                  info.start);
             break;
         }
@@ -57,10 +55,7 @@ std::expected<BoxInfo, bool> Box::tryParseBoxInfo(Buffer& buffer) noexcept {
 }
 
 std::string Box::description(const std::string& prefix) const noexcept {
-    return std::format("{} {} [{}, {}) \n",
-                       prefix,
-                       info.symbol,
-                       info.start,
+    return std::format("{} {} [{}, {}) \n", prefix, info.symbol, info.start,
                        info.start + info.size);
 }
 
@@ -220,12 +215,7 @@ std::string BoxFtyp::description(const std::string& prefix) const noexcept {
     desc.append(std::format("{}  major brand: {}\n"
                             "{}  minor version: {}\n"
                             "{}  compatible brands: {}\n",
-                            prefix,
-                            majorBrand,
-                            prefix,
-                            minorVersion,
-                            prefix,
-                            compatibleBrands));
+                            prefix, majorBrand, prefix, minorVersion, prefix, compatibleBrands));
     return desc;
 }
 
@@ -252,14 +242,9 @@ std::string BoxMvhd::matrixString(const std::string& prefix) const noexcept {
     static const std::vector<std::string> kMatrixNames = {"a, b, u", "c, d, v", "x, y, w"};
 
     for (size_t i = 0; i < kMatrixNames.size(); ++i) {
-        res += std::format("{}| {} |{}| {}, {}, {} |{}",
-                           prefix,
-                           kMatrixNames[i],
-                           (i != 1 ? "   " : " = "),
-                           matrix[i * 3],
-                           matrix[i * 3 + 1],
-                           matrix[i * 3 + 2],
-                           (i != kMatrixNames.size() - 1 ? "\n" : ""));
+        res += std::format("{}| {} |{}| {}, {}, {} |{}", prefix, kMatrixNames[i],
+                           (i != 1 ? "   " : " = "), matrix[i * 3], matrix[i * 3 + 1],
+                           matrix[i * 3 + 2], (i != kMatrixNames.size() - 1 ? "\n" : ""));
     }
 
     return res;
@@ -268,27 +253,19 @@ std::string BoxMvhd::matrixString(const std::string& prefix) const noexcept {
 std::string BoxMvhd::description(const std::string& prefix) const noexcept {
     std::string res = Box::description(prefix);
 
-    res += std::format("{0}    version: {1}\n"
-                       "{0}    flags: {2}\n"
-                       "{0}    creationTime: {3}\n"
-                       "{0}    modificationTime: {4}\n"
-                       "{0}    timeScale: {5}\n"
-                       "{0}    duration: {6}\n"
-                       "{0}    preferredRate: {7}\n"
-                       "{0}    preferredVolume: {8}\n"
-                       "{0}    matrix: \n {9} \n"
-                       "{0}    nextTrackId: {10}",
-                       prefix,
-                       version,
-                       flags,
-                       creationTime,
-                       modificationTime,
-                       timeScale,
-                       duration,
-                       preferredRate,
-                       preferredVolume,
-                       matrixString(prefix + "        "),
-                       nextTrackId);
+    res +=
+        std::format("{0}    version: {1}\n"
+                    "{0}    flags: {2}\n"
+                    "{0}    creationTime: {3}\n"
+                    "{0}    modificationTime: {4}\n"
+                    "{0}    timeScale: {5}\n"
+                    "{0}    duration: {6}\n"
+                    "{0}    preferredRate: {7}\n"
+                    "{0}    preferredVolume: {8}\n"
+                    "{0}    matrix: \n {9} \n"
+                    "{0}    nextTrackId: {10}",
+                    prefix, version, flags, creationTime, modificationTime, timeScale, duration,
+                    preferredRate, preferredVolume, matrixString(prefix + "        "), nextTrackId);
 
     return res;
 }
@@ -356,15 +333,8 @@ std::string BoxMdhd::description(const std::string& prefix) const noexcept {
                        "{0}    duration: {6}\n"
                        "{0}    language: {7}\n"
                        "{0}    quality: {8}\n",
-                       prefix,
-                       version,
-                       flags,
-                       creationTime,
-                       modificationTime,
-                       timeScale,
-                       duration,
-                       language,
-                       quality);
+                       prefix, version, flags, creationTime, modificationTime, timeScale, duration,
+                       language, quality);
     return res;
 }
 
@@ -774,11 +744,7 @@ std::string BoxAvcc::description(const std::string& prefix) const noexcept {
     return desc + std::format("version: {}, profileIdc: {}, "
                               "profileCompatibility: {}, levelIdc: {},"
                               "naluByteSize: {}\n",
-                              version,
-                              profileIdc,
-                              profileCompatibility,
-                              levelIdc,
-                              naluByteSize);
+                              version, profileIdc, profileCompatibility, levelIdc, naluByteSize);
 }
 
 // avcC (size)
@@ -831,12 +797,7 @@ std::string BoxHvcc::description(const std::string& prefix) const noexcept {
            std::format("version: {}, profileSpace: {}, "
                        "tierFlag: {}, profileIdc: {},"
                        "profileCompatibility: {} , levelIdc:{}, naluByteSize:{}\n",
-                       version,
-                       profileSpace,
-                       tierFlag,
-                       profileIdc,
-                       profileCompatibility,
-                       levelIdc,
+                       version, profileSpace, tierFlag, profileIdc, profileCompatibility, levelIdc,
                        naluByteSize);
 }
 

@@ -189,8 +189,7 @@ class HLSDemuxer : public IDemuxer {
     const std::vector<Segment>& getTSInfos() const noexcept;
 
     inline static const DemuxerInfo& info() noexcept {
-        static DemuxerInfo info = {DemuxerType::HLS,
-                                   "#EXTM3U",
+        static DemuxerInfo info = {DemuxerType::HLS, "#EXTM3U",
                                    Reflection::enroll<HLSDemuxer>("HLSDemuxer")};
         return info;
     }

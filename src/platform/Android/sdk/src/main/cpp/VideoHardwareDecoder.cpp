@@ -32,20 +32,13 @@ Error VideoHardwareDecoder::sendPacket(AVFrameRefPtr& frame) noexcept {
         flag = NativeDecodeFlag::EndOfStream;
     }
     auto inputPts = int64_t(frame->ptsTime() * 1000000);
-    auto res = NativeHardwareDecoder::sendPacket(decoderId_,
-                                                 frame->data,
-                                                 inputPts,
-                                                 flag,
+    auto res = NativeHardwareDecoder::sendPacket(decoderId_, frame->data, inputPts, flag,
                                                  PacketType::Video);
     if (res != Error::Success && res != Error::CodecAgain && res != Error::CodecNotProcessed) {
         LogE("send video packet failed, {}", toString(res));
     } else {
         LogI("send video packet {}, index:{}, pts:{}, dts:{}, isDiscard:{}, frameType:{}",
-             toString(res),
-             frame->index,
-             frame->ptsTime(),
-             frame->dtsTime(),
-             frame->isDiscard,
+             toString(res), frame->index, frame->ptsTime(), frame->dtsTime(), frame->isDiscard,
              static_cast<int>(frameInfo->frameType));
         if (frame->isDiscard) {
             discardPackets_.insert(inputPts);
@@ -68,11 +61,8 @@ void VideoHardwareDecoder::retryPendingEOS() noexcept {
         return;
     }
     auto inputPts = int64_t(pendingEOSFrame_->ptsTime() * 1000000);
-    auto res = NativeHardwareDecoder::sendPacket(decoderId_,
-                                                 pendingEOSFrame_->data,
-                                                 inputPts,
-                                                 NativeDecodeFlag::EndOfStream,
-                                                 PacketType::Video);
+    auto res = NativeHardwareDecoder::sendPacket(decoderId_, pendingEOSFrame_->data, inputPts,
+                                                 NativeDecodeFlag::EndOfStream, PacketType::Video);
     if (res == Error::Success) {
         LogI("pending EOS retry success");
         pendingEOSFrame_.reset();
@@ -124,10 +114,7 @@ void VideoHardwareDecoder::onVideoSizeChanged(uint32_t width, uint32_t height) n
     if (!videoConfig) {
         return;
     }
-    LogI("video size changed: {}x{} -> {}x{}",
-         videoConfig->width,
-         videoConfig->height,
-         width,
+    LogI("video size changed: {}x{} -> {}x{}", videoConfig->width, videoConfig->height, width,
          height);
     videoConfig->width = width;
     videoConfig->height = height;
@@ -188,11 +175,9 @@ VideoHardwareDecoder::~VideoHardwareDecoder() noexcept {
 
 bool VideoHardwareDecoder::tryAquireFrame(int64_t& pts, bool& isCompleted) noexcept {
     constexpr uint64_t kRenderTimeoutMs = 1;
-    auto result =
-        NativeHardwareDecoder::requestVideoFrame(decoderId_,
-                                                 kRenderTimeoutMs,
-                                                 renderWidth_.load(std::memory_order_acquire),
-                                                 renderHeight_.load(std::memory_order_acquire));
+    auto result = NativeHardwareDecoder::requestVideoFrame(
+        decoderId_, kRenderTimeoutMs, renderWidth_.load(std::memory_order_acquire),
+        renderHeight_.load(std::memory_order_acquire));
     isCompleted = result.isCompleted;
     pts = result.pts;
     return result.isAvailable;
@@ -200,8 +185,7 @@ bool VideoHardwareDecoder::tryAquireFrame(int64_t& pts, bool& isCompleted) noexc
 
 Error VideoHardwareDecoder::renderOutput() noexcept {
     if (mode_ != DecodeMode::Texture || !resource_ || !resource_->isValid()) {
-        LogD("renderOutput: skip, mode={} resource={}",
-             static_cast<int>(mode_),
+        LogD("renderOutput: skip, mode={} resource={}", static_cast<int>(mode_),
              resource_ ? resource_->isValid() : false);
         return Error::CodecError;
     }
@@ -243,9 +227,7 @@ Error VideoHardwareDecoder::renderOutput() noexcept {
         return Error::CodecAgain;
     }
     LogI("renderOutput: acquired frame pts={:.6f}, isCompleted={}, isDiscard={}",
-         static_cast<double>(pts) / 1000000.0,
-         isCompleted,
-         discardPackets_.contains(pts));
+         static_cast<double>(pts) / 1000000.0, isCompleted, discardPackets_.contains(pts));
     frameBuffer->unbind(true);
 
     if (isCompleted) {

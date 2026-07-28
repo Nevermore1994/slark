@@ -11,29 +11,12 @@ CMSampleBufferRef createSampleBuffer(CMFormatDescriptionRef fmtDesc, void* buff,
     @autoreleasepool {
         CMBlockBufferRef blockBuffer = nullptr;
         CMSampleBufferRef sampleBuffer = nullptr;
-        auto status = CMBlockBufferCreateWithMemoryBlock(NULL,
-                                                         buff,
-                                                         size,
-                                                         kCFAllocatorNull,
-                                                         NULL,
-                                                         0,
-                                                         size,
-                                                         FALSE,
-                                                         &blockBuffer);
+        auto status = CMBlockBufferCreateWithMemoryBlock(NULL, buff, size, kCFAllocatorNull, NULL,
+                                                         0, size, FALSE, &blockBuffer);
 
         if (status == noErr) {
-            status = CMSampleBufferCreate(NULL,
-                                          blockBuffer,
-                                          TRUE,
-                                          0,
-                                          0,
-                                          fmtDesc,
-                                          1,
-                                          0,
-                                          NULL,
-                                          0,
-                                          NULL,
-                                          &sampleBuffer);
+            status = CMSampleBufferCreate(NULL, blockBuffer, TRUE, 0, 0, fmtDesc, 1, 0, NULL, 0,
+                                          NULL, &sampleBuffer);
         }
 
         if (blockBuffer) {

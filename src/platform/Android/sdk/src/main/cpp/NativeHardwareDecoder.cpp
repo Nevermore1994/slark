@@ -31,11 +31,9 @@ Error Native_HardwareDecoder_sendPacket(JNIEnv* env,
         LogE("create decoder failed, not found video decoder class");
         return Error::CodecError;
     }
-    auto methodSignature = JNI::makeSignature(JNI::Sig::Int,
-                                              JNI::Sig::String,
-                                              JNI::makeArray(JNI::Sig::Byte),
-                                              JNI::Sig::Long,
-                                              JNI::Sig::Int);
+    auto methodSignature =
+        JNI::makeSignature(JNI::Sig::Int, JNI::Sig::String, JNI::makeArray(JNI::Sig::Byte),
+                           JNI::Sig::Long, JNI::Sig::Int);
     auto methodId =
         JNICache::instance().getStaticMethod(decoderClass, "sendPacket", methodSignature);
     if (!methodId) {
@@ -54,13 +52,10 @@ Error Native_HardwareDecoder_sendPacket(JNIEnv* env,
     }
 
     int res = JNI::JNICall::callStatic<int32_t>(
-                  env,
-                  kMediaCodecDecoderClass,
-                  "sendPacket",
+                  env, kMediaCodecDecoderClass, "sendPacket",
                   JNI::JObjectWithSig(ToJVM::str(env, decoderId), JNI::Sig::String),
                   JNI::JObjectWithSig(std::move(byteArray), JNI::Sig::ByteArray),
-                  static_cast<int64_t>(pts),
-                  static_cast<int32_t>(flag))
+                  static_cast<int64_t>(pts), static_cast<int32_t>(flag))
                   .value_or(static_cast<int32_t>(Error::CodecError));
     return static_cast<Error>(res);
 }
@@ -77,12 +72,8 @@ static ObjectReference buildVideoDecoderConfig(JNIEnv* env,
         return {env, nullptr};
     }
     return JNI::JNICall::create(
-        env,
-        kConfigClass,
-        static_cast<int32_t>(cfg->width),
-        static_cast<int32_t>(cfg->height),
-        static_cast<int32_t>(cfg->profile),
-        static_cast<int32_t>(cfg->level),
+        env, kConfigClass, static_cast<int32_t>(cfg->width), static_cast<int32_t>(cfg->height),
+        static_cast<int32_t>(cfg->profile), static_cast<int32_t>(cfg->level),
         JNI::JObjectWithSig(std::move(modeEnum), JNI::makeObject(kDecodeModeClass)));
 }
 
@@ -116,10 +107,7 @@ std::string Native_HardwareDecoder_createVideoDecoder(
     auto csdBytes = ToJVM::naluBytes(env, *decoderInfo, /*skipExistingHeader=*/true);
 
     auto jDecoderId = JNI::JNICall::callStatic<jobject>(
-        env,
-        kMediaCodecDecoderClass,
-        "createVideoDecoder",
-        JNI::ReturnSig{JNI::Sig::String},
+        env, kMediaCodecDecoderClass, "createVideoDecoder", JNI::ReturnSig{JNI::Sig::String},
         JNI::JObjectWithSig(ToJVM::str(env, decoderConfig->mediaInfo), JNI::Sig::String),
         JNI::JObjectWithSig(std::move(configObj), JNI::makeObject(kConfigClass)),
         JNI::JObjectWithSig(std::move(csdBytes), JNI::Sig::ByteArray));
@@ -136,9 +124,7 @@ std::string Native_HardwareDecoder_createVideoDecoder(
 static ObjectReference buildAudioDecoderConfig(JNIEnv* env,
                                                const std::shared_ptr<AudioDecoderConfig>& cfg) {
     constexpr std::string_view kConfigClass = "com/slark/sdk/AudioDecoderConfig";
-    return JNI::JNICall::create(env,
-                                kConfigClass,
-                                static_cast<int32_t>(cfg->sampleRate),
+    return JNI::JNICall::create(env, kConfigClass, static_cast<int32_t>(cfg->sampleRate),
                                 static_cast<int32_t>(cfg->channels),
                                 static_cast<int32_t>(cfg->profile),
                                 static_cast<int32_t>(cfg->samplingFrequencyIndex),
@@ -157,10 +143,7 @@ std::string Native_HardwareDecoder_createAudioDecoder(
     }
     // 使用 ReturnSig 指定返回类型为 String，而非推导为 jobject(Ljava/lang/Object;)
     auto jDecoderId = JNI::JNICall::callStatic<jobject>(
-        env,
-        kMediaCodecDecoderClass,
-        "createAudioDecoder",
-        JNI::ReturnSig{JNI::Sig::String},
+        env, kMediaCodecDecoderClass, "createAudioDecoder", JNI::ReturnSig{JNI::Sig::String},
         JNI::JObjectWithSig(ToJVM::str(env, decoderConfig->mediaInfo), JNI::Sig::String),
         JNI::JObjectWithSig(std::move(configObj), JNI::makeObject(kConfigClass)));
     return jDecoderId ? FromJVM::str(env, reinterpret_cast<jstring>(jDecoderId.get()))
@@ -168,9 +151,7 @@ std::string Native_HardwareDecoder_createAudioDecoder(
 }
 
 void Native_HardwareDecoder_releaseDecoder(JNIEnv* env, std::string_view decoderId) {
-    JNI::JNICall::callStatic<void>(env,
-                                   kMediaCodecDecoderClass,
-                                   "releaseDecoder",
+    JNI::JNICall::callStatic<void>(env, kMediaCodecDecoderClass, "releaseDecoder",
                                    std::string(decoderId));
 }
 
@@ -182,9 +163,7 @@ void Native_HardwareDecoder_flush(JNIEnv* env, std::string_view decoderId) {
         return;
     }
     JNI::JNICall::callStatic<void>(
-        env,
-        kMediaCodecDecoderClass,
-        "doAction",
+        env, kMediaCodecDecoderClass, "doAction",
         JNI::JObjectWithSig(ToJVM::str(env, decoderId), JNI::Sig::String),
         JNI::JObjectWithSig(std::move(enumValue), JNI::makeObject(kActionClass)));
 }
@@ -249,14 +228,11 @@ uint64_t Native_HardwareDecoder_requestVideoFrame(JNIEnv* env,
                                                   uint64_t waitTime,
                                                   uint32_t width,
                                                   uint32_t height) {
-    auto packed = JNI::JNICall::callStatic<int64_t>(env,
-                                                    kMediaCodecDecoderClass,
-                                                    "requestVideoFrame",
-                                                    std::string(decoderId),
-                                                    static_cast<int64_t>(waitTime),
-                                                    static_cast<int32_t>(width),
-                                                    static_cast<int32_t>(height))
-                      .value_or(0);
+    auto packed =
+        JNI::JNICall::callStatic<int64_t>(env, kMediaCodecDecoderClass, "requestVideoFrame",
+                                          std::string(decoderId), static_cast<int64_t>(waitTime),
+                                          static_cast<int32_t>(width), static_cast<int32_t>(height))
+            .value_or(0);
     return static_cast<uint64_t>(packed);
 }
 
@@ -322,11 +298,8 @@ VideoFrameResult NativeHardwareDecoder::requestVideoFrame(std::string_view decod
         return {};
     }
     JNIEnvGuard envGuard(getJavaVM());
-    auto packed = Native_HardwareDecoder_requestVideoFrame(envGuard.get(),
-                                                           decoderId,
-                                                           waitTime,
-                                                           width,
-                                                           height);
+    auto packed = Native_HardwareDecoder_requestVideoFrame(envGuard.get(), decoderId, waitTime,
+                                                           width, height);
     return VideoFrameResult::unpack(packed);
 }
 

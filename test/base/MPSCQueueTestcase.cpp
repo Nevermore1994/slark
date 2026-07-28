@@ -1,11 +1,10 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-#include "MPSCQueue.hpp"
+#include <gtest/gtest.h>
 
 #include <algorithm>
 #include <atomic>
-#include <gtest/gtest.h>
 #include <memory>
 #include <mutex>
 #include <random>
@@ -13,6 +12,8 @@
 #include <thread>
 #include <unordered_set>
 #include <vector>
+
+#include "MPSCQueue.hpp"
 
 using namespace slark;
 

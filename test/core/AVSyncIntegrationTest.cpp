@@ -41,8 +41,7 @@ TEST(AVSyncIntegrationTest, FirstFrameRenderedCASIsAtomicAndIdempotent) {
 
     auto simulateHandleSeekFirstFrame = [&](const AVFrameRefPtr& /*frame*/) -> bool {
         bool expected = false;
-        return firstFrameRendered.compare_exchange_strong(expected,
-                                                          true,
+        return firstFrameRendered.compare_exchange_strong(expected, true,
                                                           std::memory_order_acq_rel);
     };
 

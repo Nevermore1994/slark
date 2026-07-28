@@ -28,8 +28,7 @@ bool WAVDemuxer::parseExtensibleFormat(DataView formatSpec, FmtChunk& out) noexc
     formatSpec.substr(18).readNumberLE(validBitsPerSample, 2);
     if (validBitsPerSample != out.bitsPerSample) {
         if (validBitsPerSample != 0) {
-            LogE("validBits(%d) != bitsPerSample(%d) are not supported",
-                 validBitsPerSample,
+            LogE("validBits(%d) != bitsPerSample(%d) are not supported", validBitsPerSample,
                  out.bitsPerSample);
             return false;
         }
@@ -44,8 +43,7 @@ bool WAVDemuxer::parseExtensibleFormat(DataView formatSpec, FmtChunk& out) noexc
     }
     if ((out.channelMask != 0) && (std::popcount(out.channelMask) != out.channels)) {
         LogE("invalid number of channels (%d) in channel mask (0x%x)",
-             std::popcount(out.channelMask),
-             out.channels);
+             std::popcount(out.channelMask), out.channels);
         return false;
     }
 

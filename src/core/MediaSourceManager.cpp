@@ -62,8 +62,7 @@ bool MediaSourceManager::open(const std::string& uri,
     streamInfo_ = openResult.value();
     streamInfo_.uri = uri;
     LogI("[MediaSourceManager::open] stream open ok: totalSize={} isSeekable={}",
-         streamInfo_.totalSize,
-         streamInfo_.isSeekable);
+         streamInfo_.totalSize, streamInfo_.isSeekable);
     return true;
 }
 

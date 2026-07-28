@@ -16,18 +16,8 @@ namespace slark {
 bool isContainerBox(std::string_view symbol) noexcept {
     using namespace std::string_view_literals;
     static const std::vector<std::string_view> kContainerBox = {
-        "moov"sv,
-        "trak"sv,
-        "edts"sv,
-        "mdia"sv,
-        "meta"sv,
-        "minf"sv,
-        "stbl"sv,
-        "dinf"sv,
-        "udta"sv,
-        "mvex"sv,
-        "moof"sv,
-        "traf"sv,
+        "moov"sv, "trak"sv, "edts"sv, "mdia"sv, "meta"sv, "minf"sv,
+        "stbl"sv, "dinf"sv, "udta"sv, "mvex"sv, "moof"sv, "traf"sv,
     };
     return std::any_of(kContainerBox.begin(), kContainerBox.end(), [symbol](const auto& view) {
         return view == symbol;
@@ -84,10 +74,7 @@ uint64_t TrackContext::getSeekPos(double targetTime) const noexcept {
     }
     const auto pos = chunkOffset + sampleOffsetInChunk;
     LogI("[seek info] {} keySampleIndex:{}, time:{}, pos:{}",
-         type == TrackType::Video ? "video" : "audio",
-         seekSampleIndex,
-         targetTime,
-         pos);
+         type == TrackType::Video ? "video" : "audio", seekSampleIndex, targetTime, pos);
     return pos;
 }
 
@@ -191,10 +178,7 @@ void TrackContext::seek(uint64_t pos) noexcept {
 
     const auto finalPos = stco->chunkOffsets[chunkLogicIndex] + static_cast<uint64_t>(sampleOffset);
     LogI("[seek info] {} sampleIndex:{}, dts:{}, pos:{}",
-         type == TrackType::Video ? "video" : "audio",
-         index,
-         dts,
-         finalPos);
+         type == TrackType::Video ? "video" : "audio", index, dts, finalPos);
 }
 
 namespace {
@@ -274,14 +258,8 @@ void TrackContext::seekToSample(uint32_t targetSampleIndex) noexcept {
     index = targetSampleIndex;
     LogI("[debug] seekToSample {} done: idx={}, dts={}({:.3f}s), pts={}({:.3f}s), cttsIdx={}, "
          "cttsSample={}, cttsOffset={}",
-         type == TrackType::Video ? "video" : "audio",
-         idx,
-         dts,
-         double(dts) / mdhd->timeScale,
-         pts,
-         double(pts) / mdhd->timeScale,
-         cttsEntryIndex,
-         cttsEntrySampleIndex,
+         type == TrackType::Video ? "video" : "audio", idx, dts, double(dts) / mdhd->timeScale, pts,
+         double(pts) / mdhd->timeScale, cttsEntryIndex, cttsEntrySampleIndex,
          ctts ? ctts->entrys[cttsEntryIndex].sampleOffset : 0);
 }
 
@@ -466,9 +444,7 @@ AVFramePtrArray TrackContext::parseH264FrameData(AVFramePtr frame,
             naluByteSize = 3;
         }
     }
-    return parseNaluFrames(std::move(frame),
-                           std::move(data),
-                           std::move(frameInfo),
+    return parseNaluFrames(std::move(frame), std::move(data), std::move(frameInfo),
                            [](uint8_t naluHeader) -> std::pair<bool, VideoFrameType> {
                                const uint8_t naluType = naluHeader & 0x1f;
                                if (naluType != 5 && naluType != 1) {
@@ -501,9 +477,7 @@ AVFramePtrArray TrackContext::parseH265FrameData(AVFramePtr frame,
         }
     }
     // HEVC: IDR_W_RADL(19), IDR_N_LP(20), TRAIL_R(1), TRAIL_N(0), valid range [0, 21]
-    return parseNaluFrames(std::move(frame),
-                           std::move(data),
-                           std::move(frameInfo),
+    return parseNaluFrames(std::move(frame), std::move(data), std::move(frameInfo),
                            [](uint8_t naluHeader) -> std::pair<bool, VideoFrameType> {
                                const uint8_t naluType = (naluHeader >> 1) & 0x3f;
                                if (naluType > 21) {
@@ -554,8 +528,7 @@ void TrackContext::parseFragmentedData(Buffer& buffer,
         } else if (codecId == CodecId::HEVC) {
             frames = parseH265FrameData(std::move(frame), std::move(data), videoInfo);
         }
-        packets.insert(packets.end(),
-                       std::make_move_iterator(frames.begin()),
+        packets.insert(packets.end(), std::make_move_iterator(frames.begin()),
                        std::make_move_iterator(frames.end()));
     }
     ++fragSampleIndex;
@@ -595,8 +568,7 @@ void TrackContext::parseNormalData(Buffer& buffer,
         } else if (codecId == CodecId::HEVC) {
             frames = parseH265FrameData(std::move(frame), std::move(data), videoInfo);
         }
-        packets.insert(packets.end(),
-                       std::make_move_iterator(frames.begin()),
+        packets.insert(packets.end(), std::make_move_iterator(frames.begin()),
                        std::make_move_iterator(frames.end()));
     }
     calcIndex();
@@ -637,9 +609,7 @@ void Mp4Demuxer::handleBoxInMoov(const BoxRefPtr& box,
     if (box->info.symbol == "stsd") {
         auto stsdBox = std::dynamic_pointer_cast<BoxStsd>(box);
         SAssert(stsdBox != nullptr, "parse error");
-        LogI("stsd: children={}, isAudio={}, isVideo={}",
-             stsdBox->childs.size(),
-             stsdBox->isAudio,
+        LogI("stsd: children={}, isAudio={}, isVideo={}", stsdBox->childs.size(), stsdBox->isAudio,
              stsdBox->isVideo);
         auto [codecId, mediaBoxName] = stsdBox->getCodecId();
         LogI("stsd: codecId={}, mediaBoxName={}", static_cast<int32_t>(codecId), mediaBoxName);
@@ -692,11 +662,8 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
         }
         box->decode(buffer);
 
-        LogD("parseMoovBox: box={}, start={}, size={}, trackCnt={}",
-             box->info.symbol,
-             box->info.start,
-             box->info.size,
-             tracks_.size());
+        LogD("parseMoovBox: box={}, start={}, size={}, trackCnt={}", box->info.symbol,
+             box->info.start, box->info.size, tracks_.size());
 
         if (box->info.symbol == "tkhd") {
             const auto dataStart = static_cast<int64_t>(box->info.start + box->info.headerSize);
@@ -767,15 +734,12 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
         // udta 在 moov 顶层时跳过深度遍历，避免其异常大的 size 吞掉后续 trak
         // udta/meta 在 moov 顶层时跳过深度遍历，避免异常大的 size 吞掉后续 trak
         if ((box->info.symbol == "udta" || box->info.symbol == "meta") && parentBox.size() == 1) {
-            LogD("parseMoovBox: skip '{}' as leaf at moov top level, size={}",
-                 box->info.symbol,
+            LogD("parseMoovBox: skip '{}' as leaf at moov top level, size={}", box->info.symbol,
                  box->info.size);
             auto skipOffset = static_cast<int64_t>(box->info.start + box->info.size - buffer.pos());
             if (!buffer.skip(skipOffset)) {
-                LogW("parseMoovBox: skip '{}' failed at pos:{}, size:{}",
-                     box->info.symbol,
-                     buffer.pos(),
-                     box->info.size);
+                LogW("parseMoovBox: skip '{}' failed at pos:{}, size:{}", box->info.symbol,
+                     buffer.pos(), box->info.size);
                 if (tracks_.empty()) {
                     res = false;
                 }
@@ -788,11 +752,8 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
             if (box->info.end() > parentBox.top()->info.end()) {
                 LogW("parseMoovBox: container '{}' [{},{}) exceeds parent '{}' [{},{}), skip as "
                      "leaf",
-                     box->info.symbol,
-                     box->info.start,
-                     box->info.end(),
-                     parentBox.top()->info.symbol,
-                     parentBox.top()->info.start,
+                     box->info.symbol, box->info.start, box->info.end(),
+                     parentBox.top()->info.symbol, parentBox.top()->info.start,
                      parentBox.top()->info.end());
                 auto skipOffset =
                     static_cast<int64_t>(box->info.start + box->info.size - buffer.pos());
@@ -809,20 +770,14 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
         auto parentEnd = parentBox.top()->info.start + parentBox.top()->info.size;
         if (skipEnd > parentEnd) {
             LogW("parseMoovBox: leaf '{}' skip [{},{}) clamped to parent '{}' end {}",
-                 box->info.symbol,
-                 box->info.start,
-                 skipEnd,
-                 parentBox.top()->info.symbol,
+                 box->info.symbol, box->info.start, skipEnd, parentBox.top()->info.symbol,
                  parentEnd);
             skipEnd = parentEnd;
         }
         auto skipOffset = static_cast<int64_t>(skipEnd - buffer.pos());
         if (!buffer.skip(skipOffset)) {
-            LogW("parseMoovBox: skip {} bytes failed at pos:{}, box:{}, parentDepth:{}",
-                 skipOffset,
-                 buffer.pos(),
-                 box->info.symbol,
-                 parentBox.size());
+            LogW("parseMoovBox: skip {} bytes failed at pos:{}, box:{}, parentDepth:{}", skipOffset,
+                 buffer.pos(), box->info.symbol, parentBox.size());
             // 恢复：向上弹出父容器，跳到最近的合法容器边界继续解析
             bool recovered = false;
             while (parentBox.size() > 1) {
@@ -831,8 +786,7 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
                     static_cast<int64_t>(container->info.start + container->info.size);
                 if (buffer.skipTo(containerEnd)) {
                     LogW("parseMoovBox: recovered to container '{}' end at pos:{}",
-                         container->info.symbol,
-                         containerEnd);
+                         container->info.symbol, containerEnd);
                     parentBox.pop();
                     recovered = true;
                     break;
@@ -974,8 +928,7 @@ bool Mp4Demuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
         if (eof) {
             return false;
         }
-        LogI("open: need more data, mdat at [{}, {})",
-             headerInfo_ ? headerInfo_->headerLength : 0,
+        LogI("open: need more data, mdat at [{}, {})", headerInfo_ ? headerInfo_->headerLength : 0,
              headerInfo_ ? headerInfo_->headerLength + headerInfo_->dataSize : 0);
     } else {
         LogI("open: moov parsed");
@@ -1059,9 +1012,7 @@ void Mp4Demuxer::initAudioTrack(const std::shared_ptr<TrackContext>& track) noex
         }
     }
     LogI("initAudioTrack: channels:{}, sampleRate:{}, bitsPerSample:{}, timeScale:{}",
-         audioInfo_->channels,
-         audioInfo_->sampleRate,
-         audioInfo_->bitsPerSample,
+         audioInfo_->channels, audioInfo_->sampleRate, audioInfo_->bitsPerSample,
          audioInfo_->timeScale);
 }
 
@@ -1131,11 +1082,8 @@ void Mp4Demuxer::initVideoTrack(const std::shared_ptr<TrackContext>& track) noex
     } else {
         videoInfo_->mediaInfo = MEDIA_MIMETYPE_UNKNOWN;
     }
-    LogI("initVideoTrack: {}x{}, fps:{}, timeScale:{}",
-         videoInfo_->width,
-         videoInfo_->height,
-         videoInfo_->fps,
-         videoInfo_->timeScale);
+    LogI("initVideoTrack: {}x{}, fps:{}, timeScale:{}", videoInfo_->width, videoInfo_->height,
+         videoInfo_->fps, videoInfo_->timeScale);
 }
 
 void Mp4Demuxer::initData() noexcept {
@@ -1157,10 +1105,8 @@ void Mp4Demuxer::initData() noexcept {
     }
     isOpened_ = true;
     buffer_ = std::make_unique<Buffer>(rootBox_->info.size);
-    LogI("initData: duration:{:.3f}s, tracks:{}, fragmented:{}",
-         totalDuration_.second(),
-         static_cast<int32_t>(tracks_.size()),
-         isFragmented_);
+    LogI("initData: duration:{:.3f}s, tracks:{}, fragmented:{}", totalDuration_.second(),
+         static_cast<int32_t>(tracks_.size()), isFragmented_);
 }
 
 CTime Mp4Demuxer::computeTotalDuration() const noexcept {
@@ -1301,10 +1247,7 @@ DemuxerResult Mp4Demuxer::parseData(DataPacket& packet) noexcept {
     }
     if (!result.audioFrames.empty() || !result.videoFrames.empty()) {
         LogI("parseData: parsedLength {} - {}, audioFrameCount:{}, videoFrameCount:{}",
-             currentOffset,
-             buffer_->pos(),
-             result.audioFrames.size(),
-             result.videoFrames.size());
+             currentOffset, buffer_->pos(), result.audioFrames.size(), result.videoFrames.size());
         buffer_->shrink();
     }
 
@@ -1401,9 +1344,7 @@ void Mp4Demuxer::seekPos(uint64_t pos) noexcept {
                 track->fragSampleIndex = 0;
                 continue;
             }
-            auto it = std::lower_bound(track->fragSamples.begin(),
-                                       track->fragSamples.end(),
-                                       pos,
+            auto it = std::lower_bound(track->fragSamples.begin(), track->fragSamples.end(), pos,
                                        [](const TrackContext::FragSample& s, uint64_t p) {
                                            return s.offset < p;
                                        });

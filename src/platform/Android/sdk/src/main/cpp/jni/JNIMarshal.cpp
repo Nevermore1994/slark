@@ -71,9 +71,7 @@ ByteArrayReference bytes(JNIEnv* env, const slark::Data& data) noexcept {
     }
     jbyteArray arr = env->NewByteArray(static_cast<jsize>(data.size()));
     if (arr && !data.empty()) {
-        env->SetByteArrayRegion(arr,
-                                0,
-                                static_cast<jsize>(data.size()),
+        env->SetByteArrayRegion(arr, 0, static_cast<jsize>(data.size()),
                                 reinterpret_cast<const jbyte*>(data.data()));
     }
     return {env, arr};
@@ -126,9 +124,7 @@ ByteArrayReference naluBytes(JNIEnv* env,
     env->SetByteArrayRegion(arr, 0, headerSize, kNaluHeader);
 
     if (size > 0) {
-        env->SetByteArrayRegion(arr,
-                                headerSize,
-                                static_cast<jsize>(size),
+        env->SetByteArrayRegion(arr, headerSize, static_cast<jsize>(size),
                                 reinterpret_cast<const jbyte*>(data.data() + offset));
     }
     return {env, arr};

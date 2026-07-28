@@ -54,9 +54,8 @@ void checkAndThrow(JNIEnv* env) {
         if (!exceptionClass) {
             return "java/lang/Throwable";
         }
-        StringReference nameStr(
-            env,
-            static_cast<jstring>(env->CallObjectMethod(exceptionClass.get(), getNameMethod.get())));
+        StringReference nameStr(env, static_cast<jstring>(env->CallObjectMethod(
+                                         exceptionClass.get(), getNameMethod.get())));
         return nameStr ? FromJVM::str(env, nameStr.get()) : "java/lang/Throwable";
     }();
 
@@ -71,8 +70,7 @@ void checkAndThrow(JNIEnv* env) {
             return {};
         }
         StringReference msgStr(
-            env,
-            static_cast<jstring>(env->CallObjectMethod(exception, getMessageMethod.get())));
+            env, static_cast<jstring>(env->CallObjectMethod(exception, getMessageMethod.get())));
         return msgStr ? FromJVM::str(env, msgStr.get()) : std::string{};
     }();
 

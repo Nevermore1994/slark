@@ -188,10 +188,7 @@ SeekStrategy PlayPipeline::resolveSeekStrategy(double targetSec) const noexcept 
     const double currentSec = clockSync_->masterTime().second();
     auto strategy = canFastForward ? SeekStrategy::FastForwardInGOP : SeekStrategy::SeekToKeyframe;
     LogI("resolveSeekStrategy, current={:.3f} target={:.3f} canFastForward={} -> strategy={}",
-         currentSec,
-         targetSec,
-         canFastForward,
-         static_cast<int32_t>(strategy));
+         currentSec, targetSec, canFastForward, static_cast<int32_t>(strategy));
     return strategy;
 }
 
@@ -214,8 +211,7 @@ void PlayPipeline::seek(CTime target, bool isAccurate) noexcept {
         });
         LogI("seek distance too small, skip seek and notify completed: target={:.3f}s, "
              "current={:.3f}s",
-             targetSec,
-             currentSec);
+             targetSec, currentSec);
         return;
     }
 
@@ -230,9 +226,8 @@ void PlayPipeline::seek(CTime target, bool isAccurate) noexcept {
         double fps = clockSync_->videoFps();
         int32_t maxSkip =
             (fps > 0.0)
-                ? std::max(1,
-                           static_cast<int32_t>(
-                               fps * static_cast<double>(config_.seekFastForwardMs) / 1000.0))
+                ? std::max(1, static_cast<int32_t>(
+                                  fps * static_cast<double>(config_.seekFastForwardMs) / 1000.0))
                 : 1;
         seekContext_->setMaxSkipFrames(maxSkip);
     }
@@ -280,10 +275,8 @@ void PlayPipeline::fastForwardInGOP(CTime target) noexcept {
 void PlayPipeline::performKeyframeSeek(CTime target, SeekStrategy strategy) noexcept {
     assert(isOnOwnerThread());
     const double targetSec = target.second();
-    LogI("performKeyframeSeek ENTER target={:.3f} strategy={} epoch={}",
-         targetSec,
-         static_cast<int32_t>(strategy),
-         seekContext_->currentEpoch());
+    LogI("performKeyframeSeek ENTER target={:.3f} strategy={} epoch={}", targetSec,
+         static_cast<int32_t>(strategy), seekContext_->currentEpoch());
     pause();
     if (audioDecoder_) {
         audioDecoder_->pause();
@@ -319,10 +312,8 @@ void PlayPipeline::performKeyframeSeek(CTime target, SeekStrategy strategy) noex
         videoDecoder_->resume();
     }
     resumeStream();
-    LogI("seek to keyframe for {:.3f}s (strategy={}), epoch={}",
-         targetSec,
-         static_cast<int32_t>(strategy),
-         seekContext_->currentEpoch());
+    LogI("seek to keyframe for {:.3f}s (strategy={}), epoch={}", targetSec,
+         static_cast<int32_t>(strategy), seekContext_->currentEpoch());
 }
 
 Time::TimePoint PlayPipeline::currentTime() noexcept {
@@ -395,11 +386,7 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
         }
         LogI("requestVideoFrame HOLD, diff={:.3f}, masterTime={:.3f}, videoTime={:.3f}, "
              "cacheEndTime={:.3f}, playbackRate={:.3f}",
-             diff,
-             masterTime,
-             videoTime,
-             cacheEnd,
-             playbackRate);
+             diff, masterTime, videoTime, cacheEnd, playbackRate);
         return nullptr;
     }
 
@@ -415,9 +402,7 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
         }
         LogI("requestVideoFrame SKIP: video queue empty (starvation), masterTime={:.3f} "
              "videoTime={:.3f} cacheEndTime={:.3f}",
-             masterTime,
-             videoTime,
-             cacheEnd);
+             masterTime, videoTime, cacheEnd);
         bufferMonitor_->onStarvation(!config_.isLiveSource && config_.startBufferDuration == 0.0);
         return nullptr;
     }
@@ -439,19 +424,13 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
 
     LogI("requestVideoFrame POP pts={:.3f} dts={:.3f} isDiscard={}, masterTime={:.3f}, "
          "videoTime={:.3f}, cacheEndTime={:.3f}, diff={:.3f}",
-         frame->ptsTime(),
-         frame->dtsTime(),
-         frame->isDiscard,
-         masterTime,
-         videoTime,
-         cacheEnd,
+         frame->ptsTime(), frame->dtsTime(), frame->isDiscard, masterTime, videoTime, cacheEnd,
          diff);
     bufferMonitor_->resetStarvationCount();
     clockSync_->setVideoTime(Time::TimePoint::fromSeconds(frame->ptsTime()));
 
     bool expected = false;
-    if (readiness_.firstFrameRendered.compare_exchange_strong(expected,
-                                                              true,
+    if (readiness_.firstFrameRendered.compare_exchange_strong(expected, true,
                                                               std::memory_order_acq_rel)) {
         if (auto session = playSession_.lock()) {
             session->markFirstFrame();
@@ -861,10 +840,8 @@ void PlayPipeline::handleSeekFirstFrame(const AVFrameRefPtr& frame,
     }
     clockSync_->setVideoTime(Time::TimePoint::fromSeconds(frame->ptsTime()));
     bool expected = false;
-    const bool needFirstFrame =
-        readiness_.firstFrameRendered.compare_exchange_strong(expected,
-                                                              true,
-                                                              std::memory_order_acq_rel);
+    const bool needFirstFrame = readiness_.firstFrameRendered.compare_exchange_strong(
+        expected, true, std::memory_order_acq_rel);
     postToOwnerThread([this, needFirstFrame, isSeekFirstFrame] {
         if (needFirstFrame) {
             if (auto session = playSession_.lock()) {
@@ -900,10 +877,8 @@ void PlayPipeline::onVideoDecoded(DecoderData data) noexcept {
     if (seekContext_->isEpochStale(frameEpoch)) {
         return;
     }
-    LogI("onVideoDecoded pts:{:.6f}, isDiscard:{}, isSeekPending:{}",
-         data.frame->ptsTime(),
-         data.frame->isDiscard,
-         seekContext_->isSeekPending());
+    LogI("onVideoDecoded pts:{:.6f}, isDiscard:{}, isSeekPending:{}", data.frame->ptsTime(),
+         data.frame->isDiscard, seekContext_->isSeekPending());
 
     if (!readiness_.firstFrameRendered.load(std::memory_order_acquire) &&
         !seekContext_->isSeekPending()) {
@@ -1135,10 +1110,8 @@ bool PlayPipeline::dispatchVideoFrames(AVFramePtrArray& frames, uint64_t epoch) 
             frame->isDiscard = true;
         }
         double prev = lastEnqueuedVideoPts_.load(std::memory_order_acquire);
-        while (framePts > prev &&
-               !lastEnqueuedVideoPts_.compare_exchange_weak(prev,
-                                                            framePts,
-                                                            std::memory_order_acq_rel)) {
+        while (framePts > prev && !lastEnqueuedVideoPts_.compare_exchange_weak(
+                                      prev, framePts, std::memory_order_acq_rel)) {
         }
         (void)videoFrameSender_->send(std::shared_ptr<AVFrame>(std::move(frame)));
         enqueued = true;
@@ -1346,15 +1319,13 @@ void PlayPipeline::pushAudioFrames() noexcept {
         const auto pushMasterTime = clockSync_->masterTime().second();
         if (!audioRender_->process(frame)) {
             LogD("pushAudioFrames: render process failed, pts={:.3f}, masterTime={:.3f}",
-                 frame->ptsTime(),
-                 pushMasterTime);
+                 frame->ptsTime(), pushMasterTime);
             audioFrames_.withLock([&frame](auto& q) {
                 q.emplace_front(std::move(frame));
             });
             break;
         }
-        LogD("pushAudioFrames: pushed frame pts={:.3f}, masterTime={:.3f}",
-             frame->ptsTime(),
+        LogD("pushAudioFrames: pushed frame pts={:.3f}, masterTime={:.3f}", frame->ptsTime(),
              pushMasterTime);
     }
     if (!hasPushed) {
@@ -1367,9 +1338,7 @@ void PlayPipeline::pushAudioFrames() noexcept {
             } else if (!q.empty()) {
                 LogD("pushAudioFrames: queue not empty, render unavailable, masterTime={:.3f}, "
                      "queueSize={}, readable={}",
-                     masterTime,
-                     q.size(),
-                     audioRender_->readable());
+                     masterTime, q.size(), audioRender_->readable());
             }
         });
         if (audioRender_->readable() == 0) {
@@ -1423,8 +1392,7 @@ void PlayPipeline::pushSeekFrames() noexcept {
     render->pushFrame(frame);
     clockSync_->setVideoTime(Time::TimePoint::fromSeconds(frame->ptsTime()));
     bool expected = false;
-    if (readiness_.firstFrameRendered.compare_exchange_strong(expected,
-                                                              true,
+    if (readiness_.firstFrameRendered.compare_exchange_strong(expected, true,
                                                               std::memory_order_acq_rel)) {
         if (auto session = playSession_.lock()) {
             session->markFirstFrame();

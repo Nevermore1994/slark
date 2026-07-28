@@ -73,11 +73,7 @@ TEST(Mp4BoxFuzzTest, TryParseBoxInfoVariousSizes) {
 
 TEST(Mp4BoxFuzzTest, InvalidBoxTypes) {
     std::vector<uint32_t> invalidTypes = {
-        0x00000000,
-        0xFFFFFFFF,
-        0x20202020,
-        0x0A0A0A0A,
-        0x01020304,
+        0x00000000, 0xFFFFFFFF, 0x20202020, 0x0A0A0A0A, 0x01020304,
     };
     for (auto type : invalidTypes) {
         uint8_t data[12] = {0};

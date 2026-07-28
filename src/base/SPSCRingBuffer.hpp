@@ -15,7 +15,8 @@
 namespace slark {
 
 template <typename T, size_t N>
-requires std::is_trivially_copyable_v<T> class SPSCRingBuffer {
+    requires std::is_trivially_copyable_v<T>
+class SPSCRingBuffer {
     // 牺牲一个槽位区分空/满，实际可用容量 = kCapacity - 1
     static constexpr size_t kCapacity = std::bit_ceil((N == 0) ? 2 : (N + 1));
     static constexpr size_t kMask = kCapacity - 1;

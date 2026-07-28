@@ -197,15 +197,13 @@ TEST(TaskTest, MoveAssignmentChain) {
 
 TEST(TaskTest, NestedExceptionInChain) {
     auto task = []() -> Task<int> {
-        int v = co_await[]()->Task<int> {
-            int w = co_await[]()->Task<int> {
+        int v = co_await []() -> Task<int> {
+            int w = co_await []() -> Task<int> {
                 throw std::runtime_error("deep");
                 co_return 0;
-            }
-            ();
+            }();
             co_return w;
-        }
-        ();
+        }();
         co_return v;
     }();
 

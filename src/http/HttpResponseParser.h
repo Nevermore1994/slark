@@ -62,9 +62,7 @@ class HttpResponseParser {
         }
 
         LogI("[HttpResponseParser::onEof] state={} bodyReceived={} contentLength={}",
-             stateName(state_),
-             bodyReceived_,
-             contentLength_);
+             stateName(state_), bodyReceived_, contentLength_);
 
         // 仅对未知长度的 body 以 EOF 作为结束标志
         if (state_ == State::BodyFixed && contentLength_ < 0) {
@@ -78,8 +76,7 @@ class HttpResponseParser {
         // 其他状态（如 chunked 中途断开）视为错误
         else if (state_ != State::Completed) {
             LogE("[HttpResponseParser::onEof] unexpected EOF: state={} bodyReceived={}",
-                 stateName(state_),
-                 bodyReceived_);
+                 stateName(state_), bodyReceived_);
             fail(slark::Error::ConnectionReset);
         }
     }

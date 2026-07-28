@@ -61,8 +61,7 @@ struct PlayerObserver final : public slark::IPlayerObserver {
                            slark::PlayerEvent event,
                            std::string value) override {
         if (notifyEventFunc) {
-            notifyEventFunc(stringViewToNSString(playerId),
-                            convertEvent(event),
+            notifyEventFunc(stringViewToNSString(playerId), convertEvent(event),
                             stringViewToNSString(value));
         }
     }
@@ -119,8 +118,7 @@ struct PlayerObserver final : public slark::IPlayerObserver {
               }
             });
         };
-        _observer->notifyEventFunc = [weakSelf](NSString* playerId,
-                                                SlarkPlayerEvent evnt,
+        _observer->notifyEventFunc = [weakSelf](NSString* playerId, SlarkPlayerEvent evnt,
                                                 NSString* value) {
             dispatch_async(dispatch_get_main_queue(), ^{
               __strong __typeof(weakSelf) strongSelf = weakSelf;

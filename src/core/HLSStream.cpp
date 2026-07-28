@@ -50,9 +50,7 @@ StreamResult<StreamInfo> HLSStream::open(const OpenParams& params) {
 }
 
 void HLSStream::close() noexcept {
-    LogI("[HLSStream::close] url={} pos={} state={}",
-         params_.uri,
-         position_.load(),
+    LogI("[HLSStream::close] url={} pos={} state={}", params_.uri, position_.load(),
          static_cast<int>(state_.load()));
     if (request_) {
         request_->cancel();
@@ -65,8 +63,7 @@ void HLSStream::close() noexcept {
 }
 
 void HLSStream::storeTask(Task<void>&& task) noexcept {
-    pendingTasks_.erase(std::remove_if(pendingTasks_.begin(),
-                                       pendingTasks_.end(),
+    pendingTasks_.erase(std::remove_if(pendingTasks_.begin(), pendingTasks_.end(),
                                        [](const Task<void>& t) {
                                            return t.isDone();
                                        }),
@@ -96,8 +93,7 @@ void HLSStream::start() noexcept {
 
     auto self = shared_from_this();
 
-    auto fetchPlaylistTask = [](std::shared_ptr<http::HttpRequest> req,
-                                http::RequestInfo info,
+    auto fetchPlaylistTask = [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
                                 std::shared_ptr<HLSStream> stream) -> Task<void> {
         auto response = co_await req->asyncExecute(info);
 
@@ -158,8 +154,7 @@ void HLSStream::updateRange(Range) noexcept {}
 
 void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
     LogI("[HLSStream::handlePlaylistResponse] received: status={} bodySize={}",
-         static_cast<int>(response.statusCode),
-         response.body ? response.body->size() : 0);
+         static_cast<int>(response.statusCode), response.body ? response.body->size() : 0);
 
     if (!response.body) {
         if (params_.onError) {
@@ -208,8 +203,7 @@ void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
 
         auto self = shared_from_this();
 
-        auto fetchVariantTask = [](std::shared_ptr<http::HttpRequest> req,
-                                   http::RequestInfo info,
+        auto fetchVariantTask = [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
                                    std::shared_ptr<HLSStream> stream) -> Task<void> {
             auto response = co_await req->asyncExecute(info);
 
@@ -230,9 +224,7 @@ void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
 
         LogI("[HLSStream::handlePlaylistResponse] media playlist parsed: segments={} isLive={} "
              "totalDuration={}",
-             playlist_->segments().size(),
-             info_.isLive,
-             playlist_->totalDuration());
+             playlist_->segments().size(), info_.isLive, playlist_->totalDuration());
 
         if (metadataCallback_) {
             metadataCallback_(std::static_pointer_cast<void>(playlist_));
@@ -306,10 +298,8 @@ void HLSStream::downloadSegmentWithRetry(uint32_t segIndex, int32_t retryLeft) {
     }
 
     const auto& segment = playlist_->segments()[segIndex];
-    LogI("[HLSStream::downloadSegmentWithRetry] start: segIndex={} retryLeft={} url={}",
-         segIndex,
-         retryLeft,
-         resolveUrl(segment.uri));
+    LogI("[HLSStream::downloadSegmentWithRetry] start: segIndex={} retryLeft={} url={}", segIndex,
+         retryLeft, resolveUrl(segment.uri));
     request_ = std::make_shared<http::HttpRequest>();
 
     http::RequestInfo requestInfo;
@@ -318,10 +308,8 @@ void HLSStream::downloadSegmentWithRetry(uint32_t segIndex, int32_t retryLeft) {
 
     auto self = shared_from_this();
 
-    auto downloadTask = [](std::shared_ptr<http::HttpRequest> req,
-                           http::RequestInfo info,
-                           std::shared_ptr<HLSStream> stream,
-                           uint32_t segIdx,
+    auto downloadTask = [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
+                           std::shared_ptr<HLSStream> stream, uint32_t segIdx,
                            int32_t left) -> Task<void> {
         auto gen = req->streamingExecute(info, req->cancelToken());
         bool hasError = false;
@@ -353,9 +341,8 @@ void HLSStream::downloadSegmentWithRetry(uint32_t segIndex, int32_t retryLeft) {
             } else {
                 LogE("HLSStream: segment {} download failed after all retries", segIdx);
                 if (stream->params_.onError) {
-                    stream->params_.onError(
-                        Error::NetworkError,
-                        stream->lastErrorOriginCode_.load(std::memory_order_acquire));
+                    stream->params_.onError(Error::NetworkError, stream->lastErrorOriginCode_.load(
+                                                                     std::memory_order_acquire));
                 }
                 stream->state_ = StreamState::Error;
             }
@@ -392,9 +379,7 @@ void HLSStream::handleSegmentChunk(http::StreamChunk&& chunk, uint32_t segmentIn
         if (position_.load() / logProgressBytes() !=
             (position_.load() - chunkSize) / logProgressBytes()) {
             LogI("[HLSStream::handleSegmentChunk] progress: segIndex={} pos={} chunk={}",
-                 segmentIndex,
-                 position_.load(),
-                 chunkSize);
+                 segmentIndex, position_.load(), chunkSize);
         }
     }
 }
@@ -417,8 +402,7 @@ void HLSStream::reportHttpError(const http::HttpResponse& response) {
         default:
             break;
     }
-    LogE("[HLSStream::reportHttpError] err={} originCode={}",
-         static_cast<int>(err),
+    LogE("[HLSStream::reportHttpError] err={} originCode={}", static_cast<int>(err),
          response.error.originErrorCode);
     params_.onError(err, response.error.originErrorCode);
     state_ = StreamState::Error;
@@ -443,8 +427,7 @@ void HLSStream::refreshPlaylist() {
 
     auto self = shared_from_this();
 
-    auto fetchTask = [](std::shared_ptr<http::HttpRequest> req,
-                        http::RequestInfo info,
+    auto fetchTask = [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
                         std::shared_ptr<HLSStream> stream) -> Task<void> {
         auto response = co_await req->asyncExecute(info);
 

@@ -84,14 +84,14 @@ struct Range {
         if (!other.isValid()) {
             return std::strong_ordering::greater;
         }
-        if (auto cmp = start() <=>other.start(); cmp != 0) {
+        if (auto cmp = start() <=> other.start(); cmp != 0) {
             return cmp;
         }
-        return end() <=>other.end();
+        return end() <=> other.end();
     }
 
     bool operator==(const Range& other) const noexcept {
-        return (*this <=>other) == 0;
+        return (*this <=> other) == 0;
     }
 
     [[nodiscard]] std::string toString() const noexcept {

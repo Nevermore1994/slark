@@ -156,10 +156,8 @@ class Mp4Demuxer : public IDemuxer {
     [[nodiscard]] CTime computeTotalDuration() const noexcept override;
 
     inline static const DemuxerInfo& info() noexcept {
-        static DemuxerInfo info = {DemuxerType::MP4,
-                                   "ftyp",
-                                   Reflection::enroll<Mp4Demuxer>("Mp4Demuxer"),
-                                   4};
+        static DemuxerInfo info = {DemuxerType::MP4, "ftyp",
+                                   Reflection::enroll<Mp4Demuxer>("Mp4Demuxer"), 4};
         return info;
     }
 

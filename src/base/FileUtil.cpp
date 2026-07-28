@@ -88,10 +88,8 @@ bool removeDir(std::string_view path) noexcept {
 
 bool copyFile(std::string_view from, std::string_view to) noexcept {
     std::error_code error;
-    std::filesystem::copy(std::filesystem::path(from),
-                          std::filesystem::path(to),
-                          std::filesystem::copy_options::recursive,
-                          error);
+    std::filesystem::copy(std::filesystem::path(from), std::filesystem::path(to),
+                          std::filesystem::copy_options::recursive, error);
     return !error;
 }
 

@@ -31,9 +31,9 @@ class MoveOnlyFunction<R(Args...)> {
     MoveOnlyFunction(std::nullptr_t) noexcept {}
 
     template <typename F>
-    requires(!std::is_same_v<std::decay_t<F>, MoveOnlyFunction> &&
-             std::is_invocable_r_v<R, F, Args...>) MoveOnlyFunction(F&& f)
-        : impl_(std::make_unique<Model<std::decay_t<F>>>(std::forward<F>(f))) {}
+        requires(!std::is_same_v<std::decay_t<F>, MoveOnlyFunction> &&
+                 std::is_invocable_r_v<R, F, Args...>)
+    MoveOnlyFunction(F&& f) : impl_(std::make_unique<Model<std::decay_t<F>>>(std::forward<F>(f))) {}
 
     MoveOnlyFunction(MoveOnlyFunction&&) noexcept = default;
     MoveOnlyFunction& operator=(MoveOnlyFunction&&) noexcept = default;

@@ -300,9 +300,7 @@ void EventLoop::poll() noexcept {
             continue;
         }
         uint32_t m = events[i].events;
-        dispatchEvent(fd,
-                      (m & EPOLLIN) != 0,
-                      (m & EPOLLOUT) != 0,
+        dispatchEvent(fd, (m & EPOLLIN) != 0, (m & EPOLLOUT) != 0,
                       (m & (EPOLLERR | EPOLLHUP)) != 0);
     }
 #elif defined(__APPLE__)
@@ -314,9 +312,7 @@ void EventLoop::poll() noexcept {
         if (fd == 0 && events[i].filter == EVFILT_USER) {
             continue;
         }
-        dispatchEvent(fd,
-                      events[i].filter == EVFILT_READ,
-                      events[i].filter == EVFILT_WRITE,
+        dispatchEvent(fd, events[i].filter == EVFILT_READ, events[i].filter == EVFILT_WRITE,
                       (events[i].flags & EV_ERROR) != 0);
     }
 #endif

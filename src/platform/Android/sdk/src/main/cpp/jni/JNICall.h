@@ -240,9 +240,8 @@ class JNICall {
         if (!m) {
             return {env, nullptr};
         }
-        return {
-            env,
-            env->NewObject(c.get(), m.get(), argValue(toArg(env, std::forward<Args>(args)))...)};
+        return {env, env->NewObject(c.get(), m.get(),
+                                    argValue(toArg(env, std::forward<Args>(args)))...)};
     }
 
     template <typename R>
@@ -256,8 +255,7 @@ class JNICall {
                 return ObjectReference(env, nullptr);
             }
             const auto fieldSig = sig.empty() ? sigOf<R>() : sig;
-            auto f = env->GetStaticFieldID(c.get(),
-                                           std::string(name).c_str(),
+            auto f = env->GetStaticFieldID(c.get(), std::string(name).c_str(),
                                            std::string(fieldSig).c_str());
             if (!f || env->ExceptionCheck()) {
                 return ObjectReference(env, nullptr);
@@ -267,8 +265,7 @@ class JNICall {
             if (!c) {
                 return std::optional<R>(std::nullopt);
             }
-            auto f = env->GetStaticFieldID(c.get(),
-                                           std::string(name).c_str(),
+            auto f = env->GetStaticFieldID(c.get(), std::string(name).c_str(),
                                            std::string(sigOf<R>()).c_str());
             if (!f || env->ExceptionCheck()) {
                 return std::optional<R>(std::nullopt);
@@ -299,8 +296,7 @@ class JNICall {
             if (!c) {
                 return std::optional<R>(std::nullopt);
             }
-            auto f = env->GetFieldID(c.get(),
-                                     std::string(name).c_str(),
+            auto f = env->GetFieldID(c.get(), std::string(name).c_str(),
                                      std::string(sigOf<R>()).c_str());
             if (!f || env->ExceptionCheck()) {
                 return std::optional<R>(std::nullopt);

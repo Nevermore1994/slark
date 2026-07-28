@@ -188,9 +188,7 @@ bool TSDemuxer::parseTSPes(DataView data, uint8_t payloadIndicator, TSPESFrame& 
 
     auto isAudio = (&pes == &audioESFrame_);
     uint8_t streamId = data[3];
-    LogI("{} stream id:{}, pesPacketLength:{}",
-         isAudio ? "audio" : "video",
-         streamId,
+    LogI("{} stream id:{}, pesPacketLength:{}", isAudio ? "audio" : "video", streamId,
          (data[4] << 8) | data[5]);
 
     static const std::array<uint8_t, 6> kSpecialStreamArray = {0xbc, 0xbe, 0xbf, 0xf0, 0xf1, 0xff};
@@ -239,10 +237,8 @@ void TSDemuxer::writeVideoData(AVFramePtr& frame, DataView view) noexcept {
     headerBytes = {0x00, 0x00, 0x00, 0x01};
 #elif SLARK_IOS
     auto len = static_cast<uint32_t>(view.length());
-    headerBytes = {static_cast<uint8_t>(len >> 24),
-                   static_cast<uint8_t>(len >> 16),
-                   static_cast<uint8_t>(len >> 8),
-                   static_cast<uint8_t>(len)};
+    headerBytes = {static_cast<uint8_t>(len >> 24), static_cast<uint8_t>(len >> 16),
+                   static_cast<uint8_t>(len >> 8), static_cast<uint8_t>(len)};
 #endif
     frame->data->append(ConstByteSpan(headerBytes.data(), headerBytes.size()));
     frame->data->append(view);
@@ -554,9 +550,7 @@ DemuxerResult HLSDemuxer::parseData(DataPacket& packet) noexcept {
     }
 
     if (!buffer_->append(static_cast<uint64_t>(packet.offset), std::move(packet.data))) {
-        LogE("discard data, ts index:{}, data offset:{}, parse offset:{}",
-             tsIndex,
-             packet.offset,
+        LogE("discard data, ts index:{}, data offset:{}, parse offset:{}", tsIndex, packet.offset,
              buffer_->offset());
         result.resultCode = DemuxerResultCode::InvalidData;
         return result;

@@ -66,12 +66,8 @@ void PerfMonitor::configure(const PerfConfig& config) {
 
     LogI("[Perf] configured: enabled={} frameTrace={} sessionTrace={} resourceSampling={} "
          "slowThreshold={}ms resourceInterval={}ms",
-         config.enabled,
-         config.enableFrameTrace,
-         config.enableSessionTrace,
-         config.enableResourceSampling,
-         config.slowThresholdMs,
-         config.resourceIntervalMs);
+         config.enabled, config.enableFrameTrace, config.enableSessionTrace,
+         config.enableResourceSampling, config.slowThresholdMs, config.resourceIntervalMs);
 }
 
 void PerfMonitor::setDeviceEnv(const DeviceEnv& env) {

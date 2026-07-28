@@ -125,8 +125,7 @@ void LogOutput::sortAndWriteLoop() {
         // 合并所有批次并按序列号排序
         merged.clear();
         for (auto& batch : batches) {
-            merged.insert(merged.end(),
-                          std::make_move_iterator(batch.begin()),
+            merged.insert(merged.end(), std::make_move_iterator(batch.begin()),
                           std::make_move_iterator(batch.end()));
         }
         std::ranges::sort(merged, {}, &LogEntry::seq);

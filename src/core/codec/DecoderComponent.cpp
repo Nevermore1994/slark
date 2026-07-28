@@ -144,8 +144,7 @@ void DecoderComponent::processPendingOutputs(Thread& thread) noexcept {
             decoder_->clearPendingOutput();
             break;
         } else {
-            LogW("processPendingOutputs: renderOutput failed {} after {} frames",
-                 toString(res),
+            LogW("processPendingOutputs: renderOutput failed {} after {} frames", toString(res),
                  count);
             decoder_->clearPendingOutput();
             break;
@@ -183,8 +182,7 @@ bool DecoderComponent::decodeFrame(AVFrameRefPtr& frame, Thread& thread) noexcep
         if (res == Error::CodecNotProcessed || res == Error::CodecAgain) {
             retryCount++;
             if (retryCount > kMaxDecodeRetry) {
-                LogE("decode retry exhausted after {} retries, pts:{}",
-                     kMaxDecodeRetry,
+                LogE("decode retry exhausted after {} retries, pts:{}", kMaxDecodeRetry,
                      frame->pts);
                 if (config_.onError) {
                     config_.onError(Error::CodecResourceExhausted);

@@ -144,11 +144,10 @@ TEST(TaskTest, SymmetricTransfer_SimpleChild) {
 TEST(TaskTest, SymmetricTransfer_VoidChild) {
     bool childRan = false;
     auto task = [&childRan]() -> Task<void> {
-        co_await[&childRan]()->Task<void> {
+        co_await [&childRan]() -> Task<void> {
             childRan = true;
             co_return;
-        }
-        ();
+        }();
         co_return;
     }();
 
@@ -171,11 +170,10 @@ TEST(TaskTest, SymmetricTransfer_DeepChain) {
 
 TEST(TaskTest, SymmetricTransfer_ExceptionPropagates) {
     auto task = []() -> Task<int> {
-        int v = co_await[]()->Task<int> {
+        int v = co_await []() -> Task<int> {
             throw std::runtime_error("child error");
             co_return 0;
-        }
-        ();
+        }();
         co_return v;
     }();
 

@@ -103,8 +103,8 @@ TEST(MediaUtilTest, GetAudioProfileInvalidReturnsAACLC) {
 
 TEST(MediaUtilTest, FindNaluUnitAnnexB4ByteStartCode) {
     // 00 00 00 01 [nalu data] 00 00 00 01 [next nalu]
-    std::vector<uint8_t> data =
-        {0x00, 0x00, 0x00, 0x01, 0x65, 0xAA, 0xBB, 0x00, 0x00, 0x00, 0x01, 0x41, 0xCC};
+    std::vector<uint8_t> data = {0x00, 0x00, 0x00, 0x01, 0x65, 0xAA, 0xBB,
+                                 0x00, 0x00, 0x00, 0x01, 0x41, 0xCC};
     DataView view(reinterpret_cast<const Byte*>(data.data()), data.size());
     Range range;
     EXPECT_TRUE(findNaluUnit(view, range));

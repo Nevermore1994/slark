@@ -24,8 +24,8 @@ enum class LogType {
     Record,
 };
 
-constexpr const std::string_view kLogTags[] =
-    {" [print] ", " [debug] ", " [info] ", " [warning] ", " [error] ", " [assert] ", " [record] "};
+constexpr const std::string_view kLogTags[] = {
+    " [print] ", " [debug] ", " [info] ", " [warning] ", " [error] ", " [assert] ", " [record] "};
 
 void printLog(LogType type, const std::string& log);
 
@@ -53,16 +53,11 @@ void outputLog(LogType level, std::string_view format, Args&&... args) {
 #pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 #endif
 
-#define logger(level, format, ...)                                            \
-    do {                                                                      \
-        outputLog(level,                                                      \
-                  "{}{}[{}][Line:{}][Function:{}]" format "\n",               \
-                  Time::localTimeStr(),                                       \
-                  kLogTags[static_cast<size_t>(level)],                       \
-                  __FILE_NAME__,                                              \
-                  __LINE__,                                                   \
-                  __FUNCTION__,                                               \
-                  ##__VA_ARGS__); /* NOLINT(bugprone-lambda-function-name) */ \
+#define logger(level, format, ...)                                                             \
+    do {                                                                                       \
+        outputLog(level, "{}{}[{}][Line:{}][Function:{}]" format "\n", Time::localTimeStr(),   \
+                  kLogTags[static_cast<size_t>(level)], __FILE_NAME__, __LINE__, __FUNCTION__, \
+                  ##__VA_ARGS__); /* NOLINT(bugprone-lambda-function-name) */                  \
     } while (0)
 
 #define LogD(format, ...) logger(LogType::Debug, format, ##__VA_ARGS__)

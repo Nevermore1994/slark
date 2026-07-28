@@ -51,19 +51,9 @@ AudioProfile getAudioProfile(uint8_t profile) noexcept {
 }
 
 int32_t getAACSamplingRate(int32_t index) noexcept {
-    static const std::unordered_map<int32_t, int32_t> samplingRateTable = {{0, 96000},
-                                                                           {1, 88200},
-                                                                           {2, 64000},
-                                                                           {3, 48000},
-                                                                           {4, 44100},
-                                                                           {5, 32000},
-                                                                           {6, 24000},
-                                                                           {7, 22050},
-                                                                           {8, 16000},
-                                                                           {9, 12000},
-                                                                           {10, 11025},
-                                                                           {11, 8000},
-                                                                           {12, 7350}};
+    static const std::unordered_map<int32_t, int32_t> samplingRateTable = {
+        {0, 96000}, {1, 88200}, {2, 64000}, {3, 48000},  {4, 44100}, {5, 32000}, {6, 24000},
+        {7, 22050}, {8, 16000}, {9, 12000}, {10, 11025}, {11, 8000}, {12, 7350}};
 
     auto it = samplingRateTable.find(index);
     if (it != samplingRateTable.end()) {
@@ -271,9 +261,7 @@ void parseH264Sps(DataView bitstream, const std::shared_ptr<VideoInfo>& videoInf
 
         LogI("deltaPicOrderAlwaysZeroFlag:{}, offsetForNonRefPic:{}, "
              "offsetForTopToBottomField:{}, numRefFramesInPicOrderCntCycle:{}",
-             deltaPicOrderAlwaysZeroFlag,
-             offsetForNonRefPic,
-             offsetForTopToBottomField,
+             deltaPicOrderAlwaysZeroFlag, offsetForNonRefPic, offsetForTopToBottomField,
              numRefFramesInPicOrderCntCycle);
     }
 
@@ -283,10 +271,8 @@ void parseH264Sps(DataView bitstream, const std::shared_ptr<VideoInfo>& videoInf
     uint32_t picWidthInMbsMinus1 = Golomb::readUe(bitstream, offset);
     uint32_t picHeightInMapUnitsMinus1 = Golomb::readUe(bitstream, offset);
 
-    LogI("numRefFrames:{}, picWidthInMbsMinus1:{}, picHeightInMapUnitsMinus1:{}",
-         numRefFrames,
-         picWidthInMbsMinus1,
-         picHeightInMapUnitsMinus1);
+    LogI("numRefFrames:{}, picWidthInMbsMinus1:{}, picHeightInMapUnitsMinus1:{}", numRefFrames,
+         picWidthInMbsMinus1, picHeightInMapUnitsMinus1);
 
     uint32_t width = (picWidthInMbsMinus1 + 1) * 16;
     uint32_t height = (picHeightInMapUnitsMinus1 + 1) * 16;

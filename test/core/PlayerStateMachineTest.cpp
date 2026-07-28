@@ -133,9 +133,7 @@ TEST(PlayerStateMachineTest, EventStopMapsToStop) {
 }
 
 TEST(PlayerStateMachineTest, ErrorEventsMapsToError) {
-    for (auto ev : {EventType::ReadError,
-                    EventType::DecodeError,
-                    EventType::DemuxError,
+    for (auto ev : {EventType::ReadError, EventType::DecodeError, EventType::DemuxError,
                     EventType::RenderError}) {
         auto result = PlayerStateMachine::getStateFromEvent(ev);
         ASSERT_TRUE(result.has_value()) << "event=" << static_cast<int32_t>(ev);
@@ -151,11 +149,8 @@ TEST(PlayerStateMachineTest, UnknownEventMapsToUnknown) {
 
 TEST(PlayerStateMachineTest, NonStatefulEventsReturnUnexpected) {
     // Seek、UpdateSetting 等事件不直接映射到状态
-    for (auto ev : {EventType::Seek,
-                    EventType::UpdateSetting,
-                    EventType::UpdateSettingVolume,
-                    EventType::UpdateSettingMute,
-                    EventType::UpdateSettingEnd}) {
+    for (auto ev : {EventType::Seek, EventType::UpdateSetting, EventType::UpdateSettingVolume,
+                    EventType::UpdateSettingMute, EventType::UpdateSettingEnd}) {
         auto result = PlayerStateMachine::getStateFromEvent(ev);
         EXPECT_FALSE(result.has_value()) << "event=" << static_cast<int32_t>(ev);
     }
@@ -164,10 +159,8 @@ TEST(PlayerStateMachineTest, NonStatefulEventsReturnUnexpected) {
 // MARK: - getStateFromPipelineEvent
 
 TEST(PlayerStateMachineTest, PipelineDecoderFailedMapsToError) {
-    for (auto ev : {PipelineEvent::AudioDecoderFailed,
-                    PipelineEvent::VideoDecoderFailed,
-                    PipelineEvent::ReadError,
-                    PipelineEvent::DecodeError}) {
+    for (auto ev : {PipelineEvent::AudioDecoderFailed, PipelineEvent::VideoDecoderFailed,
+                    PipelineEvent::ReadError, PipelineEvent::DecodeError}) {
         auto result = PlayerStateMachine::getStateFromPipelineEvent(ev);
         ASSERT_TRUE(result.has_value()) << "event=" << static_cast<int32_t>(ev);
         EXPECT_EQ(*result, PlayerState::Error) << "event=" << static_cast<int32_t>(ev);
@@ -187,10 +180,8 @@ TEST(PlayerStateMachineTest, PipelineRenderEndMapsToCompleted) {
 }
 
 TEST(PlayerStateMachineTest, PipelineNonStatefulEventsReturnUnexpected) {
-    for (auto ev : {PipelineEvent::DemuxHeaderParsed,
-                    PipelineEvent::PipelineReady,
-                    PipelineEvent::FirstFrameRendered,
-                    PipelineEvent::BufferingEnd,
+    for (auto ev : {PipelineEvent::DemuxHeaderParsed, PipelineEvent::PipelineReady,
+                    PipelineEvent::FirstFrameRendered, PipelineEvent::BufferingEnd,
                     PipelineEvent::SeekCompleted}) {
         auto result = PlayerStateMachine::getStateFromPipelineEvent(ev);
         EXPECT_FALSE(result.has_value()) << "event=" << static_cast<int32_t>(ev);
@@ -203,12 +194,9 @@ TEST(PlayerStateMachineTest, NormalPlaybackPath) {
     // NotInited → Initializing → Prepared → Buffering → Playing → Completed → Stop
     using S = PlayerState;
     const std::vector<std::pair<S, S>> path = {
-        {S::NotInited, S::Initializing},
-        {S::Initializing, S::Prepared},
-        {S::Prepared, S::Buffering},
-        {S::Buffering, S::Playing},
-        {S::Playing, S::Completed},
-        {S::Completed, S::Stop},
+        {S::NotInited, S::Initializing}, {S::Initializing, S::Prepared},
+        {S::Prepared, S::Buffering},     {S::Buffering, S::Playing},
+        {S::Playing, S::Completed},      {S::Completed, S::Stop},
     };
     for (const auto& [from, to] : path) {
         EXPECT_TRUE(PlayerStateMachine::isValidTransition(from, to))

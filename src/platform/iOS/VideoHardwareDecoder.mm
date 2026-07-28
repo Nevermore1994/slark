@@ -145,9 +145,9 @@ Error VideoHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
         return Error::Success;
     }
     auto& data = frame->data;
-    auto sampleBuffer = createSampleBuffer(videoFormatDescription_,
-                                           static_cast<void*>(data->data()),
-                                           static_cast<size_t>(data->size()));
+    auto sampleBuffer =
+        createSampleBuffer(videoFormatDescription_, static_cast<void*>(data->data()),
+                           static_cast<size_t>(data->size()));
     if (!sampleBuffer) {
         LogE("create sample buffer failed");
         return Error::CodecInputError;
@@ -160,11 +160,9 @@ Error VideoHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
     if (decodeInfo == nullptr) {
         return Error::CodecError;
     }
-    auto status = VTDecompressionSessionDecodeFrame(decodeSession_,
-                                                    sampleBuffer,
+    auto status = VTDecompressionSessionDecodeFrame(decodeSession_, sampleBuffer,
                                                     kVTDecodeFrame_EnableAsynchronousDecompression,
-                                                    reinterpret_cast<void*>(decodeInfo),
-                                                    nullptr);
+                                                    reinterpret_cast<void*>(decodeInfo), nullptr);
     // Apple 文档：decode 返回错误时 callback 不保证被调用，需主动释放 decodeInfo
     if (status != kVTInvalidSessionErr && status != kVTVideoDecoderMalfunctionErr) {
         if (status != noErr) {
@@ -183,11 +181,9 @@ Error VideoHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
     if (!retryInfo) {
         return Error::CodecError;
     }
-    status = VTDecompressionSessionDecodeFrame(decodeSession_,
-                                               sampleBuffer,
+    status = VTDecompressionSessionDecodeFrame(decodeSession_, sampleBuffer,
                                                kVTDecodeFrame_EnableAsynchronousDecompression,
-                                               reinterpret_cast<void*>(retryInfo),
-                                               nullptr);
+                                               reinterpret_cast<void*>(retryInfo), nullptr);
     if (status != noErr) {
         delete retryInfo;
     }
@@ -216,30 +212,21 @@ bool VideoHardwareDecoder::createDecodeSession() noexcept {
         const size_t paramSizes[2] = {static_cast<size_t>(config->sps->length()),
                                       static_cast<size_t>(config->pps->length())};
         status = CMVideoFormatDescriptionCreateFromH264ParameterSets(
-            kCFAllocatorDefault,
-            2,
-            paramPtrs,
-            paramSizes,
-            static_cast<int32_t>(config->naluHeaderLength),
-            &videoFormatDescription_);
+            kCFAllocatorDefault, 2, paramPtrs, paramSizes,
+            static_cast<int32_t>(config->naluHeaderLength), &videoFormatDescription_);
     } else if (config->mediaInfo == MEDIA_MIMETYPE_VIDEO_HEVC) {
         if (!VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC)) {
             LogE("HEVC hardware decode not supported");
             return false;
         }
-        const uint8_t* const paramPtrs[3] = {config->vps->data(),
-                                             config->sps->data(),
+        const uint8_t* const paramPtrs[3] = {config->vps->data(), config->sps->data(),
                                              config->pps->data()};
         const size_t paramSizes[3] = {static_cast<size_t>(config->vps->length()),
                                       static_cast<size_t>(config->sps->length()),
                                       static_cast<size_t>(config->pps->length())};
-        status = CMVideoFormatDescriptionCreateFromHEVCParameterSets(kCFAllocatorDefault,
-                                                                     3,
-                                                                     paramPtrs,
-                                                                     paramSizes,
-                                                                     config->naluHeaderLength,
-                                                                     nullptr,
-                                                                     &videoFormatDescription_);
+        status = CMVideoFormatDescriptionCreateFromHEVCParameterSets(
+            kCFAllocatorDefault, 3, paramPtrs, paramSizes, config->naluHeaderLength, nullptr,
+            &videoFormatDescription_);
     } else {
         LogE("unsupported media type:{}", config->mediaInfo);
         return false;
@@ -262,12 +249,8 @@ bool VideoHardwareDecoder::createDecodeSession() noexcept {
     });
 
     VTDecompressionOutputCallbackRecord callbackRecord{decompressionOutputCallback, this};
-    status = VTDecompressionSessionCreate(kCFAllocatorDefault,
-                                          videoFormatDescription_,
-                                          nullptr,
-                                          attrs,
-                                          &callbackRecord,
-                                          &decodeSession_);
+    status = VTDecompressionSessionCreate(kCFAllocatorDefault, videoFormatDescription_, nullptr,
+                                          attrs, &callbackRecord, &decodeSession_);
     if (status != noErr) {
         LogE("create decompression session failed:{}", status);
         return false;

@@ -29,10 +29,7 @@ std::string getAppPath(const std::string& methodName) noexcept {
     // 调用 Context.methodName() -> java.io.File
     static constexpr std::string_view kContextClass = "android/content/Context";
     static constexpr std::string_view kFileClass = "java/io/File";
-    auto fileObj = JNI::JNICall::call<jobject>(env,
-                                               context,
-                                               kContextClass,
-                                               methodName,
+    auto fileObj = JNI::JNICall::call<jobject>(env, context, kContextClass, methodName,
                                                JNI::ReturnSig(JNI::makeObject(kFileClass)));
     if (!fileObj) {
         return {};

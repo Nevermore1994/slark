@@ -150,17 +150,16 @@ void Player::Impl::init() noexcept {
     });
 
     ownerThread_ = Thread::create("playerThread");
-    fastTickTaskId_ =
-        ownerThread_->postRepeatTask(std::chrono::milliseconds(setting.playerThreadTickMs),
-                                     [this]() {
-                                         process();
-                                         if (isStopped_) {
-                                             return;
-                                         }
-                                         if (auto pipeline = pipeline_) {
-                                             pipeline->onFastTick();
-                                         }
-                                     });
+    fastTickTaskId_ = ownerThread_->postRepeatTask(
+        std::chrono::milliseconds(setting.playerThreadTickMs), [this]() {
+            process();
+            if (isStopped_) {
+                return;
+            }
+            if (auto pipeline = pipeline_) {
+                pipeline->onFastTick();
+            }
+        });
     playedTimeTaskId_ =
         ownerThread_->postRepeatTask(std::chrono::milliseconds(setting.playedTimeTickMs), [this]() {
             if (isStopped_) {
@@ -234,9 +233,7 @@ bool Player::Impl::setupDataProvider() noexcept {
         LogI("data source complete.");
     };
 
-    if (!mediaSourceManager_.open(path,
-                                  std::move(onData),
-                                  std::move(onError),
+    if (!mediaSourceManager_.open(path, std::move(onData), std::move(onError),
                                   std::move(onComplete))) {
         LogE("open media source failed, path:{}", path);
         setState(PlayerState::Error);
@@ -400,10 +397,8 @@ void Player::Impl::preparePlayerInfo() noexcept {
     info_.hasAudio = demuxerComponent_->hasAudio();
     info_.hasVideo = demuxerComponent_->hasVideo();
     info_.duration = demuxerComponent_->totalDuration().second();
-    LogI("player info prepared, duration:{:.3f}s, hasAudio:{}, hasVideo:{}",
-         info_.duration,
-         info_.hasAudio,
-         info_.hasVideo);
+    LogI("player info prepared, duration:{:.3f}s, hasAudio:{}, hasVideo:{}", info_.duration,
+         info_.hasAudio, info_.hasVideo);
 
     setState(PlayerState::Prepared);
 
@@ -556,8 +551,7 @@ void Player::Impl::setState(PlayerState state) noexcept {
             return;
         }
         if (!PlayerStateMachine::isValidTransition(nowState, state)) {
-            LogW("invalid state transition: {} -> {}",
-                 static_cast<uint32_t>(nowState),
+            LogW("invalid state transition: {} -> {}", static_cast<uint32_t>(nowState),
                  static_cast<uint32_t>(state));
             return;
         }
@@ -749,8 +743,7 @@ void Player::Impl::handlePipelineEvent(PipelineEvent event,
                 break;
             }
             const auto err = error.has_value() ? error->error : Error::PipelineDecodeError;
-            LogE("pipeline error, event:{}, error:{}",
-                 static_cast<uint32_t>(event),
+            LogE("pipeline error, event:{}, error:{}", static_cast<uint32_t>(event),
                  static_cast<uint32_t>(err));
             notifyPlayerEvent(PlayerEvent::OnError, std::to_string(static_cast<uint32_t>(err)));
             setState(PlayerState::Error);
@@ -798,12 +791,8 @@ void Player::Impl::notifyPlayerState(PlayerState state) noexcept {
 void Player::Impl::notifyPlayedTime(bool isEndTime) noexcept {
     double audioTime = pipeline_ ? pipeline_->audioTime().second() : 0.0;
     double videoTime = pipeline_ ? pipeline_->videoTime().second() : 0.0;
-    notifyCenter_.notifyPlayedTime(info_.duration,
-                                   audioTime,
-                                   videoTime,
-                                   info_.hasAudio,
-                                   info_.hasVideo,
-                                   isEndTime);
+    notifyCenter_.notifyPlayedTime(info_.duration, audioTime, videoTime, info_.hasAudio,
+                                   info_.hasVideo, isEndTime);
 }
 
 void Player::Impl::notifyCacheTime() noexcept {

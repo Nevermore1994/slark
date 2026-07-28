@@ -12,7 +12,8 @@
 namespace slark {
 
 template <typename T>
-requires(std::movable<T> or std::copyable<T>) class MPSCQueue {
+    requires(std::movable<T> or std::copyable<T>)
+class MPSCQueue {
  private:
     struct Node {
         std::atomic<Node*> next{nullptr};
@@ -22,12 +23,14 @@ requires(std::movable<T> or std::copyable<T>) class MPSCQueue {
         Node() : hasValue(false) {}
 
         template <typename U>
-        requires std::copyable<U>&& std::convertible_to<U, T> Node(const U& val) : hasValue(true) {
+            requires std::copyable<U> && std::convertible_to<U, T>
+        Node(const U& val) : hasValue(true) {
             new (storage) T(val);
         }
 
         template <typename U>
-        requires std::movable<U>&& std::convertible_to<U, T> Node(U&& val) : hasValue(true) {
+            requires std::movable<U> && std::convertible_to<U, T>
+        Node(U&& val) : hasValue(true) {
             new (storage) T(std::move(val));
         }
 
@@ -69,7 +72,9 @@ requires(std::movable<T> or std::copyable<T>) class MPSCQueue {
     }
 
     template <typename U>
-    void push(const U& value) requires(std::copyable<U>&& std::convertible_to<U, T>) {
+    void push(const U& value)
+        requires(std::copyable<U> && std::convertible_to<U, T>)
+    {
         Node* node = new Node(value);
         Node* prev = tail_.exchange(node, std::memory_order_acq_rel);
         prev->next.store(node, std::memory_order_release);
@@ -78,7 +83,8 @@ requires(std::movable<T> or std::copyable<T>) class MPSCQueue {
 
     template <typename U>
     void push(U&& value)
-        requires(std::convertible_to<U, T> || std::is_same_v<std::remove_cvref<U>, T>) {
+        requires(std::convertible_to<U, T> || std::is_same_v<std::remove_cvref<U>, T>)
+    {
         Node* node = new Node(std::move(value));
         Node* prev = tail_.exchange(node, std::memory_order_acq_rel);
         prev->next.store(node, std::memory_order_release);

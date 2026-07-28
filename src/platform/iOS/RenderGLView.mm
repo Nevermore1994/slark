@@ -115,48 +115,16 @@ enum { ATTRIB_VERTEX, ATTRIB_TEXCOORD, NUM_ATTRIBUTES };
 
 // Color conversion matrices
 static const GLfloat kColorConversion601VideoRange[] = {
-    1.164f,
-    1.164f,
-    1.164f,
-    0.0f,
-    -0.392f,
-    2.017f,
-    1.596f,
-    -0.813f,
-    0.0f,
+    1.164f, 1.164f, 1.164f, 0.0f, -0.392f, 2.017f, 1.596f, -0.813f, 0.0f,
 };
 static const GLfloat kColorConversion601FullRange[] = {
-    1.0f,
-    1.0f,
-    1.0f,
-    0.0f,
-    -0.344136f,
-    1.772f,
-    1.402f,
-    -0.714136f,
-    0.0f,
+    1.0f, 1.0f, 1.0f, 0.0f, -0.344136f, 1.772f, 1.402f, -0.714136f, 0.0f,
 };
 static const GLfloat kColorConversion709VideoRange[] = {
-    1.164f,
-    1.164f,
-    1.164f,
-    0.0f,
-    -0.213f,
-    2.112f,
-    1.793f,
-    -0.533f,
-    0.0f,
+    1.164f, 1.164f, 1.164f, 0.0f, -0.213f, 2.112f, 1.793f, -0.533f, 0.0f,
 };
 static const GLfloat kColorConversion709FullRange[] = {
-    1.0f,
-    1.0f,
-    1.0f,
-    0.0f,
-    -0.187324f,
-    1.8556f,
-    1.5748f,
-    -0.468124f,
-    0.0f,
+    1.0f, 1.0f, 1.0f, 0.0f, -0.187324f, 1.8556f, 1.5748f, -0.468124f, 0.0f,
 };
 
 @interface RenderGLView () {
@@ -344,9 +312,8 @@ static const GLfloat kColorConversion709FullRange[] = {
     _displayLink = [CADisplayLink displayLinkWithTarget:self
                                                selector:@selector(displayLinkCallback)];
     if (@available(iOS 15.0, *)) {
-        _displayLink.preferredFrameRateRange = CAFrameRateRangeMake(MIN(_renderInterval, 24),
-                                                                    MAX(_renderInterval, 60),
-                                                                    _renderInterval);
+        _displayLink.preferredFrameRateRange = CAFrameRateRangeMake(
+            MIN(_renderInterval, 24), MAX(_renderInterval, 60), _renderInterval);
     } else {
         _displayLink.preferredFramesPerSecond = _renderInterval;
     }
@@ -375,9 +342,8 @@ static const GLfloat kColorConversion709FullRange[] = {
     if (_renderInterval != renderInterval) {
         _renderInterval = renderInterval;
         if (@available(iOS 15.0, *)) {
-            _displayLink.preferredFrameRateRange = CAFrameRateRangeMake(MIN(renderInterval, 24),
-                                                                        MAX(renderInterval, 60),
-                                                                        renderInterval);
+            _displayLink.preferredFrameRateRange = CAFrameRateRangeMake(
+                MIN(renderInterval, 24), MAX(renderInterval, 60), renderInterval);
         } else {
             _displayLink.preferredFramesPerSecond = renderInterval;
         }
@@ -483,11 +449,7 @@ static const GLfloat kColorConversion709FullRange[] = {
     glGenBuffers(1, &_vertexCoordinateBuffer);
     glBindBuffer(GL_ARRAY_BUFFER, _vertexCoordinateBuffer);
     glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 8, NULL, GL_DYNAMIC_DRAW);
-    glVertexAttribPointer(_attributes[ATTRIB_VERTEX],
-                          2,
-                          GL_FLOAT,
-                          GL_FALSE,
-                          0,
+    glVertexAttribPointer(_attributes[ATTRIB_VERTEX], 2, GL_FLOAT, GL_FALSE, 0,
                           static_cast<void*>(nullptr));
     glEnableVertexAttribArray(_attributes[ATTRIB_VERTEX]);
 
@@ -495,11 +457,7 @@ static const GLfloat kColorConversion709FullRange[] = {
     glGenBuffers(1, &_textureCoordinateBuffer);
     glBindBuffer(GL_ARRAY_BUFFER, _textureCoordinateBuffer);
     glBufferData(GL_ARRAY_BUFFER, sizeof(texCoords), texCoords, GL_STATIC_DRAW);
-    glVertexAttribPointer(_attributes[ATTRIB_TEXCOORD],
-                          2,
-                          GL_FLOAT,
-                          GL_FALSE,
-                          0,
+    glVertexAttribPointer(_attributes[ATTRIB_TEXCOORD], 2, GL_FLOAT, GL_FALSE, 0,
                           static_cast<void*>(nullptr));
     glEnableVertexAttribArray(_attributes[ATTRIB_TEXCOORD]);
 
@@ -518,9 +476,7 @@ static const GLfloat kColorConversion709FullRange[] = {
 
     _program->attach();
 
-    glUniformMatrix3fv(_uniforms[UNIFORM_COLOR_CONVERSION_MATRIX],
-                       1,
-                       GL_FALSE,
+    glUniformMatrix3fv(_uniforms[UNIFORM_COLOR_CONVERSION_MATRIX], 1, GL_FALSE,
                        _preferredConversion);
     glUniform1f(_uniforms[UNIFORM_Y_OFFSET], _yOffset);
     _program->detach();
@@ -546,18 +502,13 @@ static const GLfloat kColorConversion709FullRange[] = {
     BOOL success = [nativeContext renderbufferStorage:GL_RENDERBUFFER fromDrawable:layer];
 
     if (success) {
-        glFramebufferRenderbuffer(GL_FRAMEBUFFER,
-                                  GL_COLOR_ATTACHMENT0,
-                                  GL_RENDERBUFFER,
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER,
                                   _renderBuffer);
 
         // 创建 texture cache（仅在未创建时创建，避免重复创建泄漏）
         if (!_videoTextureCache) {
-            CVReturn err = CVOpenGLESTextureCacheCreate(kCFAllocatorDefault,
-                                                        NULL,
-                                                        nativeContext,
-                                                        NULL,
-                                                        &_videoTextureCache);
+            CVReturn err = CVOpenGLESTextureCacheCreate(kCFAllocatorDefault, NULL, nativeContext,
+                                                        NULL, &_videoTextureCache);
             if (err != noErr) {
                 LogE("Error at CVOpenGLESTextureCacheCreate {}", err);
             }
@@ -653,9 +604,9 @@ static const GLfloat kColorConversion709FullRange[] = {
 
     CFTypeRef colorAttachments =
         CVBufferCopyAttachment(pixelBuffer, kCVImageBufferYCbCrMatrixKey, NULL);
-    bool is601 = colorAttachments && CFStringCompare(static_cast<CFStringRef>(colorAttachments),
-                                                     kCVImageBufferYCbCrMatrix_ITU_R_601_4,
-                                                     0) == kCFCompareEqualTo;
+    bool is601 = colorAttachments &&
+                 CFStringCompare(static_cast<CFStringRef>(colorAttachments),
+                                 kCVImageBufferYCbCrMatrix_ITU_R_601_4, 0) == kCFCompareEqualTo;
     if (colorAttachments) {
         CFRelease(colorAttachments);
     }
@@ -669,18 +620,9 @@ static const GLfloat kColorConversion709FullRange[] = {
 
     // Y texture
     glActiveTexture(GL_TEXTURE0);
-    CVReturn err = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault,
-                                                                _videoTextureCache,
-                                                                pixelBuffer,
-                                                                NULL,
-                                                                GL_TEXTURE_2D,
-                                                                GL_RED_EXT,
-                                                                frameWidth,
-                                                                frameHeight,
-                                                                GL_RED_EXT,
-                                                                GL_UNSIGNED_BYTE,
-                                                                0,
-                                                                &_lumaTexture);
+    CVReturn err = CVOpenGLESTextureCacheCreateTextureFromImage(
+        kCFAllocatorDefault, _videoTextureCache, pixelBuffer, NULL, GL_TEXTURE_2D, GL_RED_EXT,
+        frameWidth, frameHeight, GL_RED_EXT, GL_UNSIGNED_BYTE, 0, &_lumaTexture);
 
     if (err != kCVReturnSuccess) {
         LogE("upload error");
@@ -696,18 +638,11 @@ static const GLfloat kColorConversion709FullRange[] = {
 
     // UV texture
     glActiveTexture(GL_TEXTURE1);
-    err = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault,
-                                                       _videoTextureCache,
-                                                       pixelBuffer,
-                                                       NULL,
-                                                       GL_TEXTURE_2D,
-                                                       GL_RG_EXT,
-                                                       frameWidth / 2,   // NOLINT
-                                                       frameHeight / 2,  // NOLINT
-                                                       GL_RG_EXT,
-                                                       GL_UNSIGNED_BYTE,
-                                                       1,
-                                                       &_chromaTexture);
+    err = CVOpenGLESTextureCacheCreateTextureFromImage(
+        kCFAllocatorDefault, _videoTextureCache, pixelBuffer, NULL, GL_TEXTURE_2D, GL_RG_EXT,
+        frameWidth / 2,   // NOLINT
+        frameHeight / 2,  // NOLINT
+        GL_RG_EXT, GL_UNSIGNED_BYTE, 1, &_chromaTexture);
 
     if (err != kCVReturnSuccess) {
         CFRelease(_lumaTexture);
@@ -724,9 +659,7 @@ static const GLfloat kColorConversion709FullRange[] = {
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     glUniform1i(_uniforms[UNIFORM_UV], 1);
-    glUniformMatrix3fv(_uniforms[UNIFORM_COLOR_CONVERSION_MATRIX],
-                       1,
-                       GL_FALSE,
+    glUniformMatrix3fv(_uniforms[UNIFORM_COLOR_CONVERSION_MATRIX], 1, GL_FALSE,
                        _preferredConversion);
     glUniform1f(_uniforms[UNIFORM_Y_OFFSET], _yOffset);
 
@@ -738,18 +671,9 @@ static const GLfloat kColorConversion709FullRange[] = {
     auto frameHeight = static_cast<GLsizei>(CVPixelBufferGetHeight(pixelBuffer));
 
     glActiveTexture(GL_TEXTURE0);
-    CVReturn err = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault,
-                                                                _videoTextureCache,
-                                                                pixelBuffer,
-                                                                NULL,
-                                                                GL_TEXTURE_2D,
-                                                                GL_RGBA,
-                                                                frameWidth,
-                                                                frameHeight,
-                                                                GL_BGRA,
-                                                                GL_UNSIGNED_BYTE,
-                                                                0,
-                                                                &_renderTexture);
+    CVReturn err = CVOpenGLESTextureCacheCreateTextureFromImage(
+        kCFAllocatorDefault, _videoTextureCache, pixelBuffer, NULL, GL_TEXTURE_2D, GL_RGBA,
+        frameWidth, frameHeight, GL_BGRA, GL_UNSIGNED_BYTE, 0, &_renderTexture);
 
     if (err != kCVReturnSuccess) {
         return NO;

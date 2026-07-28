@@ -125,22 +125,8 @@ TEST(DemuxerProbeTest, ReturnsUnknownForEmptyData) {
 }
 
 TEST(DemuxerProbeTest, ReturnsUnknownForRandomData) {
-    std::array<uint8_t, 16> garbage{0xDE,
-                                    0xAD,
-                                    0xBE,
-                                    0xEF,
-                                    0x00,
-                                    0x01,
-                                    0x02,
-                                    0x03,
-                                    0x04,
-                                    0x05,
-                                    0x06,
-                                    0x07,
-                                    0x08,
-                                    0x09,
-                                    0x0A,
-                                    0x0B};
+    std::array<uint8_t, 16> garbage{0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01, 0x02, 0x03,
+                                    0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B};
     DataView view(garbage.data(), garbage.size());
     EXPECT_EQ(DemuxerManager::shareInstance().probeDemuxType(view), DemuxerType::Unknown);
 }

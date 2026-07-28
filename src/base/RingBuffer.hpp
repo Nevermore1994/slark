@@ -27,7 +27,8 @@ constexpr size_t calcCapacity(size_t n) noexcept {
 }  // namespace detail
 
 template <typename T, size_t N>
-requires std::is_trivially_copyable_v<T> class RingBuffer {
+    requires std::is_trivially_copyable_v<T>
+class RingBuffer {
     static constexpr size_t kCapacity = std::bit_ceil(N);
     static constexpr size_t kMask = kCapacity - 1;
 
@@ -148,7 +149,8 @@ requires std::is_trivially_copyable_v<T> class RingBuffer {
 };
 
 template <typename T, size_t N>
-requires std::is_trivially_copyable_v<T> class SyncRingBuffer {
+    requires std::is_trivially_copyable_v<T>
+class SyncRingBuffer {
     static constexpr size_t kCapacity = std::bit_ceil(N);
     static constexpr size_t kMask = kCapacity - 1;
 

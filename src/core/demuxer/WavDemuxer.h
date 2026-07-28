@@ -34,10 +34,8 @@ class WAVDemuxer : public IDemuxer {
     void reset() noexcept override;
 
     inline static const DemuxerInfo& info() noexcept {
-        static DemuxerInfo info = {DemuxerType::WAV,
-                                   "WAVE",
-                                   Reflection::enroll<WAVDemuxer>("WAVDemuxer"),
-                                   8};
+        static DemuxerInfo info = {DemuxerType::WAV, "WAVE",
+                                   Reflection::enroll<WAVDemuxer>("WAVDemuxer"), 8};
         return info;
     }
 

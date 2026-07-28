@@ -18,26 +18,26 @@
 
 namespace slark {
 template <typename Mutex>
-concept IsMutex = requires(Mutex && mutex) {
+concept IsMutex = requires(Mutex&& mutex) {
     mutex.lock();
     mutex.unlock();
 };
 
 template <typename Mutex>
-concept IsSharedMutex = IsMutex<Mutex> && requires(Mutex && mutex) {
+concept IsSharedMutex = IsMutex<Mutex> && requires(Mutex&& mutex) {
     mutex.lock_shared();
     mutex.unlock_shared();
 };
 
 template <typename Mutex, typename Rep, typename Period>
 concept IsTimeForMutex =
-    IsMutex<Mutex> && requires(Mutex && mutex, const std::chrono::duration<Rep, Period>& duration) {
-    mutex.try_lock_for(duration);
-    mutex.unlock();
-};
+    IsMutex<Mutex> && requires(Mutex&& mutex, const std::chrono::duration<Rep, Period>& duration) {
+        mutex.try_lock_for(duration);
+        mutex.unlock();
+    };
 
 template <typename T>
-concept IsClock = requires(T && t) {
+concept IsClock = requires(T&& t) {
     typename T::rep;
     typename T::period;
     typename T::duration;
@@ -49,10 +49,10 @@ concept IsClock = requires(T && t) {
 template <typename Mutex, typename Clock, typename Duration>
 concept IsTimeUntilMutex =
     IsMutex<Mutex> && IsClock<Clock> &&
-    requires(Mutex && mutex, const std::chrono::time_point<Clock, Duration>& timePoint) {
-    mutex.try_lock_until(timePoint);
-    mutex.unlock();
-};
+    requires(Mutex&& mutex, const std::chrono::time_point<Clock, Duration>& timePoint) {
+        mutex.try_lock_until(timePoint);
+        mutex.unlock();
+    };
 
 template <typename Container, typename Mutex = std::mutex>
 class Synchronized : public NonCopyMovable {
@@ -61,11 +61,12 @@ class Synchronized : public NonCopyMovable {
 
     // C++23 deducing this: unified withLock for const and non-const
     template <typename Self, typename F>
-    auto withLock(this Self&& self, F&& func) requires IsMutex<Mutex> {
+    auto withLock(this Self&& self, F&& func)
+        requires IsMutex<Mutex>
+    {
         std::lock_guard<Mutex> lock(self.mutex_);
         using ContainerRef = std::conditional_t<std::is_const_v<std::remove_reference_t<Self>>,
-                                                const Container&,
-                                                Container&>;
+                                                const Container&, Container&>;
         if constexpr (std::is_void_v<std::invoke_result_t<F, ContainerRef>>) {
             func(std::forward<Self>(self).container_);
             return;
@@ -76,11 +77,12 @@ class Synchronized : public NonCopyMovable {
 
     // C++23 deducing this: unified withWriteLock for const and non-const
     template <typename Self, typename F>
-    auto withWriteLock(this Self&& self, F&& func) requires IsSharedMutex<Mutex> {
+    auto withWriteLock(this Self&& self, F&& func)
+        requires IsSharedMutex<Mutex>
+    {
         std::unique_lock<Mutex> lock(self.mutex_);
         using ContainerRef = std::conditional_t<std::is_const_v<std::remove_reference_t<Self>>,
-                                                const Container&,
-                                                Container&>;
+                                                const Container&, Container&>;
         if constexpr (std::is_void_v<std::invoke_result_t<F, ContainerRef>>) {
             func(std::forward<Self>(self).container_);
             return;
@@ -90,7 +92,9 @@ class Synchronized : public NonCopyMovable {
     }
 
     template <typename F>
-    auto withReadLock(F&& func) const requires IsSharedMutex<Mutex> {
+    auto withReadLock(F&& func) const
+        requires IsSharedMutex<Mutex>
+    {
         std::shared_lock<Mutex> lock(mutex_);
         if constexpr (std::is_void_v<std::invoke_result_t<F, const Container&>>) {
             func(std::as_const(container_));
@@ -101,8 +105,9 @@ class Synchronized : public NonCopyMovable {
     }
 
     template <typename F>
-    auto withTryLock(F&& lockFunc,
-                     std::function<void()> failedFunc = nullptr) requires IsMutex<Mutex> {
+    auto withTryLock(F&& lockFunc, std::function<void()> failedFunc = nullptr)
+        requires IsMutex<Mutex>
+    {
         if (mutex_.try_lock()) {
             std::lock_guard<Mutex> lock(mutex_, std::adopt_lock);
             if constexpr (std::is_void_v<std::invoke_result_t<F, Container&>>) {
@@ -124,7 +129,9 @@ class Synchronized : public NonCopyMovable {
     template <class Rep, class Period, typename F, typename G>
     auto withTryLockFor(const std::chrono::duration<Rep, Period>& duration,
                         F&& lockFunc,
-                        G&& failedFunc) requires IsTimeForMutex<Mutex, Rep, Period> {
+                        G&& failedFunc)
+        requires IsTimeForMutex<Mutex, Rep, Period>
+    {
         if (mutex_.try_lock_for(duration)) {
             std::lock_guard<Mutex> lock(mutex_, std::adopt_lock);
             if constexpr (std::is_void_v<std::invoke_result_t<F, Container&>>) {
@@ -146,7 +153,9 @@ class Synchronized : public NonCopyMovable {
     template <class Clock, class Duration, typename F, typename G>
     auto withTryLockUntil(const std::chrono::time_point<Clock, Duration>& timePoint,
                           F&& lockFunc,
-                          G&& failedFunc) requires IsTimeUntilMutex<Mutex, Clock, Duration> {
+                          G&& failedFunc)
+        requires IsTimeUntilMutex<Mutex, Clock, Duration>
+    {
         if (mutex_.try_lock_until(timePoint)) {
             std::lock_guard<Mutex> lock(mutex_, std::adopt_lock);
             if constexpr (std::is_void_v<std::invoke_result_t<F, Container&>>) {

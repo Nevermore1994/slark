@@ -12,8 +12,8 @@ namespace slark::http::Util {
 
 namespace {
 
-constexpr std::string_view kMethodNames[] =
-    {"Unknown", "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"};
+constexpr std::string_view kMethodNames[] = {"Unknown", "GET",    "POST",   "PUT",
+                                             "PATCH",   "DELETE", "OPTIONS"};
 
 constexpr std::string_view kCRLF = "\r\n"sv;
 constexpr std::string_view kHeaderEnd = "\r\n\r\n"sv;
@@ -325,10 +325,7 @@ bool parseRawResponse(const void* data, size_t size, ParsedResponse& out) noexce
         return decodeChunkedBody(data, bodyStart, size, out.body);
     }
 
-    return extractFixedBody(data,
-                            bodyStart,
-                            size,
-                            getHeader(out.headers, "Content-Length"),
+    return extractFixedBody(data, bodyStart, size, getHeader(out.headers, "Content-Length"),
                             out.body);
 }
 

@@ -692,11 +692,8 @@ bool AndroidVulkanContext::allocateHardwareBuffer(int32_t width, int32_t height)
 bool AndroidVulkanContext::createEGLImageFromHWB() noexcept {
     EGLClientBuffer clientBuffer = fnEGLGetNativeClientBuffer_(hardwareBuffer_);
     const EGLint attrs[] = {EGL_NONE};
-    eglImage_ = fnEGLCreateImage_(eglContext_->getDisplay(),
-                                  EGL_NO_CONTEXT,
-                                  EGL_NATIVE_BUFFER_ANDROID,
-                                  clientBuffer,
-                                  attrs);
+    eglImage_ = fnEGLCreateImage_(eglContext_->getDisplay(), EGL_NO_CONTEXT,
+                                  EGL_NATIVE_BUFFER_ANDROID, clientBuffer, attrs);
     if (eglImage_ == EGL_NO_IMAGE_KHR) {
         LogE("eglCreateImageKHR failed");
         return false;
@@ -1003,12 +1000,9 @@ void AndroidVulkanContext::drawFrame(int32_t textureId, int32_t width, int32_t h
     vkWaitForFences(device_, 1, &inFlightFences_[currentFrame_], VK_TRUE, UINT64_MAX);
 
     uint32_t imageIndex = 0;
-    VkResult result = vkAcquireNextImageKHR(device_,
-                                            swapchain_,
-                                            UINT64_MAX,
+    VkResult result = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX,
                                             imageAvailableSemaphores_[currentFrame_],
-                                            VK_NULL_HANDLE,
-                                            &imageIndex);
+                                            VK_NULL_HANDLE, &imageIndex);
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         recreateSwapchain(nullptr, frameWidth_, frameHeight_);
         return;
@@ -1084,15 +1078,8 @@ void AndroidVulkanContext::renderHardwareBufferToSwapchain(uint32_t imageIndex) 
     barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     barrier.subresourceRange.levelCount = 1;
     barrier.subresourceRange.layerCount = 1;
-    vkCmdPipelineBarrier(cmd,
-                         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                         0,
-                         0,
-                         nullptr,
-                         0,
-                         nullptr,
-                         1,
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1,
                          &barrier);
 
     VkClearValue clearColor{{{0.0f, 0.0f, 0.0f, 1.0f}}};
@@ -1106,14 +1093,8 @@ void AndroidVulkanContext::renderHardwareBufferToSwapchain(uint32_t imageIndex) 
 
     vkCmdBeginRenderPass(cmd, &rpBegin, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
-    vkCmdBindDescriptorSets(cmd,
-                            VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            pipelineLayout_,
-                            0,
-                            1,
-                            &descriptorSet_,
-                            0,
-                            nullptr);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1,
+                            &descriptorSet_, 0, nullptr);
     vkCmdDraw(cmd, 6, 1, 0, 0);  // 全屏两个三角形
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
@@ -1142,9 +1123,7 @@ void AndroidVulkanContext::destroySwapchainResources() noexcept {
     }
     swapchainFramebuffers_.clear();
     if (!commandBuffers_.empty() && commandPool_ != VK_NULL_HANDLE) {
-        vkFreeCommandBuffers(device_,
-                             commandPool_,
-                             static_cast<uint32_t>(commandBuffers_.size()),
+        vkFreeCommandBuffers(device_, commandPool_, static_cast<uint32_t>(commandBuffers_.size()),
                              commandBuffers_.data());
         commandBuffers_.clear();
     }

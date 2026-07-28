@@ -3,7 +3,7 @@
 # 基于 C++ 开发规则定制
 
 # 基础语言设置（不限制 Language，由 clang-format 按扩展名自动识别 C++/ObjC）
-Standard: c++17
+Standard: c++20
 # 缩进设置
 IndentWidth: 4
 TabWidth: 4
@@ -38,7 +38,7 @@ LambdaBodyIndentation: Signature
 AllowShortLambdasOnASingleLine: None
 
 # 函数调用参数
-BinPackArguments: false
+BinPackArguments: true
 BinPackParameters: false
 AlignAfterOpenBracket: Align
 AllowAllArgumentsOnNextLine: false

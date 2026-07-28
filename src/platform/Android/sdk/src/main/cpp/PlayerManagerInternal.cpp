@@ -18,11 +18,8 @@ namespace slark {
 void PlayerObserver::notifyPlayedTime(std::string_view playerId, double time) {
     using namespace slark::JNI;
     JNIEnvGuard jniGuard(getJavaVM());
-    JNICall::callStatic<void>(jniGuard.get(),
-                              kPlayerManagerClass,
-                              "notifyPlayerTime",
-                              std::string(playerId),
-                              time);
+    JNICall::callStatic<void>(jniGuard.get(), kPlayerManagerClass, "notifyPlayerTime",
+                              std::string(playerId), time);
 }
 
 void PlayerObserver::notifyPlayerState(std::string_view playerId, PlayerState state) {
@@ -36,15 +33,10 @@ void PlayerObserver::notifyPlayerState(std::string_view playerId, PlayerState st
     }
     auto stateEnum =
         JNICache::instance().getEnumField(env, kPlayerStateClass, kPlayerStateNames[stateIdx]);
-    JNICall::callStatic<void>(env,
-                              kPlayerManagerClass,
-                              "notifyPlayerState",
-                              std::string(playerId),
+    JNICall::callStatic<void>(env, kPlayerManagerClass, "notifyPlayerState", std::string(playerId),
                               JObjectWithSig(std::move(stateEnum), makeObject(kPlayerStateClass)));
     if (state == PlayerState::Prepared || state == PlayerState::Playing) {
-        JNICall::callStatic<void>(env,
-                                  kPlayerManagerClass,
-                                  "startRendering",
+        JNICall::callStatic<void>(env, kPlayerManagerClass, "startRendering",
                                   std::string(playerId));
     } else if (state == PlayerState::Pause || state == PlayerState::Completed ||
                state == PlayerState::Stop || state == PlayerState::Error) {
@@ -62,15 +54,11 @@ void PlayerObserver::notifyPlayerEvent(std::string_view playerId,
         LogE("notifyPlayerEvent: invalid event index {}", eventIdx);
         return;
     }
-    auto eventEnum = JNICache::instance().getEnumField(jniGuard.get(),
-                                                       kPlayerEventClass,
+    auto eventEnum = JNICache::instance().getEnumField(jniGuard.get(), kPlayerEventClass,
                                                        kPlayerEventNames[eventIdx]);
-    JNICall::callStatic<void>(jniGuard.get(),
-                              kPlayerManagerClass,
-                              "notifyPlayerEvent",
-                              std::string(playerId),
-                              JObjectWithSig(std::move(eventEnum), makeObject(kPlayerEventClass)),
-                              value);
+    JNICall::callStatic<void>(
+        jniGuard.get(), kPlayerManagerClass, "notifyPlayerEvent", std::string(playerId),
+        JObjectWithSig(std::move(eventEnum), makeObject(kPlayerEventClass)), value);
 }
 
 void asyncCreateDecoderResource(const std::string& playerId) noexcept {

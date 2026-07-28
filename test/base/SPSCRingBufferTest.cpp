@@ -8,8 +8,9 @@
 
 #include "SPSCRingBuffer.hpp"
 
-#include <atomic>
 #include <gtest/gtest.h>
+
+#include <atomic>
 #include <thread>
 #include <vector>
 
@@ -17,17 +18,17 @@ namespace slark {
 
 // N 不是 2 的幂，验证 kCapacity = bit_ceil(N+1)，capacity() = kCapacity - 1
 TEST(SPSCRingBufferTest, CapacityIsPowerOfTwo) {
-    SPSCRingBuffer<int, 10> buf; // bit_ceil(10+1)=16, capacity=15
+    SPSCRingBuffer<int, 10> buf;  // bit_ceil(10+1)=16, capacity=15
     EXPECT_EQ(buf.capacity(), 15u);
 }
 
 TEST(SPSCRingBufferTest, CapacityExactPowerOfTwo) {
-    SPSCRingBuffer<int, 16> buf; // bit_ceil(16+1)=32, capacity=31
+    SPSCRingBuffer<int, 16> buf;  // bit_ceil(16+1)=32, capacity=31
     EXPECT_EQ(buf.capacity(), 31u);
 }
 
 TEST(SPSCRingBufferTest, CapacityOne) {
-    SPSCRingBuffer<int, 1> buf; // bit_ceil(1) = 1
+    SPSCRingBuffer<int, 1> buf;  // bit_ceil(1) = 1
     EXPECT_EQ(buf.capacity(), 1u);
 }
 
@@ -48,12 +49,12 @@ TEST(SPSCRingBufferTest, WriteExactSuccess) {
 }
 
 TEST(SPSCRingBufferTest, WriteExactInsufficientSpace) {
-    SPSCRingBuffer<int, 4> buf; // bit_ceil(4+1)=8, capacity=7
+    SPSCRingBuffer<int, 4> buf;  // bit_ceil(4+1)=8, capacity=7
     std::vector<int> data(7);
-    EXPECT_TRUE(buf.writeExact(data.data(), 7)); // 刚好写满
+    EXPECT_TRUE(buf.writeExact(data.data(), 7));  // 刚好写满
     EXPECT_TRUE(buf.isFull());
     int extra = 1;
-    EXPECT_FALSE(buf.writeExact(&extra, 1)); // 满，写入失败
+    EXPECT_FALSE(buf.writeExact(&extra, 1));  // 满，写入失败
 }
 
 TEST(SPSCRingBufferTest, WriteExactZeroCount) {
@@ -106,7 +107,7 @@ TEST(SPSCRingBufferTest, ReadExactNullPtr) {
 }
 
 TEST(SPSCRingBufferTest, IsFull) {
-    SPSCRingBuffer<int, 4> buf; // bit_ceil(4+1)=8, capacity=7
+    SPSCRingBuffer<int, 4> buf;  // bit_ceil(4+1)=8, capacity=7
     std::vector<int> data(7);
     buf.writeExact(data.data(), 7);
     EXPECT_TRUE(buf.isFull());
@@ -114,7 +115,7 @@ TEST(SPSCRingBufferTest, IsFull) {
 }
 
 TEST(SPSCRingBufferTest, WrapAroundWrite) {
-    SPSCRingBuffer<int, 8> buf; // bit_ceil(8+1)=16, capacity=15
+    SPSCRingBuffer<int, 8> buf;  // bit_ceil(8+1)=16, capacity=15
     // 写满再读一部分，触发写指针回绕
     std::vector<int> data(15);
     for (size_t i = 0; i < 15; ++i) {
@@ -123,7 +124,7 @@ TEST(SPSCRingBufferTest, WrapAroundWrite) {
     buf.writeExact(data.data(), 15);
 
     int readData[5];
-    buf.readExact(readData, 5); // 读 5 个，剩 10 个
+    buf.readExact(readData, 5);  // 读 5 个，剩 10 个
 
     // 再写 5 个，写指针回绕
     std::vector<int> newData(5);
@@ -158,13 +159,13 @@ TEST(SPSCRingBufferTest, WrapAroundRead) {
     buf.writeExact(data.data(), 8);
 
     int readData[3];
-    buf.readExact(readData, 3); // readPos 前进 3
+    buf.readExact(readData, 3);  // readPos 前进 3
 
     std::vector<int> newData(3);
     for (size_t i = 0; i < 3; ++i) {
         newData[i] = 100 + i;
     }
-    buf.writeExact(newData.data(), 3); // 写指针回绕
+    buf.writeExact(newData.data(), 3);  // 写指针回绕
 
     int allData[8];
     buf.readExact(allData, 8);
@@ -190,7 +191,7 @@ TEST(SPSCRingBufferTest, Reset) {
 }
 
 TEST(SPSCRingBufferTest, LengthAndAvailable) {
-    SPSCRingBuffer<int, 16> buf; // bit_ceil(16+1)=32, capacity=31
+    SPSCRingBuffer<int, 16> buf;  // bit_ceil(16+1)=32, capacity=31
     EXPECT_EQ(buf.length(), 0u);
     EXPECT_EQ(buf.available(), 31u);
 
@@ -293,7 +294,7 @@ TEST(SPSCRingBufferTest, MemoryOrdering) {
 
 // 测试 uint8_t 特化（AudioRenderComponent 实际使用场景）
 TEST(SPSCRingBufferTest, Uint8Specialization) {
-    SPSCRingBuffer<uint8_t, 256> buf; // bit_ceil(257)=512, capacity=511
+    SPSCRingBuffer<uint8_t, 256> buf;  // bit_ceil(257)=512, capacity=511
     std::vector<uint8_t> data(511);
     for (size_t i = 0; i < 511; ++i) {
         data[i] = static_cast<uint8_t>(i);
@@ -311,7 +312,7 @@ TEST(SPSCRingBufferTest, Uint8Specialization) {
 
 // 测试 reset 后 epoch 语义：reset 后读写指针归零，buffer 可重新使用
 TEST(SPSCRingBufferTest, ResetAndReuse) {
-    SPSCRingBuffer<int, 8> buf; // bit_ceil(8+1)=16, capacity=15
+    SPSCRingBuffer<int, 8> buf;  // bit_ceil(8+1)=16, capacity=15
     std::vector<int> data(15);
     for (size_t i = 0; i < 15; ++i) {
         data[i] = static_cast<int>(i);
@@ -327,8 +328,8 @@ TEST(SPSCRingBufferTest, ResetAndReuse) {
 
 // 测试 capacity 为 0 的编译期保护（N=0 时 bit_ceil(0)=1，capacity=1）
 TEST(SPSCRingBufferTest, ZeroRequestBecomesOne) {
-    SPSCRingBuffer<int, 0> buf; // std::bit_ceil(0) = 1
+    SPSCRingBuffer<int, 0> buf;  // std::bit_ceil(0) = 1
     EXPECT_EQ(buf.capacity(), 1u);
 }
 
-} // namespace slark
+}  // namespace slark

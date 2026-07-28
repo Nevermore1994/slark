@@ -74,9 +74,8 @@ aaudio_data_callback_result_t AAudioRender::dataCallback(AAudioStream* /*stream*
         auto* samples = reinterpret_cast<int16_t*>(dataPtr);
         const auto sampleCount = static_cast<uint32_t>(numFrames) * render->audioInfo_->channels;
         for (uint32_t i = 0; i < sampleCount; ++i) {
-            samples[i] = static_cast<int16_t>(std::clamp(samples[i] * vol,
-                                                         static_cast<float>(INT16_MIN),
-                                                         static_cast<float>(INT16_MAX)));
+            samples[i] = static_cast<int16_t>(std::clamp(
+                samples[i] * vol, static_cast<float>(INT16_MIN), static_cast<float>(INT16_MAX)));
         }
     }
 
@@ -111,9 +110,7 @@ void AAudioRender::play() noexcept {
         return;
     }
     aaudio_stream_state_t nextState = AAUDIO_STREAM_STATE_UNINITIALIZED;
-    AAudioStream_waitForStateChange(stream_,
-                                    AAUDIO_STREAM_STATE_STARTING,
-                                    &nextState,
+    AAudioStream_waitForStateChange(stream_, AAUDIO_STREAM_STATE_STARTING, &nextState,
                                     200'000'000LL);  // 200ms timeout
     status_ = RenderStatus::Playing;
 }
@@ -128,16 +125,12 @@ void AAudioRender::pause() noexcept {
     auto streamState = AAudioStream_getState(stream_);
     if (streamState == AAUDIO_STREAM_STATE_STARTING) {
         aaudio_stream_state_t nextState = AAUDIO_STREAM_STATE_UNINITIALIZED;
-        AAudioStream_waitForStateChange(stream_,
-                                        AAUDIO_STREAM_STATE_STARTING,
-                                        &nextState,
+        AAudioStream_waitForStateChange(stream_, AAUDIO_STREAM_STATE_STARTING, &nextState,
                                         500'000'000LL);
     }
     AAudioStream_requestPause(stream_);
     aaudio_stream_state_t pausedState = AAUDIO_STREAM_STATE_UNINITIALIZED;
-    AAudioStream_waitForStateChange(stream_,
-                                    AAUDIO_STREAM_STATE_PAUSING,
-                                    &pausedState,
+    AAudioStream_waitForStateChange(stream_, AAUDIO_STREAM_STATE_PAUSING, &pausedState,
                                     500'000'000LL);
     status_ = RenderStatus::Pause;
 }
@@ -151,9 +144,7 @@ void AAudioRender::stop() noexcept {
         if (state == AAUDIO_STREAM_STATE_PAUSED) {
             AAudioStream_requestStart(stream_);
             aaudio_stream_state_t nextState = AAUDIO_STREAM_STATE_UNINITIALIZED;
-            AAudioStream_waitForStateChange(stream_,
-                                            AAUDIO_STREAM_STATE_STARTING,
-                                            &nextState,
+            AAudioStream_waitForStateChange(stream_, AAUDIO_STREAM_STATE_STARTING, &nextState,
                                             200'000'000LL);
         }
         AAudioStream_requestStop(stream_);
@@ -168,18 +159,14 @@ void AAudioRender::flush() noexcept {
     if (status_ == RenderStatus::Playing) {
         AAudioStream_requestPause(stream_);
         aaudio_stream_state_t nextState = AAUDIO_STREAM_STATE_UNINITIALIZED;
-        AAudioStream_waitForStateChange(stream_,
-                                        AAUDIO_STREAM_STATE_PAUSING,
-                                        &nextState,
+        AAudioStream_waitForStateChange(stream_, AAUDIO_STREAM_STATE_PAUSING, &nextState,
                                         500'000'000LL);
         status_ = RenderStatus::Pause;
     }
     flushBaseFrames_.store(AAudioStream_getFramesWritten(stream_), std::memory_order_release);
     AAudioStream_requestFlush(stream_);
     aaudio_stream_state_t flushedState = AAUDIO_STREAM_STATE_UNINITIALIZED;
-    AAudioStream_waitForStateChange(stream_,
-                                    AAUDIO_STREAM_STATE_FLUSHING,
-                                    &flushedState,
+    AAudioStream_waitForStateChange(stream_, AAUDIO_STREAM_STATE_FLUSHING, &flushedState,
                                     500'000'000LL);
 }
 

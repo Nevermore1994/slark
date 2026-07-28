@@ -33,9 +33,7 @@ std::shared_ptr<IAudioRender> createAudioRender(const std::shared_ptr<AudioInfo>
 bool checkOSStatus(OSStatus status, const char* errorMsg) {
     if (status != noErr) {
         NSError* error = [NSError errorWithDomain:NSOSStatusErrorDomain code:status userInfo:nil];
-        LogE("[audio render] Error happen in {}, and status = {}, info:{}\n",
-             errorMsg,
-             status,
+        LogE("[audio render] Error happen in {}, and status = {}, info:{}\n", errorMsg, status,
              [[error description] UTF8String]);
         return false;
     }
@@ -103,18 +101,10 @@ AudioRender::AudioRender(std::shared_ptr<AudioInfo> audioInfo) : IAudioRender(au
         }
         Float64 volLatency = 0.0, renderLatency = 0.0;
         UInt32 size = sizeof(Float64);
-        AudioUnitGetProperty(renderUnit_,
-                             kAudioUnitProperty_Latency,
-                             kAudioUnitScope_Global,
-                             0,
-                             &renderLatency,
-                             &size);
-        AudioUnitGetProperty(volumeUnit_,
-                             kAudioUnitProperty_Latency,
-                             kAudioUnitScope_Global,
-                             0,
-                             &volLatency,
-                             &size);
+        AudioUnitGetProperty(renderUnit_, kAudioUnitProperty_Latency, kAudioUnitScope_Global, 0,
+                             &renderLatency, &size);
+        AudioUnitGetProperty(volumeUnit_, kAudioUnitProperty_Latency, kAudioUnitScope_Global, 0,
+                             &volLatency, &size);
         // 补充 AVAudioSession 硬件 I/O buffer 延迟，获取完整 pipeline 延迟
         AVAudioSession* session = [AVAudioSession sharedInstance];
         const Float64 hwLatency = session.outputLatency + session.ioBufferDuration;
@@ -208,12 +198,8 @@ void AudioRender::setVolume(float volume) noexcept {
         return;
     }
     volume_ = volume;
-    AudioUnitSetParameter(volumeUnit_,
-                          kMultiChannelMixerParam_Volume,
-                          kAudioUnitScope_Input,
-                          0,
-                          volume,
-                          0);
+    AudioUnitSetParameter(volumeUnit_, kMultiChannelMixerParam_Volume, kAudioUnitScope_Input, 0,
+                          volume, 0);
     LogI("set volume:{}", volume);
 }
 
@@ -270,12 +256,9 @@ bool AudioRender::setupAudioComponent() noexcept {
     auto format = convertInfo2Description(*audioInfo_);
 
     // Set the format on the input scope of the output element / bus.
-    if (!checkOSStatus(AudioUnitSetProperty(renderUnit_,
-                                            kAudioUnitProperty_StreamFormat,
-                                            kAudioUnitScope_Input,
-                                            kAudioRemoteIOUnitOutputBus,
-                                            &format,
-                                            sizeof(format)),
+    if (!checkOSStatus(AudioUnitSetProperty(renderUnit_, kAudioUnitProperty_StreamFormat,
+                                            kAudioUnitScope_Input, kAudioRemoteIOUnitOutputBus,
+                                            &format, sizeof(format)),
                        "set Property_StreamFormat on outputbus : input scope")) {
         return false;
     }
@@ -283,44 +266,32 @@ bool AudioRender::setupAudioComponent() noexcept {
     connection.sourceAudioUnit = volumeUnit_;
     connection.sourceOutputNumber = kMixerOutputBus;
     connection.destInputNumber = kAudioRemoteIOUnitOutputBus;
-    if (!checkOSStatus(AudioUnitSetProperty(renderUnit_,
-                                            kAudioUnitProperty_MakeConnection,
-                                            kAudioUnitScope_Input,
-                                            kAudioRemoteIOUnitOutputBus,
-                                            &connection,
-                                            sizeof(connection)),
+    if (!checkOSStatus(AudioUnitSetProperty(renderUnit_, kAudioUnitProperty_MakeConnection,
+                                            kAudioUnitScope_Input, kAudioRemoteIOUnitOutputBus,
+                                            &connection, sizeof(connection)),
                        "volume unit connect render unit error")) {
         return false;
     }
 
-    if (!checkOSStatus(AudioUnitSetProperty(volumeUnit_,
-                                            kAudioUnitProperty_StreamFormat,
-                                            kAudioUnitScope_Input,
-                                            kMixerOutputBus,
-                                            &format,
-                                            sizeof(format)),
-                       "set volume input format fail")) {
+    if (!checkOSStatus(
+            AudioUnitSetProperty(volumeUnit_, kAudioUnitProperty_StreamFormat,
+                                 kAudioUnitScope_Input, kMixerOutputBus, &format, sizeof(format)),
+            "set volume input format fail")) {
         return false;
     }
     AURenderCallbackStruct callback;
     callback.inputProc = AudioRenderCallback;
     callback.inputProcRefCon = this;
-    if (!checkOSStatus(AudioUnitSetProperty(volumeUnit_,
-                                            kAudioUnitProperty_SetRenderCallback,
-                                            kAudioUnitScope_Input,
-                                            kMixerInputBus,
-                                            &callback,
+    if (!checkOSStatus(AudioUnitSetProperty(volumeUnit_, kAudioUnitProperty_SetRenderCallback,
+                                            kAudioUnitScope_Input, kMixerInputBus, &callback,
                                             sizeof(AURenderCallbackStruct)),
                        "add data callback fail")) {
         return false;
     }
-    if (!checkOSStatus(AudioUnitSetProperty(volumeUnit_,
-                                            kAudioUnitProperty_StreamFormat,
-                                            kAudioUnitScope_Input,
-                                            kMixerInputBus,
-                                            &format,
-                                            sizeof(format)),
-                       "set input format error")) {
+    if (!checkOSStatus(
+            AudioUnitSetProperty(volumeUnit_, kAudioUnitProperty_StreamFormat,
+                                 kAudioUnitScope_Input, kMixerInputBus, &format, sizeof(format)),
+            "set input format error")) {
         return false;
     }
 

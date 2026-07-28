@@ -27,7 +27,8 @@ Expected<uint64_t> getWeakPtrAddress(const std::weak_ptr<T>& ptr) noexcept {
 std::string genRandomName(std::string_view prefix) noexcept;
 
 template <typename T>
-requires std::is_unsigned_v<T> std::string toStringLE(T value) noexcept {
+    requires std::is_unsigned_v<T>
+std::string toStringLE(T value) noexcept {
     std::string ret(sizeof(T), '\0');
     auto bytes = std::bit_cast<std::array<char, sizeof(T)>>(value);
     if constexpr (std::endian::native == std::endian::little) {
@@ -39,7 +40,8 @@ requires std::is_unsigned_v<T> std::string toStringLE(T value) noexcept {
 }
 
 template <typename T>
-requires std::is_unsigned_v<T> std::string toStringBE(T value) noexcept {
+    requires std::is_unsigned_v<T>
+std::string toStringBE(T value) noexcept {
     std::string ret(sizeof(T), '\0');
     auto bytes = std::bit_cast<std::array<char, sizeof(T)>>(value);
     if constexpr (std::endian::native == std::endian::big) {

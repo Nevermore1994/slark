@@ -26,22 +26,16 @@ void Native_RequestRender(const std::string& playerId,
         LogE("not found player manager class");
         return;
     }
-    auto methodSignature = JNI::makeSignature(JNI::Sig::Void,
-                                              JNI::Sig::String,
-                                              JNI::Sig::Int,
-                                              JNI::Sig::Int,
-                                              JNI::Sig::Int);
+    auto methodSignature = JNI::makeSignature(JNI::Sig::Void, JNI::Sig::String, JNI::Sig::Int,
+                                              JNI::Sig::Int, JNI::Sig::Int);
     auto methodId =
         JNICache::instance().getStaticMethod(playerClass, "requestRender", methodSignature);
     if (!methodId) {
         LogE("not found method");
         return;
     }
-    env.get()->CallStaticVoidMethod(playerClass.get(),
-                                    methodId.get(),
-                                    jPlayer.get(),
-                                    static_cast<jint>(textureId),
-                                    static_cast<jint>(width),
+    env.get()->CallStaticVoidMethod(playerClass.get(), methodId.get(), jPlayer.get(),
+                                    static_cast<jint>(textureId), static_cast<jint>(width),
                                     static_cast<jint>(height));
 }
 
@@ -60,10 +54,8 @@ void VideoRender::pause() noexcept {
 }
 
 void VideoRender::notifyVideoInfo(std::shared_ptr<VideoInfo> videoInfo) noexcept {
-    LogI("video info: fps:{}, frame duration:{}ms, rotation:{}",
-         videoInfo->fps,
-         videoInfo->frameDurationMs().count(),
-         videoInfo->rotationDegrees);
+    LogI("video info: fps:{}, frame duration:{}ms, rotation:{}", videoInfo->fps,
+         videoInfo->frameDurationMs().count(), videoInfo->rotationDegrees);
     rotationDegrees_ = videoInfo->rotationDegrees;
 }
 
@@ -105,8 +97,7 @@ void Native_SetVideoRotation(const std::string& playerId, int32_t rotationDegree
         LogE("not found setVideoRotation method");
         return;
     }
-    env.get()->CallStaticVoidMethod(playerClass.get(),
-                                    methodId.get(),
+    env.get()->CallStaticVoidMethod(playerClass.get(), methodId.get(),
                                     JNI::ToJVM::str(env.get(), playerId).get(),
                                     static_cast<jint>(rotationDegrees));
 }

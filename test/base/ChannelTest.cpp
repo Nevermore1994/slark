@@ -4,6 +4,7 @@
 #include "Channel.hpp"
 
 #include <gtest/gtest.h>
+
 #include <numeric>
 #include <string>
 #include <thread>
@@ -14,7 +15,8 @@ using namespace std::literals;
 TEST(ChannelTest, CheckType) {
     using type = std::string;
     auto _ch = Channel<type>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     EXPECT_TRUE((std::is_same_v<GetChannelType<decltype(sp)>, type>));
     EXPECT_TRUE((std::is_same_v<GetChannelType<decltype(rp)>, type>));
     auto ssp = SenderRefPtr<type>(std::move(sp));
@@ -24,7 +26,8 @@ TEST(ChannelTest, CheckType) {
 TEST(ChannelTest, PtrSendSingleMessage) {
     using type = int;
     auto _ch = Channel<type>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     std::thread t1([rp = std::move(rp)] {
         type value = 0;
         int t1, t2;
@@ -52,7 +55,8 @@ TEST(ChannelTest, PtrSendSingleMessage) {
 TEST(ChannelTest, Receive) {
     using type = std::string;
     auto _ch = Channel<type>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     std::thread t1([rp = std::move(rp)] {
         int value = 0;
         for (;;) {
@@ -74,7 +78,8 @@ TEST(ChannelTest, Receive) {
 TEST(ChannelTest, PtrSendMultiMessage) {
     using type = int;
     auto _ch = Channel<type>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     std::thread t1([rp = std::move(rp)] {
         type value = 0;
         for (;;) {
@@ -97,7 +102,8 @@ TEST(ChannelTest, PtrSendMultiMessage) {
 TEST(ChannelTest, RefPtrSendMultiMessage) {
     using type = int;
     auto _ch = Channel<type>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     auto ssp = SenderRefPtr<type>(std::move(sp));
     std::thread t1([rp = std::move(rp)] {
         type value = 0;
@@ -122,7 +128,8 @@ TEST(ChannelTest, Close) {
     {
         using type = std::string;
         auto _ch = Channel<type>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+        auto sp = std::move(std::get<0>(_ch));
+        auto rp = std::move(std::get<1>(_ch));
         sp->done();
         EXPECT_EQ(sp->isDone(), true);
         EXPECT_FALSE(sp->send("123"s));
@@ -131,7 +138,8 @@ TEST(ChannelTest, Close) {
     {
         using type = std::string;
         auto _ch = Channel<type>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+        auto sp = std::move(std::get<0>(_ch));
+        auto rp = std::move(std::get<1>(_ch));
         rp.reset();
         EXPECT_EQ(sp->isDone(), true);
         EXPECT_FALSE(sp->send("xyz"s));
@@ -140,7 +148,8 @@ TEST(ChannelTest, Close) {
     {
         using type = std::string;
         auto _ch = Channel<type>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+        auto sp = std::move(std::get<0>(_ch));
+        auto rp = std::move(std::get<1>(_ch));
         sp->done();
         EXPECT_THROW(sp << "123"s, std::runtime_error);
         std::string s;
@@ -151,7 +160,8 @@ TEST(ChannelTest, Close) {
 TEST(ChannelTest, Range) {
     using type = int;
     auto _ch = Channel<type>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     std::thread t1([rp = std::move(rp)] {
         type value = 0;
         for (auto res : *rp) {
@@ -170,7 +180,8 @@ TEST(ChannelTest, Range) {
 TEST(ChannelTest, MultiThread) {
     using type = int;
     auto _ch = Channel<type>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     auto ssp = SenderRefPtr<type>(std::move(sp));
     std::condition_variable cond;
     std::mutex mutex;
@@ -279,7 +290,8 @@ struct TestValue : public A {
 
 TEST(ChannelTest, BitwiseCopy) {
     auto _ch = Channel<TestValue>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     std::thread t1([rp = std::move(rp)] {
         int value = 0;
         for (auto& res : *rp) {
@@ -298,7 +310,8 @@ TEST(ChannelTest, BitwiseCopy) {
 TEST(ChannelTest, ImplicitConversion) {
     using type = A;
     auto _ch = Channel<type*>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     std::thread t1([rp = std::move(rp)] {
         int value = 0;
         for (auto res : *rp) {
@@ -328,7 +341,8 @@ TEST(ChannelTest, ImplicitConversion) {
 TEST(ChannelTest, Emplace) {
     using type = std::pair<int, std::string>;
     auto _ch = Channel<type>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     std::thread t([rp = std::move(rp)] {
         for (int i = 0;; i++) {
             if (auto res = rp->receive(); res.has_value()) {
@@ -348,7 +362,8 @@ TEST(ChannelTest, Emplace) {
 
 TEST(ChannelTest, TryReceiveAll) {
     auto _ch = Channel<int>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     for (int i = 0; i < 10; i++) {
         sp << i;
     }
@@ -364,7 +379,8 @@ TEST(ChannelTest, TryReceiveAll) {
 
 TEST(ChannelTest, Wakeup) {
     auto _ch = Channel<int>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     std::thread t([rp = rp.get()] {
         auto res = rp->receive();
         ASSERT_FALSE(res.has_value());
@@ -377,7 +393,8 @@ TEST(ChannelTest, Wakeup) {
 
 TEST(ChannelTest, WakeupThenDataThenClosed) {
     auto _ch = Channel<int>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     std::thread t([rp = rp.get(), sp = sp.get()] {
         // wakeup 后应该能继续正常接收数据
         auto res = rp->receive();
@@ -397,7 +414,8 @@ TEST(ChannelTest, WakeupThenDataThenClosed) {
 
 TEST(ChannelTest, TryReceiveOnEmpty) {
     auto _ch = Channel<int>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     auto res = rp->tryReceive();
     ASSERT_FALSE(res.has_value());
     EXPECT_EQ(res.error(), ChannelEventType::None);
@@ -409,7 +427,8 @@ TEST(ChannelTest, TryReceiveOnEmpty) {
 
 TEST(ChannelTest, ReceiveOnClosedEmpty) {
     auto _ch = Channel<int>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     sp->done();
     auto res = rp->receive();
     ASSERT_FALSE(res.has_value());
@@ -418,7 +437,8 @@ TEST(ChannelTest, ReceiveOnClosedEmpty) {
 
 TEST(ChannelTest, EmptyRangeSend) {
     auto _ch = Channel<int>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     std::vector<int> empty;
     EXPECT_TRUE(sp->send(empty));
     EXPECT_EQ(rp->size(), 0u);
@@ -427,7 +447,8 @@ TEST(ChannelTest, EmptyRangeSend) {
 
 TEST(ChannelTest, SendRvalueRange) {
     auto _ch = Channel<std::string>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     std::vector<std::string> data = {"a", "b", "c"};
     // std::move(data) 匹配 const I& 重载，元素被拷贝而非移动
     // 此处仅验证 send 成功、数据正确送达
@@ -440,7 +461,8 @@ TEST(ChannelTest, SendRvalueRange) {
 
 TEST(ChannelTest, SizeAndEmpty) {
     auto _ch = Channel<int>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     EXPECT_TRUE(rp->empty());
     EXPECT_EQ(rp->size(), 0u);
     sp << 1;
@@ -456,7 +478,8 @@ TEST(ChannelTest, SizeAndEmpty) {
 
 TEST(ChannelTest, WakeupDoesNotClose) {
     auto _ch = Channel<int>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     rp->wakeup();
     EXPECT_FALSE(sp->isDone());
     EXPECT_TRUE(sp->send(1));
@@ -468,9 +491,10 @@ TEST(ChannelTest, WakeupDoesNotClose) {
 
 TEST(ChannelTest, MultipleWakeups) {
     auto _ch = Channel<int>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     rp->wakeup();
-    rp->wakeup(); // 第二次 wakeup 覆盖第一次
+    rp->wakeup();  // 第二次 wakeup 覆盖第一次
     // 只消费一次 Awakened
     auto res = rp->receive();
     ASSERT_FALSE(res.has_value());
@@ -480,14 +504,16 @@ TEST(ChannelTest, MultipleWakeups) {
 
 TEST(ChannelTest, EmplaceAfterClosed) {
     auto _ch = Channel<int>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     sp->done();
     EXPECT_FALSE(sp->emplace(1));
 }
 
 TEST(ChannelTest, SendRvalueRangeWithNonCopyable) {
     auto _ch = Channel<std::unique_ptr<int>>::create();
-    auto sp = std::move(std::get<0>(_ch)); auto rp = std::move(std::get<1>(_ch));
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
     std::vector<std::unique_ptr<int>> data;
     data.push_back(std::make_unique<int>(1));
     data.push_back(std::make_unique<int>(2));

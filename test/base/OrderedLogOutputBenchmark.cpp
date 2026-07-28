@@ -34,9 +34,7 @@ namespace {
 static std::string genLogLine(int32_t threadId, int32_t seq) {
     return std::format("2025-01-01 12:00:00.000 [info] [OrderedBench.cpp][Line:{}][Function:test] "
                        "thread={} seq={} benchmark log message padding padding padding\n",
-                       seq,
-                       threadId,
-                       seq);
+                       seq, threadId, seq);
 }
 
 static std::string benchLogDir() {
@@ -388,13 +386,8 @@ struct BenchResult {
 static void printResult(const BenchResult& r) {
     std::print("  [{:<35}] threads={:<2} ops/thread={:<7} | total={:.2f}ms | "
                "throughput={:.0f} ops/s | avg_lat={:.0f}ns | p99_lat={:.0f}ns\n",
-               r.name,
-               r.threadCount,
-               r.opsPerThread,
-               r.totalTimeMs,
-               r.throughputOpsPerSec,
-               r.avgLatencyNs,
-               r.p99LatencyNs);
+               r.name, r.threadCount, r.opsPerThread, r.totalTimeMs, r.throughputOpsPerSec,
+               r.avgLatencyNs, r.p99LatencyNs);
 }
 
 static double percentile(std::vector<int64_t>& sorted, double p) {
@@ -618,16 +611,9 @@ TEST_F(OrderedLogOutputBenchmark, Summary_ThreeWay) {
         std::this_thread::sleep_for(milliseconds(100));
     }
 
-    std::print("\n{:<8} | {:<16} {:<16} {:<16} | {:<14} {:<14} {:<14} | {:<8} {:<8}\n",
-               "Threads",
-               "Baseline(ops/s)",
-               "Unord(ops/s)",
-               "Ordered(ops/s)",
-               "Base avg(ns)",
-               "Unord avg(ns)",
-               "Ord avg(ns)",
-               "Unord/B",
-               "Ord/B");
+    std::print("\n{:<8} | {:<16} {:<16} {:<16} | {:<14} {:<14} {:<14} | {:<8} {:<8}\n", "Threads",
+               "Baseline(ops/s)", "Unord(ops/s)", "Ordered(ops/s)", "Base avg(ns)", "Unord avg(ns)",
+               "Ord avg(ns)", "Unord/B", "Ord/B");
     std::string dashLine(140, '-');
     std::print("{}\n", dashLine);
 
@@ -638,31 +624,21 @@ TEST_F(OrderedLogOutputBenchmark, Summary_ThreeWay) {
             orderedResults[i].throughputOpsPerSec / baselineResults[i].throughputOpsPerSec;
         std::print("{:<8} | {:<16.0f} {:<16.0f} {:<16.0f} | {:<14.0f} {:<14.0f} {:<14.0f} | "
                    "{:<8.2f}x {:<8.2f}x\n",
-                   kThreadCounts[i],
-                   baselineResults[i].throughputOpsPerSec,
-                   unorderedResults[i].throughputOpsPerSec,
-                   orderedResults[i].throughputOpsPerSec,
-                   baselineResults[i].avgLatencyNs,
-                   unorderedResults[i].avgLatencyNs,
-                   orderedResults[i].avgLatencyNs,
-                   speedupUnordered,
-                   speedupOrdered);
+                   kThreadCounts[i], baselineResults[i].throughputOpsPerSec,
+                   unorderedResults[i].throughputOpsPerSec, orderedResults[i].throughputOpsPerSec,
+                   baselineResults[i].avgLatencyNs, unorderedResults[i].avgLatencyNs,
+                   orderedResults[i].avgLatencyNs, speedupUnordered, speedupOrdered);
     }
 
     std::print("\n");
 
     // 额外输出 P99 延迟对比
-    std::print("{:<8} | {:<16} {:<16} {:<16}\n",
-               "Threads",
-               "Base P99(ns)",
-               "Unord P99(ns)",
+    std::print("{:<8} | {:<16} {:<16} {:<16}\n", "Threads", "Base P99(ns)", "Unord P99(ns)",
                "Ord P99(ns)");
     std::print("{}\n", std::string(80, '-'));
     for (size_t i = 0; i < kThreadCounts.size(); ++i) {
-        std::print("{:<8} | {:<16.0f} {:<16.0f} {:<16.0f}\n",
-                   kThreadCounts[i],
-                   baselineResults[i].p99LatencyNs,
-                   unorderedResults[i].p99LatencyNs,
+        std::print("{:<8} | {:<16.0f} {:<16.0f} {:<16.0f}\n", kThreadCounts[i],
+                   baselineResults[i].p99LatencyNs, unorderedResults[i].p99LatencyNs,
                    orderedResults[i].p99LatencyNs);
     }
     std::print("\n");

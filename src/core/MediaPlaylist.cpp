@@ -20,9 +20,7 @@ std::optional<uint32_t> MediaPlaylist::findSegmentByTime(double time) const noex
         return std::nullopt;
     }
 
-    auto it = std::lower_bound(segments_.begin(),
-                               segments_.end(),
-                               time,
+    auto it = std::lower_bound(segments_.begin(), segments_.end(), time,
                                [](const Segment& seg, double t) {
                                    return seg.startTime < t;
                                });

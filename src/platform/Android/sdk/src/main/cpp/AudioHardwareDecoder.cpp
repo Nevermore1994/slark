@@ -22,17 +22,12 @@ Error AudioHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
         flag = NativeDecodeFlag::EndOfStream;
     }
     auto res = NativeHardwareDecoder::sendPacket(
-        decoderId_,
-        frame->data,
+        decoderId_, frame->data,
         int64_t(frame->ptsTime() * 1000000),  // convert to microseconds
-        flag,
-        PacketType::Audio);
+        flag, PacketType::Audio);
     if (res == Error::Success || res == Error::CodecAgain || res == Error::CodecNotProcessed) {
-        LogI("send audio packet success, pts:{}, dts:{}, pts time:{}, dts time:{}",
-             frame->pts,
-             frame->dts,
-             frame->ptsTime(),
-             frame->dtsTime());
+        LogI("send audio packet success, pts:{}, dts:{}, pts time:{}, dts time:{}", frame->pts,
+             frame->dts, frame->ptsTime(), frame->dtsTime());
     } else {
         LogE("decode frame error:{}", static_cast<int>(res));
     }
@@ -56,11 +51,9 @@ void AudioHardwareDecoder::retryPendingEOS() noexcept {
         pendingEOSFrame_.reset();
         return;
     }
-    auto res = NativeHardwareDecoder::sendPacket(decoderId_,
-                                                 pendingEOSFrame_->data,
+    auto res = NativeHardwareDecoder::sendPacket(decoderId_, pendingEOSFrame_->data,
                                                  int64_t(pendingEOSFrame_->ptsTime() * 1000000),
-                                                 NativeDecodeFlag::EndOfStream,
-                                                 PacketType::Audio);
+                                                 NativeDecodeFlag::EndOfStream, PacketType::Audio);
     if (res == Error::Success) {
         isCompleted_ = true;
         LogI("pending audio EOS retry success, mark completed");

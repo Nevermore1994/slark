@@ -45,9 +45,9 @@ void PlaySession::recordFrame(int64_t frameDurationUs) noexcept {
 
 void PlaySession::recordEvent(const std::string& eventName, int64_t timestampUs) {
     std::lock_guard<std::mutex> lock(milestoneMutex_);
-    milestones_.push_back(
-        {eventName,
-         timestampUs > 0 ? timestampUs : static_cast<int64_t>(Time::nowTimeStamp().point())});
+    milestones_.push_back({eventName, timestampUs > 0
+                                          ? timestampUs
+                                          : static_cast<int64_t>(Time::nowTimeStamp().point())});
 }
 
 void PlaySession::markMilestone(std::string_view label) {

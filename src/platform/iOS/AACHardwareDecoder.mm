@@ -117,12 +117,9 @@ Error AACHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
         decodingFrame_.reset();
     });
     UInt32 outputDataPacketSize = kAACFrameSize;
-    OSStatus status = AudioConverterFillComplexBuffer(decodeSession_,
-                                                      AACDecodeInputDataProc,
-                                                      reinterpret_cast<void*>(this),
-                                                      &outputDataPacketSize,
-                                                      outputData_.get(),
-                                                      nullptr);
+    OSStatus status = AudioConverterFillComplexBuffer(
+        decodeSession_, AACDecodeInputDataProc, reinterpret_cast<void*>(this),
+        &outputDataPacketSize, outputData_.get(), nullptr);
     inputData_.reset();
     if (status != noErr) {
         LogE("aac decode error: {}", status);

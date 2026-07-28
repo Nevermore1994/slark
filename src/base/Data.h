@@ -339,7 +339,7 @@ class Data {
     }
 
     [[nodiscard]] std::strong_ordering operator<=>(const Data& other) const noexcept {
-        if (auto cmp = length_ <=>other.length_; cmp != 0) {
+        if (auto cmp = length_ <=> other.length_; cmp != 0) {
             return cmp;
         }
         return std::lexicographical_compare_three_way(begin(), end(), other.begin(), other.end());
@@ -442,10 +442,7 @@ struct std::formatter<slark::Data> {
     }
 
     auto format(const slark::Data& data, format_context& ctx) const {
-        return std::format_to(ctx.out(),
-                              "Data(length={}, capacity={}, ptr={})",
-                              data.length(),
-                              data.capacity(),
-                              static_cast<const void*>(data.data()));
+        return std::format_to(ctx.out(), "Data(length={}, capacity={}, ptr={})", data.length(),
+                              data.capacity(), static_cast<const void*>(data.data()));
     }
 };

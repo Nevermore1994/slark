@@ -30,8 +30,7 @@ void HttpResponseParser::feed(const Byte* data, size_t size) {
     if (state_ == State::StatusLine || state_ == State::Headers) {
         if (buffer_.size() + size > kMaxHeaderBufferSize) {
             LogE("[HttpResponseParser::feed] header buffer overflow: size={} state={}",
-                 buffer_.size() + size,
-                 stateName(state_));
+                 buffer_.size() + size, stateName(state_));
             fail(slark::Error::HttpResponseInvalid);
             return;
         }
@@ -170,9 +169,7 @@ void HttpResponseParser::processStatusLine() {
     state_ = State::Headers;
 
     LogI("[HttpResponseParser::processStatusLine] status={} reason={} -> {}",
-         static_cast<int>(statusCode_),
-         std::string(reasonPhrase),
-         stateName(state_));
+         static_cast<int>(statusCode_), std::string(reasonPhrase), stateName(state_));
 
     if (callbacks_.onStatusLine) {
         callbacks_.onStatusLine(statusCode_, std::string(reasonPhrase));
@@ -224,9 +221,7 @@ void HttpResponseParser::processHeaders() {
         state_ = State::ChunkSize;
         LogI("[HttpResponseParser::processHeaders] headers done: count={} transferEncoding=chunked "
              "shouldClose={} -> {}",
-             headers_.size(),
-             shouldClose_,
-             stateName(state_));
+             headers_.size(), shouldClose_, stateName(state_));
     } else {
         auto contentLengthStr = findHeader("Content-Length");
         if (!contentLengthStr.empty()) {
@@ -244,8 +239,7 @@ void HttpResponseParser::processHeaders() {
         if (shouldSkipBody()) {
             LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength={} "
                  "shouldSkipBody=true -> Completed",
-                 headers_.size(),
-                 contentLength_);
+                 headers_.size(), contentLength_);
             complete();
         } else if (contentLength_ == 0) {
             LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength=0 -> "
@@ -256,9 +250,7 @@ void HttpResponseParser::processHeaders() {
             state_ = State::BodyFixed;
             LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength={} "
                  "shouldClose={} -> BodyFixed",
-                 headers_.size(),
-                 contentLength_,
-                 shouldClose_);
+                 headers_.size(), contentLength_, shouldClose_);
         }
     }
 
@@ -291,13 +283,11 @@ void HttpResponseParser::processBodyFixed() {
 
         if (bodyReceived_ >= contentLength_) {
             LogI("[HttpResponseParser::processBodyFixed] complete: bodyReceived={}/{}",
-                 bodyReceived_,
-                 contentLength_);
+                 bodyReceived_, contentLength_);
             complete();
         } else if (bodyReceived_ - lastLoggedBodyReceived_ >= parserLogChunkBytes()) {
             LogI("[HttpResponseParser::processBodyFixed] progress: bodyReceived={}/{}",
-                 bodyReceived_,
-                 contentLength_);
+                 bodyReceived_, contentLength_);
             lastLoggedBodyReceived_ = bodyReceived_;
         }
     } else {
@@ -394,8 +384,7 @@ void HttpResponseParser::processChunkTrailer() {
     // 累计长度超限时直接 fail，防止 OOM
     if (trailerBytesRead_ + data.size() > kMaxTrailerSize) {
         LogE("[HttpResponseParser::processChunkTrailer] trailer overflow: trailerBytes={} chunk={}",
-             trailerBytesRead_,
-             data.size());
+             trailerBytesRead_, data.size());
         fail(slark::Error::HttpResponseInvalid);
         return;
     }

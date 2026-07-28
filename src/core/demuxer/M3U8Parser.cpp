@@ -104,8 +104,7 @@ bool M3U8Parser::parseMediaPlaylist(const std::string& content) noexcept {
         if (line.find("#EXTINF:") == 0) {
             // 解析 duration 和 uri
             std::smatch match;
-            if (!std::regex_match(line,
-                                  match,
+            if (!std::regex_match(line, match,
                                   std::regex(R"(#EXTINF:([\d.]+)\s*(?:,([^\n]*))?)"))) {
                 continue;
             }

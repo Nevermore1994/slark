@@ -31,99 +31,34 @@ void TestUrlParsing(const std::string& url,
 
 TEST(UrlParseTest, BasicUrls) {
     TestUrlParsing("http://example.com", "http", "", "example.com", "80", "/", "", "");
-    TestUrlParsing("http://example.com/path/to/resource",
-                   "http",
-                   "",
-                   "example.com",
-                   "80",
-                   "/path/to/resource",
-                   "",
-                   "");
-    TestUrlParsing("http://example.com/path/to/resource?query=param",
-                   "http",
-                   "",
-                   "example.com",
-                   "80",
-                   "/path/to/resource",
-                   "query=param",
-                   "");
-    TestUrlParsing("http://example.com/path/to/resource?query1=param1&query2=param2",
-                   "http",
-                   "",
-                   "example.com",
-                   "80",
-                   "/path/to/resource",
-                   "query1=param1&query2=param2",
-                   "");
+    TestUrlParsing("http://example.com/path/to/resource", "http", "", "example.com", "80",
+                   "/path/to/resource", "", "");
+    TestUrlParsing("http://example.com/path/to/resource?query=param", "http", "", "example.com",
+                   "80", "/path/to/resource", "query=param", "");
+    TestUrlParsing("http://example.com/path/to/resource?query1=param1&query2=param2", "http", "",
+                   "example.com", "80", "/path/to/resource", "query1=param1&query2=param2", "");
     TestUrlParsing("http://example.com:8080", "http", "", "example.com", "8080", "/", "", "");
-    TestUrlParsing("http://example.com/path/to/resource#section",
-                   "http",
-                   "",
-                   "example.com",
-                   "80",
-                   "/path/to/resource",
-                   "",
-                   "section");
-    TestUrlParsing("http://example.com/path/to/resource?query=param#section",
-                   "http",
-                   "",
-                   "example.com",
-                   "80",
-                   "/path/to/resource",
-                   "query=param",
-                   "section");
-    TestUrlParsing("http://username:password@example.com",
-                   "http",
-                   "username:password",
-                   "example.com",
-                   "80",
-                   "/",
-                   "",
-                   "");
-    TestUrlParsing("http://username:password@example.com:8080",
-                   "http",
-                   "username:password",
-                   "example.com",
-                   "8080",
-                   "/",
-                   "",
-                   "");
+    TestUrlParsing("http://example.com/path/to/resource#section", "http", "", "example.com", "80",
+                   "/path/to/resource", "", "section");
+    TestUrlParsing("http://example.com/path/to/resource?query=param#section", "http", "",
+                   "example.com", "80", "/path/to/resource", "query=param", "section");
+    TestUrlParsing("http://username:password@example.com", "http", "username:password",
+                   "example.com", "80", "/", "", "");
+    TestUrlParsing("http://username:password@example.com:8080", "http", "username:password",
+                   "example.com", "8080", "/", "", "");
     TestUrlParsing("http://username:password@example.com:8080/path/to/resource?query=param#section",
-                   "http",
-                   "username:password",
-                   "example.com",
-                   "8080",
-                   "/path/to/resource",
-                   "query=param",
-                   "section");
+                   "http", "username:password", "example.com", "8080", "/path/to/resource",
+                   "query=param", "section");
 }
 
 TEST(UrlParseTest, IPv6Urls) {
     // IPv6地址在内部存储时不包含方括号
-    TestUrlParsing("http://[2001:db8::1]:8080/path/to/resource",
-                   "http",
-                   "",
-                   "2001:db8::1",
-                   "8080",
-                   "/path/to/resource",
-                   "",
-                   "");
-    TestUrlParsing("http://[2001:db8::1]:8080/path/to/resource?query=param",
-                   "http",
-                   "",
-                   "2001:db8::1",
-                   "8080",
-                   "/path/to/resource",
-                   "query=param",
-                   "");
-    TestUrlParsing("http://[2001:db8::1]:8080/path/to/resource?query=param#section",
-                   "http",
-                   "",
-                   "2001:db8::1",
-                   "8080",
-                   "/path/to/resource",
-                   "query=param",
-                   "section");
+    TestUrlParsing("http://[2001:db8::1]:8080/path/to/resource", "http", "", "2001:db8::1", "8080",
+                   "/path/to/resource", "", "");
+    TestUrlParsing("http://[2001:db8::1]:8080/path/to/resource?query=param", "http", "",
+                   "2001:db8::1", "8080", "/path/to/resource", "query=param", "");
+    TestUrlParsing("http://[2001:db8::1]:8080/path/to/resource?query=param#section", "http", "",
+                   "2001:db8::1", "8080", "/path/to/resource", "query=param", "section");
 }
 
 TEST(UrlParseTest, HttpsUrls) {
@@ -133,13 +68,8 @@ TEST(UrlParseTest, HttpsUrls) {
 
 TEST(UrlParseTest, SpecialCharacters) {
     TestUrlParsing("http://example.com/path/to/res@urce?query=pa%20ram&another=param#sec!tion",
-                   "http",
-                   "",
-                   "example.com",
-                   "80",
-                   "/path/to/res@urce",
-                   "query=pa%20ram&another=param",
-                   "sec!tion");
+                   "http", "", "example.com", "80", "/path/to/res@urce",
+                   "query=pa%20ram&another=param", "sec!tion");
 }
 
 TEST(UrlParseTest, InvalidUrls) {

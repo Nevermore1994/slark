@@ -159,9 +159,7 @@ static jobject RenderManager_getBackupTextureId(JNIEnv* env, const std::string& 
         LogE("backup texture is null for playerId: {}", playerId);
         return nullptr;
     }
-    return JNI::JNICall::create(env,
-                                kTextureClass,
-                                static_cast<int32_t>(texture->textureId()),
+    return JNI::JNICall::create(env, kTextureClass, static_cast<int32_t>(texture->textureId()),
                                 static_cast<int32_t>(texture->width()),
                                 static_cast<int32_t>(texture->height()))
         .detach();

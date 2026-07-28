@@ -137,8 +137,7 @@ class DataView {
             return std::nullopt;
         }
         T result{};
-        std::copy_n(reinterpret_cast<const std::byte*>(span_.data()),
-                    sizeof(T),
+        std::copy_n(reinterpret_cast<const std::byte*>(span_.data()), sizeof(T),
                     reinterpret_cast<std::byte*>(&result));
         return result;
     }
@@ -222,10 +221,8 @@ class DataView {
         if (needle.size() > span_.size() - pos) {
             return npos;
         }
-        auto it = std::search(span_.begin() + static_cast<difference_type>(pos),
-                              span_.end(),
-                              needle.span_.begin(),
-                              needle.span_.end());
+        auto it = std::search(span_.begin() + static_cast<difference_type>(pos), span_.end(),
+                              needle.span_.begin(), needle.span_.end());
         return it != span_.end() ? static_cast<size_type>(it - span_.begin()) : npos;
     }
 
@@ -258,9 +255,7 @@ class DataView {
         if (sub.empty()) {
             return other.empty() ? 0 : -1;
         }
-        auto cmp = std::lexicographical_compare_three_way(sub.begin(),
-                                                          sub.end(),
-                                                          other.begin(),
+        auto cmp = std::lexicographical_compare_three_way(sub.begin(), sub.end(), other.begin(),
                                                           other.end());
         return cmp < 0 ? -1 : (cmp > 0 ? 1 : 0);
     }
@@ -295,10 +290,8 @@ class DataView {
     }
 
     [[nodiscard]] constexpr std::strong_ordering operator<=>(DataView other) const noexcept {
-        return std::lexicographical_compare_three_way(span_.begin(),
-                                                      span_.end(),
-                                                      other.span_.begin(),
-                                                      other.span_.end());
+        return std::lexicographical_compare_three_way(span_.begin(), span_.end(),
+                                                      other.span_.begin(), other.span_.end());
     }
 
     [[nodiscard]] constexpr iterator begin() const noexcept {
@@ -357,9 +350,7 @@ struct std::formatter<slark::DataView> {
     }
 
     auto format(const slark::DataView& view, format_context& ctx) const {
-        return std::format_to(ctx.out(),
-                              "DataView(size={}, data={})",
-                              view.size(),
+        return std::format_to(ctx.out(), "DataView(size={}, data={})", view.size(),
                               static_cast<const void*>(view.data()));
     }
 };

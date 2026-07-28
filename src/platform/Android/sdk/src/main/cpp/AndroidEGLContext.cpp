@@ -115,11 +115,8 @@ EGLSurface AndroidEGLContext::createWindowSurface(ANativeWindow* surface) noexce
 }
 
 EGLSurface AndroidEGLContext::createOffscreenSurface(uint32_t width, uint32_t height) noexcept {
-    int surfaceAttributes[] = {EGL_WIDTH,
-                               static_cast<int>(width),
-                               EGL_HEIGHT,
-                               static_cast<int>(height),
-                               EGL_NONE};
+    int surfaceAttributes[] = {EGL_WIDTH, static_cast<int>(width), EGL_HEIGHT,
+                               static_cast<int>(height), EGL_NONE};
     EGLSurface eglSurface = eglCreatePbufferSurface(display_, config_, surfaceAttributes);
     if (eglSurface == nullptr) {
         LogE("Surface was null");

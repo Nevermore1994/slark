@@ -67,12 +67,9 @@ TEST(M3U8ParserFuzzTest, MixedMasterAndMedia) {
 TEST(M3U8ParserFuzzTest, EdgeCaseUrls) {
     M3U8Parser parser("https://example.com/live/");
     std::vector<std::string> urls = {
-        "http://other.com/stream.m3u8",
-        "//relative-host.com/stream.m3u8",
-        "/absolute/path/stream.m3u8",
-        "../parent/stream.m3u8",
-        "./current/stream.m3u8",
-        "",
+        "http://other.com/stream.m3u8", "//relative-host.com/stream.m3u8",
+        "/absolute/path/stream.m3u8",   "../parent/stream.m3u8",
+        "./current/stream.m3u8",        "",
     };
     for (const auto& input : urls) {
         std::string playlist = "#EXTM3U\n#EXTINF:10.0,\n" + input + "\n#EXT-X-ENDLIST\n";

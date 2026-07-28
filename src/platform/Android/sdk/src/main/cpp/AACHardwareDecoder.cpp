@@ -21,18 +21,12 @@ Error AACHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
         flag = NativeDecodeFlag::EndOfStream;
     }
     auto res = NativeHardwareDecoder::sendPacket(
-        decoderId_,
-        frame->data,
+        decoderId_, frame->data,
         int64_t(frame->ptsTime() * 1000000),  // convert to microseconds
-        flag,
-        PacketType::Audio);
+        flag, PacketType::Audio);
     if (res == Error::Success || res == Error::CodecAgain) {
         LogI("send audio packet success, pts:{}, dts:{}, pts time:{}, dts time:{}, isEOS:{}",
-             frame->pts,
-             frame->dts,
-             frame->ptsTime(),
-             frame->dtsTime(),
-             frame->isEOS);
+             frame->pts, frame->dts, frame->ptsTime(), frame->dtsTime(), frame->isEOS);
     } else {
         LogE("decode frame error:{}", toString(res));
     }

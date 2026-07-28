@@ -51,7 +51,8 @@ class TimeDelta {
     }
 
     template <typename T>
-    requires std::is_floating_point_v<T> static TimeDelta fromSeconds(T seconds) noexcept {
+        requires std::is_floating_point_v<T>
+    static TimeDelta fromSeconds(T seconds) noexcept {
         return TimeDelta(static_cast<int64_t>(seconds * kMicroSecondScale));
     }
 
@@ -108,7 +109,8 @@ class TimePoint {
     }
 
     template <typename T>
-    requires std::is_floating_point_v<T> static TimePoint fromSeconds(T seconds) noexcept {
+        requires std::is_floating_point_v<T>
+    static TimePoint fromSeconds(T seconds) noexcept {
         return TimePoint(static_cast<uint64_t>(seconds * kMicroSecondScale));
     }
 

@@ -32,11 +32,8 @@ bool FrameBuffer::init() noexcept {
 
     glBindFramebuffer(GL_FRAMEBUFFER, frameBufferId_);
     glBindTexture(GL_TEXTURE_2D, texture_->textureId());
-    glFramebufferTexture2D(GL_FRAMEBUFFER,
-                           GL_COLOR_ATTACHMENT0,
-                           GL_TEXTURE_2D,
-                           texture_->textureId(),
-                           0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                           texture_->textureId(), 0);
     auto status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE) {
         LogE("Framebuffer is not complete: {}", status);
@@ -75,11 +72,8 @@ bool FrameBuffer::bind(bool isRebinding) noexcept {
     }
     // 必须先 bind FBO，再 attach texture，再 check status
     glBindFramebuffer(GL_FRAMEBUFFER, frameBufferId_);
-    glFramebufferTexture2D(GL_FRAMEBUFFER,
-                           GL_COLOR_ATTACHMENT0,
-                           GL_TEXTURE_2D,
-                           texture_->textureId(),
-                           0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                           texture_->textureId(), 0);
     auto status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE) {
         LogE("Framebuffer is not complete: {}", status);

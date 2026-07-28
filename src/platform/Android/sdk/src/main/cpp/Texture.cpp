@@ -17,14 +17,8 @@ Texture::Texture(uint32_t width, uint32_t height, TextureConfig config, DataPtr 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, config_.warp.t);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, config_.filter.min);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, config_.filter.mag);
-    glTexImage2D(GL_TEXTURE_2D,
-                 0,
-                 config_.internalFormat,
-                 static_cast<int>(width_),
-                 static_cast<int>(height_),
-                 0,
-                 config_.format,
-                 config_.type,
+    glTexImage2D(GL_TEXTURE_2D, 0, config_.internalFormat, static_cast<int>(width_),
+                 static_cast<int>(height_), 0, config_.format, config_.type,
                  data ? data->data() : nullptr);
     glBindTexture(GL_TEXTURE_2D, 0);
 }
@@ -41,15 +35,8 @@ void Texture::updateData(DataPtr data) const noexcept {
         return;
     }
     glBindTexture(GL_TEXTURE_2D, textureId_);
-    glTexImage2D(GL_TEXTURE_2D,
-                 0,
-                 config_.internalFormat,
-                 static_cast<int>(width_),
-                 static_cast<int>(height_),
-                 0,
-                 config_.format,
-                 config_.type,
-                 data->data());
+    glTexImage2D(GL_TEXTURE_2D, 0, config_.internalFormat, static_cast<int>(width_),
+                 static_cast<int>(height_), 0, config_.format, config_.type, data->data());
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 

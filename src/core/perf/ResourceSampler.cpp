@@ -66,8 +66,7 @@ void ResourceSampler::registerSession(std::weak_ptr<PlaySession> session) {
 
 void ResourceSampler::unregisterSession(const std::string& sessionId) {
     std::lock_guard<std::mutex> lock(sessionsMutex_);
-    activeSessions_.erase(std::remove_if(activeSessions_.begin(),
-                                         activeSessions_.end(),
+    activeSessions_.erase(std::remove_if(activeSessions_.begin(), activeSessions_.end(),
                                          [&sessionId](auto& weak) {
                                              auto s = weak.lock();
                                              return !s || s->sessionId() == sessionId;
@@ -198,10 +197,8 @@ void ResourceSampler::readMemoryInfo(int64_t& rssKB, int64_t& vmSizeKB) {
 double ResourceSampler::calcCpuUsage() {
     task_thread_times_info_data_t taskTimes;
     mach_msg_type_number_t count = TASK_THREAD_TIMES_INFO_COUNT;
-    kern_return_t kr = task_info(mach_task_self(),
-                                 TASK_THREAD_TIMES_INFO,
-                                 reinterpret_cast<task_info_t>(&taskTimes),
-                                 &count);
+    kern_return_t kr = task_info(mach_task_self(), TASK_THREAD_TIMES_INFO,
+                                 reinterpret_cast<task_info_t>(&taskTimes), &count);
     if (kr != KERN_SUCCESS) {
         return 0.0;
     }
@@ -228,10 +225,8 @@ void ResourceSampler::readMemoryInfo(int64_t& rssKB, int64_t& vmSizeKB) {
     vmSizeKB = 0;
     mach_task_basic_info_data_t taskInfo;
     mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
-    kern_return_t kr = task_info(mach_task_self(),
-                                 MACH_TASK_BASIC_INFO,
-                                 reinterpret_cast<task_info_t>(&taskInfo),
-                                 &count);
+    kern_return_t kr = task_info(mach_task_self(), MACH_TASK_BASIC_INFO,
+                                 reinterpret_cast<task_info_t>(&taskInfo), &count);
     if (kr != KERN_SUCCESS) {
         return;
     }

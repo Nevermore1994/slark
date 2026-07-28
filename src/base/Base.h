@@ -17,25 +17,20 @@
 namespace slark {
 
 template <typename T>
-requires std::is_floating_point_v<T> bool isEqual(T a,
-                                                  T b,
-                                                  T epsilon = std::numeric_limits<T>::epsilon()) {
+    requires std::is_floating_point_v<T>
+bool isEqual(T a, T b, T epsilon = std::numeric_limits<T>::epsilon()) {
     return std::fabs(a - b) < epsilon;
 }
 
 template <typename T>
-requires std::is_floating_point_v<T> bool isEqualOrGreater(
-    T a,
-    T b,
-    T epsilon = std::numeric_limits<T>::epsilon()) {
+    requires std::is_floating_point_v<T>
+bool isEqualOrGreater(T a, T b, T epsilon = std::numeric_limits<T>::epsilon()) {
     return std::fabs(a - b) < epsilon || a > b;
 }
 
 template <typename T>
-requires std::is_floating_point_v<T> bool isEqualOrLess(
-    T a,
-    T b,
-    T epsilon = std::numeric_limits<T>::epsilon()) {
+    requires std::is_floating_point_v<T>
+bool isEqualOrLess(T a, T b, T epsilon = std::numeric_limits<T>::epsilon()) {
     return std::fabs(a - b) < epsilon || a < b;
 }
 

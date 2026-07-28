@@ -42,9 +42,7 @@ void HttpStream::close() noexcept {
         request_.reset();
     }
 
-    LogI("[HttpStream::close] url={} pos={} state={}",
-         params_.uri,
-         position_.load(),
+    LogI("[HttpStream::close] url={} pos={} state={}", params_.uri, position_.load(),
          static_cast<int>(state_.load()));
 
     state_ = StreamState::Idle;
@@ -82,15 +80,13 @@ void HttpStream::start() noexcept {
         requestInfo.headers["Range"] = readRange_.toHeaderString();
     }
 
-    LogI("[HttpStream::start] url={} range={} method=GET",
-         requestInfo.url,
+    LogI("[HttpStream::start] url={} range={} method=GET", requestInfo.url,
          requestInfo.headers.count("Range") ? requestInfo.headers["Range"] : std::string{});
 
     auto self = request_;
     std::weak_ptr<HttpStream> weakThis = shared_from_this();
 
-    auto streamTask = [](std::shared_ptr<http::HttpRequest> req,
-                         http::RequestInfo info,
+    auto streamTask = [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
                          std::weak_ptr<HttpStream> weakStream) -> Task<void> {
         // 必须传 req->cancelToken()：seek 时 cancel() 才能中断 processStreaming
         auto gen = req->streamingExecute(info, req->cancelToken());
@@ -119,8 +115,7 @@ void HttpStream::start() noexcept {
             stream->isRunning_ = false;
 
             LogI("[HttpStream::streamTask] generator exhausted, totalReceived={} url={}",
-                 stream->position_.load(),
-                 stream->params_.uri);
+                 stream->position_.load(), stream->params_.uri);
 
             if (stream->params_.onComplete) {
                 stream->params_.onComplete();
@@ -182,9 +177,7 @@ void HttpStream::handleChunk(http::StreamChunk&& chunk) noexcept {
         // retCode 已是 slark::Error，originErrorCode 携带真实子码（HTTP statusCode / errno）
         lastErrorOriginCode_.store(chunk.error.originErrorCode, std::memory_order_release);
         LogE("[HttpStream::handleChunk] error chunk: retCode={} originCode={} pos={} url={}",
-             static_cast<int>(chunk.error.retCode),
-             chunk.error.originErrorCode,
-             position_.load(),
+             static_cast<int>(chunk.error.retCode), chunk.error.originErrorCode, position_.load(),
              params_.uri);
         // Cancelled 是 seek/cancel 的正常副作用，不上报为错误
         if (chunk.error.retCode != Error::Cancelled) {
@@ -228,11 +221,8 @@ void HttpStream::handleChunk(http::StreamChunk&& chunk) noexcept {
 
         LogI("[HttpStream::handleChunk] header: status={} acceptRanges={} contentLength={} "
              "totalSize={} url={}",
-             static_cast<int>(chunk.statusCode),
-             acceptRanges_ ? "bytes" : "none",
-             contentLength_,
-             info_.totalSize,
-             params_.uri);
+             static_cast<int>(chunk.statusCode), acceptRanges_ ? "bytes" : "none", contentLength_,
+             info_.totalSize, params_.uri);
 
         return;
     }
@@ -256,10 +246,8 @@ void HttpStream::handleChunk(http::StreamChunk&& chunk) noexcept {
         // 限频进度日志：每累计 progressLogBytes 打一次，避免热路径 spam
         if (position_.load() / logProgressBytes() !=
             (position_.load() - chunkSize) / logProgressBytes()) {
-            LogI("[HttpStream::handleChunk] progress: pos={} chunk={} url={}",
-                 position_.load(),
-                 chunkSize,
-                 params_.uri);
+            LogI("[HttpStream::handleChunk] progress: pos={} chunk={} url={}", position_.load(),
+                 chunkSize, params_.uri);
         }
     }
 
@@ -268,8 +256,7 @@ void HttpStream::handleChunk(http::StreamChunk&& chunk) noexcept {
         state_ = StreamState::Completed;
         isRunning_ = false;
 
-        LogI("[HttpStream::handleChunk] final chunk: totalReceived={} url={}",
-             position_.load(),
+        LogI("[HttpStream::handleChunk] final chunk: totalReceived={} url={}", position_.load(),
              params_.uri);
 
         if (params_.onComplete) {
@@ -281,10 +268,7 @@ void HttpStream::handleChunk(http::StreamChunk&& chunk) noexcept {
 void HttpStream::handleError(const http::ErrorInfo& error) noexcept {
     lastErrorOriginCode_.store(error.originErrorCode, std::memory_order_release);
     LogE("[HttpStream::handleError] retCode={} originCode={} pos={} url={}",
-         static_cast<int>(error.retCode),
-         error.originErrorCode,
-         position_.load(),
-         params_.uri);
+         static_cast<int>(error.retCode), error.originErrorCode, position_.load(), params_.uri);
     if (params_.onError) {
         params_.onError(error.retCode, error.originErrorCode);
     }

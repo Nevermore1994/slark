@@ -15,17 +15,13 @@ namespace slark {
 
 #ifdef DEBUG
 
-#define SAssert(result, format, ...)                       \
-    do {                                                   \
-        if (!(result)) [[unlikely]] {                      \
-            std::print(stderr,                             \
-                       "[Assert] {}:{} ({}) " format "\n", \
-                       __FILE_NAME__,                      \
-                       __LINE__,                           \
-                       __FUNCTION__,                       \
-                       ##__VA_ARGS__);                     \
-            __builtin_trap();                              \
-        }                                                  \
+#define SAssert(result, format, ...)                                                        \
+    do {                                                                                    \
+        if (!(result)) [[unlikely]] {                                                       \
+            std::print(stderr, "[Assert] {}:{} ({}) " format "\n", __FILE_NAME__, __LINE__, \
+                       __FUNCTION__, ##__VA_ARGS__);                                        \
+            __builtin_trap();                                                               \
+        }                                                                                   \
     } while (0)
 
 #else

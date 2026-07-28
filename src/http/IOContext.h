@@ -108,9 +108,7 @@ class AsyncConnect : public slark::AsyncIOOperationBase<AsyncConnect, void> {
             setCleanup([fd = fd_]() {
                 IOContext::instance().unregisterContinuation(fd, FdInterest::Write);
             });
-            IOContext::instance().registerContinuation(fd_,
-                                                       FdInterest::Write,
-                                                       ioHandle(),
+            IOContext::instance().registerContinuation(fd_, FdInterest::Write, ioHandle(),
                                                        ioAliveFlag());
             IOContext::instance().setWritable(fd_, true);
         } else {
@@ -139,9 +137,7 @@ class AsyncRead : public slark::AsyncIOOperationBase<AsyncRead, size_t> {
             setCleanup([fd = fd_]() {
                 IOContext::instance().unregisterContinuation(fd, FdInterest::Read);
             });
-            IOContext::instance().registerContinuation(fd_,
-                                                       FdInterest::Read,
-                                                       ioHandle(),
+            IOContext::instance().registerContinuation(fd_, FdInterest::Read, ioHandle(),
                                                        ioAliveFlag());
             IOContext::instance().setReadable(fd_, true);
         } else {
@@ -177,9 +173,7 @@ class AsyncWrite : public slark::AsyncIOOperationBase<AsyncWrite, size_t> {
             setCleanup([fd = fd_]() {
                 IOContext::instance().unregisterContinuation(fd, FdInterest::Write);
             });
-            IOContext::instance().registerContinuation(fd_,
-                                                       FdInterest::Write,
-                                                       ioHandle(),
+            IOContext::instance().registerContinuation(fd_, FdInterest::Write, ioHandle(),
                                                        ioAliveFlag());
             IOContext::instance().setWritable(fd_, true);
         } else {

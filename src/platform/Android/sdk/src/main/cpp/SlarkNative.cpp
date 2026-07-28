@@ -17,10 +17,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_slark_sdk_SlarkNativeBridge_logout(JN
                                                                               jobject /* this */,
                                                                               jint level,
                                                                               jstring message) {
-    JNI::JNICall::callStatic<void>(env,
-                                   "com/slark/sdk/SlarkNativeBridge",
-                                   "logout",
-                                   level,
+    JNI::JNICall::callStatic<void>(env, "com/slark/sdk/SlarkNativeBridge", "logout", level,
                                    message);
 }
 
@@ -33,9 +30,7 @@ void printLog(LogType type, const std::string& logStr) {
     }
     auto* env = guard.get();
     auto jMessage = JNI::ToJVM::str(env, logStr);
-    Java_com_slark_sdk_SlarkNativeBridge_logout(env,
-                                                nullptr,
-                                                static_cast<jint>(type),
+    Java_com_slark_sdk_SlarkNativeBridge_logout(env, nullptr, static_cast<jint>(type),
                                                 jMessage.get());
 }
 
