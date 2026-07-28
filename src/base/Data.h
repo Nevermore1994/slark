@@ -4,11 +4,6 @@
 
 #pragma once
 
-#include "ByteUtils.hpp"
-#include "DataView.hpp"
-#include "Error.h"
-#include "Types.h"
-
 #include <algorithm>
 #include <compare>
 #include <cstdint>
@@ -18,6 +13,11 @@
 #include <span>
 #include <string_view>
 #include <vector>
+
+#include "ByteUtils.hpp"
+#include "DataView.hpp"
+#include "Error.h"
+#include "Types.h"
 
 namespace slark {
 
@@ -29,7 +29,7 @@ using DataRefPtr = std::shared_ptr<Data>;
 using DataSpan = std::span<const uint8_t>;
 
 class Data {
-public:
+ public:
     Data() = default;
 
     Data(uint64_t size, const Byte* data) {
@@ -339,7 +339,7 @@ public:
     }
 
     [[nodiscard]] std::strong_ordering operator<=>(const Data& other) const noexcept {
-        if (auto cmp = length_ <=> other.length_; cmp != 0) {
+        if (auto cmp = length_ <=>other.length_; cmp != 0) {
             return cmp;
         }
         return std::lexicographical_compare_three_way(begin(), end(), other.begin(), other.end());
@@ -349,7 +349,7 @@ public:
         return length_ == other.length_ && std::ranges::equal(view(), other.view());
     }
 
-private:
+ private:
     [[nodiscard]] bool allocate(uint64_t size) noexcept {
         rawData_ = std::unique_ptr<Byte[]>(new (std::nothrow) Byte[size]);
         if (rawData_) {
@@ -391,7 +391,7 @@ private:
         return *this;
     }
 
-private:
+ private:
     uint64_t capacity_ = 0;
     uint64_t length_ = 0;
     std::unique_ptr<Byte[]> rawData_;
@@ -401,7 +401,7 @@ struct DataPacket {
     DataPtr data = nullptr;
     int64_t offset = 0;
     std::string tag;
-    uint64_t seekEpoch = 0; // seek 纪元，每次 seek + 1，用于全链路隔离旧包
+    uint64_t seekEpoch = 0;  // seek 纪元，每次 seek + 1，用于全链路隔离旧包
 
     DataPacket() = default;
 
@@ -433,7 +433,7 @@ struct DataPacket {
     }
 };
 
-} // namespace slark
+}  // namespace slark
 
 template <>
 struct std::formatter<slark::Data> {

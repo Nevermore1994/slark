@@ -3,8 +3,6 @@
 //
 #pragma once
 
-#include "Assert.hpp"
-
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -13,6 +11,8 @@
 #include <string>
 #include <type_traits>
 
+#include "Assert.hpp"
+
 namespace slark::Time {
 
 constexpr uint64_t kTimeInvalid = 0;
@@ -20,10 +20,10 @@ constexpr uint64_t kMicroSecondScale = 1000000;
 constexpr uint64_t kMillSecondScale = 1000;
 
 class TimeDelta {
-private:
+ private:
     int64_t microseconds_{};
 
-public:
+ public:
     explicit(false) TimeDelta(int64_t us = 0) noexcept : microseconds_(us) {}
 
     [[nodiscard]] int64_t point() const noexcept {
@@ -51,8 +51,7 @@ public:
     }
 
     template <typename T>
-        requires std::is_floating_point_v<T>
-    static TimeDelta fromSeconds(T seconds) noexcept {
+    requires std::is_floating_point_v<T> static TimeDelta fromSeconds(T seconds) noexcept {
         return TimeDelta(static_cast<int64_t>(seconds * kMicroSecondScale));
     }
 
@@ -78,10 +77,10 @@ public:
 };
 
 class TimePoint {
-private:
+ private:
     uint64_t microseconds_{};
 
-public:
+ public:
     explicit(false) constexpr TimePoint(uint64_t t = 0) noexcept : microseconds_(t) {}
 
     [[nodiscard]] uint64_t point() const noexcept {
@@ -109,8 +108,7 @@ public:
     }
 
     template <typename T>
-        requires std::is_floating_point_v<T>
-    static TimePoint fromSeconds(T seconds) noexcept {
+    requires std::is_floating_point_v<T> static TimePoint fromSeconds(T seconds) noexcept {
         return TimePoint(static_cast<uint64_t>(seconds * kMicroSecondScale));
     }
 
@@ -177,7 +175,7 @@ std::string localTimeStr() noexcept;
 std::string localShortTimeStr() noexcept;
 
 class Deadline {
-public:
+ public:
     explicit Deadline(std::chrono::milliseconds timeout) noexcept
         : expirePoint_(nowTimeStamp() + timeout) {}
 
@@ -193,16 +191,16 @@ public:
         return (expirePoint_ - now).toMilliSeconds();
     }
 
-private:
+ private:
     TimePoint expirePoint_;
 };
 
 struct CTime {
-private:
+ private:
     static constexpr double kTimePrecision = std::numeric_limits<double>::epsilon();
     static constexpr uint64_t kDefaultScale = 1000U;
 
-public:
+ public:
     int64_t value;
     uint64_t scale = kDefaultScale;
 
@@ -305,10 +303,10 @@ struct CTimeRange {
     }
 };
 
-} // namespace slark::Time
+}  // namespace slark::Time
 
 namespace slark {
 using Time::CTime;
 using Time::CTimeRange;
 using Time::Deadline;
-} // namespace slark
+}  // namespace slark

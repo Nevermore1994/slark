@@ -1,15 +1,5 @@
-//
 // Copyright (c) 2026 Nevermore-. All rights reserved.
-//
-
-//  C++23 Modernized DataView based on std::span
-//
 #pragma once
-
-#include "Error.h"
-#include "Range.h"
-#include "StringUtil.h"
-#include "Types.h"
 
 #include <algorithm>
 #include <compare>
@@ -20,10 +10,15 @@
 #include <string_view>
 #include <vector>
 
+#include "Error.h"
+#include "Range.h"
+#include "StringUtil.h"
+#include "Types.h"
+
 namespace slark {
 
 class DataView {
-public:
+ public:
     using value_type = Byte;
     using size_type = std::size_t;
     using difference_type = std::ptrdiff_t;
@@ -322,7 +317,7 @@ public:
         return span_.data() + span_.size();
     }
 
-private:
+ private:
     ConstByteSpan span_;
 
     template <typename T>
@@ -342,7 +337,7 @@ inline DataView operator""_view(const char* str, std::size_t size) noexcept {
     return DataView(reinterpret_cast<const Byte*>(str), size);
 }
 
-} // namespace slark
+}  // namespace slark
 
 template <>
 struct std::hash<slark::DataView> {

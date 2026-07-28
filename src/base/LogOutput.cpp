@@ -3,14 +3,14 @@
 //
 #include "LogOutput.h"
 
-#include "Log.hpp"
-#include "LogConfig.h"
-#include "Time.hpp"
-
 #include <algorithm>
 #include <filesystem>
 #include <memory>
 #include <ranges>
+
+#include "Log.hpp"
+#include "LogConfig.h"
+#include "Time.hpp"
 
 namespace slark {
 
@@ -166,9 +166,10 @@ std::string LogOutput::logFilePath() const {
     if (dir.empty()) {
         return "";
     }
-    const std::string fileName = config.logFileName.empty()
-                                     ? (Time::localShortTimeStr() + ".log")
-                                     : (config.logFileName + "_" + Time::localShortTimeStr() + ".log");
+    const std::string fileName =
+        config.logFileName.empty()
+            ? (Time::localShortTimeStr() + ".log")
+            : (config.logFileName + "_" + Time::localShortTimeStr() + ".log");
     return dir + "/" + fileName;
 }
 
@@ -230,12 +231,16 @@ void LogOutput::pruneOldLogs() noexcept {
 
     try {
         for (const auto& entry : std::filesystem::directory_iterator(dir)) {
-            if (!entry.is_regular_file()) continue;
-            auto stem = entry.path().stem().string();     // e.g. "slark_20260717" 或 "20260717"
-            auto ext = entry.path().extension().string(); // e.g. ".log" 或 ".1"
+            if (!entry.is_regular_file()) {
+                continue;
+            }
+            auto stem = entry.path().stem().string();      // e.g. "slark_20260717" 或 "20260717"
+            auto ext = entry.path().extension().string();  // e.g. ".log" 或 ".1"
 
             // 仅处理带编号的轮转文件
-            if (ext.size() <= 1 || ext[1] < '0' || ext[1] > '9') continue;
+            if (ext.size() <= 1 || ext[1] < '0' || ext[1] > '9') {
+                continue;
+            }
 
             // 检查文件名是否匹配前缀
             bool matched = false;
@@ -246,9 +251,11 @@ void LogOutput::pruneOldLogs() noexcept {
                 // 有前缀：前缀_时间.log.N
                 matched = stem.starts_with(prefix + "_");
             }
-            if (!matched) continue;
+            if (!matched) {
+                continue;
+            }
 
-            uint32_t num = std::stoul(ext.substr(1));
+            auto num = std::stoul(ext.substr(1));
             if (num > config.maxLogFileCount - 1) {
                 std::filesystem::remove(entry.path());
             }
@@ -258,4 +265,4 @@ void LogOutput::pruneOldLogs() noexcept {
     }
 }
 
-} // namespace slark
+}  // namespace slark

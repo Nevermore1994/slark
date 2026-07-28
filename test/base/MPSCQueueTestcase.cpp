@@ -341,7 +341,7 @@ TEST(MPSCQueueTest, SizeTracking) {
     EXPECT_EQ(queue.size(), 50u);
     int out;
     for (int i = 0; i < 20; ++i) {
-        queue.tryPop(out);
+        static_cast<void>(queue.tryPop(out));
     }
     EXPECT_EQ(queue.size(), 30u);
     (void)queue.tryPopAll();
