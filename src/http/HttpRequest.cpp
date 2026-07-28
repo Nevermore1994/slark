@@ -8,7 +8,7 @@
 
 namespace slark::http {
 
-Coroutine<HttpResponse> HttpRequest::asyncExecute(const RequestInfo& requestInfo) {
+Task<HttpResponse> HttpRequest::asyncExecute(const RequestInfo& requestInfo) {
     LogI("[HttpRequest::asyncExecute] url={} method={}",
          requestInfo.url,
          static_cast<int>(requestInfo.methodType));
@@ -30,8 +30,8 @@ Coroutine<HttpResponse> HttpRequest::asyncExecute(const RequestInfo& requestInfo
     co_return response;
 }
 
-Coroutine<HttpResponse> HttpRequest::asyncExecute(const RequestInfo& requestInfo,
-                                                  CancellationToken token) {
+Task<HttpResponse> HttpRequest::asyncExecute(const RequestInfo& requestInfo,
+                                             CancellationToken token) {
     LogI("[HttpRequest::asyncExecute] url={} method={}",
          requestInfo.url,
          static_cast<int>(requestInfo.methodType));
@@ -57,8 +57,7 @@ void HttpRequest::asyncExecute(const RequestInfo& requestInfo, HttpResponseHandl
     LogI("[HttpRequest::asyncExecute(cb)] url={} method={}",
          requestInfo.url,
          static_cast<int>(requestInfo.methodType));
-    auto launcher = [this](const RequestInfo& req,
-                           CancellationToken token) -> Coroutine<HttpResponse> {
+    auto launcher = [this](const RequestInfo& req, CancellationToken token) -> Task<HttpResponse> {
         co_return co_await asyncExecute(req, std::move(token));
     };
 
@@ -86,4 +85,4 @@ AsyncGenerator<StreamChunk> HttpRequest::streamingExecute(const RequestInfo& req
     return processor_.processStreaming(requestInfo, cancelToken_);
 }
 
-} // namespace slark::http
+}  // namespace slark::http

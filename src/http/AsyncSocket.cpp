@@ -3,15 +3,15 @@
 //
 #include "AsyncSocket.h"
 
-#include "Log.hpp"
-#include "SSLManager.h"
-#include "ScopeGuard.h"
-#include "Time.hpp"
-
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/tcp.h>
 #include <unistd.h>
+
+#include "Log.hpp"
+#include "SSLManager.h"
+#include "ScopeGuard.h"
+#include "Time.hpp"
 
 #if ENABLE_HTTPS
 #include <openssl/err.h>
@@ -76,9 +76,9 @@ Socket createAndConfigureSocket(int32_t addressFamily) {
     return sock;
 }
 
-Coroutine<void> tcpConnect(Socket socket,
-                           const AddressInfoPtr& address,
-                           std::chrono::milliseconds timeout) {
+Task<void> tcpConnect(Socket socket,
+                      const AddressInfoPtr& address,
+                      std::chrono::milliseconds timeout) {
     auto [addrStr, port] = extractAddress(address);
     auto connector = AsyncConnect(socket, addrStr, port);
     connector.setTimeout(timeout);
@@ -92,10 +92,10 @@ Coroutine<void> tcpConnect(Socket socket,
     }
 }
 
-Coroutine<bool> waitFdReadyWithTimeout(Socket socket,
-                                       FdReadyAwaiter::Interest interest,
-                                       Time::Deadline& deadline,
-                                       CancellationToken* externalToken = nullptr) {
+Task<bool> waitFdReadyWithTimeout(Socket socket,
+                                  FdReadyAwaiter::Interest interest,
+                                  Time::Deadline& deadline,
+                                  CancellationToken* externalToken = nullptr) {
     if (deadline.isExpired()) {
         co_return false;
     }
@@ -126,11 +126,9 @@ Coroutine<bool> waitFdReadyWithTimeout(Socket socket,
         }
     }
 
-    auto fdInterest = (interest == FdReadyAwaiter::Interest::Read)
-                          ? CancellableFdReadyAwaiter::Interest::Read
-                          : CancellableFdReadyAwaiter::Interest::Write;
+    auto fdInterest = interest;
 
-    auto awaiter = CancellableFdReadyAwaiter(socket, fdInterest, localToken);
+    auto awaiter = withCancellation(FdReadyAwaiter(socket, fdInterest), localToken);
     bool ready = co_await awaiter;
     if (!ready) {
         co_return false;
@@ -151,7 +149,7 @@ void closeSocket(Socket& socket) noexcept {
     }
 }
 
-} // anonymous namespace
+}  // anonymous namespace
 
 // AsyncSocket
 
@@ -162,11 +160,12 @@ AsyncSocket::~AsyncSocket() {
     close();
 }
 
-Coroutine<void> AsyncSocket::asyncConnect(const AddressInfoPtr& address,
-                                          std::chrono::milliseconds timeout) {
+Task<void> AsyncSocket::asyncConnect(const AddressInfoPtr& address,
+                                     std::chrono::milliseconds timeout) {
     socket_ = createAndConfigureSocket(address->ai_family);
     if (socket_ == kInvalidSocket) {
-        LogE("[AsyncSocket::asyncConnect] create socket failed: family={}", static_cast<int>(address->ai_family));
+        LogE("[AsyncSocket::asyncConnect] create socket failed: family={}",
+             static_cast<int>(address->ai_family));
         throw std::runtime_error("Failed to create socket");
     }
 
@@ -177,7 +176,9 @@ Coroutine<void> AsyncSocket::asyncConnect(const AddressInfoPtr& address,
     co_await tcpConnect(socket_, address, timeout);
     guard.dismiss();
 
-    LogI("[AsyncSocket::asyncConnect] tcp connect ok: fd={} timeoutMs={}", socket_, timeout.count());
+    LogI("[AsyncSocket::asyncConnect] tcp connect ok: fd={} timeoutMs={}",
+         socket_,
+         timeout.count());
 
     // 如果没有预设 transport，默认使用 PlainTransport
     if (!transport_) {
@@ -185,14 +186,14 @@ Coroutine<void> AsyncSocket::asyncConnect(const AddressInfoPtr& address,
     }
 }
 
-Coroutine<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data,
-                                                    std::chrono::milliseconds timeout) {
+Task<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data,
+                                               std::chrono::milliseconds timeout) {
     return asyncSend(data, timeout, CancellationToken{});
 }
 
-Coroutine<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data,
-                                                    std::chrono::milliseconds timeout,
-                                                    CancellationToken token) {
+Task<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data,
+                                               std::chrono::milliseconds timeout,
+                                               CancellationToken token) {
     if (socket_ == kInvalidSocket || !transport_) {
         co_return std::unexpected(Error::InvalidSocket);
     }
@@ -252,16 +253,16 @@ Coroutine<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data
     co_return totalSent;
 }
 
-Coroutine<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
-                                                       size_t size,
-                                                       std::chrono::milliseconds timeout) {
+Task<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
+                                                  size_t size,
+                                                  std::chrono::milliseconds timeout) {
     return asyncReceive(buffer, size, timeout, CancellationToken{});
 }
 
-Coroutine<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
-                                                       size_t size,
-                                                       std::chrono::milliseconds timeout,
-                                                       CancellationToken token) {
+Task<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
+                                                  size_t size,
+                                                  std::chrono::milliseconds timeout,
+                                                  CancellationToken token) {
     if (socket_ == kInvalidSocket || !transport_) {
         co_return std::unexpected(Error::InvalidSocket);
     }
@@ -319,7 +320,7 @@ Coroutine<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
     }
 }
 
-Coroutine<DataPtr> AsyncSocket::asyncReceiveAll(std::chrono::milliseconds timeout) {
+Task<DataPtr> AsyncSocket::asyncReceiveAll(std::chrono::milliseconds timeout) {
     if (socket_ == kInvalidSocket || !transport_) {
         co_return nullptr;
     }
@@ -383,9 +384,9 @@ Coroutine<DataPtr> AsyncSocket::asyncReceiveAll(std::chrono::milliseconds timeou
     co_return std::move(data);
 }
 
-Coroutine<bool> AsyncSocket::asyncReceiveStreaming(HttpResponseParser& parser,
-                                                   std::chrono::milliseconds timeout,
-                                                   CancellationToken token) {
+Task<bool> AsyncSocket::asyncReceiveStreaming(HttpResponseParser& parser,
+                                              std::chrono::milliseconds timeout,
+                                              CancellationToken token) {
     if (socket_ == kInvalidSocket || !transport_) {
         co_return false;
     }
@@ -463,7 +464,7 @@ TLSTransport::~TLSTransport() {
     shutdown();
 }
 
-Coroutine<bool> TLSTransport::performHandshake(std::chrono::milliseconds timeout) {
+Task<bool> TLSTransport::performHandshake(std::chrono::milliseconds timeout) {
     if (!sslPtr_) {
         LogW("TLS handshake failed: SSL create failed");
         co_return false;
@@ -494,7 +495,9 @@ Coroutine<bool> TLSTransport::performHandshake(std::chrono::milliseconds timeout
         } else {
             const char* errStr = ERR_reason_error_string(ERR_get_error());
             LogW("TLS handshake failed: sslError={}, errStr={}, errno={}",
-                 sslError, errStr ? errStr : "unknown", errno);
+                 sslError,
+                 errStr ? errStr : "unknown",
+                 errno);
             co_return false;
         }
     }
@@ -540,4 +543,4 @@ void TLSTransport::shutdown() noexcept {
 
 #endif
 
-} // namespace slark::http
+}  // namespace slark::http

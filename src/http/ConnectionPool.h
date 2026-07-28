@@ -3,44 +3,59 @@
 //
 #pragma once
 
-#include "AsyncSocket.h"
-#include "CancellationToken.h"
-#include "Clock.h"
-#include "Coroutine.hpp"
-#include "HttpResponseParser.h"
-
 #include <chrono>
 #include <memory>
 #include <string>
+
+#include "AsyncSocket.h"
+#include "CancellationToken.h"
+#include "Clock.h"
+#include "HttpResponseParser.h"
+#include "Task.hpp"
 
 namespace slark::http {
 
 // 持有连接的 RAII 包装，析构时自动 close
 class PooledConnection {
-public:
+ public:
     PooledConnection(std::unique_ptr<IAsyncSocket> socket) : socket_(std::move(socket)) {}
-    ~PooledConnection() { close(); }
+
+    ~PooledConnection() {
+        close();
+    }
 
     PooledConnection(PooledConnection&&) noexcept = default;
     PooledConnection& operator=(PooledConnection&&) noexcept = default;
 
-    IAsyncSocket& operator*() noexcept { return *socket_; }
-    IAsyncSocket* operator->() noexcept { return socket_.get(); }
-    [[nodiscard]] IAsyncSocket* get() const noexcept { return socket_.get(); }
-    [[nodiscard]] bool isValid() const noexcept { return socket_ && socket_->isValid(); }
+    IAsyncSocket& operator*() noexcept {
+        return *socket_;
+    }
 
-    Coroutine<AsyncSocketResult> asyncSend(std::string_view data,
-                                           std::chrono::milliseconds timeout) {
+    IAsyncSocket* operator->() noexcept {
+        return socket_.get();
+    }
+
+    [[nodiscard]] IAsyncSocket* get() const noexcept {
+        return socket_.get();
+    }
+
+    [[nodiscard]] bool isValid() const noexcept {
+        return socket_ && socket_->isValid();
+    }
+
+    Task<AsyncSocketResult> asyncSend(std::string_view data, std::chrono::milliseconds timeout) {
         co_return co_await socket_->asyncSend(data, timeout);
     }
-    Coroutine<AsyncSocketResult> asyncSend(std::string_view data,
-                                           std::chrono::milliseconds timeout,
-                                           CancellationToken token) {
+
+    Task<AsyncSocketResult> asyncSend(std::string_view data,
+                                      std::chrono::milliseconds timeout,
+                                      CancellationToken token) {
         co_return co_await socket_->asyncSend(data, timeout, token);
     }
-    Coroutine<bool> asyncReceiveStreaming(HttpResponseParser& parser,
-                                          std::chrono::milliseconds timeout,
-                                          CancellationToken token = CancellationToken{}) {
+
+    Task<bool> asyncReceiveStreaming(HttpResponseParser& parser,
+                                     std::chrono::milliseconds timeout,
+                                     CancellationToken token = CancellationToken{}) {
         co_return co_await socket_->asyncReceiveStreaming(parser, timeout, token);
     }
 
@@ -52,15 +67,17 @@ public:
     }
 
     void setPerf(RequestPerf* perf) noexcept {
-        if (socket_) { socket_->setPerf(perf); }
+        if (socket_) {
+            socket_->setPerf(perf);
+        }
     }
 
-private:
+ private:
     std::unique_ptr<IAsyncSocket> socket_;
 };
 
 // 建立新连接（DNS + TCP + 可选 TLS）
-Coroutine<std::unique_ptr<PooledConnection>> co_acquire_connection(
+Task<std::unique_ptr<PooledConnection>> co_acquire_connection(
     std::string host,
     uint16_t port,
     std::string scheme,
@@ -69,4 +86,4 @@ Coroutine<std::unique_ptr<PooledConnection>> co_acquire_connection(
     std::chrono::milliseconds tlsHandshakeTimeout = std::chrono::milliseconds{0},
     RequestPerf* perf = nullptr);
 
-} // namespace slark::http
+}  // namespace slark::http

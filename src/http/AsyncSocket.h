@@ -4,18 +4,18 @@
 
 #pragma once
 
+#include <chrono>
+#include <expected>
+#include <memory>
+#include <string_view>
+
 #include "CancellationToken.h"
-#include "Coroutine.hpp"
 #include "Data.h"
 #include "HttpResponseParser.h"
 #include "HttpsHelper.h"
 #include "IOContext.h"
 #include "Socket.hpp"
-
-#include <chrono>
-#include <expected>
-#include <memory>
-#include <string_view>
+#include "Task.hpp"
 
 namespace slark::http {
 
@@ -27,7 +27,7 @@ constexpr std::chrono::milliseconds kDefaultWriteTimeout{std::chrono::seconds{30
 
 // Transport strategy interface for read/write abstraction
 class ITransport {
-public:
+ public:
     virtual ~ITransport() = default;
     virtual ssize_t write(const void* data, size_t size) noexcept = 0;
     virtual ssize_t read(void* buffer, size_t size) noexcept = 0;
@@ -38,7 +38,7 @@ public:
 
 // Plain TCP transport
 class PlainTransport final : public ITransport {
-public:
+ public:
     explicit PlainTransport(Socket fd) noexcept : fd_(fd) {}
 
     ssize_t write(const void* data, size_t size) noexcept override {
@@ -61,7 +61,7 @@ public:
 
     void shutdown() noexcept override {}
 
-private:
+ private:
     Socket fd_;
     FdReadyAwaiter::Interest lastInterest_ = FdReadyAwaiter::Interest::Write;
 };
@@ -69,12 +69,12 @@ private:
 #if ENABLE_HTTPS
 // TLS transport wrapping OpenSSL
 class TLSTransport final : public ITransport {
-public:
+ public:
     TLSTransport(Socket fd, const std::string& hostname);
     ~TLSTransport();
 
     /// @return true 表示握手成功，false 表示失败（不抛异常）
-    Coroutine<bool> performHandshake(std::chrono::milliseconds timeout);
+    Task<bool> performHandshake(std::chrono::milliseconds timeout);
 
     ssize_t write(const void* data, size_t size) noexcept override;
     ssize_t read(void* buffer, size_t size) noexcept override;
@@ -86,7 +86,7 @@ public:
         return sslPtr_ != nullptr;
     }
 
-private:
+ private:
     Socket fd_;
     SSLPtr sslPtr_;
     mutable int32_t lastSslError_ = 0;
@@ -94,39 +94,38 @@ private:
 #endif
 
 class IAsyncSocket {
-public:
+ public:
     virtual ~IAsyncSocket() = default;
 
-    virtual Coroutine<void> asyncConnect(
-        const AddressInfoPtr& address,
-        std::chrono::milliseconds timeout = kDefaultConnectTimeout) = 0;
+    virtual Task<void> asyncConnect(const AddressInfoPtr& address,
+                                    std::chrono::milliseconds timeout = kDefaultConnectTimeout) = 0;
 
-    virtual Coroutine<AsyncSocketResult> asyncSend(
+    virtual Task<AsyncSocketResult> asyncSend(
         const std::string_view& data,
         std::chrono::milliseconds timeout = kDefaultWriteTimeout) = 0;
 
     // 带取消支持的异步发送，用于大 body 上传或需要快速响应取消的场景
-    virtual Coroutine<AsyncSocketResult> asyncSend(const std::string_view& data,
-                                                   std::chrono::milliseconds timeout,
-                                                   CancellationToken token) = 0;
+    virtual Task<AsyncSocketResult> asyncSend(const std::string_view& data,
+                                              std::chrono::milliseconds timeout,
+                                              CancellationToken token) = 0;
 
-    virtual Coroutine<AsyncSocketResult> asyncReceive(
+    virtual Task<AsyncSocketResult> asyncReceive(
         void* buffer,
         size_t size,
         std::chrono::milliseconds timeout = kDefaultReadTimeout) = 0;
 
     // 带取消支持的异步接收，用于需要快速响应取消的场景
-    virtual Coroutine<AsyncSocketResult> asyncReceive(void* buffer,
-                                                      size_t size,
-                                                      std::chrono::milliseconds timeout,
-                                                      CancellationToken token) = 0;
+    virtual Task<AsyncSocketResult> asyncReceive(void* buffer,
+                                                 size_t size,
+                                                 std::chrono::milliseconds timeout,
+                                                 CancellationToken token) = 0;
 
-    virtual Coroutine<DataPtr> asyncReceiveAll(
+    virtual Task<DataPtr> asyncReceiveAll(
         std::chrono::milliseconds timeout = kDefaultReadTimeout) = 0;
 
     // 流式接收：边读边喂 parser，触发 onHeader / onData 回调
     // token 参数用于在流式接收过程中检查取消状态，实现快速响应
-    virtual Coroutine<bool> asyncReceiveStreaming(
+    virtual Task<bool> asyncReceiveStreaming(
         HttpResponseParser& parser,
         std::chrono::milliseconds timeout = kDefaultReadTimeout,
         CancellationToken token = CancellationToken{}) = 0;
@@ -142,38 +141,36 @@ public:
 
 // Unified async socket using ITransport strategy
 class AsyncSocket final : public IAsyncSocket, public NonCopyable {
-public:
+ public:
     explicit AsyncSocket(IPVersion ipVersion, std::unique_ptr<ITransport> transport = nullptr);
     ~AsyncSocket();
 
-    Coroutine<void> asyncConnect(
-        const AddressInfoPtr& address,
-        std::chrono::milliseconds timeout = kDefaultConnectTimeout) override;
+    Task<void> asyncConnect(const AddressInfoPtr& address,
+                            std::chrono::milliseconds timeout = kDefaultConnectTimeout) override;
 
-    Coroutine<AsyncSocketResult> asyncSend(
+    Task<AsyncSocketResult> asyncSend(
         const std::string_view& data,
         std::chrono::milliseconds timeout = kDefaultWriteTimeout) override;
 
-    Coroutine<AsyncSocketResult> asyncSend(const std::string_view& data,
-                                           std::chrono::milliseconds timeout,
-                                           CancellationToken token) override;
+    Task<AsyncSocketResult> asyncSend(const std::string_view& data,
+                                      std::chrono::milliseconds timeout,
+                                      CancellationToken token) override;
 
-    Coroutine<AsyncSocketResult> asyncReceive(
+    Task<AsyncSocketResult> asyncReceive(
         void* buffer,
         size_t size,
         std::chrono::milliseconds timeout = kDefaultReadTimeout) override;
 
-    Coroutine<AsyncSocketResult> asyncReceive(void* buffer,
-                                              size_t size,
-                                              std::chrono::milliseconds timeout,
-                                              CancellationToken token) override;
+    Task<AsyncSocketResult> asyncReceive(void* buffer,
+                                         size_t size,
+                                         std::chrono::milliseconds timeout,
+                                         CancellationToken token) override;
 
-    Coroutine<DataPtr> asyncReceiveAll(
-        std::chrono::milliseconds timeout = kDefaultReadTimeout) override;
+    Task<DataPtr> asyncReceiveAll(std::chrono::milliseconds timeout = kDefaultReadTimeout) override;
 
-    Coroutine<bool> asyncReceiveStreaming(HttpResponseParser& parser,
-                                          std::chrono::milliseconds timeout = kDefaultReadTimeout,
-                                          CancellationToken token = CancellationToken{}) override;
+    Task<bool> asyncReceiveStreaming(HttpResponseParser& parser,
+                                     std::chrono::milliseconds timeout = kDefaultReadTimeout,
+                                     CancellationToken token = CancellationToken{}) override;
 
     void close() noexcept override;
 
@@ -193,7 +190,7 @@ public:
         perf_ = perf;
     }
 
-private:
+ private:
     [[maybe_unused]] IPVersion ipVersion_;
     Socket socket_;
     std::unique_ptr<ITransport> transport_;
@@ -204,4 +201,4 @@ inline std::unique_ptr<IAsyncSocket> makeSocket(IPVersion ipVersion) {
     return std::make_unique<AsyncSocket>(ipVersion);
 }
 
-} // namespace slark::http
+}  // namespace slark::http

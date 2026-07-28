@@ -3,19 +3,19 @@
 //
 #pragma once
 
-#include "CancellationToken.h"
-#include "Coroutine.hpp"
-#include "CoroutineScheduler.hpp"
-#include "Log.hpp"
-#include "NonCopyable.h"
-#include "ThreadPool.hpp"
-#include "Type.h"
-
 #include <atomic>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <thread>
+
+#include "CancellationToken.h"
+#include "CoroutineScheduler.hpp"
+#include "Log.hpp"
+#include "NonCopyable.h"
+#include "Task.hpp"
+#include "ThreadPool.hpp"
+#include "Type.h"
 
 namespace slark::http::detail {
 
@@ -29,15 +29,15 @@ void dispatchResponse(HttpResponse& response,
 
 // 桥接状态机：收敛所有状态转换
 enum class BridgeState : uint8_t {
-    Pending,   // 初始状态，等待启动
-    Running,   // 协程正在执行
-    Completed, // 协程正常完成
-    Cancelled, // 被取消
-    Failed,    // 执行失败
+    Pending,    // 初始状态，等待启动
+    Running,    // 协程正在执行
+    Completed,  // 协程正常完成
+    Cancelled,  // 被取消
+    Failed,     // 执行失败
 };
 
 class ICallbackBridge : public NonCopyable {
-public:
+ public:
     virtual ~ICallbackBridge() = default;
     virtual void cancel() noexcept = 0;
     [[nodiscard]] virtual CancellationToken cancellationToken() const noexcept = 0;
@@ -46,7 +46,7 @@ public:
 template <typename LaunchFunc>
 class CallbackBridge final : public ICallbackBridge,
                              public std::enable_shared_from_this<CallbackBridge<LaunchFunc>> {
-public:
+ public:
     explicit CallbackBridge(LaunchFunc launcher, HttpResponseHandler handler)
         : launcher_(std::move(launcher)), handler_(std::move(handler)), token_() {}
 
@@ -87,7 +87,7 @@ public:
         return token_;
     }
 
-private:
+ private:
     void run() {
         auto expected = BridgeState::Pending;
         if (!state_.compare_exchange_strong(expected, BridgeState::Running)) {
@@ -106,10 +106,10 @@ private:
 
         requestCoroutine_ = launcher_(requestInfo_, token_);
         monitorCoroutine_ = monitorTask();
-        CoroutineScheduler::instance().schedule(monitorCoroutine_.makeResumeHandle());
+        monitorCoroutine_.getHandle().resume();
     }
 
-    Coroutine<void> monitorTask() {
+    Task<void> monitorTask() {
         monitorThreadId_ = currentThreadId();
         auto weak = this->weak_from_this();
         ErrorInfo finalError{slark::Error::Success};
@@ -182,8 +182,8 @@ private:
     HttpResponseHandler handler_;
     RequestInfo requestInfo_;
     CancellationToken token_;
-    Coroutine<HttpResponse> requestCoroutine_{nullptr};
-    Coroutine<void> monitorCoroutine_{nullptr};
+    Task<HttpResponse> requestCoroutine_;
+    Task<void> monitorCoroutine_;
     std::atomic<BridgeState> state_{BridgeState::Pending};
     std::atomic<bool> monitorExited_{false};
     std::thread::id monitorThreadId_{};
@@ -202,4 +202,4 @@ std::shared_ptr<ICallbackBridge> startCallbackBridge(LaunchFunc&& launcher,
     return bridge;
 }
 
-} // namespace slark::http::detail
+}  // namespace slark::http::detail

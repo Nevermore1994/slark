@@ -3,9 +3,9 @@
 //
 #include "DnsResolver.h"
 
-#include "Log.hpp"
-
 #include <netdb.h>
+
+#include "Log.hpp"
 
 namespace slark::http {
 
@@ -17,20 +17,26 @@ DnsResolver& DnsResolver::instance() noexcept {
 DnsResolver::DnsResolver(const Config& config)
     : config_(config), threadPool_(ThreadPoolConfig{config.threadCount}) {}
 
-Coroutine<AddressInfoPtr> DnsResolver::resolveAsync(const std::string& host,
-                                                    const std::string& port,
-                                                    IPVersion ipVersion) {
+Task<AddressInfoPtr> DnsResolver::resolveAsync(const std::string& host,
+                                               const std::string& port,
+                                               IPVersion ipVersion) {
     auto key = makeKey(host, port, ipVersion);
 
     {
         std::lock_guard<std::mutex> lock(cacheMutex_);
         if (auto cached = lookupCache(key)) {
-            LogI("[DnsResolver::resolveAsync] cache hit: {}:{} ipv={}", host, port, static_cast<int>(ipVersion));
+            LogI("[DnsResolver::resolveAsync] cache hit: {}:{} ipv={}",
+                 host,
+                 port,
+                 static_cast<int>(ipVersion));
             co_return cached;
         }
     }
 
-    LogI("[DnsResolver::resolveAsync] resolving: {}:{} ipv={}", host, port, static_cast<int>(ipVersion));
+    LogI("[DnsResolver::resolveAsync] resolving: {}:{} ipv={}",
+         host,
+         port,
+         static_cast<int>(ipVersion));
 
     auto awaiter = std::make_shared<CompletionAwaiter<AddressInfoPtr>>();
 
@@ -55,7 +61,7 @@ Coroutine<AddressInfoPtr> DnsResolver::resolveAsync(const std::string& host,
     }
 
     // 挂起协程，等待 getaddrinfo 完成
-    AddressInfoPtr resolved = co_await *awaiter;
+    AddressInfoPtr resolved = co_await * awaiter;
 
     if (resolved) {
         std::lock_guard<std::mutex> lock(cacheMutex_);
@@ -166,4 +172,4 @@ AddressInfoPtr DnsResolver::cloneAddrInfo(const addrinfo* src) noexcept {
     });
 }
 
-} // namespace slark::http
+}  // namespace slark::http

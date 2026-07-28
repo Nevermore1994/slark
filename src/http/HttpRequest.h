@@ -4,25 +4,25 @@
 
 #pragma once
 
+#include <memory>
+#include <string>
+
 #include "AsyncGenerator.hpp"
 #include "CallbackBridge.hpp"
 #include "CancellationToken.h"
-#include "Coroutine.hpp"
 #include "HttpProcessor.h"
+#include "Task.hpp"
 #include "Type.h"
-
-#include <memory>
-#include <string>
 
 namespace slark::http {
 
 class HttpRequest : public NonCopyable {
-public:
+ public:
     HttpRequest() = default;
     ~HttpRequest() = default;
 
-    Coroutine<HttpResponse> asyncExecute(const RequestInfo& requestInfo);
-    Coroutine<HttpResponse> asyncExecute(const RequestInfo& requestInfo, CancellationToken token);
+    Task<HttpResponse> asyncExecute(const RequestInfo& requestInfo);
+    Task<HttpResponse> asyncExecute(const RequestInfo& requestInfo, CancellationToken token);
 
     void asyncExecute(const RequestInfo& requestInfo, HttpResponseHandler&& handler);
 
@@ -44,14 +44,14 @@ public:
         return cancelToken_;
     }
 
-private:
+ private:
     HttpProcessor processor_;
     CancellationToken cancelToken_;
     std::shared_ptr<detail::ICallbackBridge> callbackBridge_;
 };
 
 // 协程便捷函数，安全管理请求生命周期
-inline Coroutine<HttpResponse> asyncRequest(const RequestInfo& requestInfo) {
+inline Task<HttpResponse> asyncRequest(const RequestInfo& requestInfo) {
     auto request = std::make_shared<HttpRequest>();
     co_return co_await request->asyncExecute(requestInfo);
 }
@@ -71,4 +71,4 @@ inline AsyncGenerator<StreamChunk> asyncRequest(const RequestInfo& requestInfo,
     }
 }
 
-} // namespace slark::http
+}  // namespace slark::http

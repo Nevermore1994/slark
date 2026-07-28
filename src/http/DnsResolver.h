@@ -4,16 +4,16 @@
 
 #pragma once
 
-#include "Awaitable.hpp"
-#include "Coroutine.hpp"
-#include "Socket.hpp"
-#include "ThreadPool.hpp"
-
 #include <chrono>
 #include <list>
 #include <mutex>
 #include <string>
 #include <unordered_map>
+
+#include "Awaitable.hpp"
+#include "Socket.hpp"
+#include "Task.hpp"
+#include "ThreadPool.hpp"
 
 namespace slark::http {
 
@@ -24,7 +24,7 @@ struct DnsCacheEntry {
 
 /// 带 LRU 缓存的异步 DNS 解析器（单例）
 class DnsResolver {
-public:
+ public:
     struct Config {
         uint32_t threadCount;
         size_t maxCacheSize;
@@ -39,9 +39,9 @@ public:
     ~DnsResolver() = default;
 
     /// 异步解析，优先命中缓存；缓存未命中时在线程池中执行 getaddrinfo
-    Coroutine<AddressInfoPtr> resolveAsync(const std::string& host,
-                                           const std::string& port,
-                                           IPVersion ipVersion);
+    Task<AddressInfoPtr> resolveAsync(const std::string& host,
+                                      const std::string& port,
+                                      IPVersion ipVersion);
 
     /// 主动清除指定 host 的缓存（如连接失败时调用）
     void invalidate(const std::string& host) noexcept;
@@ -49,7 +49,7 @@ public:
     /// 清空全部缓存
     void clearCache() noexcept;
 
-private:
+ private:
     std::string makeKey(const std::string& host,
                         const std::string& port,
                         IPVersion ipVersion) const;
@@ -72,4 +72,4 @@ private:
     std::unordered_map<std::string, CacheValue> cache_;
 };
 
-} // namespace slark::http
+}  // namespace slark::http

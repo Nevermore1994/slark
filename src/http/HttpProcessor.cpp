@@ -16,7 +16,9 @@ namespace slark::http {
 
 namespace {
 
-inline int64_t streamProgressLogBytes() { return static_cast<int64_t>(getLogConfig().progressLogBytes); }
+inline int64_t streamProgressLogBytes() {
+    return static_cast<int64_t>(getLogConfig().progressLogBytes);
+}
 
 Error mapLegacyErrorToUnified(Error error) noexcept {
     switch (error) {
@@ -33,7 +35,7 @@ Error mapLegacyErrorToUnified(Error error) noexcept {
     }
 }
 
-} // namespace
+}  // namespace
 
 HttpProcessor::ParsedRequest HttpProcessor::parseUrl(const std::string& urlStr) {
     ParsedRequest result;
@@ -51,9 +53,9 @@ HttpProcessor::ParsedRequest HttpProcessor::parseUrl(const std::string& urlStr) 
     return result;
 }
 
-Coroutine<Error> HttpProcessor::sendRequestBody(PooledConnection& conn,
-                                                const RequestInfo& requestInfo,
-                                                CancellationToken& token) {
+Task<Error> HttpProcessor::sendRequestBody(PooledConnection& conn,
+                                           const RequestInfo& requestInfo,
+                                           CancellationToken& token) {
     if (requestInfo.bodyEmpty()) {
         co_return slark::Error::Success;
     }
@@ -72,14 +74,14 @@ Coroutine<Error> HttpProcessor::sendRequestBody(PooledConnection& conn,
     co_return slark::Error::Success;
 }
 
-Coroutine<ResponseResult> HttpProcessor::process(const RequestInfo& requestInfo,
-                                                 CancellationToken token) {
+Task<ResponseResult> HttpProcessor::process(const RequestInfo& requestInfo,
+                                            CancellationToken token) {
     co_return co_await doRequest(requestInfo, 0, token);
 }
 
-Coroutine<ResponseResult> HttpProcessor::doRequest(const RequestInfo& requestInfo,
-                                                   int32_t redirectCount,
-                                                   CancellationToken& token) {
+Task<ResponseResult> HttpProcessor::doRequest(const RequestInfo& requestInfo,
+                                              int32_t redirectCount,
+                                              CancellationToken& token) {
     auto result = co_await executeSingle(requestInfo, token);
     if (!result.has_value()) {
         co_return result;
@@ -103,8 +105,8 @@ Coroutine<ResponseResult> HttpProcessor::doRequest(const RequestInfo& requestInf
     co_return std::move(response);
 }
 
-Coroutine<ResponseResult> HttpProcessor::executeSingle(const RequestInfo& requestInfo,
-                                                      CancellationToken& token) {
+Task<ResponseResult> HttpProcessor::executeSingle(const RequestInfo& requestInfo,
+                                                  CancellationToken& token) {
     auto requestStart = Time::nowTimeStamp();
     RequestPerf perf;
     perf.host = requestInfo.url;
@@ -448,7 +450,8 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
                 } else {
                     perf.transport.timeoutSource = TimeoutSource::ReadIdle;
                 }
-                LogE("[HttpProcessor::processStreaming] read timeout: timeoutSource={} bodySize={} url={}",
+                LogE("[HttpProcessor::processStreaming] read timeout: timeoutSource={} bodySize={} "
+                     "url={}",
                      static_cast<int>(perf.transport.timeoutSource),
                      perf.parser.bodySize,
                      requestInfo.url);
@@ -533,4 +536,4 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
     }
 }
 
-} // namespace slark::http
+}  // namespace slark::http

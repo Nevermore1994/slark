@@ -11,7 +11,7 @@ namespace slark::http {
 
 static constexpr std::chrono::milliseconds kDefaultTlsTimeout{std::chrono::seconds{10}};
 
-Coroutine<std::unique_ptr<PooledConnection>> co_acquire_connection(
+Task<std::unique_ptr<PooledConnection>> co_acquire_connection(
     std::string host,
     uint16_t port,
     std::string scheme,
@@ -29,7 +29,8 @@ Coroutine<std::unique_ptr<PooledConnection>> co_acquire_connection(
     }
 
     // DNS 解析
-    auto addrInfo = co_await DnsResolver::instance().resolveAsync(host, std::to_string(port), ipVersion);
+    auto addrInfo =
+        co_await DnsResolver::instance().resolveAsync(host, std::to_string(port), ipVersion);
     if (!addrInfo) {
         LogW("[co_acquire_connection] DNS resolution failed for {}", host);
         co_return nullptr;
@@ -43,7 +44,9 @@ Coroutine<std::unique_ptr<PooledConnection>> co_acquire_connection(
         co_await socket->asyncConnect(addrInfo, ct);
     } catch (const TimeoutException&) {
         LogW("[co_acquire_connection] Connect timeout for {}", host);
-        if (perf) { perf->transport.timeoutSource = TimeoutSource::Connect; }
+        if (perf) {
+            perf->transport.timeoutSource = TimeoutSource::Connect;
+        }
         co_return nullptr;
     } catch (const std::exception& e) {
         LogW("[co_acquire_connection] Connect failed: {} {}", host, e.what());
@@ -62,7 +65,8 @@ Coroutine<std::unique_ptr<PooledConnection>> co_acquire_connection(
 #if ENABLE_HTTPS
     if (scheme == "https") {
         auto tlsTransport = std::make_unique<TLSTransport>(socket->getFd(), host);
-        auto tlsTimeout = tlsHandshakeTimeout.count() > 0 ? tlsHandshakeTimeout : kDefaultTlsTimeout;
+        auto tlsTimeout =
+            tlsHandshakeTimeout.count() > 0 ? tlsHandshakeTimeout : kDefaultTlsTimeout;
         auto tlsStart = Time::nowTimeStamp();
         bool tlsOk = co_await tlsTransport->performHandshake(tlsTimeout);
         auto tlsEnd = Time::nowTimeStamp();
@@ -73,13 +77,16 @@ Coroutine<std::unique_ptr<PooledConnection>> co_acquire_connection(
 
         if (!tlsOk) {
             LogW("[co_acquire_connection] TLS handshake failed: host={}", host);
-            if (perf) { perf->transport.timeoutSource = TimeoutSource::TlsHandshake; }
+            if (perf) {
+                perf->transport.timeoutSource = TimeoutSource::TlsHandshake;
+            }
             co_return nullptr;
         }
         socket->setTransport(std::move(tlsTransport));
 
         LogI("[co_acquire_connection] TLS handshake ok: host={} elapsedMs={}",
-             host, (tlsEnd - tlsStart).toMilliSeconds().count());
+             host,
+             (tlsEnd - tlsStart).toMilliSeconds().count());
     }
 #endif
 
@@ -88,9 +95,12 @@ Coroutine<std::unique_ptr<PooledConnection>> co_acquire_connection(
     }
 
     LogI("[co_acquire_connection] acquired: host={} port={} scheme={} connectMs={}",
-         host, port, scheme, (connectEnd - connectStart).toMilliSeconds().count());
+         host,
+         port,
+         scheme,
+         (connectEnd - connectStart).toMilliSeconds().count());
 
     co_return std::make_unique<PooledConnection>(std::move(socket));
 }
 
-} // namespace slark::http
+}  // namespace slark::http
