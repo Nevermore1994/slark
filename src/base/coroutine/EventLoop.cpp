@@ -1,14 +1,12 @@
-//
 // Copyright (c) 2026 Nevermore-. All rights reserved.
-//
 
 #include "EventLoop.h"
 
-#include "CoroutineScheduler.hpp"
-#include "Log.hpp"
+#include <fcntl.h>
 
 #include <cassert>
-#include <fcntl.h>
+
+#include "Log.hpp"
 #ifdef __linux__
 #include <sys/eventfd.h>
 #endif
@@ -54,28 +52,28 @@ EventLoop::~EventLoop() {
 }
 
 void EventLoop::run() noexcept {
-    running_.store(true, std::memory_order_release);
-    while (running_.load(std::memory_order_acquire)) {
+    running_.store(true);
+    while (running_.load()) {
         poll();
     }
 }
 
 void EventLoop::stop() noexcept {
-    running_.store(false, std::memory_order_release);
+    running_.store(false);
     wakeup();
 }
 
 void EventLoop::wakeup() noexcept {
 #ifdef __linux__
     if (wakeupFd_ >= 0) {
-        uint64_t value = 1;
-        (void)::write(wakeupFd_, &value, sizeof(value));
+        uint64_t v = 1;
+        (void)::write(wakeupFd_, &v, sizeof(v));
     }
 #elif defined(__APPLE__)
     if (kqueueFd_ >= 0) {
-        struct kevent change;
-        EV_SET(&change, 0, EVFILT_USER, EV_ADD | EV_ENABLE, NOTE_TRIGGER, 0, nullptr);
-        (void)kevent(kqueueFd_, &change, 1, nullptr, 0, nullptr);
+        struct kevent c;
+        EV_SET(&c, 0, EVFILT_USER, EV_ADD | EV_ENABLE, NOTE_TRIGGER, 0, 0);
+        kevent(kqueueFd_, &c, 1, 0, 0, 0);
     }
 #endif
 }
@@ -83,234 +81,245 @@ void EventLoop::wakeup() noexcept {
 void EventLoop::registerFd(int32_t fd) noexcept {
     int32_t flags = fcntl(fd, F_GETFL, 0);
     if (flags >= 0) {
-        (void)fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
     }
-
 #ifdef __linux__
-    epoll_event event{};
-    event.events = EPOLLET;
-    event.data.fd = fd;
-    (void)epoll_ctl(epollFd_, EPOLL_CTL_ADD, fd, &event);
+    epoll_event e{};
+    e.events = EPOLLET;
+    e.data.fd = fd;
+    epoll_ctl(epollFd_, EPOLL_CTL_ADD, fd, &e);
 #endif
 }
 
 void EventLoop::unregisterFd(int32_t fd) noexcept {
-    unregisterAllContinuations(fd);
-
-#ifdef __linux__
     {
-        std::lock_guard<std::mutex> lock(fdMutex_);
+        std::lock_guard l(fdMutex_);
+        auto it = fdSlots_.find(fd);
+        if (it != fdSlots_.end()) {
+            if (it->second.hasRead && it->second.readReg.aliveFlag) {
+                *it->second.readReg.aliveFlag = false;
+            }
+            if (it->second.hasWrite && it->second.writeReg.aliveFlag) {
+                *it->second.writeReg.aliveFlag = false;
+            }
+            for (auto t = tokenMap_.begin(); t != tokenMap_.end();) {
+                if (t->second.first == fd) {
+                    tokenMap_.erase(t++);
+                } else {
+                    ++t;
+                }
+            }
+            fdSlots_.erase(it);
+        }
+#ifdef __linux__
         fdEvents_.erase(fd);
+#endif
     }
-    (void)epoll_ctl(epollFd_, EPOLL_CTL_DEL, fd, nullptr);
+#ifdef __linux__
+    epoll_ctl(epollFd_, EPOLL_CTL_DEL, fd, nullptr);
 #elif defined(__APPLE__)
-    struct kevent changes[2];
-    EV_SET(&changes[0], fd, EVFILT_READ, EV_DELETE, 0, 0, nullptr);
-    EV_SET(&changes[1], fd, EVFILT_WRITE, EV_DELETE, 0, 0, nullptr);
-    (void)kevent(kqueueFd_, changes, 2, nullptr, 0, nullptr);
+    struct kevent cs[2];
+    EV_SET(&cs[0], fd, EVFILT_READ, EV_DELETE, 0, 0, 0);
+    EV_SET(&cs[1], fd, EVFILT_WRITE, EV_DELETE, 0, 0, 0);
+    kevent(kqueueFd_, cs, 2, 0, 0, 0);
 #endif
 }
 
-void EventLoop::setReadable(int32_t fd, bool enabled) noexcept {
+void EventLoop::setReadable(int32_t fd, bool en) noexcept {
 #ifdef __linux__
-    std::lock_guard<std::mutex> lock(fdMutex_);
-    if (enabled) {
+    std::lock_guard l(fdMutex_);
+    if (en) {
         fdEvents_[fd] |= EPOLLIN;
     } else {
         fdEvents_[fd] &= ~EPOLLIN;
     }
-    epoll_event event{};
-    event.data.fd = fd;
-    event.events = EPOLLET | fdEvents_[fd];
-    (void)epoll_ctl(epollFd_, EPOLL_CTL_MOD, fd, &event);
+    epoll_event e{};
+    e.data.fd = fd;
+    e.events = EPOLLET | fdEvents_[fd];
+    epoll_ctl(epollFd_, EPOLL_CTL_MOD, fd, &e);
 #elif defined(__APPLE__)
-    struct kevent change;
-    EV_SET(&change, fd, EVFILT_READ, enabled ? EV_ADD | EV_ENABLE : EV_DELETE, 0, 0, nullptr);
-    (void)kevent(kqueueFd_, &change, 1, nullptr, 0, nullptr);
+    struct kevent c;
+    EV_SET(&c, fd, EVFILT_READ, en ? EV_ADD | EV_ENABLE : EV_DELETE, 0, 0, 0);
+    kevent(kqueueFd_, &c, 1, 0, 0, 0);
 #endif
 }
 
-void EventLoop::setWritable(int32_t fd, bool enabled) noexcept {
+void EventLoop::setWritable(int32_t fd, bool en) noexcept {
 #ifdef __linux__
-    std::lock_guard<std::mutex> lock(fdMutex_);
-    if (enabled) {
+    std::lock_guard l(fdMutex_);
+    if (en) {
         fdEvents_[fd] |= EPOLLOUT;
     } else {
         fdEvents_[fd] &= ~EPOLLOUT;
     }
-    epoll_event event{};
-    event.data.fd = fd;
-    event.events = EPOLLET | fdEvents_[fd];
-    (void)epoll_ctl(epollFd_, EPOLL_CTL_MOD, fd, &event);
+    epoll_event e{};
+    e.data.fd = fd;
+    e.events = EPOLLET | fdEvents_[fd];
+    epoll_ctl(epollFd_, EPOLL_CTL_MOD, fd, &e);
 #elif defined(__APPLE__)
-    struct kevent change;
-    EV_SET(&change, fd, EVFILT_WRITE, enabled ? EV_ADD | EV_ENABLE : EV_DELETE, 0, 0, nullptr);
-    (void)kevent(kqueueFd_, &change, 1, nullptr, 0, nullptr);
+    struct kevent c;
+    EV_SET(&c, fd, EVFILT_WRITE, en ? EV_ADD | EV_ENABLE : EV_DELETE, 0, 0, 0);
+    kevent(kqueueFd_, &c, 1, 0, 0, 0);
 #endif
 }
 
-void EventLoop::RegistrationToken::cancel() noexcept {
-    auto loop = std::exchange(loop_, nullptr);
-    auto handle = std::exchange(handle_, nullptr);
-    if (!loop || !handle) {
-        return;
-    }
-    bool needDisable = false;
-    auto removed = loop->takeContinuation(fd_, interest_, needDisable, handle);
-    if (needDisable) {
-        if (interest_ == FdInterest::Read) {
-            loop->setReadable(fd_, false);
-        } else {
-            loop->setWritable(fd_, false);
-        }
-    }
-    if (removed && removed->notify()) {
-        CoroutineScheduler::instance().schedule(std::move(removed));
-    }
+EventLoop::RegistrationToken EventLoop::createToken(
+    int32_t fd,
+    FdInterest interest,
+    std::shared_ptr<std::atomic<bool>> aliveFlag) noexcept {
+    uint64_t id = nextId_.fetch_add(1);
+    tokenMap_[id] = {fd, interest};
+    return RegistrationToken(this, id, fd, interest, std::move(aliveFlag));
 }
 
 EventLoop::RegistrationToken EventLoop::registerContinuation(
     int32_t fd,
     FdInterest interest,
-    std::shared_ptr<SharedCoroutineHandle> handle) noexcept {
-    if (!handle) {
-        return {};
+    std::coroutine_handle<> handle,
+    std::shared_ptr<std::atomic<bool>> aliveFlag) noexcept {
+    std::lock_guard l(fdMutex_);
+    auto& slot = fdSlots_[fd];
+    auto& target = (interest == FdInterest::Read) ? slot.readReg : slot.writeReg;
+    auto& hasTarget = (interest == FdInterest::Read) ? slot.hasRead : slot.hasWrite;
+    if (hasTarget) {
+        LogW("EventLoop: overwriting pending waiter on fd={}", fd);
     }
-
-    {
-        std::lock_guard<std::mutex> lock(fdMutex_);
-        auto& waiters = continuations_[fd];
-        auto& slot = interest == FdInterest::Read ? waiters.readHandle : waiters.writeHandle;
-        assert((!slot || slot->done()) && "Overwriting pending fd waiter");
-        if (slot && !slot->done()) {
-            LogW("EventLoop: overwriting pending waiter on fd={}", fd);
-        }
-        slot = handle;
-    }
-
-    return RegistrationToken(this, std::move(handle), fd, interest);
+    target.handle = handle;
+    target.aliveFlag = aliveFlag;
+    hasTarget = true;
+    return createToken(fd, interest, std::move(aliveFlag));
 }
 
-std::shared_ptr<SharedCoroutineHandle> EventLoop::takeContinuation(
+std::pair<EventLoop::FdRegistration, bool> EventLoop::takeRegistration(
     int32_t fd,
     FdInterest interest,
-    bool& needDisable,
-    const std::shared_ptr<SharedCoroutineHandle>& expected) noexcept {
-    needDisable = false;
-    std::lock_guard<std::mutex> lock(fdMutex_);
-    auto it = continuations_.find(fd);
-    if (it == continuations_.end()) {
-        return nullptr;
+    const std::shared_ptr<std::atomic<bool>>* expectedFlag) noexcept {
+    FdRegistration reg;
+    bool needDisable = false;
+    std::lock_guard l(fdMutex_);
+    auto slotIt = fdSlots_.find(fd);
+    if (slotIt == fdSlots_.end()) {
+        return {reg, false};
     }
-
-    auto& slot = interest == FdInterest::Read ? it->second.readHandle : it->second.writeHandle;
-    if (expected && slot != expected) {
-        return nullptr;
+    auto& hasSlot =
+        (interest == FdInterest::Read) ? slotIt->second.hasRead : slotIt->second.hasWrite;
+    auto& slotReg =
+        (interest == FdInterest::Read) ? slotIt->second.readReg : slotIt->second.writeReg;
+    if (!hasSlot) {
+        return {reg, false};
     }
-    auto handle = std::move(slot);
-    needDisable = handle != nullptr;
-    if (it->second.empty()) {
-        continuations_.erase(it);
+    if (expectedFlag && slotReg.aliveFlag != *expectedFlag) {
+        return {reg, false};
     }
-    return handle;
+    reg = slotReg;
+    needDisable = true;
+    hasSlot = false;
+    slotReg = {};
+    if (!slotIt->second.hasRead && !slotIt->second.hasWrite) {
+        fdSlots_.erase(slotIt);
+    }
+    return {reg, needDisable};
 }
 
 void EventLoop::unregisterContinuation(int32_t fd, FdInterest interest) noexcept {
-    bool needDisable = false;
-    (void)takeContinuation(fd, interest, needDisable);
+    auto [reg, needDisable] = takeRegistration(fd, interest);
     if (needDisable) {
-        if (interest == FdInterest::Read) {
-            setReadable(fd, false);
-        } else {
-            setWritable(fd, false);
-        }
+        (interest == FdInterest::Read) ? setReadable(fd, false) : setWritable(fd, false);
+    }
+    if (reg.aliveFlag) {
+        *reg.aliveFlag = false;
     }
 }
 
-void EventLoop::unregisterAllContinuations(int32_t fd) noexcept {
-    bool disableRead = false;
-    bool disableWrite = false;
+void EventLoop::RegistrationToken::cancel() noexcept {
+    auto loop = std::exchange(loop_, nullptr);
+    auto id = std::exchange(id_, 0);
+    if (!loop) {
+        return;
+    }
+    if (aliveFlag_) {
+        *aliveFlag_ = false;
+        aliveFlag_.reset();
+    }
+    auto [reg, needDisable] = loop->takeRegistration(fd_, interest_);
+    if (needDisable) {
+        (interest_ == FdInterest::Read) ? loop->setReadable(fd_, false)
+                                        : loop->setWritable(fd_, false);
+    }
     {
-        std::lock_guard<std::mutex> lock(fdMutex_);
-        auto it = continuations_.find(fd);
-        if (it == continuations_.end()) {
-            return;
-        }
-        disableRead = it->second.readHandle != nullptr;
-        disableWrite = it->second.writeHandle != nullptr;
-        continuations_.erase(it);
-    }
-    if (disableRead) {
-        setReadable(fd, false);
-    }
-    if (disableWrite) {
-        setWritable(fd, false);
+        std::lock_guard l(loop->fdMutex_);
+        loop->tokenMap_.erase(id);
     }
 }
 
 void EventLoop::dispatchEvent(int32_t fd, bool readable, bool writable, bool error) noexcept {
-    std::shared_ptr<SharedCoroutineHandle> readHandle;
-    std::shared_ptr<SharedCoroutineHandle> writeHandle;
-    bool disableRead = false;
-    bool disableWrite = false;
-
+    FdRegistration readReg, writeReg;
+    bool disableRead = false, disableWrite = false;
     if (readable || error) {
-        readHandle = takeContinuation(fd, FdInterest::Read, disableRead);
+        auto r = takeRegistration(fd, FdInterest::Read);
+        readReg = r.first;
+        disableRead = r.second;
     }
     if (writable || error) {
-        writeHandle = takeContinuation(fd, FdInterest::Write, disableWrite);
+        auto r = takeRegistration(fd, FdInterest::Write);
+        writeReg = r.first;
+        disableWrite = r.second;
     }
-
     if (disableRead) {
         setReadable(fd, false);
     }
     if (disableWrite) {
         setWritable(fd, false);
     }
-
-    if (!running_.load(std::memory_order_acquire)) {
+    if (!running_.load()) {
+        if (readReg.aliveFlag) {
+            *readReg.aliveFlag = false;
+        }
+        if (writeReg.aliveFlag) {
+            *writeReg.aliveFlag = false;
+        }
         return;
     }
-    if (readHandle && readHandle->notify()) {
-        CoroutineScheduler::instance().schedule(std::move(readHandle));
+    if (readReg.aliveFlag && readReg.aliveFlag->load()) {
+        readReg.handle.resume();
     }
-    if (writeHandle && writeHandle->notify()) {
-        CoroutineScheduler::instance().schedule(std::move(writeHandle));
+    if (writeReg.aliveFlag && writeReg.aliveFlag->load()) {
+        writeReg.handle.resume();
     }
 }
 
 void EventLoop::poll() noexcept {
 #ifdef __linux__
     epoll_event events[kMaxEvents];
-    int32_t count = epoll_wait(epollFd_, events, kMaxEvents, kPollTimeoutMs);
-    for (int32_t index = 0; index < count; ++index) {
-        int32_t fd = events[index].data.fd;
+    int32_t cnt = epoll_wait(epollFd_, events, kMaxEvents, kPollTimeoutMs);
+    for (int32_t i = 0; i < cnt; ++i) {
+        int32_t fd = events[i].data.fd;
         if (fd == wakeupFd_) {
-            uint64_t value = 0;
-            (void)::read(wakeupFd_, &value, sizeof(value));
+            uint64_t v = 0;
+            (void)::read(wakeupFd_, &v, sizeof(v));
             continue;
         }
-        const uint32_t eventsMask = events[index].events;
+        uint32_t m = events[i].events;
         dispatchEvent(fd,
-                      (eventsMask & EPOLLIN) != 0,
-                      (eventsMask & EPOLLOUT) != 0,
-                      (eventsMask & (EPOLLERR | EPOLLHUP)) != 0);
+                      (m & EPOLLIN) != 0,
+                      (m & EPOLLOUT) != 0,
+                      (m & (EPOLLERR | EPOLLHUP)) != 0);
     }
 #elif defined(__APPLE__)
     struct kevent events[kMaxEvents];
-    struct timespec timeout = {0, kPollTimeoutMs * 1000000};
-    int32_t count = kevent(kqueueFd_, nullptr, 0, events, kMaxEvents, &timeout);
-    for (int32_t index = 0; index < count; ++index) {
-        int32_t fd = static_cast<int32_t>(events[index].ident);
-        if (fd == 0 && events[index].filter == EVFILT_USER) {
+    struct timespec ts = {0, kPollTimeoutMs * 1000000};
+    int32_t cnt = kevent(kqueueFd_, 0, 0, events, kMaxEvents, &ts);
+    for (int32_t i = 0; i < cnt; ++i) {
+        int32_t fd = static_cast<int32_t>(events[i].ident);
+        if (fd == 0 && events[i].filter == EVFILT_USER) {
             continue;
         }
         dispatchEvent(fd,
-                      events[index].filter == EVFILT_READ,
-                      events[index].filter == EVFILT_WRITE,
-                      (events[index].flags & EV_ERROR) != 0);
+                      events[i].filter == EVFILT_READ,
+                      events[i].filter == EVFILT_WRITE,
+                      (events[i].flags & EV_ERROR) != 0);
     }
 #endif
 }
 
-} // namespace slark
+}  // namespace slark

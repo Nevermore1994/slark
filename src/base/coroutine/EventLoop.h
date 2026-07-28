@@ -1,20 +1,16 @@
-//
 // Copyright (c) 2026 Nevermore-. All rights reserved.
-//
 
 #pragma once
-
-#include "NonCopyable.h"
-#include "SharedCoroutineHandle.hpp"
 
 #include <atomic>
 #include <coroutine>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <mutex>
-#include <utility>
 #include <unordered_map>
+#include <utility>
+
+#include "NonCopyable.h"
 
 #ifdef __linux__
 #include <sys/epoll.h>
@@ -25,17 +21,17 @@
 
 namespace slark {
 
-enum class FdInterest : uint8_t {
-    Read,
-    Write,
-};
+enum class FdInterest : uint8_t { Read, Write };
 
 class EventLoop : public NonCopyable {
-public:
+ public:
     static constexpr int32_t kMaxEvents = 1024;
     static constexpr int32_t kPollTimeoutMs = 100;
 
-    using FdCallback = std::function<void(int32_t fd, bool readable, bool writable, bool error)>;
+    struct FdRegistration {
+        std::coroutine_handle<> handle;
+        std::shared_ptr<std::atomic<bool>> aliveFlag;
+    };
 
     EventLoop();
     ~EventLoop();
@@ -44,7 +40,7 @@ public:
     void stop() noexcept;
     void wakeup() noexcept;
 
-    [[nodiscard]] bool isRunning() const noexcept {
+    bool isRunning() const noexcept {
         return running_.load(std::memory_order_acquire);
     }
 
@@ -54,40 +50,43 @@ public:
     void setWritable(int32_t fd, bool enabled) noexcept;
 
     class RegistrationToken {
-    public:
+     public:
         RegistrationToken() = default;
-
-        // 取消路径以同一摘除操作赢得恢复权：摘除成功者负责恢复。
         void cancel() noexcept;
 
-        [[nodiscard]] bool valid() const noexcept {
-            return loop_ != nullptr && handle_ != nullptr && !handle_->done();
+        bool valid() const noexcept {
+            return id_ != 0;
         }
 
-    private:
+     private:
         friend class EventLoop;
 
         RegistrationToken(EventLoop* loop,
-                          std::shared_ptr<SharedCoroutineHandle> handle,
+                          uint64_t id,
                           int32_t fd,
-                          FdInterest interest) noexcept
-            : loop_(loop), handle_(std::move(handle)), fd_(fd), interest_(interest) {}
+                          FdInterest interest,
+                          std::shared_ptr<std::atomic<bool>> aliveFlag) noexcept
+            : loop_(loop),
+              id_(id),
+              fd_(fd),
+              interest_(interest),
+              aliveFlag_(std::move(aliveFlag)) {}
 
         EventLoop* loop_{nullptr};
-        std::shared_ptr<SharedCoroutineHandle> handle_;
+        uint64_t id_{0};
         int32_t fd_{-1};
         FdInterest interest_{};
+        std::shared_ptr<std::atomic<bool>> aliveFlag_;
     };
 
-    RegistrationToken registerContinuation(
-        int32_t fd,
-        FdInterest interest,
-        std::shared_ptr<SharedCoroutineHandle> handle) noexcept;
+    RegistrationToken registerContinuation(int32_t fd,
+                                           FdInterest interest,
+                                           std::coroutine_handle<> handle,
+                                           std::shared_ptr<std::atomic<bool>> aliveFlag) noexcept;
 
     void unregisterContinuation(int32_t fd, FdInterest interest) noexcept;
-    void unregisterAllContinuations(int32_t fd) noexcept;
 
-    [[nodiscard]] int32_t nativeFd() const noexcept {
+    int32_t nativeFd() const noexcept {
 #ifdef __linux__
         return epollFd_;
 #elif defined(__APPLE__)
@@ -95,38 +94,37 @@ public:
 #endif
     }
 
-private:
-    struct FdWaiters {
-        std::shared_ptr<SharedCoroutineHandle> readHandle;
-        std::shared_ptr<SharedCoroutineHandle> writeHandle;
-
-        [[nodiscard]] bool empty() const noexcept {
-            return !readHandle && !writeHandle;
-        }
-    };
-
-    [[nodiscard]] std::shared_ptr<SharedCoroutineHandle> takeContinuation(
+ private:
+    RegistrationToken createToken(int32_t fd,
+                                  FdInterest interest,
+                                  std::shared_ptr<std::atomic<bool>> aliveFlag) noexcept;
+    std::pair<FdRegistration, bool> takeRegistration(
         int32_t fd,
         FdInterest interest,
-        bool& needDisable,
-        const std::shared_ptr<SharedCoroutineHandle>& expected = nullptr) noexcept;
-    void poll() noexcept;
+        const std::shared_ptr<std::atomic<bool>>* expectedFlag = nullptr) noexcept;
     void dispatchEvent(int32_t fd, bool readable, bool writable, bool error) noexcept;
+    void poll() noexcept;
+
+    struct FdSlot {
+        FdRegistration readReg;
+        FdRegistration writeReg;
+        bool hasRead{false};
+        bool hasWrite{false};
+    };
 
 #ifdef __linux__
-    int32_t epollFd_{-1};
-    int32_t wakeupFd_{-1};
+    int32_t epollFd_{-1}, wakeupFd_{-1};
 #elif defined(__APPLE__)
     int32_t kqueueFd_{-1};
 #endif
     std::atomic<bool> running_{false};
-
+    std::atomic<uint64_t> nextId_{1};
     mutable std::mutex fdMutex_;
-    std::unordered_map<int32_t, FdWaiters> continuations_;
-
+    std::unordered_map<int32_t, FdSlot> fdSlots_;
+    std::unordered_map<uint64_t, std::pair<int32_t, FdInterest>> tokenMap_;
 #ifdef __linux__
     std::unordered_map<int32_t, uint32_t> fdEvents_;
 #endif
 };
 
-} // namespace slark
+}  // namespace slark

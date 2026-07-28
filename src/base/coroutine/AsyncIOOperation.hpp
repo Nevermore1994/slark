@@ -1,14 +1,6 @@
-//
 // Copyright (c) 2026 Nevermore-. All rights reserved.
-//
 
 #pragma once
-
-#include "Coroutine.hpp"
-#include "CoroutineScheduler.hpp"
-#include "Error.h"
-#include "SharedCoroutineHandle.hpp"
-#include "Timer.h"
 
 #include <atomic>
 #include <chrono>
@@ -20,136 +12,148 @@
 #include <type_traits>
 #include <utility>
 
+#include "CoroutineScheduler.hpp"
+#include "Error.h"
+#include "Timer.h"
+
 namespace slark {
 
 template <typename T>
 using IOResult = std::expected<T, Error>;
 
-namespace detail {
-
-enum class CompletionState : uint8_t {
+enum class IOOpState : uint8_t {
     Pending = 0,
     Completed,
     Failed,
     TimedOut,
 };
 
-enum class ResumePhase : uint8_t {
-    Registering = 0,
-    Suspended,
-    Resumed,
-};
-
-template <typename T>
-struct IOState {
-    std::atomic<CompletionState> state{CompletionState::Pending};
-    std::atomic<ResumePhase> resumePhase{ResumePhase::Registering};
-    std::shared_ptr<SharedCoroutineHandle> resumeHandle;
-    std::optional<T> result;
-    std::optional<Error> error;
+struct SharedCompletion {
+    std::atomic<IOOpState> state{IOOpState::Pending};
+    std::shared_ptr<std::atomic<bool>> aliveFlag;
+    std::coroutine_handle<> handle;
     std::function<void()> cleanup;
-};
-
-template <>
-struct IOState<void> {
-    std::atomic<CompletionState> state{CompletionState::Pending};
-    std::atomic<ResumePhase> resumePhase{ResumePhase::Registering};
-    std::shared_ptr<SharedCoroutineHandle> resumeHandle;
     std::optional<Error> error;
-    std::function<void()> cleanup;
+
+    bool tryComplete(IOOpState newState) noexcept {
+        auto expected = IOOpState::Pending;
+        if (state.compare_exchange_strong(expected, newState, std::memory_order_acq_rel)) {
+            if (cleanup) {
+                cleanup();
+            }
+            if (aliveFlag && aliveFlag->load(std::memory_order_acquire)) {
+                handle.resume();
+            }
+            return true;
+        }
+        return false;
+    }
 };
 
-} // namespace detail
+template <typename Derived, typename T>
+class AsyncIOOperationBase {
+ public:
+    AsyncIOOperationBase() : completion_(std::make_shared<SharedCompletion>()) {}
 
-template <typename T>
-class AsyncIOOperation {
-public:
-    virtual ~AsyncIOOperation() = default;
+    virtual ~AsyncIOOperationBase() {
+        if (aliveFlag_) {
+            *aliveFlag_ = false;
+            aliveFlag_.reset();
+        }
+        cancelTimer();
+        if (auto cleanup = std::exchange(cleanup_, nullptr)) {
+            cleanup();
+        }
+    }
 
     bool await_ready() const noexcept {
-        return state_->state.load(std::memory_order_acquire) != detail::CompletionState::Pending;
+        return completion_->state.load(std::memory_order_acquire) != IOOpState::Pending;
     }
 
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
-        state_->resumeHandle = handle.promise().makeResumeHandle();
+        handle_ = handle;
+        aliveFlag_ = std::make_shared<std::atomic<bool>>(true);
+        completion_->aliveFlag = aliveFlag_;
+        completion_->handle = handle_;
+        completion_->cleanup = {};
         scheduleTimeout();
         startOperation();
-        if (state_->state.load(std::memory_order_acquire) != detail::CompletionState::Pending) {
-            return false;
-        }
-        state_->resumePhase.store(detail::ResumePhase::Suspended, std::memory_order_release);
-        if (state_->state.load(std::memory_order_acquire) != detail::CompletionState::Pending) {
-            auto expected = detail::ResumePhase::Suspended;
-            return !state_->resumePhase.compare_exchange_strong(expected, detail::ResumePhase::Resumed,
-                                                                 std::memory_order_acq_rel);
-        }
-        return state_->resumeHandle && state_->resumeHandle->suspend();
+        return completion_->state.load(std::memory_order_acquire) == IOOpState::Pending;
     }
 
     IOResult<T> await_resume() {
-        auto state = state_->state.load(std::memory_order_acquire);
-        if (state == detail::CompletionState::Failed || state == detail::CompletionState::TimedOut) {
-            return std::unexpected(state_->error.value_or(Error::NetworkError));
+        auto s = completion_->state.load(std::memory_order_acquire);
+        if (s == IOOpState::Failed || s == IOOpState::TimedOut) {
+            return std::unexpected(error_.value_or(Error::NetworkError));
         }
-        if (state == detail::CompletionState::Completed && state_->result.has_value()) {
-            return std::move(*state_->result);
-        }
-        return std::unexpected(Error::NetworkError);
+        return derived().getResult();
     }
 
-    void setTimeout(std::chrono::milliseconds timeout) noexcept { timeout_ = timeout; }
+    void setTimeout(std::chrono::milliseconds t) noexcept {
+        timeout_ = t;
+    }
 
-protected:
-    AsyncIOOperation() : state_(std::make_shared<detail::IOState<T>>()) {}
+ protected:
+    int32_t fd_{-1};
+    std::optional<Error> error_;
+    std::coroutine_handle<> handle_;
+    std::shared_ptr<std::atomic<bool>> aliveFlag_;
 
     virtual void startOperation() noexcept = 0;
 
-    void setCleanup(std::function<void()> cleanup) noexcept { state_->cleanup = std::move(cleanup); }
-
-    void complete(T result) noexcept {
-        auto expected = detail::CompletionState::Pending;
-        if (state_->state.compare_exchange_strong(expected, detail::CompletionState::Completed,
-                                                  std::memory_order_acq_rel)) {
-            state_->result.emplace(std::move(result));
-            cancelTimer();
-            finishState(*state_);
-        }
+    void complete(T value) noexcept {
+        derived().storeResult(std::move(value));
+        finish(IOOpState::Completed);
     }
 
     void fail(Error error) noexcept {
-        auto expected = detail::CompletionState::Pending;
-        if (state_->state.compare_exchange_strong(expected, detail::CompletionState::Failed,
-                                                  std::memory_order_acq_rel)) {
-            state_->error = error;
-            cancelTimer();
-            finishState(*state_);
+        error_ = error;
+        finish(IOOpState::Failed);
+    }
+
+    void setCleanup(std::function<void()> cleanup) noexcept {
+        cleanup_ = std::move(cleanup);
+        completion_->cleanup = cleanup_;
+    }
+
+    [[nodiscard]] std::coroutine_handle<> ioHandle() const noexcept {
+        return handle_;
+    }
+
+    [[nodiscard]] std::shared_ptr<std::atomic<bool>> ioAliveFlag() const noexcept {
+        return aliveFlag_;
+    }
+
+ private:
+    Derived& derived() noexcept {
+        return static_cast<Derived&>(*this);
+    }
+
+    void finish(IOOpState newState) noexcept {
+        completion_->cleanup = nullptr;
+        if (auto cleanup = std::exchange(cleanup_, nullptr)) {
+            cleanup();
         }
+        completion_->error = error_;
+        completion_->tryComplete(newState);
     }
 
-    [[nodiscard]] std::shared_ptr<SharedCoroutineHandle> getSharedHandle() const noexcept {
-        return state_->resumeHandle;
-    }
-
-    int32_t fd_{-1};
-
-private:
     void scheduleTimeout() noexcept {
         if (timeout_.count() <= 0) {
             return;
         }
-        auto weakState = std::weak_ptr<detail::IOState<T>>(state_);
-        timerId_ = CoroutineScheduler::instance().scheduleCallback(timeout_, [weakState]() {
-            auto state = weakState.lock();
-            if (!state) {
+        auto weakCompletion = std::weak_ptr<SharedCompletion>(completion_);
+        timerId_ = CoroutineScheduler::instance().scheduleCallback(timeout_, [weakCompletion]() {
+            auto c = weakCompletion.lock();
+            if (!c) {
                 return;
             }
-            auto expected = detail::CompletionState::Pending;
-            if (state->state.compare_exchange_strong(expected, detail::CompletionState::TimedOut,
-                                                     std::memory_order_acq_rel)) {
-                state->error = Error::ConnectionTimeout;
-                finishState(*state);
+            if (!c->aliveFlag || !c->aliveFlag->load(std::memory_order_acquire)) {
+                return;
             }
+            c->error = Error::ConnectionTimeout;
+            c->tryComplete(IOOpState::TimedOut);
         });
     }
 
@@ -160,117 +164,123 @@ private:
         }
     }
 
-    static void finishState(detail::IOState<T>& state) noexcept {
-        if (auto cleanup = std::exchange(state.cleanup, nullptr)) {
-            cleanup();
-        }
-        scheduleResume(state);
-    }
-
-    static void scheduleResume(detail::IOState<T>& state) noexcept {
-        auto expected = detail::ResumePhase::Suspended;
-        if (state.resumePhase.compare_exchange_strong(expected, detail::ResumePhase::Resumed,
-                                                      std::memory_order_acq_rel)) {
-            CoroutineScheduler::instance().schedule(state.resumeHandle);
-        }
-    }
-
-    std::shared_ptr<detail::IOState<T>> state_;
+    std::shared_ptr<SharedCompletion> completion_;
+    std::function<void()> cleanup_;
     std::chrono::milliseconds timeout_{0};
     TimerId timerId_;
 };
 
-template <>
-class AsyncIOOperation<void> {
-public:
-    virtual ~AsyncIOOperation() = default;
+template <typename Derived>
+class AsyncIOOperationBase<Derived, void> {
+ public:
+    AsyncIOOperationBase() : completion_(std::make_shared<SharedCompletion>()) {}
+
+    virtual ~AsyncIOOperationBase() {
+        if (aliveFlag_) {
+            *aliveFlag_ = false;
+            aliveFlag_.reset();
+        }
+        cancelTimer();
+        if (auto cleanup = std::exchange(cleanup_, nullptr)) {
+            cleanup();
+        }
+    }
 
     bool await_ready() const noexcept {
-        return state_->state.load(std::memory_order_acquire) != detail::CompletionState::Pending;
+        return completion_->state.load(std::memory_order_acquire) != IOOpState::Pending;
     }
 
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
-        state_->resumeHandle = handle.promise().makeResumeHandle();
+        handle_ = handle;
+        aliveFlag_ = std::make_shared<std::atomic<bool>>(true);
+        completion_->aliveFlag = aliveFlag_;
+        completion_->handle = handle_;
+        completion_->cleanup = {};
         scheduleTimeout();
         startOperation();
-        if (state_->state.load(std::memory_order_acquire) != detail::CompletionState::Pending) {
-            return false;
-        }
-        state_->resumePhase.store(detail::ResumePhase::Suspended, std::memory_order_release);
-        if (state_->state.load(std::memory_order_acquire) != detail::CompletionState::Pending) {
-            auto expected = detail::ResumePhase::Suspended;
-            return !state_->resumePhase.compare_exchange_strong(expected, detail::ResumePhase::Resumed,
-                                                                 std::memory_order_acq_rel);
-        }
-        return state_->resumeHandle && state_->resumeHandle->suspend();
+        return completion_->state.load(std::memory_order_acquire) == IOOpState::Pending;
     }
 
     IOResult<void> await_resume() {
-        auto state = state_->state.load(std::memory_order_acquire);
-        if (state == detail::CompletionState::Failed || state == detail::CompletionState::TimedOut) {
-            return std::unexpected(state_->error.value_or(Error::NetworkError));
+        auto s = completion_->state.load(std::memory_order_acquire);
+        if (s == IOOpState::Failed || s == IOOpState::TimedOut) {
+            return std::unexpected(error_.value_or(Error::NetworkError));
         }
         return {};
     }
 
-    void setTimeout(std::chrono::milliseconds timeout) noexcept { timeout_ = timeout; }
+    void setTimeout(std::chrono::milliseconds t) noexcept {
+        timeout_ = t;
+    }
 
-protected:
-    AsyncIOOperation() : state_(std::make_shared<detail::IOState<void>>()) {}
+ protected:
+    int32_t fd_{-1};
+    std::optional<Error> error_;
+    std::coroutine_handle<> handle_;
+    std::shared_ptr<std::atomic<bool>> aliveFlag_;
 
     virtual void startOperation() noexcept = 0;
 
-    void setCleanup(std::function<void()> cleanup) noexcept { state_->cleanup = std::move(cleanup); }
-
     void complete() noexcept {
-        auto expected = detail::CompletionState::Pending;
-        if (state_->state.compare_exchange_strong(expected, detail::CompletionState::Completed,
-                                                  std::memory_order_acq_rel)) {
-            cancelTimer();
-            finishState(*state_);
-        }
+        finish(IOOpState::Completed);
     }
 
     void fail(Error error) noexcept {
-        auto expected = detail::CompletionState::Pending;
-        if (state_->state.compare_exchange_strong(expected, detail::CompletionState::Failed,
-                                                  std::memory_order_acq_rel)) {
-            state_->error = error;
-            cancelTimer();
-            finishState(*state_);
+        error_ = error;
+        finish(IOOpState::Failed);
+    }
+
+    [[nodiscard]] IOOpState getState() const noexcept {
+        return completion_->state.load(std::memory_order_acquire);
+    }
+
+    [[nodiscard]] std::optional<Error> getError() const noexcept {
+        return error_;
+    }
+
+    void setCleanup(std::function<void()> cleanup) noexcept {
+        cleanup_ = std::move(cleanup);
+        completion_->cleanup = cleanup_;
+    }
+
+    [[nodiscard]] std::coroutine_handle<> ioHandle() const noexcept {
+        return handle_;
+    }
+
+    [[nodiscard]] std::shared_ptr<std::atomic<bool>> ioAliveFlag() const noexcept {
+        return aliveFlag_;
+    }
+
+ private:
+    Derived& derived() noexcept {
+        return static_cast<Derived&>(*this);
+    }
+
+    void finish(IOOpState newState) noexcept {
+        completion_->cleanup = nullptr;
+        if (auto cleanup = std::exchange(cleanup_, nullptr)) {
+            cleanup();
         }
+        completion_->error = error_;
+        completion_->tryComplete(newState);
     }
 
-    [[nodiscard]] std::shared_ptr<SharedCoroutineHandle> getSharedHandle() const noexcept {
-        return state_->resumeHandle;
-    }
-
-    [[nodiscard]] detail::CompletionState getState() const noexcept {
-        return state_->state.load(std::memory_order_acquire);
-    }
-
-    [[nodiscard]] std::optional<Error> getError() const noexcept { return state_->error; }
-
-    int32_t fd_{-1};
-
-private:
     void scheduleTimeout() noexcept {
         if (timeout_.count() <= 0) {
             return;
         }
-        auto weakState = std::weak_ptr<detail::IOState<void>>(state_);
-        timerId_ = CoroutineScheduler::instance().scheduleCallback(timeout_, [weakState]() {
-            auto state = weakState.lock();
-            if (!state) {
+        auto weakCompletion = std::weak_ptr<SharedCompletion>(completion_);
+        timerId_ = CoroutineScheduler::instance().scheduleCallback(timeout_, [weakCompletion]() {
+            auto c = weakCompletion.lock();
+            if (!c) {
                 return;
             }
-            auto expected = detail::CompletionState::Pending;
-            if (state->state.compare_exchange_strong(expected, detail::CompletionState::TimedOut,
-                                                     std::memory_order_acq_rel)) {
-                state->error = Error::ConnectionTimeout;
-                finishState(*state);
+            if (!c->aliveFlag || !c->aliveFlag->load(std::memory_order_acquire)) {
+                return;
             }
+            c->error = Error::ConnectionTimeout;
+            c->tryComplete(IOOpState::TimedOut);
         });
     }
 
@@ -281,24 +291,10 @@ private:
         }
     }
 
-    static void finishState(detail::IOState<void>& state) noexcept {
-        if (auto cleanup = std::exchange(state.cleanup, nullptr)) {
-            cleanup();
-        }
-        scheduleResume(state);
-    }
-
-    static void scheduleResume(detail::IOState<void>& state) noexcept {
-        auto expected = detail::ResumePhase::Suspended;
-        if (state.resumePhase.compare_exchange_strong(expected, detail::ResumePhase::Resumed,
-                                                      std::memory_order_acq_rel)) {
-            CoroutineScheduler::instance().schedule(state.resumeHandle);
-        }
-    }
-
-    std::shared_ptr<detail::IOState<void>> state_;
+    std::shared_ptr<SharedCompletion> completion_;
+    std::function<void()> cleanup_;
     std::chrono::milliseconds timeout_{0};
     TimerId timerId_;
 };
 
-} // namespace slark
+}  // namespace slark
