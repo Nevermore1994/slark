@@ -4,12 +4,6 @@
 
 #pragma once
 
-#include "Error.h"
-#include "MPSCQueue.hpp"
-#include "MoveOnlyFunction.hpp"
-#include "NonCopyable.h"
-#include "Timer.h"
-
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -22,12 +16,18 @@
 #include <string_view>
 #include <thread>
 
+#include "Error.h"
+#include "MPSCQueue.hpp"
+#include "MoveOnlyFunction.hpp"
+#include "NonCopyable.h"
+#include "Timer.h"
+
 namespace slark {
 
-using Task = MoveOnlyFunction<void()>;
+using ThreadTask = MoveOnlyFunction<void()>;
 
 class Thread : public NonCopyMovable, public std::enable_shared_from_this<Thread> {
-public:
+ public:
     [[nodiscard]] static std::shared_ptr<Thread> create(std::string name);
 
     [[nodiscard]] static std::shared_ptr<Thread> createWithLoop(std::string name,
@@ -46,10 +46,10 @@ public:
     // 若在 worker 自身线程上下文调用则跳过，避免 self-join 死锁。
     void join() noexcept;
 
-    Expected<void> postTask(Task task) noexcept;
-    TimerId postTask(std::chrono::milliseconds delay, Task task) noexcept;
-    TimerId postTask(Time::TimePoint timePoint, Task task) noexcept;
-    TimerId postRepeatTask(std::chrono::milliseconds interval, Task task) noexcept;
+    Expected<void> postTask(ThreadTask task) noexcept;
+    TimerId postTask(std::chrono::milliseconds delay, ThreadTask task) noexcept;
+    TimerId postTask(Time::TimePoint timePoint, ThreadTask task) noexcept;
+    TimerId postRepeatTask(std::chrono::milliseconds interval, ThreadTask task) noexcept;
     void cancelRepeatTask(TimerId id) noexcept;
 
     [[nodiscard]] inline bool isActive() const noexcept {
@@ -57,19 +57,19 @@ public:
     }
 
     class ScopedInactive {
-    public:
+     public:
         ScopedInactive() noexcept;
         ~ScopedInactive() noexcept;
         ScopedInactive(const ScopedInactive&) = delete;
         ScopedInactive& operator=(const ScopedInactive&) = delete;
 
-    private:
+     private:
         Thread* thread_;
     };
 
     static void setCurrentActive(bool active) noexcept;
 
-public:
+ public:
     [[nodiscard]] inline bool isRunning() const noexcept {
         std::lock_guard<std::mutex> lock(mutex_);
         return isRunning_;
@@ -102,7 +102,7 @@ public:
 
     void drainPendingWork() noexcept;
 
-private:
+ private:
     explicit Thread(std::string name);
 
     void process() noexcept;
@@ -113,7 +113,7 @@ private:
 
     std::chrono::milliseconds runRepeatTasks() noexcept;
 
-    TimerTask wrapOneShotTask(Task task) noexcept;
+    TimerTask wrapOneShotTask(ThreadTask task) noexcept;
 
     TimerId registerTimer(TimerId id) noexcept;
 
@@ -128,11 +128,11 @@ private:
 
     friend class ScopedInactive;
 
-private:
+ private:
     struct RepeatTask {
         TimerId id;
         std::chrono::milliseconds interval;
-        std::shared_ptr<Task> task;
+        std::shared_ptr<ThreadTask> task;
         Time::TimePoint lastRunTime;
     };
 
@@ -144,11 +144,11 @@ private:
     mutable std::mutex mutex_;
     std::condition_variable_any cond_;
     std::atomic<uint64_t> lastRunTimeStamp_;
-    MPSCQueue<Task> taskQueue_;
+    MPSCQueue<ThreadTask> taskQueue_;
     std::vector<TimerId> timerIds_;
     std::vector<RepeatTask> repeatTasks_;
     std::function<void(Thread&)> customWork_;
     std::thread worker_;
 };
 
-} // end namespace slark
+}  // end namespace slark

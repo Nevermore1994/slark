@@ -4,21 +4,21 @@
 
 #pragma once
 
-#include "Coroutine.hpp"
-#include "HttpRequest.h"
-#include "IStream.h"
-#include "M3U8Parser.h"
-#include "MediaPlaylist.h"
-
 #include <atomic>
 #include <memory>
 #include <mutex>
 #include <vector>
 
+#include "HttpRequest.h"
+#include "IStream.h"
+#include "M3U8Parser.h"
+#include "MediaPlaylist.h"
+#include "Task.hpp"
+
 namespace slark {
 
 class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream> {
-public:
+ public:
     HLSStream();
     ~HLSStream() override;
 
@@ -58,7 +58,7 @@ public:
         metadataCallback_ = std::move(callback);
     }
 
-private:
+ private:
     std::optional<std::string> selectVariantUri(uint32_t bandwidth);
 
     void downloadSegments();
@@ -75,9 +75,9 @@ private:
     // 播放列表/分片下载均会递归触发新协程（如 master->variant、分片重试），
     // 不能用单个成员存储：移动赋值会 destroy() 仍在运行中的旧协程（UB）。
     // 用 vector 只追加存储，插入时顺便清理已完成的协程。
-    void storeCoroutine(Coroutine<void>&& coroutine) noexcept;
+    void storeTask(Task<void>&& task) noexcept;
 
-private:
+ private:
     std::unique_ptr<M3U8Parser> parser_;
     std::shared_ptr<MediaPlaylist> playlist_;
     std::shared_ptr<http::HttpRequest> request_;
@@ -87,7 +87,7 @@ private:
     std::string mediaPlaylistUrl_;
     std::atomic<uint32_t> currentSegmentIndex_{0};
 
-    std::vector<Coroutine<void>> pendingCoroutines_;
+    std::vector<Task<void>> pendingTasks_;
 
     StreamInfo info_;
 
@@ -102,4 +102,4 @@ private:
     std::mutex mutex_;
 };
 
-} // namespace slark
+}  // namespace slark

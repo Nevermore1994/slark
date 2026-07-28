@@ -4,7 +4,9 @@
 
 #include "HLSStream.h"
 
-#include "Coroutine.hpp"
+#include <algorithm>
+#include <unordered_set>
+
 #include "CoroutineScheduler.hpp"
 #include "DataView.hpp"
 #include "HttpUtil.hpp"
@@ -12,14 +14,13 @@
 #include "LogConfig.h"
 #include "M3U8Parser.h"
 
-#include <algorithm>
-#include <unordered_set>
-
 namespace slark {
 
 namespace {
-inline uint64_t logProgressBytes() { return getLogConfig().progressLogBytes; }
-} // namespace
+inline uint64_t logProgressBytes() {
+    return getLogConfig().progressLogBytes;
+}
+}  // namespace
 
 HLSStream::HLSStream() = default;
 
@@ -63,16 +64,14 @@ void HLSStream::close() noexcept {
     isCompleted_ = false;
 }
 
-void HLSStream::storeCoroutine(Coroutine<void>&& coroutine) noexcept {
-    // 清理已完成的协程，避免 vector 无限增长
-    pendingCoroutines_.erase(
-        std::remove_if(pendingCoroutines_.begin(),
-                       pendingCoroutines_.end(),
-                       [](const Coroutine<void>& c) {
-                           return c.isDone();
-                       }),
-        pendingCoroutines_.end());
-    pendingCoroutines_.push_back(std::move(coroutine));
+void HLSStream::storeTask(Task<void>&& task) noexcept {
+    pendingTasks_.erase(std::remove_if(pendingTasks_.begin(),
+                                       pendingTasks_.end(),
+                                       [](const Task<void>& t) {
+                                           return t.isDone();
+                                       }),
+                        pendingTasks_.end());
+    pendingTasks_.push_back(std::move(task));
 }
 
 void HLSStream::start() noexcept {
@@ -99,7 +98,7 @@ void HLSStream::start() noexcept {
 
     auto fetchPlaylistTask = [](std::shared_ptr<http::HttpRequest> req,
                                 http::RequestInfo info,
-                                std::shared_ptr<HLSStream> stream) -> Coroutine<void> {
+                                std::shared_ptr<HLSStream> stream) -> Task<void> {
         auto response = co_await req->asyncExecute(info);
 
         if (response.isOk()) {
@@ -109,9 +108,9 @@ void HLSStream::start() noexcept {
         }
     };
 
-    auto coroutine = fetchPlaylistTask(request_, requestInfo, self);
-    storeCoroutine(std::move(coroutine));
-    CoroutineScheduler::instance().schedule(pendingCoroutines_.back().makeResumeHandle());
+    auto task = fetchPlaylistTask(request_, requestInfo, self);
+    storeTask(std::move(task));
+    pendingTasks_.back().getHandle().resume();
 }
 
 void HLSStream::pause() noexcept {
@@ -211,7 +210,7 @@ void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
 
         auto fetchVariantTask = [](std::shared_ptr<http::HttpRequest> req,
                                    http::RequestInfo info,
-                                   std::shared_ptr<HLSStream> stream) -> Coroutine<void> {
+                                   std::shared_ptr<HLSStream> stream) -> Task<void> {
             auto response = co_await req->asyncExecute(info);
 
             if (response.isOk()) {
@@ -221,15 +220,16 @@ void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
             }
         };
 
-        auto coroutine = fetchVariantTask(request_, requestInfo, self);
-        storeCoroutine(std::move(coroutine));
-        CoroutineScheduler::instance().schedule(pendingCoroutines_.back().makeResumeHandle());
+        auto task = fetchVariantTask(request_, requestInfo, self);
+        storeTask(std::move(task));
+        pendingTasks_.back().getHandle().resume();
     } else {
         info_.isLive = playlist_->isLive();
         info_.isSeekable = !playlist_->isLive();
         info_.totalSize = static_cast<uint64_t>(playlist_->totalDuration() * 1000);
 
-        LogI("[HLSStream::handlePlaylistResponse] media playlist parsed: segments={} isLive={} totalDuration={}",
+        LogI("[HLSStream::handlePlaylistResponse] media playlist parsed: segments={} isLive={} "
+             "totalDuration={}",
              playlist_->segments().size(),
              info_.isLive,
              playlist_->totalDuration());
@@ -322,7 +322,7 @@ void HLSStream::downloadSegmentWithRetry(uint32_t segIndex, int32_t retryLeft) {
                            http::RequestInfo info,
                            std::shared_ptr<HLSStream> stream,
                            uint32_t segIdx,
-                           int32_t left) -> Coroutine<void> {
+                           int32_t left) -> Task<void> {
         auto gen = req->streamingExecute(info, req->cancelToken());
         bool hasError = false;
 
@@ -338,7 +338,7 @@ void HLSStream::downloadSegmentWithRetry(uint32_t segIndex, int32_t retryLeft) {
 
             if (chunk->hasError()) {
                 hasError = true;
-            stream->lastErrorOriginCode_.store(chunk->error.originErrorCode,
+                stream->lastErrorOriginCode_.store(chunk->error.originErrorCode,
                                                    std::memory_order_release);
                 break;
             }
@@ -353,9 +353,9 @@ void HLSStream::downloadSegmentWithRetry(uint32_t segIndex, int32_t retryLeft) {
             } else {
                 LogE("HLSStream: segment {} download failed after all retries", segIdx);
                 if (stream->params_.onError) {
-                stream->params_.onError(Error::NetworkError,
-                                            stream->lastErrorOriginCode_.load(
-                                                std::memory_order_acquire));
+                    stream->params_.onError(
+                        Error::NetworkError,
+                        stream->lastErrorOriginCode_.load(std::memory_order_acquire));
                 }
                 stream->state_ = StreamState::Error;
             }
@@ -367,9 +367,9 @@ void HLSStream::downloadSegmentWithRetry(uint32_t segIndex, int32_t retryLeft) {
         stream->downloadSegments();
     };
 
-    auto coroutine = downloadTask(request_, requestInfo, self, segIndex, retryLeft);
-    storeCoroutine(std::move(coroutine));
-    CoroutineScheduler::instance().schedule(pendingCoroutines_.back().makeResumeHandle());
+    auto task = downloadTask(request_, requestInfo, self, segIndex, retryLeft);
+    storeTask(std::move(task));
+    pendingTasks_.back().getHandle().resume();
 }
 
 void HLSStream::handleSegmentChunk(http::StreamChunk&& chunk, uint32_t segmentIndex) {
@@ -389,8 +389,8 @@ void HLSStream::handleSegmentChunk(http::StreamChunk&& chunk, uint32_t segmentIn
 
         position_ += chunkSize;
 
-        if (position_.load() / logProgressBytes()
-            != (position_.load() - chunkSize) / logProgressBytes()) {
+        if (position_.load() / logProgressBytes() !=
+            (position_.load() - chunkSize) / logProgressBytes()) {
             LogI("[HLSStream::handleSegmentChunk] progress: segIndex={} pos={} chunk={}",
                  segmentIndex,
                  position_.load(),
@@ -445,7 +445,7 @@ void HLSStream::refreshPlaylist() {
 
     auto fetchTask = [](std::shared_ptr<http::HttpRequest> req,
                         http::RequestInfo info,
-                        std::shared_ptr<HLSStream> stream) -> Coroutine<void> {
+                        std::shared_ptr<HLSStream> stream) -> Task<void> {
         auto response = co_await req->asyncExecute(info);
 
         if (response.isOk()) {
@@ -455,9 +455,9 @@ void HLSStream::refreshPlaylist() {
         }
     };
 
-    auto coroutine = fetchTask(request_, requestInfo, self);
-    storeCoroutine(std::move(coroutine));
-    CoroutineScheduler::instance().schedule(pendingCoroutines_.back().makeResumeHandle());
+    auto task = fetchTask(request_, requestInfo, self);
+    storeTask(std::move(task));
+    pendingTasks_.back().getHandle().resume();
 }
 
-} // namespace slark
+}  // namespace slark

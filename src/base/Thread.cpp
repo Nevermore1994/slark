@@ -19,7 +19,7 @@ using namespace std::chrono_literals;
 
 namespace {
 thread_local Thread* tlsCurrentThread = nullptr;
-} // namespace
+}  // namespace
 
 Thread* Thread::current() noexcept {
     return tlsCurrentThread;
@@ -35,7 +35,7 @@ namespace _channel_detail {
 void setCurrentThreadActive(bool active) noexcept {
     Thread::setCurrentActive(active);
 }
-} // namespace _channel_detail
+}  // namespace _channel_detail
 
 Thread::ScopedInactive::ScopedInactive() noexcept : thread_(Thread::current()) {
     if (thread_) {
@@ -59,7 +59,8 @@ std::shared_ptr<Thread> Thread::create(std::string name) {
     return thread;
 }
 
-std::shared_ptr<Thread> Thread::createWithLoop(std::string name, std::function<void(Thread&)> loop) {
+std::shared_ptr<Thread> Thread::createWithLoop(std::string name,
+                                               std::function<void(Thread&)> loop) {
     auto thread = std::shared_ptr<Thread>(new Thread(std::move(name)));
     thread->customWork_ = std::move(loop);
     {
@@ -136,7 +137,7 @@ void Thread::start() noexcept {
     cond_.notify_all();
 }
 
-Expected<void> Thread::postTask(Task task) noexcept {
+Expected<void> Thread::postTask(ThreadTask task) noexcept {
     if (stopRequested_.load(std::memory_order_acquire)) {
         return std::unexpected(Error::InvalidOperation);
     }
@@ -145,17 +146,17 @@ Expected<void> Thread::postTask(Task task) noexcept {
     return {};
 }
 
-TimerId Thread::postTask(milliseconds delay, Task task) noexcept {
+TimerId Thread::postTask(milliseconds delay, ThreadTask task) noexcept {
     return registerTimer(
         TimerManager::shareInstance().runAfter(delay, wrapOneShotTask(std::move(task))));
 }
 
-TimerId Thread::postTask(Time::TimePoint timePoint, Task task) noexcept {
+TimerId Thread::postTask(Time::TimePoint timePoint, ThreadTask task) noexcept {
     return registerTimer(
         TimerManager::shareInstance().runAt(timePoint, wrapOneShotTask(std::move(task))));
 }
 
-TimerId Thread::postRepeatTask(milliseconds interval, Task task) noexcept {
+TimerId Thread::postRepeatTask(milliseconds interval, ThreadTask task) noexcept {
     if (stopRequested_.load(std::memory_order_acquire)) {
         return TimerId{};
     }
@@ -164,7 +165,7 @@ TimerId Thread::postRepeatTask(milliseconds interval, Task task) noexcept {
     repeatTasks_.push_back(RepeatTask{
         .id = id,
         .interval = interval,
-        .task = std::make_shared<Task>(std::move(task)),
+        .task = std::make_shared<ThreadTask>(std::move(task)),
         .lastRunTime = Time::TimePoint{0},
     });
     return id;
@@ -227,14 +228,14 @@ void Thread::process() noexcept {
             if (waitTime == std::chrono::milliseconds::max()) {
                 ScopedInactive guard;
                 cond_.wait(lock, [this] {
-                    return stopRequested_.load(std::memory_order_acquire) || !isRunning_
-                           || !taskQueue_.empty();
+                    return stopRequested_.load(std::memory_order_acquire) || !isRunning_ ||
+                           !taskQueue_.empty();
                 });
             } else if (waitTime > 0ms) {
                 ScopedInactive guard;
                 cond_.wait_for(lock, waitTime, [this] {
-                    return stopRequested_.load(std::memory_order_acquire) || !isRunning_
-                           || !taskQueue_.empty();
+                    return stopRequested_.load(std::memory_order_acquire) || !isRunning_ ||
+                           !taskQueue_.empty();
                 });
             }
         }
@@ -248,12 +249,12 @@ void Thread::process() noexcept {
 
 milliseconds Thread::runRepeatTasks() noexcept {
     // 一次加锁，收集到期任务和 taskPtr，同时计算下次最小等待时间
-    struct DueTask {
+    struct DueThreadTask {
         TimerId id;
-        std::shared_ptr<Task> taskPtr;
+        std::shared_ptr<ThreadTask> taskPtr;
     };
 
-    std::vector<DueTask> dueTasks;
+    std::vector<DueThreadTask> dueTasks;
     auto waitTime = std::chrono::milliseconds::max();
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -331,7 +332,7 @@ void Thread::setup() noexcept {
     isInit_ = true;
 }
 
-TimerTask Thread::wrapOneShotTask(Task task) noexcept {
+TimerTask Thread::wrapOneShotTask(ThreadTask task) noexcept {
     return [weak = weak_from_this(), task = std::move(task)]() mutable {
         if (auto self = weak.lock()) {
             self->postTask(std::move(task));
@@ -361,4 +362,4 @@ void Thread::drainPendingWork() noexcept {
     drainTaskQueue();
 }
 
-} // end namespace slark
+}  // end namespace slark

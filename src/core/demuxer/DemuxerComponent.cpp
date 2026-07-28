@@ -106,7 +106,9 @@ void DemuxerComponent::runLoop(Thread& thread) noexcept {
             break;
         }
         DataPacket packet = std::move(*exp);
-        LogI("demuxer worker: received data packet offset={}, size={}", packet.offset, packet.data ? packet.data->size() : 0);
+        LogI("demuxer worker: received data packet offset={}, size={}",
+             packet.offset,
+             packet.data ? packet.data->size() : 0);
 
         if (flushed_.load(std::memory_order_acquire)) {
             continue;
@@ -115,7 +117,9 @@ void DemuxerComponent::runLoop(Thread& thread) noexcept {
         auto expectedOffset = pendingSeekVerifiedOffset_.load(std::memory_order_acquire);
         if (expectedOffset != 0) {
             if (static_cast<uint64_t>(packet.offset) != expectedOffset) {
-                LogW("open: discard stale packet offset={}, expected={}", packet.offset, expectedOffset);
+                LogW("open: discard stale packet offset={}, expected={}",
+                     packet.offset,
+                     expectedOffset);
                 continue;
             }
             pendingSeekVerifiedOffset_.store(0, std::memory_order_release);
@@ -137,7 +141,8 @@ void DemuxerComponent::runLoop(Thread& thread) noexcept {
         SLARK_TRACE_RECORD(session.get(), "demux", durationUs);
 #endif
         if (result.resultCode != DemuxerResultCode::Normal) {
-            LogI("[DemuxerComponent::runLoop] parseData: resultCode={} videoFrames={} audioFrames={} offset={}",
+            LogI("[DemuxerComponent::runLoop] parseData: resultCode={} videoFrames={} "
+                 "audioFrames={} offset={}",
                  static_cast<int>(result.resultCode),
                  result.videoFrames.size(),
                  result.audioFrames.size(),
@@ -292,10 +297,10 @@ void DemuxerComponent::drainWorkerTasks() noexcept {
     }
 }
 
-void DemuxerComponent::postToWorker(Task task) noexcept {
+void DemuxerComponent::postToWorker(ThreadTask task) noexcept {
     if (worker_) {
         worker_->postTask(std::move(task));
     }
 }
 
-} // namespace slark
+}  // namespace slark

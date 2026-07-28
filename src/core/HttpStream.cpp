@@ -4,7 +4,6 @@
 
 #include "HttpStream.h"
 
-#include "Coroutine.hpp"
 #include "CoroutineScheduler.hpp"
 #include "DataView.hpp"
 #include "Log.hpp"
@@ -13,12 +12,12 @@
 namespace slark {
 
 namespace {
-inline uint64_t logProgressBytes() { return getLogConfig().progressLogBytes; }
-} // namespace
-
-HttpStream::HttpStream()
-    : streamCoroutine_(nullptr) {
+inline uint64_t logProgressBytes() {
+    return getLogConfig().progressLogBytes;
 }
+}  // namespace
+
+HttpStream::HttpStream() = default;
 
 HttpStream::~HttpStream() {
     close();
@@ -91,8 +90,8 @@ void HttpStream::start() noexcept {
     std::weak_ptr<HttpStream> weakThis = shared_from_this();
 
     auto streamTask = [](std::shared_ptr<http::HttpRequest> req,
-                        http::RequestInfo info,
-                        std::weak_ptr<HttpStream> weakStream) -> Coroutine<void> {
+                         http::RequestInfo info,
+                         std::weak_ptr<HttpStream> weakStream) -> Task<void> {
         // 必须传 req->cancelToken()：seek 时 cancel() 才能中断 processStreaming
         auto gen = req->streamingExecute(info, req->cancelToken());
 
@@ -129,10 +128,9 @@ void HttpStream::start() noexcept {
         }
     };
 
-    auto coroutine = streamTask(self, requestInfo, weakThis);
-    streamCoroutine_ = std::move(coroutine);
-    // 在后台线程 resume 协程，避免阻塞调用线程（如主线程 JNI prepare）
-    CoroutineScheduler::instance().schedule(streamCoroutine_.makeResumeHandle());
+    auto task = streamTask(self, requestInfo, weakThis);
+    streamTask_ = std::move(task);
+    streamTask_.getHandle().resume();
 }
 
 void HttpStream::pause() noexcept {
@@ -150,7 +148,8 @@ void HttpStream::pause() noexcept {
 
 auto HttpStream::seek(uint64_t position) -> StreamResult<void> {
     if (!acceptRanges_) {
-        LogW("[HttpStream::seek] reject, server does not advertise Accept-Ranges, pos={}", position);
+        LogW("[HttpStream::seek] reject, server does not advertise Accept-Ranges, pos={}",
+             position);
         return std::unexpected(Error::StreamNotReady);
     }
 
@@ -163,7 +162,9 @@ auto HttpStream::seek(uint64_t position) -> StreamResult<void> {
         request_->cancel();
         request_.reset();
     }
-    { auto tmp = std::move(streamCoroutine_); }
+    {
+        auto tmp = std::move(streamTask_);
+    }
 
     isCompleted_ = false;
     state_ = StreamState::Ready;
@@ -225,7 +226,8 @@ void HttpStream::handleChunk(http::StreamChunk&& chunk) noexcept {
             }
         }
 
-        LogI("[HttpStream::handleChunk] header: status={} acceptRanges={} contentLength={} totalSize={} url={}",
+        LogI("[HttpStream::handleChunk] header: status={} acceptRanges={} contentLength={} "
+             "totalSize={} url={}",
              static_cast<int>(chunk.statusCode),
              acceptRanges_ ? "bytes" : "none",
              contentLength_,
@@ -252,8 +254,8 @@ void HttpStream::handleChunk(http::StreamChunk&& chunk) noexcept {
         position_ += chunkSize;
 
         // 限频进度日志：每累计 progressLogBytes 打一次，避免热路径 spam
-        if (position_.load() / logProgressBytes()
-            != (position_.load() - chunkSize) / logProgressBytes()) {
+        if (position_.load() / logProgressBytes() !=
+            (position_.load() - chunkSize) / logProgressBytes()) {
             LogI("[HttpStream::handleChunk] progress: pos={} chunk={} url={}",
                  position_.load(),
                  chunkSize,
@@ -291,4 +293,4 @@ void HttpStream::handleError(const http::ErrorInfo& error) noexcept {
     isRunning_ = false;
 }
 
-} // namespace slark
+}  // namespace slark

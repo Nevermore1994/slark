@@ -4,18 +4,18 @@
 
 #pragma once
 
-#include "Coroutine.hpp"
+#include <atomic>
+#include <memory>
+
 #include "HttpRequest.h"
 #include "IStream.h"
 #include "StringUtil.h"
-
-#include <atomic>
-#include <memory>
+#include "Task.hpp"
 
 namespace slark {
 
 class HttpStream : public IStream, public std::enable_shared_from_this<HttpStream> {
-public:
+ public:
     HttpStream();
     ~HttpStream() override;
 
@@ -54,18 +54,18 @@ public:
         return StringUtil::extractHostFromUri(params_.uri);
     }
 
-private:
+ private:
     void handleChunk(http::StreamChunk&& chunk) noexcept;
     void handleError(const http::ErrorInfo& error) noexcept;
 
-private:
+ private:
     std::shared_ptr<http::HttpRequest> request_;
     OpenParams params_;
     Range readRange_;
     uint64_t contentLength_ = 0;
     bool acceptRanges_ = false;
 
-    Coroutine<void> streamCoroutine_;
+    Task<void> streamTask_;
 
     StreamInfo info_;
 
@@ -77,4 +77,4 @@ private:
     std::atomic<int32_t> lastErrorOriginCode_{0};
 };
 
-} // namespace slark
+}  // namespace slark

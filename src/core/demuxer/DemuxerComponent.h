@@ -17,7 +17,7 @@ using HandleDemuxResultFunc =
     std::function<void(const std::shared_ptr<IDemuxer>&, DemuxerResult&&)>;
 
 class DemuxerComponent : public IPipelineComponent, public slark::NonCopyMovable {
-private:
+ private:
     template <typename Func, typename Default>
     auto withDemuxer(Func&& func, Default&& defaultVal) const noexcept {
         if (auto demuxer = demuxer_.load()) {
@@ -27,7 +27,7 @@ private:
         return std::forward<Default>(defaultVal);
     }
 
-public:
+ public:
     explicit DemuxerComponent(ReceiverPtr<DataPacket> receiver, DemuxerConfig config);
 
     ~DemuxerComponent();
@@ -151,12 +151,12 @@ public:
             DemuxerType::Unknown);
     }
 
-private:
+ private:
     void runLoop(Thread& thread) noexcept;
 
     void drainWorkerTasks() noexcept;
 
-    void postToWorker(Task task) noexcept;
+    void postToWorker(ThreadTask task) noexcept;
 
     void invokeHandleResultFunc(DemuxerResult&& result) noexcept {
         auto func = handleResultFunc_.load();
@@ -176,7 +176,7 @@ private:
 
     bool openDemuxer(DataPacket& packet) noexcept;
 
-private:
+ private:
     std::shared_ptr<Thread> worker_;
     ReceiverPtr<DataPacket> receiver_;
     DemuxerConfig config_;
@@ -190,4 +190,4 @@ private:
     std::weak_ptr<perf::PlaySession> session_;
 };
 
-} // namespace slark
+}  // namespace slark
