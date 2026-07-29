@@ -3,22 +3,21 @@
 //
 
 #pragma once
+#include <atomic>
 #include <concepts>
 #include <condition_variable>
+#include <deque>
 #include <expected>
-#include <list>
 #include <memory>
 #include <ranges>
+#include <stdexcept>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 
 namespace slark {
 
-// 前向声明，避免与 Thread.h 循环依赖
-class Thread;
-
 namespace _channel_detail {
-// 将当前 Thread（若存在）标记为活跃/非活跃，由 Thread.cpp 实现
 void setCurrentThreadActive(bool active) noexcept;
 }  // namespace _channel_detail
 
@@ -122,16 +121,17 @@ enum class ChannelEventType {
     Awakened,  // 被 wakeup() 主动唤醒（用于 flush 等场景）
 };
 
-template <typename T, typename = std::enable_if_t<!std::is_reference_v<T>>>
-    requires(std::movable<T>)
+template <typename T>
+    requires(!std::is_reference_v<T> && std::movable<T>)
 class Channel {
  public:
     friend class Sender<T>;
 
     friend class Receiver<T>;
 
-    static auto create() noexcept -> std::tuple<SenderPtr<T>, ReceiverPtr<T>> {
-        auto p = std::shared_ptr<Channel<T>>(new Channel<T>(), [](Channel<T>* channel) {
+    static auto create(size_t capacity = 0) noexcept
+        -> std::tuple<SenderPtr<T>, ReceiverPtr<T>> {
+        auto p = std::shared_ptr<Channel<T>>(new Channel<T>(capacity), [](Channel<T>* channel) {
             delete channel;
         });
         return {std::make_unique<Sender<T>>(p), std::make_unique<Receiver<T>>(p)};
@@ -166,14 +166,16 @@ class Channel {
     auto operator=(Channel&&) -> Channel& = delete;
 
  private:
-    Channel() = default;
+    explicit Channel(size_t capacity) : capacity_(capacity) {}
 
     ~Channel() = default;
 
  private:
     bool isClosed_ = false;
     bool awakened_ = false;  // 旁路标志，被 receive 消费一次后清零
-    std::list<T> messages_;
+    size_t capacity_ = 0;  // 0 = unbounded
+    std::atomic<int> receiverAlive_{0};
+    std::deque<T> messages_;
     std::mutex mutex_;
     std::condition_variable cond_;
 };
@@ -248,29 +250,53 @@ class Sender final {
     }
 
     template <typename U>
-    inline auto send(const U& message) noexcept -> bool
+    inline auto send(const U& message) -> std::expected<void, T>
         requires std::copy_constructible<T> && std::is_convertible_v<U, T>
     {
-        std::lock_guard<std::mutex> lock(channel_->mutex_);
-        if (!channel_->isClosed_) {
+        std::unique_lock<std::mutex> lock(channel_->mutex_);
+        if (channel_->capacity_ > 0) {
+            channel_->cond_.wait(lock, [this] {
+                return channel_->messages_.size() < channel_->capacity_ || channel_->isClosed_ ||
+                       channel_->receiverAlive_.load(std::memory_order_acquire) == 0;
+            });
+        }
+        if (!channel_->isClosed_ && channel_->receiverAlive_.load(std::memory_order_acquire) > 0) {
             channel_->messages_.push_back(message);
             channel_->cond_.notify_one();
-            return true;
+            return {};
         }
-        return false;
+        return std::unexpected(T(message));
     }
 
     template <typename U>
-    inline auto send(U&& message) noexcept -> bool
+    inline auto send(U&& message) -> std::expected<void, T>
         requires std::is_convertible_v<U, T>
     {
-        std::lock_guard<std::mutex> lock(channel_->mutex_);
-        if (!channel_->isClosed_) {
+        std::unique_lock<std::mutex> lock(channel_->mutex_);
+        if (channel_->capacity_ > 0) {
+            channel_->cond_.wait(lock, [this] {
+                return channel_->messages_.size() < channel_->capacity_ || channel_->isClosed_ ||
+                       channel_->receiverAlive_.load(std::memory_order_acquire) == 0;
+            });
+        }
+        if (!channel_->isClosed_ && channel_->receiverAlive_.load(std::memory_order_acquire) > 0) {
             channel_->messages_.emplace_back(std::forward<U>(message));
             channel_->cond_.notify_one();
-            return true;
+            return {};
         }
-        return false;
+        return std::unexpected(T(std::forward<U>(message)));
+    }
+
+    template <typename U>
+        requires std::is_convertible_v<U, T>
+    inline auto post(U&& message) noexcept -> void {
+        (void)send(std::forward<U>(message));
+    }
+
+    template <typename U>
+        requires std::copy_constructible<T> && std::is_convertible_v<U, T>
+    inline auto post(const U& message) noexcept -> void {
+        (void)send(message);
     }
 
     inline auto done() noexcept -> void {
@@ -337,13 +363,9 @@ template <typename T>
 class ReceiverIterator;
 
 template <typename T>
-class ConstReceiverIterator;
-
-template <typename T>
 class Receiver final {
  private:
     friend class ReceiverIterator<T>;
-    friend class ConstReceiverIterator<T>;
 
  private:
     class ReceiverImpl {
@@ -352,10 +374,15 @@ class Receiver final {
 
         friend class ReceiverIterator<T>;
 
-        explicit ReceiverImpl(std::shared_ptr<Channel<T>> channel) : channel_(channel) {}
+        explicit ReceiverImpl(std::shared_ptr<Channel<T>> channel) : channel_(channel) {
+            channel_->receiverAlive_.fetch_add(1, std::memory_order_release);
+        }
 
         ~ReceiverImpl() {
-            channel_->done();
+            if (channel_->receiverAlive_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+                std::lock_guard<std::mutex> lock(channel_->mutex_);
+                channel_->cond_.notify_all();  // 唤醒所有等待的发送方
+            }
         }
 
         inline auto operator=(const ReceiverImpl& src) noexcept -> ReceiverImpl& {
@@ -386,6 +413,9 @@ class Receiver final {
             if (!channel_->messages_.empty()) {
                 auto value = std::move(channel_->messages_.front());
                 channel_->messages_.pop_front();
+                if (channel_->capacity_ > 0) {
+                    channel_->cond_.notify_one();  // 通知等待的发送方有空间
+                }
                 return value;
             }
             // Closed 优先于 Awakened：done() + wakeup() 并发时 worker 直接退出
@@ -396,7 +426,7 @@ class Receiver final {
                 channel_->awakened_ = false;
                 return std::unexpected(ChannelEventType::Awakened);
             }
-            return std::unexpected(ChannelEventType::Closed);
+            std::unreachable();
         }
 
         inline auto tryReceive() noexcept -> std::expected<T, ChannelEventType> {
@@ -412,14 +442,20 @@ class Receiver final {
             }
             auto value = std::move(channel_->messages_.front());
             channel_->messages_.pop_front();
+            if (channel_->capacity_ > 0) {
+                channel_->cond_.notify_one();
+            }
             return value;
         }
 
-        inline auto tryReceiveAll() -> std::list<T> {
+        inline auto tryReceiveAll() -> std::deque<T> {
             decltype(channel_->messages_) messages;
             {
                 std::lock_guard<std::mutex> lock(channel_->mutex_);
                 messages.swap(channel_->messages_);
+                if (channel_->capacity_ > 0) {
+                    channel_->cond_.notify_all();  // 批量清空后通知所有等待的发送方
+                }
             }
             return messages;
         }
@@ -467,7 +503,10 @@ class Receiver final {
 
     inline auto begin() noexcept -> ReceiverIterator<T> {
         auto it = ReceiverIterator<T>(impl_, ChannelEventType::Unknown);
-        it.value_ = std::move(impl_->receive());
+        it.value_ = impl_->receive();
+        while (!it.value_.has_value() && it.value_.error() != ChannelEventType::Closed) {
+            it.value_ = impl_->receive();
+        }
         return it;
     }
 
@@ -483,7 +522,7 @@ class Receiver final {
         return impl_->tryReceive();
     }
 
-    inline auto tryReceiveAll() noexcept -> std::list<T> {
+    inline auto tryReceiveAll() noexcept -> std::deque<T> {
         return impl_->tryReceiveAll();
     }
 
@@ -505,9 +544,12 @@ auto operator>>(const IsReceiverPtr auto& receiver, U& value) -> const IsReceive
     requires std::movable<U> && std::is_convertible_v<GetChannelType<decltype(receiver)>, U>
 {
     auto res = receiver->receive();
+    while (!res.has_value() && res.error() != ChannelEventType::Closed) {
+        res = receiver->receive();
+    }
     if (res.has_value()) {
         value = std::move(*res);
-    } else if (res.error() == ChannelEventType::Closed) {
+    } else {
         _detail::closedHandler();
     }
     return receiver;
@@ -519,9 +561,12 @@ auto operator>>(const IsReceiverPtr auto& receiver, U& value) -> const IsReceive
              (!std::movable<U>) && std::is_convertible_v<GetChannelType<decltype(receiver)>, U>
 {
     auto res = receiver->receive();
+    while (!res.has_value() && res.error() != ChannelEventType::Closed) {
+        res = receiver->receive();
+    }
     if (res.has_value()) {
         value = *res;
-    } else if (res.error() == ChannelEventType::Closed) {
+    } else {
         _detail::closedHandler();
     }
     return receiver;
