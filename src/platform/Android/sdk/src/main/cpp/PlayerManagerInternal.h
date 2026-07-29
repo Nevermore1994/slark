@@ -9,7 +9,6 @@
 #include "JNINames.h"
 #include "Manager.hpp"
 #include "Player.h"
-#include "PlayerObserver.h"
 
 namespace slark {
 

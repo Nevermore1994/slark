@@ -6,7 +6,6 @@
 
 #import "GLContextManager.h"
 #import "Player.h"
-#import "PlayerObserver.h"
 #import "iOSBase.h"
 
 #define STATE_ENUM_TO_CASE(value)   \

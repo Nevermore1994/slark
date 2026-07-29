@@ -11,7 +11,6 @@
 #include <string>
 
 #include "Player.h"
-#include "PlayerObserver.h"
 
 using namespace slark;
 using ::testing::_;

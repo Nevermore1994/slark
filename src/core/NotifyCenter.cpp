@@ -6,7 +6,7 @@
 
 #include "Base.h"
 #include "Log.hpp"
-#include "PlayerObserver.h"
+#include "PlayerTypes.h"
 #include "Util.h"
 
 namespace slark {

@@ -15,7 +15,6 @@
 #include <thread>
 
 #include "Player.h"
-#include "PlayerObserver.h"
 #include "VideoInfo.h"
 
 using namespace slark;
