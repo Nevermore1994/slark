@@ -2,7 +2,7 @@
 """
 gen_player_state.py - PlayerState/PlayerEvent/Error 跨语言 SSOT 代码生成器
 
-从 C++ Player.h 解析 PlayerState/PlayerEvent，从 internal/Error.h 解析 Error，
+从 C++ PlayerTypes.h 解析 PlayerState/PlayerEvent，从 internal/Error.h 解析 Error，
 自动生成：
   1. Kotlin: SlarkPlayerState.kt / SlarkPlayerEvent.kt / SlarkPlayerErrorCode.kt
   2. C++ JNI: PlayerStateNames.h
@@ -13,7 +13,7 @@ gen_player_state.py - PlayerState/PlayerEvent/Error 跨语言 SSOT 代码生成�
                                        [--kotlin-dir DIR] [--jni-dir DIR] [--ios-header PATH]
 
   --check         仅校验生成文件与现有文件是否一致（CI 用）
-  --cpp-header    C++ Player.h 路径（默认 auto-detect）
+  --cpp-header    C++ PlayerTypes.h 路径（默认 auto-detect）
   --error-header  internal/Error.h 路径（默认 auto-detect）
   --kotlin-dir    Kotlin 输出目录（默认 auto-detect）
   --jni-dir       JNI 头文件输出目录（默认 auto-detect）
@@ -34,7 +34,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 
-DEFAULT_CPP_HEADER = PROJECT_ROOT / "include" / "Player.h"
+DEFAULT_CPP_HEADER = PROJECT_ROOT / "include" / "PlayerTypes.h"
 DEFAULT_ERROR_HEADER = PROJECT_ROOT / "internal" / "Error.h"
 DEFAULT_KOTLIN_DIR = (
     PROJECT_ROOT
@@ -77,7 +77,7 @@ class EnumDef:
 
 
 # ---------------------------------------------------------------------------
-# C++ Player.h 解析
+# C++ PlayerTypes.h 解析
 # ---------------------------------------------------------------------------
 
 ENUM_PATTERN = re.compile(
@@ -196,7 +196,7 @@ CPP_HEADER_TEMPLATE = """\
 
 #pragma once
 
-#include "Player.h"
+#include "PlayerTypes.h"
 
 #include <cstddef>
 
@@ -390,7 +390,7 @@ def check_consistency(content: str, path: Path) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Generate cross-language enum definitions from C++ Player.h"
+        description="Generate cross-language enum definitions from C++ PlayerTypes.h"
     )
     parser.add_argument(
         "--check",
@@ -401,7 +401,7 @@ def main() -> int:
         "--cpp-header",
         type=Path,
         default=DEFAULT_CPP_HEADER,
-        help="Path to C++ Player.h",
+        help="Path to C++ PlayerTypes.h",
     )
     parser.add_argument(
         "--kotlin-dir",
@@ -451,7 +451,7 @@ def main() -> int:
 
     all_ok = True
 
-    # Generate Kotlin files from Player.h enums (PlayerState, PlayerEvent)
+    # Generate Kotlin files from PlayerTypes.h enums (PlayerState, PlayerEvent)
     for enum_name, enum_def in enums.items():
         kotlin_class = KOTLIN_CLASS_MAP.get(enum_name)
         if not kotlin_class:
