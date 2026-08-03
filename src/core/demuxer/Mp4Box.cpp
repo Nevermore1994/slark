@@ -76,132 +76,33 @@ bool Box::decode(Buffer&) noexcept {
     return true;
 }
 
+namespace {
+
+template <typename T>
+Box* makeBox(BoxInfo&& info) {
+    return new T(std::move(info));
+}
+
+}  // namespace
+
 BoxRefPtr Box::createBox(Buffer& buffer) {
     auto info = tryParseBoxInfo(buffer);
     if (!info.has_value()) {
         return nullptr;
     }
     auto boxInfo = info.value();
-    static const std::unordered_map<std::string, std::function<Box*(BoxInfo&&)>> kBoxFactory = {
-        {"ftyp",
-         [](BoxInfo&& info) {
-             return new BoxFtyp(std::move(info));
-         }},
-        {"mvhd",
-         [](BoxInfo&& info) {
-             return new BoxMvhd(std::move(info));
-         }},
-        {"stsd",
-         [](BoxInfo&& info) {
-             return new BoxStsd(std::move(info));
-         }},
-        {"stco",
-         [](BoxInfo&& info) {
-             return new BoxStco(std::move(info));
-         }},
-        {"stsz",
-         [](BoxInfo&& info) {
-             return new BoxStsz(std::move(info));
-         }},
-        {"stsc",
-         [](BoxInfo&& info) {
-             return new BoxStsc(std::move(info));
-         }},
-        {"stts",
-         [](BoxInfo&& info) {
-             return new BoxStts(std::move(info));
-         }},
-        {"ctts",
-         [](BoxInfo&& info) {
-             return new BoxCtts(std::move(info));
-         }},
-        {"stss",
-         [](BoxInfo&& info) {
-             return new BoxStss(std::move(info));
-         }},
-        {"esds",
-         [](BoxInfo&& info) {
-             return new BoxEsds(std::move(info));
-         }},
-        {"meta",
-         [](BoxInfo&& info) {
-             return new BoxMeta(std::move(info));
-         }},
-        {"avcC",
-         [](BoxInfo&& info) {
-             return new BoxAvcc(std::move(info));
-         }},
-        {"hvcC",
-         [](BoxInfo&& info) {
-             return new BoxHvcc(std::move(info));
-         }},
-        {"co64",
-         [](BoxInfo&& info) {
-             return new BoxCo64(std::move(info));
-         }},
-        {"mdhd",
-         [](BoxInfo&& info) {
-             return new BoxMdhd(std::move(info));
-         }},
-        {"elst",
-         [](BoxInfo&& info) {
-             return new BoxElst(std::move(info));
-         }},
-        {"mvex",
-         [](BoxInfo&& info) {
-             return new BoxMvex(std::move(info));
-         }},
-        {"trex",
-         [](BoxInfo&& info) {
-             return new BoxTrex(std::move(info));
-         }},
-        {"moof",
-         [](BoxInfo&& info) {
-             return new BoxMoof(std::move(info));
-         }},
-        {"mfhd",
-         [](BoxInfo&& info) {
-             return new BoxMfhd(std::move(info));
-         }},
-        {"traf",
-         [](BoxInfo&& info) {
-             return new BoxTraf(std::move(info));
-         }},
-        {"tfhd",
-         [](BoxInfo&& info) {
-             return new BoxTfhd(std::move(info));
-         }},
-        {"tfdt",
-         [](BoxInfo&& info) {
-             return new BoxTfdt(std::move(info));
-         }},
-        {"trun",
-         [](BoxInfo&& info) {
-             return new BoxTrun(std::move(info));
-         }},
-        {"tkhd",
-         [](BoxInfo&& info) {
-             return new BoxTkhd(std::move(info));
-         }},
-        {"hdlr",
-         [](BoxInfo&& info) {
-             return new BoxHdlr(std::move(info));
-         }},
-        {"vmhd",
-         [](BoxInfo&& info) {
-             return new BoxVmhd(std::move(info));
-         }},
-        {"smhd",
-         [](BoxInfo&& info) {
-             return new BoxSmhd(std::move(info));
-         }},
-        {"dref",
-         [](BoxInfo&& info) {
-             return new BoxDref(std::move(info));
-         }},
-        {"sidx", [](BoxInfo&& info) {
-             return new BoxSidx(std::move(info));
-         }}};
+    static const std::unordered_map<std::string, Box* (*)(BoxInfo&&)> kBoxFactory = {
+        {"ftyp", &makeBox<BoxFtyp>}, {"mvhd", &makeBox<BoxMvhd>}, {"stsd", &makeBox<BoxStsd>},
+        {"stco", &makeBox<BoxStco>}, {"stsz", &makeBox<BoxStsz>}, {"stsc", &makeBox<BoxStsc>},
+        {"stts", &makeBox<BoxStts>}, {"ctts", &makeBox<BoxCtts>}, {"stss", &makeBox<BoxStss>},
+        {"esds", &makeBox<BoxEsds>}, {"meta", &makeBox<BoxMeta>}, {"avcC", &makeBox<BoxAvcc>},
+        {"hvcC", &makeBox<BoxHvcc>}, {"co64", &makeBox<BoxCo64>}, {"mdhd", &makeBox<BoxMdhd>},
+        {"elst", &makeBox<BoxElst>}, {"mvex", &makeBox<BoxMvex>}, {"trex", &makeBox<BoxTrex>},
+        {"moof", &makeBox<BoxMoof>}, {"mfhd", &makeBox<BoxMfhd>}, {"traf", &makeBox<BoxTraf>},
+        {"tfhd", &makeBox<BoxTfhd>}, {"tfdt", &makeBox<BoxTfdt>}, {"trun", &makeBox<BoxTrun>},
+        {"tkhd", &makeBox<BoxTkhd>}, {"hdlr", &makeBox<BoxHdlr>}, {"vmhd", &makeBox<BoxVmhd>},
+        {"smhd", &makeBox<BoxSmhd>}, {"dref", &makeBox<BoxDref>}, {"sidx", &makeBox<BoxSidx>},
+    };
     if (kBoxFactory.contains(boxInfo.symbol)) {
         auto box = kBoxFactory.at(boxInfo.symbol)(std::move(boxInfo));
         return std::shared_ptr<Box>(box);

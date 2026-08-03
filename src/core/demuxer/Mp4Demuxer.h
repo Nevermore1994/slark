@@ -85,6 +85,8 @@ class TrackContext {
 
     void seek(uint64_t pos) noexcept;
 
+    void seekToFragment(uint64_t pos) noexcept;
+
     uint64_t getSeekPos(double time) const noexcept;
 
     void parseData(Buffer& buffer, std::shared_ptr<FrameInfo> frameInfo, AVFramePtrArray& packets);
@@ -185,10 +187,33 @@ class Mp4Demuxer : public IDemuxer {
 
     std::shared_ptr<VideoFrameInfo> makeVideoFrameInfo() const noexcept;
 
-    /// 解析 moov 时处理单个 box 的状态更新
     void handleBoxInMoov(const BoxRefPtr& box,
                          std::shared_ptr<BoxMdhd>& mdhdBox,
                          std::stack<BoxRefPtr>& parentBox) noexcept;
+
+    void parseTkhd(const BoxRefPtr& box, Buffer& buffer, uint32_t& trackId) noexcept;
+
+    void attachStsdToTracks(
+        uint32_t trackId,
+        const std::unordered_map<uint32_t, std::shared_ptr<BoxElst>>& pendingElst) noexcept;
+
+    bool advancePastBox(const BoxRefPtr& box,
+                        std::stack<BoxRefPtr>& parentBox,
+                        Buffer& buffer,
+                        bool& res) noexcept;
+
+    // 返回 false 时调用方应终止 open 解析
+    bool handleMdatBox(const BoxRefPtr& box, Buffer& buffer, bool res, bool& eof) noexcept;
+
+    void handleSidxBox(const BoxRefPtr& box, Buffer& buffer) noexcept;
+
+    [[nodiscard]] std::shared_ptr<TrackContext> findEarliestTrack() const noexcept;
+
+    bool advanceStaleTracks() noexcept;
+
+    [[nodiscard]] uint64_t seekPosFragmented(double time, uint64_t fallbackOffset) const noexcept;
+
+    [[nodiscard]] uint64_t seekPosNormal(double time, uint64_t fallbackOffset) const noexcept;
 
  private:
     BoxRefPtr rootBox_;

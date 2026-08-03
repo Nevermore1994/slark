@@ -52,6 +52,10 @@ class WAVDemuxer : public IDemuxer {
 
     bool parseExtensibleFormat(DataView formatSpec, FmtChunk& out) noexcept;
 
+    static bool readFmtCommonFields(DataView formatSpec, FmtChunk& out) noexcept;
+
+    static bool validateBitsPerSample(WaveFormat format, uint16_t bitsPerSample) noexcept;
+
     AVFramePtr makeAudioFrame(uint64_t dataLength,
                               double scale,
                               const std::shared_ptr<AudioFrameInfo>& frameInfo) noexcept;

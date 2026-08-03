@@ -89,6 +89,19 @@ bool WAVDemuxer::parseFmtChunk(DataView data,
         return false;
     }
 
+    if (!readFmtCommonFields(formatSpec, out)) {
+        return false;
+    }
+    if (!validateBitsPerSample(out.format, out.bitsPerSample)) {
+        return false;
+    }
+    if (out.format == WaveFormat::EXTENSIBLE) {
+        return parseExtensibleFormat(formatSpec, out);
+    }
+    return true;
+}
+
+bool WAVDemuxer::readFmtCommonFields(DataView formatSpec, FmtChunk& out) noexcept {
     if (!formatSpec.substr(2).readNumberLE(out.channels, 2)) {
         return false;
     }
@@ -105,27 +118,19 @@ bool WAVDemuxer::parseFmtChunk(DataView data,
     if (out.sampleRate == 0) {
         return false;
     }
+    return formatSpec.substr(14).readNumberLE(out.bitsPerSample, 2);
+}
 
-    formatSpec.substr(14).readNumberLE(out.bitsPerSample, 2);
-
-    if (out.format == WaveFormat::PCM || out.format == WaveFormat::EXTENSIBLE) {
-        if (out.bitsPerSample != 8 && out.bitsPerSample != 16 && out.bitsPerSample != 24 &&
-            out.bitsPerSample != 32) {
-            return false;
-        }
-    } else if (out.format == WaveFormat::MSGSM) {
-        if (out.bitsPerSample != 0) {
-            return false;
-        }
-    } else if (out.bitsPerSample != 8) {
-        // WaveFormat::MULAW WaveFormat::ALAW
-        return false;
+bool WAVDemuxer::validateBitsPerSample(WaveFormat format, uint16_t bitsPerSample) noexcept {
+    if (format == WaveFormat::PCM || format == WaveFormat::EXTENSIBLE) {
+        return bitsPerSample == 8 || bitsPerSample == 16 || bitsPerSample == 24 ||
+               bitsPerSample == 32;
     }
-
-    if (out.format == WaveFormat::EXTENSIBLE) {
-        return parseExtensibleFormat(formatSpec, out);
+    if (format == WaveFormat::MSGSM) {
+        return bitsPerSample == 0;
     }
-    return true;
+    // WaveFormat::MULAW WaveFormat::ALAW
+    return bitsPerSample == 8;
 }
 
 bool WAVDemuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
