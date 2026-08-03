@@ -62,8 +62,6 @@ void AudioRenderComponent::init() noexcept {
         if (auto updater = audioTimeUpdater_.load()) {
             (*updater)(played);
         }
-        LogI("request audio data, size:{} read:{} rendered:{} clockTime:{:.6f} played:{:.6f}", size,
-             read, rendered, clockTime.second(), played.second());
         return size;
     });
     pimpl_.reset(std::move(pimpl));
@@ -184,9 +182,6 @@ Time::TimePoint AudioRenderComponent::playedTime() noexcept {
                                         prev, result.point(), std::memory_order_acq_rel)) {
     }
     auto finalTime = std::max(result.point(), prev);
-    LogI("playedTime clock:{:.6f} latency:{}us result:{:.6f} prev:{:.6f} final:{:.6f}", t.second(),
-         latencyUs, result.second(), Time::TimePoint(prev).second(),
-         Time::TimePoint(finalTime).second());
     return Time::TimePoint(finalTime);
 }
 

@@ -138,9 +138,8 @@ void DecoderComponent::processPendingOutputs(Thread& thread) noexcept {
         count++;
         auto res = decoder_->renderOutput();
         if (res == Error::Success) {
-            LogD("processPendingOutputs: rendered frame count={}", count);
+            // 每帧成功输出，不记录避免刷屏
         } else if (res == Error::CodecAgain) {
-            LogD("processPendingOutputs: CodecAgain after {} frames, clear pending", count);
             decoder_->clearPendingOutput();
             break;
         } else {

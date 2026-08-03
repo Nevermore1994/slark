@@ -37,9 +37,10 @@ Error VideoHardwareDecoder::sendPacket(AVFrameRefPtr& frame) noexcept {
     if (res != Error::Success && res != Error::CodecAgain && res != Error::CodecNotProcessed) {
         LogE("send video packet failed, {}", toString(res));
     } else {
-        LogI("send video packet {}, index:{}, pts:{}, dts:{}, isDiscard:{}, frameType:{}",
-             toString(res), frame->index, frame->ptsTime(), frame->dtsTime(), frame->isDiscard,
-             static_cast<int>(frameInfo->frameType));
+        LogIThrottle(2000, "send video packet success, index:{}, pts:{:.3f}, dts:{:.3f}, "
+                           "isDiscard:{}, isEOS:{}",
+                     frame->index, frame->ptsTime(), frame->dtsTime(), frame->isDiscard,
+                     frameInfo->isEndOfStream);
         if (frame->isDiscard) {
             discardPackets_.insert(inputPts);
         }
@@ -99,6 +100,8 @@ void VideoHardwareDecoder::receiveDecodedData(DataPtr data,
         videoFrameInfo->width = videoConfig->width;
         videoFrameInfo->height = videoConfig->height;
         frame->info = std::move(videoFrameInfo);
+        LogIThrottle(2000, "video decode output pts:{:.3f}, isDiscard:{}",
+                     frame->ptsTime(), frame->isDiscard);
         invokeReceiveFunc(DecoderData{std::move(frame), Error::Success, currentSeekEpoch_});
         retryPendingEOS();
     } else {
@@ -222,12 +225,8 @@ Error VideoHardwareDecoder::renderOutput() noexcept {
     if (!tryAquireFrame(pts, isCompleted)) {
         frameBuffer->unbind(true);
         retryPendingEOS();
-        LogD("renderOutput: tryAquireFrame no frame available, pendingOutput_={}",
-             pendingOutput_.load());
         return Error::CodecAgain;
     }
-    LogI("renderOutput: acquired frame pts={:.6f}, isCompleted={}, isDiscard={}",
-         static_cast<double>(pts) / 1000000.0, isCompleted, discardPackets_.contains(pts));
     frameBuffer->unbind(true);
 
     if (isCompleted) {

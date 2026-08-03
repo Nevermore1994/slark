@@ -366,12 +366,10 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
 
     const auto state = pipelineState_.load(std::memory_order_acquire);
     if (state != PipelineState::Playing) {
-        LogI("requestVideoFrame SKIP: pipelineState={} not Playing", static_cast<int32_t>(state));
         return nullptr;
     }
 
     if (!readiness_.firstFrameRendered.load(std::memory_order_acquire)) {
-        LogI("requestVideoFrame SKIP: firstFrameRendered=false, waiting first frame");
         return nullptr;
     }
 
@@ -384,9 +382,10 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
         if (isDecodeCompleted()) {
             checkPlaybackComplete();
         }
-        LogI("requestVideoFrame HOLD, diff={:.3f}, masterTime={:.3f}, videoTime={:.3f}, "
-             "cacheEndTime={:.3f}, playbackRate={:.3f}",
-             diff, masterTime, videoTime, cacheEnd, playbackRate);
+        // 关键路径节流日志：避免逐帧刷屏，同时保留音画同步排查线索
+        LogIThrottle(1000, "requestVideoFrame HOLD, diff={:.3f}, masterTime={:.3f}, "
+                           "videoTime={:.3f}, cacheEndTime={:.3f}, playbackRate={:.3f}",
+                     diff, masterTime, videoTime, cacheEnd, playbackRate);
         return nullptr;
     }
 
@@ -422,11 +421,10 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
         }
     }
 
-    LogI("requestVideoFrame POP pts={:.3f} dts={:.3f} isDiscard={}, masterTime={:.3f}, "
-         "videoTime={:.3f}, cacheEndTime={:.3f}, diff={:.3f}",
-         frame->ptsTime(), frame->dtsTime(), frame->isDiscard, masterTime, videoTime, cacheEnd,
-         diff);
     bufferMonitor_->resetStarvationCount();
+    LogIThrottle(2000, "requestVideoFrame POP pts={:.3f} dts={:.3f} isDiscard={}, masterTime={:.3f}, "
+                       "videoTime={:.3f}, diff={:.3f}",
+                 frame->ptsTime(), frame->dtsTime(), frame->isDiscard, masterTime, videoTime, diff);
     clockSync_->setVideoTime(Time::TimePoint::fromSeconds(frame->ptsTime()));
 
     bool expected = false;
@@ -779,6 +777,8 @@ void PlayPipeline::onAudioDecoded(DecoderData data) noexcept {
     if (seekContext_->isEpochStale(frameEpoch)) {
         return;
     }
+    LogIThrottle(2000, "onAudioDecoded pts:{:.6f}, isSeekPending:{}", data.frame->ptsTime(),
+                 seekContext_->isSeekPending());
     audioFrames_.withLock([&data](auto& q) {
         q.emplace_back(std::move(data.frame));
     });
@@ -877,8 +877,8 @@ void PlayPipeline::onVideoDecoded(DecoderData data) noexcept {
     if (seekContext_->isEpochStale(frameEpoch)) {
         return;
     }
-    LogI("onVideoDecoded pts:{:.6f}, isDiscard:{}, isSeekPending:{}", data.frame->ptsTime(),
-         data.frame->isDiscard, seekContext_->isSeekPending());
+    LogIThrottle(2000, "onVideoDecoded pts:{:.6f}, isDiscard:{}, isSeekPending:{}",
+                 data.frame->ptsTime(), data.frame->isDiscard, seekContext_->isSeekPending());
 
     if (!readiness_.firstFrameRendered.load(std::memory_order_acquire) &&
         !seekContext_->isSeekPending()) {
@@ -1318,27 +1318,22 @@ void PlayPipeline::pushAudioFrames() noexcept {
         hasPushed = true;
         const auto pushMasterTime = clockSync_->masterTime().second();
         if (!audioRender_->process(frame)) {
-            LogD("pushAudioFrames: render process failed, pts={:.3f}, masterTime={:.3f}",
+            LogW("pushAudioFrames: render process failed, pts={:.3f}, masterTime={:.3f}",
                  frame->ptsTime(), pushMasterTime);
             audioFrames_.withLock([&frame](auto& q) {
                 q.emplace_front(std::move(frame));
             });
             break;
         }
-        LogD("pushAudioFrames: pushed frame pts={:.3f}, masterTime={:.3f}", frame->ptsTime(),
-             pushMasterTime);
+        LogIThrottle(2000, "pushAudioFrames: pushed frame pts={:.3f}, masterTime={:.3f}",
+                     frame->ptsTime(), pushMasterTime);
     }
     if (!hasPushed) {
-        const auto masterTime = clockSync_->masterTime().second();
         audioFrames_.withLock([&](auto& q) {
             if (q.empty() && audioDecoder_) {
                 if (auto dec = audioDecoder_->decoder(); dec && dec->isCompleted()) {
                     audioRender_->setDecoderCompleted();
                 }
-            } else if (!q.empty()) {
-                LogD("pushAudioFrames: queue not empty, render unavailable, masterTime={:.3f}, "
-                     "queueSize={}, readable={}",
-                     masterTime, q.size(), audioRender_->readable());
             }
         });
         if (audioRender_->readable() == 0) {

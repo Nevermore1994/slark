@@ -215,7 +215,11 @@ void LogOutput::recreateFile(std::unique_ptr<Writer>& writer) noexcept {
     if (!std::filesystem::exists(std::filesystem::path(path).parent_path())) {
         std::filesystem::create_directories(std::filesystem::path(path).parent_path());
     }
-    writer->open(path);
+    if (!writer->open(path)) {
+        LogP("open log file failed: {}", path);
+        return;
+    }
+    LogP("slark log file: {}", path);
 }
 
 void LogOutput::pruneOldLogs() noexcept {

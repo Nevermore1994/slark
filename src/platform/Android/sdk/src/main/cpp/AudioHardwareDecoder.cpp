@@ -25,11 +25,11 @@ Error AudioHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
         decoderId_, frame->data,
         int64_t(frame->ptsTime() * 1000000),  // convert to microseconds
         flag, PacketType::Audio);
-    if (res == Error::Success || res == Error::CodecAgain || res == Error::CodecNotProcessed) {
-        LogI("send audio packet success, pts:{}, dts:{}, pts time:{}, dts time:{}", frame->pts,
-             frame->dts, frame->ptsTime(), frame->dtsTime());
-    } else {
+    if (res != Error::Success && res != Error::CodecAgain && res != Error::CodecNotProcessed) {
         LogE("decode frame error:{}", static_cast<int>(res));
+    } else {
+        LogIThrottle(2000, "send audio packet success, pts time:{:.3f}, isEOS:{}",
+                     frame->ptsTime(), frame->info->isEndOfStream);
     }
     // EOS 成功入队：立即标记 completed，不依赖 native 回调
     if (frame->info->isEndOfStream && res == Error::Success) {

@@ -186,7 +186,8 @@ Java_com_slark_sdk_MediaCodecDecoder_processRawData(JNIEnv* env,
     if (isCompleted) {
         LogI("native decode completed");
     } else {
-        LogI("native decode success:{}", pts);
+        LogIThrottle(2000, "native decode output pts:{}, size:{}", pts,
+                     dataPtr ? dataPtr->size() : 0);
     }
     decoder->receiveDecodedData(std::move(dataPtr), pts, (JNI_TRUE == isCompleted));
 }

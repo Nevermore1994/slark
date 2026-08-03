@@ -67,6 +67,39 @@ void outputLog(LogType level, std::string_view format, Args&&... args) {
 #define LogP(format, ...) logger(LogType::Print, format, ##__VA_ARGS__)
 #define LogR(format, ...) logger(LogType::Record, format, ##__VA_ARGS__)
 
+namespace internal {
+
+inline bool logThrottled(uint64_t& lastUs, uint32_t intervalMs) noexcept {
+    auto nowUs = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count());
+    auto last = lastUs;
+    if (nowUs - last < static_cast<uint64_t>(intervalMs) * 1000U) {
+        return true;
+    }
+    lastUs = nowUs;
+    return false;
+}
+
+}  // namespace internal
+
+// 节流日志：同一调用点在 intervalMs 毫秒内只输出一次，用于逐帧/逐回调成功路径保留观测点
+#define LogIThrottle(intervalMs, format, ...)                                                       \
+    do {                                                                                           \
+        static uint64_t kLastUs = 0;                                                               \
+        if (!slark::internal::logThrottled(kLastUs, (intervalMs))) {                               \
+            LogI(format, ##__VA_ARGS__);                                                           \
+        }                                                                                          \
+    } while (0)
+#define LogDThrottle(intervalMs, format, ...)                                                      \
+    do {                                                                                           \
+        static uint64_t kLastUs = 0;                                                               \
+        if (!slark::internal::logThrottled(kLastUs, (intervalMs))) {                               \
+            LogD(format, ##__VA_ARGS__);                                                           \
+        }                                                                                          \
+    } while (0)
+
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
