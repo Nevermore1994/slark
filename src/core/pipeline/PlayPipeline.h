@@ -285,6 +285,22 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     void chaseVideoFrames(AVFrameRefPtr& frame, double diff, double playbackRate) noexcept;
 
+    void handleSeekFrameStarvation() noexcept;
+
+    [[nodiscard]] AVFrameRefPtr skipDiscardFramesDuringSeek(AVFrameRefPtr frame) noexcept;
+
+    void markFirstFrameRenderedIfNeeded() noexcept;
+
+    [[nodiscard]] bool isAudioReadyForPlaybackEnd() const noexcept;
+
+    [[nodiscard]] bool isVideoReadyForPlaybackEnd() const noexcept;
+
+    [[nodiscard]] bool areQueuesDrained() const noexcept;
+
+    void notifySeekIfDecoderCompleted() noexcept;
+
+    [[nodiscard]] AVFrameRefPtr skipFramesBeforeTarget(AVFrameRefPtr frame, double target) noexcept;
+
     void updateLiveReadyFlags(const DemuxerResult& result) noexcept;
 
     void registerComponents() noexcept;

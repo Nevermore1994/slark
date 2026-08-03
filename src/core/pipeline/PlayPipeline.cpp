@@ -383,22 +383,16 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
             checkPlaybackComplete();
         }
         // 关键路径节流日志：避免逐帧刷屏，同时保留音画同步排查线索
-        LogIThrottle(1000, "requestVideoFrame HOLD, diff={:.3f}, masterTime={:.3f}, "
-                           "videoTime={:.3f}, cacheEndTime={:.3f}, playbackRate={:.3f}",
+        LogIThrottle(1000,
+                     "requestVideoFrame HOLD, diff={:.3f}, masterTime={:.3f}, "
+                     "videoTime={:.3f}, cacheEndTime={:.3f}, playbackRate={:.3f}",
                      diff, masterTime, videoTime, cacheEnd, playbackRate);
         return nullptr;
     }
 
     auto frame = popVideoFrame();
     if (!frame) {
-        if (seekContext_->isSeekPending()) {
-            if (!seekContext_->isVideoSeeked()) {
-                auto dec = videoDecoder_ ? videoDecoder_->decoder() : nullptr;
-                if (dec && dec->isCompleted()) {
-                    onSeekFrameConsumed(TrackType::Video);
-                }
-            }
-        }
+        handleSeekFrameStarvation();
         LogI("requestVideoFrame SKIP: video queue empty (starvation), masterTime={:.3f} "
              "videoTime={:.3f} cacheEndTime={:.3f}",
              masterTime, videoTime, cacheEnd);
@@ -407,38 +401,20 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
     }
 
     if (seekContext_->isSeekPending()) {
-        while (frame->isDiscard) {
-            auto next = popVideoFrame();
-            if (!next) {
-                // 所有帧均为 discard 且队列已空 → decoder 若已 EOF 则标记 seeked
-                auto dec = videoDecoder_ ? videoDecoder_->decoder() : nullptr;
-                if (dec && dec->isCompleted() && !seekContext_->isVideoSeeked()) {
-                    onSeekFrameConsumed(TrackType::Video);
-                }
-                return nullptr;
-            }
-            frame = std::move(next);
+        frame = skipDiscardFramesDuringSeek(std::move(frame));
+        if (!frame) {
+            return nullptr;
         }
     }
 
     bufferMonitor_->resetStarvationCount();
-    LogIThrottle(2000, "requestVideoFrame POP pts={:.3f} dts={:.3f} isDiscard={}, masterTime={:.3f}, "
-                       "videoTime={:.3f}, diff={:.3f}",
+    LogIThrottle(2000,
+                 "requestVideoFrame POP pts={:.3f} dts={:.3f} isDiscard={}, masterTime={:.3f}, "
+                 "videoTime={:.3f}, diff={:.3f}",
                  frame->ptsTime(), frame->dtsTime(), frame->isDiscard, masterTime, videoTime, diff);
     clockSync_->setVideoTime(Time::TimePoint::fromSeconds(frame->ptsTime()));
 
-    bool expected = false;
-    if (readiness_.firstFrameRendered.compare_exchange_strong(expected, true,
-                                                              std::memory_order_acq_rel)) {
-        if (auto session = playSession_.lock()) {
-            session->markFirstFrame();
-            SLARK_TRACE_MILESTONE(session.get(), "first_video_frame");
-        }
-        postToOwnerThread([this] {
-            fireEvent(PipelineEvent::FirstFrameRendered);
-        });
-        LogI("first frame rendered");
-    }
+    markFirstFrameRenderedIfNeeded();
 
     if (seekContext_->isSeekPending() && !frame->isDiscard) {
         onSeekFrameConsumed(TrackType::Video);
@@ -634,53 +610,12 @@ void PlayPipeline::checkPlaybackComplete() noexcept {
             return;
         }
 
-        if (audioDecoder_) {
-            auto dec = audioDecoder_->decoder();
-            if (!dec || !dec->isCompleted()) {
-                bool canForceAudioComplete = false;
-                if (videoDecoder_) {
-                    if (auto videoDec = videoDecoder_->decoder();
-                        videoDec && videoDec->isCompleted()) {
-                        bool audioQueueEmpty = true;
-                        audioFrames_.withLock([&audioQueueEmpty](auto& q) {
-                            audioQueueEmpty = q.empty();
-                        });
-                        if (audioQueueEmpty && audioRender_ && audioRender_->readable() == 0) {
-                            canForceAudioComplete = true;
-                            LogW("audio decoder not completed but video done and data drained, "
-                                 "force complete");
-                        }
-                    }
-                }
-                if (!canForceAudioComplete) {
-                    LogI("audio decoder not completed");
-                    return;
-                }
-            }
-        }
-        if (videoDecoder_) {
-            auto dec = videoDecoder_->decoder();
-            if (!dec || !dec->isCompleted()) {
-                LogI("video decoder not completed");
-                return;
-            }
-        }
-
-        bool allEmpty = true;
-        audioFrames_.withLock([&allEmpty](auto& q) {
-            if (!q.empty()) {
-                allEmpty = false;
-            }
-        });
-        videoFrames_.withLock([&allEmpty](auto& m) {
-            if (!m.empty()) {
-                allEmpty = false;
-            }
-        });
-        if (!allEmpty) {
+        if (!isAudioReadyForPlaybackEnd() || !isVideoReadyForPlaybackEnd()) {
             return;
         }
-
+        if (!areQueuesDrained()) {
+            return;
+        }
         if (audioRender_ && mediaInfo_.hasAudio && audioRender_->readable() > 0) {
             return;
         }
@@ -689,6 +624,124 @@ void PlayPipeline::checkPlaybackComplete() noexcept {
         LogI("playback complete, firing RenderEnd");
         fireEvent(PipelineEvent::RenderEnd);
     });
+}
+
+bool PlayPipeline::isAudioReadyForPlaybackEnd() const noexcept {
+    if (!audioDecoder_) {
+        return true;
+    }
+    auto dec = audioDecoder_->decoder();
+    if (dec && dec->isCompleted()) {
+        return true;
+    }
+    // 视频已结束且音频数据排空时强制认定音频完成
+    if (videoDecoder_) {
+        if (auto videoDec = videoDecoder_->decoder(); videoDec && videoDec->isCompleted()) {
+            bool audioQueueEmpty = true;
+            audioFrames_.withLock([&audioQueueEmpty](auto& q) {
+                audioQueueEmpty = q.empty();
+            });
+            if (audioQueueEmpty && audioRender_ && audioRender_->readable() == 0) {
+                LogW("audio decoder not completed but video done and data drained, force complete");
+                return true;
+            }
+        }
+    }
+    LogI("audio decoder not completed");
+    return false;
+}
+
+bool PlayPipeline::isVideoReadyForPlaybackEnd() const noexcept {
+    if (!videoDecoder_) {
+        return true;
+    }
+    auto dec = videoDecoder_->decoder();
+    if (dec && dec->isCompleted()) {
+        return true;
+    }
+    LogI("video decoder not completed");
+    return false;
+}
+
+bool PlayPipeline::areQueuesDrained() const noexcept {
+    bool allEmpty = true;
+    audioFrames_.withLock([&allEmpty](auto& q) {
+        if (!q.empty()) {
+            allEmpty = false;
+        }
+    });
+    videoFrames_.withLock([&allEmpty](auto& m) {
+        if (!m.empty()) {
+            allEmpty = false;
+        }
+    });
+    return allEmpty;
+}
+
+void PlayPipeline::handleSeekFrameStarvation() noexcept {
+    if (!seekContext_->isSeekPending() || seekContext_->isVideoSeeked()) {
+        return;
+    }
+    auto dec = videoDecoder_ ? videoDecoder_->decoder() : nullptr;
+    if (dec && dec->isCompleted()) {
+        onSeekFrameConsumed(TrackType::Video);
+    }
+}
+
+AVFrameRefPtr PlayPipeline::skipDiscardFramesDuringSeek(AVFrameRefPtr frame) noexcept {
+    while (frame->isDiscard) {
+        auto next = popVideoFrame();
+        if (!next) {
+            // 所有帧均为 discard 且队列已空 → decoder 若已 EOF 则标记 seeked
+            auto dec = videoDecoder_ ? videoDecoder_->decoder() : nullptr;
+            if (dec && dec->isCompleted() && !seekContext_->isVideoSeeked()) {
+                onSeekFrameConsumed(TrackType::Video);
+            }
+            return nullptr;
+        }
+        frame = std::move(next);
+    }
+    return frame;
+}
+
+void PlayPipeline::markFirstFrameRenderedIfNeeded() noexcept {
+    bool expected = false;
+    if (readiness_.firstFrameRendered.compare_exchange_strong(expected, true,
+                                                              std::memory_order_acq_rel)) {
+        if (auto session = playSession_.lock()) {
+            session->markFirstFrame();
+            SLARK_TRACE_MILESTONE(session.get(), "first_video_frame");
+        }
+        postToOwnerThread([this] {
+            fireEvent(PipelineEvent::FirstFrameRendered);
+        });
+        LogI("first frame rendered");
+    }
+}
+
+void PlayPipeline::notifySeekIfDecoderCompleted() noexcept {
+    if (!seekContext_->isVideoSeeked()) {
+        auto dec = videoDecoder_ ? videoDecoder_->decoder() : nullptr;
+        if (dec && dec->isCompleted()) {
+            onSeekFrameConsumed(TrackType::Video);
+        }
+    }
+    if (!seekContext_->isAudioSeeked()) {
+        auto dec = audioDecoder_ ? audioDecoder_->decoder() : nullptr;
+        if (dec && dec->isCompleted()) {
+            onSeekFrameConsumed(TrackType::Audio);
+        }
+    }
+}
+
+AVFrameRefPtr PlayPipeline::skipFramesBeforeTarget(AVFrameRefPtr frame, double target) noexcept {
+    int32_t maxSkip = seekContext_->maxSkipFrames();
+    int32_t skipped = 0;
+    while ((frame && frame->ptsTime() < target) || skipped < maxSkip) {
+        skipped++;
+        frame = popVideoFrame();
+    }
+    return frame;
 }
 
 void PlayPipeline::drainPendingTasks() noexcept {
@@ -1347,18 +1400,7 @@ void PlayPipeline::pushSeekFrames() noexcept {
         return;
     }
 
-    if (!seekContext_->isVideoSeeked()) {
-        auto dec = videoDecoder_ ? videoDecoder_->decoder() : nullptr;
-        if (dec && dec->isCompleted()) {
-            onSeekFrameConsumed(TrackType::Video);
-        }
-    }
-    if (!seekContext_->isAudioSeeked()) {
-        auto dec = audioDecoder_ ? audioDecoder_->decoder() : nullptr;
-        if (dec && dec->isCompleted()) {
-            onSeekFrameConsumed(TrackType::Audio);
-        }
-    }
+    notifySeekIfDecoderCompleted();
 
     auto target = seekContext_->targetSeekTime();
     if (!target.has_value()) {
@@ -1374,29 +1416,14 @@ void PlayPipeline::pushSeekFrames() noexcept {
         return;
     }
 
-    int32_t maxSkip = seekContext_->maxSkipFrames();
-    int32_t skipped = 0;
-    while ((frame && frame->ptsTime() < *target) || skipped < maxSkip) {
-        skipped++;
-        frame = popVideoFrame();
-    }
+    frame = skipFramesBeforeTarget(std::move(frame), *target);
     if (!frame) {
         return;
     }
 
     render->pushFrame(frame);
     clockSync_->setVideoTime(Time::TimePoint::fromSeconds(frame->ptsTime()));
-    bool expected = false;
-    if (readiness_.firstFrameRendered.compare_exchange_strong(expected, true,
-                                                              std::memory_order_acq_rel)) {
-        if (auto session = playSession_.lock()) {
-            session->markFirstFrame();
-            SLARK_TRACE_MILESTONE(session.get(), "first_video_frame");
-        }
-        postToOwnerThread([this] {
-            fireEvent(PipelineEvent::FirstFrameRendered);
-        });
-    }
+    markFirstFrameRenderedIfNeeded();
     if (seekContext_->tryMarkVideoSeeked()) {
         onSeekFrameConsumed(TrackType::Video);
         LogI("video seek completed via pushSeekFrames");
