@@ -35,6 +35,100 @@ Error mapLegacyErrorToUnified(Error error) noexcept {
     }
 }
 
+// 建立连接并发送请求（请求头 + 请求体），executeSingle/executeStreamingSingle 共用
+struct RequestSetup {
+    std::unique_ptr<PooledConnection> conn;
+    ErrorInfo error;
+
+    [[nodiscard]] bool hasError() const noexcept {
+        return error.retCode != slark::Error::Success;
+    }
+};
+
+Task<RequestSetup> setupConnectionAndSend(std::string_view tag,
+                                          const RequestInfo& requestInfo,
+                                          const Url& url,
+                                          RequestPerf& perf,
+                                          CancellationToken& token) {
+    if (token.isCancelled()) {
+        co_return RequestSetup{nullptr, ErrorInfo{slark::Error::Cancelled}};
+    }
+    auto conn = co_await co_acquire_connection(
+        url.host, url.portNumber(), url.scheme, requestInfo.ipVersion,
+        requestInfo.connectTimeout, requestInfo.tlsHandshakeTimeout, &perf, token);
+    if (!conn || !conn->isValid()) {
+        if (token.isCancelled()) {
+            co_return RequestSetup{nullptr, ErrorInfo{slark::Error::Cancelled}};
+        }
+        LogE("[HttpProcessor::{}] connect failed: timeoutSource={} url={}", tag,
+             static_cast<int>(perf.transport.timeoutSource), requestInfo.url);
+        if (perf.transport.timeoutSource == TimeoutSource::Connect ||
+            perf.transport.timeoutSource == TimeoutSource::TlsHandshake) {
+            co_return RequestSetup{nullptr, ErrorInfo{slark::Error::ConnectionTimeout}};
+        }
+        co_return RequestSetup{nullptr, ErrorInfo{slark::Error::ConnectionFailed}};
+    }
+    conn->setPerf(&perf);
+
+    if (token.isCancelled()) {
+        co_return RequestSetup{std::move(conn), ErrorInfo{slark::Error::Cancelled}};
+    }
+    bool keepAlive = true;
+    auto requestStr = Util::buildRequestString(requestInfo, url, keepAlive);
+    auto sendResult = co_await conn->asyncSend(requestStr, requestInfo.writeTimeout, token);
+    if (!sendResult) {
+        if (token.isCancelled()) {
+            co_return RequestSetup{std::move(conn), ErrorInfo{slark::Error::Cancelled}};
+        }
+        LogE("[HttpProcessor::{}] send failed: legacyErr={} url={}", tag,
+             static_cast<int>(sendResult.error()), requestInfo.url);
+        co_return RequestSetup{std::move(conn),
+                               ErrorInfo{mapLegacyErrorToUnified(sendResult.error())}};
+    }
+
+    if (requestInfo.bodyEmpty()) {
+        co_return RequestSetup{std::move(conn), ErrorInfo{}};
+    }
+    if (token.isCancelled()) {
+        co_return RequestSetup{std::move(conn), ErrorInfo{slark::Error::Cancelled}};
+    }
+    std::string_view bodyView(reinterpret_cast<const char*>(requestInfo.body->data()),
+                              requestInfo.body->size());
+    auto bodyResult = co_await conn->asyncSend(bodyView, requestInfo.writeTimeout, token);
+    if (!bodyResult) {
+        if (token.isCancelled()) {
+            co_return RequestSetup{std::move(conn), ErrorInfo{slark::Error::Cancelled}};
+        }
+        LogE("[HttpProcessor::{}] sendBody failed: legacyErr={} url={}", tag,
+             static_cast<int>(bodyResult.error()), requestInfo.url);
+        co_return RequestSetup{std::move(conn),
+                               ErrorInfo{mapLegacyErrorToUnified(bodyResult.error())}};
+    }
+    co_return RequestSetup{std::move(conn), ErrorInfo{}};
+}
+
+// 判定 chunk 是否触发重定向，返回下一个请求；不触发时返回 nullopt
+std::optional<RequestInfo> extractRedirectTarget(const RedirectPolicy& policy,
+                                                 const StreamChunk& chunk,
+                                                 const RequestInfo& currentInfo,
+                                                 int32_t redirectCount) {
+    if (chunk.statusCode == HttpStatusCode::Unknown || chunk.headers.empty()) {
+        return std::nullopt;
+    }
+    HttpResponse headerResp;
+    headerResp.statusCode = chunk.statusCode;
+    headerResp.headers = chunk.headers;
+    if (!policy.shouldRedirect(headerResp, currentInfo, redirectCount)) {
+        return std::nullopt;
+    }
+    auto location = policy.extractRedirectLocation(chunk.headers);
+    if (!location.has_value()) {
+        return std::nullopt;
+    }
+    return RedirectPolicy::buildRedirectRequest(currentInfo, chunk.statusCode,
+                                                std::move(*location));
+}
+
 }  // namespace
 
 HttpProcessor::ParsedRequest HttpProcessor::parseUrl(const std::string& urlStr) {
@@ -51,27 +145,6 @@ HttpProcessor::ParsedRequest HttpProcessor::parseUrl(const std::string& urlStr) 
     result.url = std::move(url);
     result.isValid = true;
     return result;
-}
-
-Task<Error> HttpProcessor::sendRequestBody(PooledConnection& conn,
-                                           const RequestInfo& requestInfo,
-                                           CancellationToken& token) {
-    if (requestInfo.bodyEmpty()) {
-        co_return slark::Error::Success;
-    }
-    if (token.isCancelled()) {
-        co_return slark::Error::Cancelled;
-    }
-    std::string_view bodyView(reinterpret_cast<const char*>(requestInfo.body->data()),
-                              requestInfo.body->size());
-    auto bodyResult = co_await conn.asyncSend(bodyView, requestInfo.writeTimeout, token);
-    if (!bodyResult.has_value()) {
-        if (token.isCancelled()) {
-            co_return slark::Error::Cancelled;
-        }
-        co_return mapLegacyErrorToUnified(bodyResult.error());
-    }
-    co_return slark::Error::Success;
 }
 
 Task<ResponseResult> HttpProcessor::process(const RequestInfo& requestInfo,
@@ -123,59 +196,12 @@ Task<ResponseResult> HttpProcessor::executeSingle(const RequestInfo& requestInfo
         co_return std::unexpected(parsed.error);
     }
 
-    if (token.isCancelled()) {
-        co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
+    auto setup = co_await setupConnectionAndSend("executeSingle", requestInfo, *parsed.url, perf,
+                                                 token);
+    if (setup.hasError()) {
+        co_return std::unexpected(setup.error);
     }
-
-    // 获取连接
-    auto conn = co_await co_acquire_connection(
-        parsed.url->host, parsed.url->portNumber(), parsed.url->scheme, requestInfo.ipVersion,
-        requestInfo.connectTimeout, requestInfo.tlsHandshakeTimeout, &perf, token);
-    if (!conn || !conn->isValid()) {
-        if (token.isCancelled()) {
-            co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
-        }
-        LogE("[HttpProcessor::executeSingle] connect failed: timeoutSource={} url={}",
-             static_cast<int>(perf.transport.timeoutSource), requestInfo.url);
-        // 根据 perf 判断超时类型
-        if (perf.transport.timeoutSource == TimeoutSource::Connect) {
-            co_return std::unexpected(ErrorInfo{slark::Error::ConnectionTimeout});
-        }
-        if (perf.transport.timeoutSource == TimeoutSource::TlsHandshake) {
-            co_return std::unexpected(ErrorInfo{slark::Error::ConnectionTimeout});
-        }
-        co_return std::unexpected(ErrorInfo{slark::Error::ConnectionFailed});
-    }
-
-    // 设置socket的性能统计指针
-    conn->setPerf(&perf);
-
-    if (token.isCancelled()) {
-        co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
-    }
-
-    bool keepAlive = true;
-    auto requestStr = Util::buildRequestString(requestInfo, *parsed.url, keepAlive);
-    auto sendResult = co_await conn->asyncSend(requestStr, requestInfo.writeTimeout, token);
-    if (!sendResult) {
-        if (token.isCancelled()) {
-            co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
-        }
-        LogE("[HttpProcessor::executeSingle] send failed: legacyErr={} url={}",
-             static_cast<int>(sendResult.error()), requestInfo.url);
-        co_return std::unexpected(ErrorInfo{mapLegacyErrorToUnified(sendResult.error())});
-    }
-
-    auto bodyResult = co_await sendRequestBody(*conn, requestInfo, token);
-    if (bodyResult != slark::Error::Success) {
-        LogE("[HttpProcessor::executeSingle] sendBody failed: err={} url={}",
-             static_cast<int>(bodyResult), requestInfo.url);
-        co_return std::unexpected(ErrorInfo{bodyResult});
-    }
-
-    if (token.isCancelled()) {
-        co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
-    }
+    auto conn = std::move(setup.conn);
 
     HttpResponse response;
     DataPtr bodyData = std::make_unique<Data>();
@@ -276,75 +302,13 @@ AsyncGenerator<StreamChunk> HttpProcessor::executeStreamingSingle(const RequestI
         co_return;
     }
 
-    if (auto c = checkCancelled()) {
-        co_yield std::move(*c);
+    auto setup = co_await setupConnectionAndSend("executeStreamingSingle", requestInfo, *parsed.url,
+                                                 perf, token);
+    if (setup.hasError()) {
+        co_yield StreamChunk::makeError(setup.error);
         co_return;
     }
-
-    // 获取连接
-    auto conn = co_await co_acquire_connection(
-        parsed.url->host, parsed.url->portNumber(), parsed.url->scheme, requestInfo.ipVersion,
-        requestInfo.connectTimeout, requestInfo.tlsHandshakeTimeout, &perf, token);
-    if (!conn || !conn->isValid()) {
-        if (auto c = checkCancelled()) {
-            co_yield std::move(*c);
-            co_return;
-        }
-        LogE("[HttpProcessor::executeStreamingSingle] connect failed: timeoutSource={} url={}",
-             static_cast<int>(perf.transport.timeoutSource), requestInfo.url);
-        // 根据 perf 判断超时类型
-        if (perf.transport.timeoutSource == TimeoutSource::Connect ||
-            perf.transport.timeoutSource == TimeoutSource::TlsHandshake) {
-            co_yield StreamChunk::makeError(ErrorInfo{slark::Error::ConnectionTimeout});
-            co_return;
-        }
-        co_yield StreamChunk::makeError(ErrorInfo{slark::Error::ConnectionFailed});
-        co_return;
-    }
-
-    conn->setPerf(&perf);
-
-    if (auto c = checkCancelled()) {
-        co_yield std::move(*c);
-        co_return;
-    }
-
-    bool keepAlive = true;
-    auto requestStr = Util::buildRequestString(requestInfo, *parsed.url, keepAlive);
-    auto sendResult = co_await conn->asyncSend(requestStr, requestInfo.writeTimeout, token);
-    if (!sendResult) {
-        if (auto c = checkCancelled()) {
-            co_yield std::move(*c);
-            co_return;
-        }
-        LogE("[HttpProcessor::executeStreamingSingle] send failed: legacyErr={} url={}",
-             static_cast<int>(sendResult.error()), requestInfo.url);
-        co_yield StreamChunk::makeError(ErrorInfo{mapLegacyErrorToUnified(sendResult.error())});
-        co_return;
-    }
-
-    if (!requestInfo.bodyEmpty()) {
-        if (auto c = checkCancelled()) {
-            co_yield std::move(*c);
-            co_return;
-        }
-        std::string_view bodyView(reinterpret_cast<const char*>(requestInfo.body->data()),
-                                  requestInfo.body->size());
-        auto bodyResult = co_await conn->asyncSend(bodyView, requestInfo.writeTimeout, token);
-        if (!bodyResult) {
-            if (auto c = checkCancelled()) {
-                co_yield std::move(*c);
-                co_return;
-            }
-            co_yield StreamChunk::makeError(ErrorInfo{mapLegacyErrorToUnified(bodyResult.error())});
-            co_return;
-        }
-    }
-
-    if (auto c = checkCancelled()) {
-        co_yield std::move(*c);
-        co_return;
-    }
+    auto conn = std::move(setup.conn);
 
     // 流式接收：parser 回调是同步的，使用待 yield 缓冲区逐段产出
     HttpStatusCode statusCode = HttpStatusCode::Unknown;
@@ -529,29 +493,15 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
             if (!chunk.has_value()) {
                 co_return;
             }
-            // header chunk 由 makeHeader 生成：statusCode 已设置且 headers 非空
-            const bool isHeaderChunk = chunk->statusCode != HttpStatusCode::Unknown &&
-                                       !chunk->headers.empty();
-            const bool isTerminal = chunk->isFinal || chunk->hasError();
-            if (isHeaderChunk) {
-                HttpResponse headerResp;
-                headerResp.statusCode = chunk->statusCode;
-                headerResp.headers = chunk->headers;
-                if (redirectPolicy_.shouldRedirect(headerResp, currentInfo, redirectCount)) {
-                    auto location = redirectPolicy_.extractRedirectLocation(chunk->headers);
-                    if (location.has_value()) {
-                        auto next = RedirectPolicy::buildRedirectRequest(
-                            currentInfo, chunk->statusCode, std::move(location.value()));
-                        if (next.has_value()) {
-                            currentInfo = std::move(*next);
-                            redirectCount++;
-                            LogI("[HttpProcessor::processStreaming] redirect to {} count={}",
-                                 currentInfo.url, redirectCount);
-                            break;  // 丢弃当前响应，发起新请求
-                        }
-                    }
-                }
+            if (auto next = extractRedirectTarget(redirectPolicy_, *chunk, currentInfo,
+                                                  redirectCount)) {
+                currentInfo = std::move(*next);
+                redirectCount++;
+                LogI("[HttpProcessor::processStreaming] redirect to {} count={}", currentInfo.url,
+                     redirectCount);
+                break;  // 丢弃当前响应，发起新请求
             }
+            const bool isTerminal = chunk->isFinal || chunk->hasError();
             co_yield std::move(*chunk);
             if (isTerminal) {
                 co_return;

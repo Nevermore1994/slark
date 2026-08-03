@@ -44,10 +44,6 @@ class HttpProcessor : public NonCopyable {
 
     [[nodiscard]] static ParsedRequest parseUrl(const std::string& urlStr);
 
-    static Task<Error> sendRequestBody(PooledConnection& conn,
-                                       const RequestInfo& requestInfo,
-                                       CancellationToken& token);
-
     RedirectPolicy redirectPolicy_;
 };
 
