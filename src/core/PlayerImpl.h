@@ -83,7 +83,7 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
 
     void process() noexcept;
 
-    void handleEvent(std::list<EventPtr>&& events) noexcept;
+    void handleEvent(std::deque<EventPtr>&& events) noexcept;
 
     void handleSettingUpdate(Event& t) noexcept;
 

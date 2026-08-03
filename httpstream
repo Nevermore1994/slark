@@ -1,0 +1,441 @@
+建议采用“单一 Owner 线程串行状态机 + 共享网络 IO 线程 + generation 丢弃旧事件”模型。不要给每个 HttpStream/HLSStream 单独创建线程，也不要继续用成员 mutex 保护所有字段来掩盖异步竞态。
+
+一、推荐的总体模型
+代码
+图表
+flowchart LR
+    Caller[PlayerImpl / MediaSourceManager] -->|start pause seek close| Owner[Stream Owner Thread]
+    Owner -->|创建/取消请求| Net[共享 HTTP IO/EventLoop]
+    Net -->|不可变结果事件| Owner
+    Owner -->|onData/onError/onComplete| Player[播放器/上层]
+核心原则：
+
+HttpStream/HLSStream 的所有可变状态只允许由 Owner 线程访问。
+DNS、TCP、TLS、HTTP body 读取仍运行在共享网络 IO 线程。
+网络协程不直接修改 Stream 状态，只产生不可变事件。
+所有事件携带 generation，旧请求的迟到事件一律丢弃。
+pause/seek/close 先使旧 generation 失效，再取消旧请求。
+取消不能通过直接销毁协程 frame 完成，必须等待请求协程完成或让外部回调只持有可失效的控制块。
+当前代码中，HTTP 协程直接调用 handleChunk()：
+
+HttpStream.cppL89-L109
+auto streamTask = [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
+                     std::weak_ptr<HttpStream> weakStream) -> Task<void> {
+    auto gen = req->streamingExecute(info, req->cancelToken());
+
+    while (true) {
+        auto chunk = co_await gen.next();
+        if (!chunk.has_value()) {
+            break;
+        }
+
+        auto stream = weakStream.lock();
+        if (!stream) {
+            co_return;
+        }
+
+        stream->handleChunk(std::move(chunk.value()));
+这意味着 handleChunk() 在网络协程恢复线程执行，而 start/seek/close 通常由播放器线程调用。weak_ptr 只能避免对象已经析构，不能解决同一个对象内部字段的并发读写和旧请求污染新请求。
+
+HLS 目前也存在同样问题，例如网络请求完成后直接调用 handlePlaylistResponse()，而该函数会修改 parser_、playlist_、request_ 和状态机：
+
+HLSStream.cppL96-L105
+auto fetchPlaylistTask = [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
+                            std::shared_ptr<HLSStream> stream) -> Task<void> {
+    auto response = co_await req->asyncExecute(info);
+
+    if (response.isOk()) {
+        stream->handlePlaylistResponse(std::move(response));
+    } else {
+        stream->reportHttpError(response);
+    }
+};
+二、Owner 线程应该如何选择
+推荐：复用 PlayerImpl::ownerThread_
+项目已经存在播放器 Owner 线程，且 PlayPipeline、状态切换、seek 和数据源控制本身都围绕该线程组织。因此建议：
+
+HttpStream/HLSStream 绑定到 PlayerImpl::ownerThread_；
+MediaSourceManager::start/pause/seek/close 必须在 Owner 线程调用；
+网络 IO 不绑定到 Owner 线程；
+网络完成后通过 ownerThread_->postTask() 投递事件；
+onData/onError/onComplete/onMetadata 统一在 Owner 线程回调。
+这样不需要为每个 Stream 新建线程，也避免播放器状态和数据源状态分别由不同线程推进。
+
+建议明确一个线程契约：
+
+open/start/pause/seek/seekByTime/updateRange/close 以及所有 Stream 内部状态转移，只能在绑定的 Owner 线程执行。网络 IO 回调不得直接访问 Stream 状态。
+
+开发版本可以加入线程断言。不要依赖 MediaSourceManager::mutex_ 作为线程模型。它目前只能串行化同步入口，不能保护异步回调：
+
+MediaSourceManager.cppL69-L115
+void MediaSourceManager::start() noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (stream_) {
+        LogI("[MediaSourceManager::start]");
+        stream_->start();
+    }
+}
+
+StreamResult<void> MediaSourceManager::seek(uint64_t position) noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!stream_) {
+        return std::unexpected(Error::StreamNotReady);
+    }
+    return stream_->seek(position);
+}
+如果未来必须支持任意线程调用这些接口，应该增加异步命令层，而不是简单给 Stream 成员加 mutex：
+
+cpp
+class StreamController {
+public:
+    void start() noexcept;
+    void pause() noexcept;
+    Task<StreamResult<void>> seek(uint64_t position);
+
+private:
+    std::shared_ptr<Thread> ownerThread_;
+};
+同步返回的 seek() 接口和异步 Owner 线程之间需要定义清楚“调用成功”的含义：
+
+如果表示“命令已接受”，可以立即返回成功；
+如果表示“seek 已完成”，就必须返回 Task<StreamResult<void>> 或使用同步等待；
+不建议当前 std::expected<void, Error> 接口在内部异步投递后直接伪装成 seek 已完成。
+三、统一操作上下文
+每次 start/seek/playlist refresh/segment download 都应该创建独立的操作上下文，而不是复用一个 request_。
+
+建议抽象成：
+
+cpp
+struct StreamOperation {
+    uint64_t generation = 0;
+    uint64_t operationId = 0;
+    CancellationSource cancellation;
+    std::shared_ptr<http::HttpRequest> request;
+    Task<void> task;
+};
+事件只携带不可变数据：
+
+cpp
+struct StreamEvent {
+    uint64_t generation = 0;
+    uint64_t operationId = 0;
+    EventType type;
+    std::shared_ptr<const Data> data;
+    std::optional<http::HttpResponse> response;
+    std::optional<http::ErrorInfo> error;
+};
+Owner 线程处理事件时统一检查：
+
+cpp
+if (event.generation != generation_) {
+    return;
+}
+更严格一点还要检查 operationId：
+
+cpp
+if (event.generation != generation_ ||
+    event.operationId != currentOperationId_) {
+    return;
+}
+为什么 generation 必须先递增
+以 seek 为例：
+
+Owner 线程递增 generation_；
+标记旧操作失效；
+取消旧 HTTP 请求；
+清理当前操作引用；
+创建新操作；
+旧请求即使之后产生 chunk、error 或 complete，也会因为 generation 不匹配被丢弃。
+顺序不能反过来。如果先创建新请求，再让旧请求失效，就可能出现：
+
+text
+旧请求完成
+新请求已创建
+旧请求回调修改新请求状态
+当前 HttpStream::seek() 会取消并 reset 请求，然后移动销毁 streamTask_：
+
+HttpStream.cppL144-L168
+auto HttpStream::seek(uint64_t position) -> StreamResult<void> {
+    if (!acceptRanges_) {
+        LogW("[HttpStream::seek] reject, server does not advertise Accept-Ranges, pos={}",
+             position);
+        return std::unexpected(Error::StreamNotReady);
+    }
+
+    readRange_ = Range(position);
+    position_ = position;
+
+    if (request_) {
+        request_->cancel();
+        request_.reset();
+    }
+    {
+        auto tmp = std::move(streamTask_);
+    }
+
+    isCompleted_ = false;
+    state_ = StreamState::Ready;
+    start();
+这里的问题是：取消请求和销毁 Task 不是同一个动作。只要底层 fd、timer、AsyncGenerator 或回调仍然持有旧 coroutine frame，直接释放 Task 就存在生命周期竞态。generation 机制可以阻止旧结果污染新状态，但不能替代底层请求的正确取消和 frame 回收协议。
+
+四、HttpStream 的推荐设计
+HttpStream 本质上只有一个连续 HTTP body，因此可以采用“单活动操作”模型。
+
+Owner 线程拥有的状态
+这些字段不应由网络线程直接修改：
+
+state_
+position_
+readRange_
+contentLength_
+acceptRanges_
+info_
+当前 generation
+当前操作上下文
+是否完成、是否暂停
+用户回调
+如果必须从外部线程读取，建议返回快照，而不是返回内部引用：
+
+cpp
+struct StreamSnapshot {
+    StreamState state;
+    StreamInfo info;
+    uint64_t position;
+    bool running;
+    bool completed;
+};
+当前 info() 返回 const StreamInfo&，如果允许跨线程读取，同时 Owner 线程正在更新 header 信息，就不安全。
+
+HTTP 协程只做三件事
+网络协程不再调用 handleChunk()，只负责：
+
+发起请求；
+读取和解析 HTTP；
+向 Owner 投递 Header/Data/Completed/Error 事件。
+伪代码：
+
+cpp
+Task<void> runHttpOperation(std::shared_ptr<Operation> operation) {
+    auto generator = operation->request->streamingExecute(
+        operation->requestInfo,
+        operation->cancellation.token());
+
+    while (auto chunk = co_await generator.next()) {
+        postToOwner(StreamEvent{
+            .generation = operation->generation,
+            .operationId = operation->operationId,
+            .chunk = std::move(*chunk),
+        });
+    }
+}
+Owner 线程再处理：
+
+cpp
+void HttpStream::onEvent(StreamEvent event) {
+    if (!isCurrent(event)) {
+        return;
+    }
+
+    if (event.chunk.hasError()) {
+        transitionToError(event.chunk.error);
+        return;
+    }
+
+    if (event.chunk.isHeader()) {
+        validateResponse(event.chunk);
+        return;
+    }
+
+    deliverData(event.chunk);
+}
+pause 的语义建议
+不建议尝试保留当前 socket 并让 HTTP generator 长期挂起。原因是：
+
+连接可能被服务端关闭；
+连接池复用边界复杂；
+idle timeout 可能触发；
+当前 AsyncGenerator 的暂停、取消、销毁协议还不够稳定；
+pause 期间网络资源持续占用。
+建议定义为：
+
+pause() = 取消当前 HTTP 操作，保留“最后已经提交给上层的数据位置”；start() = 从该位置重新创建 Range 请求。
+
+关键是区分：
+
+committedPosition_：已经通过 onData 交付给上层的数据；
+receivedPosition_：网络已收到但尚未交付的数据。
+只有 Owner 线程提交成功后才更新 committedPosition_。暂停时丢弃尚未提交的数据，恢复时从 committedPosition_ 重新请求，宁可产生少量重复读取，也不能产生偏移错乱或丢数据。
+
+Range 响应必须在 Owner 线程校验
+对于 seek 后请求：
+
+请求 Range 为 N 时，响应应为 206；
+Content-Range 起点必须是 N；
+200 只能按明确策略处理，不能直接当作 Range 成功；
+416 转换为明确的 EOF 或 seek error；
+Content-Range 非法时不能向 demuxer 送数据。
+否则服务端忽略 Range 时，HTTP 从文件头开始返回的数据可能被当作从 N 开始的数据。
+
+五、HLSStream 的推荐设计
+HLS 不应继续用一个 request_ 加一个 pendingTasks_ 管理所有请求。HLS 至少有三类不同操作：
+
+Master playlist 请求；
+Media playlist 请求；
+Segment 请求；
+Live playlist refresh；
+Segment retry timer。
+建议拆成明确的操作槽：
+
+cpp
+struct HlsOperations {
+    std::optional<StreamOperation> playlist;
+    std::optional<StreamOperation> segment;
+    TimerId refreshTimer;
+    TimerId retryTimer;
+};
+所有槽位和 HLS 状态都只由 Owner 线程访问。
+
+HLS 状态机
+推荐显式状态：
+
+text
+Idle
+  -> LoadingMasterPlaylist
+  -> LoadingMediaPlaylist
+  -> Ready
+  -> LoadingSegment
+  -> Ready
+  -> Completed
+
+任意状态
+  -> Paused
+  -> Error
+  -> Closing
+Master playlist 到 variant playlist 的切换也必须是状态机事件，不要在网络协程里直接递归调用 handlePlaylistResponse()。
+
+当前代码中，playlist 回调可以直接创建新请求：
+
+HLSStream.cppL184-L220
+if (parser_->isMasterPlaylist()) {
+    auto variantUri = selectVariantUri(0);
+    if (!variantUri) {
+        LogE("[HLSStream::handlePlaylistResponse] no variant available");
+        state_ = StreamState::Error;
+        return;
+    }
+
+    auto variantUrl = resolveUrl(*variantUri);
+    mediaPlaylistUrl_ = variantUrl;
+    parser_.reset();
+    request_ = std::make_shared<http::HttpRequest>();
+
+    // 创建并启动 variant 请求
+}
+改造后应该是：
+
+text
+Owner 收到 MasterPlaylistResult
+  -> 解析并选择 variant
+  -> 结束 master operation
+  -> 创建新的 media playlist operation
+  -> 启动 variant 请求
+Segment 下载建议先保持串行
+当前实现一次只下载一个 segment，然后递归进入下一个 segment。这个方向是对的，建议在第一版重构中保持：
+
+text
+下载 segment N
+  -> Owner 接收完整 segment N
+  -> 按顺序交付 segment N 数据
+  -> Owner 将 index 更新为 N + 1
+  -> 启动 segment N + 1
+暂时不要并发下载多个 segment。并发下载需要额外处理：
+
+segment reorder buffer；
+seek 后批量取消；
+旧 segment 到达；
+内存上限；
+segment 顺序交付；
+live playlist 更新期间的 index 变化。
+retry 必须属于 Owner 状态机
+当前 segment 任务失败后直接调用：
+
+HLSStream.cppL311-L355
+auto downloadTask = [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
+                       std::shared_ptr<HLSStream> stream, uint32_t segIdx,
+                       int32_t left) -> Task<void> {
+    auto gen = req->streamingExecute(info, req->cancelToken());
+    bool hasError = false;
+
+    while (true) {
+        auto chunk = co_await gen.next();
+        if (!chunk.has_value()) {
+            break;
+        }
+
+        if (stream->isPaused_) {
+            co_return;
+        }
+失败后又直接调用 downloadSegmentWithRetry()。改造后应该投递：
+
+text
+SegmentFailed{generation, segmentIndex, error}
+  -> Owner 校验 generation
+  -> 若 retryLeft > 0，Owner 创建延迟 retry
+  -> 否则转 Error
+这样 seek、pause、close 时只需递增 generation 并取消 timer，旧 retry 不会重新启动请求。
+
+六、生命周期设计
+建议引入一个不等同于 Stream 对象本身的控制块：
+
+cpp
+struct StreamControl {
+    std::atomic<bool> alive{true};
+    std::atomic<uint64_t> generation{0};
+};
+网络回调只持有：
+
+cpp
+std::weak_ptr<StreamControl>
+而不是直接持有 shared_ptr<HttpStream>。
+
+原因：
+
+HLS 当前大量任务捕获 shared_ptr<HLSStream>，可能使 Stream 因旧任务长期无法析构；
+weak_ptr<HttpStream> 可以避免直接 UAF，但不能避免事件已经排队后继续修改新状态；
+control block 可以在 close() 时立即失效，事件即使已经排队也会被丢弃。
+关闭流程建议固定为：
+
+text
+Owner::close()
+  1. generation_++
+  2. 标记 closing/idle
+  3. 取消所有 operation 和 timer
+  4. 断开用户回调或标记 callback disabled
+  5. 等待 operation 完成确认
+  6. 清理 task/frame/request
+  7. 允许 Stream 析构
+其中第 1 步必须在第 3 步之前完成。
+
+七、回调和数据背压
+如果每个网络 chunk 都通过 ownerThread_->postTask() 投递，Owner 线程忙时可能积压大量任务。因此需要定义背压策略。
+
+第一版可以采用：
+
+使用有界数据队列；
+网络线程只负责写入队列；
+Owner 线程按批次 drain；
+队列达到上限后暂停继续读取，或者让 AsyncGenerator 消费端自然产生背压；
+close/seek 时清空旧 generation 的数据。
+不能使用无限增长的普通 std::vector 或无限投递 one-shot task。
+
+对于当前播放链路，onData 最终会把数据送入 demuxer channel，因此可以考虑：
+
+text
+Network IO
+  -> bounded DataChannel
+  -> Player Owner 线程 / Demuxer 消费
+但必须保证：
+
+DataPacket.offset 由唯一线程生成；
+seek 后旧 generation 的 packet 不再进入 channel；
+channel 中已有旧 packet 要么带 generation 被过滤，要么在 seek 时可靠排空。

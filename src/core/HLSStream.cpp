@@ -5,6 +5,7 @@
 #include "HLSStream.h"
 
 #include <algorithm>
+#include <chrono>
 #include <unordered_set>
 
 #include "CoroutineScheduler.hpp"
@@ -20,9 +21,13 @@ namespace {
 inline uint64_t logProgressBytes() {
     return getLogConfig().progressLogBytes;
 }
+
+constexpr std::chrono::milliseconds kWaitSettleTimeout{500};
+constexpr std::chrono::milliseconds kCloseWaitTimeout{5000};
 }  // namespace
 
-HLSStream::HLSStream() = default;
+HLSStream::HLSStream(std::shared_ptr<Thread> ownerThread)
+    : ownerThread_(std::move(ownerThread)) {}
 
 HLSStream::~HLSStream() {
     close();
@@ -40,10 +45,13 @@ StreamResult<StreamInfo> HLSStream::open(const OpenParams& params) {
         baseUrl_ = params.uri.substr(0, lastSlash + 1);
     }
 
-    info_.type = StreamType::HLS;
-    info_.uri = params.uri;
-    info_.isSeekable = true;
-    info_.isLive = false;
+    {
+        std::lock_guard<std::mutex> lock(infoMutex_);
+        info_.type = StreamType::HLS;
+        info_.uri = params.uri;
+        info_.isSeekable = true;
+        info_.isLive = false;
+    }
 
     state_ = StreamState::Opening;
     return info_;
@@ -52,74 +60,118 @@ StreamResult<StreamInfo> HLSStream::open(const OpenParams& params) {
 void HLSStream::close() noexcept {
     LogI("[HLSStream::close] url={} pos={} state={}", params_.uri, position_.load(),
          static_cast<int>(state_.load()));
-    if (request_) {
-        request_->cancel();
-        request_.reset();
+    std::lock_guard<std::mutex> lock(mutex_);
+    closing_ = true;
+    ++generation_;
+    cancelPlaylistOp(kCloseWaitTimeout.count());
+    cancelSegmentOp(kCloseWaitTimeout.count());
+    if (refreshTimerId_.isValid()) {
+        ownerThread_->cancelRepeatTask(refreshTimerId_);
+        refreshTimerId_ = {};
     }
-
+    if (retryTimerId_.isValid()) {
+        ownerThread_->cancelRepeatTask(retryTimerId_);
+        retryTimerId_ = {};
+    }
     state_ = StreamState::Idle;
     isRunning_ = false;
     isCompleted_ = false;
-}
-
-void HLSStream::storeTask(Task<void>&& task) noexcept {
-    pendingTasks_.erase(std::remove_if(pendingTasks_.begin(), pendingTasks_.end(),
-                                       [](const Task<void>& t) {
-                                           return t.isDone();
-                                       }),
-                        pendingTasks_.end());
-    pendingTasks_.push_back(std::move(task));
+    isPaused_ = false;
 }
 
 void HLSStream::start() noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (closing_) {
+        return;
+    }
     if (state_ != StreamState::Ready && state_ != StreamState::Paused &&
         state_ != StreamState::Opening) {
         LogI("[HLSStream::start] skip, state={}", static_cast<int>(state_.load()));
         return;
     }
 
-    // 立即标记 Reading，防止并发重复启动
     state_ = StreamState::Reading;
     isPaused_ = false;
     isRunning_ = true;
+    started_ = true;
 
     LogI("[HLSStream::start] url={}", params_.uri);
 
-    request_ = std::make_shared<http::HttpRequest>();
+    if (playlist_ && !mediaPlaylistUrl_.empty()) {
+        ++generation_;
+        cancelSegmentOp(kWaitSettleTimeout.count());
+        downloadSegments();
+        return;
+    }
+
+    ++generation_;
+    cancelPlaylistOp(kWaitSettleTimeout.count());
+
+    auto request = std::make_shared<http::HttpRequest>();
+    auto control = std::make_shared<StreamControl>();
+    uint64_t gen = generation_;
+    uint64_t opId = nextOperationId_++;
 
     http::RequestInfo requestInfo;
     requestInfo.url = params_.uri;
     requestInfo.methodType = http::HttpMethodType::Get;
 
-    auto self = shared_from_this();
+    std::weak_ptr<HLSStream> weakThis = shared_from_this();
+    std::weak_ptr<StreamControl> weakControl = control;
 
-    auto fetchPlaylistTask = [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
-                                std::shared_ptr<HLSStream> stream) -> Task<void> {
-        auto response = co_await req->asyncExecute(info);
-
-        if (response.isOk()) {
-            stream->handlePlaylistResponse(std::move(response));
-        } else {
-            stream->reportHttpError(response);
+    auto fetchPlaylistTask =
+        [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
+           std::weak_ptr<HLSStream> weakStream, std::weak_ptr<StreamControl> weakControl,
+           std::shared_ptr<Thread> ownerThread, uint64_t generation,
+           uint64_t operationId) -> Task<void> {
+        auto response = co_await req->asyncExecute(info, req->cancelToken());
+        auto control = weakControl.lock();
+        if (!control || !control->alive.load()) {
+            co_return;
         }
+        auto stream = weakStream.lock();
+        if (!stream) {
+            co_return;
+        }
+        auto event = HLSStream::PlaylistEvent{generation, operationId, std::move(response)};
+        ownerThread->postTask([weakStream, event = std::move(event)]() mutable {
+            auto s = weakStream.lock();
+            if (!s) {
+                return;
+            }
+            s->onPlaylistEvent(std::move(event));
+        });
     };
 
-    auto task = fetchPlaylistTask(request_, requestInfo, self);
-    storeTask(std::move(task));
-    pendingTasks_.back().getHandle().resume();
+    auto task = fetchPlaylistTask(request, requestInfo, weakThis, weakControl, ownerThread_, gen,
+                                  opId);
+    playlistOp_.emplace(PlaylistOp{gen, opId, request, std::move(task), std::move(control)});
+    playlistOp_->task.resume();
 }
 
 void HLSStream::pause() noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
     if (state_ != StreamState::Reading) {
         LogI("[HLSStream::pause] noop, state={}", static_cast<int>(state_.load()));
         return;
     }
 
+    ++generation_;
+    cancelSegmentOp(kWaitSettleTimeout.count());
+    cancelPlaylistOp(kWaitSettleTimeout.count());
+    if (refreshTimerId_.isValid()) {
+        ownerThread_->cancelRepeatTask(refreshTimerId_);
+        refreshTimerId_ = {};
+    }
+    if (retryTimerId_.isValid()) {
+        ownerThread_->cancelRepeatTask(retryTimerId_);
+        retryTimerId_ = {};
+    }
+
     isPaused_ = true;
     state_ = StreamState::Paused;
     isRunning_ = false;
-
-    LogI("[HLSStream::pause] pos={}", position_.load());
+    LogI("[HLSStream::pause] seg={} pos={}", currentSegmentIndex_.load(), position_.load());
 }
 
 StreamResult<void> HLSStream::seek(uint64_t /*position*/) {
@@ -128,6 +180,7 @@ StreamResult<void> HLSStream::seek(uint64_t /*position*/) {
 
 StreamResult<void> HLSStream::seekByTime(double timeSec) {
     LogI("[HLSStream::seekByTime] time={}", timeSec);
+    std::lock_guard<std::mutex> lock(mutex_);
     if (!playlist_ || playlist_->segments().empty()) {
         return std::unexpected(Error::StreamInvalidData);
     }
@@ -140,10 +193,15 @@ StreamResult<void> HLSStream::seekByTime(double timeSec) {
     }
     currentSegmentIndex_.store(*segOpt);
     position_ = 0;
-    if (request_) {
-        request_->cancel();
-        request_.reset();
+
+    ++generation_;
+    cancelSegmentOp(kWaitSettleTimeout.count());
+    cancelPlaylistOp(kWaitSettleTimeout.count());
+    if (retryTimerId_.isValid()) {
+        ownerThread_->cancelRepeatTask(retryTimerId_);
+        retryTimerId_ = {};
     }
+
     if (isRunning_) {
         downloadSegments();
     }
@@ -152,15 +210,21 @@ StreamResult<void> HLSStream::seekByTime(double timeSec) {
 
 void HLSStream::updateRange(Range) noexcept {}
 
+void HLSStream::onPlaylistEvent(PlaylistEvent event) noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (event.generation != generation_ || !playlistOp_ ||
+        event.operationId != playlistOp_->operationId) {
+        return;
+    }
+    handlePlaylistResponse(std::move(event.response));
+}
+
 void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
     LogI("[HLSStream::handlePlaylistResponse] received: status={} bodySize={}",
          static_cast<int>(response.statusCode), response.body ? response.body->size() : 0);
 
-    if (!response.body) {
-        if (params_.onError) {
-            params_.onError(Error::StreamInvalidData, 0);
-        }
-        state_ = StreamState::Error;
+    if (!response.isSuccess() || !response.body) {
+        reportHttpError(response);
         return;
     }
 
@@ -176,6 +240,7 @@ void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
             params_.onError(Error::StreamInvalidData, 0);
         }
         state_ = StreamState::Error;
+        isRunning_ = false;
         return;
     }
 
@@ -187,6 +252,7 @@ void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
         if (!variantUri) {
             LogE("[HLSStream::handlePlaylistResponse] no variant available");
             state_ = StreamState::Error;
+            isRunning_ = false;
             return;
         }
 
@@ -195,32 +261,56 @@ void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
         LogI("[HLSStream::handlePlaylistResponse] variant selected: {}", variantUrl);
 
         parser_.reset();
-        request_ = std::make_shared<http::HttpRequest>();
+        cancelPlaylistOp(kWaitSettleTimeout.count());
+        ++generation_;
+
+        auto request = std::make_shared<http::HttpRequest>();
+        auto control = std::make_shared<StreamControl>();
+        uint64_t gen = generation_;
+        uint64_t opId = nextOperationId_++;
 
         http::RequestInfo requestInfo;
         requestInfo.url = variantUrl;
         requestInfo.methodType = http::HttpMethodType::Get;
 
-        auto self = shared_from_this();
+        std::weak_ptr<HLSStream> weakThis = shared_from_this();
+        std::weak_ptr<StreamControl> weakControl = control;
 
-        auto fetchVariantTask = [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
-                                   std::shared_ptr<HLSStream> stream) -> Task<void> {
-            auto response = co_await req->asyncExecute(info);
-
-            if (response.isOk()) {
-                stream->handlePlaylistResponse(std::move(response));
-            } else {
-                stream->reportHttpError(response);
+        auto fetchVariantTask =
+            [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
+               std::weak_ptr<HLSStream> weakStream, std::weak_ptr<StreamControl> weakControl,
+               std::shared_ptr<Thread> ownerThread, uint64_t generation,
+               uint64_t operationId) -> Task<void> {
+            auto response = co_await req->asyncExecute(info, req->cancelToken());
+            auto control = weakControl.lock();
+            if (!control || !control->alive.load()) {
+                co_return;
             }
+            auto stream = weakStream.lock();
+            if (!stream) {
+                co_return;
+            }
+            auto event = HLSStream::PlaylistEvent{generation, operationId, std::move(response)};
+            ownerThread->postTask([weakStream, event = std::move(event)]() mutable {
+                auto s = weakStream.lock();
+                if (!s) {
+                    return;
+                }
+                s->onPlaylistEvent(std::move(event));
+            });
         };
 
-        auto task = fetchVariantTask(request_, requestInfo, self);
-        storeTask(std::move(task));
-        pendingTasks_.back().getHandle().resume();
+        auto task = fetchVariantTask(request, requestInfo, weakThis, weakControl, ownerThread_, gen,
+                                     opId);
+        playlistOp_.emplace(PlaylistOp{gen, opId, request, std::move(task), std::move(control)});
+        playlistOp_->task.resume();
     } else {
-        info_.isLive = playlist_->isLive();
-        info_.isSeekable = !playlist_->isLive();
-        info_.totalSize = static_cast<uint64_t>(playlist_->totalDuration() * 1000);
+        {
+            std::lock_guard<std::mutex> lock(infoMutex_);
+            info_.isLive = playlist_->isLive();
+            info_.isSeekable = !playlist_->isLive();
+            info_.totalSize = static_cast<uint64_t>(playlist_->totalDuration() * 1000);
+        }
 
         LogI("[HLSStream::handlePlaylistResponse] media playlist parsed: segments={} isLive={} "
              "totalDuration={}",
@@ -232,6 +322,17 @@ void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
 
         if (mediaPlaylistUrl_.empty()) {
             mediaPlaylistUrl_ = params_.uri;
+        }
+
+        if (info_.isLive) {
+            refreshTimerId_ = ownerThread_->postTask(std::chrono::seconds(3), [weak =
+                                                                                 weak_from_this()]() {
+                auto self = weak.lock();
+                if (!self) {
+                    return;
+                }
+                self->refreshPlaylist();
+            });
         }
 
         state_ = StreamState::Ready;
@@ -270,7 +371,6 @@ void HLSStream::downloadSegments() {
     auto segIndex = currentSegmentIndex_.load();
     if (segIndex >= segments.size()) {
         if (playlist_->isLive()) {
-            refreshPlaylist();
             return;
         }
         LogI("[HLSStream::downloadSegments] all segments done, total={}", segments.size());
@@ -288,75 +388,84 @@ void HLSStream::downloadSegments() {
 }
 
 void HLSStream::downloadSegment(uint32_t segIndex) {
-    constexpr int32_t kMaxRetry = 3;
-    downloadSegmentWithRetry(segIndex, kMaxRetry);
-}
-
-void HLSStream::downloadSegmentWithRetry(uint32_t segIndex, int32_t retryLeft) {
     if (!playlist_ || segIndex >= playlist_->segments().size()) {
         return;
     }
 
     const auto& segment = playlist_->segments()[segIndex];
-    LogI("[HLSStream::downloadSegmentWithRetry] start: segIndex={} retryLeft={} url={}", segIndex,
-         retryLeft, resolveUrl(segment.uri));
-    request_ = std::make_shared<http::HttpRequest>();
+    LogI("[HLSStream::downloadSegment] start: segIndex={} url={}", segIndex,
+         resolveUrl(segment.uri));
+
+    auto request = std::make_shared<http::HttpRequest>();
+    auto control = std::make_shared<StreamControl>();
+    uint64_t gen = generation_;
+    uint64_t opId = nextOperationId_++;
 
     http::RequestInfo requestInfo;
     requestInfo.url = resolveUrl(segment.uri);
     requestInfo.methodType = http::HttpMethodType::Get;
 
-    auto self = shared_from_this();
+    std::weak_ptr<HLSStream> weakThis = shared_from_this();
+    std::weak_ptr<StreamControl> weakControl = control;
 
-    auto downloadTask = [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
-                           std::shared_ptr<HLSStream> stream, uint32_t segIdx,
-                           int32_t left) -> Task<void> {
+    auto downloadTask =
+        [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
+           std::weak_ptr<HLSStream> weakStream, std::weak_ptr<StreamControl> weakControl,
+           std::shared_ptr<Thread> ownerThread, uint32_t segIdx, uint64_t generation,
+           uint64_t operationId) -> Task<void> {
         auto gen = req->streamingExecute(info, req->cancelToken());
-        bool hasError = false;
-
         while (true) {
             auto chunk = co_await gen.next();
             if (!chunk.has_value()) {
                 break;
             }
-
-            if (stream->isPaused_) {
+            auto control = weakControl.lock();
+            if (!control || !control->alive.load()) {
                 co_return;
             }
-
-            if (chunk->hasError()) {
-                hasError = true;
-                stream->lastErrorOriginCode_.store(chunk->error.originErrorCode,
-                                                   std::memory_order_release);
-                break;
+            auto stream = weakStream.lock();
+            if (!stream) {
+                co_return;
             }
-
-            stream->handleSegmentChunk(std::move(chunk.value()), segIdx);
-        }
-
-        if (hasError) {
-            if (left > 0) {
-                LogW("HLSStream: segment {} download failed, retrying ({} left)", segIdx, left);
-                stream->downloadSegmentWithRetry(segIdx, left - 1);
-            } else {
-                LogE("HLSStream: segment {} download failed after all retries", segIdx);
-                if (stream->params_.onError) {
-                    stream->params_.onError(Error::NetworkError, stream->lastErrorOriginCode_.load(
-                                                                     std::memory_order_acquire));
+            auto event =
+                HLSStream::SegmentEvent{generation, operationId, segIdx, std::move(*chunk)};
+            ownerThread->postTask([weakStream, event = std::move(event)]() mutable {
+                auto s = weakStream.lock();
+                if (!s) {
+                    return;
                 }
-                stream->state_ = StreamState::Error;
-            }
-            co_return;
+                s->onSegmentEvent(std::move(event));
+            });
         }
-
-        stream->currentSegmentIndex_.fetch_add(1, std::memory_order_relaxed);
-        LogI("[HLSStream] segment {} done, next={}", segIdx, segIdx + 1);
-        stream->downloadSegments();
     };
 
-    auto task = downloadTask(request_, requestInfo, self, segIndex, retryLeft);
-    storeTask(std::move(task));
-    pendingTasks_.back().getHandle().resume();
+    auto task = downloadTask(request, requestInfo, weakThis, weakControl, ownerThread_, segIndex,
+                             gen, opId);
+    segmentOp_.emplace(SegmentOp{gen, opId, segIndex, request, std::move(task), std::move(control)});
+    segmentOp_->task.resume();
+}
+
+void HLSStream::onSegmentEvent(SegmentEvent event) noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (event.generation != generation_ || !segmentOp_ ||
+        event.operationId != segmentOp_->operationId) {
+        return;
+    }
+
+    auto& chunk = event.chunk;
+    if (chunk.hasError()) {
+        lastErrorOriginCode_.store(chunk.error.originErrorCode, std::memory_order_release);
+        LogE("[HLSStream::onSegmentEvent] segment {} error: retCode={} originCode={}",
+             event.segIndex, static_cast<int>(chunk.error.retCode), chunk.error.originErrorCode);
+        if (chunk.error.retCode == Error::Cancelled) {
+            return;
+        }
+        cancelSegmentOp(kWaitSettleTimeout.count());
+        scheduleRetry(event.segIndex);
+        return;
+    }
+
+    handleSegmentChunk(std::move(event.chunk), event.segIndex);
 }
 
 void HLSStream::handleSegmentChunk(http::StreamChunk&& chunk, uint32_t segmentIndex) {
@@ -376,12 +485,113 @@ void HLSStream::handleSegmentChunk(http::StreamChunk&& chunk, uint32_t segmentIn
 
         position_ += chunkSize;
 
-        if (position_.load() / logProgressBytes() !=
-            (position_.load() - chunkSize) / logProgressBytes()) {
+        auto pos = position_.load();
+        if (pos / logProgressBytes() != (pos - chunkSize) / logProgressBytes()) {
             LogI("[HLSStream::handleSegmentChunk] progress: segIndex={} pos={} chunk={}",
-                 segmentIndex, position_.load(), chunkSize);
+                 segmentIndex, pos, chunkSize);
         }
     }
+
+    if (chunk.isFinal) {
+        cancelSegmentOp(kWaitSettleTimeout.count());
+        retryCount_ = 0;
+        currentSegmentIndex_.fetch_add(1, std::memory_order_relaxed);
+        LogI("[HLSStream::handleSegmentChunk] segment {} done, next={}", segmentIndex,
+             currentSegmentIndex_.load());
+        downloadSegments();
+    }
+}
+
+void HLSStream::scheduleRetry(uint32_t segIndex) {
+    if (closing_ || isPaused_) {
+        return;
+    }
+    const auto& segments = playlist_->segments();
+    if (segIndex >= segments.size()) {
+        return;
+    }
+    std::chrono::milliseconds delay{0};
+    if (retryCount_ >= 3) {
+        LogE("[HLSStream::scheduleRetry] segment {} retry exhausted", segIndex);
+        reportSegmentError(segIndex, lastErrorOriginCode_.load(std::memory_order_acquire));
+        retryCount_ = 0;
+        return;
+    }
+    if (retryCount_ == 1) {
+        delay = std::chrono::milliseconds(500);
+    } else if (retryCount_ == 2) {
+        delay = std::chrono::seconds(1);
+    }
+    ++retryCount_;
+    LogW("[HLSStream::scheduleRetry] segment {} retrying in {}ms (count={})", segIndex,
+         delay.count(), retryCount_);
+    if (retryTimerId_.isValid()) {
+        ownerThread_->cancelRepeatTask(retryTimerId_);
+    }
+    retryTimerId_ = ownerThread_->postTask(delay, [weak = weak_from_this(), segIndex]() {
+        auto self = weak.lock();
+        if (!self) {
+            return;
+        }
+        std::lock_guard<std::mutex> lock(self->mutex_);
+        if (self->closing_ || self->isPaused_ || !self->isRunning_) {
+            return;
+        }
+        self->retryTimerId_ = {};
+        self->downloadSegment(segIndex);
+    });
+}
+
+void HLSStream::refreshPlaylist() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (mediaPlaylistUrl_.empty() || isPaused_ || !isRunning_ || closing_) {
+        return;
+    }
+
+    LogI("[HLSStream::refreshPlaylist] url={}", mediaPlaylistUrl_);
+    if (playlistOp_) {
+        return;
+    }
+
+    auto request = std::make_shared<http::HttpRequest>();
+    auto control = std::make_shared<StreamControl>();
+    uint64_t gen = generation_;
+    uint64_t opId = nextOperationId_++;
+
+    http::RequestInfo requestInfo;
+    requestInfo.url = mediaPlaylistUrl_;
+    requestInfo.methodType = http::HttpMethodType::Get;
+
+    std::weak_ptr<HLSStream> weakThis = shared_from_this();
+    std::weak_ptr<StreamControl> weakControl = control;
+
+    auto fetchTask =
+        [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
+           std::weak_ptr<HLSStream> weakStream, std::weak_ptr<StreamControl> weakControl,
+           std::shared_ptr<Thread> ownerThread, uint64_t generation,
+           uint64_t operationId) -> Task<void> {
+        auto response = co_await req->asyncExecute(info, req->cancelToken());
+        auto control = weakControl.lock();
+        if (!control || !control->alive.load()) {
+            co_return;
+        }
+        auto stream = weakStream.lock();
+        if (!stream) {
+            co_return;
+        }
+        auto event = HLSStream::PlaylistEvent{generation, operationId, std::move(response)};
+        ownerThread->postTask([weakStream, event = std::move(event)]() mutable {
+            auto s = weakStream.lock();
+            if (!s) {
+                return;
+            }
+            s->onPlaylistEvent(std::move(event));
+        });
+    };
+
+    auto task = fetchTask(request, requestInfo, weakThis, weakControl, ownerThread_, gen, opId);
+    playlistOp_.emplace(PlaylistOp{gen, opId, request, std::move(task), std::move(control)});
+    playlistOp_->task.resume();
 }
 
 void HLSStream::reportHttpError(const http::HttpResponse& response) {
@@ -409,38 +619,62 @@ void HLSStream::reportHttpError(const http::HttpResponse& response) {
     isRunning_ = false;
 }
 
+void HLSStream::reportSegmentError(uint32_t segIndex, int32_t originCode) {
+    lastErrorOriginCode_.store(originCode, std::memory_order_release);
+    LogE("[HLSStream::reportSegmentError] segIndex={} originCode={}", segIndex, originCode);
+    if (params_.onError) {
+        params_.onError(Error::NetworkError, originCode);
+    }
+    state_ = StreamState::Error;
+    isRunning_ = false;
+}
+
 std::string HLSStream::resolveUrl(const std::string& relativeUrl) const {
     return M3U8Parser::resolveUrl(baseUrl_, relativeUrl);
 }
 
-void HLSStream::refreshPlaylist() {
-    if (mediaPlaylistUrl_.empty() || isPaused_ || !isRunning_) {
+void HLSStream::cancelPlaylistOp(uint64_t timeoutMs) {
+    if (!playlistOp_) {
         return;
     }
+    playlistOp_->request->cancel();
+    playlistOp_->control->alive = false;
 
-    LogI("[HLSStream::refreshPlaylist] url={}", mediaPlaylistUrl_);
-    request_ = std::make_shared<http::HttpRequest>();
+    auto opTask = std::move(playlistOp_->task);
+    playlistOp_.reset();
+    mutex_.unlock();
 
-    http::RequestInfo requestInfo;
-    requestInfo.url = mediaPlaylistUrl_;
-    requestInfo.methodType = http::HttpMethodType::Get;
-
-    auto self = shared_from_this();
-
-    auto fetchTask = [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
-                        std::shared_ptr<HLSStream> stream) -> Task<void> {
-        auto response = co_await req->asyncExecute(info);
-
-        if (response.isOk()) {
-            stream->handlePlaylistResponse(std::move(response));
-        } else {
-            stream->reportHttpError(response);
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+    while (!opTask.isDone()) {
+        if (std::chrono::steady_clock::now() >= deadline) {
+            LogW("[HLSStream::cancelPlaylistOp] task not settled within {}ms", timeoutMs);
+            break;
         }
-    };
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    mutex_.lock();
+}
 
-    auto task = fetchTask(request_, requestInfo, self);
-    storeTask(std::move(task));
-    pendingTasks_.back().getHandle().resume();
+void HLSStream::cancelSegmentOp(uint64_t timeoutMs) {
+    if (!segmentOp_) {
+        return;
+    }
+    segmentOp_->request->cancel();
+    segmentOp_->control->alive = false;
+
+    auto opTask = std::move(segmentOp_->task);
+    segmentOp_.reset();
+    mutex_.unlock();
+
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+    while (!opTask.isDone()) {
+        if (std::chrono::steady_clock::now() >= deadline) {
+            LogW("[HLSStream::cancelSegmentOp] task not settled within {}ms", timeoutMs);
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    mutex_.lock();
 }
 
 }  // namespace slark

@@ -7,19 +7,21 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
-#include <vector>
+#include <optional>
 
 #include "HttpRequest.h"
 #include "IStream.h"
 #include "M3U8Parser.h"
 #include "MediaPlaylist.h"
 #include "Task.hpp"
+#include "Thread.h"
+#include "Timer.h"
 
 namespace slark {
 
 class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream> {
  public:
-    HLSStream();
+    explicit HLSStream(std::shared_ptr<Thread> ownerThread);
     ~HLSStream() override;
 
     StreamResult<StreamInfo> open(const OpenParams& params) override;
@@ -34,7 +36,8 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
         return state_.load();
     }
 
-    [[nodiscard]] const StreamInfo& info() const noexcept override {
+    [[nodiscard]] StreamInfo info() const noexcept override {
+        std::lock_guard<std::mutex> lock(infoMutex_);
         return info_;
     }
 
@@ -59,37 +62,88 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
     }
 
  private:
+    struct StreamControl {
+        std::atomic<bool> alive{true};
+    };
+
+    struct PlaylistOp {
+        uint64_t generation = 0;
+        uint64_t operationId = 0;
+        std::shared_ptr<http::HttpRequest> request;
+        Task<void> task;
+        std::shared_ptr<StreamControl> control;
+    };
+
+    struct SegmentOp {
+        uint64_t generation = 0;
+        uint64_t operationId = 0;
+        uint32_t segIndex = 0;
+        std::shared_ptr<http::HttpRequest> request;
+        Task<void> task;
+        std::shared_ptr<StreamControl> control;
+    };
+
+    struct PlaylistEvent {
+        uint64_t generation = 0;
+        uint64_t operationId = 0;
+        http::HttpResponse response;
+    };
+
+    struct SegmentEvent {
+        uint64_t generation = 0;
+        uint64_t operationId = 0;
+        uint32_t segIndex = 0;
+        http::StreamChunk chunk;
+    };
+
     std::optional<std::string> selectVariantUri(uint32_t bandwidth);
 
     void downloadSegments();
     void downloadSegment(uint32_t segIndex);
-    void downloadSegmentWithRetry(uint32_t segIndex, int32_t retryLeft);
     void refreshPlaylist();
+    void scheduleRetry(uint32_t segIndex);
+
+    void onPlaylistEvent(PlaylistEvent event) noexcept;
+    void onSegmentEvent(SegmentEvent event) noexcept;
 
     void handlePlaylistResponse(http::HttpResponse&& response);
     void handleSegmentChunk(http::StreamChunk&& chunk, uint32_t segmentIndex);
     void reportHttpError(const http::HttpResponse& response);
+    void reportSegmentError(uint32_t segIndex, int32_t originCode);
 
     [[nodiscard]] std::string resolveUrl(const std::string& relativeUrl) const;
 
-    // 播放列表/分片下载均会递归触发新协程（如 master->variant、分片重试），
-    // 不能用单个成员存储：移动赋值会 destroy() 仍在运行中的旧协程（UB）。
-    // 用 vector 只追加存储，插入时顺便清理已完成的协程。
-    void storeTask(Task<void>&& task) noexcept;
+    void cancelPlaylistOp(uint64_t timeoutMs);
+    void cancelSegmentOp(uint64_t timeoutMs);
+
+    [[nodiscard]] bool onOwnerThread() const noexcept {
+        return ownerThread_ && ownerThread_->getId() == std::this_thread::get_id();
+    }
 
  private:
+    std::shared_ptr<Thread> ownerThread_;
+    mutable std::mutex mutex_;
+
+    std::optional<PlaylistOp> playlistOp_;
+    std::optional<SegmentOp> segmentOp_;
+    uint64_t generation_ = 0;
+    uint64_t nextOperationId_ = 1;
+    bool closing_ = false;
+    bool started_ = false;
+    uint32_t retryCount_ = 0;
+    TimerId refreshTimerId_{};
+    TimerId retryTimerId_{};
+
     std::unique_ptr<M3U8Parser> parser_;
     std::shared_ptr<MediaPlaylist> playlist_;
-    std::shared_ptr<http::HttpRequest> request_;
     OpenParams params_;
 
     std::string baseUrl_;
     std::string mediaPlaylistUrl_;
     std::atomic<uint32_t> currentSegmentIndex_{0};
 
-    std::vector<Task<void>> pendingTasks_;
-
     StreamInfo info_;
+    mutable std::mutex infoMutex_;
 
     std::atomic<StreamState> state_{StreamState::Idle};
     std::atomic<uint64_t> position_{0};
@@ -99,7 +153,6 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
     std::atomic<int32_t> lastErrorOriginCode_{0};
 
     MetadataCallback metadataCallback_;
-    std::mutex mutex_;
 };
 
 }  // namespace slark

@@ -36,6 +36,8 @@ set(CORE_TEST_SOURCES
     ${DEMUXER_SRC_DIR}/Mp4Demuxer.cpp
     ${DEMUXER_SRC_DIR}/HLSDemuxer.cpp
     ${DEMUXER_SRC_DIR}/WavDemuxer.cpp
+    ${CORE_SRC_DIR}/HttpStream.cpp
+    ${CORE_SRC_DIR}/HLSStream.cpp
 )
 
 add_executable(${PROJECT_NAME} ${TEST_FILES}

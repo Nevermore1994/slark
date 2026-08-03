@@ -30,7 +30,7 @@ class FileStream : public IStream {
         return state_.load();
     }
 
-    [[nodiscard]] const StreamInfo& info() const noexcept override {
+    [[nodiscard]] StreamInfo info() const noexcept override {
         return info_;
     }
 

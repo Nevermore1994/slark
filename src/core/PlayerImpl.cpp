@@ -94,7 +94,7 @@ void Player::Impl::seek(double time, bool isAccurate) noexcept {
     if (isAccurate) {
         auto ptr = buildEvent(EventType::Seek);
         ptr->data = PlayerSeekRequest{.isAccurate = true, .seekTime = time};
-        sender_->send(std::move(ptr));
+        sender_->post(std::move(ptr));
         ownerThread_->start();
         LogI("receive accurate seek:{}, isAccurate:{}", time, isAccurate);
         return;
@@ -111,7 +111,7 @@ void Player::Impl::updateState(PlayerState state) noexcept {
         LogE("error!! not init");
         return;
     }
-    sender_->send(buildEvent(state));
+    sender_->post(buildEvent(state));
     ownerThread_->start();
 }
 
@@ -129,6 +129,9 @@ void Player::Impl::init() noexcept {
     auto [sp, rp] = Channel<EventPtr>::create();
     sender_ = std::move(sp);
     receiver_ = std::move(rp);
+
+    // ownerThread_ 在 setupDataProvider 之前创建，setupDataProvider 通过 setOwnerThread 注入
+    ownerThread_ = Thread::create("playerThread");
 
     if (!setupDataProvider()) {
         LogE("setupIOHandler failed.");
@@ -149,7 +152,6 @@ void Player::Impl::init() noexcept {
         }
     });
 
-    ownerThread_ = Thread::create("playerThread");
     fastTickTaskId_ = ownerThread_->postRepeatTask(
         std::chrono::milliseconds(setting.playerThreadTickMs), [this]() {
             process();
@@ -165,7 +167,8 @@ void Player::Impl::init() noexcept {
             if (isStopped_) {
                 return;
             }
-            if (state() == PlayerState::Playing) {
+            const auto st = state();
+            if (st == PlayerState::Playing) {
                 notifyPlayedTime();
             }
         });
@@ -203,7 +206,7 @@ bool Player::Impl::setupDataProvider() noexcept {
         if (!self || self->isStopped_ || !self->dataPacketSender_) {
             return;
         }
-        (void)self->dataPacketSender_->send(std::move(data));
+        self->dataPacketSender_->post(std::move(data));
     };
 
     auto onError = [weak, path](Error err, int32_t originErrorCode) {
@@ -222,7 +225,7 @@ bool Player::Impl::setupDataProvider() noexcept {
                                 self->formatErrorValue(err, originErrorCode, host));
         // 切 Error 会 doStop() 销毁 pipeline_，投递到 ownerThread 串行执行避免并发 UAF
         if (self->sender_) {
-            self->sender_->send(buildEvent(EventType::ReadError));
+            self->sender_->post(buildEvent(EventType::ReadError));
             if (self->ownerThread_) {
                 self->ownerThread_->start();
             }
@@ -233,6 +236,8 @@ bool Player::Impl::setupDataProvider() noexcept {
         LogI("data source complete.");
     };
 
+    // 网络流（HttpStream/HLSStream）需要 owner 线程绑定：open() 内经 StreamFactory 构造函数注入
+    mediaSourceManager_.setOwnerThread(ownerThread_);
     if (!mediaSourceManager_.open(path, std::move(onData), std::move(onError),
                                   std::move(onComplete))) {
         LogE("open media source failed, path:{}", path);
@@ -563,6 +568,7 @@ void Player::Impl::setState(PlayerState state) noexcept {
         return;
     }
 
+    LogI("setState: {} -> {}", static_cast<uint32_t>(oldState), static_cast<uint32_t>(state));
     if (state == PlayerState::Playing) {
         doPlay();
     } else if (state == PlayerState::Pause || state == PlayerState::Completed) {
@@ -608,7 +614,7 @@ void Player::Impl::handleSettingUpdate(Event& t) noexcept {
     }
 }
 
-void Player::Impl::handleEvent(std::list<EventPtr>&& events) noexcept {
+void Player::Impl::handleEvent(std::deque<EventPtr>&& events) noexcept {
     PlayerState changeState = PlayerState::Unknown;
     auto currentState = state();
     bool hasPendingSeek = pendingSeekTarget_.load(std::memory_order_acquire) >= 0.0;
@@ -830,7 +836,7 @@ void Player::Impl::setVolume(float volume) noexcept {
     }
     auto ptr = buildEvent(EventType::UpdateSettingVolume);
     ptr->data = std::make_any<float>(volume);
-    sender_->send(std::move(ptr));
+    sender_->post(std::move(ptr));
     ownerThread_->start();
 }
 
@@ -841,7 +847,7 @@ void Player::Impl::setMute(bool isMute) noexcept {
     }
     auto ptr = buildEvent(EventType::UpdateSettingMute);
     ptr->data = std::make_any<bool>(isMute);
-    sender_->send(std::move(ptr));
+    sender_->post(std::move(ptr));
     ownerThread_->start();
 }
 

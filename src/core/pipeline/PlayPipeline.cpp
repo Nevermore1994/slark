@@ -1082,7 +1082,7 @@ bool PlayPipeline::dispatchAudioFrames(AVFramePtrArray& frames, uint64_t epoch) 
         while (pts > prev &&
                !lastEnqueuedAudioPts_.compare_exchange_weak(prev, pts, std::memory_order_acq_rel)) {
         }
-        (void)audioFrameSender_->send(std::shared_ptr<AVFrame>(std::move(frame)));
+        audioFrameSender_->post(std::shared_ptr<AVFrame>(std::move(frame)));
         enqueued = true;
     }
     return enqueued;
@@ -1113,7 +1113,7 @@ bool PlayPipeline::dispatchVideoFrames(AVFramePtrArray& frames, uint64_t epoch) 
         while (framePts > prev && !lastEnqueuedVideoPts_.compare_exchange_weak(
                                       prev, framePts, std::memory_order_acq_rel)) {
         }
-        (void)videoFrameSender_->send(std::shared_ptr<AVFrame>(std::move(frame)));
+        videoFrameSender_->post(std::shared_ptr<AVFrame>(std::move(frame)));
         enqueued = true;
     }
     return enqueued;
@@ -1129,7 +1129,7 @@ void PlayPipeline::injectEosFrames() noexcept {
         auto audioInfo = std::make_shared<AudioFrameInfo>();
         audioInfo->isEndOfStream = true;
         eos->info = std::move(audioInfo);
-        (void)audioFrameSender_->send(std::move(eos));
+        audioFrameSender_->post(std::move(eos));
     }
     if (videoFrameSender_) {
         auto eos = std::make_shared<AVFrame>(AVFrameType::Video);
@@ -1137,7 +1137,7 @@ void PlayPipeline::injectEosFrames() noexcept {
         auto videoInfo = std::make_shared<VideoFrameInfo>();
         videoInfo->isEndOfStream = true;
         eos->info = std::move(videoInfo);
-        (void)videoFrameSender_->send(std::move(eos));
+        videoFrameSender_->post(std::move(eos));
     }
 }
 

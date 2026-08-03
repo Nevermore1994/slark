@@ -12,6 +12,7 @@
 #include "IStream.h"
 #include "NonCopyable.h"
 #include "StreamFactory.hpp"
+#include "Thread.h"
 
 namespace slark {
 
@@ -26,6 +27,11 @@ class MediaSourceManager : public NonCopyMovable {
     MediaSourceManager() = default;
     ~MediaSourceManager() = default;
 
+    // owner 线程唯一归属方：创建网络流时经 StreamFactory 构造函数注入
+    void setOwnerThread(std::shared_ptr<Thread> ownerThread) noexcept {
+        ownerThread_ = std::move(ownerThread);
+    }
+
     bool open(const std::string& uri,
               StreamDataCallback onData,
               StreamErrorCallback onError,
@@ -39,7 +45,7 @@ class MediaSourceManager : public NonCopyMovable {
     [[nodiscard]] StreamResult<void> seekByTime(double timeSec) noexcept;
     void updateRange(Range range) noexcept;
 
-    [[nodiscard]] const StreamInfo& streamInfo() const noexcept {
+    [[nodiscard]] StreamInfo streamInfo() const noexcept {
         std::lock_guard<std::mutex> lock(mutex_);
         if (stream_) {
             return stream_->info();
@@ -71,6 +77,7 @@ class MediaSourceManager : public NonCopyMovable {
 
  private:
     mutable std::mutex mutex_;
+    std::shared_ptr<Thread> ownerThread_;
     std::shared_ptr<IStream> stream_;
     StreamInfo streamInfo_;
 };

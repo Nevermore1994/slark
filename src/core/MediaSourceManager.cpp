@@ -20,9 +20,14 @@ bool MediaSourceManager::open(const std::string& uri,
     }
 
     auto detectedType = StreamFactory::detectStreamType(uri);
+
+    // 网络流构造时需要 owner 线程注入；本地文件流不依赖
+    if (detectedType == StreamType::Http || detectedType == StreamType::HLS) {
+        SAssert(ownerThread_ != nullptr, "setOwnerThread must be called before open for network streams");
+    }
     LogI("[MediaSourceManager::open] uri={} detectedType={}", uri, static_cast<int>(detectedType));
 
-    auto result = StreamFactory::createStream(uri);
+    auto result = StreamFactory::createStream(uri, ownerThread_);
     if (!result.has_value()) {
         LogE("MediaSourceManager createStream failed: {}", result.error().message);
         return false;

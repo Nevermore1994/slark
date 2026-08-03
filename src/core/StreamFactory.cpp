@@ -13,16 +13,17 @@
 
 namespace slark {
 
-FactoryResult<std::shared_ptr<IStream>> StreamFactory::createStream(const std::string& uri) {
+FactoryResult<std::shared_ptr<IStream>> StreamFactory::createStream(
+    const std::string& uri, std::shared_ptr<Thread> ownerThread) {
     auto type = detectStreamType(uri);
 
     switch (type) {
         case StreamType::File:
             return createFileStream(uri);
         case StreamType::Http:
-            return createHttpStream(uri);
+            return createHttpStream(uri, std::move(ownerThread));
         case StreamType::HLS:
-            return createHLSStream(uri);
+            return createHLSStream(uri, std::move(ownerThread));
         default:
             return std::unexpected(
                 FactoryError{.code = -1, .message = "Unknown stream type for URI: " + uri});
@@ -36,14 +37,14 @@ FactoryResult<std::shared_ptr<IStream>> StreamFactory::createFileStream(
 }
 
 FactoryResult<std::shared_ptr<IStream>> StreamFactory::createHttpStream(
-    [[maybe_unused]] const std::string& uri) {
-    auto stream = std::make_shared<HttpStream>();
+    [[maybe_unused]] const std::string& uri, std::shared_ptr<Thread> ownerThread) {
+    auto stream = std::make_shared<HttpStream>(std::move(ownerThread));
     return stream;
 }
 
 FactoryResult<std::shared_ptr<IStream>> StreamFactory::createHLSStream(
-    [[maybe_unused]] const std::string& uri) {
-    auto stream = std::make_shared<HLSStream>();
+    [[maybe_unused]] const std::string& uri, std::shared_ptr<Thread> ownerThread) {
+    auto stream = std::make_shared<HLSStream>(std::move(ownerThread));
     return stream;
 }
 
