@@ -28,6 +28,9 @@ CheckOptions:
     value: camelBack
   - key: readability-identifier-naming.LocalVariableCase
     value: camelBack
+  # 局部 const 变量按普通变量命名（非全局常量，不加 k 前缀）
+  - key: readability-identifier-naming.LocalConstantCase
+    value: camelBack
   
   # Member variable naming: camelCase with trailing underscore
   - key: readability-identifier-naming.MemberCase
