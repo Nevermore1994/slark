@@ -53,9 +53,9 @@ Task<RequestSetup> setupConnectionAndSend(std::string_view tag,
     if (token.isCancelled()) {
         co_return RequestSetup{nullptr, ErrorInfo{slark::Error::Cancelled}};
     }
-    auto conn = co_await co_acquire_connection(
-        url.host, url.portNumber(), url.scheme, requestInfo.ipVersion,
-        requestInfo.connectTimeout, requestInfo.tlsHandshakeTimeout, &perf, token);
+    auto conn = co_await co_acquire_connection(url.host, url.portNumber(), url.scheme,
+                                               requestInfo.ipVersion, requestInfo.connectTimeout,
+                                               requestInfo.tlsHandshakeTimeout, &perf, token);
     if (!conn || !conn->isValid()) {
         if (token.isCancelled()) {
             co_return RequestSetup{nullptr, ErrorInfo{slark::Error::Cancelled}};
@@ -105,6 +105,95 @@ Task<RequestSetup> setupConnectionAndSend(std::string_view tag,
                                ErrorInfo{mapLegacyErrorToUnified(bodyResult.error())}};
     }
     co_return RequestSetup{std::move(conn), ErrorInfo{}};
+}
+
+// 组装 executeStreamingSingle 的流式解析回调
+HttpResponseParser::Callbacks makeStreamingCallbacks(
+    HttpStatusCode& statusCode,
+    std::unordered_map<std::string, std::string>& pendingHeaders,
+    bool& hasPendingHeader,
+    DataPtr& pendingBodyChunk,
+    bool& hasPendingBody,
+    RequestPerf& perf,
+    bool& parseError,
+    Error& parseErrorCode) {
+    HttpResponseParser::Callbacks callbacks;
+    callbacks.onStatusLine = [&statusCode](HttpStatusCode code, const std::string&) {
+        statusCode = code;
+    };
+    callbacks.onHeaders = [&pendingHeaders, &hasPendingHeader](
+                              std::unordered_map<std::string, std::string>&& headers) {
+        pendingHeaders = std::move(headers);
+        hasPendingHeader = true;
+    };
+    callbacks.onBodyData = [&pendingBodyChunk, &hasPendingBody, &perf](const Byte* data,
+                                                                       size_t size) {
+        if (!pendingBodyChunk) {
+            pendingBodyChunk = std::make_unique<Data>();
+        }
+        pendingBodyChunk->append(ConstByteSpan(data, size));
+        hasPendingBody = true;
+        perf.parser.bodySize += static_cast<int64_t>(size);
+    };
+    callbacks.onError = [&parseError, &parseErrorCode](Error code) {
+        parseError = true;
+        parseErrorCode = code;
+    };
+    return callbacks;
+}
+
+// 流式读取失败分类：超时返回对应 ErrorInfo，其他错误返回 nullopt
+std::optional<ErrorInfo> classifyStreamReadError(Error error,
+                                                 bool overallExpired,
+                                                 RequestPerf& perf) noexcept {
+    if (error != Error::ConnectionTimeout) {
+        return std::nullopt;
+    }
+    perf.transport.timeoutSource =
+        overallExpired ? TimeoutSource::ReadOverall : TimeoutSource::ReadIdle;
+    return ErrorInfo{slark::Error::ConnectionTimeout};
+}
+
+// 组装 executeSingle 的解析回调
+HttpResponseParser::Callbacks makeResponseCallbacks(HttpResponse& response,
+                                                    DataPtr& bodyData,
+                                                    RequestPerf& perf,
+                                                    bool& parseOk) {
+    HttpResponseParser::Callbacks callbacks;
+    callbacks.onStatusLine = [&response](HttpStatusCode code, const std::string& reason) {
+        response.statusCode = code;
+        response.reasonPhrase = reason;
+    };
+    callbacks.onHeaders = [&response](std::unordered_map<std::string, std::string>&& headers) {
+        response.headers = std::move(headers);
+    };
+    callbacks.onBodyData = [&bodyData, &perf](const Byte* data, size_t size) {
+        bodyData->append(ConstByteSpan(data, size));
+        perf.parser.bodySize += static_cast<int64_t>(size);
+    };
+    callbacks.onError = [&parseOk, &perf](Error code) {
+        parseOk = false;
+        perf.parser.parseResult = code;
+    };
+    return callbacks;
+}
+
+// 填充响应错误码与性能统计
+void buildResponse(HttpResponse& response,
+                   const HttpResponseParser& parser,
+                   DataPtr& bodyData,
+                   RequestPerf& perf,
+                   Time::TimePoint requestStart) {
+    response.body = bodyData->empty() ? nullptr : std::move(bodyData);
+    if (parser.isHttpError()) {
+        response.error =
+            ErrorInfo{slark::Error::HttpError, static_cast<int32_t>(response.statusCode)};
+    } else {
+        response.error = ErrorInfo{slark::Error::Success};
+    }
+    auto requestEnd = Time::nowTimeStamp();
+    perf.totalRequestTimeMs = (requestEnd - requestStart).toMilliSeconds().count();
+    response.perf = perf;
 }
 
 // 判定 chunk 是否触发重定向，返回下一个请求；不触发时返回 nullopt
@@ -196,8 +285,8 @@ Task<ResponseResult> HttpProcessor::executeSingle(const RequestInfo& requestInfo
         co_return std::unexpected(parsed.error);
     }
 
-    auto setup = co_await setupConnectionAndSend("executeSingle", requestInfo, *parsed.url, perf,
-                                                 token);
+    auto setup =
+        co_await setupConnectionAndSend("executeSingle", requestInfo, *parsed.url, perf, token);
     if (setup.hasError()) {
         co_return std::unexpected(setup.error);
     }
@@ -207,24 +296,7 @@ Task<ResponseResult> HttpProcessor::executeSingle(const RequestInfo& requestInfo
     DataPtr bodyData = std::make_unique<Data>();
     bool parseOk = true;
 
-    HttpResponseParser::Callbacks callbacks;
-    callbacks.onStatusLine = [&response](HttpStatusCode code, const std::string& reason) {
-        response.statusCode = code;
-        response.reasonPhrase = reason;
-    };
-    callbacks.onHeaders = [&response](std::unordered_map<std::string, std::string>&& headers) {
-        response.headers = std::move(headers);
-    };
-    callbacks.onBodyData = [&bodyData, &perf](const Byte* data, size_t size) {
-        bodyData->append(ConstByteSpan(data, size));
-        perf.parser.bodySize += static_cast<int64_t>(size);
-    };
-    callbacks.onError = [&parseOk, &perf](Error code) {
-        parseOk = false;
-        perf.parser.parseResult = code;
-    };
-
-    HttpResponseParser parser(std::move(callbacks));
+    HttpResponseParser parser(makeResponseCallbacks(response, bodyData, perf, parseOk));
     parser.setPerf(&perf);
     parser.setRequestMethod(requestInfo.methodType);
     auto streamResult =
@@ -254,17 +326,7 @@ Task<ResponseResult> HttpProcessor::executeSingle(const RequestInfo& requestInfo
         conn->close();
     }
 
-    response.body = bodyData->empty() ? nullptr : std::move(bodyData);
-    if (parser.isHttpError()) {
-        response.error =
-            ErrorInfo{slark::Error::HttpError, static_cast<int32_t>(response.statusCode)};
-    } else {
-        response.error = ErrorInfo{slark::Error::Success};
-    }
-
-    auto requestEnd = Time::nowTimeStamp();
-    perf.totalRequestTimeMs = (requestEnd - requestStart).toMilliSeconds().count();
-    response.perf = perf;
+    buildResponse(response, parser, bodyData, perf, requestStart);
 
     LogI("[HttpProcessor::executeSingle] done: status={} bodySize={} elapsedMs={} url={}",
          static_cast<int>(response.statusCode), perf.parser.bodySize, perf.totalRequestTimeMs,
@@ -274,7 +336,7 @@ Task<ResponseResult> HttpProcessor::executeSingle(const RequestInfo& requestInfo
 }
 
 AsyncGenerator<StreamChunk> HttpProcessor::executeStreamingSingle(const RequestInfo& requestInfo,
-                                                                   CancellationToken token) {
+                                                                  CancellationToken token) {
     RequestPerf perf;
     perf.host = requestInfo.url;
 
@@ -319,30 +381,9 @@ AsyncGenerator<StreamChunk> HttpProcessor::executeStreamingSingle(const RequestI
     bool parseError = false;
     Error parseErrorCode = slark::Error::Success;
 
-    HttpResponseParser::Callbacks callbacks;
-    callbacks.onStatusLine = [&statusCode](HttpStatusCode code, const std::string&) {
-        statusCode = code;
-    };
-    callbacks.onHeaders = [&pendingHeaders, &hasPendingHeader](
-                              std::unordered_map<std::string, std::string>&& headers) {
-        pendingHeaders = std::move(headers);
-        hasPendingHeader = true;
-    };
-    callbacks.onBodyData = [&pendingBodyChunk, &hasPendingBody, &perf](const Byte* data,
-                                                                       size_t size) {
-        if (!pendingBodyChunk) {
-            pendingBodyChunk = std::make_unique<Data>();
-        }
-        pendingBodyChunk->append(ConstByteSpan(data, size));
-        hasPendingBody = true;
-        perf.parser.bodySize += static_cast<int64_t>(size);
-    };
-    callbacks.onError = [&parseError, &parseErrorCode](Error code) {
-        parseError = true;
-        parseErrorCode = code;
-    };
-
-    HttpResponseParser parser(std::move(callbacks));
+    HttpResponseParser parser(makeStreamingCallbacks(statusCode, pendingHeaders, hasPendingHeader,
+                                                     pendingBodyChunk, hasPendingBody, perf,
+                                                     parseError, parseErrorCode));
     parser.setPerf(&perf);
     parser.setRequestMethod(requestInfo.methodType);
 
@@ -386,23 +427,19 @@ AsyncGenerator<StreamChunk> HttpProcessor::executeStreamingSingle(const RequestI
                 co_return;
             }
             // 区分超时和其他错误：超时不应被当作 EOF
-            auto error = readResult.error();
-            if (error == Error::ConnectionTimeout) {
-                if (overallDeadline.isExpired()) {
-                    perf.transport.timeoutSource = TimeoutSource::ReadOverall;
-                } else {
-                    perf.transport.timeoutSource = TimeoutSource::ReadIdle;
-                }
+            auto errorInfo =
+                classifyStreamReadError(readResult.error(), overallDeadline.isExpired(), perf);
+            if (errorInfo.has_value()) {
                 LogE("[HttpProcessor::executeStreamingSingle] read timeout: timeoutSource={} "
                      "bodySize={} url={}",
                      static_cast<int>(perf.transport.timeoutSource), perf.parser.bodySize,
                      requestInfo.url);
-                co_yield StreamChunk::makeError(ErrorInfo{slark::Error::ConnectionTimeout});
+                co_yield StreamChunk::makeError(std::move(*errorInfo));
                 co_return;
             }
             // 其他错误（连接重置、断开）异常断连，不应作为正常 EOF
             LogE("[HttpProcessor::executeStreamingSingle] read error: err={} bodySize={} url={}",
-                 static_cast<int>(error), perf.parser.bodySize, requestInfo.url);
+                 static_cast<int>(readResult.error()), perf.parser.bodySize, requestInfo.url);
             co_yield StreamChunk::makeError(ErrorInfo{slark::Error::ConnectionReset});
             co_return;
         }
@@ -437,8 +474,9 @@ AsyncGenerator<StreamChunk> HttpProcessor::executeStreamingSingle(const RequestI
 
         // 限频进度日志：每累计 256KB 打一次
         if (perf.parser.bodySize - lastLoggedSize >= streamProgressLogBytes()) {
-            LogI("[HttpProcessor::executeStreamingSingle] progress: bodySize={} recvLoops={} url={}",
-                 perf.parser.bodySize, recvLoops, requestInfo.url);
+            LogI(
+                "[HttpProcessor::executeStreamingSingle] progress: bodySize={} recvLoops={} url={}",
+                perf.parser.bodySize, recvLoops, requestInfo.url);
             lastLoggedSize = perf.parser.bodySize;
         }
 
@@ -493,8 +531,8 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
             if (!chunk.has_value()) {
                 co_return;
             }
-            if (auto next = extractRedirectTarget(redirectPolicy_, *chunk, currentInfo,
-                                                  redirectCount)) {
+            if (auto next =
+                    extractRedirectTarget(redirectPolicy_, *chunk, currentInfo, redirectCount)) {
                 currentInfo = std::move(*next);
                 redirectCount++;
                 LogI("[HttpProcessor::processStreaming] redirect to {} count={}", currentInfo.url,

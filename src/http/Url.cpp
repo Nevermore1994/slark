@@ -23,6 +23,94 @@ bool isValidScheme(std::string_view scheme) noexcept {
     });
 }
 
+namespace {
+
+std::string_view extractComponents(std::string_view view,
+                                   std::string& fragment,
+                                   std::string& query,
+                                   std::string& path,
+                                   std::string& userInfo) noexcept {
+    if (auto fragmentPos = view.find('#'); fragmentPos != std::string_view::npos) {
+        fragment = view.substr(fragmentPos + 1);
+        view = view.substr(0, fragmentPos);
+    }
+    if (auto queryPos = view.find('?'); queryPos != std::string_view::npos) {
+        query = view.substr(queryPos + 1);
+        view = view.substr(0, queryPos);
+    }
+    if (auto pathPos = view.find('/'); pathPos != std::string_view::npos) {
+        path = view.substr(pathPos);
+        view = view.substr(0, pathPos);
+    } else {
+        path = "/";
+    }
+    if (auto userInfoPos = view.find('@'); userInfoPos != std::string_view::npos) {
+        userInfo = view.substr(0, userInfoPos);
+        view = view.substr(userInfoPos + 1);
+    }
+    return view;
+}
+
+// 解析 host/port（支持 IPv6 字面量），返回 false 时 error 已设置
+bool parseHostPort(std::string_view view,
+                   bool https,
+                   std::string& host,
+                   std::string& port,
+                   UrlError& error) noexcept {
+    if (!view.empty() && view[0] == '[') {
+        auto closeBracket = view.find(']');
+        if (closeBracket == std::string_view::npos) {
+            error = UrlError::InvalidIPv6;
+            return false;
+        }
+        host = view.substr(1, closeBracket - 1);
+        auto afterBracket = view.substr(closeBracket + 1);
+        if (!afterBracket.empty() && afterBracket[0] == ':') {
+            port = afterBracket.substr(1);
+        } else if (afterBracket.empty()) {
+            port = https ? kHttpsDefaultPort : kHttpDefaultPort;
+        } else {
+            error = UrlError::InvalidIPv6;
+            return false;
+        }
+    } else {
+        auto portPos = view.rfind(':');
+        if (portPos != std::string_view::npos) {
+            port = view.substr(portPos + 1);
+            view = view.substr(0, portPos);
+        } else {
+            port = https ? kHttpsDefaultPort : kHttpDefaultPort;
+        }
+        host = view;
+    }
+    if (host.empty()) {
+        error = UrlError::InvalidHost;
+        return false;
+    }
+    return true;
+}
+
+// port 数值范围校验，返回 false 时 error 已设置
+bool validatePort(std::string_view port, UrlError& error) noexcept {
+    if (port.empty()) {
+        return true;
+    }
+    for (char c : port) {
+        if (!std::isdigit(static_cast<unsigned char>(c))) {
+            error = UrlError::InvalidPort;
+            return false;
+        }
+    }
+    auto portNumResult = StringUtil::fromChars<int32_t>(port);
+    if (!portNumResult || *portNumResult < 0 || *portNumResult > 65535) {
+        error = UrlError::PortOutOfRange;
+        return false;
+    }
+    return true;
+}
+
+}  // namespace
+
 void Url::parse(std::string_view url) noexcept {
     rawUrl_ = url;
 
@@ -56,81 +144,13 @@ void Url::parse(std::string_view url) noexcept {
         return;
     }
 
-    // Extract fragment
-    if (auto fragmentPos = view.find('#'); fragmentPos != std::string_view::npos) {
-        fragment = view.substr(fragmentPos + 1);
-        view = view.substr(0, fragmentPos);
-    }
-
-    // Extract query
-    if (auto queryPos = view.find('?'); queryPos != std::string_view::npos) {
-        query = view.substr(queryPos + 1);
-        view = view.substr(0, queryPos);
-    }
-
-    // Extract path
-    if (auto pathPos = view.find('/'); pathPos != std::string_view::npos) {
-        path = view.substr(pathPos);
-        view = view.substr(0, pathPos);
-    } else {
-        path = "/";
-    }
-
-    // Extract user info
-    if (auto userInfoPos = view.find('@'); userInfoPos != std::string_view::npos) {
-        userInfo = view.substr(0, userInfoPos);
-        view = view.substr(userInfoPos + 1);
-    }
-
-    // IPv6 地址处理
-    bool isIPv6 = !view.empty() && view[0] == '[';
-    if (isIPv6) {
-        auto closeBracket = view.find(']');
-        if (closeBracket == std::string_view::npos) {
-            error_ = UrlError::InvalidIPv6;
-            return;
-        }
-        host = view.substr(1, closeBracket - 1);
-        auto afterBracket = view.substr(closeBracket + 1);
-        if (!afterBracket.empty() && afterBracket[0] == ':') {
-            port = afterBracket.substr(1);
-        } else if (afterBracket.empty()) {
-            port = isHttps() ? kHttpsDefaultPort : kHttpDefaultPort;
-        } else {
-            error_ = UrlError::InvalidIPv6;
-            return;
-        }
-    } else {
-        auto portPos = view.rfind(':');
-        if (portPos != std::string_view::npos) {
-            port = view.substr(portPos + 1);
-            view = view.substr(0, portPos);
-        } else {
-            port = isHttps() ? kHttpsDefaultPort : kHttpDefaultPort;
-        }
-        host = view;
-    }
-
-    if (host.empty()) {
-        error_ = UrlError::InvalidHost;
+    view = extractComponents(view, fragment, query, path, userInfo);
+    if (!parseHostPort(view, isHttps(), host, port, error_)) {
         return;
     }
-
-    // port 数值范围校验
-    if (!port.empty()) {
-        for (char c : port) {
-            if (!std::isdigit(static_cast<unsigned char>(c))) {
-                error_ = UrlError::InvalidPort;
-                return;
-            }
-        }
-        auto portNumResult = StringUtil::fromChars<int32_t>(port);
-        if (!portNumResult || *portNumResult < 0 || *portNumResult > 65535) {
-            error_ = UrlError::PortOutOfRange;
-            return;
-        }
+    if (!validatePort(port, error_)) {
+        return;
     }
-
     error_ = UrlError::None;
 }
 

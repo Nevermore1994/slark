@@ -119,33 +119,33 @@ class RedirectPolicy {
             return result;
         }
 
-        // scheme
+        appendAuthority(result, url);
+        appendRelativePath(result, url, location);
+        return result;
+    }
+
+    static void appendAuthority(std::string& result, const Url& url) {
         result.append(url.scheme);
         result.append("://");
-
-        // userInfo（如果有）
         if (!url.userInfo.empty()) {
             result.append(url.userInfo);
             result.append("@");
         }
-
-        // host
         result.append(url.host);
-
-        // port（非默认端口）
         if ((url.isHttp() && url.port != "80") || (url.isHttps() && url.port != "443")) {
             result.append(":");
             result.append(url.port);
         }
+    }
 
-        // 处理查询字符串相对路径（?query）
+    static void appendRelativePath(std::string& result, const Url& url, std::string_view location) {
+        // 查询字符串相对路径
         if (location.starts_with('?')) {
             result.append(url.path.empty() ? "/" : url.path);
             result.append(location);
-            return result;
+            return;
         }
-
-        // 处理片段相对路径（#fragment）
+        // 片段相对路径
         if (location.starts_with('#')) {
             result.append(url.path.empty() ? "/" : url.path);
             if (!url.query.empty()) {
@@ -153,26 +153,21 @@ class RedirectPolicy {
                 result.append(url.query);
             }
             result.append(location);
-            return result;
+            return;
         }
-
-        // 路径处理
         if (location.starts_with('/')) {
-            // 绝对路径
             result.append(location);
-        } else {
-            // 相对路径，基于原路径计算
-            std::string basePath = url.path.empty() ? "/" : url.path;
-            auto lastSlash = basePath.rfind('/');
-            if (lastSlash != std::string::npos) {
-                result.append(basePath.substr(0, lastSlash + 1));
-            } else {
-                result.append("/");
-            }
-            result.append(location);
+            return;
         }
-
-        return result;
+        // 相对路径，基于原路径计算
+        std::string basePath = url.path.empty() ? "/" : url.path;
+        auto lastSlash = basePath.rfind('/');
+        if (lastSlash != std::string::npos) {
+            result.append(basePath.substr(0, lastSlash + 1));
+        } else {
+            result.append("/");
+        }
+        result.append(location);
     }
 };
 
