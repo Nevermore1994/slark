@@ -720,65 +720,79 @@ void Player::Impl::handlePipelineEvent(PipelineEvent event,
             }
             break;
         case PipelineEvent::SeekCompleted:
-            if (auto seekRequest = seekRequest_.load()) {
-                if (seekRequest->seekEpoch != pipeline_->currentSeekEpoch()) {
-                    break;
-                }
-                LogI("seek done, cost time:{}",
-                     (Time::nowTimeStamp() - seekRequest->startTime).toMilliSeconds());
-                seekRequest_.reset();
-                if (seekRequest->isAccurate) {
-                    seekJustCompleted_.store(true, std::memory_order_release);
-                }
-                notifyPlayerEvent(PlayerEvent::SeekDone);
-            }
-            resumeFromBuffering();
+            handleSeekCompleted();
             break;
         case PipelineEvent::AudioDecoderFailed:
-        case PipelineEvent::VideoDecoderFailed: {
-            const auto err = error.has_value() ? error->error : Error::PipelineDecodeError;
-            LogE("decoder init failed, error:{}", static_cast<uint32_t>(err));
-            notifyPlayerEvent(PlayerEvent::OnError, std::to_string(static_cast<uint32_t>(err)));
-            setState(PlayerState::Error);
+        case PipelineEvent::VideoDecoderFailed:
+            handleDecoderFailed(std::move(error));
             break;
-        }
         case PipelineEvent::ReadError:
-        case PipelineEvent::DecodeError: {
-            // 如果已经在停止或出错状态，忽略此类错误（可能是 stop 过程中触发的）
-            auto currentState = state();
-            if (currentState == PlayerState::Stop || currentState == PlayerState::Error) {
-                LogW("pipeline error ignored, event:{}, error:{}, current state:{}",
-                     static_cast<uint32_t>(event),
-                     error.has_value() ? static_cast<uint32_t>(error->error) : 0,
-                     static_cast<uint32_t>(currentState));
-                break;
-            }
-            const auto err = error.has_value() ? error->error : Error::PipelineDecodeError;
-            LogE("pipeline error, event:{}, error:{}", static_cast<uint32_t>(event),
-                 static_cast<uint32_t>(err));
-            notifyPlayerEvent(PlayerEvent::OnError, std::to_string(static_cast<uint32_t>(err)));
-            setState(PlayerState::Error);
+        case PipelineEvent::DecodeError:
+            handlePipelineError(event, std::move(error));
             break;
+        case PipelineEvent::RenderEnd:
+            handleRenderEnd();
+            break;
+    }
+}
+
+void Player::Impl::handleSeekCompleted() noexcept {
+    if (auto seekRequest = seekRequest_.load()) {
+        if (seekRequest->seekEpoch != pipeline_->currentSeekEpoch()) {
+            return;
         }
-        case PipelineEvent::RenderEnd: {
-            LogI("render end, playback completed");
-            notifyPlayedTime(true);
-            notifyPlayerEvent(PlayerEvent::PlayEnd);
-            bool isLoop = false;
-            params_.withReadLock([&isLoop](auto& p) {
-                if (p) {
-                    isLoop = p->setting.isLoop;
-                }
-            });
-            if (isLoop) {
-                doLoop();
-            } else {
-                setState(PlayerState::Completed);
-                if (ownerThread_) {
-                    ownerThread_->pause();
-                }
-            }
-            break;
+        LogI("seek done, cost time:{}",
+             (Time::nowTimeStamp() - seekRequest->startTime).toMilliSeconds());
+        seekRequest_.reset();
+        if (seekRequest->isAccurate) {
+            seekJustCompleted_.store(true, std::memory_order_release);
+        }
+        notifyPlayerEvent(PlayerEvent::SeekDone);
+    }
+    resumeFromBuffering();
+}
+
+void Player::Impl::handleDecoderFailed(std::optional<PipelineError> error) noexcept {
+    const auto err = error.has_value() ? error->error : Error::PipelineDecodeError;
+    LogE("decoder init failed, error:{}", static_cast<uint32_t>(err));
+    notifyPlayerEvent(PlayerEvent::OnError, std::to_string(static_cast<uint32_t>(err)));
+    setState(PlayerState::Error);
+}
+
+void Player::Impl::handlePipelineError(PipelineEvent event,
+                                       std::optional<PipelineError> error) noexcept {
+    // 如果已经在停止或出错状态，忽略此类错误（可能是 stop 过程中触发的）
+    auto currentState = state();
+    if (currentState == PlayerState::Stop || currentState == PlayerState::Error) {
+        LogW("pipeline error ignored, event:{}, error:{}, current state:{}",
+             static_cast<uint32_t>(event),
+             error.has_value() ? static_cast<uint32_t>(error->error) : 0,
+             static_cast<uint32_t>(currentState));
+        return;
+    }
+    const auto err = error.has_value() ? error->error : Error::PipelineDecodeError;
+    LogE("pipeline error, event:{}, error:{}", static_cast<uint32_t>(event),
+         static_cast<uint32_t>(err));
+    notifyPlayerEvent(PlayerEvent::OnError, std::to_string(static_cast<uint32_t>(err)));
+    setState(PlayerState::Error);
+}
+
+void Player::Impl::handleRenderEnd() noexcept {
+    LogI("render end, playback completed");
+    notifyPlayedTime(true);
+    notifyPlayerEvent(PlayerEvent::PlayEnd);
+    bool isLoop = false;
+    params_.withReadLock([&isLoop](auto& p) {
+        if (p) {
+            isLoop = p->setting.isLoop;
+        }
+    });
+    if (isLoop) {
+        doLoop();
+    } else {
+        setState(PlayerState::Completed);
+        if (ownerThread_) {
+            ownerThread_->pause();
         }
     }
 }

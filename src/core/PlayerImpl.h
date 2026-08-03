@@ -79,6 +79,14 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
 
     void handlePipelineEvent(PipelineEvent event, std::optional<PipelineError> error) noexcept;
 
+    void handleSeekCompleted() noexcept;
+
+    void handleDecoderFailed(std::optional<PipelineError> error) noexcept;
+
+    void handlePipelineError(PipelineEvent event, std::optional<PipelineError> error) noexcept;
+
+    void handleRenderEnd() noexcept;
+
     void preparePlayerInfo() noexcept;
 
     void process() noexcept;
