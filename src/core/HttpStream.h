@@ -17,6 +17,12 @@
 
 namespace slark {
 
+// 服务器 Range 能力，基于实际响应行为判定，而非响应头声明：
+//   Unknown    未收到任何响应，能力未知
+//   Supported  收到 206 + Content-Range 匹配（行为证明）
+//   Unsupported收到 200 全量（服务器忽略 Range）
+enum class RangeCapability : uint8_t { Unknown, Supported, Unsupported };
+
 class HttpStream : public IStream, public std::enable_shared_from_this<HttpStream> {
  public:
     // ownerThread：Stream 状态唯一归属线程（由 MediaSourceManager 经 StreamFactory 注入）
@@ -84,8 +90,16 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
     void handleData(http::StreamChunk&& chunk) noexcept;
     void handleFinal() noexcept;
 
-    // C-10：Range 响应校验（owner 线程，header 到达时）
+    // C-10：Range 响应校验（owner 线程，header 到达时）。
+    // 负责将服务器 Range 能力收敛为单一事实源：206+Content-Range → Supported，
+    // 200 全量 → Unsupported（继续顺序传输），其余异常 → 报错。
     bool validateRangeResponse(const http::StreamChunk& chunk) noexcept;
+
+    // 统一 Range 校验失败路径：记录错误、上报 onError、进入 Error 状态
+    bool failRangeValidation(slark::Error error, int32_t originCode, std::string detail) noexcept;
+
+    // 同步更新 RangeCapability 与 info_.isSeekable（owner 线程）
+    void updateRangeCapability(RangeCapability capability) noexcept;
 
     // 4.1.3.1：cancel 后等待 task 到达 final suspend，超时后保留 frame
     void cancelCurrentOperation(uint64_t timeoutMs) noexcept;
@@ -115,7 +129,7 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
     OpenParams params_;
     Range readRange_;
     uint64_t contentLength_ = 0;
-    bool acceptRanges_ = false;
+    RangeCapability rangeCapability_{RangeCapability::Unknown};
 
     StreamInfo info_;
     mutable std::mutex infoMutex_;  // 保护 info_ 快照（外部线程读）

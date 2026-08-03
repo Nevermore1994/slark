@@ -154,11 +154,11 @@ text
 旧请求回调修改新请求状态
 当前 HttpStream::seek() 会取消并 reset 请求，然后移动销毁 streamTask_：
 
-HttpStream.cppL144-L168
+HttpStream.cppL158-L179
 auto HttpStream::seek(uint64_t position) -> StreamResult<void> {
-    if (!acceptRanges_) {
-        LogW("[HttpStream::seek] reject, server does not advertise Accept-Ranges, pos={}",
-             position);
+    if (rangeCapability_ != RangeCapability::Supported) {
+        LogW("[HttpStream::seek] reject, server does not support Range, capability={} pos={}",
+             static_cast<int>(rangeCapability_), position);
         return std::unexpected(Error::StreamNotReady);
     }
 

@@ -5,6 +5,7 @@
 #include "HttpStream.h"
 
 #include <chrono>
+#include <format>
 #include <thread>
 
 #include "CoroutineScheduler.hpp"
@@ -158,9 +159,9 @@ void HttpStream::pause() noexcept {
 
 auto HttpStream::seek(uint64_t position) -> StreamResult<void> {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!acceptRanges_) {
-        LogW("[HttpStream::seek] reject, server does not advertise Accept-Ranges, pos={}",
-             position);
+    if (rangeCapability_ != RangeCapability::Supported) {
+        LogW("[HttpStream::seek] reject, server does not support Range, capability={} pos={}",
+             static_cast<int>(rangeCapability_), position);
         return std::unexpected(Error::StreamNotReady);
     }
 
@@ -252,19 +253,17 @@ void HttpStream::handleError(const http::ErrorInfo& error) noexcept {
     state_ = StreamState::Error;
 }
 
+void HttpStream::updateRangeCapability(RangeCapability capability) noexcept {
+    rangeCapability_ = capability;
+    std::lock_guard<std::mutex> lock(infoMutex_);
+    info_.isSeekable = capability == RangeCapability::Supported;
+}
+
 void HttpStream::handleHeader(const http::StreamChunk& chunk) noexcept {
+    // Range 能力判定收敛到 validateRangeResponse（以协议行为为准），
+    // 此处只解析元数据，不再依赖 Accept-Ranges 头。
     if (!validateRangeResponse(chunk)) {
         return;
-    }
-
-    auto it = chunk.headers.find("accept-ranges");
-    if (it != chunk.headers.end() && it->second == "bytes") {
-        acceptRanges_ = true;
-        std::lock_guard<std::mutex> lock(infoMutex_);
-        info_.isSeekable = true;
-    } else {
-        std::lock_guard<std::mutex> lock(infoMutex_);
-        info_.isSeekable = false;
     }
 
     auto lengthIt = chunk.headers.find("content-length");
@@ -291,90 +290,86 @@ void HttpStream::handleHeader(const http::StreamChunk& chunk) noexcept {
         }
     }
 
-    LogI("[HttpStream::handleHeader] status={} acceptRanges={} contentLength={} totalSize={} "
+    LogI("[HttpStream::handleHeader] status={} rangeCapability={} contentLength={} totalSize={} "
          "url={}",
-         static_cast<int>(chunk.statusCode), acceptRanges_ ? "bytes" : "none", contentLength_,
+         static_cast<int>(chunk.statusCode), static_cast<int>(rangeCapability_), contentLength_,
          info_.totalSize, params_.uri);
 }
 
+bool HttpStream::failRangeValidation(slark::Error error,
+                                     int32_t originCode,
+                                     std::string detail) noexcept {
+    LogW("[HttpStream::validateRangeResponse] {}", detail);
+    lastErrorOriginCode_.store(originCode, std::memory_order_release);
+    if (params_.onError) {
+        params_.onError(error, originCode);
+    }
+    isRunning_ = false;
+    state_ = StreamState::Error;
+    return false;
+}
+
 bool HttpStream::validateRangeResponse(const http::StreamChunk& chunk) noexcept {
+    const auto kStatus = chunk.statusCode;
+
+    // 请求被明确拒绝（416）：目标超出资源范围
+    if (kStatus == http::HttpStatusCode::RangeNotSatisfiable) {
+        return failRangeValidation(
+            Error::OutOfRange, 416,
+            std::format("416, requested range not satisfiable: {}", readRange_.toString()));
+    }
+
+    // 服务器忽略 Range 返回 200 全量：
+    // - 请求从 0 开始（或未带 Range）：数据仍从 0 顺序提供，可降级播放
+    // - 请求非 0 位置：全量数据从 0 开始与预期错位，视为错误
+    if (kStatus != http::HttpStatusCode::PartialContent) {
+        const bool startFromZero = !readRange_.isValid() || readRange_.start() == 0;
+        if (!startFromZero) {
+            return failRangeValidation(
+                Error::StreamNotReady, static_cast<int32_t>(kStatus),
+                std::format("server ignored Range, status={} requested={}",
+                            static_cast<int>(kStatus), readRange_.toString()));
+        }
+        LogW("[HttpStream::validateRangeResponse] server ignored Range, fallback sequential, "
+             "status={}",
+             static_cast<int>(kStatus));
+        updateRangeCapability(RangeCapability::Unsupported);
+        return true;
+    }
+
+    // 206：服务器实际接受了 Range 请求，能力以行为为准（部分服务器 206 响应省略 Accept-Ranges 头）
+    updateRangeCapability(RangeCapability::Supported);
+
     if (!readRange_.isValid()) {
         return true;
     }
 
-    const auto kStatus = chunk.statusCode;
-    if (kStatus == http::HttpStatusCode::RangeNotSatisfiable) {
-        LogW("[HttpStream::validateRangeResponse] 416, requested range not satisfiable: {}",
-             readRange_.toString());
-        lastErrorOriginCode_.store(416, std::memory_order_release);
-        if (params_.onError) {
-            params_.onError(Error::OutOfRange, 416);
-        }
-        isRunning_ = false;
-        state_ = StreamState::Error;
-        return false;
-    }
-
-    if (kStatus != http::HttpStatusCode::PartialContent) {
-        LogW("[HttpStream::validateRangeResponse] server ignored Range, status={} requested={}",
-             static_cast<int>(kStatus), readRange_.toString());
-        lastErrorOriginCode_.store(static_cast<int32_t>(kStatus), std::memory_order_release);
-        if (params_.onError) {
-            params_.onError(Error::StreamNotReady, static_cast<int32_t>(kStatus));
-        }
-        isRunning_ = false;
-        state_ = StreamState::Error;
-        return false;
-    }
-
     auto rangeIt = chunk.headers.find("content-range");
     if (rangeIt == chunk.headers.end()) {
-        LogW("[HttpStream::validateRangeResponse] 206 without Content-Range");
-        lastErrorOriginCode_.store(0, std::memory_order_release);
-        if (params_.onError) {
-            params_.onError(Error::StreamInvalidData, 0);
-        }
-        isRunning_ = false;
-        state_ = StreamState::Error;
-        return false;
+        return failRangeValidation(Error::StreamInvalidData, 0, "206 without Content-Range");
     }
 
     const auto& rangeStr = rangeIt->second;
     auto startPos = rangeStr.find("bytes ");
     if (startPos == std::string::npos) {
-        LogW("[HttpStream::validateRangeResponse] malformed Content-Range: {}", rangeStr);
-        lastErrorOriginCode_.store(0, std::memory_order_release);
-        if (params_.onError) {
-            params_.onError(Error::StreamInvalidData, 0);
-        }
-        isRunning_ = false;
-        state_ = StreamState::Error;
-        return false;
+        return failRangeValidation(
+            Error::StreamInvalidData, 0,
+            std::format("malformed Content-Range: {}", rangeStr));
     }
     startPos += 6;
     auto dashPos = rangeStr.find('-', startPos);
     if (dashPos == std::string::npos) {
-        LogW("[HttpStream::validateRangeResponse] malformed Content-Range: {}", rangeStr);
-        lastErrorOriginCode_.store(0, std::memory_order_release);
-        if (params_.onError) {
-            params_.onError(Error::StreamInvalidData, 0);
-        }
-        isRunning_ = false;
-        state_ = StreamState::Error;
-        return false;
+        return failRangeValidation(
+            Error::StreamInvalidData, 0,
+            std::format("malformed Content-Range: {}", rangeStr));
     }
     auto startResult =
         StringUtil::fromChars<uint64_t>(rangeStr.substr(startPos, dashPos - startPos));
     if (!startResult || *startResult != readRange_.start()) {
-        LogW("[HttpStream::validateRangeResponse] Content-Range start mismatch: got={} expect={}",
-             startResult ? *startResult : 0, readRange_.start());
-        lastErrorOriginCode_.store(0, std::memory_order_release);
-        if (params_.onError) {
-            params_.onError(Error::StreamInvalidData, 0);
-        }
-        isRunning_ = false;
-        state_ = StreamState::Error;
-        return false;
+        return failRangeValidation(
+            Error::StreamInvalidData, 0,
+            std::format("Content-Range start mismatch: got={} expect={}",
+                        startResult ? *startResult : 0, readRange_.start()));
     }
     return true;
 }

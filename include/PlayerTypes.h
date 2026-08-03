@@ -66,6 +66,7 @@ struct PlayerInfo {
     bool isValid = false;
     bool hasVideo = false;
     bool hasAudio = false;
+    bool isSeekable = true;
     double duration = 0;
 };
 

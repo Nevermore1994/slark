@@ -38,9 +38,10 @@ class MockHttpServer {
         stop();
     }
 
-    bool start(bool honorRange = true, int32_t chunkDelayMs = 0) {
+    bool start(bool honorRange = true, int32_t chunkDelayMs = 0, bool emitAcceptRanges = true) {
         honorRange_ = honorRange;
         chunkDelayMs_ = chunkDelayMs;
+        emitAcceptRanges_ = emitAcceptRanges;
         listenFd_ = ::socket(AF_INET, SOCK_STREAM, 0);
         if (listenFd_ < 0) {
             return false;
@@ -166,14 +167,15 @@ class MockHttpServer {
             uint64_t end = kMockBodySize - 1;
             uint64_t bodyLen = kMockBodySize - rangeStart;
             std::string header = "HTTP/1.1 206 Partial Content\r\n"
-                                 "Content-Type: application/octet-stream\r\n"
-                                 "Accept-Ranges: bytes\r\n"
-                                 "Content-Range: bytes " +
-                                 std::to_string(rangeStart) + "-" + std::to_string(end) + "/" +
-                                 std::to_string(kMockBodySize) + "\r\n"
-                                 "Content-Length: " +
-                                 std::to_string(bodyLen) + "\r\n"
-                                 "Connection: close\r\n\r\n";
+                                 "Content-Type: application/octet-stream\r\n";
+            if (emitAcceptRanges_) {
+                header += "Accept-Ranges: bytes\r\n";
+            }
+            header += "Content-Range: bytes " + std::to_string(rangeStart) + "-" +
+                      std::to_string(end) + "/" + std::to_string(kMockBodySize) + "\r\n"
+                      "Content-Length: " +
+                      std::to_string(bodyLen) + "\r\n"
+                      "Connection: close\r\n\r\n";
             body.reserve(static_cast<size_t>(bodyLen));
             for (uint64_t i = 0; i < bodyLen; ++i) {
                 body.push_back(static_cast<char>(i % 251));
@@ -200,6 +202,7 @@ class MockHttpServer {
     int listenFd_ = -1;
     int port_ = 0;
     bool honorRange_ = true;
+    bool emitAcceptRanges_ = true;
     int32_t chunkDelayMs_ = 0;
     std::atomic<bool> stopped_{false};
     std::thread thread_;
@@ -299,6 +302,90 @@ TEST_F(HttpStreamTest, H2_SeekAfterHeaderSetsNewRange) {
     EXPECT_EQ(stream_->position(), 32768u);
     EXPECT_TRUE(waitUntil([&]() { return stream_->position() >= kMockBodySize; }));
     EXPECT_EQ(stream_->state(), StreamState::Completed);
+}
+
+TEST_F(HttpStreamTest, H2b_SeekWorksWhen206OmitsAcceptRangesHeader) {
+    // 回归：某些服务器 206 响应省略 Accept-Ranges 头（仅 200 响应携带），
+    // 206 + Content-Range 本身即证明支持 Range，seek 不应被拒绝。
+    MockHttpServer omitHeaderServer;
+    ASSERT_TRUE(omitHeaderServer.start(/*honorRange=*/true, /*chunkDelayMs=*/0,
+                                       /*emitAcceptRanges=*/false));
+
+    auto params = makeParams();
+    params.uri = omitHeaderServer.url();
+    std::atomic<uint64_t> totalBytes{0};
+    params.onData = [&totalBytes](DataChunk chunk) {
+        totalBytes.fetch_add(chunk.size(), std::memory_order_relaxed);
+    };
+
+    auto stream = std::make_shared<HttpStream>(ownerThread_);
+    ASSERT_TRUE(stream->open(params).has_value());
+    stream->start();
+
+    // 收到 206 后应判定为可 seek，尽管响应头没有 Accept-Ranges
+    EXPECT_TRUE(waitUntil([&]() { return stream->info().isSeekable; }));
+
+    auto seekResult = stream->seek(32768);
+    ASSERT_TRUE(seekResult.has_value());
+    EXPECT_TRUE(waitUntil([&]() { return stream->position() >= kMockBodySize; }));
+    EXPECT_EQ(stream->state(), StreamState::Completed);
+    stream->close();
+    omitHeaderServer.stop();
+}
+
+TEST_F(HttpStreamTest, H2c_SequentialFallbackWhenServerIgnoresRange) {
+    // 服务器忽略 Range 返回 200 全量：请求从 0 开始时应降级为顺序播放，
+    // 不报错、正常收满数据，且 isSeekable=false。
+    MockHttpServer noRangeServer;
+    ASSERT_TRUE(noRangeServer.start(/*honorRange=*/false));
+
+    auto params = makeParams();
+    params.uri = noRangeServer.url();
+    std::atomic<uint64_t> totalBytes{0};
+    std::atomic<bool> errored{false};
+    params.onData = [&totalBytes](DataChunk chunk) {
+        totalBytes.fetch_add(chunk.size(), std::memory_order_relaxed);
+    };
+    params.onError = [&errored](Error, int32_t) {
+        errored = true;
+    };
+
+    auto stream = std::make_shared<HttpStream>(ownerThread_);
+    ASSERT_TRUE(stream->open(params).has_value());
+    stream->start();
+
+    EXPECT_TRUE(waitUntil([&]() { return stream->position() >= kMockBodySize; }));
+    EXPECT_EQ(stream->state(), StreamState::Completed);
+    EXPECT_FALSE(errored.load());
+    EXPECT_FALSE(stream->info().isSeekable);
+    stream->close();
+    noRangeServer.stop();
+}
+
+TEST_F(HttpStreamTest, H2d_SeekRejectedWhenServerIgnoresRange) {
+    // 服务器忽略 Range：即使首次请求从 0 开始可顺序播放，
+    // seek 仍应被拒绝（能力为 Unsupported）。
+    MockHttpServer noRangeServer;
+    ASSERT_TRUE(noRangeServer.start(/*honorRange=*/false));
+
+    auto params = makeParams();
+    params.uri = noRangeServer.url();
+    std::atomic<bool> errored{false};
+    params.onError = [&errored](Error, int32_t) {
+        errored = true;
+    };
+
+    auto stream = std::make_shared<HttpStream>(ownerThread_);
+    ASSERT_TRUE(stream->open(params).has_value());
+    stream->start();
+
+    // 等 header 处理完成（能力判定为 Unsupported）后再 seek
+    EXPECT_TRUE(waitUntil([&]() { return stream->position() >= kMockBodySize; }));
+    auto seekResult = stream->seek(1024);
+    EXPECT_FALSE(seekResult.has_value());
+    EXPECT_EQ(seekResult.error(), Error::StreamNotReady);
+    stream->close();
+    noRangeServer.stop();
 }
 
 TEST_F(HttpStreamTest, H3_PauseResumeResumesFromCommittedPosition) {
