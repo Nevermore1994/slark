@@ -160,12 +160,12 @@ inline void ThreadPool::workThread() {
             if (shutdown_.load() && jobs_.empty()) {
                 return;
             }
+            ++activeCount_;
             std::pop_heap(jobs_.begin(), jobs_.end(), std::greater<>{});
             job = std::move(jobs_.back().func);
             jobs_.pop_back();
         }
 
-        ++activeCount_;
         try {
             job();
         } catch (...) {

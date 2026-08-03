@@ -8,6 +8,7 @@ add_library(slark_jni_common STATIC ${JNI_COMMON_SOURCES})
 target_include_directories(slark_jni_common PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${SLARK_PROJECT_PATH}/src/base
+    ${SLARK_PROJECT_PATH}/include
     ${SLARK_PROJECT_PATH}/internal
 )
 

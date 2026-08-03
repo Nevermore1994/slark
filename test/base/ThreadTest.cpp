@@ -78,7 +78,6 @@ TEST(Thread, postTaskWhenPaused) {
     thread->stop();
 }
 
-// pause 期间 repeatTask 不执行
 TEST(Thread, pauseBlocksRepeatTask) {
     std::atomic<int32_t> counter{0};
     auto thread = Thread::create(Util::genRandomName("thread"));
@@ -86,13 +85,15 @@ TEST(Thread, pauseBlocksRepeatTask) {
         counter.fetch_add(1);
     });
     thread->start();
-    std::this_thread::sleep_for(std::chrono::milliseconds(35));
-    auto countBeforePause = counter.load();
-    ASSERT_GE(countBeforePause, 1);
+
+    while (counter.load() < 2) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
 
     thread->pause();
+    auto countBeforePause = counter.load();
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    ASSERT_EQ(counter.load(), countBeforePause);  // pause 期间不增加
+    ASSERT_EQ(counter.load(), countBeforePause);
     thread->stop();
 }
 
