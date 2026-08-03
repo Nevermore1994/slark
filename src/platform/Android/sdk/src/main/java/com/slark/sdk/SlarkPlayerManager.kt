@@ -88,5 +88,7 @@ class SlarkPlayerManager {
 
         external fun hasVideo(playerId: String): Boolean
 
+        external fun isSeekable(playerId: String): Boolean
+
     }
 }

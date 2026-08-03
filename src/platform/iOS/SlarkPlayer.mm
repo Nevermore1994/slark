@@ -199,6 +199,13 @@ struct PlayerObserver final : public slark::IPlayerObserver {
     return kCMTimeZero;
 }
 
+- (BOOL)isSeekable {
+    if (_player) {
+        return static_cast<BOOL>(_player->info().isSeekable);
+    }
+    return NO;
+}
+
 - (SlarkPlayerState)state {
     if (_player) {
         return convertState(_player->state());

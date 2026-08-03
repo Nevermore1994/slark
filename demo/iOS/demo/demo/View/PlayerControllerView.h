@@ -24,6 +24,7 @@
 @property (nonatomic, readonly) BOOL isPause;
 
 - (void)setIsPause:(BOOL)pause;
+- (void)setIsSeekable:(BOOL)isSeekable;
 - (void)updateCurrentTime:(NSTimeInterval)value;
 - (void)updateTotalTime:(NSTimeInterval)value;
 - (void)updateCacheTime:(NSTimeInterval)value;

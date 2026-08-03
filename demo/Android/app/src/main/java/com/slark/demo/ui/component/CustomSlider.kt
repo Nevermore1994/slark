@@ -38,6 +38,7 @@ fun CustomSlider(
     trackColor: Color = Color(0x55FFFFFF),
     bufferedColor: Color = Color.Unspecified,
     activeColor: Color = Color(0xFFA9A9A9),
+    enabled: Boolean = true,
 ) {
     val thumbRadiusPx = with(LocalDensity.current) { thumbRadius.toPx() }
     val trackHeightPx = with(LocalDensity.current) { trackHeight.toPx() }
@@ -46,7 +47,10 @@ fun CustomSlider(
     BoxWithConstraints(
         modifier = modifier
             .height(thumbRadius * 2)
-            .pointerInput(Unit) {
+            .pointerInput(enabled) {
+                if (!enabled) {
+                    return@pointerInput
+                }
                 detectTapGestures { offset ->
                     val width = size.width - thumbRadiusPx * 2
                     val fraction = ((offset.x - thumbRadiusPx) / width).coerceIn(0f, 1f)
@@ -54,7 +58,10 @@ fun CustomSlider(
                     onValueChange(newValue, true)
                 }
             }
-            .pointerInput(Unit) {
+            .pointerInput(enabled) {
+                if (!enabled) {
+                    return@pointerInput
+                }
                 detectDragGestures(
                     onDragStart = { offset ->
                         println("Drag started at $offset")

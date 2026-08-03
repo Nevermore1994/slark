@@ -171,6 +171,7 @@
 - (void)notifyState:(NSString*)playerId state:(SlarkPlayerState)state {
     if (state == SlarkPlayerStatePrepared) {
         [self.controllerView updateTotalTime:CMTimeGetSeconds(self.player.totalDuration)];
+        [self.controllerView setIsSeekable:self.player.isSeekable];
     } else if (state == SlarkPlayerStateCompleted || state == SlarkPlayerStatePause) {
         [self.controllerView setIsPause:YES];
     } else if (state == SlarkPlayerStatePlaying) {

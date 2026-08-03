@@ -193,3 +193,17 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_hasVideo(JNIEnv* env,
     }
     return hasVideo;
 }
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_slark_sdk_SlarkPlayerManager_00024Companion_isSeekable(JNIEnv* env,
+                                                                jobject /*thiz*/,
+                                                                jstring jPlayerId) {
+    auto playerId = FromJVM::str(env, jPlayerId);
+    auto isSeekable = false;
+    if (auto player = PlayerManager::shareInstance().find(playerId)) {
+        isSeekable = player->info().isSeekable;
+    } else {
+        LogE("not found player, {}", playerId);
+    }
+    return isSeekable;
+}

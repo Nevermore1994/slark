@@ -91,6 +91,11 @@ void Player::Impl::seek(double time, bool isAccurate) noexcept {
         LogE("error!! not init");
         return;
     }
+    if (!info_.isSeekable) {
+        LogW("[Player::Impl::seek] reject, media not seekable: time={:.3f}s isAccurate={}", time,
+             isAccurate);
+        return;
+    }
     if (isAccurate) {
         auto ptr = buildEvent(EventType::Seek);
         ptr->data = PlayerSeekRequest{.isAccurate = true, .seekTime = time};
@@ -402,8 +407,9 @@ void Player::Impl::preparePlayerInfo() noexcept {
     info_.hasAudio = demuxerComponent_->hasAudio();
     info_.hasVideo = demuxerComponent_->hasVideo();
     info_.duration = demuxerComponent_->totalDuration().second();
-    LogI("player info prepared, duration:{:.3f}s, hasAudio:{}, hasVideo:{}", info_.duration,
-         info_.hasAudio, info_.hasVideo);
+    info_.isSeekable = mediaSourceManager_.streamInfo().isSeekable;
+    LogI("player info prepared, duration:{:.3f}s, hasAudio:{}, hasVideo:{}, isSeekable:{}",
+         info_.duration, info_.hasAudio, info_.hasVideo, info_.isSeekable);
 
     setState(PlayerState::Prepared);
 

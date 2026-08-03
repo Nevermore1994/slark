@@ -478,6 +478,11 @@ static NSArray<NSNumber*>* speedOptions(void) {
     !self.onPlayClick ?: self.onPlayClick(!isPause);
 }
 
+- (void)setIsSeekable:(BOOL)isSeekable {
+    self.progressSlider.enabled = isSeekable;
+    self.progressSlider.alpha = isSeekable ? 1.0 : 0.4;
+}
+
 #pragma mark - Public Methods
 
 - (void)updateCurrentTime:(NSTimeInterval)value {

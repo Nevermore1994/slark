@@ -116,6 +116,7 @@ typedef NS_ENUM(NSUInteger, SlarkPlayerRotation) {
 @property(nonatomic, assign, readonly) NSString* playerId;
 @property(nonatomic, assign, readonly) CMTime totalDuration;
 @property(nonatomic, assign, readonly) CMTime currentTime;
+@property(nonatomic, assign, readonly) BOOL isSeekable;
 @property(nonatomic, weak) id<ISlarkPlayerObserver> delegate;
 
 - (instancetype)init:(NSString*)path;

@@ -255,6 +255,7 @@ fun PlayerProgressBar(viewModel: PlayerViewModel) {
             bufferedColor = Color(0xFFFFFFFF),
             bufferedValue = bufferedFraction,
             trackHeight = 4.dp,
+            enabled = viewModel.isSeekable,
             modifier = Modifier.fillMaxWidth().height(28.dp)
         )
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp)) {

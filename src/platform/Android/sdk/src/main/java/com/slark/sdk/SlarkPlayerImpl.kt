@@ -152,6 +152,9 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
         return SlarkPlayerManager.currentPlayedTime(playerId)
     }
 
+    override val isSeekable: Boolean
+        get() = SlarkPlayerManager.isSeekable(playerId)
+
     override fun state(): SlarkPlayerState {
         return SlarkPlayerManager.state(playerId)
     }

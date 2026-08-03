@@ -49,6 +49,7 @@ class PlayerViewModel(
     var rotationDegrees by mutableIntStateOf(0)
     var graphicsBackend by mutableStateOf(GraphicsBackend.OpenGL)
     var hasVideo by mutableStateOf(false)
+    var isSeekable by mutableStateOf(true)
 
     private var _volume = mutableStateOf(100.0f)
     var volume: Float
@@ -79,6 +80,7 @@ class PlayerViewModel(
                 SlarkPlayerState.Prepared -> {
                     totalTime = player?.totalDuration() ?: 0.0
                     hasVideo = player?.hasVideo ?: false
+                    isSeekable = player?.isSeekable ?: true
                 }
                 SlarkPlayerState.Error -> SlarkLog.e("PlayerViewModel", "Player error occurred")
                 else -> {}

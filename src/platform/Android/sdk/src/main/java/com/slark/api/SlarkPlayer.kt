@@ -118,6 +118,11 @@ interface SlarkPlayer {
     val hasVideo: Boolean
 
     /**
+     * Whether the current media supports seek (e.g. HTTP servers ignoring Range are not seekable).
+     */
+    val isSeekable: Boolean
+
+    /**
      * Handle background state changes.
      * This method is called when the player goes into the background or comes back to the foreground.
      * @param isBackground: true if the player is in the background, false if it is in the foreground.

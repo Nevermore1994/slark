@@ -209,6 +209,7 @@
         case SlarkPlayerStatePrepared:
             [self.controllerView
                 updateTotalTime:CMTimeGetSeconds(self.playerController.player.totalDuration)];
+            [self.controllerView setIsSeekable:self.playerController.player.isSeekable];
             break;
         case SlarkPlayerStateCompleted:
         case SlarkPlayerStatePause:
