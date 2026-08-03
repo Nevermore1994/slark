@@ -196,13 +196,14 @@ void HttpResponseParser::processHeaders() {
         auto line = headerBlock.substr(lineStart, lineEnd - lineStart);
         auto colonPos = line.find(':');
         if (colonPos != std::string_view::npos) {
-            auto name = line.substr(0, colonPos);
+            // header 名统一小写存储（C-13），调用方无需再区分大小写
+            auto name = StringUtil::toLower(std::string(line.substr(0, colonPos)));
             auto value = line.substr(colonPos + 1);
             // trim leading spaces
             while (!value.empty() && value.front() == ' ') {
                 value.remove_prefix(1);
             }
-            headers_[std::string(name)] = std::string(value);
+            headers_[std::move(name)] = std::string(value);
         }
 
         lineStart = lineEnd + kCRLF.size();
@@ -381,7 +382,9 @@ void HttpResponseParser::processChunkData() {
 void HttpResponseParser::processChunkTrailer() {
     auto data = readableData();
 
-    // 累计长度超限时直接 fail，防止 OOM
+    // 累计长度超限时直接 fail，防止 OOM。
+    // 注意：trailerBytesRead_ 只在消费时累计（C-14），data.size() 是未消费长度，
+    // 两者相加即当前 trailer 区间的近似大小，跨 feed 边界不重复计数。
     if (trailerBytesRead_ + data.size() > kMaxTrailerSize) {
         LogE("[HttpResponseParser::processChunkTrailer] trailer overflow: trailerBytes={} chunk={}",
              trailerBytesRead_, data.size());
@@ -392,8 +395,7 @@ void HttpResponseParser::processChunkTrailer() {
     // trailer 以空行 CRLF 结束
     auto pos = data.find(kCRLF);
     if (pos == std::string_view::npos) {
-        trailerBytesRead_ += data.size();
-        return;
+        return;  // 数据不足，等待下次 feed；不累计（readableData 从 readPos_ 起，未消费部分不重复计）
     }
 
     if (pos == 0) {
@@ -403,7 +405,7 @@ void HttpResponseParser::processChunkTrailer() {
              perf_ ? perf_->parser.chunkCount : 0);
         complete();
     } else {
-        // 跳过 trailer header
+        // 跳过 trailer header，只累计本次实际消费的字节
         auto consumed = pos + kCRLF.size();
         trailerBytesRead_ += consumed;
         consume(consumed);

@@ -108,4 +108,10 @@ class TimeoutException : public std::runtime_error {
         : std::runtime_error(std::string(message)) {}
 };
 
+class CancelledException : public std::runtime_error {
+ public:
+    explicit CancelledException(std::string_view message = "Cancelled")
+        : std::runtime_error(std::string(message)) {}
+};
+
 }  // namespace slark

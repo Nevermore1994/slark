@@ -18,7 +18,8 @@ Task<std::unique_ptr<PooledConnection>> co_acquire_connection(
     IPVersion ipVersion,
     std::chrono::milliseconds connectTimeout,
     std::chrono::milliseconds tlsHandshakeTimeout,
-    RequestPerf* perf) {
+    RequestPerf* perf,
+    CancellationToken token) {
     if (perf) {
         perf->host = host;
     }
@@ -28,9 +29,12 @@ Task<std::unique_ptr<PooledConnection>> co_acquire_connection(
         co_return nullptr;
     }
 
-    // DNS 解析
+    // DNS 解析（token 贯穿，取消时提前返回）
     auto addrInfo =
-        co_await DnsResolver::instance().resolveAsync(host, std::to_string(port), ipVersion);
+        co_await DnsResolver::instance().resolveAsync(host, std::to_string(port), ipVersion, token);
+    if (token.isCancelled()) {
+        co_return nullptr;
+    }
     if (!addrInfo) {
         LogW("[co_acquire_connection] DNS resolution failed for {}", host);
         co_return nullptr;
@@ -41,7 +45,10 @@ Task<std::unique_ptr<PooledConnection>> co_acquire_connection(
     auto connectStart = Time::nowTimeStamp();
     try {
         socket->setPerf(perf);
-        co_await socket->asyncConnect(addrInfo, ct);
+        co_await socket->asyncConnect(addrInfo, ct, token);
+    } catch (const CancelledException&) {
+        LogW("[co_acquire_connection] Connect cancelled for {}", host);
+        co_return nullptr;
     } catch (const TimeoutException&) {
         LogW("[co_acquire_connection] Connect timeout for {}", host);
         if (perf) {
@@ -53,6 +60,9 @@ Task<std::unique_ptr<PooledConnection>> co_acquire_connection(
         DnsResolver::instance().invalidate(host);
         co_return nullptr;
     }
+    if (token.isCancelled()) {
+        co_return nullptr;
+    }
     auto connectEnd = Time::nowTimeStamp();
 
     if (perf) {
@@ -61,20 +71,23 @@ Task<std::unique_ptr<PooledConnection>> co_acquire_connection(
 
     LogI("[co_acquire_connection] connected: host={} port={}", host, port);
 
-    // TLS 握手
+    // TLS 握手（token 贯穿，取消时提前返回）
 #if ENABLE_HTTPS
     if (scheme == "https") {
         auto tlsTransport = std::make_unique<TLSTransport>(socket->getFd(), host);
         auto tlsTimeout =
             tlsHandshakeTimeout.count() > 0 ? tlsHandshakeTimeout : kDefaultTlsTimeout;
         auto tlsStart = Time::nowTimeStamp();
-        bool tlsOk = co_await tlsTransport->performHandshake(tlsTimeout);
+        bool tlsOk = co_await tlsTransport->performHandshake(tlsTimeout, token);
         auto tlsEnd = Time::nowTimeStamp();
 
         if (perf) {
             perf->connection.tlsHandshakeTimeMs = (tlsEnd - tlsStart).toMilliSeconds().count();
         }
 
+        if (token.isCancelled()) {
+            co_return nullptr;
+        }
         if (!tlsOk) {
             LogW("[co_acquire_connection] TLS handshake failed: host={}", host);
             if (perf) {

@@ -9,21 +9,9 @@
 namespace slark::http {
 
 Task<HttpResponse> HttpRequest::asyncExecute(const RequestInfo& requestInfo) {
-    LogI("[HttpRequest::asyncExecute] url={} method={}", requestInfo.url,
-         static_cast<int>(requestInfo.methodType));
-    auto result = co_await processor_.process(requestInfo);
-
-    if (result.has_value()) {
-        LogI("[HttpRequest::asyncExecute] done, status={} url={}",
-             static_cast<int>(result.value().statusCode), requestInfo.url);
-        co_return std::move(result.value());
-    }
-
-    LogE("[HttpRequest::asyncExecute] failed: retCode={} originCode={} url={}",
-         static_cast<int>(result.error().retCode), result.error().originErrorCode, requestInfo.url);
-    HttpResponse response;
-    response.error = result.error();
-    co_return response;
+    // 统一 request cancellation state：无 token 重载转发内部 cancelToken_，
+    // 保证 cancel() 能中断 asyncExecute 发起的请求（C-05）
+    co_return co_await asyncExecute(requestInfo, cancelToken_);
 }
 
 Task<HttpResponse> HttpRequest::asyncExecute(const RequestInfo& requestInfo,
@@ -67,12 +55,9 @@ AsyncGenerator<StreamChunk> HttpRequest::streamingExecute(const RequestInfo& req
                                                           CancellationToken token) {
     LogI("[HttpRequest::streamingExecute] url={} method={}", requestInfo.url,
          static_cast<int>(requestInfo.methodType));
-    // 始终用 cancelToken_，保证 cancel() 与 processStreaming 联动。
-    // 若用调用方传入的 token（可能为默认构造的 CancellationToken{}），cancel()
-    // 无法中断 processStreaming，导致旧协程在旧 socket 上残留 Read continuation。
-    // 直接返回底层 generator，避免额外一层协程帧透传。
-    (void)token;
-    return processor_.processStreaming(requestInfo, cancelToken_);
+    // 统一 request cancellation state：组合调用方 token 与内部 cancelToken_，
+    // 任一取消即取消，保证 cancel() 与外部 token 均能中断流式请求（C-04）
+    return processor_.processStreaming(requestInfo, CancellationToken::link(token, cancelToken_));
 }
 
 }  // namespace slark::http

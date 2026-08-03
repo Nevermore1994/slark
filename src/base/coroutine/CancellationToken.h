@@ -67,6 +67,11 @@ class CancellationToken {
         return !isCancelled();
     }
 
+    // 组合两个 token：任一取消即取消。用于统一 request cancellation state，
+    // 使 HttpRequest 的内部 cancelToken_ 与调用方 token 联动。
+    [[nodiscard]] static CancellationToken link(const CancellationToken& a,
+                                                const CancellationToken& b);
+
  private:
     friend class CancellationTokenRegistration;
 
@@ -75,6 +80,8 @@ class CancellationToken {
         std::mutex mutex;
         std::unordered_map<TokenId, Callback> callbackMap;
         TokenId nextTokenId{0};
+        // link() 创建的转发回调注册句柄，随 State 生命周期保活
+        std::vector<std::shared_ptr<CancellationTokenRegistration>> linkedRegs;
     };
 
     std::shared_ptr<State> state_;
@@ -158,6 +165,39 @@ inline void CancellationTokenRegistration::unregister() noexcept {
     std::lock_guard<std::mutex> lock(state->mutex);
     state->callbackMap.erase(tokenId_);
     tokenId_ = 0;
+}
+
+inline CancellationToken CancellationToken::link(const CancellationToken& a,
+                                                 const CancellationToken& b) {
+    CancellationToken linked;
+    if (a.isCancelled() || b.isCancelled()) {
+        linked.cancel();
+        return linked;
+    }
+    auto weakLinked = std::weak_ptr<State>(linked.state_);
+    auto regA = std::make_shared<CancellationTokenRegistration>(
+        a.registerCallback([weakLinked]() {
+            if (auto linkedState = weakLinked.lock()) {
+                CancellationToken t;
+                t.state_ = std::move(linkedState);
+                t.cancel();
+            }
+        }));
+    auto regB = std::make_shared<CancellationTokenRegistration>(
+        b.registerCallback([weakLinked]() {
+            if (auto linkedState = weakLinked.lock()) {
+                CancellationToken t;
+                t.state_ = std::move(linkedState);
+                t.cancel();
+            }
+        }));
+    if (regA->isValid()) {
+        linked.state_->linkedRegs.push_back(std::move(regA));
+    }
+    if (regB->isValid()) {
+        linked.state_->linkedRegs.push_back(std::move(regB));
+    }
+    return linked;
 }
 
 }  // namespace slark

@@ -106,7 +106,7 @@ class CallbackBridge final : public ICallbackBridge,
 
         requestCoroutine_ = launcher_(requestInfo_, token_);
         monitorCoroutine_ = monitorTask();
-        monitorCoroutine_.getHandle().resume();
+        monitorCoroutine_.resume();
     }
 
     Task<void> monitorTask() {

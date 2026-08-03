@@ -105,11 +105,10 @@ class AsyncConnect : public slark::AsyncIOOperationBase<AsyncConnect, void> {
         if (result == 0) {
             complete();
         } else if (errno == EINPROGRESS) {
-            setCleanup([fd = fd_]() {
-                IOContext::instance().unregisterContinuation(fd, FdInterest::Write);
+            setCleanup([fd = fd_, gate = ioGate()]() {
+                IOContext::instance().unregisterContinuation(fd, FdInterest::Write, gate);
             });
-            IOContext::instance().registerContinuation(fd_, FdInterest::Write, ioHandle(),
-                                                       ioAliveFlag());
+            IOContext::instance().registerContinuation(fd_, FdInterest::Write, ioGate());
             IOContext::instance().setWritable(fd_, true);
         } else {
             fail(Error::ConnectionRefused);
@@ -134,11 +133,10 @@ class AsyncRead : public slark::AsyncIOOperationBase<AsyncRead, size_t> {
         } else if (result == 0) {
             fail(Error::ConnectionReset);
         } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            setCleanup([fd = fd_]() {
-                IOContext::instance().unregisterContinuation(fd, FdInterest::Read);
+            setCleanup([fd = fd_, gate = ioGate()]() {
+                IOContext::instance().unregisterContinuation(fd, FdInterest::Read, gate);
             });
-            IOContext::instance().registerContinuation(fd_, FdInterest::Read, ioHandle(),
-                                                       ioAliveFlag());
+            IOContext::instance().registerContinuation(fd_, FdInterest::Read, ioGate());
             IOContext::instance().setReadable(fd_, true);
         } else {
             fail(Error::NetworkError);
@@ -170,11 +168,10 @@ class AsyncWrite : public slark::AsyncIOOperationBase<AsyncWrite, size_t> {
         if (result >= 0) {
             complete(static_cast<size_t>(result));
         } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            setCleanup([fd = fd_]() {
-                IOContext::instance().unregisterContinuation(fd, FdInterest::Write);
+            setCleanup([fd = fd_, gate = ioGate()]() {
+                IOContext::instance().unregisterContinuation(fd, FdInterest::Write, gate);
             });
-            IOContext::instance().registerContinuation(fd_, FdInterest::Write, ioHandle(),
-                                                       ioAliveFlag());
+            IOContext::instance().registerContinuation(fd_, FdInterest::Write, ioGate());
             IOContext::instance().setWritable(fd_, true);
         } else {
             fail(Error::BrokenPipe);
@@ -205,29 +202,39 @@ class FdReadyAwaiter {
     FdReadyAwaiter& operator=(FdReadyAwaiter&&) = default;
 
     ~FdReadyAwaiter() {
-        flag_.setDead();
-        token_.cancel();
+        cancel();
     }
 
     bool await_ready() const noexcept {
         return false;
     }
 
+    void setResumeGate(std::shared_ptr<ResumeGate> gate) noexcept {
+        gate_ = std::move(gate);
+    }
+
+    void cancel() noexcept {
+        if (gate_) {
+            gate_->disarm();
+        }
+        token_.cancel();
+    }
+
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
-        handle_ = handle;
-        flag_ = AliveFlag{};
+        if (!gate_) {
+            gate_ = makeResumeGate(handle);
+        }
 
         auto fdInterest = (interest_ == Interest::Read) ? FdInterest::Read : FdInterest::Write;
-        token_ =
-            IOContext::instance().registerContinuation(fd_, fdInterest, handle_, flag_.shared());
+        token_ = IOContext::instance().registerContinuation(fd_, fdInterest, gate_);
 
         if (interest_ == Interest::Read) {
             IOContext::instance().setReadable(fd_, true);
         } else {
             IOContext::instance().setWritable(fd_, true);
         }
-        return true;
+        return gate_->arm();
     }
 
     void await_resume() noexcept {}
@@ -235,8 +242,7 @@ class FdReadyAwaiter {
  private:
     int32_t fd_;
     Interest interest_;
-    std::coroutine_handle<> handle_;
-    AliveFlag flag_;
+    std::shared_ptr<ResumeGate> gate_;
     EventLoop::RegistrationToken token_;
 };
 
@@ -254,12 +260,19 @@ class CancellableAwaiter {
     }
 
     template <typename Promise>
-    auto await_suspend(std::coroutine_handle<Promise> handle) noexcept {
+    bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
         if (token_.isCancelled()) {
             return false;
         }
-        cancelReg_ = token_.registerCallback([h = handle]() {
-            h.resume();
+        gate_ = makeResumeGate(handle);
+        if constexpr (requires(Awaiter& awaiter) { awaiter.setResumeGate(gate_); }) {
+            awaiter_.setResumeGate(gate_);
+        }
+        auto weakGate = std::weak_ptr<ResumeGate>(gate_);
+        cancelReg_ = token_.registerCallback([weakGate]() {
+            if (auto gate = weakGate.lock()) {
+                gate->signal();
+            }
         });
         return awaiter_.await_suspend(handle);
     }
@@ -272,6 +285,7 @@ class CancellableAwaiter {
     Awaiter awaiter_;
     slark::CancellationToken token_;
     slark::CancellationTokenRegistration cancelReg_;
+    std::shared_ptr<ResumeGate> gate_;
 };
 
 template <typename Awaiter>

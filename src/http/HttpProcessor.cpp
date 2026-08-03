@@ -130,8 +130,11 @@ Task<ResponseResult> HttpProcessor::executeSingle(const RequestInfo& requestInfo
     // 获取连接
     auto conn = co_await co_acquire_connection(
         parsed.url->host, parsed.url->portNumber(), parsed.url->scheme, requestInfo.ipVersion,
-        requestInfo.connectTimeout, requestInfo.tlsHandshakeTimeout, &perf);
+        requestInfo.connectTimeout, requestInfo.tlsHandshakeTimeout, &perf, token);
     if (!conn || !conn->isValid()) {
+        if (token.isCancelled()) {
+            co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
+        }
         LogE("[HttpProcessor::executeSingle] connect failed: timeoutSource={} url={}",
              static_cast<int>(perf.transport.timeoutSource), requestInfo.url);
         // 根据 perf 判断超时类型
@@ -244,12 +247,12 @@ Task<ResponseResult> HttpProcessor::executeSingle(const RequestInfo& requestInfo
     co_return std::move(response);
 }
 
-AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& requestInfo,
-                                                            CancellationToken token) {
+AsyncGenerator<StreamChunk> HttpProcessor::executeStreamingSingle(const RequestInfo& requestInfo,
+                                                                   CancellationToken token) {
     RequestPerf perf;
     perf.host = requestInfo.url;
 
-    LogI("[HttpProcessor::processStreaming] enter url={} method={}", requestInfo.url,
+    LogI("[HttpProcessor::executeStreamingSingle] enter url={} method={}", requestInfo.url,
          static_cast<int>(requestInfo.methodType));
 
     auto checkCancelled = [&token]() -> std::optional<StreamChunk> {
@@ -266,7 +269,8 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
 
     auto parsed = parseUrl(requestInfo.url);
     if (!parsed.isValid) {
-        LogE("[HttpProcessor::processStreaming] parseUrl failed: retCode={} originCode={} url={}",
+        LogE("[HttpProcessor::executeStreamingSingle] parseUrl failed: retCode={} originCode={} "
+             "url={}",
              static_cast<int>(parsed.error.retCode), parsed.error.originErrorCode, requestInfo.url);
         co_yield StreamChunk::makeError(parsed.error);
         co_return;
@@ -280,9 +284,13 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
     // 获取连接
     auto conn = co_await co_acquire_connection(
         parsed.url->host, parsed.url->portNumber(), parsed.url->scheme, requestInfo.ipVersion,
-        requestInfo.connectTimeout, requestInfo.tlsHandshakeTimeout, &perf);
+        requestInfo.connectTimeout, requestInfo.tlsHandshakeTimeout, &perf, token);
     if (!conn || !conn->isValid()) {
-        LogE("[HttpProcessor::processStreaming] connect failed: timeoutSource={} url={}",
+        if (auto c = checkCancelled()) {
+            co_yield std::move(*c);
+            co_return;
+        }
+        LogE("[HttpProcessor::executeStreamingSingle] connect failed: timeoutSource={} url={}",
              static_cast<int>(perf.transport.timeoutSource), requestInfo.url);
         // 根据 perf 判断超时类型
         if (perf.transport.timeoutSource == TimeoutSource::Connect ||
@@ -309,7 +317,7 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
             co_yield std::move(*c);
             co_return;
         }
-        LogE("[HttpProcessor::processStreaming] send failed: legacyErr={} url={}",
+        LogE("[HttpProcessor::executeStreamingSingle] send failed: legacyErr={} url={}",
              static_cast<int>(sendResult.error()), requestInfo.url);
         co_yield StreamChunk::makeError(ErrorInfo{mapLegacyErrorToUnified(sendResult.error())});
         co_return;
@@ -391,7 +399,8 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
         // 检查总时限
         if (overallDeadline.isExpired()) {
             perf.transport.timeoutSource = TimeoutSource::ReadOverall;
-            LogE("[HttpProcessor::processStreaming] overall deadline expired: bodySize={} url={}",
+            LogE("[HttpProcessor::executeStreamingSingle] overall deadline expired: bodySize={} "
+                 "url={}",
                  perf.parser.bodySize, requestInfo.url);
             co_yield StreamChunk::makeError(ErrorInfo{slark::Error::ConnectionTimeout});
             co_return;
@@ -399,7 +408,7 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
 
         auto socket = conn->get();
         if (!socket || !socket->isValid()) {
-            LogE("[HttpProcessor::processStreaming] socket invalid: bodySize={} url={}",
+            LogE("[HttpProcessor::executeStreamingSingle] socket invalid: bodySize={} url={}",
                  perf.parser.bodySize, requestInfo.url);
             co_yield StreamChunk::makeError(ErrorInfo{slark::Error::ConnectionReset});
             co_return;
@@ -420,22 +429,22 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
                 } else {
                     perf.transport.timeoutSource = TimeoutSource::ReadIdle;
                 }
-                LogE("[HttpProcessor::processStreaming] read timeout: timeoutSource={} bodySize={} "
-                     "url={}",
+                LogE("[HttpProcessor::executeStreamingSingle] read timeout: timeoutSource={} "
+                     "bodySize={} url={}",
                      static_cast<int>(perf.transport.timeoutSource), perf.parser.bodySize,
                      requestInfo.url);
                 co_yield StreamChunk::makeError(ErrorInfo{slark::Error::ConnectionTimeout});
                 co_return;
             }
             // 其他错误（连接重置、断开）异常断连，不应作为正常 EOF
-            LogE("[HttpProcessor::processStreaming] read error: err={} bodySize={} url={}",
+            LogE("[HttpProcessor::executeStreamingSingle] read error: err={} bodySize={} url={}",
                  static_cast<int>(error), perf.parser.bodySize, requestInfo.url);
             co_yield StreamChunk::makeError(ErrorInfo{slark::Error::ConnectionReset});
             co_return;
         }
         if (*readResult == 0) {
-            LogI("[HttpProcessor::processStreaming] EOF: bodySize={} url={}", perf.parser.bodySize,
-                 requestInfo.url);
+            LogI("[HttpProcessor::executeStreamingSingle] EOF: bodySize={} url={}",
+                 perf.parser.bodySize, requestInfo.url);
             parser.onEof();
             break;
         }
@@ -444,7 +453,7 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
         parser.feed(readBuffer.data(), received);
 
         if (hasPendingHeader) {
-            LogI("[HttpProcessor::processStreaming] header: status={} bodySize={} url={}",
+            LogI("[HttpProcessor::executeStreamingSingle] header: status={} bodySize={} url={}",
                  static_cast<int>(statusCode), perf.parser.bodySize, requestInfo.url);
             co_yield StreamChunk::makeHeader(statusCode, std::move(pendingHeaders));
             hasPendingHeader = false;
@@ -464,13 +473,13 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
 
         // 限频进度日志：每累计 256KB 打一次
         if (perf.parser.bodySize - lastLoggedSize >= streamProgressLogBytes()) {
-            LogI("[HttpProcessor::processStreaming] progress: bodySize={} recvLoops={} url={}",
+            LogI("[HttpProcessor::executeStreamingSingle] progress: bodySize={} recvLoops={} url={}",
                  perf.parser.bodySize, recvLoops, requestInfo.url);
             lastLoggedSize = perf.parser.bodySize;
         }
 
         if (parseError) {
-            LogE("[HttpProcessor::processStreaming] parse error: err={} bodySize={} url={}",
+            LogE("[HttpProcessor::executeStreamingSingle] parse error: err={} bodySize={} url={}",
                  static_cast<int>(parseErrorCode), perf.parser.bodySize, requestInfo.url);
             co_yield StreamChunk::makeError(ErrorInfo{parseErrorCode});
             co_return;
@@ -478,17 +487,76 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
     }
 
     if (parser.hasError() || parseError) {
-        LogE("[HttpProcessor::processStreaming] exit with parseError: err={} bodySize={} url={}",
+        LogE("[HttpProcessor::executeStreamingSingle] exit with parseError: err={} bodySize={} "
+             "url={}",
              static_cast<int>(parseErrorCode), perf.parser.bodySize, requestInfo.url);
         co_yield StreamChunk::makeError(ErrorInfo{parseErrorCode});
     } else {
-        LogI("[HttpProcessor::processStreaming] exit ok: bodySize={} recvLoops={} url={}",
+        LogI("[HttpProcessor::executeStreamingSingle] exit ok: bodySize={} recvLoops={} url={}",
              perf.parser.bodySize, recvLoops, requestInfo.url);
         co_yield StreamChunk::makeFinal();
     }
 
     if (parser.shouldCloseConnection()) {
         conn->close();
+    }
+}
+
+AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& requestInfo,
+                                                            CancellationToken token) {
+    LogI("[HttpProcessor::processStreaming] enter url={} method={}", requestInfo.url,
+         static_cast<int>(requestInfo.methodType));
+
+    auto checkCancelled = [&token]() -> std::optional<StreamChunk> {
+        if (token.isCancelled()) {
+            return StreamChunk::makeError(ErrorInfo{slark::Error::Cancelled});
+        }
+        return std::nullopt;
+    };
+
+    if (auto c = checkCancelled()) {
+        co_yield std::move(*c);
+        co_return;
+    }
+
+    // 流式 redirect 编排（C-09）：支持 301/302/307/308 跟随，限制跳转次数
+    auto currentInfo = requestInfo;
+    int32_t redirectCount = 0;
+    while (true) {
+        auto gen = executeStreamingSingle(currentInfo, token);
+        while (true) {
+            auto chunk = co_await gen.next();
+            if (!chunk.has_value()) {
+                co_return;
+            }
+            // header chunk 由 makeHeader 生成：statusCode 已设置且 headers 非空
+            const bool isHeaderChunk = chunk->statusCode != HttpStatusCode::Unknown &&
+                                       !chunk->headers.empty();
+            const bool isTerminal = chunk->isFinal || chunk->hasError();
+            if (isHeaderChunk) {
+                HttpResponse headerResp;
+                headerResp.statusCode = chunk->statusCode;
+                headerResp.headers = chunk->headers;
+                if (redirectPolicy_.shouldRedirect(headerResp, currentInfo, redirectCount)) {
+                    auto location = redirectPolicy_.extractRedirectLocation(chunk->headers);
+                    if (location.has_value()) {
+                        auto next = RedirectPolicy::buildRedirectRequest(
+                            currentInfo, chunk->statusCode, std::move(location.value()));
+                        if (next.has_value()) {
+                            currentInfo = std::move(*next);
+                            redirectCount++;
+                            LogI("[HttpProcessor::processStreaming] redirect to {} count={}",
+                                 currentInfo.url, redirectCount);
+                            break;  // 丢弃当前响应，发起新请求
+                        }
+                    }
+                }
+            }
+            co_yield std::move(*chunk);
+            if (isTerminal) {
+                co_return;
+            }
+        }
     }
 }
 

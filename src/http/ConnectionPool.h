@@ -76,7 +76,7 @@ class PooledConnection {
     std::unique_ptr<IAsyncSocket> socket_;
 };
 
-// 建立新连接（DNS + TCP + 可选 TLS）
+// 建立新连接（DNS + TCP + 可选 TLS）。token 任一阶段取消时立即终止，连接不回收。
 Task<std::unique_ptr<PooledConnection>> co_acquire_connection(
     std::string host,
     uint16_t port,
@@ -84,6 +84,7 @@ Task<std::unique_ptr<PooledConnection>> co_acquire_connection(
     IPVersion ipVersion = IPVersion::V4,
     std::chrono::milliseconds connectTimeout = std::chrono::milliseconds{0},
     std::chrono::milliseconds tlsHandshakeTimeout = std::chrono::milliseconds{0},
-    RequestPerf* perf = nullptr);
+    RequestPerf* perf = nullptr,
+    CancellationToken token = {});
 
 }  // namespace slark::http

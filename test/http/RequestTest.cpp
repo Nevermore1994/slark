@@ -491,7 +491,7 @@ HttpResponse executeCoroutine(const RequestInfo& info) {
     auto waiter = std::make_shared<SyncWaiter>();
     auto result = std::make_shared<HttpResponse>();
 
-    auto testCoroutine = [&]() -> Coroutine<void> {
+    auto testTask = [&]() -> Task<void> {
         try {
             auto request = std::make_shared<HttpRequest>();
             auto response = co_await request->asyncExecute(info);
@@ -500,10 +500,9 @@ HttpResponse executeCoroutine(const RequestInfo& info) {
             result->error = ErrorInfo{slark::Error::Failed, 0};
         }
         waiter->notify();
-    };
+    }();
 
-    auto coro = testCoroutine();
-    CoroutineScheduler::instance().schedule(std::move(coro).share());
+    testTask.resume();
 
     EXPECT_TRUE(waiter->wait()) << "Coroutine request timed out: " << info.url;
     return std::move(*result);

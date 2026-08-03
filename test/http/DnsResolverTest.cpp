@@ -7,9 +7,10 @@
 #include <gtest/gtest.h>
 #include <netinet/in.h>
 
+#include <atomic>
+#include <memory>
 #include <thread>
-
-#include "CoroutineScheduler.hpp"
+#include <vector>
 
 using namespace slark;
 using namespace slark::http;
@@ -27,11 +28,11 @@ class DnsResolverTest : public ::testing::Test {
                               const std::string& host,
                               IPVersion ver = IPVersion::V4) {
         auto coro = r.resolveAsync(host, "80", ver);
-        CoroutineScheduler::instance().schedule(coro.makeResumeHandle());
+        coro.resume();
         for (int32_t i = 0; i < 200 && !coro.isDone(); ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
-        return coro.isDone() ? coro.getResult() : makeAddressInfo(nullptr);
+        return coro.isDone() ? coro.result() : makeAddressInfo(nullptr);
     }
 
     std::unique_ptr<DnsResolver> resolver_;
@@ -92,7 +93,7 @@ TEST_F(DnsResolverTest, CacheExpiredAfterTtl) {
 TEST_F(DnsResolverTest, LruEvictsOldestWhenFull) {
     for (int32_t i = 0; i < 5; ++i) {
         auto coro = resolver_->resolveAsync("localhost", std::to_string(8000 + i), IPVersion::V4);
-        CoroutineScheduler::instance().schedule(coro.makeResumeHandle());
+        coro.resume();
         for (int32_t j = 0; j < 100 && !coro.isDone(); ++j) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
@@ -127,10 +128,10 @@ TEST_F(DnsResolverTest, ConcurrentResolveSameHost) {
 
 TEST_F(DnsResolverTest, ResolveWithTimeout) {
     auto coro = resolver_->resolveAsync("localhost", "80", IPVersion::V4);
-    CoroutineScheduler::instance().schedule(coro.makeResumeHandle());
+    coro.resume();
     for (int i = 0; i < 200 && !coro.isDone(); ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     EXPECT_TRUE(coro.isDone());
-    EXPECT_NE(coro.getResult().get(), nullptr);
+    EXPECT_NE(coro.result().get(), nullptr);
 }

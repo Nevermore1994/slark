@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 
 include(GoogleTest)
 
-set(HTTP_TEST_FILES
-        UrlParseTest.cpp
+file(GLOB HTTP_TEST_FILES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
 )
 
 add_executable(http_test ${HTTP_TEST_FILES})

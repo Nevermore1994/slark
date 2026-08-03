@@ -13,8 +13,6 @@
 
 #include "AsyncGenerator.hpp"
 #include "CancellationToken.h"
-#include "Coroutine.hpp"
-#include "CoroutineScheduler.hpp"
 #include "HttpRequest.h"
 
 using namespace slark;
@@ -22,10 +20,9 @@ using namespace slark::http;
 
 namespace {
 
-void resumeAndWait(Coroutine<void>& coro) {
+void resumeAndWait(Task<void>& coro) {
     coro.resume();
     for (int32_t i = 0; i < 200 && !coro.isDone(); ++i) {
-        CoroutineScheduler::instance().waitForAll();
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 }
@@ -34,7 +31,7 @@ void resumeAndWait(Coroutine<void>& coro) {
 
 // HTTP 协程异步请求测试
 TEST(HttpAsyncRequestTest, AsyncExecuteWithCoroutine) {
-    auto coro = []() -> Coroutine<void> {
+    auto coro = []() -> Task<void> {
         RequestInfo info;
         info.url = "http://httpbingo.org/get";
         info.methodType = HttpMethodType::Get;
@@ -53,7 +50,7 @@ TEST(HttpAsyncRequestTest, AsyncExecuteWithCoroutine) {
 }
 
 TEST(HttpAsyncRequestTest, AsyncExecuteWithPost) {
-    auto coro = []() -> Coroutine<void> {
+    auto coro = []() -> Task<void> {
         RequestInfo info;
         info.url = "http://httpbingo.org/post";
         info.methodType = HttpMethodType::Post;
@@ -75,7 +72,7 @@ TEST(HttpAsyncRequestTest, AsyncExecuteWithPost) {
 TEST(HttpAsyncRequestTest, AsyncExecuteWithCancellation) {
     CancellationToken token;
 
-    auto coro = [&token]() -> Coroutine<void> {
+    auto coro = [&token]() -> Task<void> {
         RequestInfo info;
         info.url = "http://httpbingo.org/delay/5";
         info.methodType = HttpMethodType::Get;
@@ -100,7 +97,7 @@ TEST(HttpAsyncRequestTest, AsyncExecuteWithCancellation) {
 }
 
 TEST(HttpAsyncRequestTest, AsyncExecuteWithTimeout) {
-    auto coro = []() -> Coroutine<void> {
+    auto coro = []() -> Task<void> {
         RequestInfo info;
         info.url = "http://httpbingo.org/delay/10";
         info.methodType = HttpMethodType::Get;
@@ -118,7 +115,7 @@ TEST(HttpAsyncRequestTest, AsyncExecuteWithTimeout) {
 }
 
 TEST(HttpAsyncRequestTest, AsyncExecuteInvalidUrl) {
-    auto coro = []() -> Coroutine<void> {
+    auto coro = []() -> Task<void> {
         RequestInfo info;
         info.url = "not-a-valid-url";
         info.methodType = HttpMethodType::Get;
@@ -136,7 +133,7 @@ TEST(HttpAsyncRequestTest, AsyncExecuteInvalidUrl) {
 }
 
 TEST(HttpAsyncRequestTest, AsyncExecuteHttps) {
-    auto coro = []() -> Coroutine<void> {
+    auto coro = []() -> Task<void> {
         RequestInfo info;
         info.url = "https://httpbingo.org/get";
         info.methodType = HttpMethodType::Get;
@@ -288,7 +285,7 @@ TEST(HttpAsyncRequestTest, CallbackExecuteWithCancel) {
 
 // HTTP 流式请求测试
 TEST(HttpAsyncRequestTest, StreamingExecute) {
-    auto coro = []() -> Coroutine<void> {
+    auto coro = []() -> Task<void> {
         RequestInfo info;
         info.url = "http://httpbingo.org/stream-bytes/1024";
         info.methodType = HttpMethodType::Get;
@@ -320,7 +317,7 @@ TEST(HttpAsyncRequestTest, StreamingExecute) {
 }
 
 TEST(HttpAsyncRequestTest, StreamingExecuteWithCancellation) {
-    auto coro = []() -> Coroutine<void> {
+    auto coro = []() -> Task<void> {
         RequestInfo info;
         info.url = "http://httpbingo.org/stream-bytes/10240";
         info.methodType = HttpMethodType::Get;
@@ -360,11 +357,11 @@ TEST(HttpAsyncRequestTest, ConcurrentRequests) {
     std::atomic<int32_t> failCount{0};
 
     constexpr int32_t kRequestCount = 5;
-    std::vector<std::shared_ptr<Coroutine<void>>> coroutines;
+    std::vector<std::shared_ptr<Task<void>>> coroutines;
 
     for (int32_t i = 0; i < kRequestCount; ++i) {
         auto coro =
-            std::make_shared<Coroutine<void>>([&successCount, &failCount]() -> Coroutine<void> {
+            std::make_shared<Task<void>>([&successCount, &failCount]() -> Task<void> {
                 RequestInfo info;
                 info.url = "http://httpbingo.org/get";
                 info.methodType = HttpMethodType::Get;
@@ -380,11 +377,10 @@ TEST(HttpAsyncRequestTest, ConcurrentRequests) {
                 }
             }());
         coroutines.push_back(coro);
-        CoroutineScheduler::instance().schedule(coro->makeResumeHandle());
+        coro->resume();
     }
 
     for (int32_t i = 0; i < 200 && successCount.load() + failCount.load() < kRequestCount; ++i) {
-        CoroutineScheduler::instance().waitForAll();
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
@@ -394,7 +390,7 @@ TEST(HttpAsyncRequestTest, ConcurrentRequests) {
 
 // 重定向测试
 TEST(HttpAsyncRequestTest, RedirectFollowing) {
-    auto coro = []() -> Coroutine<void> {
+    auto coro = []() -> Task<void> {
         RequestInfo info;
         info.url = "http://httpbingo.org/redirect/2";
         info.methodType = HttpMethodType::Get;
@@ -413,7 +409,7 @@ TEST(HttpAsyncRequestTest, RedirectFollowing) {
 }
 
 TEST(HttpAsyncRequestTest, RedirectDisabled) {
-    auto coro = []() -> Coroutine<void> {
+    auto coro = []() -> Task<void> {
         RequestInfo info;
         info.url = "http://httpbingo.org/redirect/1";
         info.methodType = HttpMethodType::Get;
@@ -432,7 +428,7 @@ TEST(HttpAsyncRequestTest, RedirectDisabled) {
 
 // 自定义头部测试
 TEST(HttpAsyncRequestTest, CustomHeaders) {
-    auto coro = []() -> Coroutine<void> {
+    auto coro = []() -> Task<void> {
         RequestInfo info;
         info.url = "http://httpbingo.org/headers";
         info.methodType = HttpMethodType::Get;
@@ -460,7 +456,7 @@ TEST(HttpAsyncRequestTest, CustomHeaders) {
 
 // User-Agent 测试
 TEST(HttpAsyncRequestTest, UserAgent) {
-    auto coro = []() -> Coroutine<void> {
+    auto coro = []() -> Task<void> {
         RequestInfo info;
         info.url = "http://httpbingo.org/user-agent";
         info.methodType = HttpMethodType::Get;
@@ -486,7 +482,7 @@ TEST(HttpAsyncRequestTest, UserAgent) {
 
 // 不同 HTTP 方法测试
 TEST(HttpAsyncRequestTest, PutMethod) {
-    auto coro = []() -> Coroutine<void> {
+    auto coro = []() -> Task<void> {
         RequestInfo info;
         info.url = "http://httpbingo.org/put";
         info.methodType = HttpMethodType::Put;
@@ -506,7 +502,7 @@ TEST(HttpAsyncRequestTest, PutMethod) {
 }
 
 TEST(HttpAsyncRequestTest, PatchMethod) {
-    auto coro = []() -> Coroutine<void> {
+    auto coro = []() -> Task<void> {
         RequestInfo info;
         info.url = "http://httpbingo.org/patch";
         info.methodType = HttpMethodType::Patch;
@@ -526,7 +522,7 @@ TEST(HttpAsyncRequestTest, PatchMethod) {
 }
 
 TEST(HttpAsyncRequestTest, DeleteMethod) {
-    auto coro = []() -> Coroutine<void> {
+    auto coro = []() -> Task<void> {
         RequestInfo info;
         info.url = "http://httpbingo.org/delete";
         info.methodType = HttpMethodType::Delete;
@@ -545,7 +541,7 @@ TEST(HttpAsyncRequestTest, DeleteMethod) {
 
 // 状态码测试
 TEST(HttpAsyncRequestTest, NotFoundStatus) {
-    auto coro = []() -> Coroutine<void> {
+    auto coro = []() -> Task<void> {
         RequestInfo info;
         info.url = "http://httpbingo.org/status/404";
         info.methodType = HttpMethodType::Get;
@@ -562,7 +558,7 @@ TEST(HttpAsyncRequestTest, NotFoundStatus) {
 }
 
 TEST(HttpAsyncRequestTest, ServerErrorStatus) {
-    auto coro = []() -> Coroutine<void> {
+    auto coro = []() -> Task<void> {
         RequestInfo info;
         info.url = "http://httpbingo.org/status/500";
         info.methodType = HttpMethodType::Get;
@@ -582,7 +578,7 @@ TEST(HttpAsyncRequestTest, ServerErrorStatus) {
 TEST(HttpAsyncRequestIntegrationTest, ScheduledHttpRequest) {
     std::atomic<bool> completed{false};
 
-    auto coro = [&]() -> Coroutine<void> {
+    auto coro = [&]() -> Task<void> {
         RequestInfo info;
         info.url = "http://httpbingo.org/get";
         info.methodType = HttpMethodType::Get;

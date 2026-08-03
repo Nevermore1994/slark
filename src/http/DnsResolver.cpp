@@ -1,42 +1,76 @@
-//
 // Copyright (c) 2026 Nevermore-. All rights reserved.
-//
+
 #include "DnsResolver.h"
 
 #include <netdb.h>
 
+#include <cstring>
+#include <new>
+
 #include "Log.hpp"
 
 namespace slark::http {
+
+struct DnsResolver::State {
+    explicit State(const Config& configIn)
+        : config(configIn), threadPool(ThreadPoolConfig{config.threadCount}) {}
+
+    Config config;
+    ThreadPool threadPool;
+    std::mutex cacheMutex;
+    std::list<std::string> lruList;
+
+    struct CacheValue {
+        DnsCacheEntry entry;
+        std::list<std::string>::iterator lruIt;
+    };
+
+    std::unordered_map<std::string, CacheValue> cache;
+};
 
 DnsResolver& DnsResolver::instance() noexcept {
     static DnsResolver instance;
     return instance;
 }
 
-DnsResolver::DnsResolver(const Config& config)
-    : config_(config), threadPool_(ThreadPoolConfig{config.threadCount}) {}
+DnsResolver::DnsResolver(const Config& config) : state_(std::make_shared<State>(config)) {}
 
 Task<AddressInfoPtr> DnsResolver::resolveAsync(const std::string& host,
                                                const std::string& port,
-                                               IPVersion ipVersion) {
+                                               IPVersion ipVersion,
+                                               CancellationToken token) {
+    return resolveAsyncImpl(state_, host, port, ipVersion, std::move(token));
+}
+
+Task<AddressInfoPtr> DnsResolver::resolveAsyncImpl(std::shared_ptr<State> state,
+                                                    std::string host,
+                                                    std::string port,
+                                                    IPVersion ipVersion,
+                                                    CancellationToken token) {
     auto key = makeKey(host, port, ipVersion);
 
     {
-        std::lock_guard<std::mutex> lock(cacheMutex_);
-        if (auto cached = lookupCache(key)) {
+        std::lock_guard lock(state->cacheMutex);
+        if (auto cached = lookupCache(*state, key)) {
             LogI("[DnsResolver::resolveAsync] cache hit: {}:{} ipv={}", host, port,
                  static_cast<int>(ipVersion));
             co_return cached;
         }
     }
 
+    if (token.isCancelled()) {
+        co_return makeAddressInfo(nullptr);
+    }
+
     LogI("[DnsResolver::resolveAsync] resolving: {}:{} ipv={}", host, port,
          static_cast<int>(ipVersion));
 
     auto awaiter = std::make_shared<CompletionAwaiter<AddressInfoPtr>>();
-
-    auto future = threadPool_.submit([host, port, ipVersion, awaiter]() {
+    // 取消贯通（C-06）：DNS 挂起期间 token 取消则提前结束，不等 thread pool
+    auto cancelReg = token.registerCallback([awaiter]() {
+        awaiter->complete(makeAddressInfo(nullptr));
+    });
+    auto future = state->threadPool.submit([host, port, ipVersion, awaiter]() {
         struct addrinfo hints{};
         hints.ai_family = getAddressFamily(ipVersion);
         hints.ai_socktype = SOCK_STREAM;
@@ -56,12 +90,11 @@ Task<AddressInfoPtr> DnsResolver::resolveAsync(const std::string& host,
         co_return makeAddressInfo(nullptr);
     }
 
-    // 挂起协程，等待 getaddrinfo 完成
     AddressInfoPtr resolved = co_await *awaiter;
 
     if (resolved) {
-        std::lock_guard<std::mutex> lock(cacheMutex_);
-        insertCache(key, resolved);
+        std::lock_guard lock(state->cacheMutex);
+        insertCache(*state, key, resolved);
         LogI("[DnsResolver::resolveAsync] resolved & cached: {}:{}", host, port);
     } else {
         LogE("[DnsResolver::resolveAsync] resolve returned null: {}:{}", host, port);
@@ -71,12 +104,12 @@ Task<AddressInfoPtr> DnsResolver::resolveAsync(const std::string& host,
 }
 
 void DnsResolver::invalidate(const std::string& host) noexcept {
-    std::lock_guard<std::mutex> lock(cacheMutex_);
-    auto it = cache_.begin();
-    while (it != cache_.end()) {
+    std::lock_guard lock(state_->cacheMutex);
+    auto it = state_->cache.begin();
+    while (it != state_->cache.end()) {
         if (it->first.starts_with(host + ":")) {
-            lruList_.erase(it->second.lruIt);
-            it = cache_.erase(it);
+            state_->lruList.erase(it->second.lruIt);
+            it = state_->cache.erase(it);
         } else {
             ++it;
         }
@@ -84,54 +117,60 @@ void DnsResolver::invalidate(const std::string& host) noexcept {
 }
 
 void DnsResolver::clearCache() noexcept {
-    std::lock_guard<std::mutex> lock(cacheMutex_);
-    cache_.clear();
-    lruList_.clear();
+    std::lock_guard lock(state_->cacheMutex);
+    state_->cache.clear();
+    state_->lruList.clear();
 }
 
 std::string DnsResolver::makeKey(const std::string& host,
                                  const std::string& port,
-                                 IPVersion ipVersion) const {
+                                 IPVersion ipVersion) {
     return host + ":" + port + ":" + std::to_string(static_cast<uint8_t>(ipVersion));
 }
 
-AddressInfoPtr DnsResolver::lookupCache(const std::string& key) noexcept {
-    auto it = cache_.find(key);
-    if (it == cache_.end()) {
+AddressInfoPtr DnsResolver::lookupCache(State& state, const std::string& key) noexcept {
+    auto it = state.cache.find(key);
+    if (it == state.cache.end()) {
         return makeAddressInfo(nullptr);
     }
 
     auto& val = it->second;
     if (std::chrono::steady_clock::now() > val.entry.expireAt) {
-        lruList_.erase(val.lruIt);
-        cache_.erase(it);
+        state.lruList.erase(val.lruIt);
+        state.cache.erase(it);
         return makeAddressInfo(nullptr);
     }
 
-    lruList_.splice(lruList_.begin(), lruList_, val.lruIt);
+    state.lruList.splice(state.lruList.begin(), state.lruList, val.lruIt);
     return cloneAddrInfo(val.entry.address.get());
 }
 
-void DnsResolver::insertCache(const std::string& key, const AddressInfoPtr& addr) {
-    if (auto it = cache_.find(key); it != cache_.end()) {
-        lruList_.erase(it->second.lruIt);
-        cache_.erase(it);
+void DnsResolver::insertCache(State& state,
+                              const std::string& key,
+                              const AddressInfoPtr& addr) {
+    if (state.config.maxCacheSize == 0) {
+        return;
     }
 
-    // 超出容量，淘汰 LRU 尾部
-    if (cache_.size() >= config_.maxCacheSize) {
-        auto& evictKey = lruList_.back();
-        cache_.erase(evictKey);
-        lruList_.pop_back();
+    if (auto it = state.cache.find(key); it != state.cache.end()) {
+        state.lruList.erase(it->second.lruIt);
+        state.cache.erase(it);
     }
 
-    lruList_.push_front(key);
-    cache_.insert_or_assign(
-        key, CacheValue{
-                 .entry = {.address = cloneAddrInfo(addr.get()),
-                           .expireAt = std::chrono::steady_clock::now() + config_.cacheTtl},
-                 .lruIt = lruList_.begin(),
-             });
+    if (state.cache.size() >= state.config.maxCacheSize) {
+        auto& evictKey = state.lruList.back();
+        state.cache.erase(evictKey);
+        state.lruList.pop_back();
+    }
+
+    state.lruList.push_front(key);
+    state.cache.insert_or_assign(
+        key,
+        State::CacheValue{
+            .entry = {.address = cloneAddrInfo(addr.get()),
+                      .expireAt = std::chrono::steady_clock::now() + state.config.cacheTtl},
+            .lruIt = state.lruList.begin(),
+        });
 }
 
 AddressInfoPtr DnsResolver::cloneAddrInfo(const addrinfo* src) noexcept {
@@ -157,8 +196,8 @@ AddressInfoPtr DnsResolver::cloneAddrInfo(const addrinfo* src) noexcept {
         delete dst;
         return makeAddressInfo(nullptr);
     }
-    std::memcpy(dst->ai_addr, src->ai_addr, src->ai_addrlen);
 
+    std::memcpy(dst->ai_addr, src->ai_addr, src->ai_addrlen);
     return AddressInfoPtr(dst, [](addrinfo* p) {
         if (p) {
             delete[] reinterpret_cast<Byte*>(p->ai_addr);

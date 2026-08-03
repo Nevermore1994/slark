@@ -62,7 +62,7 @@ TEST(UrlTest, ParseUrlWithUserInfo) {
 }
 
 // HttpResponseParser Tests
-class HttpResponseParserTest : public ::testing::Test {
+class HttpModuleParserTest : public ::testing::Test {
  protected:
     void SetUp() override {
         parser_ = std::make_unique<HttpResponseParser>(HttpResponseParser::Callbacks{});
@@ -71,7 +71,7 @@ class HttpResponseParserTest : public ::testing::Test {
     std::unique_ptr<HttpResponseParser> parser_;
 };
 
-TEST_F(HttpResponseParserTest, ParseSimpleResponse) {
+TEST_F(HttpModuleParserTest, ParseSimpleResponse) {
     const char* response = "HTTP/1.1 200 OK\r\n"
                            "Content-Length: 13\r\n"
                            "\r\n"
@@ -81,7 +81,7 @@ TEST_F(HttpResponseParserTest, ParseSimpleResponse) {
     EXPECT_TRUE(parser_->isCompleted());
 }
 
-TEST_F(HttpResponseParserTest, ParseChunkedResponse) {
+TEST_F(HttpModuleParserTest, ParseChunkedResponse) {
     const char* response = "HTTP/1.1 200 OK\r\n"
                            "Transfer-Encoding: chunked\r\n"
                            "\r\n"
@@ -96,7 +96,7 @@ TEST_F(HttpResponseParserTest, ParseChunkedResponse) {
     EXPECT_TRUE(parser_->isCompleted());
 }
 
-TEST_F(HttpResponseParserTest, ParseNoContentLengthResponse) {
+TEST_F(HttpModuleParserTest, ParseNoContentLengthResponse) {
     // Response without Content-Length (should use EOF as terminator)
     const char* response = "HTTP/1.1 200 OK\r\n"
                            "Content-Type: text/plain\r\n"
@@ -113,7 +113,7 @@ TEST_F(HttpResponseParserTest, ParseNoContentLengthResponse) {
     EXPECT_TRUE(parser_->isCompleted());
 }
 
-TEST_F(HttpResponseParserTest, ParseHeaders) {
+TEST_F(HttpModuleParserTest, ParseHeaders) {
     HttpStatusCode code = HttpStatusCode::Unknown;
     std::string reason;
     std::unordered_map<std::string, std::string> headers;
@@ -140,7 +140,7 @@ TEST_F(HttpResponseParserTest, ParseHeaders) {
     EXPECT_FALSE(parser_->hasError());
 }
 
-TEST_F(HttpResponseParserTest, ShouldCloseConnection) {
+TEST_F(HttpModuleParserTest, ShouldCloseConnection) {
     // HTTP/1.0 默认不关闭（需要显式 Connection: close）
     const char* http10 = "HTTP/1.0 200 OK\r\n"
                          "Content-Length: 0\r\n"
@@ -167,7 +167,7 @@ TEST_F(HttpResponseParserTest, ShouldCloseConnection) {
     EXPECT_FALSE(parser_->shouldCloseConnection());
 }
 
-TEST_F(HttpResponseParserTest, StateTracking) {
+TEST_F(HttpModuleParserTest, StateTracking) {
     EXPECT_EQ(parser_->state(), HttpResponseParser::State::StatusLine);
 
     const char* partial = "HTTP/1.1 200 OK\r\n";
@@ -175,7 +175,7 @@ TEST_F(HttpResponseParserTest, StateTracking) {
     EXPECT_EQ(parser_->state(), HttpResponseParser::State::Headers);
 }
 
-TEST_F(HttpResponseParserTest, Reset) {
+TEST_F(HttpModuleParserTest, Reset) {
     const char* response = "HTTP/1.1 200 OK\r\n"
                            "Content-Length: 0\r\n"
                            "\r\n";

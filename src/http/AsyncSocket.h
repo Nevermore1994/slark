@@ -74,7 +74,8 @@ class TLSTransport final : public ITransport {
     ~TLSTransport();
 
     /// @return true 表示握手成功，false 表示失败（不抛异常）
-    Task<bool> performHandshake(std::chrono::milliseconds timeout);
+    Task<bool> performHandshake(std::chrono::milliseconds timeout,
+                                CancellationToken token = CancellationToken{});
 
     ssize_t write(const void* data, size_t size) noexcept override;
     ssize_t read(void* buffer, size_t size) noexcept override;
@@ -98,7 +99,8 @@ class IAsyncSocket {
     virtual ~IAsyncSocket() = default;
 
     virtual Task<void> asyncConnect(const AddressInfoPtr& address,
-                                    std::chrono::milliseconds timeout = kDefaultConnectTimeout) = 0;
+                                    std::chrono::milliseconds timeout = kDefaultConnectTimeout,
+                                    CancellationToken token = CancellationToken{}) = 0;
 
     virtual Task<AsyncSocketResult> asyncSend(
         const std::string_view& data,
@@ -146,7 +148,8 @@ class AsyncSocket final : public IAsyncSocket, public NonCopyable {
     ~AsyncSocket();
 
     Task<void> asyncConnect(const AddressInfoPtr& address,
-                            std::chrono::milliseconds timeout = kDefaultConnectTimeout) override;
+                            std::chrono::milliseconds timeout = kDefaultConnectTimeout,
+                            CancellationToken token = CancellationToken{}) override;
 
     Task<AsyncSocketResult> asyncSend(
         const std::string_view& data,

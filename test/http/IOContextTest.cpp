@@ -4,11 +4,19 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include "CoroutineControlBlock.hpp"
-#include "SharedCoroutineHandle.hpp"
+#include "Awaitable.hpp"
+#include "Task.hpp"
 
 using namespace slark;
 using namespace slark::http;
+
+namespace {
+
+Task<void> suspendedOn(std::shared_ptr<CompletionAwaiter<void>> awaiter) {
+    co_await *awaiter;
+}
+
+}  // namespace
 
 TEST(IOContextTest, SingletonInstance) {
     auto& ctx1 = IOContext::instance();
@@ -32,11 +40,13 @@ TEST(IOContextTest, RegisterContinuation) {
     ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
     IOContext::instance().registerSocket(fds[0]);
 
-    auto control = std::make_shared<CoroutineControlBlock>(std::coroutine_handle<>{});
-    auto handle = std::make_shared<SharedCoroutineHandle>(control);
+    auto awaiter = std::make_shared<CompletionAwaiter<void>>();
+    auto task = suspendedOn(awaiter);
+    task.resume();
+    auto gate = slark::makeResumeGate(task.getHandle());
 
-    auto token = IOContext::instance().registerContinuation(fds[0], FdInterest::Read, handle);
-    EXPECT_TRUE(token.isValid());
+    auto token = IOContext::instance().registerContinuation(fds[0], FdInterest::Read, gate);
+    EXPECT_TRUE(token.valid());
     token.cancel();
 
     IOContext::instance().unregisterSocket(fds[0]);

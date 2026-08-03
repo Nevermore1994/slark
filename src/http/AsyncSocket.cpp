@@ -78,13 +78,18 @@ Socket createAndConfigureSocket(int32_t addressFamily) {
 
 Task<void> tcpConnect(Socket socket,
                       const AddressInfoPtr& address,
-                      std::chrono::milliseconds timeout) {
+                      std::chrono::milliseconds timeout,
+                      CancellationToken token = CancellationToken{}) {
     auto [addrStr, port] = extractAddress(address);
     auto connector = AsyncConnect(socket, addrStr, port);
     connector.setTimeout(timeout);
+    connector.setCancellationToken(token);
     auto result = co_await connector;
     if (!result) {
         auto error = result.error();
+        if (error == Error::Cancelled) {
+            throw CancelledException("Connection cancelled");
+        }
         if (error == Error::ConnectionTimeout) {
             throw TimeoutException("Connection timeout");
         }
@@ -161,7 +166,8 @@ AsyncSocket::~AsyncSocket() {
 }
 
 Task<void> AsyncSocket::asyncConnect(const AddressInfoPtr& address,
-                                     std::chrono::milliseconds timeout) {
+                                     std::chrono::milliseconds timeout,
+                                     CancellationToken token) {
     socket_ = createAndConfigureSocket(address->ai_family);
     if (socket_ == kInvalidSocket) {
         LogE("[AsyncSocket::asyncConnect] create socket failed: family={}",
@@ -173,7 +179,7 @@ Task<void> AsyncSocket::asyncConnect(const AddressInfoPtr& address,
     ScopeGuard guard([this] {
         closeSocket(socket_);
     });
-    co_await tcpConnect(socket_, address, timeout);
+    co_await tcpConnect(socket_, address, timeout, token);
     guard.dismiss();
 
     LogI("[AsyncSocket::asyncConnect] tcp connect ok: fd={} timeoutMs={}", socket_,
@@ -454,7 +460,8 @@ TLSTransport::~TLSTransport() {
     shutdown();
 }
 
-Task<bool> TLSTransport::performHandshake(std::chrono::milliseconds timeout) {
+Task<bool> TLSTransport::performHandshake(std::chrono::milliseconds timeout,
+                                          CancellationToken token) {
     if (!sslPtr_) {
         LogW("TLS handshake failed: SSL create failed");
         co_return false;
@@ -462,6 +469,9 @@ Task<bool> TLSTransport::performHandshake(std::chrono::milliseconds timeout) {
 
     Time::Deadline deadline(timeout);
     while (true) {
+        if (token.isCancelled()) {
+            co_return false;
+        }
         if (deadline.isExpired()) {
             LogW("TLS handshake timeout");
             co_return false;
@@ -477,7 +487,7 @@ Task<bool> TLSTransport::performHandshake(std::chrono::milliseconds timeout) {
         if (sslError == SSL_ERROR_WANT_READ || sslError == SSL_ERROR_WANT_WRITE) {
             auto interest = (sslError == SSL_ERROR_WANT_READ) ? FdReadyAwaiter::Interest::Read
                                                               : FdReadyAwaiter::Interest::Write;
-            bool ready = co_await waitFdReadyWithTimeout(fd_, interest, deadline);
+            bool ready = co_await waitFdReadyWithTimeout(fd_, interest, deadline, &token);
             if (!ready) {
                 LogW("TLS handshake failed: waitFdReady timeout");
                 co_return false;
