@@ -33,7 +33,7 @@ class AsyncGeneratorYieldAwaiter {
 
     std::coroutine_handle<> await_suspend(std::coroutine_handle<>) noexcept {
         if (auto consumer = promise_.takeWaitingConsumer()) {
-            consumer.resume();
+            consumer->signal();
         }
         return std::noop_coroutine();
     }
@@ -56,7 +56,7 @@ class AsyncGeneratorFinalAwaiter {
         auto& promise = h.promise();
         promise.setCompleted();
         if (auto consumer = promise.takeWaitingConsumer()) {
-            consumer.resume();
+            consumer->signal();
         }
         return std::noop_coroutine();
     }
@@ -125,23 +125,29 @@ class AsyncGeneratorPromise {
         completed_.store(true, std::memory_order_release);
     }
 
-    void setWaitingConsumer(std::coroutine_handle<> consumer) noexcept {
-        consumerHandle_ = consumer;
+    void setWaitingConsumer(std::shared_ptr<ResumeGate> consumer) noexcept {
+        consumerGate_ = std::move(consumer);
         consumerState_ = ConsumerState::Waiting;
     }
 
-    std::coroutine_handle<> takeWaitingConsumer() noexcept {
+    std::shared_ptr<ResumeGate> takeWaitingConsumer() noexcept {
         if (consumerState_ == ConsumerState::Waiting) {
             consumerState_ = ConsumerState::Resumed;
-            return std::exchange(consumerHandle_, nullptr);
+            return std::exchange(consumerGate_, nullptr);
         }
         return nullptr;
+    }
+
+    [[nodiscard]] std::shared_ptr<CoroutineFrameControl> frameControl() const noexcept {
+        return frameControl_;
     }
 
  private:
     std::optional<T> value_;
     std::exception_ptr exception_;
-    std::coroutine_handle<> consumerHandle_ = nullptr;
+    std::shared_ptr<ResumeGate> consumerGate_;
+    std::shared_ptr<CoroutineFrameControl> frameControl_ =
+        std::make_shared<CoroutineFrameControl>();
     ConsumerState consumerState_ = ConsumerState::None;
     std::atomic<bool> completed_{false};
 };
@@ -171,7 +177,11 @@ class AsyncGeneratorNextAwaiter {
         if (promise.hasValue() || promise.isCompleted()) {
             return consumer;
         }
-        promise.setWaitingConsumer(consumer);
+        auto gate = makeResumeGate(consumer);
+        promise.setWaitingConsumer(gate);
+        if (!gate->arm()) {
+            return consumer;
+        }
         return handle_;
     }
 
@@ -197,6 +207,10 @@ class AsyncGeneratorNextAwaiter {
 
 }  // namespace detail
 
+// 线程约束（C-08）：生产者与消费者必须由同一 executor/线程串行驱动。
+// next() / co_yield / 完成 / 析构不得跨线程并发调用；跨线程场景需先经
+// 事件投递（如 ownerThread_->postTask）串行化。若未来需要跨线程，
+// 必须将 consumerGate_/consumerState_ 改为互斥或原子状态机。
 template <typename T>
 class [[nodiscard]] AsyncGenerator : public NonCopyable {
  public:
@@ -213,18 +227,14 @@ class [[nodiscard]] AsyncGenerator : public NonCopyable {
 
     AsyncGenerator& operator=(AsyncGenerator&& other) noexcept {
         if (this != &other) {
-            if (handle_) {
-                handle_.destroy();
-            }
+            destroyFrame();
             handle_ = std::exchange(other.handle_, nullptr);
         }
         return *this;
     }
 
     ~AsyncGenerator() {
-        if (handle_) {
-            handle_.destroy();
-        }
+        destroyFrame();
     }
 
     [[nodiscard]] bool isValid() const noexcept {
@@ -273,6 +283,16 @@ class [[nodiscard]] AsyncGenerator : public NonCopyable {
     Task<Container<T>> collect();
 
  private:
+    void destroyFrame() noexcept {
+        if (!handle_) {
+            return;
+        }
+        auto handle = std::exchange(handle_, nullptr);
+        if (handle.promise().frameControl()->destroy(handle)) {
+            handle.destroy();
+        }
+    }
+
     handle_type handle_ = nullptr;
 };
 

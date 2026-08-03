@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "CoroutineControl.hpp"
 #include "NonCopyable.h"
 
 #ifdef __linux__
@@ -29,8 +30,7 @@ class EventLoop : public NonCopyable {
     static constexpr int32_t kPollTimeoutMs = 100;
 
     struct FdRegistration {
-        std::coroutine_handle<> handle;
-        std::shared_ptr<std::atomic<bool>> aliveFlag;
+        std::shared_ptr<ResumeGate> gate;
     };
 
     EventLoop();
@@ -65,26 +65,27 @@ class EventLoop : public NonCopyable {
                           uint64_t id,
                           int32_t fd,
                           FdInterest interest,
-                          std::shared_ptr<std::atomic<bool>> aliveFlag) noexcept
+                          std::shared_ptr<ResumeGate> gate) noexcept
             : loop_(loop),
               id_(id),
               fd_(fd),
               interest_(interest),
-              aliveFlag_(std::move(aliveFlag)) {}
+              gate_(std::move(gate)) {}
 
         EventLoop* loop_{nullptr};
         uint64_t id_{0};
         int32_t fd_{-1};
         FdInterest interest_{};
-        std::shared_ptr<std::atomic<bool>> aliveFlag_;
+        std::shared_ptr<ResumeGate> gate_;
     };
 
     RegistrationToken registerContinuation(int32_t fd,
                                            FdInterest interest,
-                                           std::coroutine_handle<> handle,
-                                           std::shared_ptr<std::atomic<bool>> aliveFlag) noexcept;
+                                           std::shared_ptr<ResumeGate> gate) noexcept;
 
-    void unregisterContinuation(int32_t fd, FdInterest interest) noexcept;
+    void unregisterContinuation(int32_t fd,
+                                FdInterest interest,
+                                std::shared_ptr<ResumeGate> expectedGate = {}) noexcept;
 
     int32_t nativeFd() const noexcept {
 #ifdef __linux__
@@ -97,11 +98,11 @@ class EventLoop : public NonCopyable {
  private:
     RegistrationToken createToken(int32_t fd,
                                   FdInterest interest,
-                                  std::shared_ptr<std::atomic<bool>> aliveFlag) noexcept;
+                                  std::shared_ptr<ResumeGate> gate) noexcept;
     std::pair<FdRegistration, bool> takeRegistration(
         int32_t fd,
         FdInterest interest,
-        const std::shared_ptr<std::atomic<bool>>* expectedFlag = nullptr) noexcept;
+        const std::shared_ptr<ResumeGate>* expectedGate = nullptr) noexcept;
     void dispatchEvent(int32_t fd, bool readable, bool writable, bool error) noexcept;
     void poll() noexcept;
 
@@ -118,6 +119,9 @@ class EventLoop : public NonCopyable {
     int32_t kqueueFd_{-1};
 #endif
     std::atomic<bool> running_{false};
+    // stop() 可能在 eventThread 执行 run() 之前被调用（测试进程快速退出），
+    // 该标志保证 run() 不会把 running_ 重新置 true 而永久阻塞 join()
+    std::atomic<bool> stopRequested_{false};
     std::atomic<uint64_t> nextId_{1};
     mutable std::mutex fdMutex_;
     std::unordered_map<int32_t, FdSlot> fdSlots_;

@@ -52,13 +52,22 @@ EventLoop::~EventLoop() {
 }
 
 void EventLoop::run() noexcept {
-    running_.store(true);
+    running_.store(true, std::memory_order_release);
+    // stop() 可能已先于本线程执行（事件线程尚未启动时进程退出）。
+    // 必须 store 后复检：若 stop() 在 store 前完成，running_ 会被这里覆盖为 true
+    // 且 wakeup 事件已消费，导致 poll 永不退出、join() 永久阻塞。
+    if (stopRequested_.load(std::memory_order_acquire)) {
+        running_.store(false, std::memory_order_release);
+        return;
+    }
     while (running_.load()) {
         poll();
     }
+    running_.store(false, std::memory_order_release);
 }
 
 void EventLoop::stop() noexcept {
+    stopRequested_.store(true, std::memory_order_release);
     running_.store(false);
     wakeup();
 }
@@ -96,11 +105,11 @@ void EventLoop::unregisterFd(int32_t fd) noexcept {
         std::lock_guard l(fdMutex_);
         auto it = fdSlots_.find(fd);
         if (it != fdSlots_.end()) {
-            if (it->second.hasRead && it->second.readReg.aliveFlag) {
-                *it->second.readReg.aliveFlag = false;
+            if (it->second.hasRead && it->second.readReg.gate) {
+                it->second.readReg.gate->disarm();
             }
-            if (it->second.hasWrite && it->second.writeReg.aliveFlag) {
-                *it->second.writeReg.aliveFlag = false;
+            if (it->second.hasWrite && it->second.writeReg.gate) {
+                it->second.writeReg.gate->disarm();
             }
             for (auto t = tokenMap_.begin(); t != tokenMap_.end();) {
                 if (t->second.first == fd) {
@@ -128,6 +137,14 @@ void EventLoop::unregisterFd(int32_t fd) noexcept {
 void EventLoop::setReadable(int32_t fd, bool en) noexcept {
 #ifdef __linux__
     std::lock_guard l(fdMutex_);
+    if (!en) {
+        // C-03：关闭 interest 前复核 slot。若 dispatch/cancel 取走旧 waiter 后
+        // 另一线程已注册新 waiter，则不关闭，避免关掉新 waiter 的 interest。
+        auto it = fdSlots_.find(fd);
+        if (it != fdSlots_.end() && it->second.hasRead) {
+            return;
+        }
+    }
     if (en) {
         fdEvents_[fd] |= EPOLLIN;
     } else {
@@ -138,6 +155,14 @@ void EventLoop::setReadable(int32_t fd, bool en) noexcept {
     e.events = EPOLLET | fdEvents_[fd];
     epoll_ctl(epollFd_, EPOLL_CTL_MOD, fd, &e);
 #elif defined(__APPLE__)
+    std::lock_guard l(fdMutex_);
+    if (!en) {
+        // C-03：同上，关闭前复核 slot 归属
+        auto it = fdSlots_.find(fd);
+        if (it != fdSlots_.end() && it->second.hasRead) {
+            return;
+        }
+    }
     struct kevent c;
     EV_SET(&c, fd, EVFILT_READ, en ? EV_ADD | EV_ENABLE : EV_DELETE, 0, 0, 0);
     kevent(kqueueFd_, &c, 1, 0, 0, 0);
@@ -147,6 +172,13 @@ void EventLoop::setReadable(int32_t fd, bool en) noexcept {
 void EventLoop::setWritable(int32_t fd, bool en) noexcept {
 #ifdef __linux__
     std::lock_guard l(fdMutex_);
+    if (!en) {
+        // C-03：关闭前复核 slot 归属
+        auto it = fdSlots_.find(fd);
+        if (it != fdSlots_.end() && it->second.hasWrite) {
+            return;
+        }
+    }
     if (en) {
         fdEvents_[fd] |= EPOLLOUT;
     } else {
@@ -157,6 +189,14 @@ void EventLoop::setWritable(int32_t fd, bool en) noexcept {
     e.events = EPOLLET | fdEvents_[fd];
     epoll_ctl(epollFd_, EPOLL_CTL_MOD, fd, &e);
 #elif defined(__APPLE__)
+    std::lock_guard l(fdMutex_);
+    if (!en) {
+        // C-03：关闭前复核 slot 归属
+        auto it = fdSlots_.find(fd);
+        if (it != fdSlots_.end() && it->second.hasWrite) {
+            return;
+        }
+    }
     struct kevent c;
     EV_SET(&c, fd, EVFILT_WRITE, en ? EV_ADD | EV_ENABLE : EV_DELETE, 0, 0, 0);
     kevent(kqueueFd_, &c, 1, 0, 0, 0);
@@ -166,34 +206,42 @@ void EventLoop::setWritable(int32_t fd, bool en) noexcept {
 EventLoop::RegistrationToken EventLoop::createToken(
     int32_t fd,
     FdInterest interest,
-    std::shared_ptr<std::atomic<bool>> aliveFlag) noexcept {
+    std::shared_ptr<ResumeGate> gate) noexcept {
     uint64_t id = nextId_.fetch_add(1);
     tokenMap_[id] = {fd, interest};
-    return RegistrationToken(this, id, fd, interest, std::move(aliveFlag));
+    return RegistrationToken(this, id, fd, interest, std::move(gate));
 }
 
 EventLoop::RegistrationToken EventLoop::registerContinuation(
     int32_t fd,
     FdInterest interest,
-    std::coroutine_handle<> handle,
-    std::shared_ptr<std::atomic<bool>> aliveFlag) noexcept {
+    std::shared_ptr<ResumeGate> gate) noexcept {
     std::lock_guard l(fdMutex_);
     auto& slot = fdSlots_[fd];
     auto& target = (interest == FdInterest::Read) ? slot.readReg : slot.writeReg;
     auto& hasTarget = (interest == FdInterest::Read) ? slot.hasRead : slot.hasWrite;
     if (hasTarget) {
         LogW("EventLoop: overwriting pending waiter on fd={}", fd);
+        if (target.gate) {
+            target.gate->disarm();
+        }
+        for (auto token = tokenMap_.begin(); token != tokenMap_.end();) {
+            if (token->second.first == fd && token->second.second == interest) {
+                token = tokenMap_.erase(token);
+            } else {
+                ++token;
+            }
+        }
     }
-    target.handle = handle;
-    target.aliveFlag = aliveFlag;
+    target.gate = gate;
     hasTarget = true;
-    return createToken(fd, interest, std::move(aliveFlag));
+    return createToken(fd, interest, std::move(gate));
 }
 
 std::pair<EventLoop::FdRegistration, bool> EventLoop::takeRegistration(
     int32_t fd,
     FdInterest interest,
-    const std::shared_ptr<std::atomic<bool>>* expectedFlag) noexcept {
+    const std::shared_ptr<ResumeGate>* expectedGate) noexcept {
     FdRegistration reg;
     bool needDisable = false;
     std::lock_guard l(fdMutex_);
@@ -208,7 +256,7 @@ std::pair<EventLoop::FdRegistration, bool> EventLoop::takeRegistration(
     if (!hasSlot) {
         return {reg, false};
     }
-    if (expectedFlag && slotReg.aliveFlag != *expectedFlag) {
+    if (expectedGate && slotReg.gate != *expectedGate) {
         return {reg, false};
     }
     reg = slotReg;
@@ -221,13 +269,16 @@ std::pair<EventLoop::FdRegistration, bool> EventLoop::takeRegistration(
     return {reg, needDisable};
 }
 
-void EventLoop::unregisterContinuation(int32_t fd, FdInterest interest) noexcept {
-    auto [reg, needDisable] = takeRegistration(fd, interest);
+void EventLoop::unregisterContinuation(int32_t fd,
+                                        FdInterest interest,
+                                        std::shared_ptr<ResumeGate> expectedGate) noexcept {
+    auto expected = expectedGate;
+    auto [reg, needDisable] = takeRegistration(fd, interest, expected ? &expected : nullptr);
     if (needDisable) {
         (interest == FdInterest::Read) ? setReadable(fd, false) : setWritable(fd, false);
     }
-    if (reg.aliveFlag) {
-        *reg.aliveFlag = false;
+    if (reg.gate) {
+        reg.gate->disarm();
     }
 }
 
@@ -237,11 +288,11 @@ void EventLoop::RegistrationToken::cancel() noexcept {
     if (!loop) {
         return;
     }
-    if (aliveFlag_) {
-        *aliveFlag_ = false;
-        aliveFlag_.reset();
+    if (gate_) {
+        gate_->disarm();
     }
-    auto [reg, needDisable] = loop->takeRegistration(fd_, interest_);
+    auto expectedGate = gate_;
+    auto [reg, needDisable] = loop->takeRegistration(fd_, interest_, &expectedGate);
     if (needDisable) {
         (interest_ == FdInterest::Read) ? loop->setReadable(fd_, false)
                                         : loop->setWritable(fd_, false);
@@ -272,19 +323,19 @@ void EventLoop::dispatchEvent(int32_t fd, bool readable, bool writable, bool err
         setWritable(fd, false);
     }
     if (!running_.load()) {
-        if (readReg.aliveFlag) {
-            *readReg.aliveFlag = false;
+        if (readReg.gate) {
+            readReg.gate->disarm();
         }
-        if (writeReg.aliveFlag) {
-            *writeReg.aliveFlag = false;
+        if (writeReg.gate) {
+            writeReg.gate->disarm();
         }
         return;
     }
-    if (readReg.aliveFlag && readReg.aliveFlag->load()) {
-        readReg.handle.resume();
+    if (readReg.gate) {
+        readReg.gate->signal();
     }
-    if (writeReg.aliveFlag && writeReg.aliveFlag->load()) {
-        writeReg.handle.resume();
+    if (writeReg.gate) {
+        writeReg.gate->signal();
     }
 }
 

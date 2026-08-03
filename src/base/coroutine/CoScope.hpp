@@ -40,7 +40,10 @@ class AsyncScope {
         if (!state_->cv.wait_for(lock, std::chrono::seconds(5), [s = state_]() {
                 return s->activeCount.load(std::memory_order_acquire) == 0;
             })) {
-            state_->childTasks.clear();
+            // C-07：超时后不得直接释放 child frame。挂起的 child 其 scopeWrapper
+            // 仍持有 state_（shared_ptr），会保活 childTasks_ 中的 Task 与 frame；
+            // 若外部回调（timer/fd/IO）仍持 handle，clear 会 UAF。因此保留 frame，
+            // 由 child 自身完成或进程退出时回收。
         }
     }
 
@@ -50,14 +53,15 @@ class AsyncScope {
 
         auto wrapperTask = detail::scopeWrapper<T>(state_, std::move(task));
         auto handle = wrapperTask.getHandle();
+        auto frameControl = handle.promise().frameControl();
         state_->childTasks.push_back(std::move(wrapperTask));
 
         if (state_->defaultExecutor && !state_->defaultExecutor->isInline()) {
-            state_->defaultExecutor->execute([h = handle]() noexcept {
-                h.resume();
+            state_->defaultExecutor->execute([frameControl, handle]() noexcept {
+                frameControl->resume(handle);
             });
         } else {
-            handle.resume();
+            state_->childTasks.back().resume();
         }
     }
 

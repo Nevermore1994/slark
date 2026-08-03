@@ -2,16 +2,20 @@
 
 #pragma once
 
+#include <chrono>
 #include <coroutine>
+#include <memory>
 
-#include "AliveFlag.hpp"
+#include "CoroutineControl.hpp"
 #include "CoroutineScheduler.hpp"
 
 namespace slark {
 
 struct YieldAwaiter {
     ~YieldAwaiter() {
-        flag_.setDead();
+        if (gate_) {
+            gate_->disarm();
+        }
     }
 
     bool await_ready() const noexcept {
@@ -20,24 +24,20 @@ struct YieldAwaiter {
 
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
-        handle_ = handle;
-        flag_ = AliveFlag{};
-        auto weakFlag = flag_.weak();
-        auto h = handle_;
-        CoroutineScheduler::instance().scheduleCallback(std::chrono::milliseconds(0),
-                                                        [weakFlag, h]() {
-                                                            checkAlive(weakFlag, [h]() {
-                                                                h.resume();
-                                                            });
-                                                        });
-        return true;
+        gate_ = makeResumeGate(handle);
+        auto weakGate = std::weak_ptr<ResumeGate>(gate_);
+        CoroutineScheduler::instance().scheduleCallback(std::chrono::milliseconds(0), [weakGate]() {
+            if (auto gate = weakGate.lock()) {
+                gate->signal();
+            }
+        });
+        return gate_->arm();
     }
 
     void await_resume() noexcept {}
 
  private:
-    std::coroutine_handle<> handle_;
-    AliveFlag flag_;
+    std::shared_ptr<ResumeGate> gate_;
 };
 
 inline YieldAwaiter yield() noexcept {

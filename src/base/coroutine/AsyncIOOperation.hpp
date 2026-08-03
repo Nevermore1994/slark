@@ -4,14 +4,18 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <coroutine>
 #include <expected>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <type_traits>
 #include <utility>
 
+#include "CancellationToken.h"
+#include "CoroutineControl.hpp"
 #include "CoroutineScheduler.hpp"
 #include "Error.h"
 #include "Timer.h"
@@ -23,30 +27,125 @@ using IOResult = std::expected<T, Error>;
 
 enum class IOOpState : uint8_t {
     Pending = 0,
+    Starting,
+    Waiting,
     Completed,
     Failed,
     TimedOut,
+    Cancelled,
 };
 
 struct SharedCompletion {
     std::atomic<IOOpState> state{IOOpState::Pending};
-    std::shared_ptr<std::atomic<bool>> aliveFlag;
-    std::coroutine_handle<> handle;
+    mutable std::mutex mutex;
+    std::shared_ptr<ResumeGate> gate;
     std::function<void()> cleanup;
     std::optional<Error> error;
 
-    bool tryComplete(IOOpState newState) noexcept {
-        auto expected = IOOpState::Pending;
-        if (state.compare_exchange_strong(expected, newState, std::memory_order_acq_rel)) {
-            if (cleanup) {
-                cleanup();
+    template <typename Publish>
+    bool tryComplete(IOOpState newState,
+                     std::optional<Error> newError,
+                     Publish&& publish) noexcept {
+        std::shared_ptr<ResumeGate> resumeGate;
+        std::function<void()> cleanupTask;
+        IOOpState previous;
+        {
+            std::lock_guard lock(mutex);
+            previous = state.load(std::memory_order_relaxed);
+            if (previous == IOOpState::Completed || previous == IOOpState::Failed ||
+                previous == IOOpState::TimedOut || previous == IOOpState::Cancelled) {
+                return false;
             }
-            if (aliveFlag && aliveFlag->load(std::memory_order_acquire)) {
-                handle.resume();
-            }
-            return true;
+            publish();
+            error = newError;
+            state.store(newState, std::memory_order_release);
+            resumeGate = gate;
+            cleanupTask = std::exchange(cleanup, nullptr);
         }
-        return false;
+
+        if ((previous == IOOpState::Starting || previous == IOOpState::Waiting) && resumeGate) {
+            resumeGate->signal();
+        }
+        if (cleanupTask) {
+            cleanupTask();
+        }
+        return true;
+    }
+
+    bool begin(std::shared_ptr<ResumeGate> newGate) noexcept {
+        std::lock_guard lock(mutex);
+        gate = std::move(newGate);
+        auto expected = IOOpState::Pending;
+        return state.compare_exchange_strong(expected, IOOpState::Starting,
+                                             std::memory_order_acq_rel);
+    }
+
+    bool wait() noexcept {
+        std::lock_guard lock(mutex);
+        auto expected = IOOpState::Starting;
+        return state.compare_exchange_strong(expected, IOOpState::Waiting,
+                                             std::memory_order_acq_rel);
+    }
+
+    void setCleanup(std::function<void()> task) noexcept {
+        std::lock_guard lock(mutex);
+        cleanup = std::move(task);
+    }
+
+    [[nodiscard]] std::shared_ptr<ResumeGate> getGate() const noexcept {
+        std::lock_guard lock(mutex);
+        return gate;
+    }
+
+    [[nodiscard]] std::optional<Error> getError() const noexcept {
+        std::lock_guard lock(mutex);
+        return error;
+    }
+
+    void cancel() noexcept {
+        std::shared_ptr<ResumeGate> resumeGate;
+        std::function<void()> cleanupTask;
+        {
+            std::lock_guard lock(mutex);
+            auto current = state.load(std::memory_order_relaxed);
+            if (current == IOOpState::Completed || current == IOOpState::Failed ||
+                current == IOOpState::TimedOut || current == IOOpState::Cancelled) {
+                return;
+            }
+            state.store(IOOpState::Cancelled, std::memory_order_release);
+            resumeGate = gate;
+            cleanupTask = std::exchange(cleanup, nullptr);
+        }
+        if (resumeGate) {
+            resumeGate->disarm();
+        }
+        if (cleanupTask) {
+            cleanupTask();
+        }
+    }
+
+    // 外部取消（C-06）：设置 Cancelled 并唤醒挂起的协程，cleanup 照常执行
+    void requestCancel() noexcept {
+        std::shared_ptr<ResumeGate> resumeGate;
+        std::function<void()> cleanupTask;
+        {
+            std::lock_guard lock(mutex);
+            auto current = state.load(std::memory_order_relaxed);
+            if (current == IOOpState::Completed || current == IOOpState::Failed ||
+                current == IOOpState::TimedOut || current == IOOpState::Cancelled) {
+                return;
+            }
+            state.store(IOOpState::Cancelled, std::memory_order_release);
+            error = Error::Cancelled;
+            resumeGate = gate;
+            cleanupTask = std::exchange(cleanup, nullptr);
+        }
+        if (resumeGate) {
+            resumeGate->signal();
+        }
+        if (cleanupTask) {
+            cleanupTask();
+        }
     }
 };
 
@@ -56,36 +155,35 @@ class AsyncIOOperationBase {
     AsyncIOOperationBase() : completion_(std::make_shared<SharedCompletion>()) {}
 
     virtual ~AsyncIOOperationBase() {
-        if (aliveFlag_) {
-            *aliveFlag_ = false;
-            aliveFlag_.reset();
-        }
         cancelTimer();
-        if (auto cleanup = std::exchange(cleanup_, nullptr)) {
-            cleanup();
-        }
+        completion_->cancel();
     }
 
     bool await_ready() const noexcept {
-        return completion_->state.load(std::memory_order_acquire) != IOOpState::Pending;
+        return isTerminal(completion_->state.load(std::memory_order_acquire));
     }
 
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
-        handle_ = handle;
-        aliveFlag_ = std::make_shared<std::atomic<bool>>(true);
-        completion_->aliveFlag = aliveFlag_;
-        completion_->handle = handle_;
-        completion_->cleanup = {};
+        auto gate = makeResumeGate(handle);
+        if (!completion_->begin(gate)) {
+            gate->disarm();
+            return false;
+        }
+
         scheduleTimeout();
         startOperation();
-        return completion_->state.load(std::memory_order_acquire) == IOOpState::Pending;
+        if (completion_->wait()) {
+            return gate->arm();
+        }
+        gate->disarm();
+        return false;
     }
 
     IOResult<T> await_resume() {
         auto s = completion_->state.load(std::memory_order_acquire);
-        if (s == IOOpState::Failed || s == IOOpState::TimedOut) {
-            return std::unexpected(error_.value_or(Error::NetworkError));
+        if (s == IOOpState::Failed || s == IOOpState::TimedOut || s == IOOpState::Cancelled) {
+            return std::unexpected(completion_->getError().value_or(Error::NetworkError));
         }
         return derived().getResult();
     }
@@ -94,49 +192,52 @@ class AsyncIOOperationBase {
         timeout_ = t;
     }
 
+    // 外部取消（C-06）：token 取消时唤醒挂起的协程
+    void setCancellationToken(CancellationToken token) {
+        if (token.isCancelled()) {
+            completion_->requestCancel();
+            return;
+        }
+        auto weakCompletion = std::weak_ptr<SharedCompletion>(completion_);
+        cancelReg_ = token.registerCallback([weakCompletion]() {
+            if (auto completion = weakCompletion.lock()) {
+                completion->requestCancel();
+            }
+        });
+    }
+
  protected:
     int32_t fd_{-1};
-    std::optional<Error> error_;
-    std::coroutine_handle<> handle_;
-    std::shared_ptr<std::atomic<bool>> aliveFlag_;
 
     virtual void startOperation() noexcept = 0;
 
-    void complete(T value) noexcept {
-        derived().storeResult(std::move(value));
-        finish(IOOpState::Completed);
+    void complete(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
+        completion_->tryComplete(IOOpState::Completed, std::nullopt, [this, value = std::move(value)]() mutable {
+            derived().storeResult(std::move(value));
+        });
     }
 
     void fail(Error error) noexcept {
-        error_ = error;
-        finish(IOOpState::Failed);
+        completion_->tryComplete(IOOpState::Failed, error, [] {});
     }
 
     void setCleanup(std::function<void()> cleanup) noexcept {
-        cleanup_ = std::move(cleanup);
-        completion_->cleanup = cleanup_;
+        completion_->setCleanup(std::move(cleanup));
     }
 
-    [[nodiscard]] std::coroutine_handle<> ioHandle() const noexcept {
-        return handle_;
-    }
-
-    [[nodiscard]] std::shared_ptr<std::atomic<bool>> ioAliveFlag() const noexcept {
-        return aliveFlag_;
+    [[nodiscard]] std::shared_ptr<ResumeGate> ioGate() const noexcept {
+        return completion_->getGate();
     }
 
  private:
-    Derived& derived() noexcept {
-        return static_cast<Derived&>(*this);
+    CancellationTokenRegistration cancelReg_;
+    [[nodiscard]] static bool isTerminal(IOOpState state) noexcept {
+        return state == IOOpState::Completed || state == IOOpState::Failed ||
+               state == IOOpState::TimedOut || state == IOOpState::Cancelled;
     }
 
-    void finish(IOOpState newState) noexcept {
-        completion_->cleanup = nullptr;
-        if (auto cleanup = std::exchange(cleanup_, nullptr)) {
-            cleanup();
-        }
-        completion_->error = error_;
-        completion_->tryComplete(newState);
+    Derived& derived() noexcept {
+        return static_cast<Derived&>(*this);
     }
 
     void scheduleTimeout() noexcept {
@@ -145,15 +246,9 @@ class AsyncIOOperationBase {
         }
         auto weakCompletion = std::weak_ptr<SharedCompletion>(completion_);
         timerId_ = CoroutineScheduler::instance().scheduleCallback(timeout_, [weakCompletion]() {
-            auto c = weakCompletion.lock();
-            if (!c) {
-                return;
+            if (auto completion = weakCompletion.lock()) {
+                completion->tryComplete(IOOpState::TimedOut, Error::ConnectionTimeout, [] {});
             }
-            if (!c->aliveFlag || !c->aliveFlag->load(std::memory_order_acquire)) {
-                return;
-            }
-            c->error = Error::ConnectionTimeout;
-            c->tryComplete(IOOpState::TimedOut);
         });
     }
 
@@ -165,7 +260,6 @@ class AsyncIOOperationBase {
     }
 
     std::shared_ptr<SharedCompletion> completion_;
-    std::function<void()> cleanup_;
     std::chrono::milliseconds timeout_{0};
     TimerId timerId_;
 };
@@ -176,36 +270,35 @@ class AsyncIOOperationBase<Derived, void> {
     AsyncIOOperationBase() : completion_(std::make_shared<SharedCompletion>()) {}
 
     virtual ~AsyncIOOperationBase() {
-        if (aliveFlag_) {
-            *aliveFlag_ = false;
-            aliveFlag_.reset();
-        }
         cancelTimer();
-        if (auto cleanup = std::exchange(cleanup_, nullptr)) {
-            cleanup();
-        }
+        completion_->cancel();
     }
 
     bool await_ready() const noexcept {
-        return completion_->state.load(std::memory_order_acquire) != IOOpState::Pending;
+        return isTerminal(completion_->state.load(std::memory_order_acquire));
     }
 
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
-        handle_ = handle;
-        aliveFlag_ = std::make_shared<std::atomic<bool>>(true);
-        completion_->aliveFlag = aliveFlag_;
-        completion_->handle = handle_;
-        completion_->cleanup = {};
+        auto gate = makeResumeGate(handle);
+        if (!completion_->begin(gate)) {
+            gate->disarm();
+            return false;
+        }
+
         scheduleTimeout();
         startOperation();
-        return completion_->state.load(std::memory_order_acquire) == IOOpState::Pending;
+        if (completion_->wait()) {
+            return gate->arm();
+        }
+        gate->disarm();
+        return false;
     }
 
     IOResult<void> await_resume() {
         auto s = completion_->state.load(std::memory_order_acquire);
-        if (s == IOOpState::Failed || s == IOOpState::TimedOut) {
-            return std::unexpected(error_.value_or(Error::NetworkError));
+        if (s == IOOpState::Failed || s == IOOpState::TimedOut || s == IOOpState::Cancelled) {
+            return std::unexpected(completion_->getError().value_or(Error::NetworkError));
         }
         return {};
     }
@@ -214,21 +307,31 @@ class AsyncIOOperationBase<Derived, void> {
         timeout_ = t;
     }
 
+    // 外部取消（C-06）：token 取消时唤醒挂起的协程
+    void setCancellationToken(CancellationToken token) {
+        if (token.isCancelled()) {
+            completion_->requestCancel();
+            return;
+        }
+        auto weakCompletion = std::weak_ptr<SharedCompletion>(completion_);
+        cancelReg_ = token.registerCallback([weakCompletion]() {
+            if (auto completion = weakCompletion.lock()) {
+                completion->requestCancel();
+            }
+        });
+    }
+
  protected:
     int32_t fd_{-1};
-    std::optional<Error> error_;
-    std::coroutine_handle<> handle_;
-    std::shared_ptr<std::atomic<bool>> aliveFlag_;
 
     virtual void startOperation() noexcept = 0;
 
     void complete() noexcept {
-        finish(IOOpState::Completed);
+        completion_->tryComplete(IOOpState::Completed, std::nullopt, [] {});
     }
 
     void fail(Error error) noexcept {
-        error_ = error;
-        finish(IOOpState::Failed);
+        completion_->tryComplete(IOOpState::Failed, error, [] {});
     }
 
     [[nodiscard]] IOOpState getState() const noexcept {
@@ -236,34 +339,26 @@ class AsyncIOOperationBase<Derived, void> {
     }
 
     [[nodiscard]] std::optional<Error> getError() const noexcept {
-        return error_;
+        return completion_->getError();
     }
 
     void setCleanup(std::function<void()> cleanup) noexcept {
-        cleanup_ = std::move(cleanup);
-        completion_->cleanup = cleanup_;
+        completion_->setCleanup(std::move(cleanup));
     }
 
-    [[nodiscard]] std::coroutine_handle<> ioHandle() const noexcept {
-        return handle_;
-    }
-
-    [[nodiscard]] std::shared_ptr<std::atomic<bool>> ioAliveFlag() const noexcept {
-        return aliveFlag_;
+    [[nodiscard]] std::shared_ptr<ResumeGate> ioGate() const noexcept {
+        return completion_->getGate();
     }
 
  private:
-    Derived& derived() noexcept {
-        return static_cast<Derived&>(*this);
+    CancellationTokenRegistration cancelReg_;
+    [[nodiscard]] static bool isTerminal(IOOpState state) noexcept {
+        return state == IOOpState::Completed || state == IOOpState::Failed ||
+               state == IOOpState::TimedOut || state == IOOpState::Cancelled;
     }
 
-    void finish(IOOpState newState) noexcept {
-        completion_->cleanup = nullptr;
-        if (auto cleanup = std::exchange(cleanup_, nullptr)) {
-            cleanup();
-        }
-        completion_->error = error_;
-        completion_->tryComplete(newState);
+    Derived& derived() noexcept {
+        return static_cast<Derived&>(*this);
     }
 
     void scheduleTimeout() noexcept {
@@ -272,15 +367,9 @@ class AsyncIOOperationBase<Derived, void> {
         }
         auto weakCompletion = std::weak_ptr<SharedCompletion>(completion_);
         timerId_ = CoroutineScheduler::instance().scheduleCallback(timeout_, [weakCompletion]() {
-            auto c = weakCompletion.lock();
-            if (!c) {
-                return;
+            if (auto completion = weakCompletion.lock()) {
+                completion->tryComplete(IOOpState::TimedOut, Error::ConnectionTimeout, [] {});
             }
-            if (!c->aliveFlag || !c->aliveFlag->load(std::memory_order_acquire)) {
-                return;
-            }
-            c->error = Error::ConnectionTimeout;
-            c->tryComplete(IOOpState::TimedOut);
         });
     }
 
@@ -292,7 +381,6 @@ class AsyncIOOperationBase<Derived, void> {
     }
 
     std::shared_ptr<SharedCompletion> completion_;
-    std::function<void()> cleanup_;
     std::chrono::milliseconds timeout_{0};
     TimerId timerId_;
 };

@@ -2,14 +2,15 @@
 
 #pragma once
 
-#include <atomic>
 #include <coroutine>
 #include <exception>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
 
+#include "CoroutineControl.hpp"
 #include "NonCopyable.h"
 
 namespace slark {
@@ -22,6 +23,8 @@ class Task;
 struct TaskPromiseBase {
     std::coroutine_handle<> continuation_;
     IExecutor* executor_ = nullptr;
+    std::shared_ptr<CoroutineFrameControl> frameControl_ =
+        std::make_shared<CoroutineFrameControl>();
 
     struct FinalAwaiter {
         bool await_ready() const noexcept {
@@ -31,10 +34,13 @@ struct TaskPromiseBase {
         template <typename Promise>
         std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> h) noexcept {
             auto& promise = h.promise();
-            if (promise.continuation_) {
-                return promise.continuation_;
+            if (!promise.continuation_) {
+                return std::noop_coroutine();
             }
-            return std::noop_coroutine();
+
+            auto continuation = promise.continuation_;
+            promise.continuation_ = nullptr;
+            return continuation;
         }
 
         void await_resume() noexcept {}
@@ -50,6 +56,10 @@ struct TaskPromiseBase {
 
     void setContinuation(std::coroutine_handle<> cont) noexcept {
         continuation_ = cont;
+    }
+
+    [[nodiscard]] std::shared_ptr<CoroutineFrameControl> frameControl() const noexcept {
+        return frameControl_;
     }
 };
 
@@ -99,6 +109,18 @@ class TaskPromise<void> : public TaskPromiseBase {
     std::exception_ptr exception_;
 };
 
+namespace detail {
+template <typename Handle>
+void destroyTaskFrame(Handle handle) noexcept {
+    if (!handle) {
+        return;
+    }
+    if (handle.promise().frameControl()->destroy(handle)) {
+        handle.destroy();
+    }
+}
+}  // namespace detail
+
 template <typename T>
 class TaskAwaiter {
  public:
@@ -113,12 +135,15 @@ class TaskAwaiter {
 
     TaskAwaiter& operator=(TaskAwaiter&& other) noexcept {
         if (this != &other) {
+            detail::destroyTaskFrame(std::exchange(handle_, nullptr));
             handle_ = std::exchange(other.handle_, nullptr);
         }
         return *this;
     }
 
-    ~TaskAwaiter() = default;
+    ~TaskAwaiter() {
+        detail::destroyTaskFrame(std::exchange(handle_, nullptr));
+    }
 
     bool await_ready() const noexcept {
         return !handle_ || handle_.done();
@@ -156,18 +181,14 @@ class [[nodiscard]] Task : public NonCopyable {
 
     Task& operator=(Task&& other) noexcept {
         if (this != &other) {
-            if (handle_) {
-                handle_.destroy();
-            }
+            detail::destroyTaskFrame(std::exchange(handle_, nullptr));
             handle_ = std::exchange(other.handle_, nullptr);
         }
         return *this;
     }
 
     ~Task() {
-        if (handle_) {
-            handle_.destroy();
-        }
+        detail::destroyTaskFrame(std::exchange(handle_, nullptr));
     }
 
     [[nodiscard]] bool isValid() const noexcept {
@@ -179,8 +200,8 @@ class [[nodiscard]] Task : public NonCopyable {
     }
 
     void resume() noexcept {
-        if (handle_ && !handle_.done()) {
-            handle_.resume();
+        if (handle_) {
+            handle_.promise().frameControl()->resume(handle_);
         }
     }
 

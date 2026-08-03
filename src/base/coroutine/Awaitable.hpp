@@ -4,14 +4,16 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <coroutine>
 #include <exception>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <type_traits>
 #include <utility>
 
-#include "AliveFlag.hpp"
+#include "CoroutineControl.hpp"
 #include "CoroutineScheduler.hpp"
 
 namespace slark {
@@ -30,24 +32,23 @@ class TimerAwaiter {
 
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
-        handle_ = handle;
-        flag_ = AliveFlag{};
-
-        auto weakFlag = flag_.weak();
-        auto h = handle_;
-        timerId_ = CoroutineScheduler::instance().scheduleCallback(duration_, [weakFlag, h]() {
-            checkAlive(weakFlag, [h]() {
-                h.resume();
-            });
+        gate_ = makeResumeGate(handle);
+        auto weakGate = std::weak_ptr<ResumeGate>(gate_);
+        timerId_ = CoroutineScheduler::instance().scheduleCallback(duration_, [weakGate]() {
+            if (auto gate = weakGate.lock()) {
+                gate->signal();
+            }
         });
-        return true;
+        return gate_->arm();
     }
 
     void await_resume() noexcept {}
 
  private:
     void cancel() noexcept {
-        flag_.setDead();
+        if (gate_) {
+            gate_->disarm();
+        }
         if (timerId_.isValid()) {
             CoroutineScheduler::instance().cancel(timerId_);
             timerId_ = {};
@@ -55,8 +56,7 @@ class TimerAwaiter {
     }
 
     std::chrono::milliseconds duration_;
-    std::coroutine_handle<> handle_;
-    AliveFlag flag_;
+    std::shared_ptr<ResumeGate> gate_;
     TimerId timerId_;
 };
 
@@ -64,19 +64,36 @@ template <typename T>
 class CompletionAwaiter {
  public:
     ~CompletionAwaiter() {
-        flag_.setDead();
+        std::lock_guard lock(mutex_);
+        if (gate_) {
+            gate_->disarm();
+        }
     }
 
     bool await_ready() const noexcept {
-        return state_.load(std::memory_order_acquire) != Init;
+        return state_.load(std::memory_order_acquire) == Completed;
     }
 
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
-        handle_ = handle;
-        flag_ = AliveFlag{};
-        auto expected = Init;
-        return !state_.compare_exchange_strong(expected, Waiting, std::memory_order_acq_rel);
+        auto gate = makeResumeGate(handle);
+        {
+            std::lock_guard lock(mutex_);
+            gate_ = gate;
+            auto expected = Init;
+            if (!state_.compare_exchange_strong(expected, Installing, std::memory_order_acq_rel)) {
+                gate_->disarm();
+                return false;
+            }
+        }
+
+        std::lock_guard lock(mutex_);
+        auto expected = Installing;
+        if (state_.compare_exchange_strong(expected, Waiting, std::memory_order_acq_rel)) {
+            return gate_->arm();
+        }
+        gate_->disarm();
+        return false;
     }
 
     T await_resume() {
@@ -87,33 +104,40 @@ class CompletionAwaiter {
     }
 
     void complete(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
-        result_.emplace(std::move(value));
-        finish();
+        finish([&] { result_.emplace(std::move(value)); });
     }
 
     void fail(std::exception_ptr exception) noexcept {
-        exception_ = std::move(exception);
-        finish();
+        finish([&] { exception_ = std::move(exception); });
     }
 
  private:
-    enum State : uint8_t { Init, Waiting, Completed };
+    enum State : uint8_t { Init, Installing, Waiting, Completed };
 
-    void finish() noexcept {
-        auto expected = Waiting;
-        if (state_.compare_exchange_strong(expected, Completed, std::memory_order_acq_rel)) {
-            if (flag_.isAlive()) {
-                handle_.resume();
+    template <typename Publish>
+    void finish(Publish&& publish) noexcept {
+        std::shared_ptr<ResumeGate> gate;
+        bool shouldSignal = false;
+        {
+            std::lock_guard lock(mutex_);
+            auto state = state_.load(std::memory_order_relaxed);
+            if (state == Completed) {
+                return;
             }
-            return;
+            publish();
+            state_.store(Completed, std::memory_order_release);
+            shouldSignal = state == Installing || state == Waiting;
+            gate = gate_;
         }
-        state_.store(Completed, std::memory_order_release);
+        if (shouldSignal && gate) {
+            gate->signal();
+        }
     }
 
-    std::coroutine_handle<> handle_;
-    AliveFlag flag_;
+    mutable std::mutex mutex_;
     std::optional<T> result_;
     std::exception_ptr exception_;
+    std::shared_ptr<ResumeGate> gate_;
     std::atomic<State> state_{Init};
 };
 
@@ -121,19 +145,36 @@ template <>
 class CompletionAwaiter<void> {
  public:
     ~CompletionAwaiter() {
-        flag_.setDead();
+        std::lock_guard lock(mutex_);
+        if (gate_) {
+            gate_->disarm();
+        }
     }
 
     bool await_ready() const noexcept {
-        return state_.load(std::memory_order_acquire) != Init;
+        return state_.load(std::memory_order_acquire) == Completed;
     }
 
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
-        handle_ = handle;
-        flag_ = AliveFlag{};
-        auto expected = Init;
-        return !state_.compare_exchange_strong(expected, Waiting, std::memory_order_acq_rel);
+        auto gate = makeResumeGate(handle);
+        {
+            std::lock_guard lock(mutex_);
+            gate_ = gate;
+            auto expected = Init;
+            if (!state_.compare_exchange_strong(expected, Installing, std::memory_order_acq_rel)) {
+                gate_->disarm();
+                return false;
+            }
+        }
+
+        std::lock_guard lock(mutex_);
+        auto expected = Installing;
+        if (state_.compare_exchange_strong(expected, Waiting, std::memory_order_acq_rel)) {
+            return gate_->arm();
+        }
+        gate_->disarm();
+        return false;
     }
 
     void await_resume() {
@@ -143,31 +184,39 @@ class CompletionAwaiter<void> {
     }
 
     void complete() noexcept {
-        finish();
+        finish([] {});
     }
 
     void fail(std::exception_ptr exception) noexcept {
-        exception_ = std::move(exception);
-        finish();
+        finish([&] { exception_ = std::move(exception); });
     }
 
  private:
-    enum State : uint8_t { Init, Waiting, Completed };
+    enum State : uint8_t { Init, Installing, Waiting, Completed };
 
-    void finish() noexcept {
-        auto expected = Waiting;
-        if (state_.compare_exchange_strong(expected, Completed, std::memory_order_acq_rel)) {
-            if (flag_.isAlive()) {
-                handle_.resume();
+    template <typename Publish>
+    void finish(Publish&& publish) noexcept {
+        std::shared_ptr<ResumeGate> gate;
+        bool shouldSignal = false;
+        {
+            std::lock_guard lock(mutex_);
+            auto state = state_.load(std::memory_order_relaxed);
+            if (state == Completed) {
+                return;
             }
-            return;
+            publish();
+            state_.store(Completed, std::memory_order_release);
+            shouldSignal = state == Installing || state == Waiting;
+            gate = gate_;
         }
-        state_.store(Completed, std::memory_order_release);
+        if (shouldSignal && gate) {
+            gate->signal();
+        }
     }
 
-    std::coroutine_handle<> handle_;
-    AliveFlag flag_;
+    mutable std::mutex mutex_;
     std::exception_ptr exception_;
+    std::shared_ptr<ResumeGate> gate_;
     std::atomic<State> state_{Init};
 };
 
