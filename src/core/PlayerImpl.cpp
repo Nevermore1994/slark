@@ -470,7 +470,6 @@ void Player::Impl::doPause() noexcept {
         return;
     }
     pipeline_->pause();
-    mediaSourceManager_.pause();
 }
 
 void Player::Impl::doStop() noexcept {

@@ -94,9 +94,6 @@ void PlayPipeline::pause() noexcept {
     if (s == PipelineState::Paused) {
         return;
     }
-    if (demuxer_) {
-        demuxer_->pause();
-    }
     if (audioRender_) {
         audioRender_->pause();
     }
@@ -278,6 +275,9 @@ void PlayPipeline::performKeyframeSeek(CTime target, SeekStrategy strategy) noex
     LogI("performKeyframeSeek ENTER target={:.3f} strategy={} epoch={}", targetSec,
          static_cast<int32_t>(strategy), seekContext_->currentEpoch());
     pause();
+    if (demuxer_) {
+        demuxer_->pause();
+    }
     if (audioDecoder_) {
         audioDecoder_->pause();
     }
