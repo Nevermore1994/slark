@@ -49,6 +49,8 @@ void BufferMonitor::onHeartbeat() noexcept {
             regulateDataFlow();
         }
     }
+    // 重缓冲期间持续检查退出条件，不依赖 streamPaused_（BufferingStart 可能未暂停流）
+    checkRebufferComplete();
     if (!decoderEof_) {
         regulateDecoderFlow();
     }

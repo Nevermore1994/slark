@@ -146,6 +146,43 @@ TEST(BufferMonitorTest, RebufferingStartsWhenStreamRunningAndDurationDropsBelowL
     EXPECT_TRUE(monitor.isRebuffering());
 }
 
+TEST(BufferMonitorTest, RebufferingEndsOnHeartbeatWhenStreamNeverPaused) {
+    // 场景：prebuffer 完成后，流始终未暂停，onStarvation 触发 BufferingStart，
+    // 随后 duration 恢复，onHeartbeat 必须无条件发出 BufferingEnd
+    MockDelegate delegate;
+    auto cfg = BackpressureConfig::forNetwork();
+    // startBufferDuration = 2.0, rebufferScale = 1.5 → rebufferThreshold = 3.0
+
+    EXPECT_CALL(delegate, demuxedDuration())
+        .WillOnce(Return(3.0))   // heartbeat 1: prebuffer complete (regulateDataFlow)
+        .WillOnce(Return(3.0))   // heartbeat 1: checkRebufferComplete
+        .WillOnce(Return(4.0))   // heartbeat 2: regulateDataFlow（流未暂停）
+        .WillOnce(Return(4.0))   // heartbeat 2: checkRebufferComplete → BufferingEnd
+        .WillOnce(Return(4.0))   // heartbeat 2: regulateDecoderFlow
+        .WillRepeatedly(Return(4.0));
+    EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);
+    EXPECT_CALL(delegate, pauseStream()).Times(0);
+    EXPECT_CALL(delegate, resumeStream()).Times(0);
+    EXPECT_CALL(delegate, onBufferEvent(PipelineEvent::BufferingStart, testing::Eq(std::nullopt)))
+        .Times(1);
+    EXPECT_CALL(delegate, onBufferEvent(PipelineEvent::BufferingEnd, testing::Eq(std::nullopt)))
+        .Times(1);
+    EXPECT_CALL(delegate, audioDecodedFrameCount()).WillRepeatedly(Return(0));
+    EXPECT_CALL(delegate, videoDecodedFrameCount()).WillRepeatedly(Return(0));
+
+    BufferMonitor monitor(cfg, delegate);
+    monitor.startPrebuffering();
+    monitor.onHeartbeat();  // prebuffer complete（duration=3.0 ≥ 2.0）
+    monitor.onStarvation(false);
+    monitor.onStarvation(false);
+    monitor.onStarvation(false);
+    monitor.onStarvation(false);
+    monitor.onStarvation(false);  // 第 5 次 → BufferingStart（流未暂停）
+    EXPECT_TRUE(monitor.isRebuffering());
+    monitor.onHeartbeat();  // duration 恢复为 4.0 ≥ 3.0 → BufferingEnd（流仍未暂停）
+    EXPECT_FALSE(monitor.isRebuffering());
+}
+
 TEST(BufferMonitorTest, RebufferingEndsWhenStreamResumesAndDurationRecovered) {
     MockDelegate delegate;
     auto cfg = BackpressureConfig::forNetwork();
