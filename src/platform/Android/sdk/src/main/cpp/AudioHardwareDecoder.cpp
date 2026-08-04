@@ -28,8 +28,8 @@ Error AudioHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
     if (res != Error::Success && res != Error::CodecAgain && res != Error::CodecNotProcessed) {
         LogE("decode frame error:{}", static_cast<int>(res));
     } else {
-        LogIThrottle(2000, "send audio packet success, pts time:{:.3f}, isEOS:{}",
-                     frame->ptsTime(), frame->info->isEndOfStream);
+        LogIThrottle(2000, "send audio packet success, pts time:{:.3f}, isEOS:{}", frame->ptsTime(),
+                     frame->info->isEndOfStream);
     }
     // EOS 成功入队：立即标记 completed，不依赖 native 回调
     if (frame->info->isEndOfStream && res == Error::Success) {
@@ -62,53 +62,7 @@ void AudioHardwareDecoder::retryPendingEOS() noexcept {
     // CodecNotProcessed / CodecAgain → 保持 pendingEOSFrame_，下次回调后继续重试
 }
 
-bool AudioHardwareDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept {
-    config_ = std::move(config);
-    auto audioConfig = std::dynamic_pointer_cast<AudioDecoderConfig>(config_);
-    if (!audioConfig) {
-        LogE("audio decoder config is invalid");
-        return false;
-    }
-    decoderId_ = NativeHardwareDecoder::createAudioDecoder(audioConfig);
-    if (decoderId_.empty()) {
-        LogE("create audio decoder failed");
-        return false;
-    }
-    NativeDecoderManager::shareInstance().add(decoderId_, shared_from_this());
-    LogI("create audio decoder:{}", decoderId_);
-    isOpen_ = true;
-    return true;
-}
-
-void AudioHardwareDecoder::receiveDecodedData(DataPtr data,
-                                              int64_t pts,
-                                              bool isCompleted) noexcept {
-    isCompleted_ = isCompleted;
-    if (isCompleted) {
-        LogI("audio decode completed");
-    }
-    if (!data || data->empty()) {
-        if (!isCompleted) {
-            LogE("data is empty");
-        }
-        return;
-    }
-    auto audioConfig = std::dynamic_pointer_cast<AudioDecoderConfig>(config_);
-    if (!audioConfig) {
-        LogE("audio decoder config is invalid");
-        return;
-    }
-    auto frame = std::make_unique<AVFrame>(AVFrameType::Audio);
-    frame->pts = pts;
-    frame->dts = pts;
-    frame->timeScale = 1000000;  // us
-    frame->data = std::move(data);
-    auto audioFrameInfo = std::make_shared<AudioFrameInfo>();
-    audioFrameInfo->sampleRate = audioConfig->sampleRate;
-    audioFrameInfo->channels = audioConfig->channels;
-    audioFrameInfo->bitsPerSample = audioConfig->bitsPerSample;
-    frame->info = std::move(audioFrameInfo);
-    invokeReceiveFunc(DecoderData{std::move(frame), Error::Success, currentSeekEpoch_});
+void AudioHardwareDecoder::onDecodedDataReady() noexcept {
     retryPendingEOS();
 }
 

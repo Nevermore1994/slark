@@ -4,20 +4,17 @@
 
 #pragma once
 
-#include "NativeDecoderManager.h"
+#include "AudioHardwareDecoderBase.h"
 
 namespace slark {
 
-class AudioHardwareDecoder : public NativeDecoder,
-                             public std::enable_shared_from_this<AudioHardwareDecoder> {
+class AudioHardwareDecoder : public AudioHardwareDecoderBase<AudioHardwareDecoder> {
  public:
-    AudioHardwareDecoder() : NativeDecoder(DecoderType::AACHardwareDecoder) {}
+    AudioHardwareDecoder() : AudioHardwareDecoderBase(DecoderType::AACHardwareDecoder) {}
 
     ~AudioHardwareDecoder() override = default;
 
     Error decode(AVFrameRefPtr& frame) noexcept override;
-
-    bool open(std::shared_ptr<DecoderConfig> config) noexcept override;
 
     void flush() noexcept override;
 
@@ -28,13 +25,14 @@ class AudioHardwareDecoder : public NativeDecoder,
         return info;
     }
 
-    void receiveDecodedData(DataPtr data, int64_t pts, bool isCompleted) noexcept override;
+ protected:
+    void onDecodedDataReady() noexcept override;
 
  private:
     void retryPendingEOS() noexcept;
 
-    AVFrameRefPtr pendingEOSFrame_;  ///< 缓存 sendPacket(EOS) 失败后被 codec 拒绝的 EOS 帧，在
-                                     ///< receiveDecodedData 回调后重试
+    // 缓存 sendPacket(EOS) 失败后被 codec 拒绝的 EOS 帧，在 receiveDecodedData 回调后重试
+    AVFrameRefPtr pendingEOSFrame_;
 };
 
 }  // namespace slark

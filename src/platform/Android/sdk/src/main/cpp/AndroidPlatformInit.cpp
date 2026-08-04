@@ -6,7 +6,6 @@
 #include <limits.h>
 #include <sys/stat.h>
 
-#include "AACHardwareDecoder.h"
 #include "AAudioRender.h"
 #include "AndroidEGLContext.h"
 #include "Base.h"
@@ -99,7 +98,6 @@ struct AndroidPlatformRegistrar {
 
         registry.registerMediaInfo(std::string(MEDIA_MIMETYPE_AUDIO_AAC) + "HW",
                                    DecoderType::AACHardwareDecoder);
-        registry.registerDecoderInfo(DecoderType::AACHardwareDecoder, AACHardwareDecoder::info());
 
         registry.registerMediaInfo(std::string(MEDIA_MIMETYPE_VIDEO_AVC) + "HW",
                                    DecoderType::VideoHardwareDecoder);
