@@ -99,7 +99,11 @@ void LogOutput::submitEntries(std::vector<LogEntry> entries) {
     if (!alive_.load(std::memory_order_acquire)) {
         return;
     }
-    entryQueue_.push(std::move(entries));
+    {
+        // push 与 sortAndWriteLoop 的谓词检查（sortMutex_ 内）互斥，避免丢失唤醒
+        std::lock_guard lock(sortMutex_);
+        entryQueue_.push(std::move(entries));
+    }
     sortCond_.notify_one();
 }
 

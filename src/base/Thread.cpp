@@ -141,7 +141,11 @@ Expected<void> Thread::postTask(ThreadTask task) noexcept {
     if (stopRequested_.load(std::memory_order_acquire)) {
         return std::unexpected(Error::InvalidOperation);
     }
-    taskQueue_.push(std::move(task));
+    {
+        // push 与 process() 中 cond_.wait 的谓词检查（mutex_ 内）互斥，避免丢失唤醒
+        std::lock_guard<std::mutex> lock(mutex_);
+        taskQueue_.push(std::move(task));
+    }
     cond_.notify_one();
     return {};
 }

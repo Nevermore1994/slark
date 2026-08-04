@@ -444,10 +444,13 @@ TEST(Thread, createModeStillWorks) {
     latch.wait();
     ASSERT_EQ(counter.load(), 1);
 
+    // 用 latch 确认恢复后任务可执行，避免固定 sleep 的调度时序依赖
+    std::latch secondTaskLatch(1);
     thread->postTask([&]() {
         counter.fetch_add(1);
+        secondTaskLatch.count_down();
     });
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    secondTaskLatch.wait();
     ASSERT_EQ(counter.load(), 2);
 
     thread->stop();
