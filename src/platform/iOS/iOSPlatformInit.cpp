@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
-#include "AACHardwareDecoder.h"
+#include "AudioHardwareDecoder.h"
 #include "AudioRender.h"
 #include "MediaDefs.h"
 #include "PlatformRegistry.h"
@@ -31,7 +31,7 @@ struct IOSPlatformRegistrar {
         // 注册AAC硬件解码器
         registry.registerMediaInfo(std::string(MEDIA_MIMETYPE_AUDIO_AAC) + "HW",
                                    DecoderType::AACHardwareDecoder);
-        registry.registerDecoderInfo(DecoderType::AACHardwareDecoder, AACHardwareDecoder::info());
+        registry.registerDecoderInfo(DecoderType::AACHardwareDecoder, AudioHardwareDecoder::info());
 
         // 注册视频硬件解码器
         registry.registerMediaInfo(std::string(MEDIA_MIMETYPE_VIDEO_AVC) + "HW",

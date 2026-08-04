@@ -7,7 +7,7 @@
 #include "MediaDefs.h"
 #include "RawDecoder.h"
 #if SLARK_IOS
-#include "AACHardwareDecoder.h"
+#include "AudioHardwareDecoder.h"
 #include "VideoHardwareDecoder.h"
 #elif SLARK_ANDROID
 #include "AudioHardwareDecoder.h"
@@ -43,7 +43,7 @@ void DecoderManager::init() noexcept {
         {DecoderType::RAW, RawDecoder::info()},
 #if SLARK_IOS
         {DecoderType::VideoHardwareDecoder, VideoHardwareDecoder::info()},
-        {DecoderType::AACHardwareDecoder, AACHardwareDecoder::info()},
+        {DecoderType::AACHardwareDecoder, AudioHardwareDecoder::info()},
 #elif SLARK_ANDROID
         {DecoderType::VideoHardwareDecoder, VideoHardwareDecoder::info()},
         {DecoderType::AACHardwareDecoder, AudioHardwareDecoder::info()},

@@ -3,7 +3,7 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
-#include "AACHardwareDecoder.h"
+#include "AudioHardwareDecoder.h"
 
 #include "AudioDescription.h"
 #include "Log.hpp"
@@ -22,7 +22,7 @@ OSStatus AACDecodeInputDataProc(AudioConverterRef,
     if (inUserData == nullptr) {
         return kInvalidStatus;
     }
-    auto decoder = reinterpret_cast<AACHardwareDecoder*>(inUserData);
+    auto decoder = reinterpret_cast<AudioHardwareDecoder*>(inUserData);
     auto framePtr = decoder->getDecodingFrame();
     if (!framePtr) {
         LogI("exit aac decode");
@@ -86,13 +86,13 @@ static AudioFormatID getAACFormatID(uint8_t profile) {
     }
 }
 
-AACHardwareDecoder::AACHardwareDecoder() : IDecoder(DecoderType::AACHardwareDecoder) {}
+AudioHardwareDecoder::AudioHardwareDecoder() : IDecoder(DecoderType::AACHardwareDecoder) {}
 
-AACHardwareDecoder::~AACHardwareDecoder() {
+AudioHardwareDecoder::~AudioHardwareDecoder() {
     close();
 }
 
-void AACHardwareDecoder::reset() noexcept {
+void AudioHardwareDecoder::reset() noexcept {
     isOpen_ = false;
     if (decodeSession_) {
         AudioConverterDispose(decodeSession_);
@@ -103,11 +103,11 @@ void AACHardwareDecoder::reset() noexcept {
     spareBuffer_.reset();
 }
 
-void AACHardwareDecoder::flush() noexcept {
+void AudioHardwareDecoder::flush() noexcept {
     isCompleted_ = false;
 }
 
-Error AACHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
+Error AudioHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
     if (frame->info && frame->info->isEndOfStream) {
         isCompleted_ = true;
         return Error::Success;
@@ -148,7 +148,7 @@ Error AACHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
     return Error::Success;
 }
 
-bool AACHardwareDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept {
+bool AudioHardwareDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept {
     reset();
     config_ = config;
     auto audioConfig = std::dynamic_pointer_cast<AudioDecoderConfig>(config);
@@ -203,7 +203,7 @@ bool AACHardwareDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept {
     return true;
 }
 
-void AACHardwareDecoder::close() noexcept {
+void AudioHardwareDecoder::close() noexcept {
     reset();
     config_.reset();
 }

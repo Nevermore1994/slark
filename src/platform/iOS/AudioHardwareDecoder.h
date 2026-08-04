@@ -13,10 +13,10 @@
 
 namespace slark {
 
-class AACHardwareDecoder : public IDecoder {
+class AudioHardwareDecoder : public IDecoder {
  public:
-    AACHardwareDecoder();
-    ~AACHardwareDecoder() override;
+    AudioHardwareDecoder();
+    ~AudioHardwareDecoder() override;
 
     bool open(std::shared_ptr<DecoderConfig> config) noexcept override;
     void close() noexcept override;
@@ -27,7 +27,7 @@ class AACHardwareDecoder : public IDecoder {
     inline static const DecoderTypeInfo& info() noexcept {
         static DecoderTypeInfo info = {
             DecoderType::AACHardwareDecoder,
-            Reflection::enroll<AACHardwareDecoder>("AACHardwareDecoder")};
+            Reflection::enroll<AudioHardwareDecoder>("AudioHardwareDecoder")};
         return info;
     }
 
