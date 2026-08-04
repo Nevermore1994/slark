@@ -129,8 +129,7 @@ class Channel {
 
     friend class Receiver<T>;
 
-    static auto create(size_t capacity = 0) noexcept
-        -> std::tuple<SenderPtr<T>, ReceiverPtr<T>> {
+    static auto create(size_t capacity = 0) noexcept -> std::tuple<SenderPtr<T>, ReceiverPtr<T>> {
         auto p = std::shared_ptr<Channel<T>>(new Channel<T>(capacity), [](Channel<T>* channel) {
             delete channel;
         });
@@ -173,7 +172,7 @@ class Channel {
  private:
     bool isClosed_ = false;
     bool awakened_ = false;  // 旁路标志，被 receive 消费一次后清零
-    size_t capacity_ = 0;  // 0 = unbounded
+    size_t capacity_ = 0;    // 0 = unbounded
     std::atomic<int> receiverAlive_{0};
     std::deque<T> messages_;
     std::mutex mutex_;
@@ -253,25 +252,19 @@ class Sender final {
     inline auto send(const U& message) -> std::expected<void, T>
         requires std::copy_constructible<T> && std::is_convertible_v<U, T>
     {
-        std::unique_lock<std::mutex> lock(channel_->mutex_);
-        if (channel_->capacity_ > 0) {
-            channel_->cond_.wait(lock, [this] {
-                return channel_->messages_.size() < channel_->capacity_ || channel_->isClosed_ ||
-                       channel_->receiverAlive_.load(std::memory_order_acquire) == 0;
-            });
-        }
-        if (!channel_->isClosed_ && channel_->receiverAlive_.load(std::memory_order_acquire) > 0) {
-            channel_->messages_.push_back(message);
-            channel_->cond_.notify_one();
-            return {};
-        }
-        return std::unexpected(T(message));
+        return trySend(message);
     }
 
     template <typename U>
     inline auto send(U&& message) -> std::expected<void, T>
         requires std::is_convertible_v<U, T>
     {
+        return trySend(std::forward<U>(message));
+    }
+
+ private:
+    template <typename U>
+    inline auto trySend(U&& message) -> std::expected<void, T> {
         std::unique_lock<std::mutex> lock(channel_->mutex_);
         if (channel_->capacity_ > 0) {
             channel_->cond_.wait(lock, [this] {
@@ -287,6 +280,7 @@ class Sender final {
         return std::unexpected(T(std::forward<U>(message)));
     }
 
+ public:
     template <typename U>
         requires std::is_convertible_v<U, T>
     inline auto post(U&& message) noexcept -> void {

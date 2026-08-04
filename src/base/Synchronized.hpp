@@ -132,22 +132,11 @@ class Synchronized : public NonCopyMovable {
                         G&& failedFunc)
         requires IsTimeForMutex<Mutex, Rep, Period>
     {
-        if (mutex_.try_lock_for(duration)) {
-            std::lock_guard<Mutex> lock(mutex_, std::adopt_lock);
-            if constexpr (std::is_void_v<std::invoke_result_t<F, Container&>>) {
-                lockFunc(container_);
-                return;
-            } else {
-                return std::optional{lockFunc(container_)};
-            }
-        } else {
-            if constexpr (std::is_void_v<std::invoke_result_t<G>>) {
-                failedFunc();
-                return;
-            } else {
-                return std::optional<std::invoke_result_t<F, Container&>>{};
-            }
-        }
+        return withTryLockImpl(
+            [&] {
+                return mutex_.try_lock_for(duration);
+            },
+            std::forward<F>(lockFunc), std::forward<G>(failedFunc));
     }
 
     template <class Clock, class Duration, typename F, typename G>
@@ -156,22 +145,11 @@ class Synchronized : public NonCopyMovable {
                           G&& failedFunc)
         requires IsTimeUntilMutex<Mutex, Clock, Duration>
     {
-        if (mutex_.try_lock_until(timePoint)) {
-            std::lock_guard<Mutex> lock(mutex_, std::adopt_lock);
-            if constexpr (std::is_void_v<std::invoke_result_t<F, Container&>>) {
-                lockFunc(container_);
-                return;
-            } else {
-                return std::optional{lockFunc(container_)};
-            }
-        } else {
-            if constexpr (std::is_void_v<std::invoke_result_t<G>>) {
-                failedFunc();
-                return;
-            } else {
-                return std::optional<std::invoke_result_t<F, Container&>>{};
-            }
-        }
+        return withTryLockImpl(
+            [&] {
+                return mutex_.try_lock_until(timePoint);
+            },
+            std::forward<F>(lockFunc), std::forward<G>(failedFunc));
     }
 
     template <typename F>
@@ -199,6 +177,26 @@ class Synchronized : public NonCopyMovable {
     }
 
  private:
+    template <typename TryLock, typename F, typename G>
+    auto withTryLockImpl(TryLock&& tryLock, F&& lockFunc, G&& failedFunc) {
+        if (tryLock()) {
+            std::lock_guard<Mutex> lock(mutex_, std::adopt_lock);
+            if constexpr (std::is_void_v<std::invoke_result_t<F, Container&>>) {
+                lockFunc(container_);
+                return;
+            } else {
+                return std::optional{lockFunc(container_)};
+            }
+        } else {
+            if constexpr (std::is_void_v<std::invoke_result_t<G>>) {
+                failedFunc();
+                return;
+            } else {
+                return std::optional<std::invoke_result_t<F, Container&>>{};
+            }
+        }
+    }
+
     Container container_{};
     mutable Mutex mutex_;
 };
