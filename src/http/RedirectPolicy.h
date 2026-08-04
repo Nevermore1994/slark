@@ -139,13 +139,11 @@ class RedirectPolicy {
     }
 
     static void appendRelativePath(std::string& result, const Url& url, std::string_view location) {
-        // 查询字符串相对路径
         if (location.starts_with('?')) {
             result.append(url.path.empty() ? "/" : url.path);
             result.append(location);
             return;
         }
-        // 片段相对路径
         if (location.starts_with('#')) {
             result.append(url.path.empty() ? "/" : url.path);
             if (!url.query.empty()) {

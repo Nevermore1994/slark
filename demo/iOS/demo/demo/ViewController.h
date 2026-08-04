@@ -1,8 +1,5 @@
 //
-//  ViewController.h
-//  demo
-//
-//  Created by Nevermore on 2023/10/18.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #import <UIKit/UIKit.h>

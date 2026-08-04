@@ -1,6 +1,5 @@
 //
-//  AudioViewController.h
-//  demo
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #import <UIKit/UIKit.h>

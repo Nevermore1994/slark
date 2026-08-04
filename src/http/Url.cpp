@@ -51,7 +51,6 @@ std::string_view extractComponents(std::string_view view,
     return view;
 }
 
-// 解析 host/port（支持 IPv6 字面量），返回 false 时 error 已设置
 bool parseHostPort(std::string_view view,
                    bool https,
                    std::string& host,
@@ -90,7 +89,6 @@ bool parseHostPort(std::string_view view,
     return true;
 }
 
-// port 数值范围校验，返回 false 时 error 已设置
 bool validatePort(std::string_view port, UrlError& error) noexcept {
     if (port.empty()) {
         return true;

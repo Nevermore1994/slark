@@ -107,7 +107,6 @@ Task<RequestSetup> setupConnectionAndSend(std::string_view tag,
     co_return RequestSetup{std::move(conn), ErrorInfo{}};
 }
 
-// 组装 executeStreamingSingle 的流式解析回调
 HttpResponseParser::Callbacks makeStreamingCallbacks(
     HttpStatusCode& statusCode,
     std::unordered_map<std::string, std::string>& pendingHeaders,
@@ -142,7 +141,6 @@ HttpResponseParser::Callbacks makeStreamingCallbacks(
     return callbacks;
 }
 
-// 流式读取失败分类：超时返回对应 ErrorInfo，其他错误返回 nullopt
 std::optional<ErrorInfo> classifyStreamReadError(Error error,
                                                  bool overallExpired,
                                                  RequestPerf& perf) noexcept {
@@ -154,7 +152,6 @@ std::optional<ErrorInfo> classifyStreamReadError(Error error,
     return ErrorInfo{slark::Error::ConnectionTimeout};
 }
 
-// 组装 executeSingle 的解析回调
 HttpResponseParser::Callbacks makeResponseCallbacks(HttpResponse& response,
                                                     DataPtr& bodyData,
                                                     RequestPerf& perf,
@@ -178,7 +175,6 @@ HttpResponseParser::Callbacks makeResponseCallbacks(HttpResponse& response,
     return callbacks;
 }
 
-// 填充响应错误码与性能统计
 void buildResponse(HttpResponse& response,
                    const HttpResponseParser& parser,
                    DataPtr& bodyData,

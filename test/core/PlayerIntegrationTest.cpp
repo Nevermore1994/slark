@@ -69,7 +69,7 @@ static void safeDestroy(Player& player) {
     }
 }
 
-// ─── 第一类：纯防御性保护测试（不调用 prepare）────────────────────────────────
+// 第一类：纯防御性保护测试（不调用 prepare）
 
 TEST(PlayerIntegrationTest, InitialStateIsNotInited) {
     Player player(makeParams());
@@ -162,7 +162,7 @@ TEST(PlayerIntegrationTest, TwoPlayersHaveDifferentIds) {
     EXPECT_NE(p1.playerId(), p2.playerId());
 }
 
-// ─── 第二类：prepare 后的生命周期测试 ────────────────────────────────────────
+// 第二类：prepare 后的生命周期测试
 // 这些测试依赖 prepare 后 PlayerImpl 的内部状态。
 // 在无真实媒体文件的环境中，PlayerImpl 会进入 Error 状态，
 // Error 状态下 doStop() 不再在 ownerThread_ 自身线程中调用 stop()，析构安全。
@@ -286,7 +286,7 @@ TEST(PlayerIntegrationTest, MultiplePrepareCyclesDoNotCrash) {
     }
 }
 
-// ─── 第三类：PlayPipeline 组件级集成测试 ───────────────────────────────────
+// 第三类：PlayPipeline 组件级集成测试
 
 TEST(PlayerIntegrationTest, PipelineBuildAndTeardown) {
     Player player(makeParams());

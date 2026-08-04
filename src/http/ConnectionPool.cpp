@@ -13,7 +13,6 @@ static constexpr std::chrono::milliseconds kDefaultTlsTimeout{std::chrono::secon
 
 namespace {
 
-// DNS 解析 + TCP 连接，失败返回 false（perf 已记录错误与耗时）
 Task<bool> resolveAndConnect(AsyncSocket& socket,
                              const std::string& host,
                              uint16_t port,
@@ -62,7 +61,6 @@ Task<bool> resolveAndConnect(AsyncSocket& socket,
     co_return true;
 }
 
-// TLS 握手，失败返回 false（perf 已记录错误与耗时）
 Task<bool> performTlsHandshake(AsyncSocket& socket,
                                const std::string& host,
                                std::chrono::milliseconds tlsHandshakeTimeout,

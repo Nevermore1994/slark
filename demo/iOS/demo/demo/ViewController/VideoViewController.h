@@ -1,8 +1,5 @@
 //
-//  VideoViewController.h
-//  demo
-//
-//  Created by Nevermore on 2024/10/12.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #ifndef VideoViewController_h

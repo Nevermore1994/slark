@@ -1,8 +1,5 @@
 //
-//  SelectUrlViewController.h
-//  demo
-//
-//  Created by Nevermore- on 2025/7/29.
+// Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
 #ifndef SelectUrlViewController_h

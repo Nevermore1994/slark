@@ -44,7 +44,7 @@ void write2BE(std::vector<uint8_t>& v, uint16_t val) {
 
 }  // namespace
 
-// ─── BoxElst 解析测试 ─────────────────────────────────────────────────────────
+// BoxElst 解析测试
 
 TEST(BoxElstTest, DecodeV0SingleEntry) {
     // version=0, flags=0, entryCount=1
@@ -126,7 +126,7 @@ TEST(BoxElstTest, DecodeV1Entry) {
     EXPECT_EQ(box.mediaTimeOffset(), 1024);
 }
 
-// ─── BoxTrex 解析测试 ─────────────────────────────────────────────────────────
+// BoxTrex 解析测试
 
 TEST(BoxTrexTest, Decode) {
     std::vector<uint8_t> data;
@@ -150,7 +150,7 @@ TEST(BoxTrexTest, Decode) {
     EXPECT_EQ(box.defaultSampleSize, 1024u);
 }
 
-// ─── BoxTfhd 解析测试 ─────────────────────────────────────────────────────────
+// BoxTfhd 解析测试
 
 TEST(BoxTfhdTest, DecodeMinimal) {
     std::vector<uint8_t> data;
@@ -188,7 +188,7 @@ TEST(BoxTfhdTest, DecodeWithDefaultSampleDuration) {
     EXPECT_EQ(box.defaultSampleDuration, 3000u);
 }
 
-// ─── BoxTfdt 解析测试 ─────────────────────────────────────────────────────────
+// BoxTfdt 解析测试
 
 TEST(BoxTfdtTest, DecodeV0) {
     std::vector<uint8_t> data;
@@ -222,7 +222,7 @@ TEST(BoxTfdtTest, DecodeV1) {
     EXPECT_EQ(box.baseMediaDecodeTime, 9000000000ULL);
 }
 
-// ─── BoxTrun 解析测试 ─────────────────────────────────────────────────────────
+// BoxTrun 解析测试
 
 TEST(BoxTrunTest, DecodeWithSizeAndDuration) {
     // flags: kDataOffsetPresent | kSampleDurationPresent | kSampleSizePresent
@@ -252,7 +252,7 @@ TEST(BoxTrunTest, DecodeWithSizeAndDuration) {
     EXPECT_EQ(box.samples[0].size, 1024u);
 }
 
-// ─── BoxSidx 解析测试 ─────────────────────────────────────────────────────────
+// BoxSidx 解析测试
 
 TEST(BoxSidxTest, DecodeV0) {
     std::vector<uint8_t> data;
@@ -290,7 +290,7 @@ TEST(BoxSidxTest, DecodeV0) {
     EXPECT_FALSE(box.entries[0].referenceType);
 }
 
-// ─── BoxMfhd 解析测试 ─────────────────────────────────────────────────────────
+// BoxMfhd 解析测试
 
 TEST(BoxMfhdTest, Decode) {
     std::vector<uint8_t> data;
@@ -308,7 +308,7 @@ TEST(BoxMfhdTest, Decode) {
     EXPECT_EQ(box.sequenceNumber, 42u);
 }
 
-// ─── Box::createBox 工厂测试 ──────────────────────────────────────────────────
+// Box::createBox 工厂测试
 
 TEST(BoxFactoryTest, CreateElstBox) {
     // 构造一个完整的 elst box（size=8+header, type='elst'）

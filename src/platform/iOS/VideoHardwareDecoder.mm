@@ -3,7 +3,6 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
-// slark
 #import "VideoHardwareDecoder.h"
 
 #include "DecoderConfig.h"

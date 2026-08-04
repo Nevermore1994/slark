@@ -99,7 +99,7 @@ ParseResult feedAllData(IDemuxer& demuxer,
 
 }  // namespace
 
-// ─── probeDemuxType unit tests ───────────────────────────────────────────────
+// probeDemuxType unit tests
 
 TEST(DemuxerProbeTest, ProbesMp4ByFtypSignature) {
     std::array<uint8_t, 12> header{0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'};
@@ -131,7 +131,7 @@ TEST(DemuxerProbeTest, ReturnsUnknownForRandomData) {
     EXPECT_EQ(DemuxerManager::shareInstance().probeDemuxType(view), DemuxerType::Unknown);
 }
 
-// ─── DemuxerManager unit tests ───────────────────────────────────────────────
+// DemuxerManager unit tests
 
 TEST(DemuxerManagerTest, CreateMp4DemuxerSucceeds) {
     auto demuxer = DemuxerManager::shareInstance().create(DemuxerType::MP4);
@@ -171,7 +171,7 @@ TEST(DemuxerManagerTest, DoesNotContainUnknown) {
     EXPECT_FALSE(DemuxerManager::shareInstance().contains(DemuxerType::Unknown));
 }
 
-// ─── MP4 integration tests ───────────────────────────────────────────────────
+// MP4 integration tests
 
 class Mp4DemuxerFileTest : public ::testing::Test {
  protected:
@@ -272,7 +272,7 @@ TEST_F(Mp4DemuxerFileTest, SeekToBeginningProducesKeyFrame) {
     EXPECT_GT(result.keyFrames, 0u) << "seek to beginning should produce a key frame";
 }
 
-// ─── TS integration tests ────────────────────────────────────────────────────
+// TS integration tests
 
 class TsDemuxerFileTest : public ::testing::Test {
  protected:
@@ -401,7 +401,7 @@ TEST_F(TsDemuxerFileTest, TsDemuxerResetClearsState) {
         << "re-parsing same TS should produce same frame count";
 }
 
-// ─── WAV integration tests ───────────────────────────────────────────────────
+// WAV integration tests
 
 class WavDemuxerFileTest : public ::testing::Test {
  protected:
@@ -475,7 +475,7 @@ TEST_F(WavDemuxerFileTest, SeekToMidpointWorks) {
     EXPECT_FALSE(demuxer_->isCompleted());
 }
 
-// ─── fMP4 integration tests ──────────────────────────────────────────────────
+// fMP4 integration tests
 
 namespace {
 constexpr const char* kFmp4Path = "../../test_sample/Sample_fmp4.mp4";
