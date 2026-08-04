@@ -98,3 +98,4 @@ cmake-build--L-test
 # Test output
 test/output/
 .tmp_build
+cmake-build-verify
