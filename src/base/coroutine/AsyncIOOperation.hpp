@@ -4,8 +4,8 @@
 
 #include <atomic>
 #include <chrono>
-#include <cstdint>
 #include <coroutine>
+#include <cstdint>
 #include <expected>
 #include <functional>
 #include <memory>
@@ -185,7 +185,11 @@ class AsyncIOOperationBase {
         if (s == IOOpState::Failed || s == IOOpState::TimedOut || s == IOOpState::Cancelled) {
             return std::unexpected(completion_->getError().value_or(Error::NetworkError));
         }
-        return derived().getResult();
+        if constexpr (std::is_void_v<T>) {
+            return {};
+        } else {
+            return derived().getResult();
+        }
     }
 
     void setTimeout(std::chrono::milliseconds t) noexcept {
@@ -211,127 +215,26 @@ class AsyncIOOperationBase {
 
     virtual void startOperation() noexcept = 0;
 
-    void complete(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
-        completion_->tryComplete(IOOpState::Completed, std::nullopt, [this, value = std::move(value)]() mutable {
-            derived().storeResult(std::move(value));
+    template <typename U>
+    void complete(U value) noexcept(std::is_nothrow_move_constructible_v<T>)
+        requires(!std::is_void_v<T> && std::is_convertible_v<U, T>)
+    {
+        completion_->tryComplete(IOOpState::Completed, std::nullopt,
+                                 [this, value = std::move(value)]() mutable {
+                                     derived().storeResult(std::move(value));
+                                 });
+    }
+
+    void complete() noexcept
+        requires std::is_void_v<T>
+    {
+        completion_->tryComplete(IOOpState::Completed, std::nullopt, [] {
         });
     }
 
     void fail(Error error) noexcept {
-        completion_->tryComplete(IOOpState::Failed, error, [] {});
-    }
-
-    void setCleanup(std::function<void()> cleanup) noexcept {
-        completion_->setCleanup(std::move(cleanup));
-    }
-
-    [[nodiscard]] std::shared_ptr<ResumeGate> ioGate() const noexcept {
-        return completion_->getGate();
-    }
-
- private:
-    CancellationTokenRegistration cancelReg_;
-    [[nodiscard]] static bool isTerminal(IOOpState state) noexcept {
-        return state == IOOpState::Completed || state == IOOpState::Failed ||
-               state == IOOpState::TimedOut || state == IOOpState::Cancelled;
-    }
-
-    Derived& derived() noexcept {
-        return static_cast<Derived&>(*this);
-    }
-
-    void scheduleTimeout() noexcept {
-        if (timeout_.count() <= 0) {
-            return;
-        }
-        auto weakCompletion = std::weak_ptr<SharedCompletion>(completion_);
-        timerId_ = CoroutineScheduler::instance().scheduleCallback(timeout_, [weakCompletion]() {
-            if (auto completion = weakCompletion.lock()) {
-                completion->tryComplete(IOOpState::TimedOut, Error::ConnectionTimeout, [] {});
-            }
+        completion_->tryComplete(IOOpState::Failed, error, [] {
         });
-    }
-
-    void cancelTimer() noexcept {
-        if (timerId_.isValid()) {
-            CoroutineScheduler::instance().cancel(timerId_);
-            timerId_ = {};
-        }
-    }
-
-    std::shared_ptr<SharedCompletion> completion_;
-    std::chrono::milliseconds timeout_{0};
-    TimerId timerId_;
-};
-
-template <typename Derived>
-class AsyncIOOperationBase<Derived, void> {
- public:
-    AsyncIOOperationBase() : completion_(std::make_shared<SharedCompletion>()) {}
-
-    virtual ~AsyncIOOperationBase() {
-        cancelTimer();
-        completion_->cancel();
-    }
-
-    bool await_ready() const noexcept {
-        return isTerminal(completion_->state.load(std::memory_order_acquire));
-    }
-
-    template <typename Promise>
-    bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
-        auto gate = makeResumeGate(handle);
-        if (!completion_->begin(gate)) {
-            gate->disarm();
-            return false;
-        }
-
-        scheduleTimeout();
-        startOperation();
-        if (completion_->wait()) {
-            return gate->arm();
-        }
-        gate->disarm();
-        return false;
-    }
-
-    IOResult<void> await_resume() {
-        auto s = completion_->state.load(std::memory_order_acquire);
-        if (s == IOOpState::Failed || s == IOOpState::TimedOut || s == IOOpState::Cancelled) {
-            return std::unexpected(completion_->getError().value_or(Error::NetworkError));
-        }
-        return {};
-    }
-
-    void setTimeout(std::chrono::milliseconds t) noexcept {
-        timeout_ = t;
-    }
-
-    // 外部取消（C-06）：token 取消时唤醒挂起的协程
-    void setCancellationToken(CancellationToken token) {
-        if (token.isCancelled()) {
-            completion_->requestCancel();
-            return;
-        }
-        auto weakCompletion = std::weak_ptr<SharedCompletion>(completion_);
-        cancelReg_ = token.registerCallback([weakCompletion]() {
-            if (auto completion = weakCompletion.lock()) {
-                completion->requestCancel();
-            }
-        });
-    }
-
- protected:
-    int32_t fd_{-1};
-
-    virtual void startOperation() noexcept = 0;
-
-    void complete() noexcept {
-        completion_->tryComplete(IOOpState::Completed, std::nullopt, [] {});
-    }
-
-    void fail(Error error) noexcept {
-        completion_->tryComplete(IOOpState::Failed, error, [] {});
     }
 
     [[nodiscard]] IOOpState getState() const noexcept {
@@ -352,6 +255,7 @@ class AsyncIOOperationBase<Derived, void> {
 
  private:
     CancellationTokenRegistration cancelReg_;
+
     [[nodiscard]] static bool isTerminal(IOOpState state) noexcept {
         return state == IOOpState::Completed || state == IOOpState::Failed ||
                state == IOOpState::TimedOut || state == IOOpState::Cancelled;
@@ -368,7 +272,8 @@ class AsyncIOOperationBase<Derived, void> {
         auto weakCompletion = std::weak_ptr<SharedCompletion>(completion_);
         timerId_ = CoroutineScheduler::instance().scheduleCallback(timeout_, [weakCompletion]() {
             if (auto completion = weakCompletion.lock()) {
-                completion->tryComplete(IOOpState::TimedOut, Error::ConnectionTimeout, [] {});
+                completion->tryComplete(IOOpState::TimedOut, Error::ConnectionTimeout, [] {
+                });
             }
         });
     }

@@ -22,12 +22,11 @@ struct VoidResult {};
 template <typename T>
 using WhenAllResultType = std::conditional_t<std::is_void_v<T>, VoidResult, T>;
 
-template <typename... Ts>
-struct WhenAllState {
-    std::tuple<std::optional<WhenAllResultType<Ts>>...> results;
-    std::atomic<int> remaining{0};
-    std::exception_ptr exception;
+namespace detail {
+
+struct WhenContinuationState {
     std::mutex mutex;
+    std::exception_ptr exception;
     std::shared_ptr<ResumeGate> continuationGate;
 
     void setContinuationGate(std::shared_ptr<ResumeGate> gate) noexcept {
@@ -46,6 +45,30 @@ struct WhenAllState {
             exception = std::move(error);
         }
     }
+};
+
+template <typename MakeChild, typename ChildTasks>
+void startChildTask(IExecutor* exec, ChildTasks& childTasks, MakeChild&& makeChild) {
+    auto child = std::forward<MakeChild>(makeChild)();
+    auto handle = child.getHandle();
+    auto frameControl = handle.promise().frameControl();
+    childTasks.push_back(std::move(child));
+
+    if (exec && !exec->isInline()) {
+        exec->execute([frameControl, handle]() noexcept {
+            frameControl->resume(handle);
+        });
+    } else {
+        childTasks.back().resume();
+    }
+}
+
+}  // namespace detail
+
+template <typename... Ts>
+struct WhenAllState : detail::WhenContinuationState {
+    std::tuple<std::optional<WhenAllResultType<Ts>>...> results;
+    std::atomic<int> remaining{0};
 };
 
 namespace detail {
@@ -120,18 +143,9 @@ class WhenAllAwaiter {
 
     template <size_t I>
     void startOne(IExecutor* exec) {
-        auto child = detail::whenAllChild<I>(state_, std::move(std::get<I>(tasks_)));
-        auto handle = child.getHandle();
-        auto frameControl = handle.promise().frameControl();
-        childTasks_.push_back(std::move(child));
-
-        if (exec && !exec->isInline()) {
-            exec->execute([frameControl, handle]() noexcept {
-                frameControl->resume(handle);
-            });
-        } else {
-            childTasks_.back().resume();
-        }
+        detail::startChildTask(exec, childTasks_, [this]() {
+            return detail::whenAllChild<I>(state_, std::move(std::get<I>(tasks_)));
+        });
     }
 
     template <size_t... Is>
@@ -164,33 +178,13 @@ struct WhenAnyResult {
 };
 
 template <typename... Ts>
-struct WhenAnyState {
+struct WhenAnyState : detail::WhenContinuationState {
     std::tuple<std::optional<WhenAllResultType<Ts>>...> results;
     std::atomic<int> completed{0};
     std::atomic<size_t> winnerIndex{0};
-    std::exception_ptr exception;
-    std::mutex mutex;
-    std::shared_ptr<ResumeGate> continuationGate;
 
     std::mutex orphanMutex;
     std::vector<Task<void>> orphanTasks;
-
-    void setContinuationGate(std::shared_ptr<ResumeGate> gate) noexcept {
-        std::lock_guard lock(mutex);
-        continuationGate = std::move(gate);
-    }
-
-    std::shared_ptr<ResumeGate> takeContinuationGate() noexcept {
-        std::lock_guard lock(mutex);
-        return std::exchange(continuationGate, nullptr);
-    }
-
-    void recordException(std::exception_ptr error) noexcept {
-        std::lock_guard lock(mutex);
-        if (!exception) {
-            exception = std::move(error);
-        }
-    }
 };
 
 namespace detail {
@@ -268,24 +262,16 @@ class WhenAnyAwaiter {
             }
         }
 
-        return WhenAnyResult<Ts...>{index, buildWinnerValue(index, std::index_sequence_for<Ts...>{})};
+        return WhenAnyResult<Ts...>{index,
+                                    buildWinnerValue(index, std::index_sequence_for<Ts...>{})};
     }
 
  private:
     template <size_t I>
     void startOne(IExecutor* exec) {
-        auto child = detail::whenAnyChild<I>(state_, std::move(std::get<I>(tasks_)));
-        auto handle = child.getHandle();
-        auto frameControl = handle.promise().frameControl();
-        childTasks_.push_back(std::move(child));
-
-        if (exec && !exec->isInline()) {
-            exec->execute([frameControl, handle]() noexcept {
-                frameControl->resume(handle);
-            });
-        } else {
-            childTasks_.back().resume();
-        }
+        detail::startChildTask(exec, childTasks_, [this]() {
+            return detail::whenAnyChild<I>(state_, std::move(std::get<I>(tasks_)));
+        });
     }
 
     template <size_t... Is>
@@ -297,11 +283,13 @@ class WhenAnyAwaiter {
     template <size_t... Is>
     auto buildWinnerValue(size_t index, std::index_sequence<Is...>) {
         std::variant<WhenAllResultType<Ts>...> value;
-        ([&] {
-            if (index == Is) {
-                value.template emplace<Is>(std::move(*std::get<Is>(state_->results)));
-            }
-        }(), ...);
+        (
+            [&] {
+                if (index == Is) {
+                    value.template emplace<Is>(std::move(*std::get<Is>(state_->results)));
+                }
+            }(),
+            ...);
         return value;
     }
 
