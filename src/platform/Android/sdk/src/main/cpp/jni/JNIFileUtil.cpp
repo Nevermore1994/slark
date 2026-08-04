@@ -8,6 +8,7 @@
 #include "JNICall.h"
 #include "JNIEnvGuard.h"
 #include "JNIMarshal.h"
+#include "JNINames.h"
 
 namespace slark::File {
 
@@ -27,8 +28,8 @@ std::string getAppPath(const std::string& methodName) noexcept {
     }
 
     // 调用 Context.methodName() -> java.io.File
-    static constexpr std::string_view kContextClass = "android/content/Context";
-    static constexpr std::string_view kFileClass = "java/io/File";
+    static constexpr std::string_view kContextClass = JNI::JavaClass::AndroidContext;
+    static constexpr std::string_view kFileClass = JNI::JavaClass::JavaFile;
     auto fileObj = JNI::JNICall::call<jobject>(env, context, kContextClass, methodName,
                                                JNI::ReturnSig(JNI::makeObject(kFileClass)));
     if (!fileObj) {
@@ -37,12 +38,13 @@ std::string getAppPath(const std::string& methodName) noexcept {
 
     // 优先使用 getCanonicalPath() 解析真实路径，避免 SELinux 拒绝符号链接访问
     // 失败时回退到 getPath()
-    auto canonicalPath =
-        JNI::JNICall::call<std::string>(env, fileObj.get(), kFileClass, "getCanonicalPath");
+    auto canonicalPath = JNI::JNICall::call<std::string>(env, fileObj.get(), kFileClass,
+                                                         JNI::JavaMethod::GetCanonicalPath);
     if (!canonicalPath.empty()) {
         return canonicalPath;
     }
-    auto path = JNI::JNICall::call<std::string>(env, fileObj.get(), kFileClass, "getPath");
+    auto path =
+        JNI::JNICall::call<std::string>(env, fileObj.get(), kFileClass, JNI::JavaMethod::GetPath);
     return path;
 }
 
@@ -52,10 +54,10 @@ std::string rootPath() noexcept {
     static std::string path;
     static std::once_flag flag;
     std::call_once(flag, [] {
-        path = getAppPath("getFilesDir");
+        path = getAppPath(JNI::JavaMethod::GetFilesDir);
     });
     if (path.empty()) {
-        path = getAppPath("getFilesDir");
+        path = getAppPath(JNI::JavaMethod::GetFilesDir);
     }
     return path;
 }
@@ -64,10 +66,10 @@ std::string cachePath() noexcept {
     static std::string path;
     static std::once_flag flag;
     std::call_once(flag, [] {
-        path = getAppPath("getCacheDir");
+        path = getAppPath(JNI::JavaMethod::GetCacheDir);
     });
     if (path.empty()) {
-        path = getAppPath("getCacheDir");
+        path = getAppPath(JNI::JavaMethod::GetCacheDir);
     }
     return path;
 }

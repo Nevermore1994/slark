@@ -8,6 +8,7 @@
 #include "JNICall.h"
 #include "JNIEnvGuard.h"
 #include "JNIMarshal.h"
+#include "JNINames.h"
 #include "Log.hpp"
 
 using namespace slark;
@@ -17,7 +18,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_slark_sdk_SlarkNativeBridge_logout(JN
                                                                               jobject /* this */,
                                                                               jint level,
                                                                               jstring message) {
-    JNI::JNICall::callStatic<void>(env, "com/slark/sdk/SlarkNativeBridge", "logout", level,
+    JNI::JNICall::callStatic<void>(env, JavaClass::SlarkNativeBridge, JavaMethod::Logout, level,
                                    message);
 }
 

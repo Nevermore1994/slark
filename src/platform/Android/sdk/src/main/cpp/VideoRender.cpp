@@ -5,8 +5,10 @@
 #include "VideoRender.h"
 
 #include "JNICache.h"
+#include "JNICall.h"
 #include "JNIEnvGuard.h"
 #include "JNIMarshal.h"
+#include "JNINames.h"
 #include "JNISignature.h"
 #include "Log.hpp"
 #include "TexturePool.h"
@@ -18,25 +20,10 @@ void Native_RequestRender(const std::string& playerId,
                           uint32_t width,
                           uint32_t height) {
     using namespace slark::JNI;
-    constexpr std::string_view kPlayerManagerClass = "com/slark/sdk/SlarkPlayerManager";
     JNIEnvGuard env(getJavaVM());
-    auto jPlayer = JNI::ToJVM::str(env.get(), playerId);
-    auto playerClass = JNICache::instance().getClass(env.get(), kPlayerManagerClass);
-    if (!playerClass) {
-        LogE("not found player manager class");
-        return;
-    }
-    auto methodSignature = JNI::makeSignature(JNI::Sig::Void, JNI::Sig::String, JNI::Sig::Int,
-                                              JNI::Sig::Int, JNI::Sig::Int);
-    auto methodId =
-        JNICache::instance().getStaticMethod(playerClass, "requestRender", methodSignature);
-    if (!methodId) {
-        LogE("not found method");
-        return;
-    }
-    env.get()->CallStaticVoidMethod(playerClass.get(), methodId.get(), jPlayer.get(),
-                                    static_cast<jint>(textureId), static_cast<jint>(width),
-                                    static_cast<jint>(height));
+    JNICall::callStatic<void>(env.get(), JavaClass::SlarkPlayerManager, JavaMethod::RequestRender,
+                              playerId, static_cast<int32_t>(textureId),
+                              static_cast<int32_t>(width), static_cast<int32_t>(height));
 }
 
 VideoRender::VideoRender() = default;
@@ -83,23 +70,9 @@ void VideoRender::requestRenderFrame() noexcept {
 
 void Native_SetVideoRotation(const std::string& playerId, int32_t rotationDegrees) {
     using namespace slark::JNI;
-    constexpr std::string_view kClass = "com/slark/sdk/SlarkPlayerManager";
     JNIEnvGuard env(getJavaVM());
-    auto playerClass = JNICache::instance().getClass(env.get(), kClass);
-    if (!playerClass) {
-        LogE("not found player manager class");
-        return;
-    }
-    auto methodSig = JNI::makeSignature(JNI::Sig::Void, JNI::Sig::String, JNI::Sig::Int);
-    auto methodId =
-        JNICache::instance().getStaticMethod(playerClass, "setVideoRotation", methodSig);
-    if (!methodId) {
-        LogE("not found setVideoRotation method");
-        return;
-    }
-    env.get()->CallStaticVoidMethod(playerClass.get(), methodId.get(),
-                                    JNI::ToJVM::str(env.get(), playerId).get(),
-                                    static_cast<jint>(rotationDegrees));
+    JNICall::callStatic<void>(env.get(), JavaClass::SlarkPlayerManager,
+                              JavaMethod::SetVideoRotation, playerId, rotationDegrees);
 }
 
 void VideoRender::renderFrame(const AVFrameRefPtr& frame) noexcept {

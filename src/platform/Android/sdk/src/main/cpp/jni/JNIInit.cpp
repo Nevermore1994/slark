@@ -5,6 +5,7 @@
 #include "JNIBase.h"
 #include "JNICache.h"
 #include "JNIMarshal.h"
+#include "JNINames.h"
 #include "Log.hpp"
 #include "LogConfig.h"
 
@@ -16,16 +17,11 @@ jobject g_applicationContext = nullptr;
 
 void loadClassCache(JNIEnv* env) {
     static const char* kClasses[] = {
-        "com/slark/sdk/SlarkNativeBridge",
-        "com/slark/sdk/SlarkPlayerManager",
-        "com/slark/api/SlarkPlayerState",
-        "com/slark/api/SlarkPlayerEvent",
-        "com/slark/sdk/MediaCodecDecoder$Action",
-        "com/slark/sdk/MediaCodecDecoder",
-        "com/slark/sdk/RenderTexture",
-        "com/slark/sdk/AudioDecoderConfig",
-        "com/slark/sdk/VideoDecoderConfig",
-        "com/slark/sdk/DecodeMode",
+        JavaClass::SlarkNativeBridge,       JavaClass::SlarkPlayerManager,
+        JavaClass::SlarkPlayerState,        JavaClass::SlarkPlayerEvent,
+        JavaClass::MediaCodecDecoderAction, JavaClass::MediaCodecDecoder,
+        JavaClass::RenderTexture,           JavaClass::AudioDecoderConfig,
+        JavaClass::VideoDecoderConfig,      JavaClass::DecodeMode,
     };
 
     for (const auto* className : kClasses) {

@@ -167,7 +167,7 @@ extern "C" JNIEXPORT jobject JNICALL
 Java_com_slark_sdk_SlarkPlayerManager_00024Companion_state(JNIEnv* env,
                                                            jobject /*thiz*/,
                                                            jstring jPlayerId) {
-    constexpr std::string_view kPlayerStateClass = "com/slark/api/SlarkPlayerState";
+    constexpr std::string_view kPlayerStateClass = JavaClass::SlarkPlayerState;
     auto playerId = FromJVM::str(env, jPlayerId);
     std::string_view fieldView = "Unknown";
     if (auto player = PlayerManager::shareInstance().find(playerId)) {

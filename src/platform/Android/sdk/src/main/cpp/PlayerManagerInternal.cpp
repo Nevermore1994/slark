@@ -18,7 +18,7 @@ namespace slark {
 void PlayerObserver::notifyPlayedTime(std::string_view playerId, double time) {
     using namespace slark::JNI;
     JNIEnvGuard jniGuard(getJavaVM());
-    JNICall::callStatic<void>(jniGuard.get(), kPlayerManagerClass, "notifyPlayerTime",
+    JNICall::callStatic<void>(jniGuard.get(), kPlayerManagerClass, JavaMethod::NotifyPlayerTime,
                               std::string(playerId), time);
 }
 
@@ -33,14 +33,16 @@ void PlayerObserver::notifyPlayerState(std::string_view playerId, PlayerState st
     }
     auto stateEnum =
         JNICache::instance().getEnumField(env, kPlayerStateClass, kPlayerStateNames[stateIdx]);
-    JNICall::callStatic<void>(env, kPlayerManagerClass, "notifyPlayerState", std::string(playerId),
+    JNICall::callStatic<void>(env, kPlayerManagerClass, JavaMethod::NotifyPlayerState,
+                              std::string(playerId),
                               JObjectWithSig(std::move(stateEnum), makeObject(kPlayerStateClass)));
     if (state == PlayerState::Prepared || state == PlayerState::Playing) {
-        JNICall::callStatic<void>(env, kPlayerManagerClass, "startRendering",
+        JNICall::callStatic<void>(env, kPlayerManagerClass, JavaMethod::StartRendering,
                                   std::string(playerId));
     } else if (state == PlayerState::Pause || state == PlayerState::Completed ||
                state == PlayerState::Stop || state == PlayerState::Error) {
-        JNICall::callStatic<void>(env, kPlayerManagerClass, "stopRendering", std::string(playerId));
+        JNICall::callStatic<void>(env, kPlayerManagerClass, JavaMethod::StopRendering,
+                                  std::string(playerId));
     }
 }
 
@@ -57,7 +59,7 @@ void PlayerObserver::notifyPlayerEvent(std::string_view playerId,
     auto eventEnum = JNICache::instance().getEnumField(jniGuard.get(), kPlayerEventClass,
                                                        kPlayerEventNames[eventIdx]);
     JNICall::callStatic<void>(
-        jniGuard.get(), kPlayerManagerClass, "notifyPlayerEvent", std::string(playerId),
+        jniGuard.get(), kPlayerManagerClass, JavaMethod::NotifyPlayerEvent, std::string(playerId),
         JObjectWithSig(std::move(eventEnum), makeObject(kPlayerEventClass)), value);
 }
 

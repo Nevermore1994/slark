@@ -14,6 +14,7 @@ inline constexpr const char* SlarkPlayerManager = "com/slark/sdk/SlarkPlayerMana
 inline constexpr const char* SlarkPlayerState = "com/slark/api/SlarkPlayerState";
 inline constexpr const char* SlarkPlayerEvent = "com/slark/api/SlarkPlayerEvent";
 inline constexpr const char* MediaCodecDecoder = "com/slark/sdk/MediaCodecDecoder";
+inline constexpr const char* MediaCodecDecoderAction = "com/slark/sdk/MediaCodecDecoder$Action";
 inline constexpr const char* RenderTexture = "com/slark/sdk/RenderTexture";
 inline constexpr const char* AudioDecoderConfig = "com/slark/sdk/AudioDecoderConfig";
 inline constexpr const char* VideoDecoderConfig = "com/slark/sdk/VideoDecoderConfig";
@@ -28,16 +29,21 @@ inline constexpr const char* NotifyPlayerState = "notifyPlayerState";
 inline constexpr const char* NotifyPlayerEvent = "notifyPlayerEvent";
 inline constexpr const char* NotifyPlayerTime = "notifyPlayerTime";
 inline constexpr const char* RequestRender = "requestRender";
+inline constexpr const char* SetVideoRotation = "setVideoRotation";
 inline constexpr const char* GetPlayedTime = "getPlayedTime";
+inline constexpr const char* StartRendering = "startRendering";
+inline constexpr const char* StopRendering = "stopRendering";
 inline constexpr const char* SendPacket = "sendPacket";
 inline constexpr const char* CreateVideoDecoder = "createVideoDecoder";
 inline constexpr const char* CreateAudioDecoder = "createAudioDecoder";
 inline constexpr const char* ReleaseDecoder = "releaseDecoder";
 inline constexpr const char* FlushDecoder = "flushDecoder";
 inline constexpr const char* RequestVideoFrame = "requestVideoFrame";
+inline constexpr const char* DoAction = "doAction";
 inline constexpr const char* GetFilesDir = "getFilesDir";
 inline constexpr const char* GetCacheDir = "getCacheDir";
 inline constexpr const char* GetPath = "getPath";
+inline constexpr const char* GetCanonicalPath = "getCanonicalPath";
 }  // namespace JavaMethod
 
 namespace JavaEnumValue {

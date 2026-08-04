@@ -11,6 +11,7 @@
 #include "JNICall.h"
 #include "JNIEnvGuard.h"
 #include "JNIMarshal.h"
+#include "JNINames.h"
 #include "JNISignature.h"
 #include "Log.hpp"
 #include "Manager.hpp"
@@ -148,7 +149,6 @@ static jboolean RenderManager_swapGLBuffers(const std::string& playerId, jint te
 }
 
 static jobject RenderManager_getBackupTextureId(JNIEnv* env, const std::string& playerId) {
-    static std::string_view kTextureClass = "com/slark/sdk/RenderTexture";
     auto render = VideoRenderManager::shareInstance().find(playerId);
     if (!render) {
         LogE("failed to find player for playerId: {}", playerId);
@@ -159,9 +159,9 @@ static jobject RenderManager_getBackupTextureId(JNIEnv* env, const std::string& 
         LogE("backup texture is null for playerId: {}", playerId);
         return nullptr;
     }
-    return JNI::JNICall::create(env, kTextureClass, static_cast<int32_t>(texture->textureId()),
-                                static_cast<int32_t>(texture->width()),
-                                static_cast<int32_t>(texture->height()))
+    return JNI::JNICall::create(
+               env, JNI::JavaClass::RenderTexture, static_cast<int32_t>(texture->textureId()),
+               static_cast<int32_t>(texture->width()), static_cast<int32_t>(texture->height()))
         .detach();
 }
 
