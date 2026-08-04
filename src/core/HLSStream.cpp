@@ -26,8 +26,7 @@ constexpr std::chrono::milliseconds kWaitSettleTimeout{500};
 constexpr std::chrono::milliseconds kCloseWaitTimeout{5000};
 }  // namespace
 
-HLSStream::HLSStream(std::shared_ptr<Thread> ownerThread)
-    : ownerThread_(std::move(ownerThread)) {}
+HLSStream::HLSStream(std::shared_ptr<Thread> ownerThread) : ownerThread_(std::move(ownerThread)) {}
 
 HLSStream::~HLSStream() {
     close();
@@ -116,35 +115,7 @@ void HLSStream::start() noexcept {
     requestInfo.url = params_.uri;
     requestInfo.methodType = http::HttpMethodType::Get;
 
-    std::weak_ptr<HLSStream> weakThis = shared_from_this();
-    std::weak_ptr<StreamControl> weakControl = control;
-
-    auto fetchPlaylistTask =
-        [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
-           std::weak_ptr<HLSStream> weakStream, std::weak_ptr<StreamControl> weakControl,
-           std::shared_ptr<Thread> ownerThread, uint64_t generation,
-           uint64_t operationId) -> Task<void> {
-        auto response = co_await req->asyncExecute(info, req->cancelToken());
-        auto control = weakControl.lock();
-        if (!control || !control->alive.load()) {
-            co_return;
-        }
-        auto stream = weakStream.lock();
-        if (!stream) {
-            co_return;
-        }
-        auto event = HLSStream::PlaylistEvent{generation, operationId, std::move(response)};
-        ownerThread->postTask([weakStream, event = std::move(event)]() mutable {
-            auto s = weakStream.lock();
-            if (!s) {
-                return;
-            }
-            s->onPlaylistEvent(std::move(event));
-        });
-    };
-
-    auto task = fetchPlaylistTask(request, requestInfo, weakThis, weakControl, ownerThread_, gen,
-                                  opId);
+    auto task = fetchPlaylist(request, requestInfo, control, gen, opId);
     playlistOp_.emplace(PlaylistOp{gen, opId, request, std::move(task), std::move(control)});
     playlistOp_->task.resume();
 }
@@ -210,6 +181,26 @@ StreamResult<void> HLSStream::seekByTime(double timeSec) {
 
 void HLSStream::updateRange(Range) noexcept {}
 
+Task<void> HLSStream::fetchPlaylist(std::shared_ptr<http::HttpRequest> request,
+                                    http::RequestInfo info,
+                                    std::shared_ptr<StreamControl> control,
+                                    uint64_t generation,
+                                    uint64_t operationId) {
+    std::weak_ptr<HLSStream> weakStream = weak_from_this();
+    auto response = co_await request->asyncExecute(info, request->cancelToken());
+    if (!control->alive.load()) {
+        co_return;
+    }
+    auto event = PlaylistEvent{generation, operationId, std::move(response)};
+    ownerThread_->postTask([weakStream, event = std::move(event)]() mutable {
+        auto s = weakStream.lock();
+        if (!s) {
+            return;
+        }
+        s->onPlaylistEvent(std::move(event));
+    });
+}
+
 void HLSStream::onPlaylistEvent(PlaylistEvent event) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     if (event.generation != generation_ || !playlistOp_ ||
@@ -273,35 +264,7 @@ void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
         requestInfo.url = variantUrl;
         requestInfo.methodType = http::HttpMethodType::Get;
 
-        std::weak_ptr<HLSStream> weakThis = shared_from_this();
-        std::weak_ptr<StreamControl> weakControl = control;
-
-        auto fetchVariantTask =
-            [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
-               std::weak_ptr<HLSStream> weakStream, std::weak_ptr<StreamControl> weakControl,
-               std::shared_ptr<Thread> ownerThread, uint64_t generation,
-               uint64_t operationId) -> Task<void> {
-            auto response = co_await req->asyncExecute(info, req->cancelToken());
-            auto control = weakControl.lock();
-            if (!control || !control->alive.load()) {
-                co_return;
-            }
-            auto stream = weakStream.lock();
-            if (!stream) {
-                co_return;
-            }
-            auto event = HLSStream::PlaylistEvent{generation, operationId, std::move(response)};
-            ownerThread->postTask([weakStream, event = std::move(event)]() mutable {
-                auto s = weakStream.lock();
-                if (!s) {
-                    return;
-                }
-                s->onPlaylistEvent(std::move(event));
-            });
-        };
-
-        auto task = fetchVariantTask(request, requestInfo, weakThis, weakControl, ownerThread_, gen,
-                                     opId);
+        auto task = fetchPlaylist(request, requestInfo, control, gen, opId);
         playlistOp_.emplace(PlaylistOp{gen, opId, request, std::move(task), std::move(control)});
         playlistOp_->task.resume();
     } else {
@@ -325,14 +288,14 @@ void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
         }
 
         if (info_.isLive) {
-            refreshTimerId_ = ownerThread_->postTask(std::chrono::seconds(3), [weak =
-                                                                                 weak_from_this()]() {
-                auto self = weak.lock();
-                if (!self) {
-                    return;
-                }
-                self->refreshPlaylist();
-            });
+            refreshTimerId_ =
+                ownerThread_->postTask(std::chrono::seconds(3), [weak = weak_from_this()]() {
+                    auto self = weak.lock();
+                    if (!self) {
+                        return;
+                    }
+                    self->refreshPlaylist();
+                });
         }
 
         state_ = StreamState::Ready;
@@ -408,11 +371,11 @@ void HLSStream::downloadSegment(uint32_t segIndex) {
     std::weak_ptr<HLSStream> weakThis = shared_from_this();
     std::weak_ptr<StreamControl> weakControl = control;
 
-    auto downloadTask =
-        [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
-           std::weak_ptr<HLSStream> weakStream, std::weak_ptr<StreamControl> weakControl,
-           std::shared_ptr<Thread> ownerThread, uint32_t segIdx, uint64_t generation,
-           uint64_t operationId) -> Task<void> {
+    auto downloadTask = [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
+                           std::weak_ptr<HLSStream> weakStream,
+                           std::weak_ptr<StreamControl> weakControl,
+                           std::shared_ptr<Thread> ownerThread, uint32_t segIdx,
+                           uint64_t generation, uint64_t operationId) -> Task<void> {
         auto gen = req->streamingExecute(info, req->cancelToken());
         while (true) {
             auto chunk = co_await gen.next();
@@ -441,7 +404,8 @@ void HLSStream::downloadSegment(uint32_t segIndex) {
 
     auto task = downloadTask(request, requestInfo, weakThis, weakControl, ownerThread_, segIndex,
                              gen, opId);
-    segmentOp_.emplace(SegmentOp{gen, opId, segIndex, request, std::move(task), std::move(control)});
+    segmentOp_.emplace(
+        SegmentOp{gen, opId, segIndex, request, std::move(task), std::move(control)});
     segmentOp_->task.resume();
 }
 
@@ -562,34 +526,7 @@ void HLSStream::refreshPlaylist() {
     requestInfo.url = mediaPlaylistUrl_;
     requestInfo.methodType = http::HttpMethodType::Get;
 
-    std::weak_ptr<HLSStream> weakThis = shared_from_this();
-    std::weak_ptr<StreamControl> weakControl = control;
-
-    auto fetchTask =
-        [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
-           std::weak_ptr<HLSStream> weakStream, std::weak_ptr<StreamControl> weakControl,
-           std::shared_ptr<Thread> ownerThread, uint64_t generation,
-           uint64_t operationId) -> Task<void> {
-        auto response = co_await req->asyncExecute(info, req->cancelToken());
-        auto control = weakControl.lock();
-        if (!control || !control->alive.load()) {
-            co_return;
-        }
-        auto stream = weakStream.lock();
-        if (!stream) {
-            co_return;
-        }
-        auto event = HLSStream::PlaylistEvent{generation, operationId, std::move(response)};
-        ownerThread->postTask([weakStream, event = std::move(event)]() mutable {
-            auto s = weakStream.lock();
-            if (!s) {
-                return;
-            }
-            s->onPlaylistEvent(std::move(event));
-        });
-    };
-
-    auto task = fetchTask(request, requestInfo, weakThis, weakControl, ownerThread_, gen, opId);
+    auto task = fetchPlaylist(request, requestInfo, control, gen, opId);
     playlistOp_.emplace(PlaylistOp{gen, opId, request, std::move(task), std::move(control)});
     playlistOp_->task.resume();
 }

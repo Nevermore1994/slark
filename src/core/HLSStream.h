@@ -103,6 +103,12 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
     void refreshPlaylist();
     void scheduleRetry(uint32_t segIndex);
 
+    Task<void> fetchPlaylist(std::shared_ptr<http::HttpRequest> request,
+                             http::RequestInfo info,
+                             std::shared_ptr<StreamControl> control,
+                             uint64_t generation,
+                             uint64_t operationId);
+
     void onPlaylistEvent(PlaylistEvent event) noexcept;
     void onSegmentEvent(SegmentEvent event) noexcept;
 
