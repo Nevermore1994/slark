@@ -1468,67 +1468,7 @@ void TrackContext::appendFragmentSamples(const BoxRefPtr& moofBox, uint64_t moof
         if (trafChild->info.symbol != "traf") {
             continue;
         }
-        auto tfhdBox = std::dynamic_pointer_cast<BoxTfhd>(trafChild->getChild("tfhd"));
-        if (!tfhdBox || tfhdBox->trackId != trackId) {
-            continue;
-        }
-
-        uint64_t baseOffset = moofOffset;
-        if (tfhdBox->flags & BoxTfhd::kBaseDataOffsetPresent) {
-            baseOffset = tfhdBox->baseDataOffset;
-        }
-
-        int64_t baseDecodeTime = 0;
-        if (auto tfdtBox = std::dynamic_pointer_cast<BoxTfdt>(trafChild->getChild("tfdt"))) {
-            baseDecodeTime = static_cast<int64_t>(tfdtBox->baseMediaDecodeTime);
-        } else if (!fragSamples.empty()) {
-            const auto& last = fragSamples.back();
-            baseDecodeTime = last.dts + static_cast<int64_t>(last.duration);
-        }
-        baseDecodeTime -= elstMediaTimeOffset;
-
-        for (const auto& trafChild2 : trafChild->childs) {
-            if (trafChild2->info.symbol != "trun") {
-                continue;
-            }
-            auto trunBox = std::dynamic_pointer_cast<BoxTrun>(trafChild2);
-            if (!trunBox) {
-                continue;
-            }
-
-            uint64_t dataOffset = baseOffset;
-            if (trunBox->flags & BoxTrun::kDataOffsetPresent) {
-                dataOffset =
-                    baseOffset + static_cast<uint64_t>(static_cast<int64_t>(trunBox->dataOffset));
-            }
-
-            int64_t currentDts = baseDecodeTime;
-            for (uint32_t i = 0; i < trunBox->samples.size(); ++i) {
-                const auto& s = trunBox->samples[i];
-                const uint32_t dur = resolveSampleDuration(s, trunBox->flags, tfhdBox, trex);
-                const uint32_t sz = resolveSampleSize(s, trunBox->flags, tfhdBox, trex);
-                const uint32_t sampleFlags =
-                    resolveSampleFlags(s, i, trunBox->flags, trunBox, tfhdBox, trex);
-                const int32_t cto = (trunBox->flags & BoxTrun::kSampleCompositionTimeOffsetPresent)
-                                        ? s.compositionTimeOffset
-                                        : 0;
-
-                FragSample fs;
-                fs.offset = dataOffset;
-                fs.size = sz;
-                fs.duration = dur;
-                fs.flags = sampleFlags;
-                fs.compositionTimeOffset = cto;
-                fs.dts = currentDts;
-                fs.pts = currentDts + static_cast<int64_t>(cto);
-                fs.isKeyFrame = !(sampleFlags & BoxTrun::kSampleIsNonSync);
-                fragSamples.push_back(fs);
-
-                dataOffset += sz;
-                currentDts += static_cast<int64_t>(dur);
-            }
-            baseDecodeTime = currentDts;
-        }
+        appendTrafSamples(trafChild, moofOffset);
     }
     // 更新 fragment 总 duration（取最大 dts + duration）
     if (!fragSamples.empty()) {
@@ -1537,6 +1477,76 @@ void TrackContext::appendFragmentSamples(const BoxRefPtr& moofBox, uint64_t moof
         fragmentDurationTicks = std::max(fragmentDurationTicks, lastEnd);
     }
     isCompleted = fragSamples.empty();
+}
+
+void TrackContext::appendTrafSamples(const BoxRefPtr& trafChild, uint64_t moofOffset) noexcept {
+    auto tfhdBox = std::dynamic_pointer_cast<BoxTfhd>(trafChild->getChild("tfhd"));
+    if (!tfhdBox || tfhdBox->trackId != trackId) {
+        return;
+    }
+
+    uint64_t baseOffset = moofOffset;
+    if (tfhdBox->flags & BoxTfhd::kBaseDataOffsetPresent) {
+        baseOffset = tfhdBox->baseDataOffset;
+    }
+
+    int64_t baseDecodeTime = 0;
+    if (auto tfdtBox = std::dynamic_pointer_cast<BoxTfdt>(trafChild->getChild("tfdt"))) {
+        baseDecodeTime = static_cast<int64_t>(tfdtBox->baseMediaDecodeTime);
+    } else if (!fragSamples.empty()) {
+        const auto& last = fragSamples.back();
+        baseDecodeTime = last.dts + static_cast<int64_t>(last.duration);
+    }
+    baseDecodeTime -= elstMediaTimeOffset;
+
+    for (const auto& child : trafChild->childs) {
+        if (auto trunBox = std::dynamic_pointer_cast<BoxTrun>(child)) {
+            baseDecodeTime = appendTrunSamples(trunBox, tfhdBox, baseOffset, baseDecodeTime);
+        }
+    }
+}
+
+int64_t TrackContext::appendTrunSamples(const std::shared_ptr<BoxTrun>& trunBox,
+                                        const std::shared_ptr<BoxTfhd>& tfhdBox,
+                                        uint64_t baseOffset,
+                                        int64_t baseDecodeTime) noexcept {
+    uint64_t dataOffset = baseOffset;
+    if (trunBox->flags & BoxTrun::kDataOffsetPresent) {
+        // dataOffset 有符号（ISO-BMFF 允许负值），int64 计算避免无符号下溢
+        const int64_t resolvedOffset = static_cast<int64_t>(baseOffset) + trunBox->dataOffset;
+        if (resolvedOffset < 0) {
+            LogW("appendTrunSamples: negative trun data offset, skip, trackId={}", trackId);
+            return baseDecodeTime;
+        }
+        dataOffset = static_cast<uint64_t>(resolvedOffset);
+    }
+
+    int64_t currentDts = baseDecodeTime;
+    for (uint32_t i = 0; i < trunBox->samples.size(); ++i) {
+        const auto& s = trunBox->samples[i];
+        const uint32_t dur = resolveSampleDuration(s, trunBox->flags, tfhdBox, trex);
+        const uint32_t sz = resolveSampleSize(s, trunBox->flags, tfhdBox, trex);
+        const uint32_t sampleFlags =
+            resolveSampleFlags(s, i, trunBox->flags, trunBox, tfhdBox, trex);
+        const int32_t cto = (trunBox->flags & BoxTrun::kSampleCompositionTimeOffsetPresent)
+                                ? s.compositionTimeOffset
+                                : 0;
+
+        FragSample fs;
+        fs.offset = dataOffset;
+        fs.size = sz;
+        fs.duration = dur;
+        fs.flags = sampleFlags;
+        fs.compositionTimeOffset = cto;
+        fs.dts = currentDts;
+        fs.pts = currentDts + static_cast<int64_t>(cto);
+        fs.isKeyFrame = !(sampleFlags & BoxTrun::kSampleIsNonSync);
+        fragSamples.push_back(fs);
+
+        dataOffset += sz;
+        currentDts += static_cast<int64_t>(dur);
+    }
+    return currentDts;
 }
 
 bool Mp4Demuxer::parseMoofBox(Buffer& /*buffer*/, const BoxRefPtr& moofBox) noexcept {

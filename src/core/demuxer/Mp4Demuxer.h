@@ -129,6 +129,14 @@ class TrackContext {
                          std::shared_ptr<FrameInfo> frameInfo,
                          AVFramePtrArray& packets);
 
+    void appendTrafSamples(const BoxRefPtr& trafChild, uint64_t moofOffset) noexcept;
+
+    // 返回处理后的下一个 trun 的 baseDecodeTime
+    int64_t appendTrunSamples(const std::shared_ptr<BoxTrun>& trunBox,
+                              const std::shared_ptr<BoxTfhd>& tfhdBox,
+                              uint64_t baseOffset,
+                              int64_t baseDecodeTime) noexcept;
+
     /// calcIndex 的三个独立状态机推进
     void advanceStscState() noexcept;
     void advanceSttsState() noexcept;
