@@ -187,6 +187,8 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
  private:
     [[nodiscard]] double demuxedDuration() const noexcept override;
 
+    [[nodiscard]] double maxBufferedPts() const noexcept;
+
     void pauseStream() noexcept override;
 
     void resumeStream() noexcept override;
@@ -246,6 +248,8 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
     void onAudioDecoded(DecoderData data) noexcept;
 
     void onVideoDecoded(DecoderData data) noexcept;
+
+    [[nodiscard]] bool isDecodedFrameSkippable(const DecoderData& data) noexcept;
 
     /// seek 首帧 push 路径：直接推帧渲染并更新首帧/seek 状态
     void handleSeekFirstFrame(const AVFrameRefPtr& frame, bool isSeekFirstFrame) noexcept;

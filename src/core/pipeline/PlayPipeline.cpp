@@ -328,7 +328,7 @@ double PlayPipeline::cachedDuration() const noexcept {
     return demuxedDuration();
 }
 
-double PlayPipeline::cacheEndTime() const noexcept {
+double PlayPipeline::maxBufferedPts() const noexcept {
     double maxPts = 0.0;
     videoFrames_.withLock([&maxPts](const auto& m) {
         if (!m.empty()) {
@@ -342,7 +342,11 @@ double PlayPipeline::cacheEndTime() const noexcept {
     });
     maxPts = std::max(maxPts, lastEnqueuedAudioPts_.load(std::memory_order_acquire));
     maxPts = std::max(maxPts, lastEnqueuedVideoPts_.load(std::memory_order_acquire));
-    return std::max(0.0, maxPts);
+    return maxPts;
+}
+
+double PlayPipeline::cacheEndTime() const noexcept {
+    return std::max(0.0, maxBufferedPts());
 }
 
 bool PlayPipeline::isDecodeCompleted() const noexcept {
@@ -491,21 +495,8 @@ void PlayPipeline::chaseVideoFrames(AVFrameRefPtr& frame,
 }
 
 double PlayPipeline::demuxedDuration() const noexcept {
-    double maxPts = 0.0;
-    videoFrames_.withLock([&maxPts](const auto& m) {
-        if (!m.empty()) {
-            maxPts = std::max(maxPts, m.rbegin()->second->ptsTime());
-        }
-    });
-    audioFrames_.withLock([&maxPts](const auto& q) {
-        if (!q.empty()) {
-            maxPts = std::max(maxPts, q.back()->ptsTime());
-        }
-    });
-    maxPts = std::max(maxPts, lastEnqueuedAudioPts_.load(std::memory_order_acquire));
-    maxPts = std::max(maxPts, lastEnqueuedVideoPts_.load(std::memory_order_acquire));
     const double currentSec = clockSync_->masterTime().second();
-    return std::max(0.0, maxPts - currentSec);
+    return std::max(0.0, maxBufferedPts() - currentSec);
 }
 
 void PlayPipeline::pauseStream() noexcept {
@@ -811,9 +802,9 @@ void PlayPipeline::setDemuxerComponent(std::shared_ptr<DemuxerComponent> demuxer
     connectComponents();
 }
 
-void PlayPipeline::onAudioDecoded(DecoderData data) noexcept {
+bool PlayPipeline::isDecodedFrameSkippable(const DecoderData& data) noexcept {
     if (pipelineState_.load(std::memory_order_acquire) >= PipelineState::TearingDown) {
-        return;
+        return true;
     }
     if (!data.frame) {
         if (data.error != Error::Success) {
@@ -821,13 +812,16 @@ void PlayPipeline::onAudioDecoded(DecoderData data) noexcept {
                 fireEvent(PipelineEvent::DecodeError, PipelineError{.error = err});
             });
         }
-        return;
+        return true;
     }
     if (data.frame->isEOS) {
-        return;
+        return true;
     }
-    const uint64_t frameEpoch = seekContext_->currentEpoch();
-    if (seekContext_->isEpochStale(frameEpoch)) {
+    return seekContext_->isEpochStale(seekContext_->currentEpoch());
+}
+
+void PlayPipeline::onAudioDecoded(DecoderData data) noexcept {
+    if (isDecodedFrameSkippable(data)) {
         return;
     }
     LogIThrottle(2000, "onAudioDecoded pts:{:.6f}, isSeekPending:{}", data.frame->ptsTime(),
@@ -912,22 +906,7 @@ void PlayPipeline::handleSeekFirstFrame(const AVFrameRefPtr& frame,
 }
 
 void PlayPipeline::onVideoDecoded(DecoderData data) noexcept {
-    if (pipelineState_.load(std::memory_order_acquire) >= PipelineState::TearingDown) {
-        return;
-    }
-    if (!data.frame) {
-        if (data.error != Error::Success) {
-            postToOwnerThread([this, err = data.error] {
-                fireEvent(PipelineEvent::DecodeError, PipelineError{.error = err});
-            });
-        }
-        return;
-    }
-    if (data.frame->isEOS) {
-        return;
-    }
-    const uint64_t frameEpoch = seekContext_->currentEpoch();
-    if (seekContext_->isEpochStale(frameEpoch)) {
+    if (isDecodedFrameSkippable(data)) {
         return;
     }
     LogIThrottle(2000, "onVideoDecoded pts:{:.6f}, isDiscard:{}, isSeekPending:{}",
