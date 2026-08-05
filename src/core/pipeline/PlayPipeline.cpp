@@ -597,7 +597,8 @@ void PlayPipeline::checkPlaybackComplete() noexcept {
         if (state != PipelineState::Playing && state != PipelineState::Paused) {
             return;
         }
-        if (!readiness_.firstFrameRendered.load(std::memory_order_acquire)) {
+        // 首帧渲染约束仅对有视频的媒体有效；纯音频无视频帧，以队列排空为结束条件
+        if (mediaInfo_.hasVideo && !readiness_.firstFrameRendered.load(std::memory_order_acquire)) {
             return;
         }
 
