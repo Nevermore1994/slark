@@ -111,6 +111,9 @@ class Thread : public NonCopyMovable, public std::enable_shared_from_this<Thread
 
     void drainTaskQueue() noexcept;
 
+    void waitIdle(std::chrono::milliseconds waitTime,
+                  std::unique_lock<std::mutex>& lock) noexcept;
+
     std::chrono::milliseconds runRepeatTasks() noexcept;
 
     TimerTask wrapOneShotTask(ThreadTask task) noexcept;

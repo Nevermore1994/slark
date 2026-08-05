@@ -183,78 +183,102 @@ bool FileStream::deliverData(std::shared_ptr<Data> buffer, bool eof) noexcept {
     return true;
 }
 
+void FileStream::processPendingSeek() noexcept {
+    if (!pendingSeekFlag_.load(std::memory_order_acquire)) {
+        return;
+    }
+    eofReached_.store(false, std::memory_order_release);
+    isCompleted_ = false;
+    uint64_t seekPos = 0;
+    {
+        std::lock_guard lock(mutex_);
+        seekPos = pendingSeekPos_;
+        pendingSeekFlag_.store(false, std::memory_order_release);
+    }
+    if (file_) {
+        auto result = file_->seek(static_cast<int64_t>(seekPos));
+        if (result) {
+            position_ = seekPos;
+        }
+    }
+    {
+        std::lock_guard lock(mutex_);
+        seekCompleted_ = true;
+    }
+    cv_.notify_all();
+}
+
+bool FileStream::waitIfPaused() noexcept {
+    if (!shouldPause_) {
+        return false;
+    }
+    std::unique_lock lock(mutex_);
+    cv_.wait(lock, [this] {
+        return !shouldPause_ || shouldStop_ ||
+               pendingSeekFlag_.load(std::memory_order_acquire);
+    });
+    return true;
+}
+
+bool FileStream::waitIfEof() noexcept {
+    if (!eofReached_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    std::unique_lock lock(mutex_);
+    cv_.wait(lock, [this] {
+        return !eofReached_.load(std::memory_order_acquire) || shouldStop_ ||
+               pendingSeekFlag_.load(std::memory_order_acquire);
+    });
+    return true;
+}
+
+bool FileStream::readAndDeliver() noexcept {
+    auto chunkSize = std::max<uint32_t>(params_.readChunkSize, 1);
+    auto buffer = std::make_shared<Data>(chunkSize);
+    if (!buffer || buffer->capacity() == 0) {
+        LogE("readLoop: buffer alloc failed, chunkSize={}", chunkSize);
+        if (params_.onError) {
+            params_.onError(Error::OutOfMemory, 0);
+        }
+        return false;
+    }
+
+    auto readResult = file_->readInto(*buffer, chunkSize);
+    bool eof = (!readResult || *readResult == 0);
+    if (!eof) {
+        buffer->setSize(*readResult);
+    }
+
+    if (pendingSeekFlag_.load(std::memory_order_acquire)) {
+        return true;
+    }
+
+    if (!deliverData(std::move(buffer), eof)) {
+        LogI("readLoop: deliverData EOF at pos={}, park thread", position_.load());
+        eofReached_.store(true, std::memory_order_release);
+        return true;
+    }
+    LogI("readLoop: sent data at pos={}", position_.load());
+    return true;
+}
+
 void FileStream::readLoop() noexcept {
     while (!shouldStop_) {
-        if (pendingSeekFlag_.load(std::memory_order_acquire)) {
-            eofReached_.store(false, std::memory_order_release);
-            isCompleted_ = false;
-            uint64_t seekPos = 0;
-            {
-                std::lock_guard lock(mutex_);
-                seekPos = pendingSeekPos_;
-                pendingSeekFlag_.store(false, std::memory_order_release);
-            }
-            if (file_) {
-                auto result = file_->seek(static_cast<int64_t>(seekPos));
-                if (result) {
-                    position_ = seekPos;
-                }
-            }
-            {
-                std::lock_guard lock(mutex_);
-                seekCompleted_ = true;
-            }
-            cv_.notify_all();
-        }
+        processPendingSeek();
 
-        if (shouldPause_) {
-            std::unique_lock lock(mutex_);
-            cv_.wait(lock, [this] {
-                return !shouldPause_ || shouldStop_ ||
-                       pendingSeekFlag_.load(std::memory_order_acquire);
-            });
+        if (waitIfPaused()) {
             continue;
         }
-
-        if (eofReached_.load(std::memory_order_acquire)) {
-            std::unique_lock lock(mutex_);
-            cv_.wait(lock, [this] {
-                return !eofReached_.load(std::memory_order_acquire) || shouldStop_ ||
-                       pendingSeekFlag_.load(std::memory_order_acquire);
-            });
+        if (waitIfEof()) {
             continue;
         }
-
         if (shouldStop_) {
             break;
         }
 
-        auto chunkSize = std::max<uint32_t>(params_.readChunkSize, 1);
-        auto buffer = std::make_shared<Data>(chunkSize);
-        if (!buffer || buffer->capacity() == 0) {
-            LogE("readLoop: buffer alloc failed, chunkSize={}", chunkSize);
-            if (params_.onError) {
-                params_.onError(Error::OutOfMemory, 0);
-            }
+        if (!readAndDeliver()) {
             break;
         }
-
-        auto readResult = file_->readInto(*buffer, chunkSize);
-        bool eof = (!readResult || *readResult == 0);
-        if (!eof) {
-            buffer->setSize(*readResult);
-        }
-
-        if (pendingSeekFlag_.load(std::memory_order_acquire)) {
-            continue;
-        }
-
-        if (!deliverData(std::move(buffer), eof)) {
-            LogI("readLoop: deliverData EOF at pos={}, park thread", position_.load());
-            eofReached_.store(true, std::memory_order_release);
-            continue;
-        }
-        LogI("readLoop: sent data at pos={}", position_.load());
     }
 }
 

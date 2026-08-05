@@ -188,6 +188,22 @@ void Thread::cancelRepeatTask(TimerId id) noexcept {
     TimerManager::shareInstance().cancel(id);
 }
 
+void Thread::waitIdle(std::chrono::milliseconds waitTime,
+                     std::unique_lock<std::mutex>& lock) noexcept {
+    ScopedInactive guard;
+    if (waitTime == std::chrono::milliseconds::max()) {
+        cond_.wait(lock, [this] {
+            return stopRequested_.load(std::memory_order_acquire) || !isRunning_ ||
+                   !taskQueue_.empty();
+        });
+    } else {
+        cond_.wait_for(lock, waitTime, [this] {
+            return stopRequested_.load(std::memory_order_acquire) || !isRunning_ ||
+                   !taskQueue_.empty();
+        });
+    }
+}
+
 void Thread::process() noexcept {
     tlsCurrentThread = this;
     setup();
@@ -229,19 +245,7 @@ void Thread::process() noexcept {
             }
 
             std::unique_lock<std::mutex> lock(mutex_);
-            if (waitTime == std::chrono::milliseconds::max()) {
-                ScopedInactive guard;
-                cond_.wait(lock, [this] {
-                    return stopRequested_.load(std::memory_order_acquire) || !isRunning_ ||
-                           !taskQueue_.empty();
-                });
-            } else if (waitTime > 0ms) {
-                ScopedInactive guard;
-                cond_.wait_for(lock, waitTime, [this] {
-                    return stopRequested_.load(std::memory_order_acquire) || !isRunning_ ||
-                           !taskQueue_.empty();
-                });
-            }
+            waitIdle(waitTime, lock);
         }
     }
 

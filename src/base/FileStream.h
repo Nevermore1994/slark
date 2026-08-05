@@ -51,6 +51,11 @@ class FileStream : public IStream {
     void notifyThread() noexcept;
     bool deliverData(std::shared_ptr<Data> buffer, bool eof) noexcept;
 
+    void processPendingSeek() noexcept;
+    bool waitIfPaused() noexcept;
+    bool waitIfEof() noexcept;
+    bool readAndDeliver() noexcept;
+
  private:
     std::unique_ptr<File::ReadFile> file_;
     std::unique_ptr<std::thread> thread_;
