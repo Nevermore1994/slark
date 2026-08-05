@@ -1,17 +1,17 @@
 #!/bin/bash
-# 并行运行所有测试（base / core / integration / http / platform / fuzz）
+# Run all tests in parallel (base / core / integration / http / platform / fuzz)
 #
-# 输出: 详细结果 → test/output/<YYYYMMDD_HHMMSS>/
-#       终端      → 仅打印每组统计 + 最后汇总失败用例
+# Output: detailed results -> test/output/<YYYYMMDD_HHMMSS>/
+#         terminal         -> per-group stats + final failed-test summary
 #
-# 用法:
-#   ./scripts/run_tests.sh              # Debug 构建 + 运行全部测试
-#   ./scripts/run_tests.sh Release      # Release 构建
-#   ./scripts/run_tests.sh Debug -L base # 只运行 base 标签测试
-#   ./scripts/run_tests.sh Debug --gtest_filter="LogConfig*" # 过滤特定测试
+# Usage:
+#   ./scripts/run_tests.sh              # Debug build + run all tests
+#   ./scripts/run_tests.sh Release      # Release build
+#   ./scripts/run_tests.sh Debug -L base # run only base-label tests
+#   ./scripts/run_tests.sh Debug --gtest_filter="LogConfig*" # filter specific tests
 #
-# 环境变量:
-#   BUILD_JOBS=4 ./scripts/run_tests.sh # 指定并行编译任务数
+# Environment:
+#   BUILD_JOBS=4 ./scripts/run_tests.sh # parallel compile jobs
 
 set -o pipefail
 
@@ -22,24 +22,24 @@ BUILD_TYPE="${1:-Debug}"
 BUILD_DIR="${PROJECT_DIR}/cmake-build-${BUILD_TYPE}-test"
 BUILD_JOBS="${BUILD_JOBS:-$(sysctl -n hw.logicalcpu 2>/dev/null || nproc 2>/dev/null || echo 4)}"
 
-# 颜色
+# Colors
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# 额外参数传递给 ctest（-L、--gtest_filter 等）
+# Extra args passed to ctest (-L, --gtest_filter, etc.)
 shift 2>/dev/null || true
 CTEST_ARGS="$@"
 
-# 输出目录
+# Output directory
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 OUTPUT_DIR="${PROJECT_DIR}/test/output/${TIMESTAMP}"
 mkdir -p "${OUTPUT_DIR}"
 
 echo -e "${CYAN}============================================${NC}"
-echo -e "${CYAN} Slark 测试运行器${NC}"
+echo -e "${CYAN} Slark Test Runner${NC}"
 echo -e "${CYAN}============================================${NC}"
 echo " Build Type : ${BUILD_TYPE}"
 echo " Build Dir  : ${BUILD_DIR}"
@@ -48,34 +48,33 @@ echo " Output Dir : ${OUTPUT_DIR}"
 echo " CTest Args : ${CTEST_ARGS:-<none>}"
 echo -e "${CYAN}============================================${NC}"
 
-# ─── 1. 配置 ───────────────────────────────────────────────────────────────────
+# ─── 1. Configure ───────────────────────────────────────────────────────────────
 echo ""
-echo -e "${YELLOW}[1/3] 配置 CMake...${NC}"
+echo -e "${YELLOW}[1/3] Configuring CMake...${NC}"
 cmake -S "${PROJECT_DIR}" \
       -B "${BUILD_DIR}" \
       -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
       -DBUILD_PLATFORM=PC \
       -DDISABLE_HTTP=OFF
 
-# ─── 2. 编译 ───────────────────────────────────────────────────────────────────
+# ─── 2. Build ───────────────────────────────────────────────────────────────────
 echo ""
-echo -e "${YELLOW}[2/3] 编译测试...${NC}"
-TARGETS="Base_test Core_test http_test Platform_test BaseFuzz_test CoreFuzz_test HttpFuzz_test StringUtilFuzz_test SeekContextFuzz_test TimerPoolFuzz_test FileStreamFuzz_test WriterFuzz_test ThreadFuzz_test"
+echo -e "${YELLOW}[2/3] Building tests...${NC}"
+TARGETS="Base_test Core_test http_test Platform_test CoreFuzz_test HttpFuzz_test StringUtilFuzz_test SeekContextFuzz_test TimerPoolFuzz_test FileStreamFuzz_test WriterFuzz_test ThreadFuzz_test"
 if [ -d "${PROJECT_DIR}/src/core" ]; then
-    TARGETS="${TARGETS} CoreIntegration_test"
+    TARGETS="${TARGETS} CoreIntegration_test PlayerMediaIntegration_test"
 fi
 # shellcheck disable=SC2086
 cmake --build "${BUILD_DIR}" \
       --target ${TARGETS} \
       -j"${BUILD_JOBS}"
 
-# ─── 3. 运行 ───────────────────────────────────────────────────────────────────
+# ─── 3. Run ─────────────────────────────────────────────────────────────────────
 echo ""
-echo -e "${YELLOW}[3/3] 并行运行测试...${NC}"
+echo -e "${YELLOW}[3/3] Running tests in parallel...${NC}"
 cd "${BUILD_DIR}"
 
-# 解析 ctest 参数中的标签过滤
-# 如果用户指定了 -L，则只运行对应标签，否则运行全部
+# Parse label filter from ctest args; if -L given, run only matching labels
 HAS_LABEL_FILTER=false
 if echo "${CTEST_ARGS}" | grep -Eq '\-L[ =]'; then
     HAS_LABEL_FILTER=true
@@ -88,17 +87,17 @@ run_test_group() {
     local output_file="${OUTPUT_DIR}/${group_tag}.log"
     local fail_file="${OUTPUT_DIR}/${group_tag}_failed.log"
 
-    echo -e "  ${CYAN}[${group_name}]${NC} 启动..."
+    echo -e "  ${CYAN}[${group_name}]${NC} starting..."
 
-    # 构建标签参数：-L 支持多次调用匹配多个标签
+    # Build label args: -L can be given multiple times to match multiple labels
     local label_args=""
     for label in ${labels}; do
         label_args="${label_args} -L ${label}"
     done
 
-    # 运行 ctest 并将 stdout+stderr 重定向到文件
-    # ${CTEST_ARGS} 中的 --gtest_filter 等参数会透传给每个测试
-    # 注意: --output-on-failure 只能出现一次
+    # Run ctest, redirect stdout+stderr to file
+    # ${CTEST_ARGS} (e.g. --gtest_filter) is forwarded to each test
+    # Note: --output-on-failure must appear only once
     ctest \
         ${label_args} \
         --output-junit "${OUTPUT_DIR}/${group_tag}_junit.xml" \
@@ -107,26 +106,28 @@ run_test_group() {
         > "${output_file}" 2>&1
     local exit_code=$?
 
-    # 提取失败的测试用例名到单独文件
-    awk '/The following tests FAILED:/{flag=1; next} /^$/{flag=0} flag' "${output_file}" \
-        | sed 's/^[[:space:]]*//' \
-        | grep -v '^$' \
-        | grep -v '^Errors while running' \
-        > "${fail_file}" 2>/dev/null || true
+    # Extract failed test names to a separate file (guard against missing log)
+    if [ -f "${output_file}" ]; then
+        awk '/The following tests FAILED:/{flag=1; next} /^$/{flag=0} flag' "${output_file}" \
+            | sed 's/^[[:space:]]*//' \
+            | grep -v '^$' \
+            | grep -v '^Errors while running' \
+            > "${fail_file}" 2>/dev/null || true
+    fi
 
     return ${exit_code}
 }
 
-# 并行启动六个测试组
+# Launch six test groups in parallel
 BASE_PID=""; CORE_PID=""; INTEG_PID=""; HTTP_PID=""; PLATFORM_PID=""; FUZZ_PID=""
 BASE_EXIT=0; CORE_EXIT=0; INTEG_EXIT=0; HTTP_EXIT=0; PLATFORM_EXIT=0; FUZZ_EXIT=0
 
 if [ "${HAS_LABEL_FILTER}" = true ]; then
-    # 用户指定了标签过滤，直接运行 ctest
+    # User specified a label filter; run ctest directly
     ctest ${CTEST_ARGS} --output-on-failure > "${OUTPUT_DIR}/filtered.log" 2>&1
     FINAL_EXIT=$?
 else
-    # 并行启动六个测试组（base / core / integration / http / platform / fuzz）
+    # Launch six test groups in parallel
     run_test_group "base" "Base Test" &
     BASE_PID=$!
 
@@ -145,7 +146,7 @@ else
     run_test_group "fuzz" "Fuzz Test" &
     FUZZ_PID=$!
 
-    # 等待所有测试完成
+    # Wait for all groups
     wait ${BASE_PID};     BASE_EXIT=$?
     wait ${CORE_PID};     CORE_EXIT=$?
     wait ${INTEG_PID};    INTEG_EXIT=$?
@@ -156,10 +157,10 @@ else
     FINAL_EXIT=$((BASE_EXIT | CORE_EXIT | INTEG_EXIT | HTTP_EXIT | PLATFORM_EXIT | FUZZ_EXIT))
 fi
 
-# ─── 4. 汇总 ───────────────────────────────────────────────────────────────────
+# ─── 4. Summary ─────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${CYAN}============================================${NC}"
-echo -e "${CYAN} 测试汇总${NC}"
+echo -e "${CYAN} Test Summary${NC}"
 echo -e "${CYAN}============================================${NC}"
 
 ALL_FAILED=()
@@ -196,19 +197,19 @@ collect_results() {
     TOTAL_FAIL=$((TOTAL_FAIL + fail_count))
 
     if [ "${fail_count}" -gt 0 ]; then
-        echo -e " ${RED}✗ ${group_name}${NC}: ${total_tests} 个测试, ${RED}${fail_count} 个失败${NC}"
+        echo -e " ${RED}✗ ${group_name}${NC}: ${total_tests} tests, ${RED}${fail_count} failed${NC}"
         while IFS= read -r failed_test; do
             ALL_FAILED+=("${group_name} :: ${failed_test}")
         done < "${fail_file}"
     else
-        echo -e " ${GREEN}✓ ${group_name}${NC}: ${total_tests} 个测试全部通过"
+        echo -e " ${GREEN}✓ ${group_name}${NC}: ${total_tests} tests all passed"
     fi
 }
 
 if [ "${HAS_LABEL_FILTER}" = true ]; then
     SUMMARY=$(grep -E '^[0-9]+% tests passed' "${OUTPUT_DIR}/filtered.log" | tail -1)
     TOTAL_TESTS=$(echo "${SUMMARY}" | grep -oE 'out of [0-9]+' | grep -oE '[0-9]+')
-    echo -e " ${GREEN}结果${NC}: ${TOTAL_TESTS:-0} 个测试"
+    echo -e " ${GREEN}Result${NC}: ${TOTAL_TESTS:-0} tests"
     FAILED_TESTS=$(awk '/The following tests FAILED:/{flag=1; next} /^$/{flag=0} flag' "${OUTPUT_DIR}/filtered.log" | sed 's/^[[:space:]]*//' | grep -v '^$' | grep -v '^Errors while running')
     if [ -n "${FAILED_TESTS}" ]; then
         echo ""
@@ -231,10 +232,10 @@ else
 
     echo ""
     if [ ${#ALL_FAILED[@]} -eq 0 ]; then
-        echo -e " ${GREEN}全部 ${TOTAL_PASS} 个测试通过 ✓${NC}"
+        echo -e " ${GREEN}All ${TOTAL_PASS} tests passed ✓${NC}"
     else
-        echo -e " ${GREEN}通过  : ${TOTAL_PASS}${NC}"
-        echo -e " ${RED}失败  : ${TOTAL_FAIL}${NC}"
+        echo -e " ${GREEN}Passed  : ${TOTAL_PASS}${NC}"
+        echo -e " ${RED}Failed  : ${TOTAL_FAIL}${NC}"
         echo ""
         echo -e "${RED}────────────────────────────────────────────${NC}"
         echo -e "${RED} FAILED TESTS:${NC}"
@@ -247,16 +248,16 @@ else
 fi
 
 echo -e "${CYAN}============================================${NC}"
-echo " 详细输出: ${OUTPUT_DIR}/"
+echo " Detailed output: ${OUTPUT_DIR}/"
 echo -e "${CYAN}============================================${NC}"
 
-# ─── 5. 清理 cache log ──────────────────────────────────────────────────────
+# ─── 5. Clean cache logs ──────────────────────────────────────────────────────
 echo ""
-echo -e "${YELLOW}清理测试 cache log...${NC}"
+echo -e "${YELLOW}Cleaning test cache logs...${NC}"
 for cache_dir in "${PROJECT_DIR}/test/base/cache" "${PROJECT_DIR}/test/core/cache" "${PROJECT_DIR}/test/http/cache" "${PROJECT_DIR}/test/platform/cache" "${PROJECT_DIR}/test/fuzz/cache"; do
     if [ -d "${cache_dir}/logs" ]; then
         rm -rf "${cache_dir}/logs"
-        echo "  已清理: ${cache_dir}/logs/"
+        echo "  Cleaned: ${cache_dir}/logs/"
     fi
 done
 

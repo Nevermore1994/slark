@@ -14,6 +14,7 @@ file(GLOB TEST_FILES CONFIGURE_DEPENDS
 # PlayerIntegrationTest 单独作为 CoreIntegration_test target，从 Core_test 中排除
 list(REMOVE_ITEM TEST_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/PlayerIntegrationTest.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/PlayerMediaIntegrationTest.cpp
 )
 # Fuzz 测试移到 test/fuzz/ 统一管理
 list(REMOVE_ITEM TEST_FILES
@@ -122,6 +123,47 @@ if(NOT DISABLE_CORE)
     )
     set_tests_properties(PlayerIntegrationTest PROPERTIES
         TIMEOUT 300
+        LABELS "integration"
+    )
+
+    # ─── 真实媒体文件播放集成测试（移动端真实解码/渲染链路）──────────────────
+    project(PlayerMediaIntegration_test)
+
+    add_executable(${PROJECT_NAME}
+        ${CMAKE_CURRENT_SOURCE_DIR}/PlayerMediaIntegrationTest.cpp
+    )
+
+    target_include_directories(${PROJECT_NAME}
+        PRIVATE
+        ${CORE_SRC_DIR}
+        ${CORE_SRC_DIR}/demuxer
+        ${CORE_SRC_DIR}/pipeline
+        ${CORE_SRC_DIR}/audio
+        ${CORE_SRC_DIR}/codec
+        ${CORE_SRC_DIR}/perf
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/http
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../internal
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../include
+    )
+
+    target_link_libraries(${PROJECT_NAME}
+        slark_core
+        slark_base
+        slark_internal
+        gtest_main
+        gmock
+        pthread)
+
+    if(NOT DISABLE_HTTP)
+        target_link_libraries(${PROJECT_NAME} slark_http)
+    endif()
+
+    add_test(NAME PlayerMediaIntegrationTest
+        COMMAND ${PROJECT_NAME}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    set_tests_properties(PlayerMediaIntegrationTest PROPERTIES
+        TIMEOUT 600
         LABELS "integration"
     )
 endif()
