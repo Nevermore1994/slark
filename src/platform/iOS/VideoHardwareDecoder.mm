@@ -86,7 +86,7 @@ static void decompressionOutputCallback(void* decompressionOutputRefCon,
         videoInfo->format = FrameFormat::VideoToolBox;
         frame->info = videoInfo;
         decoder->invokeReceiveFunc(
-            DecoderData{std::move(frame), Error::Success, decoder->currentSeekEpoch_});
+            DecoderData{std::move(frame), Error::Success, decoder->currentSeekEpoch()});
     }
 }
 

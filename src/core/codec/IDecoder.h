@@ -131,6 +131,10 @@ class IDecoder : public NonCopyMovable {
         currentSeekEpoch_ = epoch;
     }
 
+    [[nodiscard]] uint64_t currentSeekEpoch() const noexcept {
+        return currentSeekEpoch_;
+    }
+
  protected:
     std::atomic_bool isOpen_ = false;
     std::atomic_bool isCompleted_ = false;
