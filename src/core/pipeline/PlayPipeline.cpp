@@ -839,7 +839,7 @@ void PlayPipeline::setupAudioTrack(DecoderType type,
                                    std::shared_ptr<AudioDecoderConfig> config,
                                    std::shared_ptr<AudioInfo> audioInfo,
                                    float volume) noexcept {
-    SAssert(!audioDecoder_, "audio track already set up");
+    LogA(!audioDecoder_, "audio track already set up");
     auto renderInfo = std::make_shared<AudioInfo>(*audioInfo);
     renderInfo->bitsPerSample = 16;
     audioRender_ = std::make_shared<AudioRenderComponent>(renderInfo);
@@ -930,7 +930,7 @@ void PlayPipeline::onVideoDecoded(DecoderData data) noexcept {
 
 void PlayPipeline::setupVideoTrack(DecoderType type,
                                    std::shared_ptr<VideoDecoderConfig> config) noexcept {
-    SAssert(!videoDecoder_, "video track already set up");
+    LogA(!videoDecoder_, "video track already set up");
 
     if (config && config->numRefFrames > 0) {
         const int32_t refFrames = static_cast<int32_t>(config->numRefFrames);

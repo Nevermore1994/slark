@@ -26,7 +26,7 @@ namespace slark {
 using namespace slark;
 
 std::shared_ptr<IAudioRender> createAudioRender(const std::shared_ptr<AudioInfo>& audioInfo) {
-    SAssert(audioInfo != nullptr, "[audio render] audio render info is nullptr");
+    LogA(audioInfo != nullptr, "[audio render] audio render info is nullptr");
     return std::make_unique<AudioRender>(audioInfo);
 }
 

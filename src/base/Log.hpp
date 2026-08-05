@@ -3,14 +3,15 @@
 //
 #pragma once
 
+#include <chrono>
 #include <cinttypes>
 #include <cstdio>
 #include <format>
 #include <print>
+#include <string>
 #include <string_view>
 
 #include "LogConfig.h"
-#include "LogOutput.h"
 
 namespace slark {
 
@@ -29,35 +30,24 @@ constexpr const std::string_view kLogTags[] = {
 
 void printLog(LogType type, const std::string& log);
 
-template <typename... Args>
-void outputLog(LogType level, std::string_view format, Args&&... args) {
-    auto logStr = std::vformat(format, std::make_format_args(args...));
-    if (level != LogType::Print && static_cast<int>(level) >= getLogConfig().minLogLevel) {
-        LogOutput::shareInstance().write(logStr);
-    }
-    if (level == LogType::Record) {
-        return;
-    }
-#if SLAKR_IOS
-    printLog(level, logStr);
-#elif SLARK_ANDROID
-    printLog(level, logStr);
-#else
-    std::print("{}", logStr);
-    fflush(stdout);
-#endif
+namespace Time {
+std::string localTimeStr() noexcept;
 }
+
+/// 输出日志：达到最低等级门槛则写文件，随后按平台输出到控制台
+void outputLog(LogType level, const std::string& log);
 
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 #endif
 
-#define LOGGER(level, format, ...)                                                             \
+#define LOGGER(level, fmt, ...)                                                                 \
     do {                                                                                       \
-        outputLog(level, "{}{}[{}][Line:{}][Function:{}]" format "\n", Time::localTimeStr(),   \
-                  kLogTags[static_cast<size_t>(level)], __FILE_NAME__, __LINE__, __FUNCTION__, \
-                  ##__VA_ARGS__); /* NOLINT(bugprone-lambda-function-name) */                  \
+        outputLog(level, std::format("{}{}[{}][Line:{}][Function:{}]" fmt "\n",                \
+                                     Time::localTimeStr(),                                      \
+                                     kLogTags[static_cast<size_t>(level)], __FILE_NAME__,      \
+                                     __LINE__, __FUNCTION__, ##__VA_ARGS__));                   \
     } while (0)
 
 // clang-format off
@@ -67,6 +57,18 @@ void outputLog(LogType level, std::string_view format, Args&&... args) {
 #define LogE(format, ...) LOGGER(LogType::Error, format, ##__VA_ARGS__)
 #define LogP(format, ...) LOGGER(LogType::Print, format, ##__VA_ARGS__)
 #define LogR(format, ...) LOGGER(LogType::Record, format, ##__VA_ARGS__)
+
+#ifdef DEBUG
+#define LogA(condition, fmt, ...)                                                          \
+    do {                                                                                   \
+        if (!(condition)) [[unlikely]] {                                                   \
+            LOGGER(LogType::Assert, fmt, ##__VA_ARGS__);                                   \
+            __builtin_trap();                                                              \
+        }                                                                                  \
+    } while (0)
+#else
+#define LogA(condition, format, ...) /*nothing*/
+#endif
 
 namespace internal {
 

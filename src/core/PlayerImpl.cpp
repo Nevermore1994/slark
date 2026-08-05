@@ -38,7 +38,7 @@ BackpressureConfig buildBackpressureConfig(StreamType type, bool isLive) {
 
 Player::Impl::Impl(std::unique_ptr<PlayerParams> params)
     : playerId_(Random::uuid()), notifyCenter_(playerId_) {
-    SAssert(params != nullptr, "PlayerParams must not be null");
+    LogA(params != nullptr, "PlayerParams must not be null");
     GLContextManager::shareInstance().addMainContext(playerId_, params->mainGLContext);
     params_.withWriteLock([&params](auto& p) {
         p = std::move(params);
@@ -51,7 +51,7 @@ Player::Impl::~Impl() {
     if (ownerThread_) {
         // 不变量：ownerThread_ 生命周期严格覆盖其 worker 函数。
         // 必须在外部线程析构，禁止 worker 自销毁 → 见下方 assert。
-        SAssert(ownerThread_->getId() != std::this_thread::get_id(),
+        LogA(ownerThread_->getId() != std::this_thread::get_id(),
                 "~Impl must not run on ownerThread_");
         ownerThread_->stop();
         ownerThread_->join();  // 同步等 worker 退出，杜绝并发 reset/UAF

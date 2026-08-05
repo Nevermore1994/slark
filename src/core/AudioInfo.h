@@ -120,7 +120,7 @@ class IAudioRender {
     }
 
     [[nodiscard]] const std::shared_ptr<AudioInfo>& info() const noexcept {
-        SAssert(audioInfo_ != nullptr, "audio render info is nullptr");
+        LogA(audioInfo_ != nullptr, "audio render info is nullptr");
         return audioInfo_;
     }
 

@@ -11,7 +11,7 @@
 #include <string>
 #include <type_traits>
 
-#include "Assert.hpp"
+#include "Log.hpp"
 
 namespace slark::Time {
 
@@ -215,7 +215,7 @@ struct CTime {
 
     [[nodiscard]] double second() const noexcept {
         bool valid = isValid();
-        SAssert(valid, "time is invalid");
+        LogA(valid, "time is invalid");
         if (valid) {
             return std::round(static_cast<double>(value) / static_cast<double>(scale) * 1000000.0) /
                    1000000.0;
@@ -267,7 +267,7 @@ struct CTimeRange {
     }
 
     bool operator==(const CTimeRange& rhs) const noexcept {
-        SAssert(isValid() && rhs.isValid(), "time is invalid");
+        LogA(isValid() && rhs.isValid(), "time is invalid");
         if (!isValid() || !rhs.isValid()) {
             return false;
         }
@@ -275,7 +275,7 @@ struct CTimeRange {
     }
 
     std::partial_ordering operator<=>(const CTimeRange& rhs) const noexcept {
-        SAssert(isValid() && rhs.isValid(), "time is invalid");
+        LogA(isValid() && rhs.isValid(), "time is invalid");
         if (!isValid() || !rhs.isValid()) {
             return std::partial_ordering::unordered;
         }

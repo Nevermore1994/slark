@@ -623,7 +623,7 @@ void Mp4Demuxer::handleBoxInMoov(const BoxRefPtr& box,
                                  std::stack<BoxRefPtr>& parentBox) noexcept {
     if (box->info.symbol == "stsd") {
         auto stsdBox = std::dynamic_pointer_cast<BoxStsd>(box);
-        SAssert(stsdBox != nullptr, "parse error");
+        LogA(stsdBox != nullptr, "parse error");
         LogI("stsd: children={}, isAudio={}, isVideo={}", stsdBox->childs.size(), stsdBox->isAudio,
              stsdBox->isVideo);
         auto [codecId, mediaBoxName] = stsdBox->getCodecId();

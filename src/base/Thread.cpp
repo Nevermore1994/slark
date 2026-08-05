@@ -9,7 +9,7 @@
 #include <pthread.h>
 #endif
 
-#include "Assert.hpp"
+#include "Log.hpp"
 #include "Thread.h"
 #include "TimerManager.h"
 

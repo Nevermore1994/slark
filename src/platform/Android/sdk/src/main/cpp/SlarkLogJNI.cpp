@@ -11,6 +11,6 @@ JNIEXPORT void JNICALL Java_com_slark_sdk_SlarkLog_00024Companion_nativeLog(JNIE
                                                                             jstring message) {
     using namespace slark;
     auto logStr = JNI::FromJVM::str(env, message);
-    outputLog(LogType::Record, "{}\n", logStr);
+    outputLog(LogType::Record, std::format("{}\n", logStr));
 }
 }

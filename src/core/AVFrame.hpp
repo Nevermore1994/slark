@@ -8,7 +8,6 @@
 #include <memory>
 #include <ranges>
 
-#include "Assert.hpp"
 #include "Data.h"
 #include "DataView.hpp"
 #include "Log.hpp"

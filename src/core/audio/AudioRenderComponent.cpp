@@ -96,7 +96,7 @@ void AudioRenderComponent::reset() noexcept {
 }
 
 std::shared_ptr<AudioInfo> AudioRenderComponent::audioInfo() const noexcept {
-    SAssert(audioInfo_ != nullptr, "audio render info is nullptr");
+    LogA(audioInfo_ != nullptr, "audio render info is nullptr");
     return audioInfo_;
 }
 

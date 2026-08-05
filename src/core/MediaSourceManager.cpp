@@ -23,7 +23,7 @@ bool MediaSourceManager::open(const std::string& uri,
 
     // 网络流构造时需要 owner 线程注入；本地文件流不依赖
     if (detectedType == StreamType::Http || detectedType == StreamType::HLS) {
-        SAssert(ownerThread_ != nullptr, "setOwnerThread must be called before open for network streams");
+        LogA(ownerThread_ != nullptr, "setOwnerThread must be called before open for network streams");
     }
     LogI("[MediaSourceManager::open] uri={} detectedType={}", uri, static_cast<int>(detectedType));
 

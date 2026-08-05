@@ -654,7 +654,7 @@ uint64_t HLSDemuxer::getSeekToPos(double time) noexcept {
 }
 
 const std::vector<Segment>& HLSDemuxer::getTSInfos() const noexcept {
-    SAssert(mainParser_ != nullptr, "demuxer closed");
+    LogA(mainParser_ != nullptr, "demuxer closed");
     if (isPlayList()) {
         return slinkParser_->playlist()->segments();
     }

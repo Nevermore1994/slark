@@ -29,6 +29,23 @@ LogOutput& LogOutput::shareInstance() {
     return *instance;
 }
 
+void outputLog(LogType level, const std::string& log) {
+    if (level != LogType::Print && static_cast<int>(level) >= getLogConfig().minLogLevel) {
+        LogOutput::shareInstance().write(log);
+    }
+    if (level == LogType::Record) {
+        return;
+    }
+#if SLAKR_IOS
+    printLog(level, log);
+#elif SLARK_ANDROID
+    printLog(level, log);
+#else
+    std::print("{}", log);
+    fflush(stdout);
+#endif
+}
+
 void LogOutput::shutdown() noexcept {
     auto& self = shareInstance();
     self.alive_.store(false, std::memory_order_release);
@@ -271,5 +288,19 @@ void LogOutput::pruneOldLogs() noexcept {
         // 文件系统操作失败不阻塞日志
     }
 }
+
+namespace internal {
+
+[[noreturn]] void logAssertAndTrap(std::string_view file, int line, std::string_view func,
+                                   std::string_view format, std::format_args args) {
+    auto logStr = std::vformat(format, args);
+    auto fullLog = std::format("{}{}[{}][Line:{}][Function:{}] {}\n", Time::localTimeStr(),
+                               kLogTags[static_cast<size_t>(LogType::Assert)], file, line, func,
+                               logStr);
+    outputLog(LogType::Assert, fullLog);
+    __builtin_trap();
+}
+
+}  // namespace internal
 
 }  // namespace slark

@@ -252,7 +252,7 @@ DemuxerResult WAVDemuxer::parseData(DataPacket& packet) noexcept {
     auto receivedLength = buffer_->pos() + buffer_->length();
     auto isCompleted = receivedLength >= headerInfo_->dataSize;
 
-    SAssert(audioInfo_->sampleRate != 0, "wav demuxer sample rate is invalid.");
+    LogA(audioInfo_->sampleRate != 0, "wav demuxer sample rate is invalid.");
     constexpr uint32_t kSamplesPerFrame = 1024;
     const uint64_t frameLength =
         audioInfo_->bitsPerSample * audioInfo_->channels * kSamplesPerFrame / 8;
