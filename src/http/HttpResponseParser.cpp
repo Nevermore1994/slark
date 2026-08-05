@@ -18,6 +18,33 @@ inline int64_t parserLogChunkBytes() {
 }
 }  // namespace
 
+bool HttpResponseParser::checkHeaderOverflow(size_t appendSize) noexcept {
+    constexpr size_t kMaxHeaderBufferSize = 64 * 1024;
+    if (state_ != State::StatusLine && state_ != State::Headers) {
+        return false;
+    }
+    if (buffer_.size() + appendSize > kMaxHeaderBufferSize) {
+        LogE("[HttpResponseParser::feed] header buffer overflow: size={} state={}",
+             buffer_.size() + appendSize, stateName(state_));
+        fail(slark::Error::HttpResponseInvalid);
+        return true;
+    }
+    return false;
+}
+
+void HttpResponseParser::processCurrentState() {
+    switch (state_) {
+        case State::StatusLine:    processStatusLine(); break;
+        case State::Headers:       processHeaders(); break;
+        case State::BodyFixed:     processBodyFixed(); break;
+        case State::BodyChunked:
+        case State::ChunkSize:     processChunkSize(); break;
+        case State::ChunkData:     processChunkData(); break;
+        case State::ChunkTrailer:  processChunkTrailer(); break;
+        default: break;
+    }
+}
+
 void HttpResponseParser::feed(const Byte* data, size_t size) {
     if (state_ == State::Completed || state_ == State::Error) {
         return;
@@ -25,48 +52,16 @@ void HttpResponseParser::feed(const Byte* data, size_t size) {
 
     auto parseStart = Time::nowTimeStamp();
 
-    // 防止恶意服务端发送超大 header 耗尽内存
-    constexpr size_t kMaxHeaderBufferSize = 64 * 1024;
-    if (state_ == State::StatusLine || state_ == State::Headers) {
-        if (buffer_.size() + size > kMaxHeaderBufferSize) {
-            LogE("[HttpResponseParser::feed] header buffer overflow: size={} state={}",
-                 buffer_.size() + size, stateName(state_));
-            fail(slark::Error::HttpResponseInvalid);
-            return;
-        }
+    if (checkHeaderOverflow(size)) {
+        return;
     }
 
     buffer_.append(reinterpret_cast<const char*>(data), size);
 
-    // 循环驱动状态机，直到数据不足或终态
     while (state_ != State::Completed && state_ != State::Error) {
         auto prevSize = readableSize();
+        processCurrentState();
 
-        switch (state_) {
-            case State::StatusLine:
-                processStatusLine();
-                break;
-            case State::Headers:
-                processHeaders();
-                break;
-            case State::BodyFixed:
-                processBodyFixed();
-                break;
-            case State::BodyChunked:
-            case State::ChunkSize:
-                processChunkSize();
-                break;
-            case State::ChunkData:
-                processChunkData();
-                break;
-            case State::ChunkTrailer:
-                processChunkTrailer();
-                break;
-            default:
-                return;
-        }
-
-        // 如果本轮没有消费任何数据，说明数据不足，等待更多数据
         if (readableSize() == prevSize && state_ != State::Completed && state_ != State::Error) {
             break;
         }
@@ -74,7 +69,6 @@ void HttpResponseParser::feed(const Byte* data, size_t size) {
 
     if (perf_) {
         auto parseEnd = Time::nowTimeStamp();
-        // 直接使用微秒精度
         perf_->parser.headerParseTimeUs += (parseEnd - parseStart).point();
     }
 }
@@ -176,6 +170,46 @@ void HttpResponseParser::processStatusLine() {
     }
 }
 
+void HttpResponseParser::determineBodyMode() {
+    auto transferEncoding = findHeader("Transfer-Encoding");
+    if (!transferEncoding.empty() &&
+        StringUtil::toLower(transferEncoding).find("chunked") != std::string::npos) {
+        state_ = State::ChunkSize;
+        LogI("[HttpResponseParser::processHeaders] headers done: count={} transferEncoding=chunked "
+             "shouldClose={} -> {}",
+             headers_.size(), shouldClose_, stateName(state_));
+        return;
+    }
+    auto contentLengthStr = findHeader("Content-Length");
+    if (!contentLengthStr.empty()) {
+        auto clResult = StringUtil::fromChars<int64_t>(contentLengthStr);
+        if (!clResult || *clResult < 0) {
+            LogE("[HttpResponseParser::processHeaders] invalid Content-Length: {}",
+                 contentLengthStr);
+            fail(slark::Error::HttpResponseInvalid);
+            return;
+        }
+        contentLength_ = *clResult;
+    }
+
+    if (shouldSkipBody()) {
+        LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength={} "
+             "shouldSkipBody=true -> Completed",
+             headers_.size(), contentLength_);
+        complete();
+    } else if (contentLength_ == 0) {
+        LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength=0 -> "
+             "Completed",
+             headers_.size());
+        complete();
+    } else {
+        state_ = State::BodyFixed;
+        LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength={} "
+             "shouldClose={} -> BodyFixed",
+             headers_.size(), contentLength_, shouldClose_);
+    }
+}
+
 void HttpResponseParser::processHeaders() {
     auto data = readableData();
     auto pos = data.find(kHeaderEnd);
@@ -185,7 +219,6 @@ void HttpResponseParser::processHeaders() {
 
     auto headerBlock = data.substr(0, pos);
 
-    // 逐行解析 header
     size_t lineStart = 0;
     while (lineStart < headerBlock.size()) {
         auto lineEnd = headerBlock.find(kCRLF, lineStart);
@@ -196,10 +229,8 @@ void HttpResponseParser::processHeaders() {
         auto line = headerBlock.substr(lineStart, lineEnd - lineStart);
         auto colonPos = line.find(':');
         if (colonPos != std::string_view::npos) {
-            // header 名统一小写存储（C-13），调用方无需再区分大小写
             auto name = StringUtil::toLower(std::string(line.substr(0, colonPos)));
             auto value = line.substr(colonPos + 1);
-            // trim leading spaces
             while (!value.empty() && value.front() == ' ') {
                 value.remove_prefix(1);
             }
@@ -211,55 +242,14 @@ void HttpResponseParser::processHeaders() {
 
     consume(pos + kHeaderEnd.size());
 
-    // 判断 Connection: close
     auto connValue = findHeader("Connection");
     shouldClose_ = (!connValue.empty() && StringUtil::iequals(connValue, "close"));
 
-    // 判断 body 传输方式
-    auto transferEncoding = findHeader("Transfer-Encoding");
-    if (!transferEncoding.empty() &&
-        StringUtil::toLower(transferEncoding).find("chunked") != std::string::npos) {
-        state_ = State::ChunkSize;
-        LogI("[HttpResponseParser::processHeaders] headers done: count={} transferEncoding=chunked "
-             "shouldClose={} -> {}",
-             headers_.size(), shouldClose_, stateName(state_));
-    } else {
-        auto contentLengthStr = findHeader("Content-Length");
-        if (!contentLengthStr.empty()) {
-            auto clResult = StringUtil::fromChars<int64_t>(contentLengthStr);
-            if (!clResult || *clResult < 0) {
-                LogE("[HttpResponseParser::processHeaders] invalid Content-Length: {}",
-                     contentLengthStr);
-                fail(slark::Error::HttpResponseInvalid);
-                return;
-            }
-            contentLength_ = *clResult;
-        }
-
-        // RFC 7230: 特定状态码和请求方法无 body
-        if (shouldSkipBody()) {
-            LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength={} "
-                 "shouldSkipBody=true -> Completed",
-                 headers_.size(), contentLength_);
-            complete();
-        } else if (contentLength_ == 0) {
-            LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength=0 -> "
-                 "Completed",
-                 headers_.size());
-            complete();
-        } else {
-            state_ = State::BodyFixed;
-            LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength={} "
-                 "shouldClose={} -> BodyFixed",
-                 headers_.size(), contentLength_, shouldClose_);
-        }
-    }
+    determineBodyMode();
 
     if (callbacks_.onHeaders) {
         callbacks_.onHeaders(std::unordered_map<std::string, std::string>(headers_));
     }
-
-    // 如果已经有 body 数据在 buffer 中，继续处理
 }
 
 void HttpResponseParser::processBodyFixed() {

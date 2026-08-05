@@ -26,41 +26,67 @@ AddressInfoPtr resolveAddress(const std::string& host,
 
 AddressInfoPtr resolveAddress(const Url& url, IPVersion ipVersion);
 
+namespace util_detail {
+
+template <typename T>
+constexpr bool tryParseNumericType(const std::string& v, T& value) {
+    if constexpr (std::is_same_v<double, T> || std::is_same_v<float, T> ||
+                  std::is_same_v<uint32_t, T> || std::is_same_v<int32_t, T> ||
+                  std::is_same_v<uint64_t, T> || std::is_same_v<int64_t, T>) {
+        auto result = StringUtil::fromChars<T>(v);
+        if (!result) {
+            return false;
+        }
+        value = *result;
+        return true;
+    }
+    return false;
+}
+
+template <typename T>
+bool tryParseNonNumericType(const std::string& v, T& value) {
+    if constexpr (std::is_same_v<std::string, T> || std::is_same_v<std::string_view, T>) {
+        value = v;
+        return true;
+    }
+    if constexpr (std::is_same_v<bool, T>) {
+        std::istringstream(v) >> std::boolalpha >> value;
+        return true;
+    }
+    if constexpr (std::is_same_v<char, T>) {
+        auto result = StringUtil::fromChars<int32_t>(v);
+        if (!result) {
+            return false;
+        }
+        value = static_cast<char>(*result);
+        return true;
+    }
+    if constexpr (std::is_same_v<unsigned char, T>) {
+        auto result = StringUtil::fromChars<uint32_t>(v);
+        if (!result) {
+            return false;
+        }
+        value = static_cast<unsigned char>(*result);
+        return true;
+    }
+    return false;
+}
+
+}  // namespace util_detail
+
 template <typename T>
 bool parseFieldValue(const std::unordered_map<std::string, std::string>& headers,
                      const std::string& key,
                      T& value) {
     for (const auto& [k, v] : headers) {
         if (StringUtil::iequals(k, key)) {
-            if constexpr (std::is_same_v<double, T> || std::is_same_v<float, T> ||
-                          std::is_same_v<uint32_t, T> || std::is_same_v<int32_t, T> ||
-                          std::is_same_v<uint64_t, T> || std::is_same_v<int64_t, T>) {
-                auto result = StringUtil::fromChars<T>(v);
-                if (!result) {
-                    return false;
-                }
-                value = *result;
-            } else if constexpr (std::is_same_v<std::string, T> ||
-                                 std::is_same_v<std::string_view, T>) {
-                value = v;
-            } else if constexpr (std::is_same_v<bool, T>) {
-                std::istringstream(v) >> std::boolalpha >> value;
-            } else if constexpr (std::is_same_v<char, T>) {
-                auto result = StringUtil::fromChars<int32_t>(v);
-                if (!result) {
-                    return false;
-                }
-                value = static_cast<char>(*result);
-            } else if constexpr (std::is_same_v<unsigned char, T>) {
-                auto result = StringUtil::fromChars<uint32_t>(v);
-                if (!result) {
-                    return false;
-                }
-                value = static_cast<unsigned char>(*result);
-            } else {
-                return false;
+            if (util_detail::tryParseNumericType(v, value)) {
+                return true;
             }
-            return true;
+            if (util_detail::tryParseNonNumericType(v, value)) {
+                return true;
+            }
+            return false;
         }
     }
     return false;

@@ -114,9 +114,13 @@ class HttpResponseParser {
     void reset() noexcept;
 
  private:
+    void processCurrentState();
+    bool checkHeaderOverflow(size_t appendSize) noexcept;
+
     void processStatusLine();
     void processHeaders();
     void processBodyFixed();
+    void determineBodyMode();
     void processChunkSize();
     void processChunkData();
     void processChunkTrailer();
