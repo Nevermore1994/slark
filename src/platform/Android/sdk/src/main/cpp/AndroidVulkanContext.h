@@ -88,6 +88,7 @@ class AndroidVulkanContext {
     void destroyEGLInterop() noexcept;
     void destroyHardwareBufferResources() noexcept;
     void destroySwapchainResources() noexcept;
+    void cleanupEGLResources() noexcept;
     void destroyDeviceResources() noexcept;
 
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const noexcept;

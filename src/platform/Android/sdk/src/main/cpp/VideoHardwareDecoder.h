@@ -70,6 +70,11 @@ class VideoHardwareDecoder : public NativeDecoder,
 
     void retryPendingEOS() noexcept;
 
+    Error processOutputFrame(FrameBufferRefPtr& frameBuffer,
+                             int64_t pts,
+                             uint32_t curWidth,
+                             uint32_t curHeight) noexcept;
+
  private:
     DecodeMode mode_;
     EGLSurface surface_ = nullptr;

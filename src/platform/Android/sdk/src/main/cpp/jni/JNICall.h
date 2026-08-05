@@ -52,35 +52,60 @@ struct ReturnSig {
 };
 
 // 编译期签名推导
+namespace sig_detail {
+
+template <typename D>
+constexpr std::string_view sigOfPrimitive() {
+    if constexpr (std::is_same_v<D, void>) {
+        return Sig::Void;
+    }
+    if constexpr (std::is_same_v<D, bool> || std::is_same_v<D, jboolean>) {
+        return Sig::Bool;
+    }
+    if constexpr (std::is_same_v<D, int32_t> || std::is_same_v<D, jint>) {
+        return Sig::Int;
+    }
+    if constexpr (std::is_same_v<D, int64_t> || std::is_same_v<D, jlong>) {
+        return Sig::Long;
+    }
+    if constexpr (std::is_same_v<D, float> || std::is_same_v<D, jfloat>) {
+        return Sig::Float;
+    }
+    if constexpr (std::is_same_v<D, double> || std::is_same_v<D, jdouble>) {
+        return Sig::Double;
+    }
+    return "";
+}
+
+template <typename D>
+constexpr std::string_view sigOfReference() {
+    if constexpr (std::is_same_v<D, std::string> || std::is_same_v<D, std::string_view>) {
+        return Sig::String;
+    }
+    if constexpr (std::is_same_v<D, jbyteArray>) {
+        return Sig::ByteArray;
+    }
+    if constexpr (std::is_same_v<D, jintArray>) {
+        return Sig::IntArray;
+    }
+    if constexpr (std::is_same_v<D, jstring>) {
+        return Sig::String;
+    }
+    if constexpr (std::is_same_v<D, jobject> || std::is_same_v<D, JObjectWithSig>) {
+        return "Ljava/lang/Object;";
+    }
+    return "";
+}
+
+}  // namespace sig_detail
+
 template <typename T>
 constexpr std::string_view sigOf() {
     using D = std::decay_t<T>;
-    if constexpr (std::is_same_v<D, void>) {
-        return Sig::Void;
-    } else if constexpr (std::is_same_v<D, bool> || std::is_same_v<D, jboolean>) {
-        return Sig::Bool;
-    } else if constexpr (std::is_same_v<D, int32_t> || std::is_same_v<D, jint>) {
-        return Sig::Int;
-    } else if constexpr (std::is_same_v<D, int64_t> || std::is_same_v<D, jlong>) {
-        return Sig::Long;
-    } else if constexpr (std::is_same_v<D, float> || std::is_same_v<D, jfloat>) {
-        return Sig::Float;
-    } else if constexpr (std::is_same_v<D, double> || std::is_same_v<D, jdouble>) {
-        return Sig::Double;
-    } else if constexpr (std::is_same_v<D, std::string> || std::is_same_v<D, std::string_view>) {
-        return Sig::String;
-    } else if constexpr (std::is_same_v<D, jbyteArray>) {
-        return Sig::ByteArray;
-    } else if constexpr (std::is_same_v<D, jintArray>) {
-        return Sig::IntArray;
-    } else if constexpr (std::is_same_v<D, jstring>) {
-        return Sig::String;
-    } else if constexpr (std::is_same_v<D, jobject>) {
-        return "Ljava/lang/Object;";
-    } else if constexpr (std::is_same_v<D, JObjectWithSig>) {
-        // 运行时签名，无法在编译期返回，此分支不应被 methodSig() 调用
-        // 实际签名由 methodSigRuntime() 处理
-        return "Ljava/lang/Object;";
+    if constexpr (!sig_detail::sigOfPrimitive<D>().empty()) {
+        return sig_detail::sigOfPrimitive<D>();
+    } else if constexpr (!sig_detail::sigOfReference<D>().empty()) {
+        return sig_detail::sigOfReference<D>();
     } else {
         static_assert(!sizeof(D), "sigOf<T>: unknown type");
         return "";

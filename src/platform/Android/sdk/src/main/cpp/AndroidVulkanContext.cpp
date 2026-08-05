@@ -65,6 +65,22 @@ bool AndroidVulkanContext::init(ANativeWindow* window,
     return true;
 }
 
+void AndroidVulkanContext::cleanupEGLResources() noexcept {
+    if (fbo_) {
+        glDeleteFramebuffers(1, &fbo_);
+        fbo_ = 0;
+    }
+    if (fboTexture_) {
+        glDeleteTextures(1, &fboTexture_);
+        fboTexture_ = 0;
+    }
+    if (eglImage_ != EGL_NO_IMAGE_KHR && fnEGLDestroyImage_ && eglContext_) {
+        fnEGLDestroyImage_(eglContext_->getDisplay(), eglImage_);
+        eglImage_ = EGL_NO_IMAGE_KHR;
+    }
+    destroyHardwareBufferResources();
+}
+
 bool AndroidVulkanContext::recreateSwapchain(ANativeWindow* window,
                                              int32_t width,
                                              int32_t height) noexcept {
@@ -99,21 +115,8 @@ bool AndroidVulkanContext::recreateSwapchain(ANativeWindow* window,
         return false;
     }
 
-    // 重建时同步清理 EGL 侧资源（fbo/fboTexture/eglImage 绑定了旧 hardwareBuffer）
     if (hardwareBuffer_ || fbo_ || eglImage_ != EGL_NO_IMAGE_KHR) {
-        if (fbo_) {
-            glDeleteFramebuffers(1, &fbo_);
-            fbo_ = 0;
-        }
-        if (fboTexture_) {
-            glDeleteTextures(1, &fboTexture_);
-            fboTexture_ = 0;
-        }
-        if (eglImage_ != EGL_NO_IMAGE_KHR && fnEGLDestroyImage_ && eglContext_) {
-            fnEGLDestroyImage_(eglContext_->getDisplay(), eglImage_);
-            eglImage_ = EGL_NO_IMAGE_KHR;
-        }
-        destroyHardwareBufferResources();
+        cleanupEGLResources();
     }
 
     LogI("AndroidVulkanContext swapchain recreated: {}x{}", newW, newH);

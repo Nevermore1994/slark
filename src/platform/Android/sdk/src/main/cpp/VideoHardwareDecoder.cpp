@@ -236,9 +236,17 @@ Error VideoHardwareDecoder::renderOutput() noexcept {
         isCompleted_ = true;
     }
 
-    // pendingOutput_ 保持 true：outputBufferQueue 中可能还有更多帧
-    // processPendingOutputs 循环通过 hasPendingOutput() 继续尝试
+    if (isCompleted) {
+        isCompleted_ = true;
+    }
 
+    return processOutputFrame(frameBuffer, pts, curWidth, curHeight);
+}
+
+Error VideoHardwareDecoder::processOutputFrame(FrameBufferRefPtr& frameBuffer,
+                                               int64_t pts,
+                                               uint32_t curWidth,
+                                               uint32_t curHeight) noexcept {
     auto* glFb = frameBuffer.get();
     if (discardPackets_.contains(pts)) {
         discardPackets_.erase(pts);
