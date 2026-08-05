@@ -85,7 +85,8 @@ struct RecordingObserver : public IPlayerObserver {
         states_.push_back(state);
     }
 
-    void notifyPlayerEvent(std::string_view /*playerId*/, PlayerEvent event,
+    void notifyPlayerEvent(std::string_view /*playerId*/,
+                           PlayerEvent event,
                            std::string /*value*/) override {
         std::lock_guard lock(mutex_);
         events_.push_back(event);
@@ -155,7 +156,8 @@ PlayerState prepareAndWait(Player& player) {
     return player.state();
 }
 
-bool waitForPlayEnd(Player& player, const RecordingObserver& observer,
+bool waitForPlayEnd(Player& player,
+                    const RecordingObserver& observer,
                     std::chrono::milliseconds timeout = 15s) {
     return waitUntil(
         [&player, &observer] {
@@ -193,8 +195,11 @@ class PlayerMediaIntegrationTest : public ::testing::Test {
         }
         player->play();
         // 等待播放时钟真实推进（iOS 模拟器 AudioUnit 初始化较慢，audio track setup 延迟完成）
-        s_playable_ =
-            waitUntil([observer] { return observer->lastPlayedTime_.load() > 0.5; }, 10s);
+        s_playable_ = waitUntil(
+            [observer] {
+                return observer->lastPlayedTime_.load() > 0.5;
+            },
+            10s);
         safeDestroy(*player);
     }
 
@@ -284,7 +289,11 @@ TEST_F(PlayerMediaIntegrationTest, Mp4PlaysToCompletion) {
 
     player->play();
     // Sample.mp4 时长 64.9s，验证音视频轨道推进即可（PlayEnd 链路由 3s wav 覆盖）
-    EXPECT_TRUE(waitUntil([&player] { return player->currentPlayedTime() > 3.0; }, 15s))
+    EXPECT_TRUE(waitUntil(
+        [&player] {
+            return player->currentPlayedTime() > 3.0;
+        },
+        15s))
         << "mp4 playback should advance";
     EXPECT_TRUE(observer->hasEvent(PlayerEvent::FirstFrameRendered))
         << "mp4 video first frame should render";
@@ -307,11 +316,14 @@ TEST_F(PlayerMediaIntegrationTest, WavSeekDuringPlayback) {
     }
 
     player->play();
-    EXPECT_TRUE(waitUntil([&player] { return player->state() == PlayerState::Playing; }));
+    EXPECT_TRUE(waitUntil([&player] {
+        return player->state() == PlayerState::Playing;
+    }));
 
     player->seek(1.5, false);
-    EXPECT_TRUE(waitUntil([&observer] { return observer->hasEvent(PlayerEvent::SeekDone); }))
-        << "seek should complete";
+    EXPECT_TRUE(waitUntil([&observer] {
+        return observer->hasEvent(PlayerEvent::SeekDone);
+    })) << "seek should complete";
     EXPECT_GE(player->currentPlayedTime(), 1.0);
     EXPECT_TRUE(waitForPlayEnd(*player, *observer)) << "playback should finish after seek";
     safeDestroy(*player);
@@ -328,7 +340,9 @@ TEST_F(PlayerMediaIntegrationTest, WavPauseHaltsProgress) {
     }
 
     player->play();
-    EXPECT_TRUE(waitUntil([&player] { return player->state() == PlayerState::Playing; }));
+    EXPECT_TRUE(waitUntil([&player] {
+        return player->state() == PlayerState::Playing;
+    }));
     std::this_thread::sleep_for(100ms);
 
     player->pause();
@@ -338,8 +352,9 @@ TEST_F(PlayerMediaIntegrationTest, WavPauseHaltsProgress) {
     EXPECT_NEAR(t1, t2, 0.1) << "paused playback should not advance";
 
     player->play();
-    EXPECT_TRUE(waitUntil([&player, t2] { return player->currentPlayedTime() > t2 + 0.2; }))
-        << "resume should advance progress";
+    EXPECT_TRUE(waitUntil([&player, t2] {
+        return player->currentPlayedTime() > t2 + 0.2;
+    })) << "resume should advance progress";
     safeDestroy(*player);
 }
 
@@ -356,10 +371,15 @@ TEST_F(PlayerMediaIntegrationTest, WavLoopRestartsAfterEnd) {
     }
 
     player->play();
-    EXPECT_TRUE(waitUntil([&observer] { return observer->hasEvent(PlayerEvent::PlayEnd); }, 15s))
+    EXPECT_TRUE(waitUntil(
+        [&observer] {
+            return observer->hasEvent(PlayerEvent::PlayEnd);
+        },
+        15s))
         << "loop playback should emit PlayEnd";
-    EXPECT_TRUE(waitUntil([&player] { return player->state() == PlayerState::Playing; }))
-        << "loop should restart playback";
+    EXPECT_TRUE(waitUntil([&player] {
+        return player->state() == PlayerState::Playing;
+    })) << "loop should restart playback";
     safeDestroy(*player);
 }
 
@@ -381,8 +401,9 @@ TEST_F(PlayerMediaIntegrationTest, RapidSeekDoesNotCrash) {
     for (int32_t i = 0; i < 8; ++i) {
         player->seek(static_cast<double>(i) * 0.3, false);
     }
-    EXPECT_TRUE(waitUntil([&observer] { return observer->hasEvent(PlayerEvent::SeekDone); }))
-        << "rapid seeks should eventually complete";
+    EXPECT_TRUE(waitUntil([&observer] {
+        return observer->hasEvent(PlayerEvent::SeekDone);
+    })) << "rapid seeks should eventually complete";
     EXPECT_NE(player->state(), PlayerState::Error);
     safeDestroy(*player);
 }

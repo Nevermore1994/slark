@@ -291,12 +291,15 @@ void LogOutput::pruneOldLogs() noexcept {
 
 namespace internal {
 
-[[noreturn]] void logAssertAndTrap(std::string_view file, int line, std::string_view func,
-                                   std::string_view format, std::format_args args) {
+[[noreturn]] void logAssertAndTrap(std::string_view file,
+                                   int line,
+                                   std::string_view func,
+                                   std::string_view format,
+                                   std::format_args args) {
     auto logStr = std::vformat(format, args);
-    auto fullLog = std::format("{}{}[{}][Line:{}][Function:{}] {}\n", Time::localTimeStr(),
-                               kLogTags[static_cast<size_t>(LogType::Assert)], file, line, func,
-                               logStr);
+    auto fullLog =
+        std::format("{}{}[{}][Line:{}][Function:{}] {}\n", Time::localTimeStr(),
+                    kLogTags[static_cast<size_t>(LogType::Assert)], file, line, func, logStr);
     outputLog(LogType::Assert, fullLog);
     __builtin_trap();
 }

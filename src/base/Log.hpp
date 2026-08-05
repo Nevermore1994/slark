@@ -42,12 +42,11 @@ void outputLog(LogType level, const std::string& log);
 #pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 #endif
 
-#define LOGGER(level, fmt, ...)                                                                 \
-    do {                                                                                       \
-        outputLog(level, std::format("{}{}[{}][Line:{}][Function:{}]" fmt "\n",                \
-                                     Time::localTimeStr(),                                      \
-                                     kLogTags[static_cast<size_t>(level)], __FILE_NAME__,      \
-                                     __LINE__, __FUNCTION__, ##__VA_ARGS__));                   \
+#define LOGGER(level, fmt, ...)                                                                  \
+    do {                                                                                         \
+        outputLog(level, std::format("{}{}[{}][Line:{}][Function:{}]" fmt "\n",                  \
+                                     Time::localTimeStr(), kLogTags[static_cast<size_t>(level)], \
+                                     __FILE_NAME__, __LINE__, __FUNCTION__, ##__VA_ARGS__));     \
     } while (0)
 
 // clang-format off

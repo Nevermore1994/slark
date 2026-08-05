@@ -39,8 +39,9 @@ Error VideoHardwareDecoder::sendPacket(AVFrameRefPtr& frame) noexcept {
     if (res != Error::Success && res != Error::CodecAgain && res != Error::CodecNotProcessed) {
         LogE("send video packet failed, {}", toString(res));
     } else {
-        LogIThrottle(2000, "send video packet success, index:{}, pts:{:.3f}, dts:{:.3f}, "
-                           "isDiscard:{}, isEOS:{}",
+        LogIThrottle(2000,
+                     "send video packet success, index:{}, pts:{:.3f}, dts:{:.3f}, "
+                     "isDiscard:{}, isEOS:{}",
                      frame->index, frame->ptsTime(), frame->dtsTime(), frame->isDiscard,
                      frameInfo->isEndOfStream);
         if (frame->isDiscard) {
@@ -102,8 +103,8 @@ void VideoHardwareDecoder::receiveDecodedData(DataPtr data,
         videoFrameInfo->width = videoConfig->width;
         videoFrameInfo->height = videoConfig->height;
         frame->info = std::move(videoFrameInfo);
-        LogIThrottle(2000, "video decode output pts:{:.3f}, isDiscard:{}",
-                     frame->ptsTime(), frame->isDiscard);
+        LogIThrottle(2000, "video decode output pts:{:.3f}, isDiscard:{}", frame->ptsTime(),
+                     frame->isDiscard);
         invokeReceiveFunc(DecoderData{std::move(frame), Error::Success, currentSeekEpoch_});
         retryPendingEOS();
     } else {

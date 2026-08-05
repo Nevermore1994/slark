@@ -52,7 +52,7 @@ Player::Impl::~Impl() {
         // 不变量：ownerThread_ 生命周期严格覆盖其 worker 函数。
         // 必须在外部线程析构，禁止 worker 自销毁 → 见下方 assert。
         LogA(ownerThread_->getId() != std::this_thread::get_id(),
-                "~Impl must not run on ownerThread_");
+             "~Impl must not run on ownerThread_");
         ownerThread_->stop();
         ownerThread_->join();  // 同步等 worker 退出，杜绝并发 reset/UAF
         forceCleanup();        // 此时无并发，清理安全
