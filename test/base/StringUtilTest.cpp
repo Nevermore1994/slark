@@ -31,18 +31,12 @@ TEST(String, spilt4) {
                      "is given the string is append to any existing property value as string, i.e. "
                      "it results in a longer string and not a list of strings.";
     auto spiltStrs = StringUtil::split(s1, " ");
-    std::for_each(spiltStrs.begin(), spiltStrs.end(), [](const auto& view) {
-        // std::cout << view << std::endl;
-    });
     ASSERT_EQ(spiltStrs.size(), 76);
 }
 
 TEST(String, spilt5) {
     std::string_view s1 = "https://baidu.com";
     auto spiltStrs = StringUtil::split(s1, std::string_view("/"));
-    std::for_each(spiltStrs.begin(), spiltStrs.end(), [](const auto& view) {
-        // std::cout << view << std::endl;
-    });
     ASSERT_EQ(spiltStrs.size(), 2);
 }
 
@@ -54,9 +48,6 @@ TEST(String, spilt6) {
                      "is given the string is append to any existing property value as string, i.e. "
                      "it results in a longer string and not a list of strings.";
     auto spiltStrs = StringUtil::split(s1, " ");
-    std::for_each(spiltStrs.begin(), spiltStrs.end(), [](const auto& view) {
-        // std::cout << view << std::endl;
-    });
     ASSERT_EQ(spiltStrs.size(), 76);
 }
 

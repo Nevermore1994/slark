@@ -4,6 +4,8 @@
 
 #include "VideoHardwareDecoder.h"
 
+#include <thread>
+
 #include "DecoderConfig.h"
 #include "FrameBuffer.h"
 #include "GLContextManager.h"

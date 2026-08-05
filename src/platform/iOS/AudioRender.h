@@ -11,6 +11,7 @@
 #include "AudioDescription.h"
 #include "AudioInfo.h"
 #include "Data.h"
+#include "Timer.h"
 
 namespace slark {
 

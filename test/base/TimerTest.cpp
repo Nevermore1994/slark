@@ -50,13 +50,13 @@ TEST(Timer, exceptionDoesNotKillThread) {
     std::atomic<int32_t> counter{0};
 
     // 第一个定时器会抛出异常
-    auto id1 = TimerManager::shareInstance().runAfter(10ms, [&counter]() {
+    [[maybe_unused]] auto id1 = TimerManager::shareInstance().runAfter(10ms, [&counter]() {
         counter.fetch_add(1);
         throw std::runtime_error("test exception");
     });
 
     // 第二个定时器在第一个之后执行
-    auto id2 = TimerManager::shareInstance().runAfter(50ms, [&counter]() {
+    [[maybe_unused]] auto id2 = TimerManager::shareInstance().runAfter(50ms, [&counter]() {
         counter.fetch_add(1);
     });
 

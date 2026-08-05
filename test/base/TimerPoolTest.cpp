@@ -15,7 +15,8 @@ namespace {
 
 Time::TimePoint futureTime(uint64_t msFromNow) noexcept {
     return Time::TimePoint::fromMilliSeconds(
-        std::chrono::milliseconds(Time::nowTimeStamp().toMilliSeconds().count() + msFromNow));
+        std::chrono::milliseconds(
+            static_cast<uint64_t>(Time::nowTimeStamp().toMilliSeconds().count()) + msFromNow));
 }
 
 }  // namespace

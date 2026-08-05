@@ -4,6 +4,8 @@
 
 #include "FrameBufferPool.h"
 
+#include <thread>
+
 #include "Log.hpp"
 
 namespace slark {

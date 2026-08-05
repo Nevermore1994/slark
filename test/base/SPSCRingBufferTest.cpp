@@ -129,7 +129,7 @@ TEST(SPSCRingBufferTest, WrapAroundWrite) {
     // 再写 5 个，写指针回绕
     std::vector<int> newData(5);
     for (size_t i = 0; i < 5; ++i) {
-        newData[i] = 100 + i;
+        newData[i] = static_cast<int>(100 + i);
     }
     EXPECT_TRUE(buf.writeExact(newData.data(), 5));
 
@@ -163,7 +163,7 @@ TEST(SPSCRingBufferTest, WrapAroundRead) {
 
     std::vector<int> newData(3);
     for (size_t i = 0; i < 3; ++i) {
-        newData[i] = 100 + i;
+        newData[i] = static_cast<int>(100 + i);
     }
     buf.writeExact(newData.data(), 3);  // 写指针回绕
 

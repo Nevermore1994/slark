@@ -115,7 +115,9 @@ TEST(TaskTest, MoveAssignmentDestroysOldFrame) {
 
 TEST(TaskTest, MoveToSelfNoOp) {
     auto task = simpleIntTask(42);
-    task = std::move(task);
+    // 故意验证 self-move 的 no-op 语义，经指针间接移动避免编译器 -Wself-move
+    auto* self = &task;
+    task = std::move(*self);
     EXPECT_TRUE(task.isValid());
     task.resume();
     EXPECT_EQ(task.result(), 42);

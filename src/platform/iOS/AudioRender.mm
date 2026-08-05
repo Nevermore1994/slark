@@ -107,7 +107,7 @@ AudioRender::AudioRender(std::shared_ptr<AudioInfo> audioInfo) : IAudioRender(au
                              &volLatency, &size);
         // 补充 AVAudioSession 硬件 I/O buffer 延迟，获取完整 pipeline 延迟
         AVAudioSession* session = [AVAudioSession sharedInstance];
-        const Float64 hwLatency = session.outputLatency + session.ioBufferDuration;
+        const Float64 hwLatency = session.outputLatency + session.IOBufferDuration;
         auto us = static_cast<int64_t>((volLatency + renderLatency + hwLatency) * 1'000'000.0);
         latencyUs_.store(us, std::memory_order_release);
     });

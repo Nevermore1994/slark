@@ -59,7 +59,7 @@ TEST(JNIMockTest, ReferenceCounting) {
     int refCount = 0;
     auto newRef = [&]() {
         refCount++;
-        return (jobject)(uintptr_t)0x42;
+        return reinterpret_cast<jobject>(static_cast<uintptr_t>(0x42));
     };
     auto deleteRef = [&](jobject) {
         refCount--;

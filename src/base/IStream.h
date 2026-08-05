@@ -103,8 +103,6 @@ class IStream {
     virtual void updateRange(Range range) noexcept = 0;
 
     [[nodiscard]] virtual StreamState state() const noexcept = 0;
-    // 返回快照而非 const&：Stream 内部状态可能由 owner 线程更新，
-    // 引用在跨线程读取时会与写入竞争（C-11）。调用方应接受值语义。
     [[nodiscard]] virtual StreamInfo info() const noexcept = 0;
     [[nodiscard]] virtual uint64_t position() const noexcept = 0;
     [[nodiscard]] virtual bool isRunning() const noexcept = 0;

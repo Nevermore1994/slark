@@ -291,7 +291,7 @@ TEST_F(SyncRingBufferTest, SPSCBatchReadWrite) {
         std::vector<int> data(BATCH_SIZE);
         for (int batch = 0; batch < NUM_BATCHES; ++batch) {
             for (size_t i = 0; i < BATCH_SIZE; ++i) {
-                data[i] = static_cast<int>(batch * BATCH_SIZE + i + 1);
+                data[i] = static_cast<int>(static_cast<size_t>(batch * BATCH_SIZE) + i + 1);
             }
             while (!buffer.writeExact(data.data(), BATCH_SIZE)) {
                 std::this_thread::yield();
@@ -377,7 +377,7 @@ TEST_F(SyncRingBufferTest, MultiThreadedReadWrite) {
             while (!startFlag.load()) {
             }
             for (size_t i = 0; i < ITEMS_PER_PRODUCER; ++i) {
-                int value = static_cast<int>(p * ITEMS_PER_PRODUCER + i + 1);
+                int value = static_cast<int>(static_cast<size_t>(p * ITEMS_PER_PRODUCER) + i + 1);
                 while (!buffer.writeExact(&value, 1)) {
                     std::this_thread::yield();
                 }
