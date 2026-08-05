@@ -113,6 +113,11 @@ class TrackContext {
                                     std::shared_ptr<VideoFrameInfo> frameInfo,
                                     const NaluClassifier& classifier);
 
+    void parseVideoFramePayload(AVFramePtr& frame,
+                                DataPtr data,
+                                std::shared_ptr<VideoFrameInfo> videoInfo,
+                                AVFramePtrArray& packets);
+
     uint32_t findSampleIndexByTime(double targetTime) const noexcept;
 
     std::optional<std::pair<uint32_t, uint32_t>> findChunkBySampleIndex(
@@ -188,6 +193,7 @@ class Mp4Demuxer : public IDemuxer {
     void initAudioTrack(const std::shared_ptr<TrackContext>& track) noexcept;
 
     void initVideoTrack(const std::shared_ptr<TrackContext>& track) noexcept;
+    void initVideoFps(const std::shared_ptr<TrackContext>& track) noexcept;
 
     bool isCompleted() const noexcept;
 
@@ -210,10 +216,17 @@ class Mp4Demuxer : public IDemuxer {
                         Buffer& buffer,
                         bool& res) noexcept;
 
+    bool recoverFromSkipFailure(std::stack<BoxRefPtr>& parentBox,
+                                Buffer& buffer,
+                                bool& res) noexcept;
+
     // 返回 false 时调用方应终止 open 解析
     bool handleMdatBox(const BoxRefPtr& box, Buffer& buffer, bool res, bool& eof) noexcept;
 
     void handleSidxBox(const BoxRefPtr& box, Buffer& buffer) noexcept;
+
+    // open() 的 box 分发 + skip 逻辑，返回 false 时终止循环
+    bool processOpenBox(const BoxRefPtr& box, Buffer& buffer, bool& res, bool& eof) noexcept;
 
     [[nodiscard]] std::shared_ptr<TrackContext> findEarliestTrack() const noexcept;
 

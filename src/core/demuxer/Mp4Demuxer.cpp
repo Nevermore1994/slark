@@ -505,6 +505,20 @@ AVFramePtrArray TrackContext::parseH265FrameData(AVFramePtr frame,
                            });
 }
 
+void TrackContext::parseVideoFramePayload(AVFramePtr& frame,
+                                         DataPtr data,
+                                         std::shared_ptr<VideoFrameInfo> videoInfo,
+                                         AVFramePtrArray& packets) {
+    AVFramePtrArray frames;
+    if (codecId == CodecId::AVC) {
+        frames = parseH264FrameData(std::move(frame), std::move(data), videoInfo);
+    } else if (codecId == CodecId::HEVC) {
+        frames = parseH265FrameData(std::move(frame), std::move(data), videoInfo);
+    }
+    packets.insert(packets.end(), std::make_move_iterator(frames.begin()),
+                   std::make_move_iterator(frames.end()));
+}
+
 void TrackContext::parseFragmentedData(Buffer& buffer,
                                        std::shared_ptr<FrameInfo> frameInfo,
                                        AVFramePtrArray& packets) {
@@ -537,14 +551,7 @@ void TrackContext::parseFragmentedData(Buffer& buffer,
         }
         auto data = buffer.readData(s.size);
         auto videoInfo = std::dynamic_pointer_cast<VideoFrameInfo>(frameInfo);
-        AVFramePtrArray frames;
-        if (codecId == CodecId::AVC) {
-            frames = parseH264FrameData(std::move(frame), std::move(data), videoInfo);
-        } else if (codecId == CodecId::HEVC) {
-            frames = parseH265FrameData(std::move(frame), std::move(data), videoInfo);
-        }
-        packets.insert(packets.end(), std::make_move_iterator(frames.begin()),
-                       std::make_move_iterator(frames.end()));
+        parseVideoFramePayload(frame, std::move(data), videoInfo, packets);
     }
     ++fragSampleIndex;
     if (fragSampleIndex >= fragSamples.size()) {
@@ -577,14 +584,7 @@ void TrackContext::parseNormalData(Buffer& buffer,
         frame->frameType = AVFrameType::Video;
         auto data = buffer.readData(size);
         auto videoInfo = std::dynamic_pointer_cast<VideoFrameInfo>(frameInfo);
-        AVFramePtrArray frames;
-        if (codecId == CodecId::AVC) {
-            frames = parseH264FrameData(std::move(frame), std::move(data), videoInfo);
-        } else if (codecId == CodecId::HEVC) {
-            frames = parseH265FrameData(std::move(frame), std::move(data), videoInfo);
-        }
-        packets.insert(packets.end(), std::make_move_iterator(frames.begin()),
-                       std::make_move_iterator(frames.end()));
+        parseVideoFramePayload(frame, std::move(data), videoInfo, packets);
     }
     calcIndex();
 }
@@ -795,28 +795,7 @@ bool Mp4Demuxer::advancePastBox(const BoxRefPtr& box,
     if (!buffer.skip(skipOffset)) {
         LogW("parseMoovBox: skip {} bytes failed at pos:{}, box:{}, parentDepth:{}", skipOffset,
              buffer.pos(), box->info.symbol, parentBox.size());
-        // 恢复：向上弹出父容器，跳到最近的合法容器边界继续解析
-        bool recovered = false;
-        while (parentBox.size() > 1) {
-            auto container = parentBox.top();
-            auto containerEnd = static_cast<int64_t>(container->info.start + container->info.size);
-            if (buffer.skipTo(containerEnd)) {
-                LogW("parseMoovBox: recovered to container '{}' end at pos:{}",
-                     container->info.symbol, containerEnd);
-                parentBox.pop();
-                recovered = true;
-                break;
-            }
-            parentBox.pop();
-        }
-        if (!recovered) {
-            if (tracks_.empty()) {
-                LogE("parseMoovBox: recovery failed, no track created, moov parse failed");
-                res = false;
-            }
-            return false;
-        }
-        return true;
+        return recoverFromSkipFailure(parentBox, buffer, res);
     }
     const auto endPos = box->info.size + box->info.start;
     while (!parentBox.empty()) {
@@ -825,6 +804,74 @@ bool Mp4Demuxer::advancePastBox(const BoxRefPtr& box,
         } else {
             break;
         }
+    }
+    return true;
+}
+
+bool Mp4Demuxer::recoverFromSkipFailure(std::stack<BoxRefPtr>& parentBox,
+                                         Buffer& buffer,
+                                         bool& res) noexcept {
+    bool recovered = false;
+    while (parentBox.size() > 1) {
+        auto container = parentBox.top();
+        auto containerEnd = static_cast<int64_t>(container->info.start + container->info.size);
+        if (buffer.skipTo(containerEnd)) {
+            LogW("parseMoovBox: recovered to container '{}' end at pos:{}",
+                 container->info.symbol, containerEnd);
+            parentBox.pop();
+            recovered = true;
+            break;
+        }
+        parentBox.pop();
+    }
+    if (!recovered) {
+        if (tracks_.empty()) {
+            LogE("parseMoovBox: recovery failed, no track created, moov parse failed");
+            res = false;
+        }
+        return false;
+    }
+    return true;
+}
+
+bool Mp4Demuxer::processOpenBox(const BoxRefPtr& box,
+                                Buffer& buffer,
+                                bool& res,
+                                bool& eof) noexcept {
+    if (box->info.symbol == "moov") {
+        if (!buffer.require(box->info.size - box->info.headerSize)) {
+            buffer.skipTo(static_cast<int64_t>(box->info.start));
+            eof = true;
+            return false;
+        }
+        res = parseMoovBox(buffer, box);
+        if (!res) {
+            LogE("open: parseMoovBox failed");
+            return false;
+        }
+        rootBox_->append(box);
+    } else if (box->info.symbol == "mdat") {
+        if (!handleMdatBox(box, buffer, res, eof)) {
+            return false;
+        }
+    } else if (box->info.symbol == "sidx") {
+        handleSidxBox(box, buffer);
+        rootBox_->append(box);
+    } else if (box->info.symbol == "moof") {
+        parseMoofChildren(buffer, box);
+        parseMoofBox(buffer, box);
+        rootBox_->append(box);
+    } else {
+        rootBox_->append(box);
+    }
+
+    const auto endPos = box->info.size + box->info.start;
+    const auto skipOffset = endPos - buffer.pos();
+    if (!buffer.skip(static_cast<int64_t>(skipOffset))) {
+        if (box->info.symbol != "mdat") {
+            res = false;
+        }
+        return false;
     }
     return true;
 }
@@ -849,40 +896,7 @@ bool Mp4Demuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
             eof = true;
             break;
         }
-
-        if (box->info.symbol == "moov") {
-            if (!buffer->require(box->info.size - box->info.headerSize)) {
-                buffer->skipTo(static_cast<int64_t>(box->info.start));
-                eof = true;
-                break;
-            }
-            res = parseMoovBox(*buffer, box);
-            if (!res) {
-                LogE("open: parseMoovBox failed");
-                break;
-            }
-            rootBox_->append(box);
-        } else if (box->info.symbol == "mdat") {
-            if (!handleMdatBox(box, *buffer, res, eof)) {
-                break;
-            }
-        } else if (box->info.symbol == "sidx") {
-            handleSidxBox(box, *buffer);
-            rootBox_->append(box);
-        } else if (box->info.symbol == "moof") {
-            parseMoofChildren(*buffer, box);
-            parseMoofBox(*buffer, box);
-            rootBox_->append(box);
-        } else {
-            rootBox_->append(box);
-        }
-
-        const auto endPos = box->info.size + box->info.start;
-        const auto skipOffset = endPos - buffer->pos();
-        if (!buffer->skip(static_cast<int64_t>(skipOffset))) {
-            if (box->info.symbol != "mdat") {
-                res = false;
-            }
+        if (!processOpenBox(box, *buffer, res, eof)) {
             break;
         }
     }
@@ -1045,16 +1059,7 @@ void Mp4Demuxer::initAudioTrack(const std::shared_ptr<TrackContext>& track) noex
          audioInfo_->timeScale);
 }
 
-void Mp4Demuxer::initVideoTrack(const std::shared_ptr<TrackContext>& track) noexcept {
-    auto stsdBox = track->stsd;
-    videoInfo_ = std::make_shared<VideoInfo>();
-    videoInfo_->width = stsdBox->width;
-    videoInfo_->height = stsdBox->height;
-    videoInfo_->timeScale = track->mdhd->timeScale;
-    if (auto it = trackRotations_.find(track->trackId); it != trackRotations_.end()) {
-        videoInfo_->rotationDegrees = it->second;
-    }
-
+void Mp4Demuxer::initVideoFps(const std::shared_ptr<TrackContext>& track) noexcept {
     auto sttsBox = track->stts;
     if (sttsBox && !sttsBox->entrys.empty()) {
         const auto delta = sttsBox->entrys.front().sampleDelta;
@@ -1070,6 +1075,19 @@ void Mp4Demuxer::initVideoTrack(const std::shared_ptr<TrackContext>& track) noex
             videoInfo_->fps = static_cast<uint16_t>(videoInfo_->timeScale / s.duration);
         }
     }
+}
+
+void Mp4Demuxer::initVideoTrack(const std::shared_ptr<TrackContext>& track) noexcept {
+    auto stsdBox = track->stsd;
+    videoInfo_ = std::make_shared<VideoInfo>();
+    videoInfo_->width = stsdBox->width;
+    videoInfo_->height = stsdBox->height;
+    videoInfo_->timeScale = track->mdhd->timeScale;
+    if (auto it = trackRotations_.find(track->trackId); it != trackRotations_.end()) {
+        videoInfo_->rotationDegrees = it->second;
+    }
+
+    initVideoFps(track);
 
     if (track->codecId == CodecId::AVC) {
         videoInfo_->mediaInfo = MEDIA_MIMETYPE_VIDEO_AVC;

@@ -27,8 +27,20 @@ bool TSDemuxer::checkPacket(Buffer& buffer, uint64_t& pos) noexcept {
     return false;
 }
 
+static bool validateTSHeader(const TSHeader& header) noexcept {
+    if (header.syncbyte != 0x47) {
+        LogE("sync byte error:{}", header.syncbyte);
+        return false;
+    }
+    if (header.errorIndicator) {
+        LogE("transport error:{}", header.errorIndicator);
+        return false;
+    }
+    return true;
+}
+
 bool TSDemuxer::parsePacket(DataView data, uint32_t tsIndex, DemuxerResult& result) noexcept {
-    TSHeader header;  // 4byte
+    TSHeader header;
     data.readNumberLE(header.syncbyte, 1);
     header.payloadUinitIndicator = (static_cast<uint8_t>(data[1]) & 0x40) >> 6;
     header.errorIndicator = (static_cast<uint8_t>(data[1]) & 0x80) >> 7;
@@ -36,12 +48,7 @@ bool TSDemuxer::parsePacket(DataView data, uint32_t tsIndex, DemuxerResult& resu
                                        (static_cast<uint8_t>(data[2])));
     header.adaptationFieldControl = (static_cast<uint8_t>(data[3]) & 0x30) >> 4;
     data = data.substr(4);
-    if (header.syncbyte != 0x47) {
-        LogE("sync byte error:{}", header.syncbyte);
-        return false;
-    }
-    if (header.errorIndicator) {
-        LogE("transport error:{}", header.errorIndicator);
+    if (!validateTSHeader(header)) {
         return false;
     }
 
@@ -60,7 +67,7 @@ bool TSDemuxer::parsePacket(DataView data, uint32_t tsIndex, DemuxerResult& resu
         data = data.substr(1);
     }
 
-    // PID 分发表：避免线性 if-else 链
+    // PID 分发表
     if (header.pid == 0) {
         parseTSPAT(data);
     } else if (header.pid == pat_.pmtPid) {
@@ -171,6 +178,27 @@ static int64_t parsePtsValue(DataView data, uint32_t offset) noexcept {
                                 ((data[offset + 4] & 0xfe) >> 1));
 }
 
+static void parsePesPtsDts(DataView data,
+                            uint8_t ptsFlag,
+                            uint8_t headerDataLength,
+                            int64_t& pts,
+                            int64_t& dts,
+                            uint32_t& dataOffset) noexcept {
+    if ((ptsFlag & 0x02) && headerDataLength >= 5) {
+        pts = parsePtsValue(data, 9);
+    } else if (ptsFlag & 0x02) {
+        LogE("pes header data length error:{}", headerDataLength);
+    }
+    if ((ptsFlag & 0x01) && headerDataLength >= 10) {
+        dts = parsePtsValue(data, 14);
+    } else if (ptsFlag & 0x01) {
+        LogE("pes header data length error:{}", headerDataLength);
+    } else {
+        dts = pts;
+    }
+    dataOffset = 6 + 3 + headerDataLength;
+}
+
 bool TSDemuxer::parseTSPes(DataView data, uint8_t payloadIndicator, TSPESFrame& pes) noexcept {
     if (payloadIndicator != 1) {
         pes.mediaData.append(data);
@@ -180,7 +208,6 @@ bool TSDemuxer::parseTSPes(DataView data, uint8_t payloadIndicator, TSPESFrame& 
         LogE("data length is too short.");
         return false;
     }
-    // pes header: start code 0x00 0x00 0x01, stream id (1 byte), packet length(2 byte)
     if (data[0] != 0 || data[1] != 0 || data[2] != 1) {
         LogE("start code error:{} {} {}", data[0], data[1], data[2]);
         return false;
@@ -205,21 +232,7 @@ bool TSDemuxer::parseTSPes(DataView data, uint8_t payloadIndicator, TSPESFrame& 
         uint8_t ptsFlag = (data[7] & 0xc0) >> 6;
         LogI("pes flag info:{}", (data[7] & 0x3f));
         auto headerDataLength = static_cast<uint8_t>(data[8]);
-        // PTS: bit[32..30] + bit[29..15] + bit[14..0]
-        if ((ptsFlag & 0x02) && headerDataLength >= 5) {
-            pes.pts = parsePtsValue(data, 9);
-        } else if (ptsFlag & 0x02) {
-            LogE("pes header data length error:{}", headerDataLength);
-        }
-        // DTS: same layout starting at offset 14
-        if ((ptsFlag & 0x01) && headerDataLength >= 10) {
-            pes.dts = parsePtsValue(data, 14);
-        } else if (ptsFlag & 0x01) {
-            LogE("pes header data length error:{}", headerDataLength);
-        } else {
-            pes.dts = pes.pts;
-        }
-        dataOffset = 6 + 3 + headerDataLength;  // pes header(6) + flags(3) + header data
+        parsePesPtsDts(data, ptsFlag, headerDataLength, pes.pts, pes.dts, dataOffset);
     } else if (streamId != 0xbe) {
         dataOffset = 6;
     }

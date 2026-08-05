@@ -285,12 +285,6 @@ void DemuxerComponent::seekToTime(double time) noexcept {
     });
 }
 
-void DemuxerComponent::drainWorkerTasks() noexcept {
-    if (worker_) {
-        worker_->drainPendingWork();
-    }
-}
-
 void DemuxerComponent::postToWorker(ThreadTask task) noexcept {
     if (worker_) {
         worker_->postTask(std::move(task));

@@ -56,7 +56,6 @@ class DemuxerComponent : public IPipelineComponent, public slark::NonCopyMovable
 
     void seekToTime(double time) noexcept;
 
-    /// In HLS, what you get is the TS index, while in other cases, it's the file offset.
     [[nodiscard]] uint64_t getSeekToPos(double time) noexcept;
 
     void setHandleResultFunc(HandleDemuxResultFunc&& func) noexcept {
@@ -154,7 +153,6 @@ class DemuxerComponent : public IPipelineComponent, public slark::NonCopyMovable
  private:
     void runLoop(Thread& thread) noexcept;
 
-    void drainWorkerTasks() noexcept;
 
     void postToWorker(ThreadTask task) noexcept;
 

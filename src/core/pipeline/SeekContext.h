@@ -18,16 +18,6 @@ enum class SeekStrategy : uint8_t {
     SeekToKeyframe,
 };
 
-[[nodiscard]] constexpr std::string_view toStringView(SeekStrategy strategy) noexcept {
-    switch (strategy) {
-        case SeekStrategy::FastForwardInGOP:
-            return "FastForwardInGOP";
-        case SeekStrategy::SeekToKeyframe:
-            return "SeekToKeyframe";
-    }
-    return "Unknown";
-}
-
 class SeekContext : public NonCopyMovable {
  public:
     SeekContext() = default;

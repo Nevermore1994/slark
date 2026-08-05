@@ -78,6 +78,84 @@ bool M3U8Parser::parseMasterPlaylist(const std::string& content) noexcept {
     return !playlist_->variants().empty();
 }
 
+namespace {
+
+bool parseByteRangeLine(const std::string& line,
+                        std::optional<Range>& pendingByteRange,
+                        uint64_t& accumulatedOffset,
+                        bool& hasAccumulatedOffset) noexcept {
+    std::smatch match;
+    if (!std::regex_match(line, match, std::regex(R"(#EXT-X-BYTERANGE:(\d+)(?:@(\d+))?)"))) {
+        return false;
+    }
+    Range range;
+    auto lenResult = StringUtil::fromChars<uint64_t>(match[1].str());
+    if (!lenResult) {
+        return true;
+    }
+    range.size = static_cast<int64_t>(*lenResult);
+
+    if (match[2].matched) {
+        auto offResult = StringUtil::fromChars<uint64_t>(match[2].str());
+        if (!offResult) {
+            return true;
+        }
+        range.pos = *offResult;
+        accumulatedOffset = *offResult + *lenResult;
+        hasAccumulatedOffset = true;
+    } else if (hasAccumulatedOffset) {
+        range.pos = accumulatedOffset;
+        accumulatedOffset += *lenResult;
+    } else {
+        return true;
+    }
+    pendingByteRange = range;
+    return true;
+}
+
+bool parseExtinfLine(const std::string& line,
+                     std::istringstream& stream,
+                     double& currentTime,
+                     bool& hasDiscontinuity,
+                     std::optional<Range>& pendingByteRange,
+                     const std::string& baseUrl,
+                     std::shared_ptr<MediaPlaylist>& playlist) noexcept {
+    std::smatch match;
+    if (!std::regex_match(line, match,
+                          std::regex(R"(#EXTINF:([\d.]+)\s*(?:,([^\n]*))?)"))) {
+        return false;
+    }
+    auto durResult = StringUtil::fromChars<double>(match[1].str());
+    if (!durResult || *durResult < 0.0 || *durResult > 86400.0) {
+        return true;
+    }
+
+    Segment segment;
+    segment.duration = *durResult;
+    segment.startTime = currentTime;
+    segment.isDiscontinuity = hasDiscontinuity;
+
+    hasDiscontinuity = false;
+
+    if (pendingByteRange.has_value()) {
+        segment.byteRange = pendingByteRange;
+        pendingByteRange.reset();
+    }
+
+    std::string uriLine;
+    if (std::getline(stream, uriLine)) {
+        uriLine.erase(0, uriLine.find_first_not_of(" \t\r"));
+        uriLine.erase(uriLine.find_last_not_of(" \t\r") + 1);
+        segment.uri = M3U8Parser::resolveUrl(baseUrl, uriLine);
+    }
+
+    playlist->addSegment(std::move(segment));
+    currentTime += segment.duration;
+    return true;
+}
+
+}  // namespace
+
 bool M3U8Parser::parseMediaPlaylist(const std::string& content) noexcept {
     if (!std::regex_search(content, kEndListRegex)) {
         playlist_->setLive(true);
@@ -89,11 +167,9 @@ bool M3U8Parser::parseMediaPlaylist(const std::string& content) noexcept {
     uint64_t accumulatedOffset = 0;
     bool hasAccumulatedOffset = false;
 
-    // 按行解析，在遇到 EXTINF 时将之前累积的 BYTERANGE 绑定到该 segment
     std::istringstream stream(content);
     std::string line;
     while (std::getline(stream, line)) {
-        // 去除行首行尾空白
         line.erase(0, line.find_first_not_of(" \t\r"));
         line.erase(line.find_last_not_of(" \t\r") + 1);
 
@@ -102,65 +178,10 @@ bool M3U8Parser::parseMediaPlaylist(const std::string& content) noexcept {
         }
 
         if (line.find("#EXTINF:") == 0) {
-            // 解析 duration 和 uri
-            std::smatch match;
-            if (!std::regex_match(line, match,
-                                  std::regex(R"(#EXTINF:([\d.]+)\s*(?:,([^\n]*))?)"))) {
-                continue;
-            }
-            auto durResult = StringUtil::fromChars<double>(match[1].str());
-            if (!durResult || *durResult < 0.0 || *durResult > 86400.0) {
-                continue;
-            }
-
-            Segment segment;
-            segment.duration = *durResult;
-            segment.startTime = currentTime;
-            segment.isDiscontinuity = hasDiscontinuity;
-            hasDiscontinuity = false;
-
-            // 将已累积的 BYTERANGE 绑定到此 segment
-            if (pendingByteRange.has_value()) {
-                segment.byteRange = pendingByteRange;
-                pendingByteRange.reset();
-            }
-
-            // 读取下一行作为 URI
-            if (std::getline(stream, line)) {
-                line.erase(0, line.find_first_not_of(" \t\r"));
-                line.erase(line.find_last_not_of(" \t\r") + 1);
-                segment.uri = resolveUrl(baseUrl_, line);
-            }
-
-            playlist_->addSegment(std::move(segment));
-            currentTime += segment.duration;
+            parseExtinfLine(line, stream, currentTime, hasDiscontinuity,
+                            pendingByteRange, baseUrl_, playlist_);
         } else if (line.find("#EXT-X-BYTERANGE:") == 0) {
-            // 解析 BYTERANGE: <length>[@<offset>]
-            std::smatch match;
-            if (std::regex_match(line, match, std::regex(R"(#EXT-X-BYTERANGE:(\d+)(?:@(\d+))?)"))) {
-                Range range;
-                auto lenResult = StringUtil::fromChars<uint64_t>(match[1].str());
-                if (!lenResult) {
-                    continue;
-                }
-                range.size = static_cast<int64_t>(*lenResult);
-
-                if (match[2].matched) {
-                    auto offResult = StringUtil::fromChars<uint64_t>(match[2].str());
-                    if (!offResult) {
-                        continue;
-                    }
-                    range.pos = *offResult;
-                    accumulatedOffset = *offResult + *lenResult;
-                    hasAccumulatedOffset = true;
-                } else if (hasAccumulatedOffset) {
-                    range.pos = accumulatedOffset;
-                    accumulatedOffset += *lenResult;
-                } else {
-                    continue;
-                }
-                pendingByteRange = range;
-            }
+            parseByteRangeLine(line, pendingByteRange, accumulatedOffset, hasAccumulatedOffset);
         } else if (line.find("#EXT-X-DISCONTINUITY") == 0) {
             hasDiscontinuity = true;
         }

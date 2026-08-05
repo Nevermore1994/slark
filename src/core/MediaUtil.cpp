@@ -137,6 +137,17 @@ void parseHrd(DataView bitstream, int32_t& offset) {
     offset += 5;
 }
 
+static double parseVuiFrameRate(DataView bitstream, int32_t& offset) {
+    using namespace Util;
+    auto timeScale = Golomb::readBits(bitstream, offset, 32);
+    uint32_t numUnitsInTick = Golomb::readBits(bitstream, offset, 32);
+    auto fixFlag = Golomb::readBits(bitstream, offset, 1);
+    if (fixFlag) {
+        return static_cast<double>(timeScale) / static_cast<double>(numUnitsInTick);
+    }
+    return 0.0;
+}
+
 double parseH264Vui(DataView bitstream, int32_t& offset) {
     using namespace Util;
     double fps = 0.0;
@@ -147,13 +158,11 @@ double parseH264Vui(DataView bitstream, int32_t& offset) {
         }
 
         auto aspectRatioInfoPresentFlag = ReadUINT8(bitstream, offset, 1);
-        // Skip aspect ratio and overscan info for now (can be expanded)
         if (aspectRatioInfoPresentFlag) {
-            // aspectRatioIdc
             auto aspectRatioIdc = Golomb::readBits(bitstream, offset, 8);
             if (aspectRatioIdc == 255) {
-                offset += 16;  // sar width
-                offset += 16;  // sar height
+                offset += 16;
+                offset += 16;
             }
         }
 
@@ -164,34 +173,27 @@ double parseH264Vui(DataView bitstream, int32_t& offset) {
 
         auto videoSignalTypePresentFlag = ReadUINT8(bitstream, offset, 1);
         if (videoSignalTypePresentFlag) {
-            // Skip video_signal_type (can be expanded)
-            offset += 3;  // videoFormat
-            offset += 1;  // videoFullRangeFlag
+            offset += 3;
+            offset += 1;
             auto colorFlag = Golomb::readBits(bitstream, offset, 1);
             if (colorFlag) {
-                offset += 8;  // color primaries
-                offset += 8;  // transfer character
-                offset += 8;  // matrix corfficuents
+                offset += 8;
+                offset += 8;
+                offset += 8;
             }
         }
 
         auto chromaInfoFlag = Golomb::readBits(bitstream, offset, 1);
         if (chromaInfoFlag) {
-            Golomb::readUe(bitstream, offset);  // chroma type top field
-            Golomb::readUe(bitstream, offset);  // chroma type bottom field
+            Golomb::readUe(bitstream, offset);
+            Golomb::readUe(bitstream, offset);
         }
 
         auto frameRateInfoPresentFlag = ReadUINT8(bitstream, offset, 1);
         if (frameRateInfoPresentFlag) {
-            auto timeScale = Golomb::readBits(bitstream, offset, 32);
-            uint32_t numUnitsInTick = Golomb::readBits(bitstream, offset, 32);
-            auto fixFlag = Golomb::readBits(bitstream, offset, 1);
-            if (fixFlag) {
-                fps = static_cast<double>(timeScale) / static_cast<double>(numUnitsInTick);
-            }
+            fps = parseVuiFrameRate(bitstream, offset);
         }
-        auto nalHrdParametersPresentFlag =
-            Golomb::readBits(bitstream, offset, 1);  // nal_hrd_parameters_present_flag
+        auto nalHrdParametersPresentFlag = Golomb::readBits(bitstream, offset, 1);
         if (nalHrdParametersPresentFlag) {
             parseHrd(bitstream, offset);
         }
