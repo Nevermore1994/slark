@@ -170,7 +170,7 @@
 
         _controllerView.onSpeedChange = ^(float speed) {
             @strongify(self);
-            // TODO: SlarkPlayer 暂未暴露 speed 属性，待 SDK 支持后在此设置
+            // TODO: SlarkPlayer does not expose a speed property yet; set it here once supported
             (void)self;
         };
 
@@ -248,7 +248,7 @@
                        dispatch_get_main_queue(),
                        ^{
                            __strong typeof(weakSelf) strongSelf = weakSelf;
-                           // 若用户已手动返回，self 已释放，跳过二次 pop
+                           // If the user already navigated back, self is released; skip the second pop
                            if (!strongSelf || !strongSelf.navigationController) {
                                return;
                            }

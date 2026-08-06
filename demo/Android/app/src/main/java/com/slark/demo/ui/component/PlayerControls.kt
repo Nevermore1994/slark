@@ -93,7 +93,6 @@ fun PlayerBottomRow(viewModel: PlayerViewModel) {
             .padding(horizontal = 12.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 音量
         IconButton(
             onClick = { viewModel.mute(!viewModel.isMute) },
             modifier = Modifier.size(32.dp)
@@ -118,7 +117,6 @@ fun PlayerBottomRow(viewModel: PlayerViewModel) {
 
         Spacer(modifier = Modifier.width(16.dp))
 
-        // 循环
         IconButton(
             onClick = { viewModel.loop(!viewModel.isLoop) },
             modifier = Modifier.size(32.dp)
@@ -150,12 +148,12 @@ fun PlayerBottomRow(viewModel: PlayerViewModel) {
 
         Spacer(modifier = Modifier.weight(1f))
 
-        // 倍速选择（最右，下拉时不传播点击到父层）
+        // Speed selector (rightmost; consumes clicks so the dropdown does not bubble to the parent)
         Box(
             modifier = Modifier.clickable(
                 indication = null,
                 interactionSource = remember { MutableInteractionSource() }
-            ) { /* 消耗点击事件，不触发上层 showControls */ }
+            ) { /* Consume the click so showControls is not triggered above */ }
         ) {
             val speedLabel = when (viewModel.speed) {
                 0.5f  -> "0.5x"
@@ -239,7 +237,8 @@ fun SpeedButton(speed: Float, onSpeedChange: (Float) -> Unit, modifier: Modifier
 fun PlayerProgressBar(viewModel: PlayerViewModel) {
     val currentTime = (viewModel.currentTime * 1000).toLong()
     val totalTime = (viewModel.totalTime * 1000).toLong()
-    // 注意：viewModel.cacheTime / totalTime 都是秒；不要用毫秒的 totalTime 与秒的 cacheTime 相除
+    // Note: viewModel.cacheTime / totalTime are in seconds; do not divide millisecond
+    // totalTime by second cacheTime
     val bufferedFraction = if (viewModel.totalTime > 0.0)
         (viewModel.cacheTime.toFloat() / viewModel.totalTime.toFloat()).coerceIn(0f, 1f)
     else 0f

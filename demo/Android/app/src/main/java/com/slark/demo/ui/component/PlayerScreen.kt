@@ -75,7 +75,8 @@ fun PlayerScreen(
                 detectTapGestures { showControls() }
             }
     ) {
-        // 视频渲染，不额外施加 Rotation 变换，画面方向由 player.setRotation 内部处理
+        // Video rendering without extra Rotation transform; orientation is handled
+        // internally by player.setRotation
         AndroidView(
             factory = { ctx ->
                 TextureView(ctx).apply {
@@ -89,14 +90,12 @@ fun PlayerScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // loading
         if (viewModel.isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 RotatingImage()
             }
         }
 
-        // 中央播放/暂停
         if (controlsVisible) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -122,7 +121,6 @@ fun PlayerScreen(
             }
         }
 
-        // 顶部返回
         if (controlsVisible) {
             IconButton(
                 onClick = onBackClick,
@@ -139,7 +137,6 @@ fun PlayerScreen(
             }
         }
 
-        // 底部控制面板
         if (controlsVisible) {
             PlayerControls(
                 viewModel,

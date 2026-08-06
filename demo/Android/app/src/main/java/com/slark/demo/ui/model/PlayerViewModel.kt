@@ -42,7 +42,7 @@ class PlayerViewModel(
     var speed: Float
         get() = _speed.value
         set(value) {
-            // TODO: SlarkPlayer SDK 暂未暴露 speed 属性，待支持后在此设置
+            // TODO: SlarkPlayer SDK does not expose a speed property yet; set it here once supported
             _speed.value = value
         }
     var errorMessage by mutableStateOf<String?>(null)
@@ -92,10 +92,10 @@ class PlayerViewModel(
             when (event) {
                 SlarkPlayerEvent.UpdateCacheTime -> cacheTime = value.toDouble()
                 SlarkPlayerEvent.OnError -> {
-                    // OnError value 格式："slarkError|originErrorCode|host"
-                    // - slarkError：slark::Error 大分类（300 网络/400 HTTP/500 媒体/600 pipeline/700 通用）
-                    // - originErrorCode：真实子码（HTTP statusCode / errno / 解码器错误码）
-                    // - host：URI host（用于诊断具体域名/CDN）
+                    // OnError value format: "slarkError|originErrorCode|host"
+                    // - slarkError: slark::Error broad category (300 network/400 HTTP/500 media/600 pipeline/700 generic)
+                    // - originErrorCode: real sub-code (HTTP statusCode / errno / decoder error code)
+                    // - host: URI host (for diagnosing the specific domain/CDN)
                     val parts = value.split("|", limit = 3)
                     val slarkCode = parts.getOrNull(0)?.toIntOrNull()
                     val originCode = parts.getOrNull(1)?.toIntOrNull() ?: 0
@@ -132,12 +132,14 @@ class PlayerViewModel(
                         SlarkPlayerErrorCode.PipelineRenderError -> "Rendering error"
                         else -> "Unknown error"
                     }
-                    // originCode 携带 HTTP 真实子码（如 404/500），拼接到 message 让用户可见
+                    // originCode carries the real HTTP sub-code (e.g. 404/500); append it
+                    // to the message so users can see it
                     val detail = if (originCode > 0) "$shortMessage ($originCode)" else shortMessage
                     val fullMessage = if (host.isNotEmpty()) "$detail · $host" else detail
                     errorMessage = fullMessage
-                    // Toast 让用户直接看到具体错误码和 host
-                    // notifyEvent 在后台线程回调，Toast.show() 必须在主线程
+                    // Show the exact error code and host via Toast.
+                    // notifyEvent runs on a background thread, so Toast.show() must be
+                    // dispatched to the main thread.
                     if (appContext != null) {
                         Handler(Looper.getMainLooper()).post {
                             Toast.makeText(appContext, fullMessage, Toast.LENGTH_LONG).show()

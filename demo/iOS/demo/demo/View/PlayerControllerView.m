@@ -64,18 +64,15 @@ static NSArray<NSNumber*>* speedOptions(void) {
     self.layer.cornerRadius = 14;
     self.clipsToBounds = YES;
 
-    // 顶部栏
     [self addSubview:self.backButton];
     [self addSubview:self.rotateButton];
     [self addSubview:self.renderBackendButton];
 
-    // 进度区
     [self addSubview:self.currentTimeLabel];
     [self addSubview:self.cacheProgressView];
     [self addSubview:self.progressSlider];
     [self addSubview:self.totalTimeLabel];
 
-    // 底部控制栏
     [self addSubview:self.muteButton];
     [self addSubview:self.volumeSlider];
     [self addSubview:self.prevButton];
@@ -84,7 +81,6 @@ static NSArray<NSNumber*>* speedOptions(void) {
     [self addSubview:self.loopButton];
     [self addSubview:self.speedButton];
 
-    // 顶部栏布局
     [self.backButton mas_makeConstraints:^(MASConstraintMaker* make) {
         make.width.height.mas_equalTo(28);
         make.left.mas_equalTo(12);
@@ -102,7 +98,6 @@ static NSArray<NSNumber*>* speedOptions(void) {
         make.centerY.equalTo(self.backButton);
     }];
 
-    // 进度区布局
     [self.currentTimeLabel mas_makeConstraints:^(MASConstraintMaker* make) {
         make.height.mas_equalTo(20);
         make.width.mas_equalTo(52);
@@ -128,7 +123,6 @@ static NSArray<NSNumber*>* speedOptions(void) {
         make.centerY.equalTo(self.currentTimeLabel);
     }];
 
-    // 底部控制栏布局
     [self.playButton mas_makeConstraints:^(MASConstraintMaker* make) {
         make.width.height.mas_equalTo(52);
         make.centerX.equalTo(self);

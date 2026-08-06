@@ -1,8 +1,9 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-// 真实媒体文件播放集成测试（Android instrumentation）
-// 在模拟器/真机的完整 JVM + MediaCodec 环境下验证播放链路。
+// Real-media playback integration tests (Android instrumentation).
+// Validates the playback pipeline in the full JVM + MediaCodec environment
+// on emulators/devices.
 
 package com.slark.demo
 
@@ -27,16 +28,16 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 
 /**
- * 真实媒体文件播放集成测试。
- * 媒体资产复用 app 的 assets：sample-3s.wav（3s PCM）。
+ * Real-media playback integration tests.
+ * Media assets reuse the app's assets: sample-3s.wav (3s PCM).
  */
 @RunWith(AndroidJUnit4::class)
 class PlayerMediaIntegrationTest {
 
     @Before
     fun initSdk() {
-        // 同步初始化 SDK（触发 System.loadLibrary + MediaCodec 预热），
-        // 避免依赖 app 启动时的异步 init 未完成导致 UnsatisfiedLinkError
+        // Initialize the SDK synchronously (triggers System.loadLibrary + MediaCodec warm-up)
+        // to avoid UnsatisfiedLinkError from the app's unfinished async init
         val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
             as Application
         SlarkSdk.init(app)
@@ -55,7 +56,7 @@ class PlayerMediaIntegrationTest {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             val s = player.state()
-            // 离开初始化态即视为准备完成（Android 上可能直接进入 Buffering）
+            // Leaving the init states counts as prepared (Android may go straight to Buffering)
             if (s != SlarkPlayerState.NotInited && s != SlarkPlayerState.Initializing) return true
             Thread.sleep(50)
         }
@@ -115,8 +116,8 @@ class PlayerMediaIntegrationTest {
         player.prepare()
         assertTrue("wav should reach Prepared", waitForPrepared(player))
         player.play()
-        // PlayEnd 事件先于 Completed 状态到达；Completed 回调可能跨线程稍迟，
-        // 用 JNI state() 查询兜底避免回调时序竞态
+        // PlayEnd arrives before the Completed state; the Completed callback may lag across
+        // threads, so query JNI state() as a fallback to avoid a callback-timing race
         assertTrue("wav should complete in 15s", latch.await(15, TimeUnit.SECONDS))
         assertTrue("PlayEnd event received", events.contains(SlarkPlayerEvent.PlayEnd))
         val completedViaQuery = waitForState(player, SlarkPlayerState.Completed, 3000)
@@ -141,7 +142,7 @@ class PlayerMediaIntegrationTest {
         player.prepare()
         assertTrue("wav should reach Prepared", waitForPrepared(player))
         player.play()
-        // 等待进入播放
+        // Wait for playback to start
         Thread.sleep(500)
         player.seekTo(1.5, false)
         assertTrue("wav should finish after seek in 15s", latch.await(15, TimeUnit.SECONDS))

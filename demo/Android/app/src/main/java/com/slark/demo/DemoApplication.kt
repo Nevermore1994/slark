@@ -1,3 +1,7 @@
+//
+// Copyright (c) 2026 Nevermore-. All rights reserved.
+//
+
 package com.slark.demo
 
 import android.app.Application
