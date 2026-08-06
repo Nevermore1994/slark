@@ -8,6 +8,8 @@
 #include <netinet/tcp.h>
 #include <unistd.h>
 
+#include <utility>
+
 #include "Log.hpp"
 #include "SSLManager.h"
 #include "ScopeGuard.h"
@@ -21,23 +23,6 @@
 namespace slark::http {
 
 namespace {
-
-std::pair<std::string, uint16_t> extractAddress(const AddressInfoPtr& address) {
-    char addrStr[INET6_ADDRSTRLEN] = {};
-    uint16_t port = 0;
-
-    if (address->ai_family == AF_INET) {
-        auto* addr = reinterpret_cast<sockaddr_in*>(address->ai_addr);
-        inet_ntop(AF_INET, &addr->sin_addr, addrStr, sizeof(addrStr));
-        port = ntohs(addr->sin_port);
-    } else if (address->ai_family == AF_INET6) {
-        auto* addr = reinterpret_cast<sockaddr_in6*>(address->ai_addr);
-        inet_ntop(AF_INET6, &addr->sin6_addr, addrStr, sizeof(addrStr));
-        port = ntohs(addr->sin6_port);
-    }
-
-    return {addrStr, port};
-}
 
 Socket createAndConfigureSocket(int32_t addressFamily) {
     Socket sock = ::socket(addressFamily, SOCK_STREAM, 0);
@@ -77,11 +62,10 @@ Socket createAndConfigureSocket(int32_t addressFamily) {
 }
 
 Task<void> tcpConnect(Socket socket,
-                      const AddressInfoPtr& address,
+                      ConnectAddress address,
                       std::chrono::milliseconds timeout,
                       CancellationToken token = CancellationToken{}) {
-    auto [addrStr, port] = extractAddress(address);
-    auto connector = AsyncConnect(socket, addrStr, port);
+    auto connector = AsyncConnect(socket, std::move(address));
     connector.setTimeout(timeout);
     connector.setCancellationToken(token);
     auto result = co_await connector;
@@ -165,13 +149,16 @@ AsyncSocket::~AsyncSocket() {
     close();
 }
 
-Task<void> AsyncSocket::asyncConnect(const AddressInfoPtr& address,
+Task<void> AsyncSocket::asyncConnect(ConnectAddress address,
                                      std::chrono::milliseconds timeout,
                                      CancellationToken token) {
-    socket_ = createAndConfigureSocket(address->ai_family);
+    if (!address.isValid()) {
+        throw std::invalid_argument("Invalid connect address");
+    }
+
+    socket_ = createAndConfigureSocket(address.family);
     if (socket_ == kInvalidSocket) {
-        LogE("[AsyncSocket::asyncConnect] create socket failed: family={}",
-             static_cast<int>(address->ai_family));
+        LogE("[AsyncSocket::asyncConnect] create socket failed: family={}", address.family);
         throw std::runtime_error("Failed to create socket");
     }
 
@@ -179,7 +166,7 @@ Task<void> AsyncSocket::asyncConnect(const AddressInfoPtr& address,
     ScopeGuard guard([this] {
         closeSocket(socket_);
     });
-    co_await tcpConnect(socket_, address, timeout, token);
+    co_await tcpConnect(socket_, std::move(address), timeout, token);
     guard.dismiss();
 
     LogI("[AsyncSocket::asyncConnect] tcp connect ok: fd={} timeoutMs={}", socket_,

@@ -95,7 +95,7 @@ class IAsyncSocket {
  public:
     virtual ~IAsyncSocket() = default;
 
-    virtual Task<void> asyncConnect(const AddressInfoPtr& address,
+    virtual Task<void> asyncConnect(ConnectAddress address,
                                     std::chrono::milliseconds timeout = kDefaultConnectTimeout,
                                     CancellationToken token = CancellationToken{}) = 0;
 
@@ -133,7 +133,7 @@ class AsyncSocket final : public IAsyncSocket, public NonCopyable {
     explicit AsyncSocket(IPVersion ipVersion, std::unique_ptr<ITransport> transport = nullptr);
     ~AsyncSocket();
 
-    Task<void> asyncConnect(const AddressInfoPtr& address,
+    Task<void> asyncConnect(ConnectAddress address,
                             std::chrono::milliseconds timeout = kDefaultConnectTimeout,
                             CancellationToken token = CancellationToken{}) override;
 

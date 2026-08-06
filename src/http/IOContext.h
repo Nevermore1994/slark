@@ -12,11 +12,13 @@
 #include <cstring>
 #include <mutex>
 #include <thread>
+#include <utility>
 
 #include "AliveFlag.hpp"
 #include "AsyncIOOperation.hpp"
 #include "CancellationToken.h"
 #include "EventLoop.h"
+#include "Socket.hpp"
 #include "Time.hpp"
 
 namespace slark::http {
@@ -62,7 +64,7 @@ class IOContext : public slark::EventLoop {
 
 class AsyncConnect : public slark::AsyncIOOperationBase<AsyncConnect, void> {
  public:
-    AsyncConnect(int32_t fd, std::string_view host, uint16_t port) : host_(host), port_(port) {
+    AsyncConnect(int32_t fd, ConnectAddress address) : address_(std::move(address)) {
         fd_ = fd;
     }
 
@@ -83,24 +85,14 @@ class AsyncConnect : public slark::AsyncIOOperationBase<AsyncConnect, void> {
     }
 
     void startOperation() noexcept override {
-        sockaddr_in addr4{};
-        addr4.sin_family = AF_INET;
-        addr4.sin_port = htons(port_);
-        if (inet_pton(AF_INET, host_.c_str(), &addr4.sin_addr) > 0) {
-            doConnect(reinterpret_cast<sockaddr*>(&addr4), sizeof(addr4));
+        if (!address_.isValid()) {
+            fail(Error::InvalidSocket);
             return;
         }
-        sockaddr_in6 addr6{};
-        addr6.sin6_family = AF_INET6;
-        addr6.sin6_port = htons(port_);
-        if (inet_pton(AF_INET6, host_.c_str(), &addr6.sin6_addr) > 0) {
-            doConnect(reinterpret_cast<sockaddr*>(&addr6), sizeof(addr6));
-            return;
-        }
-        fail(Error::InvalidSocket);
+        doConnect(reinterpret_cast<const sockaddr*>(&address_.storage), address_.length);
     }
 
-    void doConnect(sockaddr* addr, socklen_t addrLen) noexcept {
+    void doConnect(const sockaddr* addr, socklen_t addrLen) noexcept {
         int32_t result = ::connect(fd_, addr, addrLen);
         if (result == 0) {
             complete();
@@ -116,8 +108,7 @@ class AsyncConnect : public slark::AsyncIOOperationBase<AsyncConnect, void> {
     }
 
  private:
-    std::string host_;
-    uint16_t port_;
+    ConnectAddress address_;
 };
 
 class AsyncRead : public slark::AsyncIOOperationBase<AsyncRead, size_t> {

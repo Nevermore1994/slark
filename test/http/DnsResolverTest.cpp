@@ -58,6 +58,44 @@ TEST_F(DnsResolverTest, ResolveInvalidHostReturnsNull) {
     EXPECT_EQ(result.get(), nullptr);
 }
 
+TEST_F(DnsResolverTest, ConnectAddressOwnsCopiedSocketAddress) {
+    sockaddr_in source{};
+    source.sin_family = AF_INET;
+    source.sin_port = htons(8080);
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &source.sin_addr), 1);
+
+    addrinfo info{};
+    info.ai_family = AF_INET;
+    info.ai_addrlen = sizeof(source);
+    info.ai_addr = reinterpret_cast<sockaddr*>(&source);
+
+    auto address = makeConnectAddress(&info);
+    ASSERT_TRUE(address.has_value());
+    ASSERT_TRUE(address->isValid());
+    EXPECT_EQ(address->family, AF_INET);
+    EXPECT_EQ(address->length, sizeof(source));
+
+    source.sin_port = htons(9090);
+    EXPECT_EQ(ntohs(reinterpret_cast<const sockaddr_in*>(&address->storage)->sin_port), 8080);
+}
+
+TEST_F(DnsResolverTest, ConnectAddressRejectsUnsupportedOrOversizedAddress) {
+    sockaddr_in source{};
+    source.sin_family = AF_INET;
+
+    addrinfo unsupported{};
+    unsupported.ai_family = AF_UNIX;
+    unsupported.ai_addrlen = sizeof(source);
+    unsupported.ai_addr = reinterpret_cast<sockaddr*>(&source);
+    EXPECT_FALSE(makeConnectAddress(&unsupported).has_value());
+
+    addrinfo oversized{};
+    oversized.ai_family = AF_INET;
+    oversized.ai_addrlen = sizeof(sockaddr_storage) + 1;
+    oversized.ai_addr = reinterpret_cast<sockaddr*>(&source);
+    EXPECT_FALSE(makeConnectAddress(&oversized).has_value());
+}
+
 TEST_F(DnsResolverTest, SecondResolveShouldHitCache) {
     ASSERT_NE(runAndWait(*resolver_, "localhost").get(), nullptr);
 

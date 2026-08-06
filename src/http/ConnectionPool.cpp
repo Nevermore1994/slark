@@ -13,59 +13,92 @@ static constexpr std::chrono::milliseconds kDefaultTlsTimeout{std::chrono::secon
 
 namespace {
 
-Task<bool> resolveAndConnect(AsyncSocket& socket,
-                             const std::string& host,
-                             uint16_t port,
-                             IPVersion ipVersion,
-                             std::chrono::milliseconds connectTimeout,
-                             std::chrono::milliseconds& connectMs,
-                             RequestPerf* perf,
-                             CancellationToken& token) {
+Task<std::unique_ptr<AsyncSocket>> resolveAndConnect(
+    const std::string& host,
+    uint16_t port,
+    IPVersion ipVersion,
+    std::chrono::milliseconds connectTimeout,
+    std::chrono::milliseconds& connectMs,
+    RequestPerf* perf,
+    CancellationToken& token) {
     auto addrInfo =
         co_await DnsResolver::instance().resolveAsync(host, std::to_string(port), ipVersion, token);
     if (token.isCancelled()) {
-        co_return false;
+        co_return nullptr;
     }
     if (!addrInfo) {
         LogW("[co_acquire_connection] DNS resolution failed for {}", host);
         if (perf) {
             perf->connection.connectResult = slark::Error::DnsResolveFailed;
         }
-        co_return false;
+        co_return nullptr;
     }
 
-    auto ct = connectTimeout.count() > 0 ? connectTimeout : kDefaultConnectTimeout;
-    auto connectStart = Time::nowTimeStamp();
-    try {
-        socket.setPerf(perf);
-        co_await socket.asyncConnect(addrInfo, ct, token);
-    } catch (const CancelledException&) {
-        LogW("[co_acquire_connection] Connect cancelled for {}", host);
-        co_return false;
-    } catch (const TimeoutException&) {
-        LogW("[co_acquire_connection] Connect timeout for {}", host);
+    const auto timeout = connectTimeout.count() > 0 ? connectTimeout : kDefaultConnectTimeout;
+    Time::Deadline deadline(timeout);
+    bool timedOut = false;
+    bool failed = false;
+
+    for (const auto* candidate = addrInfo.get(); candidate; candidate = candidate->ai_next) {
+        if (token.isCancelled()) {
+            co_return nullptr;
+        }
+        const auto remaining = deadline.remaining();
+        if (remaining <= std::chrono::milliseconds(0)) {
+            timedOut = true;
+            break;
+        }
+
+        auto candidateAddress = makeConnectAddress(candidate);
+        if (!candidateAddress) {
+            failed = true;
+            LogW("[co_acquire_connection] Invalid DNS address candidate for {}", host);
+            continue;
+        }
+
+        auto socket = std::make_unique<AsyncSocket>(ipVersion);
+        socket->setPerf(perf);
+        const auto connectStart = Time::nowTimeStamp();
+        try {
+            co_await socket->asyncConnect(std::move(*candidateAddress), remaining, token);
+        } catch (const CancelledException&) {
+            LogW("[co_acquire_connection] Connect cancelled for {}", host);
+            co_return nullptr;
+        } catch (const TimeoutException&) {
+            LogW("[co_acquire_connection] Connect timeout for {}", host);
+            timedOut = true;
+            break;
+        } catch (const std::exception& e) {
+            failed = true;
+            LogW("[co_acquire_connection] Address candidate failed: {} {}", host, e.what());
+            continue;
+        }
+
+        if (token.isCancelled()) {
+            co_return nullptr;
+        }
+        connectMs = (Time::nowTimeStamp() - connectStart).toMilliSeconds();
         if (perf) {
+            perf->connection.connectTimeMs = connectMs.count();
+            perf->connection.connectResult = slark::Error::Success;
+        }
+        LogI("[co_acquire_connection] connected: host={} port={} remainingMs={}", host, port,
+             deadline.remaining().count());
+        co_return socket;
+    }
+
+    if (perf) {
+        if (timedOut || deadline.isExpired()) {
             perf->transport.timeoutSource = TimeoutSource::Connect;
             perf->connection.connectResult = slark::Error::ConnectionTimeout;
-        }
-        co_return false;
-    } catch (const std::exception& e) {
-        LogW("[co_acquire_connection] Connect failed: {} {}", host, e.what());
-        DnsResolver::instance().invalidate(host);
-        if (perf) {
+        } else {
             perf->connection.connectResult = slark::Error::ConnectionFailed;
         }
-        co_return false;
     }
-    if (token.isCancelled()) {
-        co_return false;
+    if (failed && !timedOut) {
+        DnsResolver::instance().invalidate(host);
     }
-    connectMs = (Time::nowTimeStamp() - connectStart).toMilliSeconds();
-    if (perf) {
-        perf->connection.connectTimeMs = connectMs.count();
-    }
-    LogI("[co_acquire_connection] connected: host={} port={}", host, port);
-    co_return true;
+    co_return nullptr;
 }
 
 Task<bool> performTlsHandshake(AsyncSocket& socket,
@@ -119,17 +152,10 @@ Task<std::unique_ptr<PooledConnection>> co_acquire_connection(
         perf->host = host;
     }
 
-    auto socket = std::make_unique<AsyncSocket>(ipVersion);
-    if (!socket) {
-        if (perf) {
-            perf->connection.connectResult = slark::Error::ConnectionFailed;
-        }
-        co_return nullptr;
-    }
-
     std::chrono::milliseconds connectMs{0};
-    if (!co_await resolveAndConnect(*socket, host, port, ipVersion, connectTimeout, connectMs, perf,
-                                    token)) {
+    auto socket = co_await resolveAndConnect(host, port, ipVersion, connectTimeout, connectMs, perf,
+                                             token);
+    if (!socket) {
         co_return nullptr;
     }
 

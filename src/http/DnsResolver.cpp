@@ -176,35 +176,56 @@ void DnsResolver::insertCache(State& state,
 
 AddressInfoPtr DnsResolver::cloneAddrInfo(const addrinfo* src) noexcept {
     if (!src) {
-        return makeAddressInfo(nullptr);
+        return makeClonedAddressInfo(nullptr);
     }
 
-    auto* dst = new (std::nothrow) addrinfo{};
-    if (!dst) {
-        return makeAddressInfo(nullptr);
-    }
-
-    dst->ai_flags = src->ai_flags;
-    dst->ai_family = src->ai_family;
-    dst->ai_socktype = src->ai_socktype;
-    dst->ai_protocol = src->ai_protocol;
-    dst->ai_addrlen = src->ai_addrlen;
-    dst->ai_next = nullptr;
-    dst->ai_canonname = nullptr;
-
-    dst->ai_addr = reinterpret_cast<sockaddr*>(new (std::nothrow) Byte[src->ai_addrlen]{});
-    if (!dst->ai_addr) {
-        delete dst;
-        return makeAddressInfo(nullptr);
-    }
-
-    std::memcpy(dst->ai_addr, src->ai_addr, src->ai_addrlen);
-    return AddressInfoPtr(dst, [](addrinfo* p) {
-        if (p) {
-            delete[] reinterpret_cast<Byte*>(p->ai_addr);
-            delete p;
+    addrinfo* head = nullptr;
+    addrinfo* tail = nullptr;
+    for (auto* current = src; current; current = current->ai_next) {
+        auto* node = new (std::nothrow) addrinfo{};
+        if (!node) {
+            destroyClonedAddressInfo(head);
+            return makeClonedAddressInfo(nullptr);
         }
-    });
+
+        node->ai_flags = current->ai_flags;
+        node->ai_family = current->ai_family;
+        node->ai_socktype = current->ai_socktype;
+        node->ai_protocol = current->ai_protocol;
+        node->ai_addrlen = current->ai_addrlen;
+
+        if (current->ai_addr && current->ai_addrlen > 0) {
+            node->ai_addr = reinterpret_cast<sockaddr*>(
+                new (std::nothrow) Byte[current->ai_addrlen]{});
+            if (!node->ai_addr) {
+                delete node;
+                destroyClonedAddressInfo(head);
+                return makeClonedAddressInfo(nullptr);
+            }
+            std::memcpy(node->ai_addr, current->ai_addr, current->ai_addrlen);
+        }
+
+        if (current->ai_canonname) {
+            const auto length = std::strlen(current->ai_canonname);
+            node->ai_canonname = new (std::nothrow) char[length + 1];
+            if (!node->ai_canonname) {
+                delete[] reinterpret_cast<Byte*>(node->ai_addr);
+                delete node;
+                destroyClonedAddressInfo(head);
+                return makeClonedAddressInfo(nullptr);
+            }
+            std::memcpy(node->ai_canonname, current->ai_canonname, length + 1);
+        }
+
+        if (!head) {
+            head = node;
+        } else {
+            tail->ai_next = node;
+        }
+        tail = node;
+    }
+
+    return makeClonedAddressInfo(head);
 }
 
 }  // namespace slark::http
