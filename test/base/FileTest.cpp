@@ -29,18 +29,26 @@ TEST(Writer, getPath) {
 }
 
 TEST(File, isExist) {
-    Writer writer1;
-    writer1.open("test1.txt");
-    Writer writer2;
-    writer2.open("test2.txt");
-    writer1.close();
-    writer2.close();
-    ASSERT_EQ(File::isFileExist("test1.txt"), true);
-    ASSERT_EQ(File::isFileExist("test2.txt"), true);
-    File::deleteFile("test1.txt");
-    File::deleteFile("test2.txt");
-    ASSERT_EQ(File::isFileExist("test1.txt"), false);
-    ASSERT_EQ(File::isFileExist("test2.txt"), false);
+    const std::string kPath1 = "test1.txt";
+    const std::string kPath2 = "test2.txt";
+    File::deleteFile(kPath1);
+    File::deleteFile(kPath2);
+
+    {
+        File::WriteFile file(kPath1);
+        ASSERT_TRUE(file.open().has_value());
+    }
+    {
+        File::WriteFile file(kPath2);
+        ASSERT_TRUE(file.open().has_value());
+    }
+
+    EXPECT_TRUE(File::isFileExist(kPath1));
+    EXPECT_TRUE(File::isFileExist(kPath2));
+    EXPECT_TRUE(File::deleteFile(kPath1));
+    EXPECT_TRUE(File::deleteFile(kPath2));
+    EXPECT_FALSE(File::isFileExist(kPath1));
+    EXPECT_FALSE(File::isFileExist(kPath2));
 }
 
 TEST(FileUtil, create) {
