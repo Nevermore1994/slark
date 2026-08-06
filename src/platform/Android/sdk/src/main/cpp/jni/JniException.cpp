@@ -35,7 +35,7 @@ void checkAndThrow(JNIEnv* env) {
                            "ExceptionCheck returned true but ExceptionOccurred returned null");
     }
 
-    // 必须先 clear，才能安全调用其他 JNI 方法（CheckJNI 在 pending exception 下会 abort）
+    // Must clear first before calling other JNI methods (CheckJNI aborts with a pending exception)
     env->ExceptionClear();
 
     ObjectReference exRef(env, exception);

@@ -81,7 +81,7 @@ class VideoHardwareDecoder : public NativeDecoder,
     std::shared_ptr<VideoDecodeResource> resource_ = nullptr;
     std::unordered_set<int64_t> discardPackets_;
     AVFrameRefPtr
-        pendingEOSFrame_;  ///< 缓存 sendPacket(EOS) 失败后被 codec 拒绝的 EOS 帧，在排空输出后重试
+        pendingEOSFrame_;  ///< EOS frame cached when sendPacket(EOS) is rejected by the codec, retried after draining outputs
 
     std::atomic<bool> pendingOutput_{false};
     bool contextAttached_ = false;

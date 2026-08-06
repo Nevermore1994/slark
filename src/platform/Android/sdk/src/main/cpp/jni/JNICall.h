@@ -23,15 +23,15 @@ struct JObjectWithSig {
 
     JObjectWithSig(jobject o, std::string_view s) noexcept : obj(o), sig(s) {}
 
-    // 从 StringReference 构造，持有其所有权（RAII）
+    // Construct from a StringReference, taking ownership (RAII)
     JObjectWithSig(StringReference ref, std::string_view s) noexcept
         : obj(ref.get()), sig(s), ownedStrRef_(std::move(ref)) {}
 
-    // 从 ObjectReference 构造，持有其所有权（RAII）
+    // Construct from an ObjectReference, taking ownership (RAII)
     JObjectWithSig(ObjectReference ref, std::string_view s) noexcept
         : obj(ref.get()), sig(s), ownedObjRef_(std::move(ref)) {}
 
-    // 从 ByteArrayReference 构造，持有其所有权（RAII）
+    // Construct from a ByteArrayReference, taking ownership (RAII)
     JObjectWithSig(ByteArrayReference ref, std::string_view s) noexcept
         : obj(reinterpret_cast<jobject>(ref.get())), sig(s), ownedByteArrayRef_(std::move(ref)) {}
 
@@ -51,7 +51,7 @@ struct ReturnSig {
     explicit ReturnSig(std::string_view s) noexcept : sig(s) {}
 };
 
-// 编译期签名推导
+// Compile-time signature deduction
 namespace sig_detail {
 
 template <typename D>
@@ -117,7 +117,8 @@ std::string methodSig() {
     return makeSignature(sigOf<Args>()...);
 }
 
-// 从参数列表中提取每个参数的签名（支持 JObjectWithSig 的运行时签名）
+// Extract each argument's signature from the parameter list (supports the runtime
+// signature of JObjectWithSig)
 template <typename T>
 std::string sigOfArg(const T& v) {
     using D = std::decay_t<T>;
@@ -155,7 +156,8 @@ auto toArg(JNIEnv* env, T&& v) {
     }
 }
 
-// 从转换结果中提取实际传给 JNI 的值（StringReference 需要 .get()）
+// Extract the value actually passed to JNI from the conversion result
+// (StringReference requires .get())
 template <typename T>
 auto argValue(T&& v) {
     using D = std::decay_t<T>;
@@ -189,8 +191,9 @@ class JNICall {
                  : emptyResult<R>();
     }
 
-    // 调用静态方法（指定精确返回类型签名）
-    // 返回值为具体 Java 类时必须传入 ReturnSig，参数中若含有 JObjectWithSig 同样兼容
+    // Call a static method with an explicit return-type signature.
+    // ReturnSig is required when the return value is a concrete Java class; JObjectWithSig
+    // arguments are also supported.
     template <typename R, typename... Args>
     static auto callStatic(JNIEnv* env,
                            std::string_view cls,
@@ -250,11 +253,11 @@ class JNICall {
         if (!c) {
             return {env, nullptr};
         }
-        // 检查是否含有 JObjectWithSig 参数（需要运行时签名）
+        // Check for JObjectWithSig arguments (they need a runtime signature)
         constexpr bool hasRuntimeSig = (std::is_same_v<std::decay_t<Args>, JObjectWithSig> || ...);
         std::string sig;
         if constexpr (hasRuntimeSig) {
-            // 使用参数的运行时签名，构造函数返回值为 V
+            // Use the arguments' runtime signatures; the constructor's return type is V
             sig = std::string("(");
             ((sig.append(sigOfArg(args))), ...);
             sig.append(")V");
@@ -336,7 +339,7 @@ class JNICall {
         if constexpr (std::is_same_v<R, void>) {
             return false;
         } else if constexpr (std::is_same_v<R, jobject>) {
-            // callStatic<jobject> / call<jobject> 返回 ObjectReference，emptyResult 需保持一致
+            // callStatic<jobject> / call<jobject> return ObjectReference; keep emptyResult consistent
             return ObjectReference(nullptr, nullptr);
         } else if constexpr (std::is_same_v<R, std::string>) {
             return std::string{};
@@ -407,7 +410,8 @@ class JNICall {
         }
     }
 
-    // invokeImpl<R, IsStatic>：static/instance 两路合一，零开销，消除两套 PrimCaller
+    // invokeImpl<R, IsStatic>: unifies the static/instance paths with zero overhead,
+    // eliminating two PrimCaller variants
     template <typename R, bool IsStatic, typename ReceiverT, typename... JArgs>
     static auto invokeImpl(JNIEnv* env, ReceiverT receiver, jmethodID m, JArgs... jargs) {
         auto callVoid = [&] {
@@ -424,7 +428,7 @@ class JNICall {
                 return env->CallObjectMethod(receiver, m, jargs...);
             }
         };
-        // 基础类型分发 lambda，T 决定具体 JNI 函数
+        // Primitive-type dispatch lambda; T selects the concrete JNI function
         auto callPrim = [&]<typename T>() {
             if constexpr (IsStatic) {
                 if constexpr (std::is_same_v<T, jint>) {
@@ -496,7 +500,7 @@ class JNICall {
         }
     }
 
-    // readField<R, IsStatic>：static/instance 合一，类型分发集中在一处
+    // readField<R, IsStatic>: unifies static/instance reads, concentrating type dispatch
     template <typename R, bool IsStatic, typename ObjT>
     static std::optional<R> readField(JNIEnv* env, ObjT obj, jfieldID f) {
         if constexpr (std::is_same_v<R, int32_t>) {

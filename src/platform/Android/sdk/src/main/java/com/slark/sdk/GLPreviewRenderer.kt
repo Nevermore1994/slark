@@ -80,7 +80,8 @@ class GLPreviewRenderer : IPreviewRenderer {
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, vertexVBO)
         GLES20.glBufferSubData(GLES20.GL_ARRAY_BUFFER, 0, 8 * Float.SIZE_BYTES, vertexBuffer)
 
-        // 通过修改 texcoord 实现旋转，避免 vertex shader 旋转与宽高比矫正冲突
+        // Rotate by modifying texcoords, avoiding conflicts between vertex-shader rotation
+        // and aspect-ratio correction
         val texCoords = when (rot) {
             90  -> floatArrayOf(1f, 0f, 1f, 1f, 0f, 0f, 0f, 1f)
             180 -> floatArrayOf(1f, 1f, 0f, 1f, 1f, 0f, 0f, 0f)

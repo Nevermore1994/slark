@@ -88,8 +88,8 @@ class JNIReference {
  private:
     void release() noexcept {
         if (env_ && ref_) {
-            // 所有 jobject 派生类型都需要 DeleteLocalRef
-            // 包括 jclass、jstring、jarray、jbyteArray、jintArray 等
+            // All jobject-derived types require DeleteLocalRef
+            // (jclass, jstring, jarray, jbyteArray, jintArray, etc.)
             if constexpr (std::is_same_v<T, jclass> || std::is_same_v<T, jobject> ||
                           std::is_same_v<T, jstring> || std::is_same_v<T, jarray> ||
                           std::is_same_v<T, jbyteArray> || std::is_same_v<T, jintArray> ||

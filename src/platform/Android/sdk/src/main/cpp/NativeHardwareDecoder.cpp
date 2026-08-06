@@ -35,7 +35,8 @@ Error Native_HardwareDecoder_sendPacket(JNIEnv* env,
             byteArray = ToJVM::bytes(env, *data);
         }
     } else {
-        // EndOfStream 时 byteArray 保持 null，Kotlin 侧 flag 检查在前，不会访问 byteArray
+        // On EndOfStream, byteArray stays null; the Kotlin-side flag check runs first
+        // and never accesses byteArray
     }
 
     int res = JNI::JNICall::callStatic<int32_t>(
@@ -80,7 +81,8 @@ std::string Native_HardwareDecoder_createVideoDecoder(
         return {};
     }
 
-    // 构建 CSD 数据（Annex B: start code + NAL），通过 MediaFormat csd-0 传入，不占输入 slot
+    // Build CSD data (Annex B: start code + NAL), passed via MediaFormat csd-0 without
+    // consuming an input slot
     auto decoderInfo = std::make_unique<Data>();
     static constexpr uint8_t kNaluStartCode[] = {0x00, 0x00, 0x00, 0x01};
     Data naluHeader(4, kNaluStartCode);
@@ -130,7 +132,7 @@ std::string Native_HardwareDecoder_createAudioDecoder(
         LogE("build AudioDecoderConfig failed");
         return {};
     }
-    // 使用 ReturnSig 指定返回类型为 String，而非推导为 jobject(Ljava/lang/Object;)
+    // ReturnSig pins the return type to String instead of deducing jobject(Ljava/lang/Object;)
     auto jDecoderId = JNI::JNICall::callStatic<jobject>(
         env, kMediaCodecDecoderClass, JavaMethod::CreateAudioDecoder,
         JNI::ReturnSig{JNI::Sig::String},

@@ -165,7 +165,8 @@ void AndroidEGLContext::destroy() noexcept {
     if (display_ != EGL_NO_DISPLAY) {
         eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         eglDestroyContext(display_, context_);
-        // 不调 eglTerminate，display 是 process-wide 资源，多 player 共用时不能单方面终止
+        // Do not call eglTerminate: the display is a process-wide resource shared by
+        // multiple players and must not be terminated unilaterally
         eglReleaseThread();
     }
 

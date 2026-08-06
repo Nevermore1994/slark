@@ -70,7 +70,7 @@ bool FrameBuffer::bind(bool isRebinding) noexcept {
     if (isRebinding) {
         glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFrameBufferId_);
     }
-    // 必须先 bind FBO，再 attach texture，再 check status
+    // Must bind the FBO first, then attach the texture, then check the status
     glBindFramebuffer(GL_FRAMEBUFFER, frameBufferId_);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
                            texture_->textureId(), 0);

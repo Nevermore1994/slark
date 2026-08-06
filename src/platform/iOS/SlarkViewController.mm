@@ -58,7 +58,7 @@
                                           backend:(SlarkGraphicsBackend)backend
                                        hdrEnabled:(BOOL)hdrEnabled {
 #if TARGET_IPHONE_SIMULATOR
-    // 模拟器不支持 OpenGLES，直接使用 Metal
+    // The simulator does not support OpenGLES; use Metal directly
     (void)backend;
     return [[RenderMetalView alloc] initWithFrame:frame hdrEnabled:hdrEnabled];
 #else
@@ -100,7 +100,7 @@
 }
 
 - (void)deviceOrientationDidChange:(NSNotification*)notification {
-    // 屏幕旋转由 layoutSubviews 驱动 framebuffer 重建，此处无需额外处理
+    // Screen rotation drives the framebuffer rebuild via layoutSubviews; nothing to do here
 }
 
 - (void)applicationWillResignActive {
@@ -124,13 +124,13 @@
     AVAudioSessionInterruptionType type = static_cast<AVAudioSessionInterruptionType>(
         [info[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue]);
     if (type == AVAudioSessionInterruptionTypeBegan) {
-        // 来电、VoIP 等中断开始，暂停播放
+        // Interruption began (call, VoIP, etc.), pause playback
         if (self.renderView.isActive) {
             [self.player pause];
             _isActive = YES;
         }
     } else if (type == AVAudioSessionInterruptionTypeEnded) {
-        // 中断结束，检查是否应该恢复播放
+        // Interruption ended, check whether playback should resume
         NSUInteger options = [info[AVAudioSessionInterruptionOptionKey] unsignedIntegerValue];
         if ((options & AVAudioSessionInterruptionOptionShouldResume) && _isActive) {
             [self.player play];
@@ -143,7 +143,7 @@
     NSDictionary* info = notification.userInfo;
     AVAudioSessionRouteChangeReason reason = static_cast<AVAudioSessionRouteChangeReason>(
         [info[AVAudioSessionRouteChangeReasonKey] unsignedIntegerValue]);
-    // 耳机拔出时暂停，防止音频外漏
+    // Pause when headphones are unplugged to prevent audio leaking out loud
     if (reason == AVAudioSessionRouteChangeReasonOldDeviceUnavailable) {
         [self.player pause];
     }

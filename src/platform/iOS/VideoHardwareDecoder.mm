@@ -29,7 +29,8 @@ static void decompressionOutputCallback(void* decompressionOutputRefCon,
                                         CVImageBufferRef pixelBuffer,
                                         CMTime,
                                         CMTime) {
-    // VideoToolbox 可能在回调线程内部产生 autorelease 对象，保留 autoreleasepool 防止泄漏
+    // VideoToolbox may create autoreleased objects inside the callback thread;
+    // keep an autoreleasepool to prevent leaks
     @autoreleasepool {
         auto* decodeInfo = reinterpret_cast<DecodeInfo*>(sourceFrameRefCon);
         auto decoder = reinterpret_cast<VideoHardwareDecoder*>(decompressionOutputRefCon);
@@ -42,7 +43,8 @@ static void decompressionOutputCallback(void* decompressionOutputRefCon,
         CVPixelBufferRef opaque = nullptr;
         do {
             if (isDiscardFrame) {
-                // isDiscard 帧仍需回调给 pipeline，用于 seek 预览和 seek 完成判断
+                // isDiscard frames still must be delivered to the pipeline for seek
+                // preview and seek-completion detection
                 break;
             }
             if (status != noErr) {
@@ -123,7 +125,7 @@ void VideoHardwareDecoder::reset() noexcept {
             videoFormatDescription_ = nullptr;
         }
     }
-    // 先等待并 invalidate 完成后，再设置状态标志
+    // Set the state flags only after waiting and invalidating
     isOpen_ = false;
     isCompleted_ = false;
 }
@@ -162,7 +164,8 @@ Error VideoHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
     auto status = VTDecompressionSessionDecodeFrame(decodeSession_, sampleBuffer,
                                                     kVTDecodeFrame_EnableAsynchronousDecompression,
                                                     reinterpret_cast<void*>(decodeInfo), nullptr);
-    // Apple 文档：decode 返回错误时 callback 不保证被调用，需主动释放 decodeInfo
+    // Per Apple docs, the callback is not guaranteed when decode returns an error,
+    // so decodeInfo must be released explicitly
     if (status != kVTInvalidSessionErr && status != kVTVideoDecoderMalfunctionErr) {
         if (status != noErr) {
             delete decodeInfo;
@@ -170,7 +173,7 @@ Error VideoHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
         return status == noErr ? Error::Success : Error::CodecError;
     }
 
-    // session 异常，释放旧 decodeInfo 并尝试重建 session 后重试
+    // Session error: release the old decodeInfo and retry after recreating the session
     delete decodeInfo;
     LogE("decode session error:{}, recreating", getVTErrorStr(status));
     if (!createDecodeSession()) {
@@ -186,12 +189,13 @@ Error VideoHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
     if (status != noErr) {
         delete retryInfo;
     }
-    // sampleBuffer 由 ScopeGuard 统一释放，无需手动 CFRelease
+    // sampleBuffer is released by the ScopeGuard; no manual CFRelease needed
     return status == noErr ? Error::Success : Error::CodecError;
 }
 
-// 注意：createDecodeSession 不能在 VTDecompressionSession 异步回调线程上调用，否则 reset() 中的
-// VTDecompressionSessionWaitForAsynchronousFrames 会死锁（同步模式下回调和 decode 在同一线程）
+// Note: createDecodeSession must not be called on the VTDecompressionSession async callback
+// thread, otherwise VTDecompressionSessionWaitForAsynchronousFrames in reset() deadlocks
+// (callbacks and decode share a thread in synchronous mode)
 bool VideoHardwareDecoder::createDecodeSession() noexcept {
     reset();
     auto config = std::dynamic_pointer_cast<VideoDecoderConfig>(config_);
@@ -201,7 +205,7 @@ bool VideoHardwareDecoder::createDecodeSession() noexcept {
     }
     OSStatus status = noErr;
     if (config->mediaInfo == MEDIA_MIMETYPE_VIDEO_AVC) {
-        // naluHeaderLength 合法值为 1/2/4，VideoToolbox 不接受 3
+        // Valid naluHeaderLength values are 1/2/4; VideoToolbox rejects 3
         if (config->naluHeaderLength != 1 && config->naluHeaderLength != 2 &&
             config->naluHeaderLength != 4) {
             LogE("invalid naluHeaderLength:{}", config->naluHeaderLength);

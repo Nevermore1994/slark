@@ -17,7 +17,7 @@ constexpr const char* kOESVertexShader = R"(
     }
 )";
 
-// 采样 GL_TEXTURE_2D（由 GLTextureRenderer 离屏渲染后的 FBO color attachment）
+// Samples GL_TEXTURE_2D (FBO color attachment rendered offscreen by GLTextureRenderer)
 constexpr const char* kOESFragmentShader = R"(
     precision mediump float;
     varying vec2 vTexCoord;
@@ -25,8 +25,8 @@ constexpr const char* kOESFragmentShader = R"(
     void main() { gl_FragColor = texture2D(uTexture, vTexCoord); }
 )";
 
-// Vulkan SPIR-V：全屏两个三角形（6顶点），采样 AHardwareBuffer 纹理输出到 swapchain
-// 由 fullscreen.vert / fullscreen.frag 通过 NDK glslc 编译生成
+// Vulkan SPIR-V: fullscreen quad (6 vertices) sampling the AHardwareBuffer texture to the swapchain.
+// Compiled from fullscreen.vert / fullscreen.frag via the NDK glslc.
 static const uint32_t kVertSpirv[] = {
     0x07230203, 0x00010000, 0x000d000a, 0x00000032, 0x00000000, 0x00020011, 0x00000001, 0x0006000b,
     0x00000001, 0x4c534c47, 0x6474732e, 0x3035342e, 0x00000000, 0x0003000e, 0x00000000, 0x00000001,

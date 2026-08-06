@@ -92,7 +92,7 @@ bool AndroidVulkanContext::recreateSwapchain(ANativeWindow* window,
     destroySwapchainResources();
 
     if (window) {
-        // Surface 重建：先销毁旧 surface，再用新 window 创建
+        // Rebuild the surface: destroy the old one, then create from the new window
         vkDestroySurfaceKHR(instance_, surface_, nullptr);
         surface_ = VK_NULL_HANDLE;
         if (!createSurface(window)) {
@@ -227,7 +227,7 @@ bool AndroidVulkanContext::selectPhysicalDevice() noexcept {
 
 bool AndroidVulkanContext::createLogicalDevice() noexcept {
     const float priority = 1.0f;
-    // 用 set 去重，避免为同一 family 创建重复的 QueueCreateInfo
+    // Deduplicate with a set to avoid duplicate QueueCreateInfo for the same family
     const std::set<uint32_t> uniqueFamilies = {graphicsQueueFamily_, presentQueueFamily_};
     std::vector<VkDeviceQueueCreateInfo> queueCIs;
     queueCIs.reserve(uniqueFamilies.size());
@@ -275,7 +275,7 @@ bool AndroidVulkanContext::createSwapchain(int32_t width, int32_t height) noexce
     std::vector<VkSurfaceFormatKHR> formats(fmtCount);
     vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice_, surface_, &fmtCount, formats.data());
 
-    // 优先选 BGRA8_SRGB，否则取第一个
+    // Prefer BGRA8_SRGB, otherwise take the first format
     VkSurfaceFormatKHR chosen = formats[0];
     for (auto& f : formats) {
         if (f.format == VK_FORMAT_B8G8R8A8_SRGB &&
@@ -633,14 +633,14 @@ bool AndroidVulkanContext::initEGLInterop(void* sharedEGLContext) noexcept {
         eglContext_.reset();
         return false;
     }
-    // 创建离屏 pbuffer surface 用于 EGL 上下文激活
+    // Create an offscreen pbuffer surface to activate the EGL context
     auto pbuffer = eglContext_->createOffscreenSurface(1, 1);
     if (!pbuffer) {
         LogE("EGL pbuffer surface creation failed");
         return false;
     }
     eglPbuffer_ = pbuffer;
-    // 绑定到当前线程以便后续 loadEGLExtensions 和 GL 初始化
+    // Bind to the current thread for the subsequent loadEGLExtensions and GL init
     eglContext_->attachContext(eglPbuffer_);
     if (!loadEGLExtensions()) {
         return false;
@@ -733,7 +733,7 @@ bool AndroidVulkanContext::createHWBVkImage() noexcept {
         LogE("vkGetAndroidHardwareBufferPropertiesANDROID failed");
         return false;
     }
-    // 部分驱动对 RGBA8 格式返回 VK_FORMAT_UNDEFINED，fallback 到 R8G8B8A8_UNORM
+    // Some drivers return VK_FORMAT_UNDEFINED for RGBA8; fall back to R8G8B8A8_UNORM
     hwbVkFormat_ =
         (hwbFmtProps.format != VK_FORMAT_UNDEFINED) ? hwbFmtProps.format : VK_FORMAT_R8G8B8A8_UNORM;
     hwbMemoryTypeBits_ = hwbProps.memoryTypeBits;
@@ -814,7 +814,7 @@ bool AndroidVulkanContext::bindHWBMemory() noexcept {
 }
 
 void AndroidVulkanContext::updateHWBDescriptor() noexcept {
-    // clearHWBDescriptor 重置 pool 后需要重新分配 descriptor set
+    // After clearHWBDescriptor resets the pool, the descriptor set must be reallocated
     if (descriptorSet_ == VK_NULL_HANDLE) {
         VkDescriptorSetAllocateInfo ai{};
         ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -847,25 +847,27 @@ void AndroidVulkanContext::doBlitOES(int32_t textureId,
                                      int32_t surfaceH,
                                      int32_t contentW,
                                      int32_t contentH) noexcept {
-    // 与 GLPreviewRenderer 一致的宽高比计算：content 在 surface 内保持比例居中显示
+    // Aspect-ratio math consistent with GLPreviewRenderer: content is centered in the
+    // surface while keeping its aspect ratio
     const float contentAspect = static_cast<float>(contentW) / static_cast<float>(contentH);
     const float surfaceAspect = static_cast<float>(surfaceW) / static_cast<float>(surfaceH);
     float normX, normY;
     if (contentAspect > surfaceAspect) {
-        // content 更宽 → 撑满宽度，上下 letterbox
+        // content is wider -> fill the width, letterbox top and bottom
         normX = 1.0f;
         normY = surfaceAspect / contentAspect;
     } else {
-        // surface 更宽 → 撑满高度，左右 letterbox
+        // surface is wider -> fill the height, letterbox left and right
         normX = contentAspect / surfaceAspect;
         normY = 1.0f;
     }
     const float kVerts[] = {-normX, -normY, normX, -normY, -normX, normY, normX, normY};
 
-    // 根据 rotation_ 计算纹理坐标，与 GLPreviewRenderer 一致
+    // Compute texture coordinates from rotation_, consistent with GLPreviewRenderer.
     // TRIANGLE_STRIP: BL, BR, TL, TR
-    // 注意：GL 坐标系 V 轴朝上(0=底,1=顶)，Vulkan 坐标系 V 轴朝下(0=顶,1=底)。
-    // AHardwareBuffer 经 GL 写入后由 Vulkan shader 采样，需翻转 V 轴补偿坐标系差异。
+    // Note: GL's V axis points up (0=bottom,1=top) while Vulkan's points down (0=top,1=bottom).
+    // The AHardwareBuffer is written by GL and sampled by the Vulkan shader, so the V axis
+    // must be flipped to compensate for the coordinate-system difference.
     float kUVs[8];
     switch (rotation_) {
         case 90:
@@ -944,8 +946,8 @@ void AndroidVulkanContext::blitOESToHardwareBuffer(int32_t textureId,
                                                    int32_t surfaceH,
                                                    int32_t contentW,
                                                    int32_t contentH) noexcept {
-    // 尺寸变化或 Vulkan 侧资源已销毁时重建（hwbImage_ 可能被 destroyHardwareBufferResources
-    // 单独清理）
+    // Rebuild on size changes or when the Vulkan-side resources were destroyed
+    // (hwbImage_ may be cleaned up separately by destroyHardwareBufferResources)
     bool needRebuild = !hardwareBuffer_ || hwbImage_ == VK_NULL_HANDLE;
     if (!needRebuild) {
         AHardwareBuffer_Desc desc{};
@@ -958,10 +960,11 @@ void AndroidVulkanContext::blitOESToHardwareBuffer(int32_t textureId,
     }
 
     doBlitOES(textureId, surfaceW, surfaceH, contentW, contentH);
-    // EGL/GL 写入后 Vulkan 侧 layout 失效，重置为 UNDEFINED 确保下帧 barrier 做完整 transition
+    // After the EGL/GL write the Vulkan layout is stale; reset to UNDEFINED so the next
+    // frame's barrier performs a full transition
     hwbImageLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
 
-    // GL 错误时销毁重建后重试一次
+    // On a GL error, destroy, rebuild and retry once
     GLenum glErr = glGetError();
     if (glErr != GL_NO_ERROR) {
         LogW("blitOESToHardwareBuffer: GL error 0x{:x}, rebuilding and retrying", glErr);
@@ -982,20 +985,22 @@ void AndroidVulkanContext::drawFrame(int32_t textureId, int32_t width, int32_t h
         return;
     }
 
-    // EGL context 是线程绑定的，每帧重新绑定（无需缓存标志，避免多线程/重建后的 stale 状态）
+    // The EGL context is thread-bound; rebind every frame (no cached flag, avoiding stale
+    // state after multi-threading or recreation)
     if (eglContext_) {
         eglContext_->attachContext(eglPbuffer_);
     }
 
-    // 90/270 旋转需要交换宽高，保持内容宽高比
+    // 90/270 rotation swaps width and height to keep the content aspect ratio
     const bool swapWH = (rotation_ == 90 || rotation_ == 270);
     const int32_t renderW = swapWH ? height : width;
     const int32_t renderH = swapWH ? width : height;
 
-    // HWB 用屏幕尺寸，避免 Vulkan 侧拉伸（HWB 与 swapchain 同尺寸）。
-    // doBlitOES 内根据内容尺寸 renderW/renderH 做 letterbox。
+    // Use screen size for the HWB to avoid Vulkan-side stretching (HWB matches the
+    // swapchain size). doBlitOES letterboxes based on the content size renderW/renderH.
     blitOESToHardwareBuffer(textureId, frameWidth_, frameHeight_, renderW, renderH);
-    // blit 失败（hwbImage_ 无效）时跳过本帧渲染，避免向 Vulkan 提交非法 image barrier
+    // Skip this frame when the blit failed (hwbImage_ invalid) to avoid submitting an
+    // illegal image barrier to Vulkan
     if (hwbImage_ == VK_NULL_HANDLE) {
         return;
     }
@@ -1033,8 +1038,8 @@ void AndroidVulkanContext::drawFrame(int32_t textureId, int32_t width, int32_t h
     if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, inFlightFences_[currentFrame_]) !=
         VK_SUCCESS) {
         LogE("vkQueueSubmit failed");
-        // fence 已 reset 但 submit 失败不会 signal，提交空 submit signal fence 防止下帧
-        // WaitForFences 死锁
+        // The fence was reset but a failed submit never signals it; submit an empty
+        // submit to signal the fence and avoid a next-frame WaitForFences deadlock
         vkQueueWaitIdle(graphicsQueue_);
         VkSubmitInfo emptySubmit{};
         emptySubmit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1098,7 +1103,7 @@ void AndroidVulkanContext::renderHardwareBufferToSwapchain(uint32_t imageIndex) 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1,
                             &descriptorSet_, 0, nullptr);
-    vkCmdDraw(cmd, 6, 1, 0, 0);  // 全屏两个三角形
+    vkCmdDraw(cmd, 6, 1, 0, 0);  // fullscreen quad, two triangles
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
 }
@@ -1173,8 +1178,9 @@ void AndroidVulkanContext::clearHWBDescriptor() noexcept {
     if (descriptorPool_ == VK_NULL_HANDLE) {
         return;
     }
-    // hwbImageView_ 已销毁，reset pool 使 descriptor set 回到未绑定状态，避免悬空引用
-    // vkUpdateDescriptorSets 写入 VK_NULL_HANDLE imageView 违反 Vulkan spec
+    // hwbImageView_ is destroyed; resetting the pool unbinds the descriptor set, avoiding
+    // a dangling reference (vkUpdateDescriptorSets with a VK_NULL_HANDLE imageView violates
+    // the Vulkan spec)
     vkResetDescriptorPool(device_, descriptorPool_, 0);
     descriptorSet_ = VK_NULL_HANDLE;
 }

@@ -27,7 +27,7 @@ std::string getAppPath(const std::string& methodName) noexcept {
         return {};
     }
 
-    // 调用 Context.methodName() -> java.io.File
+    // Call Context.methodName() -> java.io.File
     static constexpr std::string_view kContextClass = JNI::JavaClass::AndroidContext;
     static constexpr std::string_view kFileClass = JNI::JavaClass::JavaFile;
     auto fileObj = JNI::JNICall::call<jobject>(env, context, kContextClass, methodName,
@@ -36,8 +36,8 @@ std::string getAppPath(const std::string& methodName) noexcept {
         return {};
     }
 
-    // 优先使用 getCanonicalPath() 解析真实路径，避免 SELinux 拒绝符号链接访问
-    // 失败时回退到 getPath()
+    // Prefer getCanonicalPath() to resolve the real path, avoiding SELinux denials on
+    // symlink access; fall back to getPath() on failure
     auto canonicalPath = JNI::JNICall::call<std::string>(env, fileObj.get(), kFileClass,
                                                          JNI::JavaMethod::GetCanonicalPath);
     if (!canonicalPath.empty()) {

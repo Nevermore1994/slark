@@ -234,7 +234,8 @@ struct MetalVideoRender : public IVideoRender {
     _isDestructing.store(true);
     [self stop];
     if (_renderQueue) {
-        // 用 async + 强引用自持有，避免主线程 sync(renderQueue) ↔ renderQueue sync(main) 死锁
+        // Use async + a strong self-reference to avoid the main-thread sync(renderQueue) <->
+        // renderQueue sync(main) deadlock
         dispatch_queue_t q = _renderQueue;
         __block RenderMetalView* strongSelf = self;
         dispatch_async(q, ^{
@@ -358,8 +359,8 @@ struct MetalVideoRender : public IVideoRender {
         LogE("Metal is not supported on this device");
         return NO;
     }
-    // layer.device 必须在主线程设置，但 setupMetal 在 renderQueue 上执行，用 dispatch_async
-    // 避免死锁
+    // layer.device must be set on the main thread, but setupMetal runs on the renderQueue;
+    // use dispatch_async to avoid a deadlock
     id<MTLDevice> device = _device;
     dispatch_async(dispatch_get_main_queue(), ^{
       CAMetalLayer* layer = static_cast<CAMetalLayer*>(self.layer);

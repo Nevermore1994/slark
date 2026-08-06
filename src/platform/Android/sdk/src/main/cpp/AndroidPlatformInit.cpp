@@ -24,10 +24,10 @@ namespace slark {
 
 namespace {
 
-// Android 系统 CA 证书目录
+// Android system CA certificate directory
 constexpr const char* kSystemCaDir = "/system/etc/security/cacerts";
 
-// 从 Android 系统 CA 目录加载所有证书到 SSL_CTX
+// Load all certificates from the Android system CA directory into the SSL_CTX
 void loadAndroidSystemCerts(SSL_CTX* ctx) {
     DIR* dir = opendir(kSystemCaDir);
     if (!dir) {
@@ -47,7 +47,7 @@ void loadAndroidSystemCerts(SSL_CTX* ctx) {
     char path[PATH_MAX];
 
     while ((entry = readdir(dir)) != nullptr) {
-        // Android CA 证书文件以数字命名（hash.0）
+        // Android CA files are named by hash (hash.0)
         if (entry->d_name[0] == '.') {
             continue;
         }
@@ -64,7 +64,7 @@ void loadAndroidSystemCerts(SSL_CTX* ctx) {
             continue;
         }
 
-        // Android 系统证书可能有多种格式，尝试 PEM 和 DER
+        // Android system certs may come in several formats; try PEM and DER
         X509* cert = PEM_read_X509(fp, nullptr, nullptr, nullptr);
         if (!cert) {
             rewind(fp);
@@ -106,8 +106,8 @@ struct AndroidPlatformRegistrar {
         registry.registerDecoderInfo(DecoderType::VideoHardwareDecoder,
                                      VideoHardwareDecoder::info());
 
-        // 配置 HTTPS CA 证书：从 Android 系统证书目录加载
-        // SSLManager::shareContext() 在首次 SSL 连接时调用 configContext
+        // Configure HTTPS CA certs: loaded from the Android system certificate directory.
+        // SSLManager::shareContext() calls configContext on the first SSL connection.
         http::HttpsHelper::configContext = [](http::SSLContextPtr& ctx) {
             loadAndroidSystemCerts(ctx.get());
         };

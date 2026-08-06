@@ -12,7 +12,7 @@
 
 namespace slark {
 
-// PlayerState 枚举名称映射表，与 C++ 枚举、Kotlin 枚举一一对应
+// PlayerState enum name mapping, one-to-one with the C++ and Kotlin enums
 inline constexpr const char* kPlayerStateNames[] = {
     "NotInited",     // 0
     "Initializing",  // 1
@@ -29,11 +29,11 @@ inline constexpr const char* kPlayerStateNames[] = {
 
 constexpr size_t kPlayerStateCount = std::size(kPlayerStateNames);
 
-// 编译期校验：名称数组长度必须与枚举值数量一致
+// Compile-time check: the name array length must match the enum value count
 static_assert(kPlayerStateCount == static_cast<size_t>(PlayerState::Unknown) + 1,
               "kPlayerStateNames size must match PlayerState enum count");
 
-// PlayerEvent 枚举名称映射表，与 C++ 枚举、Kotlin 枚举一一对应
+// PlayerEvent enum name mapping, one-to-one with the C++ and Kotlin enums
 inline constexpr const char* kPlayerEventNames[] = {
     "FirstFrameRendered",  // 0
     "SeekDone",            // 1
@@ -44,7 +44,7 @@ inline constexpr const char* kPlayerEventNames[] = {
 
 constexpr size_t kPlayerEventCount = std::size(kPlayerEventNames);
 
-// 编译期校验：名称数组长度必须与枚举值数量一致
+// Compile-time check: the name array length must match the enum value count
 static_assert(kPlayerEventCount == static_cast<size_t>(PlayerEvent::OnError) + 1,
               "kPlayerEventNames size must match PlayerEvent enum count");
 

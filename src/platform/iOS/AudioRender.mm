@@ -105,7 +105,7 @@ AudioRender::AudioRender(std::shared_ptr<AudioInfo> audioInfo) : IAudioRender(au
                              &renderLatency, &size);
         AudioUnitGetProperty(volumeUnit_, kAudioUnitProperty_Latency, kAudioUnitScope_Global, 0,
                              &volLatency, &size);
-        // 补充 AVAudioSession 硬件 I/O buffer 延迟，获取完整 pipeline 延迟
+        // Add the AVAudioSession hardware I/O buffer latency for the full pipeline latency
         AVAudioSession* session = [AVAudioSession sharedInstance];
         const Float64 hwLatency = session.outputLatency + session.IOBufferDuration;
         auto us = static_cast<int64_t>((volLatency + renderLatency + hwLatency) * 1'000'000.0);
@@ -128,7 +128,7 @@ void AudioRender::play() noexcept {
         LogI("[audio render] start play return:{}", static_cast<uint32_t>(status_.load()));
         return;
     }
-    // MultiChannelMixer 由 RemoteIO 驱动，只需 start RemoteIO
+    // MultiChannelMixer is driven by RemoteIO, so only RemoteIO needs to start
     AudioOutputUnitStart(renderUnit_);
     status_ = RenderStatus::Playing;
     LogI("[audio render] play.");
@@ -143,7 +143,7 @@ void AudioRender::pause() noexcept {
         LogI("[audio render] pause return:{}", static_cast<uint32_t>(status_.load()));
         return;
     }
-    // MultiChannelMixer 由 RemoteIO 驱动，只需 stop RemoteIO
+    // MultiChannelMixer is driven by RemoteIO, so only RemoteIO needs to stop
     AudioOutputUnitStop(renderUnit_);
     status_ = RenderStatus::Pause;
     LogI("[audio render] pause.");
@@ -174,7 +174,7 @@ void AudioRender::stop() noexcept {
     }
     status_ = RenderStatus::Stop;
 
-    // 先停止 RemoteIO，再按 renderUnit -> volumeUnit 顺序 dispose
+    // Stop RemoteIO first, then dispose in renderUnit -> volumeUnit order
     if (renderUnit_) {
         AudioOutputUnitStop(renderUnit_);
         AudioComponentInstanceDispose(renderUnit_);
@@ -190,7 +190,7 @@ void AudioRender::stop() noexcept {
 }
 
 void AudioRender::reset() noexcept {
-    // 平台层无需重置时钟，时钟由 AudioRenderComponent 管理
+    // The platform layer does not reset the clock; AudioRenderComponent manages it
 }
 
 void AudioRender::setVolume(float volume) noexcept {

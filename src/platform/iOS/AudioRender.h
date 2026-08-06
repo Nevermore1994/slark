@@ -35,7 +35,7 @@ class AudioRender : public IAudioRender {
 
     void renderEnd() noexcept override;
 
-    /// 返回 AudioUnit pipeline 延迟（MultiChannelMixer + RemoteIO 之和）
+    /// Return the AudioUnit pipeline latency (MultiChannelMixer + RemoteIO combined)
     [[nodiscard]] Time::TimeDelta getHardwareLatency() noexcept override;
 
  public:
@@ -49,7 +49,7 @@ class AudioRender : public IAudioRender {
  private:
     AudioUnit volumeUnit_ = nullptr;
     AudioUnit renderUnit_ = nullptr;
-    std::atomic<int64_t> latencyUs_{0};  // 单位 µs，定时器写，getHardwareLatency 读
+    std::atomic<int64_t> latencyUs_{0};  // in µs; written by the timer, read by getHardwareLatency
     TimerId timerId_ = TimerId::kInvalidTimerId;
 };
 

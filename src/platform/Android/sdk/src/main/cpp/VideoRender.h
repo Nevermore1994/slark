@@ -50,7 +50,7 @@ class VideoRender : public IVideoRender, public std::enable_shared_from_this<Vid
     /// Called from Kotlin Choreographer.doFrame() via JNI on each VSync beat.
     void onVSync() noexcept;
 
-    /// 返回备份帧的 texture 信息（线程安全），无备份帧时返回 nullptr
+    /// Return the backup frame's texture info (thread-safe), nullptr when no backup frame exists
     TextureRefPtr getBackupTexture() noexcept {
         std::lock_guard lock(mutex_);
         return backupRenderInfo_.texture;

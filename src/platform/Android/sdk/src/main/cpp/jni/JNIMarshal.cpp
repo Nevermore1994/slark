@@ -103,7 +103,7 @@ ByteArrayReference naluBytes(JNIEnv* env,
         return {env, nullptr};
     }
 
-    // 计算跳过已有 header 后的偏移和大小
+    // Compute the offset and size after skipping any existing header
     const uint32_t headerSize = 4;
     uint32_t offset = 0;
     uint32_t size = static_cast<uint32_t>(data.size());
@@ -113,13 +113,13 @@ ByteArrayReference naluBytes(JNIEnv* env,
         size -= headerSize;
     }
 
-    // 创建包含起始码的 NALU 数据
+    // Allocate a NALU buffer that includes the start code
     jbyteArray arr = env->NewByteArray(static_cast<jsize>(size + headerSize));
     if (!arr) {
         return {env, nullptr};
     }
 
-    // NALU 起始码
+    // NALU start code
     constexpr jbyte kNaluHeader[4] = {0x00, 0x00, 0x00, 0x01};
     env->SetByteArrayRegion(arr, 0, headerSize, kNaluHeader);
 

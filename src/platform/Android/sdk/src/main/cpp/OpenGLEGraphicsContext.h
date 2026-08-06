@@ -38,7 +38,7 @@ class OpenGLEGraphicsContext : public IGraphicsContext {
 
     void* nativeContext() noexcept override;
 
-    // 兼容旧接口，直接获取 AndroidEGLContext
+    // Backward-compatible accessor returning the AndroidEGLContext directly
     AndroidEGLContext* eglContext() const noexcept {
         return context_.get();
     }

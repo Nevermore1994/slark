@@ -48,7 +48,7 @@ Error VideoHardwareDecoder::sendPacket(AVFrameRefPtr& frame) noexcept {
             discardPackets_.insert(inputPts);
         }
     }
-    // EOS 被 codec 拒绝（输入队列满）时缓存，等排空输出后重试
+    // Cache EOS rejected by the codec (full input queue); retry after draining outputs
     if (frameInfo->isEndOfStream && res == Error::CodecNotProcessed) {
         pendingEOSFrame_ = frame;
     }
@@ -71,7 +71,7 @@ void VideoHardwareDecoder::retryPendingEOS() noexcept {
         LogI("pending EOS retry success");
         pendingEOSFrame_.reset();
     }
-    // CodecNotProcessed / CodecAgain → 保持 pendingEOSFrame_，下次排空输出后继续重试
+    // CodecNotProcessed / CodecAgain -> keep pendingEOSFrame_ and retry after draining outputs
 }
 
 void VideoHardwareDecoder::receiveDecodedData(DataPtr data,
@@ -93,14 +93,14 @@ void VideoHardwareDecoder::receiveDecodedData(DataPtr data,
         auto frame = std::make_unique<AVFrame>(AVFrameType::Video);
         frame->pts = pts;
         frame->timeScale = 1000000;
-        frame->data = std::move(data);
-        if (discardPackets_.contains(pts)) {
-            frame->isDiscard = true;
-            discardPackets_.erase(pts);
-        }
-        auto videoFrameInfo = std::make_shared<VideoFrameInfo>();
-        videoFrameInfo->format = FrameFormat::MediaCodecByteBuffer;
-        videoFrameInfo->width = videoConfig->width;
+    frame->data = std::move(data);
+    if (discardPackets_.contains(pts)) {
+        frame->isDiscard = true;
+        discardPackets_.erase(pts);
+    }
+    auto videoFrameInfo = std::make_shared<VideoFrameInfo>();
+    videoFrameInfo->format = FrameFormat::MediaCodecByteBuffer;
+    videoFrameInfo->width = videoConfig->width;
         videoFrameInfo->height = videoConfig->height;
         frame->info = std::move(videoFrameInfo);
         LogIThrottle(2000, "video decode output pts:{:.3f}, isDiscard:{}", frame->ptsTime(),

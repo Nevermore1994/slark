@@ -41,11 +41,11 @@ object MediaCodecDecoderPool {
         val pool = decoderPools.getOrPut(type) { LinkedBlockingQueue() }
         if (pool.size < max) {
             try {
-                // 停止后放回池，下次 acquireDecoder 调用 reset() 重新配置
+                // Stop before returning to the pool; the next acquireDecoder reconfigures via reset()
                 decoder.stop()
                 pool.offer(decoder)
             } catch (e: Exception) {
-                // 状态异常时直接释放，不放回池
+                // Abnormal state: release directly instead of returning to the pool
                 SlarkLog.e(LOG_TAG, "stop decoder failed, releasing: ${e.message}")
                 try { decoder.release() } catch (_: Exception) {}
             }

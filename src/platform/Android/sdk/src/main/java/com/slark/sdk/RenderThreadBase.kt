@@ -11,8 +11,9 @@ import android.view.Surface
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-// GL/Vulkan 渲染线程公共生命周期骨架：vsync 驱动、启停、shutdown/join 超时兜底、
-// 旋转/尺寸/表面重建的 handler 编排。backend 特定逻辑由子类实现。
+// Common lifecycle skeleton for the GL/Vulkan render threads: vsync driving, start/stop,
+// shutdown/join timeout fallback, and handler orchestration for rotation/size/surface rebuild.
+// Backend-specific logic is implemented by subclasses.
 abstract class RenderThreadBase(
     protected val surface: Surface,
     protected var width: Int,
@@ -144,7 +145,7 @@ abstract class RenderThreadBase(
             }
             latch.countDown()
         }
-        // 超时 3s 防止 backend fence 阻塞导致 shutdown 卡死
+        // 3s timeout prevents a blocked backend fence from hanging shutdown
         if (!latch.await(3, TimeUnit.SECONDS)) {
             SlarkLog.w(logTag, "shutdown: destroy backend timed out, force quit")
         }

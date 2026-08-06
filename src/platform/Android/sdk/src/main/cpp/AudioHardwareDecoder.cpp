@@ -31,12 +31,12 @@ Error AudioHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
         LogIThrottle(2000, "send audio packet success, pts time:{:.3f}, isEOS:{}", frame->ptsTime(),
                      frame->info->isEndOfStream);
     }
-    // EOS 成功入队：立即标记 completed，不依赖 native 回调
+    // EOS queued successfully: mark completed immediately without relying on a native callback
     if (frame->info->isEndOfStream && res == Error::Success) {
         isCompleted_ = true;
         LogI("audio EOS sent, mark completed");
     }
-    // EOS 被 codec 拒绝（输入队列满）时缓存，等 receiveDecodedData 回调后重试
+    // Cache EOS rejected by the codec (full input queue); retry after receiveDecodedData
     if (frame->info->isEndOfStream && res == Error::CodecNotProcessed) {
         pendingEOSFrame_ = frame;
     }
@@ -59,7 +59,7 @@ void AudioHardwareDecoder::retryPendingEOS() noexcept {
         LogI("pending audio EOS retry success, mark completed");
         pendingEOSFrame_.reset();
     }
-    // CodecNotProcessed / CodecAgain → 保持 pendingEOSFrame_，下次回调后继续重试
+    // CodecNotProcessed / CodecAgain -> keep pendingEOSFrame_ and retry on the next callback
 }
 
 void AudioHardwareDecoder::onDecodedDataReady() noexcept {

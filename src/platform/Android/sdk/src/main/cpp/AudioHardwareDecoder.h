@@ -31,7 +31,7 @@ class AudioHardwareDecoder : public AudioHardwareDecoderBase<AudioHardwareDecode
  private:
     void retryPendingEOS() noexcept;
 
-    // 缓存 sendPacket(EOS) 失败后被 codec 拒绝的 EOS 帧，在 receiveDecodedData 回调后重试
+    // EOS frame cached when sendPacket(EOS) is rejected by the codec, retried in receiveDecodedData
     AVFrameRefPtr pendingEOSFrame_;
 };
 

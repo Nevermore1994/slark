@@ -70,7 +70,8 @@ class AndroidVulkanContext {
     bool bindHWBMemory() noexcept;
     void updateHWBDescriptor() noexcept;
 
-    // surfaceW/surfaceH: HWB/display 尺寸，contentW/contentH: 内容（旋转后）尺寸，用于 letterbox
+    // surfaceW/surfaceH: HWB/display size; contentW/contentH: content size (after rotation),
+    // used for letterboxing
     void blitOESToHardwareBuffer(int32_t textureId,
                                  int32_t surfaceW,
                                  int32_t surfaceH,
@@ -151,7 +152,7 @@ class AndroidVulkanContext {
     GLint oesTexCoordAttr_ = -1;
     GLint oesTexUniform_ = -1;
 
-    // 缓存 EGL/GL 扩展函数指针，避免每帧重复查询
+    // Cache EGL/GL extension function pointers to avoid per-frame lookups
     PFNEGLGETNATIVECLIENTBUFFERANDROIDPROC fnEGLGetNativeClientBuffer_ = nullptr;
     PFNEGLCREATEIMAGEKHRPROC fnEGLCreateImage_ = nullptr;
     PFNEGLDESTROYIMAGEKHRPROC fnEGLDestroyImage_ = nullptr;

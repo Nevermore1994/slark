@@ -120,7 +120,7 @@ void VideoRender::renderFrameComplete(int32_t id) noexcept {
         renderInfos_.erase(textureId);
         auto ptsTime = info.ptsTime;
         videoClock_.setTime(Time::TimePoint::fromSeconds(ptsTime));
-        // 同步更新 ClockSync::videoTime_，确保 AV Sync 正常工作
+        // Sync ClockSync::videoTime_ so A/V sync works correctly
         if (videoTimeUpdater_) {
             videoTimeUpdater_(Time::TimePoint::fromSeconds(ptsTime));
         }

@@ -39,7 +39,8 @@ OSStatus AACDecodeInputDataProc(AudioConverterRef,
         LogE("decode audio frame info is nullptr");
         return kInvalidStatus;
     }
-    // 直接指向输入数据，避免拷贝；AudioConverter 在 callback 返回前同步消费
+    // Point directly at the input data to avoid a copy; AudioConverter consumes it
+    // synchronously before the callback returns
     ioData->mBuffers[0].mDataByteSize = static_cast<UInt32>(dataPtr->length());
     ioData->mBuffers[0].mNumberChannels = audioFrameInfo->channels;
     ioData->mBuffers[0].mData = dataPtr->data();
@@ -67,8 +68,8 @@ static MPEG4ObjectID getAACProfile(uint8_t profile) {
         case static_cast<uint8_t>(AudioProfile::AAC_HE):
             return kMPEG4Object_AAC_SBR;
         case static_cast<uint8_t>(AudioProfile::AAC_HE_SP):
-            // HE-AAC v2 (PS) 通过 mFormatID=kAudioFormatMPEG4AAC_HE_V2 区分，
-            // mFormatFlags 同样填 SBR，iOS SDK 无独立的 PS 枚举值
+            // HE-AAC v2 (PS) is distinguished via mFormatID=kAudioFormatMPEG4AAC_HE_V2;
+            // mFormatFlags also uses SBR, the iOS SDK has no separate PS enum value
             return kMPEG4Object_AAC_SBR;
         default:
             return kMPEG4Object_AAC_LC;
@@ -129,18 +130,19 @@ Error AudioHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
         LogE("decode error, current decode frame is nullptr");
         return Error::CodecError;
     }
-    // 双缓冲交替：move 当前 buffer 给 frame，下一帧使用备用 buffer，避免每帧堆分配
+    // Double-buffer alternation: move the current buffer to the frame and use the spare
+    // next, avoiding a per-frame heap allocation
     auto byteSize = outputData_->mBuffers[0].mDataByteSize;
     outputBuffer_->setSize(byteSize);
     decodingFrame_->data = std::move(outputBuffer_);
-    // 切换到备用 buffer
+    // Switch to the spare buffer
     outputBuffer_ = std::move(spareBuffer_);
     auto bufferCapacity = static_cast<uint64_t>(outputData_->mBuffers[0].mDataByteSize);
     if (!outputBuffer_ || outputBuffer_->capacity() < bufferCapacity) {
         outputBuffer_ = Data::create(bufferCapacity);
     }
     outputData_->mBuffers[0].mData = outputBuffer_->data();
-    // 备用 buffer 延迟创建，在 frame 消费完成后回收为下一帧的备用 buffer
+    // Lazily create the spare buffer; once the frame is consumed it becomes the next spare
     if (!spareBuffer_ || spareBuffer_->capacity() < bufferCapacity) {
         spareBuffer_ = Data::create(bufferCapacity);
     }

@@ -241,7 +241,7 @@ Java_com_slark_sdk_GLRenderThread_rebuildSurface(JNIEnv* env,
     RenderManager_rebuildSurface(env, JNI::FromJVM::str(env, player_id), surface);
 }
 
-/// Choreographer VSync 回调入口：通知 C++ VideoRender 拉取并渲染下一帧
+/// Choreographer VSync callback entry: notifies the C++ VideoRender to pull and render the next frame
 extern "C" JNIEXPORT void JNICALL Java_com_slark_sdk_GLRenderThread_onVSync(JNIEnv* env,
                                                                             jobject /*thiz*/,
                                                                             jstring player_id) {
@@ -279,7 +279,7 @@ Java_com_slark_sdk_VulkanRenderThread_createVulkanContext(JNIEnv* env,
         LogE("createVulkanContext: failed to get ANativeWindow for playerId:{}", playerId);
         return false;
     }
-    // 获取主 EGL 上下文，使 Vulkan 的 EGL interop 上下文与解码器共享纹理
+    // Get the main EGL context so Vulkan's EGL interop context shares textures with the decoder
     auto mainContext = GLContextManager::shareInstance().getMainContext(playerId);
     void* nativeSharedCtx = mainContext ? mainContext->nativeContext() : nullptr;
     auto ctx = std::make_shared<AndroidVulkanContext>();

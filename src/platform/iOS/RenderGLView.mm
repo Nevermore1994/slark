@@ -134,9 +134,9 @@ static const GLfloat kColorConversion709FullRange[] = {
     const GLfloat* _preferredConversion;
     GLfloat _yOffset;
     CVOpenGLESTextureCacheRef _videoTextureCache;
-    CAEAGLLayer* _eaglLayer;  // 主线程 cache，避免 renderQueue→main 的 sync 调用
+    CAEAGLLayer* _eaglLayer;  // cached on the main thread, avoiding renderQueue->main sync calls
 
-    // 实例级 uniform/attribute 位置，避免多实例并存时全局数组互相覆盖
+    // Per-instance uniform/attribute locations, avoiding cross-instance global array clashes
     GLint _uniforms[NUM_UNIFORMS];
     GLuint _attributes[NUM_ATTRIBUTES];
 
@@ -189,8 +189,9 @@ static const GLfloat kColorConversion709FullRange[] = {
     [self stop];
 
     if (_renderQueue) {
-        // 用 async + 强引用自持有，避免主线程 sync(renderQueue) ↔ renderQueue sync(main) 死锁
-        // GL 资源和 preRenderBuffer 必须在 renderQueue 上统一清理
+        // Use async + a strong self-reference to avoid the main-thread sync(renderQueue) <->
+        // renderQueue sync(main) deadlock; GL resources and preRenderBuffer must be cleaned
+        // up on the renderQueue
         dispatch_queue_t q = _renderQueue;
         __strong RenderGLView* strongSelf = self;
         dispatch_async(q, ^{
@@ -353,7 +354,7 @@ static const GLfloat kColorConversion709FullRange[] = {
 - (void)layoutSubviews {
     [super layoutSubviews];
 
-    // 主线程写 _eaglLayer，renderQueue 读，加锁保护竞态
+    // _eaglLayer is written on the main thread and read on the renderQueue; lock the race
     @synchronized(self) {
         _eaglLayer = static_cast<CAEAGLLayer*>(self.layer);
     }
@@ -493,8 +494,9 @@ static const GLfloat kColorConversion709FullRange[] = {
     glGenRenderbuffers(1, &_renderBuffer);
     glBindRenderbuffer(GL_RENDERBUFFER, _renderBuffer);
 
-    // 使用主线程 cache 的 layer，renderbufferStorage 要求 context 为 current，
-    // 此处已在 renderQueue 上 attachContext，直接调用无需切回主线程
+    // Use the layer cached on the main thread. renderbufferStorage requires the context
+    // to be current; it is already attached on the renderQueue here, so no main-thread hop
+    // is needed.
     CAEAGLLayer* layer = nil;
     @synchronized(self) {
         layer = _eaglLayer ?: static_cast<CAEAGLLayer*>(self.layer);
@@ -505,7 +507,7 @@ static const GLfloat kColorConversion709FullRange[] = {
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER,
                                   _renderBuffer);
 
-        // 创建 texture cache（仅在未创建时创建，避免重复创建泄漏）
+        // Create the texture cache only once to avoid leaks from repeated creation
         if (!_videoTextureCache) {
             CVReturn err = CVOpenGLESTextureCacheCreate(kCFAllocatorDefault, NULL, nativeContext,
                                                         NULL, &_videoTextureCache);
@@ -589,7 +591,7 @@ static const GLfloat kColorConversion709FullRange[] = {
     }
 
     [self cleanupTextures];
-    _program->detach();  // 先 detach program，再 detach context
+    _program->detach();  // detach the program before the context
     _context->detachContext();
 }
 
@@ -597,7 +599,7 @@ static const GLfloat kColorConversion709FullRange[] = {
     auto frameWidth = static_cast<GLsizei>(CVPixelBufferGetWidth(pixelBuffer));
     auto frameHeight = static_cast<GLsizei>(CVPixelBufferGetHeight(pixelBuffer));
 
-    // 根据 format type 和 YCbCrMatrix 选择正确的颜色矩阵与 yOffset
+    // Select the correct color matrix and yOffset from the format type and YCbCrMatrix
     bool isFullRange = (CVPixelBufferGetPixelFormatType(pixelBuffer) ==
                         kCVPixelFormatType_420YpCbCr8BiPlanarFullRange);
     _yOffset = isFullRange ? 0.0f : (16.0f / 255.0f);
@@ -618,7 +620,7 @@ static const GLfloat kColorConversion709FullRange[] = {
             isFullRange ? kColorConversion709FullRange : kColorConversion709VideoRange;
     }
 
-    // Y texture
+    // Y plane texture
     glActiveTexture(GL_TEXTURE0);
     CVReturn err = CVOpenGLESTextureCacheCreateTextureFromImage(
         kCFAllocatorDefault, _videoTextureCache, pixelBuffer, NULL, GL_TEXTURE_2D, GL_RED_EXT,
@@ -636,7 +638,7 @@ static const GLfloat kColorConversion709FullRange[] = {
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glUniform1i(_uniforms[UNIFORM_Y], 0);
 
-    // UV texture
+    // UV plane texture
     glActiveTexture(GL_TEXTURE1);
     err = CVOpenGLESTextureCacheCreateTextureFromImage(
         kCFAllocatorDefault, _videoTextureCache, pixelBuffer, NULL, GL_TEXTURE_2D, GL_RG_EXT,

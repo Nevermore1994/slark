@@ -52,8 +52,8 @@ class AudioHardwareDecoder : public IDecoder {
     AVFrameRefPtr decodingFrame_ = nullptr;
     std::unique_ptr<Data> inputData_;
     std::unique_ptr<AudioBufferList> outputData_;
-    DataPtr outputBuffer_;  // 预分配的输出 PCM buffer，跨帧复用
-    DataPtr spareBuffer_;   // 双缓冲备用
+    DataPtr outputBuffer_;  // preallocated output PCM buffer, reused across frames
+    DataPtr spareBuffer_;   // double-buffer spare
 };
 
 }  // namespace slark

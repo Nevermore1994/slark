@@ -11,8 +11,9 @@
 
 namespace slark {
 
-// 音频硬件解码器公共实现：open()/receiveDecodedData() 由基类提供，子类仅需实现
-// decode()/flush() 及可选的数据就绪钩子（如 EOS 重试）。
+// Common audio hardware decoder implementation: open()/receiveDecodedData() are provided
+// by the base class; subclasses only implement decode()/flush() and optional data-ready
+// hooks (e.g. EOS retry).
 template <typename Derived>
 class AudioHardwareDecoderBase : public NativeDecoder,
                                  public std::enable_shared_from_this<Derived> {

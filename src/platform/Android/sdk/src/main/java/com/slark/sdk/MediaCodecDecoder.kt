@@ -111,7 +111,7 @@ class MediaCodecDecoder(
         override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
             SlarkLog.e(LOG_TAG, "codec error: ${e.message}")
             isRunning.set(false)
-            // 唤醒可能阻塞在 outputBufferQueue 的 requestVideoFrame
+            // Wake requestVideoFrame that may be blocked on outputBufferQueue
             outputBufferQueue.offer(-1 to MediaCodec.BufferInfo())
             processCodecError(decoderId, e.errorCode)
         }
@@ -149,7 +149,8 @@ class MediaCodecDecoder(
                         try {
                             codec.releaseOutputBuffer(index, false)
                         } catch (e: Exception) {
-                            // flush 与回调跨线程竞态的最终兜底：buffer 可能在 release 前刚被失效
+                            // Last-resort guard for the flush-vs-callback race: the buffer may
+                            // have just been invalidated before release
                             SlarkLog.e(LOG_TAG, "releaseOutputBuffer error: ${e.message}")
                         }
                     }
@@ -268,7 +269,7 @@ class MediaCodecDecoder(
         val output = outputBufferQueue.poll(waitTime, TimeUnit.MILLISECONDS)
             ?: return packFrameResult(false, isCompleted.get(), 0L)
         val (outputIndex, info) = output
-        // onError 注入的哨兵值，表示解码器已出错
+        // Sentinel injected by onError, indicating the decoder failed
         if (outputIndex < 0) {
             return packFrameResult(false, isCompleted.get(), 0L)
         }
@@ -291,7 +292,8 @@ class MediaCodecDecoder(
             }
             surfaceRef = ref
         }
-        // 用剩余时间等 SurfaceTexture 回调，避免总等待超过 waitTime
+        // Wait for the SurfaceTexture callback with the remaining time, keeping the total
+        // wait within waitTime
         val elapsedMs = (System.nanoTime() - startNs) / 1_000_000L
         val remainMs = (waitTime - elapsedMs).coerceAtLeast(1L)
         val (frameReady, _) = surfaceRef!!.awaitFrame(remainMs)

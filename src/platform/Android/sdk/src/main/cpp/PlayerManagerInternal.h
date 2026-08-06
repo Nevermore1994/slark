@@ -33,7 +33,7 @@ using PlayerObserverManager = Manager<PlayerObserver>;
 
 enum class Action : int32_t { Prepare = 0, Play, Pause, Release };
 
-/// 异步创建解码资源（Share Context 延迟到首次使用时初始化）
+/// Asynchronously create decode resources (Share Context is lazily initialized on first use)
 void asyncCreateDecoderResource(const std::string& playerId) noexcept;
 
 }  // namespace slark
