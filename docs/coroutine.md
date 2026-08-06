@@ -756,7 +756,7 @@ class CancellationToken {
 
 **Q: 为什么 `shared_ptr<State>` 共享状态？**
 - 一个 token 的取消应对所有拷贝生效
-- 例如：`HttpRequest` 有一个 `CancellationToken`，`HttpStream` 通过 `req->cancelToken()` 获取引用
+- 例如：`HttpRequest` 为每次操作创建独立的取消状态，`streamingExecute` 默认绑定该状态
 - 调用 `request_->cancel()` 时，所有正在运行的协程（包括通过 `streamingExecute` 创建的 `AsyncGenerator` 消费者）都应被取消
 
 **Q: 为什么锁外执行回调？**
@@ -1005,7 +1005,7 @@ auto result = co_await AsyncConnect(fd, host, port).timeout(5s);
 
 ```cpp
 auto streamTask = [](auto req, auto info, auto weakStream) -> Coroutine<void> {
-    auto gen = req->streamingExecute(info, req->cancelToken());
+    auto gen = req->streamingExecute(info);
     while (true) {
         auto chunk = co_await gen.next();
         if (!chunk.has_value()) break;
