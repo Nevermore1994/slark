@@ -43,8 +43,8 @@ struct GateFixture {
 TEST(ResumeGateTest, SignalBeforeArmIsCoalesced) {
     GateFixture fx;
     fx.gate->signal();          // Pending -> Signaled
-    EXPECT_FALSE(fx.gate->arm());   // Signaled 状态下 arm 失败
-    EXPECT_FALSE(fx.done());        // 协程未 resume
+    EXPECT_FALSE(fx.gate->arm());
+    EXPECT_FALSE(fx.done());
 }
 
 TEST(ResumeGateTest, ArmThenSignalResumesOnce) {
@@ -78,14 +78,12 @@ TEST(ResumeGateTest, SignalAfterDisarmIsNoop) {
 TEST(ResumeGateTest, SignalBeforeArmAndDisarm) {
     GateFixture fx;
     fx.gate->signal();          // Pending -> Signaled
-    fx.gate->disarm();          // Signaled 不受 disarm 影响
+    fx.gate->disarm();
     EXPECT_FALSE(fx.gate->arm());
     EXPECT_FALSE(fx.done());
 }
 
 TEST(ResumeGateTest, SignalAfterFrameDestroyIsSafe) {
-    // 协程 frame 销毁后 signal 不得崩溃（阶段三 StreamControl 落地后的全局保障，
-    // 当前 CoroutineFrameControl 的 destroyed_ 检查已使该路径安全）
     auto awaiter = std::make_shared<CompletionAwaiter<void>>();
     std::shared_ptr<ResumeGate> gate;
     {

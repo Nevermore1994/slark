@@ -42,30 +42,24 @@ TEST(Timer, loop) {
 }
 
 TEST(Timer, exceptionDoesNotKillThread) {
-    // 异常不应导致 TimerManager 线程终止
-    // 清理之前测试残留的定时器，防止干扰
     TimerManager::shareInstance().clear();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
     std::atomic<int32_t> counter{0};
 
-    // 第一个定时器会抛出异常
     [[maybe_unused]] auto id1 = TimerManager::shareInstance().runAfter(10ms, [&counter]() {
         counter.fetch_add(1);
         throw std::runtime_error("test exception");
     });
 
-    // 第二个定时器在第一个之后执行
     [[maybe_unused]] auto id2 = TimerManager::shareInstance().runAfter(50ms, [&counter]() {
         counter.fetch_add(1);
     });
 
     std::this_thread::sleep_for(200ms);
 
-    // 两个任务都应该执行（异常不应阻止第二个任务）
     EXPECT_EQ(counter.load(), 2);
 
-    // 再添加一个定时器验证 TimerManager 仍然工作
     std::atomic<bool> thirdExecuted{false};
     TimerManager::shareInstance().runAfter(10ms, [&thirdExecuted]() {
         thirdExecuted.store(true);
@@ -74,7 +68,6 @@ TEST(Timer, exceptionDoesNotKillThread) {
     std::this_thread::sleep_for(100ms);
     EXPECT_TRUE(thirdExecuted.load());
 
-    // 清理定时器，避免后续测试被残留回调干扰
     TimerManager::shareInstance().clear();
 }
 

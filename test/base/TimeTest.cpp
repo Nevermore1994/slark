@@ -10,7 +10,6 @@
 
 using namespace slark;
 
-// --- TimeDelta Tests ---
 
 TEST(TimeDelta, DefaultConstruction) {
     Time::TimeDelta td;
@@ -93,7 +92,6 @@ TEST(TimeDelta, Comparison) {
     EXPECT_TRUE(a != b);
 }
 
-// --- TimePoint Tests ---
 
 TEST(TimePoint, DefaultConstruction) {
     Time::TimePoint tp;
@@ -195,7 +193,6 @@ TEST(TimePoint, Comparison) {
     EXPECT_TRUE(a != b);
 }
 
-// --- Time static methods ---
 
 TEST(Time, NowTimeStamp) {
     auto t1 = Time::nowTimeStamp();

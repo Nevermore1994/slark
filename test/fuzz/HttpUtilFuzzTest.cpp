@@ -27,29 +27,21 @@ TEST(HttpUtilFuzzTest, RandomResponseDataDoesNotCrash) {
 
 TEST(HttpUtilFuzzTest, ChunkedEncodingVariants) {
     std::vector<std::string> chunkedInputs = {
-        // 各种合法的 chunked
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nHello\r\n0\r\n\r\n",
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: "
         "chunked\r\n\r\n5\r\nHello\r\n5\r\nWorld\r\n0\r\n\r\n",
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
-        // 带 chunk-extension
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5;ext=1\r\nHello\r\n0\r\n\r\n",
-        // 非法 chunk size
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nG\r\nHello\r\n0\r\n\r\n",
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n-1\r\nHello\r\n0\r\n\r\n",
-        // 截断的 chunked
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nHel",
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\n",
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n",
-        // 尾部额外数据
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: "
         "chunked\r\n\r\n5\r\nHello\r\n0\r\n\r\ntrailer:val\r\n",
-        // chunked 中混合 Content-Length（冲突）
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Length: "
         "5\r\n\r\n5\r\nHello\r\n0\r\n\r\n",
-        // 超大 chunk size
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nFFFFFFF\r\nHello\r\n0\r\n\r\n",
-        // 随机二进制 chunked
         std::string("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n") +
             std::string(100, '\x00') + "\r\n0\r\n\r\n",
     };

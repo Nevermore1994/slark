@@ -11,8 +11,6 @@
 
 using namespace slark;
 
-// 不实际读写文件，只测试 FileStream 的并发状态机操作
-// 注意：open 需要有效文件路径，此处用临时文件
 static std::string createTempFile() {
     char tmp[] = "/tmp/slark_fuzz_XXXXXX";
     auto fd = mkstemp(tmp);

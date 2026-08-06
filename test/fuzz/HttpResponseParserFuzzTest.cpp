@@ -18,7 +18,6 @@ void fuzzFeed(HttpResponseParser& parser, const std::string& data) {
 
 }  // namespace
 
-// 随机乱序 chunk 投喂
 TEST(HttpResponseParserFuzzTest, RandomChunkedInput) {
     HttpResponseParser::Callbacks callbacks;
     std::string body;
@@ -29,7 +28,6 @@ TEST(HttpResponseParserFuzzTest, RandomChunkedInput) {
 
     std::string response = "HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\n0123456789";
     std::mt19937 rng(42);
-    // 随机切分
     size_t pos = 0;
     while (pos < response.size()) {
         size_t chunk = 1 + (rng() % std::min<size_t>(5, response.size() - pos));
@@ -40,7 +38,6 @@ TEST(HttpResponseParserFuzzTest, RandomChunkedInput) {
     EXPECT_EQ(body, "0123456789");
 }
 
-// 无效 HTTP 响应不崩溃
 TEST(HttpResponseParserFuzzTest, InvalidInputDoesNotCrash) {
     HttpResponseParser::Callbacks callbacks;
     bool errored = false;
@@ -68,7 +65,6 @@ TEST(HttpResponseParserFuzzTest, InvalidInputDoesNotCrash) {
     }
 }
 
-// chunked 编码的随机切分
 TEST(HttpResponseParserFuzzTest, RandomChunkedEncoding) {
     HttpResponseParser::Callbacks callbacks;
     std::string body;
@@ -90,7 +86,6 @@ TEST(HttpResponseParserFuzzTest, RandomChunkedEncoding) {
     EXPECT_EQ(body, "HelloWorld");
 }
 
-// 超大 Content-Length
 TEST(HttpResponseParserFuzzTest, LargeContentLength) {
     HttpResponseParser::Callbacks callbacks;
     bool errored = false;
@@ -104,7 +99,6 @@ TEST(HttpResponseParserFuzzTest, LargeContentLength) {
     EXPECT_FALSE(errored);
 }
 
-// 重复 reset 和 feed
 TEST(HttpResponseParserFuzzTest, RepeatedResetAndFeed) {
     HttpResponseParser::Callbacks callbacks;
     HttpResponseParser parser(callbacks);
@@ -117,7 +111,6 @@ TEST(HttpResponseParserFuzzTest, RepeatedResetAndFeed) {
     }
 }
 
-// 部分 header + 截断
 TEST(HttpResponseParserFuzzTest, TruncatedHeaders) {
     HttpResponseParser::Callbacks callbacks;
     bool errored = false;
@@ -131,7 +124,6 @@ TEST(HttpResponseParserFuzzTest, TruncatedHeaders) {
     parser.onEof();
 }
 
-// 大量重复 header
 TEST(HttpResponseParserFuzzTest, ManyHeaders) {
     HttpResponseParser::Callbacks callbacks;
     int headerCount = 0;

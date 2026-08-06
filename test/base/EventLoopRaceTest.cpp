@@ -32,7 +32,6 @@ struct LoopFixture {
 
     LoopFixture() {
         thread = std::thread([this] { loop.run(); });
-        // 等待 loop 进入 poll
         while (!loop.isRunning()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
@@ -83,7 +82,6 @@ bool waitDone(const Task<void>& task, int32_t timeoutMs = 2000) {
 }  // namespace
 
 TEST(EventLoopRaceTest, RegisterCancelRegisterSameFdSameInterest) {
-    // E1：同一 fd 同 interest 快速 register -> cancel -> register，新 waiter 必须可唤醒
     LoopFixture fx;
     SocketPair sp;
     ASSERT_TRUE(sp.open());
@@ -105,12 +103,11 @@ TEST(EventLoopRaceTest, RegisterCancelRegisterSameFdSameInterest) {
     gate2->arm();
 
     ASSERT_EQ(::write(sp.fds[1], "x", 1), 1);
-    EXPECT_TRUE(waitDone(task2)) << "第二次注册的 waiter 必须能被数据到达唤醒";
+    EXPECT_TRUE(waitDone(task2)) << "a waiter registered the second time must be woken by incoming data";
     reg2.cancel();
 }
 
 TEST(EventLoopRaceTest, UnregisterContinuationWithExpectedGateKeepsNewWaiter) {
-    // E1 变体：unregisterContinuation(expectedGate) 关闭 interest 时不得影响新 waiter
     LoopFixture fx;
     SocketPair sp;
     ASSERT_TRUE(sp.open());
@@ -132,12 +129,11 @@ TEST(EventLoopRaceTest, UnregisterContinuationWithExpectedGateKeepsNewWaiter) {
     gate2->arm();
 
     ASSERT_EQ(::write(sp.fds[1], "y", 1), 1);
-    EXPECT_TRUE(waitDone(task2)) << "expectedGate 注销后新 waiter 必须仍可唤醒";
+    EXPECT_TRUE(waitDone(task2)) << "a new waiter must still wake after expectedGate is unregistered";
     reg2.cancel();
 }
 
 TEST(EventLoopRaceTest, FdCloseThenReuseDoesNotSignalOldWaiter) {
-    // E3：fd close 后被新 socket 复用同一 fd 号，旧 waiter 不得被唤醒
     LoopFixture fx;
     SocketPair sp;
     ASSERT_TRUE(sp.open());
@@ -151,15 +147,12 @@ TEST(EventLoopRaceTest, FdCloseThenReuseDoesNotSignalOldWaiter) {
     fx.loop.setReadable(fdToReuse, true);
     gate1->arm();
 
-    // 关闭并注销旧 fd
     fx.loop.unregisterContinuation(fdToReuse, FdInterest::Read, gate1);
     sp.close();
 
-    // 用新 socketpair 尝试复用同一 fd 号
     SocketPair sp2;
     ASSERT_TRUE(sp2.open());
     if (sp2.fds[0] != fdToReuse) {
-        // fd 号未复用，测试失去意义，跳过（无法强制复用）
         return;
     }
     fx.loop.registerFd(fdToReuse);
@@ -172,14 +165,11 @@ TEST(EventLoopRaceTest, FdCloseThenReuseDoesNotSignalOldWaiter) {
     gate2->arm();
 
     ASSERT_EQ(::write(sp2.fds[1], "z", 1), 1);
-    EXPECT_TRUE(waitDone(task2)) << "复用 fd 后新 waiter 必须正常唤醒";
+    EXPECT_TRUE(waitDone(task2)) << "a new waiter must wake normally after the fd is reused";
     reg2.cancel();
 }
 
 TEST(EventLoopRaceTest, DispatchAndRegisterInterleaving) {
-    // E2：复现 C-03 —— dispatchEvent 取走旧 reg 后、锁外 setReadable(false) 前，
-    // 新 waiter 注册成功但其 interest 被旧路径关闭。
-    // 阶段二 3.2 修复（关闭前复核 slot 归属）后启用。
     LoopFixture fx;
     SocketPair sp;
     ASSERT_TRUE(sp.open());
@@ -199,7 +189,6 @@ TEST(EventLoopRaceTest, DispatchAndRegisterInterleaving) {
         reg.cancel();
     });
 
-    // 持续写数据触发 dispatchEvent，与 registrar 的注册交错
     for (int i = 0; i < 1000; ++i) {
         (void)::write(sp.fds[1], "e", 1);
         std::this_thread::sleep_for(std::chrono::microseconds(100));
@@ -207,7 +196,6 @@ TEST(EventLoopRaceTest, DispatchAndRegisterInterleaving) {
     stop.store(true);
     registrar.join();
 
-    // 修复后：最终注册的 waiter 必须可被数据唤醒
     auto awaiter = std::make_shared<CompletionAwaiter<void>>();
     Task<void> task;
     auto gate = makeGate(task, awaiter);
@@ -215,6 +203,6 @@ TEST(EventLoopRaceTest, DispatchAndRegisterInterleaving) {
     fx.loop.setReadable(sp.fds[0], true);
     gate->arm();
     ASSERT_EQ(::write(sp.fds[1], "w", 1), 1);
-    EXPECT_TRUE(waitDone(task)) << "交错注册后 waiter 的 interest 不得被旧 dispatch 关闭";
+    EXPECT_TRUE(waitDone(task)) << "after interleaved registration, the waiter interest must not be disabled by an old dispatch";
     reg.cancel();
 }

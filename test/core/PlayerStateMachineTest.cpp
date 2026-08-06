@@ -8,7 +8,6 @@
 
 using namespace slark;
 
-// MARK: - isValidTransition 完整矩阵
 
 TEST(PlayerStateMachineTest, NotInitedOnlyToInitializing) {
     EXPECT_TRUE(
@@ -112,7 +111,6 @@ TEST(PlayerStateMachineTest, ErrorOnlyToStop) {
     EXPECT_FALSE(PlayerStateMachine::isValidTransition(PlayerState::Error, PlayerState::Error));
 }
 
-// MARK: - getStateFromEvent
 
 TEST(PlayerStateMachineTest, EventPlayMapsToPlaying) {
     auto result = PlayerStateMachine::getStateFromEvent(EventType::Play);
@@ -148,7 +146,6 @@ TEST(PlayerStateMachineTest, UnknownEventMapsToUnknown) {
 }
 
 TEST(PlayerStateMachineTest, NonStatefulEventsReturnUnexpected) {
-    // Seek、UpdateSetting 等事件不直接映射到状态
     for (auto ev : {EventType::Seek, EventType::UpdateSetting, EventType::UpdateSettingVolume,
                     EventType::UpdateSettingMute, EventType::UpdateSettingEnd}) {
         auto result = PlayerStateMachine::getStateFromEvent(ev);
@@ -156,7 +153,6 @@ TEST(PlayerStateMachineTest, NonStatefulEventsReturnUnexpected) {
     }
 }
 
-// MARK: - getStateFromPipelineEvent
 
 TEST(PlayerStateMachineTest, PipelineDecoderFailedMapsToError) {
     for (auto ev : {PipelineEvent::AudioDecoderFailed, PipelineEvent::VideoDecoderFailed,
@@ -188,10 +184,8 @@ TEST(PlayerStateMachineTest, PipelineNonStatefulEventsReturnUnexpected) {
     }
 }
 
-// MARK: - 状态机链式路径验证
 
 TEST(PlayerStateMachineTest, NormalPlaybackPath) {
-    // NotInited → Initializing → Prepared → Buffering → Playing → Completed → Stop
     using S = PlayerState;
     const std::vector<std::pair<S, S>> path = {
         {S::NotInited, S::Initializing}, {S::Initializing, S::Prepared},
@@ -205,7 +199,6 @@ TEST(PlayerStateMachineTest, NormalPlaybackPath) {
 }
 
 TEST(PlayerStateMachineTest, PauseResumePath) {
-    // Playing → Pause → Playing → Stop
     using S = PlayerState;
     EXPECT_TRUE(PlayerStateMachine::isValidTransition(S::Playing, S::Pause));
     EXPECT_TRUE(PlayerStateMachine::isValidTransition(S::Pause, S::Playing));
@@ -213,17 +206,14 @@ TEST(PlayerStateMachineTest, PauseResumePath) {
 }
 
 TEST(PlayerStateMachineTest, RebufferingPath) {
-    // Playing → Buffering → Playing
     using S = PlayerState;
     EXPECT_TRUE(PlayerStateMachine::isValidTransition(S::Playing, S::Buffering));
     EXPECT_TRUE(PlayerStateMachine::isValidTransition(S::Buffering, S::Playing));
 }
 
 TEST(PlayerStateMachineTest, ErrorRecoveryPath) {
-    // Playing → Error → Stop
     using S = PlayerState;
     EXPECT_TRUE(PlayerStateMachine::isValidTransition(S::Playing, S::Error));
     EXPECT_TRUE(PlayerStateMachine::isValidTransition(S::Error, S::Stop));
-    // Error 不能直接恢复到 Playing
     EXPECT_FALSE(PlayerStateMachine::isValidTransition(S::Error, S::Playing));
 }

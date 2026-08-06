@@ -29,7 +29,6 @@ void resumeAndWait(Task<void>& coro) {
 
 }  // namespace
 
-// HTTP 协程异步请求测试
 TEST(HttpAsyncRequestTest, AsyncExecuteWithCoroutine) {
     auto coro = []() -> Task<void> {
         RequestInfo info;
@@ -150,7 +149,6 @@ TEST(HttpAsyncRequestTest, AsyncExecuteHttps) {
     EXPECT_TRUE(coro.isDone());
 }
 
-// HTTP 回调异步请求测试
 TEST(HttpAsyncRequestTest, CallbackExecute) {
     std::mutex mtx;
     std::condition_variable cv;
@@ -283,7 +281,6 @@ TEST(HttpAsyncRequestTest, CallbackExecuteWithCancel) {
     EXPECT_EQ(storedResponse.error.retCode, slark::Error::Cancelled);
 }
 
-// HTTP 流式请求测试
 TEST(HttpAsyncRequestTest, StreamingExecute) {
     auto coro = []() -> Task<void> {
         RequestInfo info;
@@ -351,7 +348,6 @@ TEST(HttpAsyncRequestTest, StreamingExecuteWithCancellation) {
     EXPECT_TRUE(coro.isDone());
 }
 
-// 并发请求测试
 TEST(HttpAsyncRequestTest, ConcurrentRequests) {
     std::atomic<int32_t> successCount{0};
     std::atomic<int32_t> failCount{0};
@@ -388,7 +384,6 @@ TEST(HttpAsyncRequestTest, ConcurrentRequests) {
     EXPECT_GT(successCount.load(), 0);
 }
 
-// 重定向测试
 TEST(HttpAsyncRequestTest, RedirectFollowing) {
     auto coro = []() -> Task<void> {
         RequestInfo info;
@@ -426,7 +421,6 @@ TEST(HttpAsyncRequestTest, RedirectDisabled) {
     EXPECT_TRUE(coro.isDone());
 }
 
-// 自定义头部测试
 TEST(HttpAsyncRequestTest, CustomHeaders) {
     auto coro = []() -> Task<void> {
         RequestInfo info;
@@ -454,7 +448,6 @@ TEST(HttpAsyncRequestTest, CustomHeaders) {
     EXPECT_TRUE(coro.isDone());
 }
 
-// User-Agent 测试
 TEST(HttpAsyncRequestTest, UserAgent) {
     auto coro = []() -> Task<void> {
         RequestInfo info;
@@ -480,7 +473,6 @@ TEST(HttpAsyncRequestTest, UserAgent) {
     EXPECT_TRUE(coro.isDone());
 }
 
-// 不同 HTTP 方法测试
 TEST(HttpAsyncRequestTest, PutMethod) {
     auto coro = []() -> Task<void> {
         RequestInfo info;
@@ -539,7 +531,6 @@ TEST(HttpAsyncRequestTest, DeleteMethod) {
     EXPECT_TRUE(coro.isDone());
 }
 
-// 状态码测试
 TEST(HttpAsyncRequestTest, NotFoundStatus) {
     auto coro = []() -> Task<void> {
         RequestInfo info;
@@ -574,7 +565,6 @@ TEST(HttpAsyncRequestTest, ServerErrorStatus) {
     EXPECT_TRUE(coro.isDone());
 }
 
-// 集成测试：协程调度器与HTTP请求
 TEST(HttpAsyncRequestIntegrationTest, ScheduledHttpRequest) {
     std::atomic<bool> completed{false};
 

@@ -22,7 +22,6 @@ TEST(ThreadFuzzTest, ConcurrentPostAndStop) {
         while (running.load()) {
             thread->postTask([&taskCount]() {
                 taskCount++;
-                // 模拟随机耗时
                 std::this_thread::yield();
             });
             std::this_thread::yield();
@@ -65,7 +64,6 @@ TEST(ThreadFuzzTest, PostAfterStopNoCrash) {
     thread->start();
     thread->stop();
     thread->join();
-    // stop 后 postTask 不应崩溃
     EXPECT_NO_THROW({
         auto result = thread->postTask([]() {
         });
@@ -89,7 +87,6 @@ TEST(ThreadFuzzTest, RepeatTaskCancellation) {
 
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
 
-    // 取消一半
     for (size_t i = 0; i < ids.size() / 2; ++i) {
         thread->cancelRepeatTask(ids[i]);
     }

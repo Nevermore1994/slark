@@ -52,7 +52,6 @@ TEST(UrlParseTest, BasicUrls) {
 }
 
 TEST(UrlParseTest, IPv6Urls) {
-    // IPv6地址在内部存储时不包含方括号
     TestUrlParsing("http://[2001:db8::1]:8080/path/to/resource", "http", "", "2001:db8::1", "8080",
                    "/path/to/resource", "", "");
     TestUrlParsing("http://[2001:db8::1]:8080/path/to/resource?query=param", "http", "",

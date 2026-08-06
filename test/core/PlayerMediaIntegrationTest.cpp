@@ -1,10 +1,6 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-// 真实媒体文件播放集成测试，面向移动端（Android/iOS）真实解码/渲染链路。
-// 媒体资产：../../test_sample/Sample.mp4（AVC+AAC）、sample-3s.wav（PCM 纯音频）。
-// 环境策略：仅当 prepare 成功且播放时钟能实际推进（具备真实播放能力）时执行强断言，
-//           否则 GTEST_SKIP，保证无能力环境（如 PC 无音频后端/无视频软解）不误报失败。
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -32,17 +28,13 @@ constexpr const char* kMp4File = "Sample.mp4";
 constexpr const char* kWavFile = "sample-3s.wav";
 constexpr const char* kInvalidFile = "not_exist.mp4";
 
-// 媒体文件路径：优先取 SLARK_TEST_MEDIA_DIR（移动端模拟器进程工作目录不可控），
-// 否则回退到 PC 构建的相对路径
 std::string mediaPath(const char* file) {
     const char* dir = std::getenv("SLARK_TEST_MEDIA_DIR");
     std::string base = (dir != nullptr) ? std::string(dir) : "../../test_sample";
     return base + "/" + file;
 }
 
-// MARK: - 事件记录 observer
 
-// 消费型视频渲染：模拟移动端渲染持续拉取视频帧（无 UI 环境下验证视频链路可排空）
 struct MockVideoRender : public IVideoRender {
     void start() noexcept override {
         running_.store(true, std::memory_order_relaxed);
@@ -114,7 +106,6 @@ struct RecordingObserver : public IPlayerObserver {
     std::atomic<double> lastPlayedTime_{0.0};
 };
 
-// MARK: - 辅助
 
 std::unique_ptr<PlayerParams> makeParams(const std::string& path, bool isLoop = false) {
     auto params = std::make_unique<PlayerParams>();
@@ -138,8 +129,6 @@ bool waitUntil(const std::function<bool()>& cond, std::chrono::milliseconds time
     return cond();
 }
 
-// prepare 并等待组件创建完成：state 离开 Prepared（audio/video track 就绪）。
-// iOS 模拟器 AudioUnit 初始化可达数秒，需等其完成后 owner 线程才从慢任务释放。
 PlayerState prepareAndWait(Player& player) {
     player.prepare();
     waitUntil([&player] {
@@ -167,8 +156,6 @@ bool waitForPlayEnd(Player& player,
         timeout);
 }
 
-// 安全销毁：prepareAndWait 已保证组件创建完成，stop 后 owner 线程任务排空较快，
-// 短暂等待后析构避免 ~Impl 在 owner 线程上执行触发断言
 void safeDestroy(Player& player) {
     if (player.state() != PlayerState::NotInited && player.state() != PlayerState::Stop) {
         player.stop();
@@ -181,10 +168,6 @@ void safeDestroy(Player& player) {
 class PlayerMediaIntegrationTest : public ::testing::Test {
  protected:
     static void SetUpTestSuite() {
-        // 探测当前环境播放能力：play 后等待播放时钟真实推进。
-        // 移动端（Android/iOS）音频时钟会推进（wav 3.2s 内可推进至 >0.5s）；
-        // PC 无音频后端时 notifyPlayedTime 恒为 0，判定不可播放并跳过强断言用例。
-        // 不依赖 PlayEnd：PC 上偶发误报 PlayEnd 会导致强断言用例超时假失败。
         auto player = std::make_unique<Player>(makeParams(mediaPath(kWavFile)));
         auto observer = std::make_shared<RecordingObserver>();
         player->addObserver(observer);
@@ -194,7 +177,6 @@ class PlayerMediaIntegrationTest : public ::testing::Test {
             return;
         }
         player->play();
-        // 等待播放时钟真实推进（iOS 模拟器 AudioUnit 初始化较慢，audio track setup 延迟完成）
         s_playable_ = waitUntil(
             [observer] {
                 return observer->lastPlayedTime_.load() > 0.5;
@@ -212,7 +194,6 @@ class PlayerMediaIntegrationTest : public ::testing::Test {
 
 bool PlayerMediaIntegrationTest::s_playable_ = true;
 
-// MARK: - 真实文件 prepare / info
 
 TEST_F(PlayerMediaIntegrationTest, WavPrepareSucceeds) {
     auto player = std::make_unique<Player>(makeParams(mediaPath(kWavFile)));
@@ -250,7 +231,6 @@ TEST_F(PlayerMediaIntegrationTest, MissingFileReportsError) {
     safeDestroy(*player);
 }
 
-// MARK: - 完整播放
 
 TEST_F(PlayerMediaIntegrationTest, WavPlaysToCompletion) {
     if (!PlayerMediaIntegrationTest::isPlayable()) {
@@ -280,7 +260,6 @@ TEST_F(PlayerMediaIntegrationTest, Mp4PlaysToCompletion) {
     auto player = std::make_unique<Player>(makeParams(mediaPath(kMp4File)));
     auto observer = std::make_shared<RecordingObserver>();
     player->addObserver(observer);
-    // 注入消费型视频渲染，使视频帧可排空（无 UI 环境验证完整播放链路）
     player->setRenderImpl(std::make_shared<MockVideoRender>());
     auto state = prepareAndWait(*player);
     if (state == PlayerState::Error) {
@@ -288,7 +267,6 @@ TEST_F(PlayerMediaIntegrationTest, Mp4PlaysToCompletion) {
     }
 
     player->play();
-    // Sample.mp4 时长 64.9s，验证音视频轨道推进即可（PlayEnd 链路由 3s wav 覆盖）
     EXPECT_TRUE(waitUntil(
         [&player] {
             return player->currentPlayedTime() > 3.0;
@@ -301,7 +279,6 @@ TEST_F(PlayerMediaIntegrationTest, Mp4PlaysToCompletion) {
     safeDestroy(*player);
 }
 
-// MARK: - seek / 暂停 / 循环
 
 TEST_F(PlayerMediaIntegrationTest, WavSeekDuringPlayback) {
     if (!PlayerMediaIntegrationTest::isPlayable()) {
@@ -383,7 +360,6 @@ TEST_F(PlayerMediaIntegrationTest, WavLoopRestartsAfterEnd) {
     safeDestroy(*player);
 }
 
-// MARK: - 播放中操作稳定性
 
 TEST_F(PlayerMediaIntegrationTest, RapidSeekDoesNotCrash) {
     if (!PlayerMediaIntegrationTest::isPlayable()) {
@@ -428,7 +404,6 @@ TEST_F(PlayerMediaIntegrationTest, VolumeAndMuteDuringPlayback) {
     safeDestroy(*player);
 }
 
-// MARK: - 事件完整性
 
 TEST_F(PlayerMediaIntegrationTest, ReceivesProgressEvents) {
     if (!PlayerMediaIntegrationTest::isPlayable()) {

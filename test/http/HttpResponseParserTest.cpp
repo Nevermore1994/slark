@@ -54,7 +54,6 @@ class ParserTestHelper {
         parser->feed(reinterpret_cast<const Byte*>(data.data()), data.size());
     }
 
-    // 按固定步长分片喂入，覆盖跨 feed 边界的解析路径
     void feedInSlices(const std::string& data, size_t slice) {
         for (size_t i = 0; i < data.size(); i += slice) {
             auto n = std::min(slice, data.size() - i);
@@ -70,7 +69,6 @@ class ParserTestHelper {
         return parser->hasError();
     }
 
-    // 暴露 parser 供断言状态机细节（state/isHttpError/reset 等）
     HttpResponseParser* rawParser() const {
         return parser.get();
     }
@@ -199,9 +197,6 @@ TEST(HttpResponseParserTest, HeadRequestHasNoBody) {
 }
 
 TEST(HttpResponseParserTest, DISABLED_InformationalAndNoBodyStatusCompleteImmediately) {
-    // 真实缺陷（阶段二 3.4 修复）：无任何 header 的响应（仅状态行 + 空行）
-    // 在 processStatusLine 消费状态行后剩余 "\r\n"，processHeaders 用 find("\r\n\r\n")
-    // 无法识别单空行为结束，卡在 Headers 状态。修复后启用。
     for (const auto& line : {"HTTP/1.1 100 Continue\r\n\r\n", "HTTP/1.1 204 No Content\r\n\r\n",
                              "HTTP/1.1 304 Not Modified\r\n\r\n"}) {
         ParserTestHelper helper;
@@ -219,8 +214,6 @@ TEST(HttpResponseParserTest, DuplicateContentLengthTakesLastValue) {
 }
 
 TEST(HttpResponseParserTest, DISABLED_InvalidContentLengthTrailingCharsFails) {
-    // 真实缺陷（阶段二 3.4 修复）：fromChars("5abc") 解析出 5 而非报错，
-    // 未校验完整消费。修复后启用。
     ParserTestHelper helper;
     helper.feed("HTTP/1.1 200 OK\r\nContent-Length: 5abc\r\n\r\n");
     EXPECT_TRUE(helper.hasError());
@@ -261,7 +254,6 @@ TEST(HttpResponseParserTest, StatusLineWithoutReasonPhraseFails) {
 }
 
 TEST(HttpResponseParserTest, HeaderNameIsLowercasedInStorage) {
-    // C-13：header 名统一小写存储，调用方无需区分大小写
     ParserTestHelper helper;
     helper.feed("HTTP/1.1 200 OK\r\naccept-ranges: bytes\r\nContent-Length: 0\r\n\r\n");
     EXPECT_TRUE(helper.isCompleted());

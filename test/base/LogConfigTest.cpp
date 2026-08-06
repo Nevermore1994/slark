@@ -15,7 +15,6 @@ using namespace slark;
 class LogConfigTest : public ::testing::Test {
  protected:
     void TearDown() override {
-        // 恢复默认配置，避免测试间污染
         setLogConfig(LogConfig{});
     }
 };
@@ -61,12 +60,10 @@ TEST_F(LogConfigTest, PartialSetKeepsDefaults) {
 }
 
 TEST_F(LogConfigTest, MinLogLevelConsistency) {
-    // kMinLogLevelDefault 必须与 LogType::Debug 一致
     EXPECT_EQ(kMinLogLevelDefault, static_cast<int>(LogType::Debug));
 }
 
 TEST_F(LogConfigTest, LogLevelEnumOrder) {
-    // LogType 枚举值必须与 SlarkLogLevel (Android/iOS) 一致
     EXPECT_EQ(static_cast<int>(LogType::Print), 0);
     EXPECT_EQ(static_cast<int>(LogType::Debug), 1);
     EXPECT_EQ(static_cast<int>(LogType::Info), 2);
@@ -99,7 +96,6 @@ TEST_F(LogConfigTest, MaxLogFileCountEdge) {
 }
 
 TEST_F(LogConfigTest, LogFileNamePrefixSemantic) {
-    // logFileName 是前缀，实际文件名为 前缀_时间.log
     LogConfig config;
     config.logFileName = "myapp";
     setLogConfig(config);
@@ -107,7 +103,6 @@ TEST_F(LogConfigTest, LogFileNamePrefixSemantic) {
 }
 
 TEST_F(LogConfigTest, LogDirEmptyUsesDefault) {
-    // 空 logDir 由 LogOutput 内部 fallback 到默认路径
     LogConfig config;
     config.logDir = "";
     setLogConfig(config);
@@ -115,7 +110,6 @@ TEST_F(LogConfigTest, LogDirEmptyUsesDefault) {
 }
 
 TEST_F(LogConfigTest, MinLogLevelFilter) {
-    // 设置 minLogLevel=Error，Debug/Info/Warning 不应写文件
     LogConfig config;
     config.minLogLevel = static_cast<int>(LogType::Error);
     setLogConfig(config);
@@ -123,7 +117,6 @@ TEST_F(LogConfigTest, MinLogLevelFilter) {
 }
 
 TEST_F(LogConfigTest, MaxLogFileSizeZero) {
-    // 0 表示每次写入都会触发轮转（极端场景）
     LogConfig config;
     config.maxLogFileSize = 0;
     setLogConfig(config);

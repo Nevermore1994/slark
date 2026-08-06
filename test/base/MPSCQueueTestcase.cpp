@@ -370,7 +370,6 @@ TEST(MPSCQueueTest, TryPopAllMultiProducer) {
     EXPECT_EQ(unique.size(), kThreads * kItemsPerThread);
 }
 
-// 测试非默认可构造类型
 struct NonDefaultConstructible {
     int value;
 
@@ -392,12 +391,10 @@ struct NonDefaultConstructible {
 };
 
 TEST(MPSCQueueTest, NonDefaultConstructibleType) {
-    // 验证非默认可构造类型可以编译和使用
     MPSCQueue<NonDefaultConstructible> queue;
     queue.push(NonDefaultConstructible(42));
     queue.push(NonDefaultConstructible(100));
 
-    // tryPop 需要默认构造，所以不测试
     auto all = queue.tryPopAll();
     EXPECT_EQ(all.size(), 2u);
     EXPECT_EQ(all[0].value, 42);

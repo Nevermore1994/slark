@@ -149,7 +149,6 @@ TEST(HttpProcessorTest, StreamingGetReturnsChunks) {
 }
 
 TEST(HttpProcessorTest, StreamingFollowsRedirect) {
-    // S1（C-09）：流式路径支持 301/302 跟随，最终到达 200
     RequestInfo info;
     info.url = "http://httpbingo.org/redirect-to?url=/get&status_code=302";
     info.methodType = HttpMethodType::Get;

@@ -42,9 +42,6 @@ TEST(RedirectPolicyTest, ShouldRedirectWithValidCode) {
 }
 
 TEST(RedirectPolicyTest, ShouldNotRedirectWithoutLocation) {
-    // 修复（C-09）：shouldRedirect 仅判定状态码，Location 是否存在由调用方
-    // extractRedirectLocation 校验；无 Location 时 processStreaming 不应跟随。
-    // 本用例验证：仅状态码时 shouldRedirect 返回 true 但 Location 提取为空。
     RedirectPolicy policy;
     HttpResponse resp;
     resp.statusCode = HttpStatusCode::Found;

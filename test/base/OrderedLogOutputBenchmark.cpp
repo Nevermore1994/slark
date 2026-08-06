@@ -52,7 +52,6 @@ static void cleanBenchDir() {
     }
 }
 
-// 带序列号的日志条目
 struct SequencedLogEntry {
     uint64_t seqNum = 0;
     DataPtr data;
@@ -62,7 +61,6 @@ struct SequencedLogEntry {
     }
 };
 
-// Baseline: 每次 write 加锁
 class BaselineLogOutput {
  public:
     BaselineLogOutput() {
@@ -97,7 +95,6 @@ class BaselineLogOutput {
     Synchronized<std::unique_ptr<Writer>> writer_;
 };
 
-// thread_local 缓冲（无序）
 class UnorderedThreadLocalLogOutput {
     static constexpr uint64_t kBufferCapacity = 8 * 1024;
 
@@ -185,12 +182,9 @@ class UnorderedThreadLocalLogOutput {
     Synchronized<std::unique_ptr<Writer>> writer_;
 };
 
-// thread_local 缓冲 + 全局序列号 + 后台排序写入
 class OrderedThreadLocalLogOutput {
     static constexpr uint64_t kBufferCapacity = 8 * 1024;
-    // 排序窗口：积累一定数量的条目后排序写入
     static constexpr uint64_t kSortWindowSize = 256;
-    // 排序线程最大等待时间
     static constexpr auto kFlushInterval = std::chrono::milliseconds(10);
 
     struct SequencedEntry {
@@ -241,7 +235,6 @@ class OrderedThreadLocalLogOutput {
         writer_.withLock([](auto& w) {
             w = std::make_unique<Writer>();
         });
-        // 启动后台排序线程
         sortThread_ = std::thread(&OrderedThreadLocalLogOutput::sortAndWriteLoop, this);
     }
 
@@ -265,7 +258,6 @@ class OrderedThreadLocalLogOutput {
     void flush() noexcept {
         auto& buf = getThreadBuffer();
         buf.flush();
-        // 通知排序线程
         {
             std::lock_guard<std::mutex> lock(sortMutex_);
             sortCond_.notify_one();
@@ -314,7 +306,6 @@ class OrderedThreadLocalLogOutput {
         }
     }
 
-    // 后台排序线程：按序列号排序后写入
     void sortAndWriteLoop() {
         while (true) {
             std::vector<SequencedEntry> batch;
@@ -337,12 +328,10 @@ class OrderedThreadLocalLogOutput {
                 continue;
             }
 
-            // 按序列号排序
             std::ranges::sort(batch, [](const SequencedEntry& a, const SequencedEntry& b) {
                 return a.seqNum < b.seqNum;
             });
 
-            // 合并为一个大 Data 批量写入
             uint64_t totalSize = 0;
             for (const auto& entry : batch) {
                 totalSize += entry.data.length();
@@ -365,7 +354,6 @@ class OrderedThreadLocalLogOutput {
     std::atomic<uint64_t> globalSeq_;
     Synchronized<std::unique_ptr<Writer>> writer_;
 
-    // 排序线程相关
     std::thread sortThread_;
     std::mutex sortMutex_;
     std::condition_variable sortCond_;
@@ -632,7 +620,6 @@ TEST_F(OrderedLogOutputBenchmark, Summary_ThreeWay) {
 
     std::print("\n");
 
-    // 额外输出 P99 延迟对比
     std::print("{:<8} | {:<16} {:<16} {:<16}\n", "Threads", "Base P99(ns)", "Unord P99(ns)",
                "Ord P99(ns)");
     std::print("{}\n", std::string(80, '-'));

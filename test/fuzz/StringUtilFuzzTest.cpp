@@ -57,7 +57,6 @@ TEST(StringUtilFuzzTest, HighAsciiAndBinary) {
 }
 
 TEST(StringUtilFuzzTest, FromCharsEdgeCases) {
-    // fromChars 的边界情况
     std::vector<std::string> inputs = {
         "",
         "-",
@@ -95,7 +94,6 @@ TEST(StringUtilFuzzTest, LongStrings) {
         std::uniform_int_distribution<size_t> lenDist(0, 65536);
         size_t len = lenDist(rng);
         std::string input(len, 'a');
-        // 随机穿插一些特殊字符
         for (size_t j = 0; j < len && j < 100; ++j) {
             input[rng() % len] = static_cast<char>(rng() & 0xFF);
         }

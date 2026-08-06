@@ -1,10 +1,6 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-// Player 对外接口集成测试
-// 测试分两类：
-//   1. 纯防御性保护测试（不依赖 prepare/媒体文件，任何环境均可运行）
-//   2. 生命周期测试（依赖 prepare 后的状态，通过 GTEST_SKIP 在无媒体环境跳过）
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -21,7 +17,6 @@ using namespace slark;
 using ::testing::_;
 using ::testing::AtLeast;
 
-// MARK: - Mock 定义
 
 struct MockPlayerObserver : public IPlayerObserver {
     MOCK_METHOD(void,
@@ -35,7 +30,6 @@ struct MockPlayerObserver : public IPlayerObserver {
     MOCK_METHOD(void, notifyPlayedTime, (std::string_view playerId, double time), (override));
 };
 
-// MARK: - 辅助工厂
 
 static std::unique_ptr<PlayerParams> makeParams(const std::string& path = "/dev/null") {
     auto params = std::make_unique<PlayerParams>();
@@ -48,8 +42,6 @@ static std::unique_ptr<PlayerParams> makeParams(const std::string& path = "/dev/
     return params;
 }
 
-// prepare 后等待状态离开 Initializing，返回最终状态
-// 超时时返回 Error（无媒体文件环境），让调用方的 GTEST_SKIP 生效
 static PlayerState waitForPrepared(Player& player, int32_t maxMs = 500) {
     for (int32_t i = 0; i < maxMs / 10; ++i) {
         auto s = player.state();
@@ -61,7 +53,6 @@ static PlayerState waitForPrepared(Player& player, int32_t maxMs = 500) {
     return PlayerState::Error;
 }
 
-// 安全析构：先 stop 再等待线程退出，避免 Thread 在自身线程中析构
 static void safeDestroy(Player& player) {
     if (player.state() != PlayerState::NotInited && player.state() != PlayerState::Stop) {
         player.stop();
@@ -69,7 +60,6 @@ static void safeDestroy(Player& player) {
     }
 }
 
-// 第一类：纯防御性保护测试（不调用 prepare）
 
 TEST(PlayerIntegrationTest, InitialStateIsNotInited) {
     Player player(makeParams());
@@ -162,10 +152,6 @@ TEST(PlayerIntegrationTest, TwoPlayersHaveDifferentIds) {
     EXPECT_NE(p1.playerId(), p2.playerId());
 }
 
-// 第二类：prepare 后的生命周期测试
-// 这些测试依赖 prepare 后 PlayerImpl 的内部状态。
-// 在无真实媒体文件的环境中，PlayerImpl 会进入 Error 状态，
-// Error 状态下 doStop() 不再在 ownerThread_ 自身线程中调用 stop()，析构安全。
 TEST(PlayerIntegrationTest, PrepareTransitionsOutOfNotInited) {
     Player player(makeParams());
     player.prepare();
@@ -193,7 +179,6 @@ TEST(PlayerIntegrationTest, ObserverReceivesStateNotificationAfterPrepare) {
     player.addObserver(std::weak_ptr<IPlayerObserver>(observer));
     player.prepare();
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
-    // 在无媒体文件环境下，Error 状态下也应收到至少一次状态通知
     safeDestroy(player);
 }
 
@@ -260,7 +245,6 @@ TEST(PlayerIntegrationTest, StopAfterPrepareTransitionsToStop) {
     Player player(makeParams());
     player.prepare();
     auto state = waitForPrepared(player);
-    // Error 状态下 stop 应安全
     if (state == PlayerState::Error) {
         GTEST_SKIP() << "PlayerImpl entered Error state (no media file), skipping stop test";
     }
@@ -286,14 +270,12 @@ TEST(PlayerIntegrationTest, MultiplePrepareCyclesDoNotCrash) {
     }
 }
 
-// 第三类：PlayPipeline 组件级集成测试
 
 TEST(PlayerIntegrationTest, PipelineBuildAndTeardown) {
     Player player(makeParams());
     player.prepare();
     auto state = waitForPrepared(player);
     EXPECT_NE(state, PlayerState::NotInited);
-    // teardown 通过析构触发，safeDestroy 确保安全
     safeDestroy(player);
 }
 

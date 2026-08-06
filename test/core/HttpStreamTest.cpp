@@ -1,8 +1,6 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-// HttpStream owner 线程 + generation 模型集成测试（4.1.7）
-// 使用本地 mock HTTP server（支持 Range/206），不依赖外部网络。
 
 #include <gtest/gtest.h>
 
@@ -29,9 +27,6 @@ namespace {
 
 constexpr uint32_t kMockBodySize = 65536;
 
-// 本地 mock HTTP server：支持 Range 请求（返回 206 + Content-Range），
-// 也支持忽略 Range 返回 200 的路径（用于校验失败测试）。
-// 每连接独立线程处理，避免串行 accept 阻塞。
 class MockHttpServer {
  public:
     ~MockHttpServer() {
@@ -46,7 +41,6 @@ class MockHttpServer {
         if (listenFd_ < 0) {
             return false;
         }
-        // client 关闭连接后 server 继续 send 会触发 SIGPIPE 终止进程
         int noSigpipe = 1;
         ::setsockopt(listenFd_, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, sizeof(noSigpipe));
         int reuse = 1;
@@ -54,7 +48,7 @@ class MockHttpServer {
         sockaddr_in addr{};
         addr.sin_family = AF_INET;
         addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        addr.sin_port = 0;  // 随机端口
+        addr.sin_port = 0;
         if (::bind(listenFd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
             return false;
         }
@@ -104,7 +98,6 @@ class MockHttpServer {
         }
     }
 
-    // 分块发送 body（每块后按 chunkDelayMs_ 休眠），用于慢速传输测试
     void sendBodyChunked(int fd, const char* data, size_t size) {
         constexpr size_t kChunk = 4096;
         size_t sent = 0;
@@ -147,7 +140,6 @@ class MockHttpServer {
             }
         }
 
-        // 解析 Range: bytes=N-
         uint64_t rangeStart = 0;
         bool hasRange = false;
         auto rangePos = request.find("Range: bytes=");
@@ -163,7 +155,6 @@ class MockHttpServer {
 
         std::string body;
         if (hasRange && honorRange_ && rangeStart < kMockBodySize) {
-            // 206 Partial Content
             uint64_t end = kMockBodySize - 1;
             uint64_t bodyLen = kMockBodySize - rangeStart;
             std::string header = "HTTP/1.1 206 Partial Content\r\n"
@@ -183,7 +174,6 @@ class MockHttpServer {
             sendAll(fd, header.data(), header.size());
             sendBodyChunked(fd, body.data(), body.size());
         } else {
-            // 200 OK（忽略 Range）
             body.reserve(kMockBodySize);
             for (uint32_t i = 0; i < kMockBodySize; ++i) {
                 body.push_back(static_cast<char>(i % 251));
@@ -258,7 +248,7 @@ bool waitUntil(const std::function<bool()>& cond, int32_t maxMs = 10000) {
     return cond();
 }
 
-}  // namespace
+}
 
 TEST_F(HttpStreamTest, H1_OpenStartReceivesDataAndCompletes) {
     auto params = makeParams();
@@ -293,10 +283,8 @@ TEST_F(HttpStreamTest, H2_SeekAfterHeaderSetsNewRange) {
     ASSERT_TRUE(stream_->open(params).has_value());
     stream_->start();
 
-    // 等待 header 到达（acceptRanges 解析完成）
     EXPECT_TRUE(waitUntil([&]() { return stream_->info().isSeekable; }));
 
-    // seek 到中间位置后应继续下载并最终完成（position 单调推进到末尾）
     auto seekResult = stream_->seek(32768);
     ASSERT_TRUE(seekResult.has_value());
     EXPECT_EQ(stream_->position(), 32768u);
@@ -305,11 +293,9 @@ TEST_F(HttpStreamTest, H2_SeekAfterHeaderSetsNewRange) {
 }
 
 TEST_F(HttpStreamTest, H2b_SeekWorksWhen206OmitsAcceptRangesHeader) {
-    // 回归：某些服务器 206 响应省略 Accept-Ranges 头（仅 200 响应携带），
-    // 206 + Content-Range 本身即证明支持 Range，seek 不应被拒绝。
     MockHttpServer omitHeaderServer;
-    ASSERT_TRUE(omitHeaderServer.start(/*honorRange=*/true, /*chunkDelayMs=*/0,
-                                       /*emitAcceptRanges=*/false));
+    ASSERT_TRUE(omitHeaderServer.start(true, /*chunkDelayMs=*/0,
+                                       false));
 
     auto params = makeParams();
     params.uri = omitHeaderServer.url();
@@ -322,7 +308,6 @@ TEST_F(HttpStreamTest, H2b_SeekWorksWhen206OmitsAcceptRangesHeader) {
     ASSERT_TRUE(stream->open(params).has_value());
     stream->start();
 
-    // 收到 206 后应判定为可 seek，尽管响应头没有 Accept-Ranges
     EXPECT_TRUE(waitUntil([&]() { return stream->info().isSeekable; }));
 
     auto seekResult = stream->seek(32768);
@@ -334,10 +319,8 @@ TEST_F(HttpStreamTest, H2b_SeekWorksWhen206OmitsAcceptRangesHeader) {
 }
 
 TEST_F(HttpStreamTest, H2c_SequentialFallbackWhenServerIgnoresRange) {
-    // 服务器忽略 Range 返回 200 全量：请求从 0 开始时应降级为顺序播放，
-    // 不报错、正常收满数据，且 isSeekable=false。
     MockHttpServer noRangeServer;
-    ASSERT_TRUE(noRangeServer.start(/*honorRange=*/false));
+    ASSERT_TRUE(noRangeServer.start(false));
 
     auto params = makeParams();
     params.uri = noRangeServer.url();
@@ -363,10 +346,8 @@ TEST_F(HttpStreamTest, H2c_SequentialFallbackWhenServerIgnoresRange) {
 }
 
 TEST_F(HttpStreamTest, H2d_SeekRejectedWhenServerIgnoresRange) {
-    // 服务器忽略 Range：即使首次请求从 0 开始可顺序播放，
-    // seek 仍应被拒绝（能力为 Unsupported）。
     MockHttpServer noRangeServer;
-    ASSERT_TRUE(noRangeServer.start(/*honorRange=*/false));
+    ASSERT_TRUE(noRangeServer.start(false));
 
     auto params = makeParams();
     params.uri = noRangeServer.url();
@@ -379,7 +360,6 @@ TEST_F(HttpStreamTest, H2d_SeekRejectedWhenServerIgnoresRange) {
     ASSERT_TRUE(stream->open(params).has_value());
     stream->start();
 
-    // 等 header 处理完成（能力判定为 Unsupported）后再 seek
     EXPECT_TRUE(waitUntil([&]() { return stream->position() >= kMockBodySize; }));
     auto seekResult = stream->seek(1024);
     EXPECT_FALSE(seekResult.has_value());
@@ -389,9 +369,8 @@ TEST_F(HttpStreamTest, H2d_SeekRejectedWhenServerIgnoresRange) {
 }
 
 TEST_F(HttpStreamTest, H3_PauseResumeResumesFromCommittedPosition) {
-    // 慢速 server（每 4KB 延迟 2ms），确保 pause 时仍在传输中
     MockHttpServer slowServer;
-    ASSERT_TRUE(slowServer.start(/*honorRange=*/true, /*chunkDelayMs=*/2));
+    ASSERT_TRUE(slowServer.start(true, /*chunkDelayMs=*/2));
 
     auto params = makeParams();
     params.uri = slowServer.url();
@@ -404,7 +383,6 @@ TEST_F(HttpStreamTest, H3_PauseResumeResumesFromCommittedPosition) {
     ASSERT_TRUE(stream->open(params).has_value());
     stream->start();
 
-    // 等待收到部分数据后 pause
     EXPECT_TRUE(waitUntil([&]() { return totalBytes.load() > 0; }));
     stream->pause();
     EXPECT_EQ(stream->state(), StreamState::Paused);
@@ -412,7 +390,6 @@ TEST_F(HttpStreamTest, H3_PauseResumeResumesFromCommittedPosition) {
     EXPECT_GT(pausedPos, 0u);
     EXPECT_LT(pausedPos, kMockBodySize);
 
-    // resume 后从 committedPosition_ 继续，最终到达末尾
     stream->start();
     EXPECT_TRUE(waitUntil([&]() { return stream->position() >= kMockBodySize; }));
     EXPECT_EQ(stream->state(), StreamState::Completed);
@@ -432,14 +409,13 @@ TEST_F(HttpStreamTest, H4_CloseDuringTransferIsSafe) {
     stream_->start();
 
     EXPECT_TRUE(waitUntil([&]() { return totalBytes.load() > 0; }));
-    stream_->close();  // close 期间在途事件全部丢弃、无 UAF
+    stream_->close();
     EXPECT_EQ(stream_->state(), StreamState::Idle);
 }
 
 TEST_F(HttpStreamTest, H5_RangeValidationRejectsServerIgnoringRange) {
-    // 服务端忽略 Range 返回 200：不得静默当作 Range 成功
     MockHttpServer noRangeServer;
-    ASSERT_TRUE(noRangeServer.start(/*honorRange=*/false));
+    ASSERT_TRUE(noRangeServer.start(false));
 
     auto params = makeParams();
     params.uri = noRangeServer.url();
@@ -459,10 +435,9 @@ TEST_F(HttpStreamTest, H5_RangeValidationRejectsServerIgnoringRange) {
 }
 
 TEST_F(HttpStreamTest, H6_RangeValidationRejectsOutOfRange) {
-    // 请求越界 Range → server 返回 200（无法满足）→ 拒绝
     auto params = makeParams();
     params.uri = server_.url();
-    params.range = Range(kMockBodySize + 100);  // 越界
+    params.range = Range(kMockBodySize + 100);
     std::atomic<bool> errored{false};
     params.onError = [&errored](Error, int32_t) {
         errored = true;

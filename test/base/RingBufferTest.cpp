@@ -12,7 +12,6 @@ namespace slark {
 
 class RingBufferTest : public testing::Test {
  protected:
-    // N=10 会被 bit_ceil 对齐到 16
     RingBuffer<int, 10> buffer;
     static constexpr int TEST_CAPACITY = 16;
 
@@ -43,7 +42,6 @@ TEST_F(RingBufferTest, WriteExactFail) {
     int data[] = {1, 2, 3};
     EXPECT_TRUE(buffer.writeExact(data, 3));
     EXPECT_EQ(buffer.length(), 3u);
-    // 剩余空间不够，写入失败
     EXPECT_FALSE(buffer.writeExact(data, TEST_CAPACITY));
 }
 
@@ -56,7 +54,6 @@ TEST_F(RingBufferTest, ReadExactFail) {
     for (int i = 0; i < 3; ++i) {
         EXPECT_EQ(readData[i], data[i]);
     }
-    // 已空，读取失败
     EXPECT_FALSE(buffer.readExact(readData, 1));
 }
 
@@ -81,7 +78,6 @@ TEST_F(RingBufferTest, WrapAround) {
 }
 
 TEST_F(RingBufferTest, EdgeCases) {
-    // 测试nullptr操作
     EXPECT_FALSE(buffer.writeExact(nullptr, 5));
     EXPECT_FALSE(buffer.readExact(nullptr, 5));
 
@@ -96,15 +92,12 @@ TEST_F(RingBufferTest, EdgeCases) {
     EXPECT_TRUE(buffer.writeExact(fillData.data(), TEST_CAPACITY));
     EXPECT_TRUE(buffer.isFull());
 
-    // 测试向满缓冲区写入
     int extraData[] = {100};
     EXPECT_FALSE(buffer.writeExact(extraData, 1));
 
-    // 测试读取超出可用数据量
     std::vector<int> largeBuffer(TEST_CAPACITY + 5);
     EXPECT_FALSE(buffer.readExact(largeBuffer.data(), static_cast<uint32_t>(largeBuffer.size())));
 
-    // 测试从空缓冲区读取
     buffer.reset();
     EXPECT_FALSE(buffer.readExact(largeBuffer.data(), 5));
 }
@@ -135,7 +128,6 @@ TEST_F(RingBufferTest, FullBuffer) {
     EXPECT_FALSE(buffer.writeExact(&extraData, 1));
 }
 
-// --- SyncRingBuffer Tests ---
 
 class SyncRingBufferTest : public ::testing::Test {
  protected:
@@ -166,7 +158,6 @@ TEST_F(SyncRingBufferTest, WriteExactFail) {
     int data[] = {1, 2, 3};
     EXPECT_TRUE(buffer.writeExact(data, 3));
     EXPECT_EQ(buffer.length(), 3u);
-    // 剩余空间不够，写入失败
     EXPECT_FALSE(buffer.writeExact(data, 1024));
 }
 
@@ -430,7 +421,6 @@ TEST_F(SyncRingBufferTest, ResetDuringUse) {
             }
             if (i % 20 == 0) {
                 buffer.reset();
-                // 无法准确统计 discard 数量，只保证不崩溃
             }
             std::this_thread::yield();
         }
@@ -457,7 +447,6 @@ TEST_F(SyncRingBufferTest, ResetDuringUse) {
     consumer.join();
 }
 
-// --- Span 接口测试 ---
 
 TEST_F(RingBufferTest, SpanWriteAndRead) {
     std::vector<int> data = {10, 20, 30, 40, 50};
@@ -505,7 +494,6 @@ TEST_F(RingBufferTest, PeekEmpty) {
     EXPECT_EQ(buffer.peek(peekData, 3), 0u);
 }
 
-// --- SyncRingBuffer 超时接口测试 ---
 
 TEST_F(SyncRingBufferTest, TimeoutWriteExactImmediateSuccess) {
     int data[] = {1, 2, 3};
@@ -527,4 +515,4 @@ TEST_F(SyncRingBufferTest, CompileTimeCapacity) {
     EXPECT_EQ(srb.capacity(), 16u);
 }
 
-}  // namespace slark
+}

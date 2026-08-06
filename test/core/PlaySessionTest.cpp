@@ -14,12 +14,10 @@
 
 using namespace slark::perf;
 
-// perfMonitorReportSession 的空实现，避免链接到 PerfMonitor 单例
 namespace slark::perf {
-void perfMonitorReportSession(PlaySession& /*session*/) {}
-}  // namespace slark::perf
+void perfMonitorReportSession(PlaySession& ) {}
+}
 
-// MARK: - 构造与基本属性
 
 TEST(PlaySessionTest, ConstructorSetsSessionIdAndUrl) {
     PlaySession session("sess-001", "https://example.com/video.mp4");
@@ -40,7 +38,6 @@ TEST(PlaySessionTest, FirstFrameMsIsNegativeBeforeMarkFirstFrame) {
     EXPECT_DOUBLE_EQ(session.firstFrameMs(), -1.0);
 }
 
-// MARK: - markFirstFrame 幂等性
 
 TEST(PlaySessionTest, MarkFirstFrameRecordsPositiveMs) {
     PlaySession session("sess-004", "file://local.mp4");
@@ -56,7 +53,7 @@ TEST(PlaySessionTest, MarkFirstFrameIsIdempotent) {
     double first = session.firstFrameMs();
 
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    session.markFirstFrame();  // 第二次调用不应更新
+    session.markFirstFrame();
     EXPECT_DOUBLE_EQ(session.firstFrameMs(), first);
 }
 
@@ -76,11 +73,9 @@ TEST(PlaySessionTest, MarkFirstFrameConcurrentOnlyOneWins) {
         t.join();
     }
 
-    // 无论多少线程调用，firstFrameMs 应该是一个合理的正值
     EXPECT_GT(session.firstFrameMs(), 0.0);
 }
 
-// MARK: - finish 幂等性
 
 TEST(PlaySessionTest, FinishSetsIsFinishedAndSuccess) {
     PlaySession session("sess-007", "file://local.mp4");
@@ -92,7 +87,7 @@ TEST(PlaySessionTest, FinishSetsIsFinishedAndSuccess) {
 TEST(PlaySessionTest, FinishIsIdempotent) {
     PlaySession session("sess-008", "file://local.mp4");
     session.finish(true);
-    session.finish(false);  // 第二次调用不应改变 success
+    session.finish(false);
     EXPECT_TRUE(session.isSuccess());
     EXPECT_TRUE(session.isFinished());
 }
@@ -111,11 +106,9 @@ TEST(PlaySessionTest, ElapsedMsStopsAfterFinish) {
     double elapsed1 = session.elapsedMs();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
     double elapsed2 = session.elapsedMs();
-    // finish 后 elapsed 应固定（endUs_ 已记录）
     EXPECT_DOUBLE_EQ(elapsed1, elapsed2);
 }
 
-// MARK: - record 阶段统计
 
 TEST(PlaySessionTest, RecordAccumulatesStats) {
     PlaySession session("sess-011", "file://local.mp4");
@@ -148,22 +141,19 @@ TEST(PlaySessionTest, RecordMultipleStages) {
 
 TEST(PlaySessionTest, RecordDropsWhenExceedsMaxStageCount) {
     PlaySession session("sess-013", "file://local.mp4");
-    // 填满 kMaxStageCount 个阶段
     for (size_t i = 0; i < PlaySession::kMaxStageCount; ++i) {
         session.record("stage_" + std::to_string(i), 100);
     }
-    // 超出上限的阶段应被丢弃
     session.record("overflow_stage", 100);
     auto stats = session.stageStatsSnapshot();
     EXPECT_EQ(stats.size(), PlaySession::kMaxStageCount);
     EXPECT_EQ(stats.find("overflow_stage"), stats.end());
 }
 
-// MARK: - recordFrame 帧统计
 
 TEST(PlaySessionTest, RecordFrameAccumulatesStats) {
     PlaySession session("sess-014", "file://local.mp4");
-    session.recordFrame(16667);  // ~60fps
+    session.recordFrame(16667);
     session.recordFrame(16667);
     session.recordFrame(16667);
 
@@ -179,7 +169,6 @@ TEST(PlaySessionTest, RecordFrameZeroDurationReturnsZeroFps) {
     EXPECT_DOUBLE_EQ(stats.avgFps(), 0.0);
 }
 
-// MARK: - markMilestone
 
 TEST(PlaySessionTest, MarkMilestoneRecordsLabel) {
     PlaySession session("sess-016", "file://local.mp4");
@@ -205,7 +194,6 @@ TEST(PlaySessionTest, MarkMilestoneTimestampIsMonotonic) {
     EXPECT_LE(milestones[0].timestampUs, milestones[1].timestampUs);
 }
 
-// MARK: - onResourceSample
 
 TEST(PlaySessionTest, ResourceSampleAccumulatesStats) {
     PlaySession session("sess-018", "file://local.mp4");
@@ -219,7 +207,6 @@ TEST(PlaySessionTest, ResourceSampleAccumulatesStats) {
     EXPECT_EQ(stats.peakRssKB, 150);
 }
 
-// MARK: - PerfStats 单元测试
 
 TEST(PerfStatsTest, RecordUpdatesAllFields) {
     PerfStats stats;
@@ -239,7 +226,6 @@ TEST(PerfStatsTest, AvgMsIsZeroWhenNoRecords) {
     EXPECT_DOUBLE_EQ(stats.avgMs(), 0.0);
 }
 
-// MARK: - FrameStats 单元测试
 
 TEST(FrameStatsTest, RecordAndDrop) {
     FrameStats stats;
@@ -252,7 +238,6 @@ TEST(FrameStatsTest, RecordAndDrop) {
     EXPECT_NEAR(stats.avgFps(), 60.0, 1.0);
 }
 
-// MARK: - ResourceStats 单元测试
 
 TEST(ResourceStatsTest, RecordUpdatesAvgAndPeak) {
     ResourceStats stats;
@@ -266,7 +251,6 @@ TEST(ResourceStatsTest, RecordUpdatesAvgAndPeak) {
     EXPECT_EQ(stats.peakRssKB, 80);
 }
 
-// MARK: - BackpressureConfig 验证
 
 TEST(BackpressureConfigTest, ForLocalIsValid) {
     EXPECT_TRUE(slark::BackpressureConfig::forLocal().isValid());
@@ -282,7 +266,7 @@ TEST(BackpressureConfigTest, ForLiveIsValid) {
 
 TEST(BackpressureConfigTest, InvalidConfigDetected) {
     auto cfg = slark::BackpressureConfig::forNetwork();
-    cfg.demuxLowWatermarkDuration = cfg.demuxHighWatermarkDuration + 1.0;  // 低水位 > 高水位
+    cfg.demuxLowWatermarkDuration = cfg.demuxHighWatermarkDuration + 1.0;
     EXPECT_FALSE(cfg.isValid());
 }
 

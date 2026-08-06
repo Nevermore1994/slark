@@ -14,7 +14,6 @@ using namespace slark::http;
 
 namespace {
 
-// 手动推进 Task：resume 启动，轮询等待 IO 线程回调恢复协程
 void resumeUntilDone(Task<void>& task, int32_t timeoutMs = 15000) {
     task.resume();
     auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
@@ -25,10 +24,8 @@ void resumeUntilDone(Task<void>& task, int32_t timeoutMs = 15000) {
 
 }  // namespace
 
-// 取消协议测试：T1-T3 验证取消穿透 DNS/TCP/TLS（C-06），3.3 修复后启用。
 
 TEST(HttpCancelTest, CancelDuringDnsPhase) {
-    // 预取消 token：DNS 解析应跳过线程池立即返回 null，不进入后续流程
     CancellationToken token;
     token.cancel();
 
@@ -52,7 +49,7 @@ TEST(HttpCancelTest, CancelDuringDnsPhase) {
                        std::chrono::steady_clock::now() - start)
                        .count();
     EXPECT_TRUE(task.isDone());
-    EXPECT_LT(elapsed, 2000) << "已取消的 token 不应发起任何网络请求";
+    EXPECT_LT(elapsed, 2000) << "a cancelled token must not start any network request";
 }
 
 TEST(HttpCancelTest, CancelDuringTcpConnectPhase) {
@@ -84,7 +81,7 @@ TEST(HttpCancelTest, CancelDuringTcpConnectPhase) {
                        std::chrono::steady_clock::now() - start)
                        .count();
     EXPECT_TRUE(task.isDone());
-    EXPECT_LT(elapsed, 2000) << "取消应穿透 TCP connect 阶段立即返回";
+    EXPECT_LT(elapsed, 2000) << "cancellation must penetrate TCP connect and return immediately";
 }
 
 TEST(HttpCancelTest, CancelDuringTlsPhase) {
@@ -116,7 +113,7 @@ TEST(HttpCancelTest, CancelDuringTlsPhase) {
                        std::chrono::steady_clock::now() - start)
                        .count();
     EXPECT_TRUE(task.isDone());
-    EXPECT_LT(elapsed, 2000) << "取消应穿透 TLS handshake 阶段立即返回";
+    EXPECT_LT(elapsed, 2000) << "cancellation must penetrate TLS handshake and return immediately";
 }
 
 TEST(HttpCancelTest, CancelAfterHeaderChunkStopsStream) {
@@ -164,7 +161,6 @@ TEST(HttpCancelTest, CancelAndReadTimeoutRaceIsSafe) {
         HttpRequest request;
         auto response = co_await request.asyncExecute(info, token);
 
-        // 取消与超时竞争：结果只能是 Cancelled 或 ConnectionTimeout，不崩溃即可
         EXPECT_TRUE(response.error.retCode == slark::Error::Cancelled ||
                     response.error.retCode == slark::Error::ConnectionTimeout);
     }();

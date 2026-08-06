@@ -14,7 +14,6 @@
 
 using namespace slark;
 
-// MARK: - isNetworkLink
 
 TEST(MediaUtilTest, IsNetworkLinkHttp) {
     EXPECT_TRUE(isNetworkLink("http://example.com/video.mp4"));
@@ -35,7 +34,6 @@ TEST(MediaUtilTest, IsNetworkLinkEdgeCases) {
     EXPECT_TRUE(isNetworkLink("https://a.b"));
 }
 
-// MARK: - isHlsLink
 
 TEST(MediaUtilTest, IsHlsLinkValidM3U8) {
     EXPECT_TRUE(isHlsLink("http://example.com/stream.m3u8"));
@@ -57,7 +55,6 @@ TEST(MediaUtilTest, IsHlsLinkEdgeCases) {
     EXPECT_TRUE(isHlsLink("https://example.com/a.m3u8?x=1"));
 }
 
-// MARK: - getAACSamplingRate
 
 TEST(MediaUtilTest, GetAACSamplingRateKnownIndices) {
     EXPECT_EQ(getAACSamplingRate(0), 96000);
@@ -81,7 +78,6 @@ TEST(MediaUtilTest, GetAACSamplingRateUnknownIndexReturnsDefault) {
     EXPECT_EQ(getAACSamplingRate(-1), 44100);
 }
 
-// MARK: - getAudioProfile
 
 TEST(MediaUtilTest, GetAudioProfileValidProfiles) {
     EXPECT_EQ(getAudioProfile(1), AudioProfile::AAC_MAIN);
@@ -99,26 +95,22 @@ TEST(MediaUtilTest, GetAudioProfileInvalidReturnsAACLC) {
     EXPECT_EQ(getAudioProfile(255), AudioProfile::AAC_LC);
 }
 
-// MARK: - findNaluUnit (AnnexB 起始码解析)
 
 TEST(MediaUtilTest, FindNaluUnitAnnexB4ByteStartCode) {
-    // 00 00 00 01 [nalu data] 00 00 00 01 [next nalu]
     std::vector<uint8_t> data = {0x00, 0x00, 0x00, 0x01, 0x65, 0xAA, 0xBB,
                                  0x00, 0x00, 0x00, 0x01, 0x41, 0xCC};
     DataView view(reinterpret_cast<const Byte*>(data.data()), data.size());
     Range range;
     EXPECT_TRUE(findNaluUnit(view, range));
-    // 起始码后的 nalu 数据：65 AA BB，size 应为 3
     EXPECT_EQ(range.size, 3u);
 }
 
 TEST(MediaUtilTest, FindNaluUnitAnnexB3ByteStartCode) {
-    // 00 00 01 [nalu data] 00 00 01 [next nalu]
     std::vector<uint8_t> data = {0x00, 0x00, 0x01, 0x65, 0xAA, 0x00, 0x00, 0x01, 0x41};
     DataView view(reinterpret_cast<const Byte*>(data.data()), data.size());
     Range range;
     EXPECT_TRUE(findNaluUnit(view, range));
-    EXPECT_EQ(range.size, 2u);  // 65 AA
+    EXPECT_EQ(range.size, 2u);
 }
 
 TEST(MediaUtilTest, FindNaluUnitNoStartCodeReturnsFalse) {
@@ -129,12 +121,11 @@ TEST(MediaUtilTest, FindNaluUnitNoStartCodeReturnsFalse) {
 }
 
 TEST(MediaUtilTest, FindNaluUnitSingleNaluToEnd) {
-    // 只有一个 NALU，没有下一个起始码
     std::vector<uint8_t> data = {0x00, 0x00, 0x00, 0x01, 0x65, 0xAA, 0xBB, 0xCC};
     DataView view(reinterpret_cast<const Byte*>(data.data()), data.size());
     Range range;
     EXPECT_TRUE(findNaluUnit(view, range));
-    EXPECT_EQ(range.size, 4u);  // 65 AA BB CC
+    EXPECT_EQ(range.size, 4u);
 }
 
 TEST(MediaUtilTest, FindNaluUnitEmptyDataReturnsFalse) {
@@ -143,7 +134,6 @@ TEST(MediaUtilTest, FindNaluUnitEmptyDataReturnsFalse) {
     EXPECT_FALSE(findNaluUnit(view, range));
 }
 
-// MARK: - MediaDefs 常量
 
 TEST(MediaDefsTest, MimeTypeStringsAreCorrect) {
     EXPECT_EQ(MEDIA_MIMETYPE_VIDEO_AVC, "video/avc");

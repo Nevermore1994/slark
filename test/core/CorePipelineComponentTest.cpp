@@ -15,7 +15,6 @@
 
 using namespace slark;
 
-// MARK: -BackpressureConfig 测试
 
 TEST(BackpressureConfigTest, ForLocalDefaultsAreValid) {
     auto cfg = BackpressureConfig::forLocal();
@@ -97,23 +96,19 @@ TEST(BackpressureConfigTest, ValidBoundaryStartBufferJustBelowHigh) {
     EXPECT_TRUE(cfg.isValid());
 }
 
-// MARK : -ClockSync 测试
 
 TEST(ClockSyncTest, EvaluateAVSyncRenderWhenDiffWithinThreshold) {
-    // kMinThreshold = 0.04 内 → Render
     EXPECT_EQ(ClockSync::evaluateAVSync(0.0), AVSyncAction::Render);
     EXPECT_EQ(ClockSync::evaluateAVSync(0.039), AVSyncAction::Render);
     EXPECT_EQ(ClockSync::evaluateAVSync(-0.039), AVSyncAction::Render);
 }
 
 TEST(ClockSyncTest, EvaluateAVSyncRenderWhenDiffExceedsMaxThreshold) {
-    // 负 diff 达到 kMaxThreshold(10.0) 以上，视为时钟异常 → Render
     EXPECT_EQ(ClockSync::evaluateAVSync(-10.0), AVSyncAction::Render);
     EXPECT_EQ(ClockSync::evaluateAVSync(-100.0), AVSyncAction::Render);
 }
 
 TEST(ClockSyncTest, EvaluateAVSyncDropWhenVideoLagsAudio) {
-    // 正 diff（视频落后音频）超过阈值但未异常 → Drop（追帧）
     EXPECT_EQ(ClockSync::evaluateAVSync(0.2), AVSyncAction::Drop);
     EXPECT_EQ(ClockSync::evaluateAVSync(1.0), AVSyncAction::Drop);
     EXPECT_EQ(ClockSync::evaluateAVSync(5.0), AVSyncAction::Drop);
@@ -121,38 +116,25 @@ TEST(ClockSyncTest, EvaluateAVSyncDropWhenVideoLagsAudio) {
 }
 
 TEST(ClockSyncTest, EvaluateAVSyncHoldWhenVideoLeadsAudio) {
-    //     负 diff（视频超前音频）超过阈值但未异常 → Hold
     EXPECT_EQ(ClockSync::evaluateAVSync(-0.2), AVSyncAction::Hold);
     EXPECT_EQ(ClockSync::evaluateAVSync(-1.0), AVSyncAction::Hold);
     EXPECT_EQ(ClockSync::evaluateAVSync(-9.99), AVSyncAction::Hold);
 }
 
 TEST(ClockSyncTest, EvaluateAVSyncThresholdBoundary) {
-    //     kMinThreshold = 0.04 的精确边界测试
     EXPECT_EQ(ClockSync::evaluateAVSync(0.039), AVSyncAction::Render);
-    //     刚好在 kMinThreshold(0.04) 内 → Render
     EXPECT_EQ(ClockSync::evaluateAVSync(-0.039), AVSyncAction::Render);
-    //     刚好在 kMinThreshold(0.04) 内 → Render（早到容忍窗口内）
     EXPECT_EQ(ClockSync::evaluateAVSync(0.041), AVSyncAction::Drop);
-    //     刚好超过 kMinThreshold(0.04) → Drop
     EXPECT_EQ(ClockSync::evaluateAVSync(-0.041), AVSyncAction::Hold);
-    //     刚好超过 kMinThreshold(0.04) → Hold
 }
 
 TEST(ClockSyncTest, EvaluateAVSyncWithPlaybackRate) {
-    //     变速播放时阈值随速率缩放
-    //     实际 kMinThreshold = 0.04，2x 下 scaledMinThreshold = 0.08
-    //     diff = 0.07，在 1x 下应 Drop(0.07>0.04)，在 2x 下应 Render(0.07<0.08)
     EXPECT_EQ(ClockSync::evaluateAVSync(0.07, 2.0), AVSyncAction::Render);
 
-    //     diff = 0.25，在 1x 和 2x 下都应 Drop
     EXPECT_EQ(ClockSync::evaluateAVSync(0.25, 2.0), AVSyncAction::Drop);
 
-    //     0.5x 速率下：kMinThreshold* 0.5 = 0.02
-    //     diff = 0.08，在 0.5x 下应 Drop（0.08 > 0.02）
     EXPECT_EQ(ClockSync::evaluateAVSync(0.08, 0.5), AVSyncAction::Drop);
 
-    //     diff = 0.01，在 0.5x 下应 Render（0.01 < 0.02）
     EXPECT_EQ(ClockSync::evaluateAVSync(0.01, 0.5), AVSyncAction::Render);
 }
 
@@ -170,12 +152,9 @@ TEST(ClockSyncTest, SetAndGetPlaybackRate) {
 TEST(ClockSyncTest, PlaybackRateClampedToRange) {
     ClockSync clock;
 
-    //     低于最小值应被忽略
     clock.setPlaybackRate(0.1);
     EXPECT_DOUBLE_EQ(clock.playbackRate(), 1.0);
-    //     仍为默认值
 
-    //     高于最大值应被忽略
     clock.setPlaybackRate(5.0);
     EXPECT_DOUBLE_EQ(clock.playbackRate(), 1.0);
 }
@@ -189,7 +168,6 @@ TEST(ClockSyncTest, PlaybackRateBoundaryValues) {
     clock.setPlaybackRate(2.0);
     EXPECT_DOUBLE_EQ(clock.playbackRate(), 2.0);
 
-    //     刚好等于边界值应被接受
     clock.setPlaybackRate(0.5);
     EXPECT_DOUBLE_EQ(clock.playbackRate(), 0.5);
 
@@ -237,10 +215,8 @@ TEST(ClockSyncTest, ResetClearsTimes) {
     EXPECT_EQ(clock.videoTime(), Time::TimePoint(0));
 }
 
-// MARK : -PlayerStateMachine isValidTransition 补充测试
 
 TEST(PlayerStateMachineCoreTest, AllValidTransitions) {
-    //     完整的状态转换矩阵验证
 
     struct Transition {
         PlayerState from;

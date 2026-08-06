@@ -55,7 +55,6 @@ TEST(Thread, postTask) {
     thread->stop();
 }
 
-// pause 期间投递的任务不执行，start 后才执行
 TEST(Thread, postTaskWhenPaused) {
     std::atomic<int32_t> counter{0};
     auto thread = Thread::create(Util::genRandomName("thread"));
@@ -70,11 +69,11 @@ TEST(Thread, postTaskWhenPaused) {
     ASSERT_TRUE(result.has_value());
 
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    ASSERT_EQ(counter.load(), 0);  // pause 期间不执行
+    ASSERT_EQ(counter.load(), 0);
 
     thread->start();
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    ASSERT_EQ(counter.load(), 1);  // start 后执行
+    ASSERT_EQ(counter.load(), 1);
     thread->stop();
 }
 
@@ -155,8 +154,6 @@ TEST(Thread, postRepeatTask) {
 
     std::lock_guard lock(orderMutex);
     ASSERT_GE(order.size(), 2u);
-    // repeat task 在 start 后首次执行时 lastRunTime=0 会立即到期，
-    // 与 postTask 竞争，不保证顺序，只验证两者都被执行过
     EXPECT_TRUE(std::ranges::find(order, 1) != order.end());
     EXPECT_TRUE(std::ranges::find(order, 2) != order.end());
 }
@@ -233,7 +230,6 @@ TEST(Thread, repeatTaskNoDanglingPointer) {
     SUCCEED();
 }
 
-// pause 期间投递大量任务不会触发唤醒，start 后全部执行
 TEST(Thread, pauseDoesNotWakeOnPostTask) {
     using namespace std::chrono;
     constexpr int32_t kTaskCount = 20;
@@ -253,7 +249,6 @@ TEST(Thread, pauseDoesNotWakeOnPostTask) {
         });
     }
 
-    // 等待足够长时间，确认 pause 期间任务不执行
     std::this_thread::sleep_for(80ms);
     ASSERT_EQ(counter.load(), 0);
 
@@ -263,7 +258,6 @@ TEST(Thread, pauseDoesNotWakeOnPostTask) {
     thread->stop();
 }
 
-// pause 期间 repeatTask 暂停，start 后继续执行
 TEST(Thread, repeatTaskResumesAfterStart) {
     using namespace std::chrono;
     std::atomic<int32_t> counter{0};
@@ -280,11 +274,11 @@ TEST(Thread, repeatTaskResumesAfterStart) {
     ASSERT_GE(countAtPause, 1);
 
     std::this_thread::sleep_for(50ms);
-    ASSERT_EQ(counter.load(), countAtPause);  // pause 期间不增加
+    ASSERT_EQ(counter.load(), countAtPause);
 
     thread->start();
     std::this_thread::sleep_for(35ms);
-    ASSERT_GT(counter.load(), countAtPause);  // start 后继续增加
+    ASSERT_GT(counter.load(), countAtPause);
     thread->stop();
 }
 
@@ -299,7 +293,6 @@ TEST(Thread, startAfterStopIsNoop) {
     ASSERT_TRUE(thread->isExit());
 }
 
-// setThreadName 不影响线程正常执行
 TEST(Thread, setThreadName) {
     std::atomic<int32_t> counter{0};
     auto thread = Thread::create("initial-name");
@@ -316,7 +309,6 @@ TEST(Thread, setThreadName) {
     thread->stop();
 }
 
-// custom loop 模式下 shouldStop/pause/resume 正常工作
 TEST(Thread, createWithLoopShouldStopPauseResume) {
     using namespace std::chrono;
     std::atomic<int> state{0};  // 0=init, 1=running, 2=paused, 3=resumed, 4=stopped
@@ -350,7 +342,6 @@ TEST(Thread, createWithLoopShouldStopPauseResume) {
     ASSERT_EQ(state.load(), 4);
 }
 
-// custom loop 的 drainPendingWork 能消费 postTask
 TEST(Thread, createWithLoopDrainPendingWork) {
     using namespace std::chrono;
     std::atomic<int> counter{0};
@@ -381,25 +372,23 @@ TEST(Thread, createWithLoopDrainPendingWork) {
     ASSERT_TRUE(thread->isExit());
 }
 
-// 没有 postTask 时 drainPendingWork 是空操作
 TEST(Thread, createWithLoopDrainPendingWorkNoop) {
     using namespace std::chrono;
     std::atomic<bool> loopExited{false};
 
     auto thread = Thread::createWithLoop("testNoop", [&](Thread& t) {
         while (!t.shouldStop()) {
-            t.drainPendingWork();  // 空队列，应该快速返回
+            t.drainPendingWork();
             loopExited.store(true);
-            break;  // 只跑一轮
+            break;
         }
     });
 
     std::this_thread::sleep_for(30ms);
     ASSERT_TRUE(loopExited.load());
-    ASSERT_TRUE(thread->isExit());  // loop 已退出，thread 已 stop
+    ASSERT_TRUE(thread->isExit());
 }
 
-// postTask 在 shouldStop() 返回 true 后被拒绝
 TEST(Thread, createWithLoopPostTaskAfterStop) {
     using namespace std::chrono;
     auto thread = Thread::createWithLoop("testPostStop", [&](Thread& t) {
@@ -417,7 +406,6 @@ TEST(Thread, createWithLoopPostTaskAfterStop) {
     ASSERT_FALSE(result.has_value());
 }
 
-// create 模式（无 custom loop）行为不变
 TEST(Thread, createModeStillWorks) {
     std::atomic<int> counter{0};
     auto thread = Thread::create(Util::genRandomName("thread"));
@@ -436,7 +424,6 @@ TEST(Thread, createModeStillWorks) {
     thread->start();
     ASSERT_TRUE(thread->isRunning());
 
-    // 用 latch 确认 thread 已恢复运行
     std::latch latch(1);
     thread->postTask([&]() {
         latch.count_down();
@@ -444,7 +431,6 @@ TEST(Thread, createModeStillWorks) {
     latch.wait();
     ASSERT_EQ(counter.load(), 1);
 
-    // 用 latch 确认恢复后任务可执行，避免固定 sleep 的调度时序依赖
     std::latch secondTaskLatch(1);
     thread->postTask([&]() {
         counter.fetch_add(1);

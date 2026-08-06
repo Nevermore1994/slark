@@ -68,14 +68,10 @@ TEST(M3U8ParserTest, ByteRangeSupport) {
     const auto& segments = parser.playlist()->segments();
     ASSERT_EQ(segments.size(), 3u);
 
-    // #EXT-X-BYTERANGE applies to the following URI (segment)
-    // segment0 has no preceding BYTERANGE
     EXPECT_FALSE(segments[0].byteRange.has_value());
-    // segment1 has #EXT-X-BYTERANGE:1000@200
     EXPECT_TRUE(segments[1].byteRange.has_value());
     EXPECT_EQ(segments[1].byteRange->pos, 200u);
     EXPECT_EQ(segments[1].byteRange->size, 1000u);
-    // segment2 has #EXT-X-BYTERANGE:500 (offset = 200 + 1000 = 1200)
     EXPECT_TRUE(segments[2].byteRange.has_value());
     EXPECT_EQ(segments[2].byteRange->pos, 1200u);
     EXPECT_EQ(segments[2].byteRange->size, 500u);

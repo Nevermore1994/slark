@@ -66,7 +66,6 @@ TEST_F(DnsResolverTest, SecondResolveShouldHitCache) {
     auto elapsed = std::chrono::steady_clock::now() - t0;
 
     EXPECT_NE(second.get(), nullptr);
-    // 缓存命中无需等待 getaddrinfo，应在 10ms 内完成
     EXPECT_LT(elapsed, std::chrono::milliseconds(10));
 }
 
@@ -86,7 +85,6 @@ TEST_F(DnsResolverTest, CacheExpiredAfterTtl) {
 
     ASSERT_NE(runAndWait(*r, "localhost").get(), nullptr);
 
-    // TTL=0 立即过期，第二次应重新走 getaddrinfo
     EXPECT_NE(runAndWait(*r, "localhost").get(), nullptr);
 }
 

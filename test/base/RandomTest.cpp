@@ -109,7 +109,6 @@ TEST(Random, UuidFormat) {
     EXPECT_EQ(id[18], '-');
     EXPECT_EQ(id[23], '-');
 
-    // variant bits: 8, 9, a, b
     char variant = id[19];
     EXPECT_TRUE(variant == '8' || variant == '9' || variant == 'a' || variant == 'b')
         << "Invalid variant: " << variant;

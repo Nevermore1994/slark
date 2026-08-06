@@ -26,7 +26,6 @@ static std::unique_ptr<Buffer> loadFileToBuffer(std::string_view path, uint64_t&
     if (!data || !data->data()) {
         return nullptr;
     }
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     ifs.read(reinterpret_cast<char*>(data->data()), static_cast<std::streamsize>(fileSize));
     data->setSize(fileSize);
 
@@ -53,7 +52,6 @@ TEST(DemuxerRegressionTest, DISABLED_FlvOpenContractReturnsSeekRange) {
 }
 
 TEST(DemuxerRegressionTest, WavOpenContractRequeueProbeData) {
-    // 优先使用 CMake 配置的 TEST_SAMPLE_DIR，否则尝试相对路径
     const char* sampleDir = std::getenv("TEST_SAMPLE_DIR");
     std::string samplePath;
     if (sampleDir) {
@@ -95,10 +93,7 @@ TEST(DemuxerRegressionTest, M3U8ByteRangeAccumulatesOffsetWhenMissingAtSymbol) {
     const auto& segments = parser.playlist()->segments();
     ASSERT_EQ(segments.size(), 2u);
 
-    // #EXT-X-BYTERANGE applies to the following URI (segment)
-    // segment0 has no preceding BYTERANGE
     EXPECT_FALSE(segments[0].byteRange.has_value());
-    // segment1 has #EXT-X-BYTERANGE:1000@200
     EXPECT_TRUE(segments[1].byteRange.has_value());
     EXPECT_EQ(segments[1].byteRange->pos, 200u);
     EXPECT_EQ(segments[1].byteRange->size, 1000u);

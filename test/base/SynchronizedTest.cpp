@@ -169,11 +169,7 @@ TEST(Synchronized, WaitWithCondition) {
     std::atomic<bool> threadDone{false};
 
     std::jthread waiter([&]() {
-        // wait 内部会持有锁，谓词直接访问已锁定的值，不能再调用 withLock
         ready.wait(cond, [&]() -> bool {
-            // 注意：此时 wait 已持有锁，直接访问内部值
-            // 但由于封装，我们需要用另一种方式测试
-            // 这里改用简单的轮询方式测试 wait
             return true;
         });
         threadDone.store(true);
@@ -197,7 +193,6 @@ TEST(Synchronized, ConstWithLock) {
     EXPECT_EQ(result, 42);
 }
 
-// --- AtomicWeakPtr Tests ---
 
 TEST(AtomicWeakPtr, DefaultConstruction) {
     AtomicWeakPtr<int32_t> ptr;
@@ -266,7 +261,6 @@ TEST(AtomicWeakPtr, ConcurrentStoreLoad) {
     });
 }
 
-// --- AtomicSharedPtr Tests ---
 
 TEST(AtomicSharedPtr, DefaultConstruction) {
     AtomicSharedPtr<int32_t> ptr;

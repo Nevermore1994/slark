@@ -19,7 +19,6 @@
 using namespace slark;
 using namespace slark::http;
 
-// URL Tests
 TEST(UrlTest, ParseHttpUrl) {
     Url url("http://example.com/path?query=value#fragment");
     EXPECT_TRUE(url.isValid());
@@ -49,7 +48,6 @@ TEST(UrlTest, ParseInvalidUrl) {
 TEST(UrlTest, ParseIpv6Url) {
     Url url("http://[::1]:8080/path");
     EXPECT_TRUE(url.isValid());
-    // IPv6地址在内部存储时不包含方括号
     EXPECT_EQ(url.host, "::1");
     EXPECT_EQ(url.portNumber(), 8080);
 }
@@ -61,7 +59,6 @@ TEST(UrlTest, ParseUrlWithUserInfo) {
     EXPECT_EQ(url.host, "example.com");
 }
 
-// HttpResponseParser Tests
 class HttpModuleParserTest : public ::testing::Test {
  protected:
     void SetUp() override {
@@ -97,18 +94,15 @@ TEST_F(HttpModuleParserTest, ParseChunkedResponse) {
 }
 
 TEST_F(HttpModuleParserTest, ParseNoContentLengthResponse) {
-    // Response without Content-Length (should use EOF as terminator)
     const char* response = "HTTP/1.1 200 OK\r\n"
                            "Content-Type: text/plain\r\n"
                            "\r\n";
 
     parser_->feed(reinterpret_cast<const Byte*>(response), strlen(response));
 
-    // Without Content-Length or chunked, not completed until EOF
     EXPECT_FALSE(parser_->isCompleted());
     EXPECT_TRUE(parser_->isBodyUnknownLength());
 
-    // Simulate EOF
     parser_->onEof();
     EXPECT_TRUE(parser_->isCompleted());
 }
@@ -136,20 +130,16 @@ TEST_F(HttpModuleParserTest, ParseHeaders) {
     parser_->feed(reinterpret_cast<const Byte*>(response), strlen(response));
 
     EXPECT_EQ(code, HttpStatusCode::NotFound);
-    // 验证头部被正确解析
     EXPECT_FALSE(parser_->hasError());
 }
 
 TEST_F(HttpModuleParserTest, ShouldCloseConnection) {
-    // HTTP/1.0 默认不关闭（需要显式 Connection: close）
     const char* http10 = "HTTP/1.0 200 OK\r\n"
                          "Content-Length: 0\r\n"
                          "\r\n";
     parser_->feed(reinterpret_cast<const Byte*>(http10), strlen(http10));
-    // 实现只检查 Connection: close 头部
     EXPECT_FALSE(parser_->shouldCloseConnection());
 
-    // HTTP/1.1 with Connection: close
     parser_ = std::make_unique<HttpResponseParser>(HttpResponseParser::Callbacks{});
     const char* http11Close = "HTTP/1.1 200 OK\r\n"
                               "Connection: close\r\n"
@@ -158,7 +148,6 @@ TEST_F(HttpModuleParserTest, ShouldCloseConnection) {
     parser_->feed(reinterpret_cast<const Byte*>(http11Close), strlen(http11Close));
     EXPECT_TRUE(parser_->shouldCloseConnection());
 
-    // HTTP/1.1 without Connection: close (keep-alive by default)
     parser_ = std::make_unique<HttpResponseParser>(HttpResponseParser::Callbacks{});
     const char* http11Default = "HTTP/1.1 200 OK\r\n"
                                 "Content-Length: 0\r\n"
@@ -188,7 +177,6 @@ TEST_F(HttpModuleParserTest, Reset) {
     EXPECT_FALSE(parser_->isCompleted());
 }
 
-// HttpUtil Tests
 TEST(HttpUtilTest, BuildGetRequest) {
     RequestInfo info;
     info.url = "http://example.com/path?query=value";
@@ -231,7 +219,6 @@ TEST(HttpUtilTest, BuildRequestWithNoPath) {
     EXPECT_THAT(request, ::testing::HasSubstr("GET / HTTP/1.1"));
 }
 
-// CancellationToken Tests for HTTP
 TEST(CancellationTokenHttpTest, CancelDuringRequest) {
     CancellationToken token;
 
@@ -250,7 +237,6 @@ TEST(CancellationTokenHttpTest, CancelDuringRequest) {
     EXPECT_TRUE(token.isCancelled());
 }
 
-// Type Tests
 TEST(TypeTest, RequestInfoDefaults) {
     RequestInfo info;
     EXPECT_TRUE(info.isAllowRedirect);
@@ -271,9 +257,7 @@ TEST(TypeTest, RequestInfoWithBody) {
 TEST(TypeTest, HttpResponseDefaults) {
     HttpResponse response;
     EXPECT_EQ(response.statusCode, HttpStatusCode::Unknown);
-    // 默认 error.retCode 是 Success，所以 isSuccess 返回 true
     EXPECT_TRUE(response.isSuccess());
-    // statusCode 默认是 Unknown，不是 OK
     EXPECT_FALSE(response.isOk());
 }
 
@@ -305,7 +289,6 @@ TEST(TypeTest, ErrorInfoConstruct) {
     EXPECT_EQ(error.originErrorCode, 5000);
 }
 
-// RedirectPolicy Tests
 TEST(RedirectPolicyTest, ShouldRedirect) {
     RedirectPolicy policy;
 
@@ -317,7 +300,7 @@ TEST(RedirectPolicyTest, ShouldRedirect) {
 
     EXPECT_TRUE(policy.shouldRedirect(response, request, 0));
     EXPECT_TRUE(policy.shouldRedirect(response, request, 5));
-    EXPECT_FALSE(policy.shouldRedirect(response, request, 10));  // max redirect
+    EXPECT_FALSE(policy.shouldRedirect(response, request, 10));
 
     response.statusCode = HttpStatusCode::OK;
     EXPECT_FALSE(policy.shouldRedirect(response, request, 0));
@@ -343,7 +326,6 @@ TEST(RedirectPolicyTest, BuildRedirectRequest) {
     original.methodType = HttpMethodType::Get;
     original.headers["Authorization"] = "Bearer token";
 
-    // 同域重定向：headers 应保留（跨域才剥离）
     auto redirect = RedirectPolicy::buildRedirectRequest(original, "http://example.com/new");
 
     ASSERT_TRUE(redirect.has_value());
@@ -362,12 +344,10 @@ TEST(RedirectPolicyTest, CrossDomainStripsSensitiveHeaders) {
 
     ASSERT_TRUE(redirect.has_value());
     EXPECT_EQ(redirect->url, "http://new.example.com/new");
-    // 跨域应剥离敏感 headers
     EXPECT_TRUE(redirect->headers.find("Authorization") == redirect->headers.end() ||
                 redirect->headers["Authorization"].empty());
 }
 
-// HttpStatusCode Tests
 TEST(HttpStatusCodeTest, InformationalCodes) {
     EXPECT_LT(static_cast<int>(HttpStatusCode::Continue), 200);
     EXPECT_LT(static_cast<int>(HttpStatusCode::SwitchingProtocols), 200);
@@ -400,7 +380,6 @@ TEST(HttpStatusCodeTest, ServerErrorCodes) {
     EXPECT_GE(static_cast<int>(HttpStatusCode::ServiceUnavailable), 500);
 }
 
-// HttpMethodType Tests
 TEST(HttpMethodTypeTest, Values) {
     EXPECT_EQ(static_cast<int>(HttpMethodType::Unknown), 0);
     EXPECT_EQ(static_cast<int>(HttpMethodType::Get), 1);
@@ -411,14 +390,12 @@ TEST(HttpMethodTypeTest, Values) {
     EXPECT_EQ(static_cast<int>(HttpMethodType::Options), 6);
 }
 
-// IPVersion Tests
 TEST(IPVersionTest, Values) {
     EXPECT_EQ(static_cast<int>(IPVersion::V4), 0);
     EXPECT_EQ(static_cast<int>(IPVersion::V6), 1);
     EXPECT_EQ(static_cast<int>(IPVersion::Auto), 2);
 }
 
-// Integration Tests
 TEST(HttpIntegrationTest, UrlAndRequestInfo) {
     RequestInfo info;
     info.url = "https://api.example.com:8443/v1/users?id=123";
@@ -433,7 +410,6 @@ TEST(HttpIntegrationTest, UrlAndRequestInfo) {
     bool keepAlive = true;
     std::string request = Util::buildRequestString(info, url, keepAlive);
     EXPECT_THAT(request, ::testing::HasSubstr("GET /v1/users?id=123 HTTP/1.1"));
-    // Host 头默认不包含端口号（除非是非默认端口且实现需要）
     EXPECT_THAT(request, ::testing::HasSubstr("Host: api.example.com"));
 }
 
@@ -478,7 +454,6 @@ TEST(HttpIntegrationTest, ChunkedResponseParsing) {
 
     HttpResponseParser parser(std::move(callbacks));
 
-    // Feed in chunks to simulate real network conditions
     const char* part1 = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
     parser.feed(reinterpret_cast<const Byte*>(part1), strlen(part1));
     EXPECT_EQ(parser.state(), HttpResponseParser::State::ChunkSize);

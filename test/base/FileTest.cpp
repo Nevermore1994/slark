@@ -180,7 +180,6 @@ TEST(File, BackFillByte) {
     ASSERT_TRUE(b.has_value());
     EXPECT_EQ(*b, static_cast<Byte>('X'));
 
-    // 回填一个字节，下次读应该读到回填的字节
     rf.backFillByte(static_cast<Byte>('Z'));
     auto b2 = rf.readByte();
     ASSERT_TRUE(b2.has_value());
@@ -203,7 +202,6 @@ TEST(File, SeekAndRead) {
     File::ReadFile rf(kPath);
     ASSERT_TRUE(rf.open().has_value());
 
-    // seek 到第 5 个字节
     ASSERT_TRUE(rf.seek(5).has_value());
     auto data = rf.read(3);
     ASSERT_TRUE(data.has_value());

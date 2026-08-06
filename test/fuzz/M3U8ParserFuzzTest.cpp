@@ -8,7 +8,6 @@
 
 using namespace slark;
 
-// 随机无效 M3U8 输入不崩溃
 TEST(M3U8ParserFuzzTest, InvalidInputDoesNotCrash) {
     M3U8Parser parser("https://example.com");
     std::vector<std::string> invalidInputs = {
@@ -30,7 +29,6 @@ TEST(M3U8ParserFuzzTest, InvalidInputDoesNotCrash) {
     }
 }
 
-// 随机截断的 M3U8
 TEST(M3U8ParserFuzzTest, TruncatedInput) {
     M3U8Parser parser("https://example.com");
     std::string base = "#EXTM3U\n#EXTINF:10.0,\nsegment.ts\n#EXT-X-ENDLIST\n";
@@ -43,7 +41,6 @@ TEST(M3U8ParserFuzzTest, TruncatedInput) {
     }
 }
 
-// 大量 segment 不崩溃
 TEST(M3U8ParserFuzzTest, ManySegments) {
     M3U8Parser parser("https://example.com");
     std::string content = "#EXTM3U\n";
@@ -55,7 +52,6 @@ TEST(M3U8ParserFuzzTest, ManySegments) {
     EXPECT_GE(parser.playlist()->segments().size(), 1000u);
 }
 
-// 混合 master 和 media 标签
 TEST(M3U8ParserFuzzTest, MixedMasterAndMedia) {
     M3U8Parser parser("https://example.com");
     std::string content = "#EXTM3U\n#EXTINF:10.0,\nsegment.ts\n"
@@ -63,7 +59,6 @@ TEST(M3U8ParserFuzzTest, MixedMasterAndMedia) {
     EXPECT_NO_THROW(parser.parse(content));
 }
 
-// URL 解析边界
 TEST(M3U8ParserFuzzTest, EdgeCaseUrls) {
     M3U8Parser parser("https://example.com/live/");
     std::vector<std::string> urls = {

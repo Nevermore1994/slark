@@ -114,11 +114,8 @@ TEST(BufferTest, BitReadView) {
 
     BitReadView bitView(buffer);
 
-    // \xAB = 10101011, first bit is 1
     EXPECT_EQ(bitView.readBit(), 1u);
-    // next 7 bits: 0101011 = 0x2B = 43
     EXPECT_EQ(bitView.readBits(7), 43u);
-    // \xCD = 11001101
     EXPECT_EQ(bitView.readBits(8), 0xCDu);
 }
 

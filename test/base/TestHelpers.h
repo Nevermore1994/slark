@@ -12,7 +12,6 @@
 
 namespace slark::coro {
 
-// 手动调度器：记录任务，手动推进
 struct ManualExecutor : IExecutor {
     std::vector<std::function<void()>> tasks;
     std::mutex mutex;

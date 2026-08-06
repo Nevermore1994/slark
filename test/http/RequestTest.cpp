@@ -56,7 +56,6 @@ RequestInfo makeRequest(std::string_view path, HttpMethodType method, DataRefPtr
     return info;
 }
 
-// 通过回调模式执行请求并同步等待结果
 HttpResponse executeSync(const RequestInfo& info) {
     auto waiter = std::make_shared<SyncWaiter>();
     auto result = std::make_shared<HttpResponse>();
@@ -84,7 +83,6 @@ HttpResponse executeSync(const RequestInfo& info) {
         waiter->notify();
     };
 
-    // shared_ptr 延长生命周期，避免协程未完成时对象析构
     auto request = std::make_shared<HttpRequest>();
     request->asyncExecute(info, std::move(handler));
 
@@ -175,21 +173,18 @@ TEST_F(HttpRequestTest, Status404) {
 }
 
 TEST_F(HttpRequestTest, CancelToken) {
-    // 验证 CancellationToken 的基本功能
     CancellationToken token;
     EXPECT_FALSE(token.isCancelled());
 
     token.cancel();
     EXPECT_TRUE(token.isCancelled());
 
-    // 验证 HttpRequest::cancel() 接口存在且可调用
     HttpRequest request;
-    request.cancel();  // 无 bridge 时不崩溃
+    request.cancel();
 }
 
 TEST_F(HttpRequestTest, ConnectTimeout) {
     RequestInfo info;
-    // 使用不可达地址触发连接超时
     info.url = "http://192.0.2.1/timeout";
     info.methodType = HttpMethodType::Get;
     info.connectTimeout = std::chrono::seconds(3);
@@ -199,7 +194,6 @@ TEST_F(HttpRequestTest, ConnectTimeout) {
     EXPECT_NE(response.error.retCode, slark::Error::Success);
 }
 
-// HTTPS 测试用例
 class HttpsRequestTest : public ::testing::Test {
  protected:
     void SetUp() override {}
@@ -357,7 +351,6 @@ TEST_F(HttpsRequestTest, HeadersEcho) {
     EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
     ASSERT_NE(response.body, nullptr);
-    // 验证响应中包含我们发送的请求头
     auto bodyStr =
         std::string(reinterpret_cast<const char*>(response.body->data()), response.body->size());
     EXPECT_TRUE(bodyStr.find("X-Custom-Header") != std::string::npos);
@@ -385,7 +378,6 @@ TEST_F(HttpsRequestTest, QueryParams) {
     EXPECT_TRUE(bodyStr.find("\"test\"") != std::string::npos);
 }
 
-// HTTP 高级场景测试
 class HttpAdvancedTest : public ::testing::Test {
  protected:
     void SetUp() override {}
@@ -461,7 +453,6 @@ TEST_F(HttpAdvancedTest, ResponseHeaders) {
 
     EXPECT_EQ(response.error.retCode, slark::Error::Success);
     EXPECT_EQ(response.statusCode, HttpStatusCode::OK);
-    // 验证响应头存在
     EXPECT_FALSE(response.headers.empty());
 }
 
@@ -486,7 +477,6 @@ TEST_F(HttpAdvancedTest, PostFormUrlEncoded) {
     EXPECT_TRUE(bodyStr.find("value1") != std::string::npos);
 }
 
-// 协程式HTTP测试辅助函数
 HttpResponse executeCoroutine(const RequestInfo& info) {
     auto waiter = std::make_shared<SyncWaiter>();
     auto result = std::make_shared<HttpResponse>();
@@ -508,7 +498,6 @@ HttpResponse executeCoroutine(const RequestInfo& info) {
     return std::move(*result);
 }
 
-// 协程式HTTP测试
 class HttpCoroutineTest : public ::testing::Test {
  protected:
     void SetUp() override {}
@@ -629,7 +618,6 @@ TEST_F(HttpCoroutineTest, PostFormUrlEncoded) {
     EXPECT_TRUE(bodyStr.find("value1") != std::string::npos);
 }
 
-// 协程式HTTPS测试
 class HttpsCoroutineTest : public ::testing::Test {
  protected:
     void SetUp() override {}

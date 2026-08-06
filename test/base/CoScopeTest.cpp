@@ -71,17 +71,13 @@ TEST(CoScopeTest, CancelBeforeWait) {
 }
 
 TEST(CoScopeTest, DestroyWithBlockedChildIsSafe) {
-    // C-07：child 挂起在不可取消的 awaiter 上时，scope 析构不得 UAF。
-    // 超时后保留 frame 由 child 保活，测试本身只验证不崩溃。
     auto blocker = std::make_shared<CompletionAwaiter<void>>();
     {
         AsyncScope scope;
         scope.spawn([&blocker]() -> Task<void> {
             co_await *blocker;
         }());
-        // scope 析构触发 cancel + 5s 等待，超时后保留 frame
     }
-    // 之后唤醒 child（frame 仍存活），不崩溃即可
     blocker->complete();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
 }

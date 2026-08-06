@@ -1,8 +1,6 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-// HLSStream owner 线程 + generation 模型集成测试（4.2.6）
-// 使用本地 mock HLS server（master/media playlist + TS segment），不依赖外部网络。
 
 #include <gtest/gtest.h>
 
@@ -26,7 +24,6 @@ using namespace slark;
 
 namespace {
 
-// 本地 mock HLS server：按路径返回 master/media playlist 或 TS segment
 class MockHlsServer {
  public:
     ~MockHlsServer() {
@@ -124,7 +121,6 @@ class MockHlsServer {
             }
         }
 
-        // 解析请求路径
         std::string path;
         auto space1 = request.find(' ');
         auto space2 = request.find(' ', space1 + 1);
@@ -254,7 +250,6 @@ TEST_F(HLSStreamTest, L1_MasterVariantMediaSegmentFlow) {
     EXPECT_TRUE(waitUntil([&]() { return completed.load(); }, 15000));
     EXPECT_TRUE(stream_->isCompleted());
     EXPECT_EQ(stream_->state(), StreamState::Completed);
-    // 2 个 segment，每个 1024 字节
     EXPECT_EQ(totalBytes.load(), 2048u);
 }
 
@@ -274,7 +269,6 @@ TEST_F(HLSStreamTest, L3_SeekByTimeRestartsFromTargetSegment) {
     stream_->start();
     EXPECT_TRUE(waitUntil([&]() { return totalBytes.load() > 0; }, 15000));
 
-    // seek 到 1.5s（位于 seg1），从该 segment 继续下载
     auto res = stream_->seekByTime(1.5);
     ASSERT_TRUE(res.has_value());
     EXPECT_TRUE(waitUntil([&]() { return completed.load(); }, 15000));
@@ -291,7 +285,6 @@ TEST_F(HLSStreamTest, L5_ConcurrentStartSeekCloseIsSafe) {
 
     ASSERT_TRUE(stream_->open(params).has_value());
 
-    // 并发 start / seekByTime / close
     std::thread t1([this]() {
         for (int i = 0; i < 5; ++i) {
             stream_->start();
@@ -308,5 +301,5 @@ TEST_F(HLSStreamTest, L5_ConcurrentStartSeekCloseIsSafe) {
     t1.join();
     t2.join();
     stream_->close();
-    EXPECT_TRUE(true);  // 仅验证无崩溃/UAF
+    EXPECT_TRUE(true);
 }

@@ -39,7 +39,6 @@ TEST(ScopeGuard, ReleaseExecutesImmediately) {
         guard.release();
         EXPECT_TRUE(called);
     }
-    // 析构时不应再次调用
     EXPECT_TRUE(called);
 }
 
@@ -97,7 +96,6 @@ TEST(ScopeGuard, LambdaCapture) {
             log.push_back(2);
         });
     }
-    // LIFO: g2 先析构
     ASSERT_EQ(log.size(), 2u);
     EXPECT_EQ(log[0], 2);
     EXPECT_EQ(log[1], 1);

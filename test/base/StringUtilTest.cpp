@@ -145,12 +145,10 @@ TEST(String, FromCharsDouble) {
 }
 
 TEST(String, FromCharsWithPosCount) {
-    // "prefix:42" 从 pos=7 取 2 个字符
     auto v = StringUtil::fromChars<int32_t>("prefix:42", 7, 2);
     ASSERT_TRUE(v.has_value());
     EXPECT_EQ(*v, 42);
 
-    // pos 越界
     auto invalid = StringUtil::fromChars<int32_t>("abc", 10, 2);
     EXPECT_FALSE(invalid.has_value());
 }
