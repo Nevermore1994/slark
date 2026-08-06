@@ -39,7 +39,7 @@ class HttpRequest : public NonCopyable {
         }
     }
 
-    // 暴露 cancelToken 供 streamingExecute 调用方传入，保证 cancel() 联动可达
+    // Expose cancelToken for streamingExecute callers, keeping cancel() reachable
     [[nodiscard]] const CancellationToken& cancelToken() const noexcept {
         return cancelToken_;
     }
@@ -50,14 +50,15 @@ class HttpRequest : public NonCopyable {
     std::shared_ptr<detail::ICallbackBridge> callbackBridge_;
 };
 
-// 协程便捷函数，安全管理请求生命周期
+// Coroutine convenience function that safely manages the request lifetime
 inline Task<HttpResponse> asyncRequest(const RequestInfo& requestInfo) {
     auto request = std::make_shared<HttpRequest>();
     co_return co_await request->asyncExecute(requestInfo);
 }
 
-// 流式请求便捷函数，返回 AsyncGenerator
-// 用 shared_ptr 管理 HttpRequest，与上面的便捷函数及 HttpStream/HLSStream 用法保持一致
+// Streaming request convenience function returning an AsyncGenerator.
+// Uses shared_ptr to manage HttpRequest, consistent with the convenience function above
+// and with HttpStream/HLSStream usage.
 inline AsyncGenerator<StreamChunk> asyncRequest(const RequestInfo& requestInfo,
                                                 CancellationToken token = {}) {
     auto request = std::make_shared<HttpRequest>();

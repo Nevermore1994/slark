@@ -9,8 +9,8 @@
 namespace slark::http {
 
 Task<HttpResponse> HttpRequest::asyncExecute(const RequestInfo& requestInfo) {
-    // 统一 request cancellation state：无 token 重载转发内部 cancelToken_，
-    // 保证 cancel() 能中断 asyncExecute 发起的请求（C-05）
+    // Unify request cancellation state: the no-token overload forwards the internal
+    // cancelToken_, ensuring cancel() can interrupt requests started by asyncExecute (C-05)
     co_return co_await asyncExecute(requestInfo, cancelToken_);
 }
 
@@ -55,8 +55,8 @@ AsyncGenerator<StreamChunk> HttpRequest::streamingExecute(const RequestInfo& req
                                                           CancellationToken token) {
     LogI("[HttpRequest::streamingExecute] url={} method={}", requestInfo.url,
          static_cast<int>(requestInfo.methodType));
-    // 统一 request cancellation state：组合调用方 token 与内部 cancelToken_，
-    // 任一取消即取消，保证 cancel() 与外部 token 均能中断流式请求（C-04）
+    // Unify request cancellation state: combine the caller's token with the internal
+    // cancelToken_; either cancels the stream, so cancel() and external tokens both work (C-04)
     return processor_.processStreaming(requestInfo, CancellationToken::link(token, cancelToken_));
 }
 

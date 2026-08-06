@@ -111,12 +111,12 @@ bool parseChunkData(DataPtr& data,
 
 std::tuple<bool, int64_t> parseResponseHeader(DataView data, ResponseHeader& response) noexcept;
 
-/// 构建HTTP请求字符串（请求行 + 请求头）
+/// Build an HTTP request string (request line + headers)
 std::string buildRequestString(const RequestInfo& info,
                                const Url& url,
                                bool keepAlive = false) noexcept;
 
-/// 从原始响应数据中解析完整的HTTP响应
+/// Parse a complete HTTP response from raw response data
 struct ParsedResponse {
     HttpStatusCode statusCode = HttpStatusCode::Unknown;
     std::unordered_map<std::string, std::string> headers;

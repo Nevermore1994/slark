@@ -28,9 +28,9 @@ constexpr int kNoSignal = 0;
 #endif
 
 constexpr int32_t kDefaultReadSize = 16 * 1024;             // 16KB
-constexpr size_t kGrowthThreshold = 256 * 1024;             // 256KB，超过此值后按固定步长增长
-constexpr size_t kGrowthStepSize = 128 * 1024;              // 128KB 固定步长
-constexpr size_t kMaxReceiveBufferSize = 64 * 1024 * 1024;  // 64MB 上限
+constexpr size_t kGrowthThreshold = 256 * 1024;             // 256KB, grow by a fixed step above this
+constexpr size_t kGrowthStepSize = 128 * 1024;              // 128KB fixed step
+constexpr size_t kMaxReceiveBufferSize = 64 * 1024 * 1024;  // 64MB cap
 constexpr int32_t kSocketError = kInvalid;
 constexpr int32_t kRetryCode = EINTR;
 constexpr int32_t kAgainCode = EAGAIN;

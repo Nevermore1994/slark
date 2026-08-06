@@ -27,13 +27,13 @@ void dispatchResponse(HttpResponse& response,
                       const RequestInfo& requestInfo,
                       HttpResponseHandler& handler);
 
-// 桥接状态机：收敛所有状态转换
+// Bridge state machine: converges all state transitions
 enum class BridgeState : uint8_t {
-    Pending,    // 初始状态，等待启动
-    Running,    // 协程正在执行
-    Completed,  // 协程正常完成
-    Cancelled,  // 被取消
-    Failed,     // 执行失败
+    Pending,    // initial state, waiting to start
+    Running,    // coroutine is executing
+    Completed,  // coroutine completed normally
+    Cancelled,  // cancelled
+    Failed,     // execution failed
 };
 
 class ICallbackBridge : public NonCopyable {

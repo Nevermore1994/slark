@@ -21,7 +21,6 @@ constexpr std::string_view kHTTPFlag = "HTTP/"sv;
 constexpr std::string_view kBase64Chars =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"sv;
 
-// chunked body 解码
 bool decodeChunkedBody(const void* data,
                        size_t bodyStart,
                        size_t totalSize,
@@ -29,7 +28,7 @@ bool decodeChunkedBody(const void* data,
     auto bodyData = std::make_unique<Data>(
         ConstByteSpan(reinterpret_cast<const Byte*>(data) + bodyStart, totalSize - bodyStart));
 
-    // 预估容量：通常是原始数据的70-80%
+    // Estimated capacity: typically 70-80% of the raw data
     auto estimatedSize = static_cast<size_t>(static_cast<double>(bodyData->length()) * 0.75);
     std::vector<Byte> decoded;
     decoded.reserve(estimatedSize);
@@ -58,7 +57,6 @@ bool decodeChunkedBody(const void* data,
     return true;
 }
 
-// Content-Length body 提取
 bool extractFixedBody(const void* data,
                       size_t bodyStart,
                       size_t totalSize,
@@ -152,21 +150,19 @@ bool parseChunkData(DataPtr& data,
                     const ChunkParseCallbacks& callbacks) noexcept {
     DataView dataView(data->view());
     while (!dataView.empty()) {
-        // 跳过chunk间的CRLF分隔符
         if (dataView.find(kCRLF) == 0) {
             dataView = dataView.subview(kCRLF.size());
             continue;
         }
 
-        // 需要解析新的chunk大小
         if (context.chunkSize <= 0) {
             auto pos = dataView.find(kCRLF);
             if (pos == std::string_view::npos) {
-                break;  // 数据不完整，等待更多数据
+                break;  // incomplete data, wait for more
             }
 
             auto sizeStr = dataView.subview(0, pos).toString();
-            // chunk-size可能带有chunk-extension，取分号前的部分
+            // chunk-size may carry a chunk-extension; take the part before the semicolon
             auto semicolonPos = sizeStr.find(';');
             if (semicolonPos != std::string::npos) {
                 sizeStr = sizeStr.substr(0, semicolonPos);
@@ -181,7 +177,7 @@ bool parseChunkData(DataPtr& data,
 
             dataView = dataView.subview(pos + kCRLF.size());
 
-            // chunk大小为0表示传输结束
+            // A chunk size of 0 marks the end of the transfer
             if (context.chunkSize == 0) {
                 context.isCompleted = true;
                 break;
@@ -189,14 +185,12 @@ bool parseChunkData(DataPtr& data,
             continue;
         }
 
-        // 读取chunk数据
         auto readSize = std::min(static_cast<size_t>(context.chunkSize), dataView.size());
         callbacks.onData(std::make_unique<Data>(dataView.subview(0, readSize).span()));
         dataView = dataView.subview(readSize);
         context.chunkSize -= static_cast<int64_t>(readSize);
     }
 
-    // 保留未处理的数据
     if (dataView.empty()) {
         data->reset();
     } else {
@@ -218,13 +212,12 @@ std::tuple<bool, int64_t> parseResponseHeader(DataView data, ResponseHeader& res
         return {false, 0};
     }
 
-    // 解析状态行: "HTTP/1.1 200 OK"
     auto statusLine = lines[0];
     if (statusLine.find(kHTTPFlag) == std::string_view::npos) {
         return {false, 0};
     }
 
-    // 按空格分割状态行，至少需要3个部分
+    // Split the status line by spaces; at least 3 parts required
     auto firstSpace = statusLine.find(' ');
     if (firstSpace == std::string_view::npos) {
         return {false, 0};
@@ -250,7 +243,6 @@ std::tuple<bool, int64_t> parseResponseHeader(DataView data, ResponseHeader& res
     response.headers["Version"] = version.toString();
     response.reasonPhrase = reasonPhrase.toString();
 
-    // 解析响应头: "Key: Value"
     for (size_t i = 1; i < lines.size(); ++i) {
         auto& line = lines[i];
         auto colonPos = line.find(':');
@@ -259,7 +251,7 @@ std::tuple<bool, int64_t> parseResponseHeader(DataView data, ResponseHeader& res
         }
 
         auto name = line.substr(0, colonPos);
-        // value取冒号后的全部内容（处理value中包含冒号的情况）
+        // value takes everything after the colon (handles colons embedded in values)
         auto value = line.substr(colonPos + 1);
         response.headers[name.removePrefix(' ').toString()] = value.removePrefix(' ').toString();
     }
@@ -283,7 +275,7 @@ std::string buildRequestString(const RequestInfo& info, const Url& url, bool kee
     }
     result.append(kCRLF);
     for (const auto& [key, value] : info.headers) {
-        // 过滤 CRLF，防止 header injection
+        // Filter out CRLF to prevent header injection
         if (key.find('\r') != std::string::npos || key.find('\n') != std::string::npos ||
             value.find('\r') != std::string::npos || value.find('\n') != std::string::npos) {
             continue;

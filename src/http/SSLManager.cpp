@@ -50,18 +50,18 @@ SSLContextPtr& SSLManager::shareContext() {
         }
         contextPtr.reset(context);
 
-        // 开启证书链验证
+        // Enable certificate chain verification
         SSL_CTX_set_verify(context, SSL_VERIFY_PEER, nullptr);
 
-        // 声明支持 HTTP/1.1（为未来 HTTP/2 预留扩展点）
+        // Advertise HTTP/1.1 (extension point reserved for future HTTP/2)
         static constexpr uint8_t kAlpnProtos[] = "\x08http/1.1";
         SSL_CTX_set_alpn_protos(context, kAlpnProtos, sizeof(kAlpnProtos) - 1);
 
         if (HttpsHelper::configContext) {
-            // 平台层负责加载 CA bundle（如 Android/iOS 系统证书）
+            // The platform layer loads the CA bundle (e.g. Android/iOS system certs)
             HttpsHelper::configContext(contextPtr);
         } else {
-            // 回退：加载系统默认 CA
+            // Fallback: load the system default CAs
             SSL_CTX_set_default_verify_paths(context);
         }
     });
@@ -78,9 +78,9 @@ SSLPtr SSLManager::create(Socket socket, const std::string& hostname) noexcept {
 
     SSL_set_fd(ssl, socket);
     if (!hostname.empty()) {
-        // SNI：告知服务端期望的域名
+        // SNI: tell the server the expected domain
         SSL_set_tlsext_host_name(ssl, hostname.c_str());
-        // hostname 验证：握手后校验证书中的 CN/SAN 是否匹配
+        // Hostname verification: check the CN/SAN in the certificate after the handshake
         SSL_set1_host(ssl, hostname.c_str());
     }
 

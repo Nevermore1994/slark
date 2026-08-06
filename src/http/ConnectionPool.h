@@ -15,7 +15,7 @@
 
 namespace slark::http {
 
-// 持有连接的 RAII 包装，析构时自动 close
+// RAII wrapper owning a connection, closes it automatically on destruction
 class PooledConnection {
  public:
     PooledConnection(std::unique_ptr<IAsyncSocket> socket) : socket_(std::move(socket)) {}
@@ -76,7 +76,8 @@ class PooledConnection {
     std::unique_ptr<IAsyncSocket> socket_;
 };
 
-// 建立新连接（DNS + TCP + 可选 TLS）。token 任一阶段取消时立即终止，连接不回收。
+// Establish a new connection (DNS + TCP + optional TLS). Cancellation at any stage
+// terminates immediately and the connection is not recycled.
 Task<std::unique_ptr<PooledConnection>> co_acquire_connection(
     std::string host,
     uint16_t port,

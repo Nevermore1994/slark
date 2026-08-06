@@ -59,7 +59,7 @@ Socket createAndConfigureSocket(int32_t addressFamily) {
     setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &optval, sizeof(optval));
 
 #if defined(TCP_KEEPIDLE)
-    // 60s 无数据后开始发送 keepalive 探测，适配移动网络 NAT 超时
+    // Start keepalive probing after 60s of idle, adapting to mobile NAT timeouts
     int32_t keepIdle = 60;
     int32_t keepIntvl = 10;
     int32_t keepCnt = 3;
@@ -120,7 +120,7 @@ Task<bool> waitFdReadyWithTimeout(Socket socket,
         CoroutineScheduler::instance().cancel(timerId);
     });
 
-    // registration 必须在整个等待期间存活，否则回调会被注销
+    // registration must outlive the entire wait, otherwise the callback gets unregistered
     CancellationTokenRegistration registration;
     if (externalToken) {
         registration = externalToken->registerCallback([token = localToken]() mutable {
@@ -185,7 +185,6 @@ Task<void> AsyncSocket::asyncConnect(const AddressInfoPtr& address,
     LogI("[AsyncSocket::asyncConnect] tcp connect ok: fd={} timeoutMs={}", socket_,
          timeout.count());
 
-    // 如果没有预设 transport，默认使用 PlainTransport
     if (!transport_) {
         transport_ = std::make_unique<PlainTransport>(socket_);
     }
@@ -208,7 +207,6 @@ Task<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data,
     int32_t retryCount = 0;
 
     while (totalSent < data.size()) {
-        // 检查取消状态
         if (token.isCancelled()) {
             co_return std::unexpected(Error::Cancelled);
         }
@@ -272,7 +270,6 @@ Task<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
     int32_t waitCount = 0;
 
     while (true) {
-        // 检查取消状态
         if (token.isCancelled()) {
             co_return std::unexpected(Error::Cancelled);
         }
@@ -343,7 +340,7 @@ Task<DataPtr> AsyncSocket::asyncReceiveAll(std::chrono::milliseconds timeout) {
         if (result > 0) {
             totalReceived += static_cast<size_t>(result);
             if (data->size() - totalReceived < static_cast<size_t>(kDefaultReadSize)) {
-                // 渐进式扩容：小于阈值时加倍，大于阈值时按固定步长增长
+                // Grow progressively: double below the threshold, fixed step above it
                 auto currentSize = data->size();
                 auto newSize = (currentSize < kGrowthThreshold) ? currentSize * 2
                                                                 : currentSize + kGrowthStepSize;
@@ -394,7 +391,6 @@ Task<bool> AsyncSocket::asyncReceiveStreaming(HttpResponseParser& parser,
     int32_t waitCount = 0;
 
     while (!parser.isCompleted() && !parser.hasError()) {
-        // 检查取消状态，实现快速响应
         if (token.isCancelled()) {
             co_return false;
         }
@@ -413,7 +409,7 @@ Task<bool> AsyncSocket::asyncReceiveStreaming(HttpResponseParser& parser,
         }
 
         if (result == 0) {
-            // 连接关闭，通知 parser EOF 到达
+            // Connection closed, notify the parser that EOF arrived
             parser.onEof();
             break;
         }
@@ -532,7 +528,7 @@ void TLSTransport::shutdown() noexcept {
     if (sslPtr_) {
         int32_t ret = SSL_shutdown(sslPtr_.get());
         if (ret == 0) {
-            // 已发送 close_notify，等待对端回复（非阻塞，忽略错误）
+            // close_notify already sent; wait for the peer's reply (non-blocking, ignore errors)
             SSL_shutdown(sslPtr_.get());
         }
         sslPtr_.reset();

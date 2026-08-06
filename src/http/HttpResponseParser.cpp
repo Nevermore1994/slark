@@ -282,7 +282,7 @@ void HttpResponseParser::processBodyFixed() {
             lastLoggedBodyReceived_ = bodyReceived_;
         }
     } else {
-        // Content-Length 未知，消费所有可用数据
+        // Content-Length unknown, consume all available data
         if (callbacks_.onBodyData) {
             callbacks_.onBodyData(reinterpret_cast<const Byte*>(data.data()), data.size());
         }
@@ -301,7 +301,7 @@ void HttpResponseParser::processBodyFixed() {
 void HttpResponseParser::processChunkSize() {
     auto data = readableData();
 
-    // 只跳一个 chunk 间的 CRLF（RFC 7230 §4.1 严格限定）
+    // Skip exactly one CRLF between chunks (strictly per RFC 7230 §4.1)
     if (data.starts_with(kCRLF)) {
         consume(kCRLF.size());
         data = readableData();
@@ -314,7 +314,7 @@ void HttpResponseParser::processChunkSize() {
 
     auto sizeStr = data.substr(0, pos);
 
-    // chunk-size 可能带有 chunk-extension
+    // chunk-size may carry a chunk-extension
     auto semicolonPos = sizeStr.find(';');
     if (semicolonPos != std::string_view::npos) {
         sizeStr = sizeStr.substr(0, semicolonPos);
@@ -333,13 +333,13 @@ void HttpResponseParser::processChunkSize() {
     if (chunkSize == 0) {
         LogI("[HttpResponseParser::processChunkSize] last chunk, entering trailer, totalChunks={}",
              perf_ ? perf_->parser.chunkCount : 0);
-        // 最后一个 chunk，进入 trailer 处理
+        // Last chunk, move to trailer processing
         state_ = State::ChunkTrailer;
     } else {
         currentChunkSize_ = chunkSize;
         chunkBytesRead_ = 0;
         state_ = State::ChunkData;
-        // 统计chunk数量
+        // Count chunks
         if (perf_) {
             perf_->parser.chunkCount++;
         }
@@ -372,9 +372,10 @@ void HttpResponseParser::processChunkData() {
 void HttpResponseParser::processChunkTrailer() {
     auto data = readableData();
 
-    // 累计长度超限时直接 fail，防止 OOM。
-    // 注意：trailerBytesRead_ 只在消费时累计（C-14），data.size() 是未消费长度，
-    // 两者相加即当前 trailer 区间的近似大小，跨 feed 边界不重复计数。
+    // Fail immediately when the cumulative length exceeds the limit to prevent OOM.
+    // Note: trailerBytesRead_ accumulates only on consume (C-14); data.size() is the
+    // unconsumed length. Their sum approximates the current trailer region without
+    // double counting across feed boundaries.
     if (trailerBytesRead_ + data.size() > kMaxTrailerSize) {
         LogE("[HttpResponseParser::processChunkTrailer] trailer overflow: trailerBytes={} chunk={}",
              trailerBytesRead_, data.size());
@@ -382,20 +383,21 @@ void HttpResponseParser::processChunkTrailer() {
         return;
     }
 
-    // trailer 以空行 CRLF 结束
+    // Trailer ends with a blank line CRLF
     auto pos = data.find(kCRLF);
     if (pos == std::string_view::npos) {
-        return;  // 数据不足，等待下次 feed；不累计（readableData 从 readPos_ 起，未消费部分不重复计）
+        return;  // insufficient data, wait for next feed; not counted (readableData starts at
+                 // readPos_, unconsumed bytes are not double counted)
     }
 
     if (pos == 0) {
-        // 空行，trailer 结束
+        // Blank line, trailer ends
         consume(kCRLF.size());
         LogI("[HttpResponseParser::processChunkTrailer] complete after trailer, totalChunks={}",
              perf_ ? perf_->parser.chunkCount : 0);
         complete();
     } else {
-        // 跳过 trailer header，只累计本次实际消费的字节
+        // Skip the trailer header, counting only the bytes actually consumed this time
         auto consumed = pos + kCRLF.size();
         trailerBytesRead_ += consumed;
         consume(consumed);

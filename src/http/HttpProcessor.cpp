@@ -35,7 +35,8 @@ Error mapLegacyErrorToUnified(Error error) noexcept {
     }
 }
 
-// 建立连接并发送请求（请求头 + 请求体），executeSingle/executeStreamingSingle 共用
+// Establish a connection and send the request (headers + body), shared by
+// executeSingle/executeStreamingSingle
 struct RequestSetup {
     std::unique_ptr<PooledConnection> conn;
     ErrorInfo error;
@@ -266,7 +267,8 @@ void buildResponse(HttpResponse& response,
     response.perf = perf;
 }
 
-// 判定 chunk 是否触发重定向，返回下一个请求；不触发时返回 nullopt
+// Determine whether a chunk triggers a redirect, returning the next request;
+// returns nullopt when no redirect is needed
 std::optional<RequestInfo> extractRedirectTarget(const RedirectPolicy& policy,
                                                  const StreamChunk& chunk,
                                                  const RequestInfo& currentInfo,
@@ -372,14 +374,14 @@ Task<ResponseResult> HttpProcessor::executeSingle(const RequestInfo& requestInfo
     auto streamResult =
         co_await conn->asyncReceiveStreaming(parser, requestInfo.readTimeout, token);
 
-    // 区分取消、超时和断连
+    // Distinguish cancellation, timeout and disconnection
     if (!streamResult) {
         if (token.isCancelled()) {
             co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
         }
         LogE("[HttpProcessor::executeSingle] receive failed: timeoutSource={} url={}",
              static_cast<int>(perf.transport.timeoutSource), requestInfo.url);
-        // asyncReceiveStreaming 返回 false 表示读取失败，需检查 perf 判断超时
+        // asyncReceiveStreaming returning false means a read failure; check perf for timeout
         if (perf.transport.timeoutSource != TimeoutSource::None) {
             co_return std::unexpected(ErrorInfo{slark::Error::ConnectionTimeout});
         }
@@ -532,7 +534,7 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
         co_return;
     }
 
-    // 流式 redirect 编排（C-09）：支持 301/302/307/308 跟随，限制跳转次数
+    // Streaming redirect orchestration (C-09): follows 301/302/307/308, limits hop count
     auto currentInfo = requestInfo;
     int32_t redirectCount = 0;
     while (true) {
@@ -548,7 +550,7 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& r
                 redirectCount++;
                 LogI("[HttpProcessor::processStreaming] redirect to {} count={}", currentInfo.url,
                      redirectCount);
-                break;  // 丢弃当前响应，发起新请求
+                break;  // drop the current response and issue a new request
             }
             const bool isTerminal = chunk->isFinal || chunk->hasError();
             co_yield std::move(*chunk);

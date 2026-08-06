@@ -48,7 +48,8 @@ class RedirectPolicy {
         RequestInfo redirectRequest = original;
         redirectRequest.url = std::move(*resolvedUrl);
 
-        // 跨域重定向时剥离敏感请求头，防止凭证泄露到第三方域名
+        // Strip sensitive headers on cross-domain redirects to prevent credential leaks
+        // to third-party domains
         Url origUrl(original.url);
         Url newUrl(redirectRequest.url);
         if (origUrl.host != newUrl.host) {
@@ -57,21 +58,21 @@ class RedirectPolicy {
             }
         }
 
-        // RFC 7231：根据重定向状态码处理方法
+        // RFC 7231: method handling by redirect status code
         switch (redirectCode) {
             case HttpStatusCode::SeeOther:
-                // 303：方法必须改为 GET
+                // 303: method must be changed to GET
                 redirectRequest.methodType = HttpMethodType::Get;
-                redirectRequest.body = nullptr;  // 303 不应携带 body
+                redirectRequest.body = nullptr;  // 303 must not carry a body
                 break;
             case HttpStatusCode::MovedPermanently:  // 301
             case HttpStatusCode::Found:             // 302
-                // 历史原因，很多客户端对 301/302 的 POST 请求也改为 GET
-                // 这里保持原方法，由调用方决定是否修改
+                // Historically many clients rewrite POST to GET for 301/302.
+                // Keep the original method here; the caller decides whether to change it.
                 break;
             case HttpStatusCode::TemporaryRedirect:  // 307
             case HttpStatusCode::PermanentRedirect:  // 308
-                // 必须保持原方法和 body
+                // Original method and body must be preserved
                 break;
             default:
                 break;
@@ -80,7 +81,7 @@ class RedirectPolicy {
         return redirectRequest;
     }
 
-    // 兼容旧接口的重载
+    // Overload for backward compatibility
     [[nodiscard]] static std::optional<RequestInfo> buildRedirectRequest(
         const RequestInfo& original,
         std::string_view location) {
@@ -88,12 +89,12 @@ class RedirectPolicy {
     }
 
  private:
-    // 解析重定向URL，处理相对路径；https→http 降级时返回 nullopt
+    // Resolve a redirect URL, handling relative paths; returns nullopt on https→http downgrade
     [[nodiscard]] static std::optional<std::string> resolveRedirectUrl(std::string_view originalUrl,
                                                                        std::string_view location) {
-        // 绝对URL（包含scheme）
+        // Absolute URL (includes scheme)
         if (location.starts_with("http:") || location.starts_with("https:")) {
-            // 拒绝 https → http 降级重定向，防止中间人攻击
+            // Reject https → http downgrade redirects to prevent MITM attacks
             Url origUrl(originalUrl);
             if (origUrl.isHttps() && location.starts_with("http:") &&
                 !location.starts_with("https:")) {
@@ -102,7 +103,7 @@ class RedirectPolicy {
             return std::string(location);
         }
 
-        // 解析原始URL获取base
+        // Parse the original URL to obtain the base
         Url url(originalUrl);
         if (!url.isValid()) {
             return std::string(location);
@@ -111,7 +112,7 @@ class RedirectPolicy {
         std::string result;
         result.reserve(originalUrl.size() + location.size());
 
-        // 协议相对路径（//host/path）
+        // Protocol-relative path (//host/path)
         if (location.starts_with("//")) {
             result.append(url.scheme);
             result.append(":");
@@ -157,7 +158,7 @@ class RedirectPolicy {
             result.append(location);
             return;
         }
-        // 相对路径，基于原路径计算
+        // Relative path, computed from the original path
         std::string basePath = url.path.empty() ? "/" : url.path;
         auto lastSlash = basePath.rfind('/');
         if (lastSlash != std::string::npos) {

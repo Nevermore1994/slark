@@ -14,8 +14,9 @@
 
 namespace slark::http {
 
-// HTTP 请求处理器：处理单次请求、重定向、性能统计
-// 注意：process() 方法中的 token 参数用于控制单次请求的取消，不存储于对象成员中
+// HTTP request processor: handles single requests, redirects and performance stats.
+// Note: the token parameter in process() controls cancellation per request and is not
+// stored as an object member.
 class HttpProcessor : public NonCopyable {
  public:
     HttpProcessor() = default;

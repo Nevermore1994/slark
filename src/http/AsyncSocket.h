@@ -73,7 +73,7 @@ class TLSTransport final : public ITransport {
     TLSTransport(Socket fd, const std::string& hostname);
     ~TLSTransport();
 
-    /// @return true 表示握手成功，false 表示失败（不抛异常）
+    /// @return true on handshake success, false on failure (does not throw)
     Task<bool> performHandshake(std::chrono::milliseconds timeout,
                                 CancellationToken token = CancellationToken{});
 
@@ -106,7 +106,7 @@ class IAsyncSocket {
         const std::string_view& data,
         std::chrono::milliseconds timeout = kDefaultWriteTimeout) = 0;
 
-    // 带取消支持的异步发送，用于大 body 上传或需要快速响应取消的场景
+    // Cancellation-enabled async send, for large body uploads or scenarios needing fast cancel response
     virtual Task<AsyncSocketResult> asyncSend(const std::string_view& data,
                                               std::chrono::milliseconds timeout,
                                               CancellationToken token) = 0;
@@ -116,7 +116,7 @@ class IAsyncSocket {
         size_t size,
         std::chrono::milliseconds timeout = kDefaultReadTimeout) = 0;
 
-    // 带取消支持的异步接收，用于需要快速响应取消的场景
+    // Cancellation-enabled async receive, for scenarios needing fast cancel response
     virtual Task<AsyncSocketResult> asyncReceive(void* buffer,
                                                  size_t size,
                                                  std::chrono::milliseconds timeout,
@@ -125,8 +125,8 @@ class IAsyncSocket {
     virtual Task<DataPtr> asyncReceiveAll(
         std::chrono::milliseconds timeout = kDefaultReadTimeout) = 0;
 
-    // 流式接收：边读边喂 parser，触发 onHeader / onData 回调
-    // token 参数用于在流式接收过程中检查取消状态，实现快速响应
+    // Streaming receive: read and feed the parser incrementally, triggering onHeader / onData.
+    // The token checks cancellation during streaming for fast response.
     virtual Task<bool> asyncReceiveStreaming(
         HttpResponseParser& parser,
         std::chrono::milliseconds timeout = kDefaultReadTimeout,
@@ -136,7 +136,6 @@ class IAsyncSocket {
     [[nodiscard]] virtual bool isValid() const noexcept = 0;
     [[nodiscard]] virtual Socket getFd() const noexcept = 0;
 
-    // 设置性能统计对象（用于请求级性能追踪）
     virtual void setPerf(RequestPerf* perf) noexcept = 0;
     virtual void setTransport(std::unique_ptr<ITransport> transport) noexcept = 0;
 };

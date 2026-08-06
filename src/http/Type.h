@@ -119,7 +119,7 @@ enum class HttpStatusCode : uint16_t {
     NetworkAuthenticationRequired = 511,
 };
 
-// 超时来源类型
+// Timeout source type
 enum class TimeoutSource : uint8_t {
     None,
     Connect,
@@ -129,7 +129,7 @@ enum class TimeoutSource : uint8_t {
     ReadOverall,
 };
 
-// 连接池性能统计
+// Connection pool performance stats
 struct ConnectionPoolPerf {
     bool reuseAttempted = false;
     bool reuseSucceeded = false;
@@ -138,7 +138,7 @@ struct ConnectionPoolPerf {
     Error connectResult = Error::Success;
 };
 
-// 传输层性能统计
+// Transport layer performance stats
 struct TransportPerf {
     int32_t sendRetryCount = 0;
     int32_t receiveWaitCount = 0;
@@ -147,7 +147,7 @@ struct TransportPerf {
     int64_t totalReceiveTimeMs = 0;
 };
 
-// 解析层性能统计
+// Parser layer performance stats
 struct ParserPerf {
     int64_t headerParseTimeUs = 0;
     int32_t chunkCount = 0;
@@ -155,7 +155,7 @@ struct ParserPerf {
     int64_t bodySize = 0;
 };
 
-// 请求级性能统计
+// Request-level performance stats
 struct RequestPerf {
     ConnectionPoolPerf connection;
     TransportPerf transport;
@@ -163,7 +163,6 @@ struct RequestPerf {
     int64_t totalRequestTimeMs = 0;
     std::string host;
 
-    // 重置统计信息
     void reset() noexcept {
         connection = ConnectionPoolPerf{};
         transport = TransportPerf{};
@@ -172,7 +171,6 @@ struct RequestPerf {
         host.clear();
     }
 
-    // 获取摘要信息
     [[nodiscard]] std::string summary() const;
 };
 
@@ -260,13 +258,13 @@ struct HttpResponse {
     }
 };
 
-// 流式响应块：用于 Generator 流式返回
+// Streaming response chunk: used for Generator-based streaming returns
 struct StreamChunk {
-    DataPtr data;                                          // 数据块内容
-    bool isFinal = false;                                  // 是否为最后一个块（响应结束）
-    ErrorInfo error;                                       // 错误信息（仅在出错时有效）
-    HttpStatusCode statusCode = HttpStatusCode::Unknown;   // HTTP 状态码（首个块携带）
-    std::unordered_map<std::string, std::string> headers;  // 响应头（首个块携带）
+    DataPtr data;                                          // chunk data
+    bool isFinal = false;                                  // whether this is the final chunk (end of response)
+    ErrorInfo error;                                       // error info (only valid on error)
+    HttpStatusCode statusCode = HttpStatusCode::Unknown;   // HTTP status code (carried by the first chunk)
+    std::unordered_map<std::string, std::string> headers;  // response headers (carried by the first chunk)
 
     [[nodiscard]] bool hasError() const noexcept {
         return error.retCode != slark::Error::Success;
