@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 """
-gen_player_state.py - PlayerState/PlayerEvent/Error 跨语言 SSOT 代码生成器
+gen_player_state.py - cross-language SSOT code generator for PlayerState/PlayerEvent/Error
 
-从 C++ PlayerTypes.h 解析 PlayerState/PlayerEvent，从 internal/Error.h 解析 Error，
-自动生成：
+Parses PlayerState/PlayerEvent from C++ PlayerTypes.h and Error from internal/Error.h,
+generating:
   1. Kotlin: SlarkPlayerState.kt / SlarkPlayerEvent.kt / SlarkPlayerErrorCode.kt
   2. C++ JNI: PlayerStateNames.h
-  3. iOS: SlarkPlayer.h 中的 NS_ENUM 定义（直接写入）
+  3. iOS: NS_ENUM definitions in SlarkPlayer.h (written in place)
 
-用法:
+Usage:
   python3 scripts/gen_player_state.py [--check] [--cpp-header PATH] [--error-header PATH]
                                        [--kotlin-dir DIR] [--jni-dir DIR] [--ios-header PATH]
 
-  --check         仅校验生成文件与现有文件是否一致（CI 用）
-  --cpp-header    C++ PlayerTypes.h 路径（默认 auto-detect）
-  --error-header  internal/Error.h 路径（默认 auto-detect）
-  --kotlin-dir    Kotlin 输出目录（默认 auto-detect）
-  --jni-dir       JNI 头文件输出目录（默认 auto-detect）
-  --ios-header    iOS SlarkPlayer.h 路径（默认 auto-detect）
+  --check         only verify generated files match the existing ones (for CI)
+  --cpp-header    C++ PlayerTypes.h path (default auto-detect)
+  --error-header  internal/Error.h path (default auto-detect)
+  --kotlin-dir    Kotlin output directory (default auto-detect)
+  --jni-dir       JNI header output directory (default auto-detect)
+  --ios-header    iOS SlarkPlayer.h path (default auto-detect)
 """
 
 from __future__ import annotations
@@ -207,14 +207,14 @@ namespace slark {{
 """
 
 CPP_ENUM_ARRAY_TEMPLATE = """\
-// {enum_name} 枚举名称映射表，与 C++ 枚举、Kotlin 枚举一一对应
+// {enum_name} enum name mapping, one-to-one with the C++ and Kotlin enums
 inline constexpr const char* k{enum_name}Names[] = {{
 {values}
 }};
 
 constexpr size_t k{enum_name}Count = std::size(k{enum_name}Names);
 
-// 编译期校验：名称数组长度必须与枚举值数量一致
+// Compile-time check: the name array length must match the enum value count
 static_assert(k{enum_name}Count == static_cast<size_t>({enum_name}::{last_value}) + 1,
               "k{enum_name}Names size must match {enum_name} enum count");
 """
