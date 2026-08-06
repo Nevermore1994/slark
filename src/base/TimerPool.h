@@ -15,7 +15,7 @@
 
 namespace slark {
 
-/// 纯时间轮数据结构
+/// Pure hierarchical timing wheel data structure
 class TimerPool : public NonCopyMovable {
  public:
     TimerPool() = default;

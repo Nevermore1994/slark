@@ -14,7 +14,7 @@
 namespace slark {
 
 static const Time::TimeDelta kMaxThreadBlockTimeInterval =
-    Time::TimeDelta::fromSeconds(30.0);  // 30s
+    Time::TimeDelta::fromSeconds(30.0);
 
 class ThreadManager final : public NonCopyMovable {
  public:
@@ -39,7 +39,7 @@ class ThreadManager final : public NonCopyMovable {
 
     std::shared_ptr<Thread> thisThread() noexcept;
 
-    // 设置线程阻塞回调，业务层可据此上报/abort
+    // Set the thread block callback, letting the business layer report/abort accordingly
     void setBlockCallback(BlockCallback callback) noexcept;
 
  private:

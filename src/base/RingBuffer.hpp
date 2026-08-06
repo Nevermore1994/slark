@@ -145,7 +145,7 @@ class RingBuffer {
     std::array<T, kCapacity> data_;
     size_t readPos_ = 0;
     size_t writePos_ = 0;
-    size_t size_ = 0;  // 追踪实际数据量，正确区分空/满
+    size_t size_ = 0;  // tracks actual data size to correctly distinguish empty/full
 };
 
 template <typename T, size_t N>

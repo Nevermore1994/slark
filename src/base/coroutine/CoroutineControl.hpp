@@ -43,7 +43,8 @@ class CoroutineFrameControl final {
         return true;
     }
 
-    // 返回 false 表示当前恢复栈正在使用该 frame，销毁已延迟到恢复返回后。
+    // Returns false when the current resume stack is using this frame; destruction is
+    // deferred until the resume returns.
     bool destroy(std::coroutine_handle<> handle) noexcept {
         std::unique_lock lock(mutex_);
         destroyed_ = true;

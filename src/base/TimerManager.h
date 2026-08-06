@@ -17,7 +17,7 @@
 
 namespace slark {
 
-/// 全局定时器管理器，负责线程调度和同步
+/// Global timer manager responsible for thread scheduling and synchronization
 class TimerManager final : public NonCopyMovable {
  public:
     static TimerManager& shareInstance();
@@ -47,7 +47,7 @@ class TimerManager final : public NonCopyMovable {
                      std::chrono::milliseconds interval) noexcept;
 
  private:
-    // 循环任务包装器，支持 move-only callable
+    // Wraps a loop task, supports move-only callables
     struct LoopTaskWrapper {
         TimerTask task;
 
@@ -64,7 +64,7 @@ class TimerManager final : public NonCopyMovable {
     TimerPool timerPool_;
     std::thread tickThread_;
     std::atomic<bool> stopRequested_{false};
-    // 循环任务存储：shared_ptr 支持多次执行
+    // Loop task storage: shared_ptr allows multiple executions
     std::unordered_map<uint64_t, std::shared_ptr<LoopTaskWrapper>> loopTasks_;
 };
 

@@ -401,7 +401,7 @@ struct DataPacket {
     DataPtr data = nullptr;
     int64_t offset = 0;
     std::string tag;
-    uint64_t seekEpoch = 0;  // seek 纪元，每次 seek + 1，用于全链路隔离旧包
+    uint64_t seekEpoch = 0;  // seek epoch, incremented on each seek to isolate stale packets end-to-end
 
     DataPacket() = default;
 

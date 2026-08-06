@@ -61,7 +61,7 @@ class MPSCQueue {
     }
 
     ~MPSCQueue() {
-        // 逐节点释放，不要求 T 默认可构造
+        // Free nodes one by one without requiring default-constructible T
         Node* cur = head_->next.load(std::memory_order_acquire);
         delete head_;
         while (cur) {
@@ -106,7 +106,7 @@ class MPSCQueue {
 
     [[nodiscard]] std::vector<T> tryPopAll() {
         std::vector<T> result;
-        // 直接遍历节点，避免要求 T 默认可构造
+        // Traverse nodes directly to avoid requiring default-constructible T
         Node* next = head_->next.load(std::memory_order_acquire);
         while (next) {
             result.push_back(std::move(next->getValue()));

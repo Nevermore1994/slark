@@ -40,10 +40,11 @@ class AsyncScope {
         if (!state_->cv.wait_for(lock, std::chrono::seconds(5), [s = state_]() {
                 return s->activeCount.load(std::memory_order_acquire) == 0;
             })) {
-            // C-07：超时后不得直接释放 child frame。挂起的 child 其 scopeWrapper
-            // 仍持有 state_（shared_ptr），会保活 childTasks_ 中的 Task 与 frame；
-            // 若外部回调（timer/fd/IO）仍持 handle，clear 会 UAF。因此保留 frame，
-            // 由 child 自身完成或进程退出时回收。
+            // C-07: must not release child frames directly after timeout. A suspended child's
+            // scopeWrapper still holds state_ (shared_ptr), keeping the Task and frame in
+            // childTasks_ alive; if external callbacks (timer/fd/IO) still hold the handle,
+            // clearing would be a UAF. Therefore keep the frames, reclaimed when children
+            // complete themselves or the process exits.
         }
     }
 

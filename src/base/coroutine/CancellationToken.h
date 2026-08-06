@@ -14,7 +14,6 @@
 
 namespace slark {
 
-// 前向声明
 class CancellationTokenRegistration;
 
 class CancellationToken {
@@ -29,9 +28,8 @@ class CancellationToken {
         {
             std::lock_guard<std::mutex> lock(state_->mutex);
             if (state_->cancelled.exchange(true, std::memory_order_acq_rel)) {
-                return;  // 已经取消
+                return;  // already cancelled
             }
-            // 从 callbackMap 中提取回调执行
             for (auto& [id, cb] : state_->callbackMap) {
                 if (cb) {
                     callbacks.push_back(std::move(cb));
@@ -39,7 +37,7 @@ class CancellationToken {
             }
             state_->callbackMap.clear();
         }
-        // 在锁外执行回调，避免死锁
+        // Run callbacks outside the lock to avoid deadlock
         for (const auto& cb : callbacks) {
             if (cb) {
                 cb();
@@ -51,10 +49,10 @@ class CancellationToken {
         return state_->cancelled.load(std::memory_order_acquire);
     }
 
-    // 注册取消回调，返回注册句柄（已取消时返回无效句柄）
+    // Register a cancel callback, returns a registration handle (invalid when already cancelled)
     [[nodiscard]] CancellationTokenRegistration registerCallback(Callback callback) const;
 
-    // 取消注册特定回调
+    // Unregister a specific callback
     bool unregisterCallback(TokenId tokenId) const noexcept {
         if (tokenId == 0) {
             return false;
@@ -67,8 +65,8 @@ class CancellationToken {
         return !isCancelled();
     }
 
-    // 组合两个 token：任一取消即取消。用于统一 request cancellation state，
-    // 使 HttpRequest 的内部 cancelToken_ 与调用方 token 联动。
+    // Combine two tokens: cancelled when either is cancelled. Used to unify request cancellation
+    // state so HttpRequest's internal cancelToken_ stays in sync with the caller's token.
     [[nodiscard]] static CancellationToken link(const CancellationToken& a,
                                                 const CancellationToken& b);
 
@@ -80,14 +78,14 @@ class CancellationToken {
         std::mutex mutex;
         std::unordered_map<TokenId, Callback> callbackMap;
         TokenId nextTokenId{0};
-        // link() 创建的转发回调注册句柄，随 State 生命周期保活
+        // Forward-callback registrations created by link(), kept alive with the State
         std::vector<std::shared_ptr<CancellationTokenRegistration>> linkedRegs;
     };
 
     std::shared_ptr<State> state_;
 };
 
-// 回调注册句柄，可用于注销回调
+// Callback registration handle, used to unregister the callback
 class CancellationTokenRegistration {
  public:
     using TokenId = CancellationToken::TokenId;
@@ -97,14 +95,13 @@ class CancellationTokenRegistration {
     CancellationTokenRegistration& operator=(CancellationTokenRegistration&& other) noexcept;
     ~CancellationTokenRegistration();
 
-    // 禁用拷贝
     CancellationTokenRegistration(const CancellationTokenRegistration&) = delete;
     CancellationTokenRegistration& operator=(const CancellationTokenRegistration&) = delete;
 
-    // 注销回调
+    // Unregister the callback
     void unregister() noexcept;
 
-    // 检查是否有效
+    // Check whether the handle is still valid
     [[nodiscard]] bool isValid() const noexcept {
         return tokenId_ != 0 && !weakState_.expired();
     }
@@ -120,7 +117,6 @@ class CancellationTokenRegistration {
     TokenId tokenId_{0};
 };
 
-// CancellationToken 内联实现
 inline CancellationTokenRegistration CancellationToken::registerCallback(Callback callback) const {
     std::lock_guard<std::mutex> lock(state_->mutex);
     if (state_->cancelled.load(std::memory_order_acquire)) {
@@ -131,7 +127,6 @@ inline CancellationTokenRegistration CancellationToken::registerCallback(Callbac
     return CancellationTokenRegistration(state_, tokenId);
 }
 
-// CancellationTokenRegistration 内联实现
 inline CancellationTokenRegistration::CancellationTokenRegistration(
     CancellationTokenRegistration&& other) noexcept
     : weakState_(std::move(other.weakState_)), tokenId_(other.tokenId_) {

@@ -95,7 +95,7 @@ class IStream {
     virtual void pause() noexcept = 0;
     virtual auto seek(uint64_t position) -> StreamResult<void> = 0;
 
-    /// 基于时间的 seek，默认返回 InvalidOperation；HLS 实现此接口
+    /// Time-based seek; returns InvalidOperation by default. HLS implements this interface.
     virtual auto seekByTime(double /*timeSec*/) -> StreamResult<void> {
         return std::unexpected(Error::InvalidOperation);
     }

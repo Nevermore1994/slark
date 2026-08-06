@@ -54,21 +54,18 @@ std::string StringUtil::toSafeLogString(std::string_view sv, size_t maxLen) noex
             break;
         }
         auto uc = static_cast<unsigned char>(c);
-        // 可打印 ASCII 范围，直接输出
         if (uc >= 0x20 && uc <= 0x7E) {
             result.push_back(c);
         } else if (c == '\r' || c == '\n' || c == '\t') {
-            // 常见控制字符用转义
             result.push_back('\\');
             result.push_back(c == '\r' ? 'r' : c == '\n' ? 'n' : 't');
         } else {
-            // 非法字节用 \xHH 转义
             constexpr char kHex[] = "0123456789ABCDEF";
             result.push_back('\\');
             result.push_back('x');
             result.push_back(kHex[uc >> 4]);
             result.push_back(kHex[uc & 0x0F]);
-            i += 3;  // 额外补偿 \x 的 3 个字符
+            i += 3;  // compensate for the 3 chars of \x escape
         }
         ++i;
     }

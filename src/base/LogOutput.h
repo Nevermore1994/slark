@@ -22,9 +22,9 @@ class LogOutput : public NonCopyMovable {
 
     void write(std::string_view str) noexcept;
 
-    /// 关闭日志系统：刷新所有缓存日志后停止排序线程。
-    /// shutdown 后可继续调用 write（日志将被丢弃）。
-    /// 幂等，可多次调用。
+    /// Shut down the log system: flush all buffered logs, then stop the sorting thread.
+    /// write() may still be called after shutdown (logs are dropped).
+    /// Idempotent; safe to call multiple times.
     static void shutdown() noexcept;
 
  private:

@@ -81,7 +81,7 @@ class ThreadPool : public NonCopyMovable {
         });
     }
 
-    // 移除所有待执行任务，同步执行取消回调
+    // Remove all pending jobs and invoke cancel callbacks synchronously
     void clear() noexcept {
         std::vector<Job> jobsToCancel;
         {
@@ -109,7 +109,7 @@ class ThreadPool : public NonCopyMovable {
         JobPriority priority;
         uint64_t sequence;
         MoveOnlyFunction<void()> func;
-        MoveOnlyFunction<void()> cancel;  // 取消回调，用于让 future 返回
+        MoveOnlyFunction<void()> cancel;  // cancel callback, lets the future return
 
         bool operator>(const Job& other) const noexcept {
             if (priority != other.priority) {
@@ -187,7 +187,8 @@ auto ThreadPool::submitWithPriority(JobPriority priority, F&& f, Args&&... args)
     -> Expected<std::future<std::invoke_result_t<F, Args...>>> {
     using ReturnType = std::invoke_result_t<F, Args...>;
 
-    // 用 promise 持有 shared state，cancel 时可直接设置异常而不影响 future 绑定
+    // Use a promise to hold the shared state; cancel can set an exception directly
+    // without disturbing the future binding
     auto promise = std::make_shared<std::promise<ReturnType>>();
     std::future<ReturnType> future = promise->get_future();
 

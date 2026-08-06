@@ -95,14 +95,14 @@ void TimerPool::collectExpired(std::vector<TimerEntry>& expired) noexcept {
     }
 
     auto targetTick = now - startMs_;
-    // 限制单次推进的 tick 数量，避免时间跳变时卡顿
+    // Limit ticks advanced per call to avoid jank on large time jumps
     constexpr uint64_t kMaxTicksPerCall = 1024;
     auto maxTick = currentTick_ + kMaxTicksPerCall;
     if (targetTick > maxTick) {
         targetTick = maxTick;
     }
 
-    // 逐 tick 推进，处理 [currentTick_, targetTick] 范围内的所有 slot
+    // Advance tick by tick, handling all slots in [currentTick_, targetTick)
     while (currentTick_ < targetTick) {
         auto idx = static_cast<uint32_t>(currentTick_ % kWheelSize);
 
@@ -117,7 +117,6 @@ void TimerPool::collectExpired(std::vector<TimerEntry>& expired) noexcept {
         drainSlot(level1_[idx], expired);
         ++currentTick_;
     }
-    // 处理 targetTick 本身
     auto idx = static_cast<uint32_t>(currentTick_ % kWheelSize);
     if (idx == 0 && currentTick_ > 0) {
         auto l2 = static_cast<uint32_t>((currentTick_ / kLevel2TickMs) % kWheelSize);
@@ -127,7 +126,7 @@ void TimerPool::collectExpired(std::vector<TimerEntry>& expired) noexcept {
         }
     }
     drainSlot(level1_[idx], expired);
-    // 到期定时器已移除，刷新缓存
+    // Expired timers were removed, refresh the cache
     refreshEarliestExpire();
 }
 
@@ -158,7 +157,7 @@ void TimerPool::reinsert(TimerEntry entry) noexcept {
     auto id = entry.id;
     auto expMs = static_cast<uint64_t>(entry.expireTime.toMilliSeconds().count());
     earliestExpireMs_ = std::min(earliestExpireMs_, expMs);
-    // 显式覆盖，避免静默失败
+    // Explicitly overwrite to avoid silent failure
     timers_.insert_or_assign(id, std::move(entry));
     placeInWheel({id, expMs});
 }
@@ -166,7 +165,7 @@ void TimerPool::reinsert(TimerEntry entry) noexcept {
 void TimerPool::cancel(TimerId id) noexcept {
     if (auto it = timers_.find(id); it != timers_.end()) {
         it->second.isValid = false;
-        // 被取消的恰好是最早到期的，需要刷新
+        // The cancelled timer may be the earliest one, refresh if so
         auto expMs = static_cast<uint64_t>(it->second.expireTime.toMilliSeconds().count());
         if (expMs <= earliestExpireMs_) {
             refreshEarliestExpire();

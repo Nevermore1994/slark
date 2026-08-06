@@ -119,8 +119,8 @@ class EventLoop : public NonCopyable {
     int32_t kqueueFd_{-1};
 #endif
     std::atomic<bool> running_{false};
-    // stop() 可能在 eventThread 执行 run() 之前被调用（测试进程快速退出），
-    // 该标志保证 run() 不会把 running_ 重新置 true 而永久阻塞 join()
+    // stop() may be called before run() executes on the event thread (e.g. fast test exit);
+    // this flag ensures run() does not set running_ back to true and block join() forever
     std::atomic<bool> stopRequested_{false};
     std::atomic<uint64_t> nextId_{1};
     mutable std::mutex fdMutex_;

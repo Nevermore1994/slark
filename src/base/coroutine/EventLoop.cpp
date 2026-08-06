@@ -53,9 +53,9 @@ EventLoop::~EventLoop() {
 
 void EventLoop::run() noexcept {
     running_.store(true, std::memory_order_release);
-    // stop() 可能已先于本线程执行（事件线程尚未启动时进程退出）。
-    // 必须 store 后复检：若 stop() 在 store 前完成，running_ 会被这里覆盖为 true
-    // 且 wakeup 事件已消费，导致 poll 永不退出、join() 永久阻塞。
+    // stop() may have run before this thread (process exit while event thread not yet started).
+    // Must re-check after store: if stop() finished before the store, running_ would be overwritten
+    // to true here and the wakeup event already consumed, causing poll to never exit and join() to hang.
     if (stopRequested_.load(std::memory_order_acquire)) {
         running_.store(false, std::memory_order_release);
         return;
@@ -138,8 +138,8 @@ void EventLoop::setReadable(int32_t fd, bool en) noexcept {
 #ifdef __linux__
     std::lock_guard l(fdMutex_);
     if (!en) {
-        // C-03：关闭 interest 前复核 slot。若 dispatch/cancel 取走旧 waiter 后
-        // 另一线程已注册新 waiter，则不关闭，避免关掉新 waiter 的 interest。
+        // C-03: re-check the slot before disabling interest. If a new waiter was registered after
+        // dispatch/cancel removed the old one, keep interest to avoid disabling the new waiter.
         auto it = fdSlots_.find(fd);
         if (it != fdSlots_.end() && it->second.hasRead) {
             return;
@@ -157,7 +157,7 @@ void EventLoop::setReadable(int32_t fd, bool en) noexcept {
 #elif defined(__APPLE__)
     std::lock_guard l(fdMutex_);
     if (!en) {
-        // C-03：同上，关闭前复核 slot 归属
+        // C-03: same as above, re-check slot ownership before disabling
         auto it = fdSlots_.find(fd);
         if (it != fdSlots_.end() && it->second.hasRead) {
             return;
@@ -173,7 +173,7 @@ void EventLoop::setWritable(int32_t fd, bool en) noexcept {
 #ifdef __linux__
     std::lock_guard l(fdMutex_);
     if (!en) {
-        // C-03：关闭前复核 slot 归属
+        // C-03: re-check slot ownership before disabling
         auto it = fdSlots_.find(fd);
         if (it != fdSlots_.end() && it->second.hasWrite) {
             return;
@@ -191,7 +191,7 @@ void EventLoop::setWritable(int32_t fd, bool en) noexcept {
 #elif defined(__APPLE__)
     std::lock_guard l(fdMutex_);
     if (!en) {
-        // C-03：关闭前复核 slot 归属
+        // C-03: re-check slot ownership before disabling
         auto it = fdSlots_.find(fd);
         if (it != fdSlots_.end() && it->second.hasWrite) {
             return;

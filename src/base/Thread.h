@@ -41,9 +41,9 @@ class Thread : public NonCopyMovable, public std::enable_shared_from_this<Thread
 
     void stop() noexcept;
 
-    // 同步等待 worker 线程退出。
-    // 必须先调用 stop()/loop 自然退出条件后再 join，否则会阻塞。
-    // 若在 worker 自身线程上下文调用则跳过，避免 self-join 死锁。
+    // Synchronously wait for the worker thread to exit.
+    // Must call stop() or let the loop exit naturally before join, otherwise it blocks.
+    // Skipped when called on the worker thread itself to avoid a self-join deadlock.
     void join() noexcept;
 
     Expected<void> postTask(ThreadTask task) noexcept;

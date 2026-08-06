@@ -118,7 +118,7 @@ enum class ChannelEventType {
     Success [[maybe_unused]],
     Closed,
     None,
-    Awakened,  // 被 wakeup() 主动唤醒（用于 flush 等场景）
+    Awakened,  // woken by wakeup() (e.g. for flush scenarios)
 };
 
 template <typename T>
@@ -149,7 +149,7 @@ class Channel {
         return isClosed_;
     }
 
-    // 不关闭 channel，仅唤醒一次 receive（用于 flush 等场景）
+    // Wake a single pending receive without closing the channel (e.g. for flush)
     inline auto wakeup() noexcept -> void {
         std::lock_guard<std::mutex> lock(mutex_);
         awakened_ = true;
@@ -171,7 +171,7 @@ class Channel {
 
  private:
     bool isClosed_ = false;
-    bool awakened_ = false;  // 旁路标志，被 receive 消费一次后清零
+    bool awakened_ = false;  // one-shot flag, cleared when consumed by receive
     size_t capacity_ = 0;    // 0 = unbounded
     std::atomic<int> receiverAlive_{0};
     std::deque<T> messages_;
@@ -375,7 +375,7 @@ class Receiver final {
         ~ReceiverImpl() {
             if (channel_->receiverAlive_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
                 std::lock_guard<std::mutex> lock(channel_->mutex_);
-                channel_->cond_.notify_all();  // 唤醒所有等待的发送方
+                channel_->cond_.notify_all();  // wake up all waiting senders
             }
         }
 
@@ -397,8 +397,8 @@ class Receiver final {
             requires std::movable<T>
         {
             std::unique_lock<std::mutex> lock(channel_->mutex_);
-            // 进入 wait 前自动置 inactive；返回时恢复 active 并刷新 lastRunTimeStamp_
-            // 非 Thread 上下文调用无副作用
+            // Mark thread inactive before wait; restore active and refresh lastRunTimeStamp_ on return.
+            // No effect outside a Thread context.
             _channel_detail::setCurrentThreadActive(false);
             channel_->cond_.wait(lock, [this] {
                 return !channel_->messages_.empty() || channel_->isClosed_ || channel_->awakened_;
@@ -408,11 +408,11 @@ class Receiver final {
                 auto value = std::move(channel_->messages_.front());
                 channel_->messages_.pop_front();
                 if (channel_->capacity_ > 0) {
-                    channel_->cond_.notify_one();  // 通知等待的发送方有空间
+                    channel_->cond_.notify_one();  // notify waiting senders of free space
                 }
                 return value;
             }
-            // Closed 优先于 Awakened：done() + wakeup() 并发时 worker 直接退出
+            // Closed takes precedence over Awakened: worker exits directly when done() + wakeup() race
             if (channel_->isClosed_) {
                 return std::unexpected(ChannelEventType::Closed);
             }
@@ -448,7 +448,7 @@ class Receiver final {
                 std::lock_guard<std::mutex> lock(channel_->mutex_);
                 messages.swap(channel_->messages_);
                 if (channel_->capacity_ > 0) {
-                    channel_->cond_.notify_all();  // 批量清空后通知所有等待的发送方
+                    channel_->cond_.notify_all();  // notify all waiting senders after draining
                 }
             }
             return messages;
@@ -615,7 +615,7 @@ class ReceiverIterator {
     }
 
     inline auto operator==(const ReceiverIterator& iter) const noexcept -> bool {
-        // 输入迭代器：只有都到达末尾（Closed）时才相等
+        // Input iterator: equal only when both reach the end (Closed)
         const auto& lvalue = value_;
         const auto& rvalue = iter.value_;
         return !lvalue.has_value() && !rvalue.has_value() &&

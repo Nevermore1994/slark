@@ -39,7 +39,7 @@ class ScopeGuard {
             fn_();
         }
         active_ = false;
-        fn_ = nullptr;  // 防止double free
+        fn_ = nullptr;  // prevent double free
     }
 
  private:

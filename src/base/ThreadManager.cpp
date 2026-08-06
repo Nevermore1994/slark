@@ -94,7 +94,7 @@ void ThreadManager::reportRunInfo() noexcept {
             if (!thread) {
                 return true;
             }
-            // 仅对活跃中线程做卡死判定，阻塞等待期间 active=false 自然跳过
+            // Only active threads are judged as blocked; active=false naturally skips while waiting
             if (thread->isRunning() && thread->isActive()) {
                 auto interval = now - thread->getLastRunTimeStamp();
                 if (interval >= kMaxThreadBlockTimeInterval) {

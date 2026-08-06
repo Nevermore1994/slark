@@ -117,7 +117,7 @@ void LogOutput::submitEntries(std::vector<LogEntry> entries) {
         return;
     }
     {
-        // push 与 sortAndWriteLoop 的谓词检查（sortMutex_ 内）互斥，避免丢失唤醒
+        // Mutual exclusion with sortAndWriteLoop's predicate check avoids a lost wakeup
         std::lock_guard lock(sortMutex_);
         entryQueue_.push(std::move(entries));
     }
@@ -143,7 +143,6 @@ void LogOutput::sortAndWriteLoop() {
             continue;
         }
 
-        // 合并所有批次并按序列号排序
         merged.clear();
         for (auto& batch : batches) {
             merged.insert(merged.end(), std::make_move_iterator(batch.begin()),
@@ -151,10 +150,10 @@ void LogOutput::sortAndWriteLoop() {
         }
         std::ranges::sort(merged, {}, &LogEntry::seq);
 
-        // 合并为单个 Data 批量写入
-        // 注意：不能用 Data(totalSize) + append()，因为 Data(totalSize) 的 length_=totalSize
-        // 再 append 会触发扩容，结果变成 totalSize 个 0 + 实际内容。
-        // 改用 fromString 构造空 Data 后直接 append，或一次性复制。
+        // Merge into a single Data for batched write.
+        // Do not use Data(totalSize) + append(): Data(totalSize) sets length_=totalSize and
+        // append would trigger reallocation, producing totalSize zeros followed by real content.
+        // Use fromString to build an empty Data then append, or copy in one shot.
         uint64_t totalSize = 0;
         for (const auto& entry : merged) {
             totalSize += entry.data.length();
@@ -207,8 +206,8 @@ void LogOutput::rotateIfNeeded(std::unique_ptr<Writer>& writer) noexcept {
     }
 
     try {
-        // 轮转：basePath → .1，.1 → .2 ... .(N-1) → .N，删除 .N
-        // 最终保留当前文件 + .1 ~ .(N-1)，共 N 个文件
+        // Rotate: basePath → .1, .1 → .2 ... .(N-1) → .N, then delete .N.
+        // Keeps the current file plus .1 ~ .(N-1), N files in total.
         const uint32_t maxNum = config.maxLogFileCount - 1;
         std::filesystem::remove(basePath + "." + std::to_string(maxNum));
         for (uint32_t i = maxNum; i > 0; --i) {
@@ -220,7 +219,7 @@ void LogOutput::rotateIfNeeded(std::unique_ptr<Writer>& writer) noexcept {
         }
         std::filesystem::rename(basePath, basePath + ".1");
     } catch (...) {
-        // 轮转失败不阻塞日志写入
+        // Rotation failure must not block log writing
     }
 
     recreateFile(writer);
@@ -250,7 +249,6 @@ void LogOutput::pruneOldLogs() noexcept {
         return;
     }
 
-    // 文件名前缀用于匹配待清理的日志文件
     const std::string prefix = config.logFileName;
 
     try {
@@ -258,21 +256,19 @@ void LogOutput::pruneOldLogs() noexcept {
             if (!entry.is_regular_file()) {
                 continue;
             }
-            auto stem = entry.path().stem().string();      // e.g. "slark_20260717" 或 "20260717"
-            auto ext = entry.path().extension().string();  // e.g. ".log" 或 ".1"
+            auto stem = entry.path().stem().string();      // e.g. "slark_20260717" or "20260717"
+            auto ext = entry.path().extension().string();  // e.g. ".log" or ".1"
 
-            // 仅处理带编号的轮转文件
             if (ext.size() <= 1 || ext[1] < '0' || ext[1] > '9') {
                 continue;
             }
 
-            // 检查文件名是否匹配前缀
             bool matched = false;
             if (prefix.empty()) {
-                // 无前缀：默认格式 时间.log.N
+                // No prefix: default format <time>.log.N
                 matched = true;
             } else {
-                // 有前缀：前缀_时间.log.N
+                // With prefix: <prefix>_<time>.log.N
                 matched = stem.starts_with(prefix + "_");
             }
             if (!matched) {
@@ -285,7 +281,7 @@ void LogOutput::pruneOldLogs() noexcept {
             }
         }
     } catch (...) {
-        // 文件系统操作失败不阻塞日志
+        // Filesystem failures must not block logging
     }
 }
 

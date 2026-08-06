@@ -109,7 +109,6 @@ void TimerManager::processLoopTask(TimerEntry& entry) {
         return;
     }
 
-    // 先重新插入定时器
     entry.expireTime = Time::nowTimeStamp() + entry.loopInterval;
     entry.isValid = true;
     {
@@ -157,18 +156,18 @@ TimerId TimerManager::runAfter(std::chrono::milliseconds delay, TimerTask func) 
 TimerId TimerManager::runLoop(std::chrono::milliseconds interval, TimerTask func) noexcept {
     auto id = TimerId::next();
 
-    // 循环任务需要多次执行，用 shared_ptr 包装
+    // Loop tasks run multiple times, wrap with shared_ptr
     auto sharedTask = std::make_shared<LoopTaskWrapper>(LoopTaskWrapper{.task = std::move(func)});
 
     {
         std::lock_guard lock(mutex_);
         loopTasks_[id.id()] = sharedTask;
 
-        // 定时器 entry 中存储一个空 task，实际执行时从 loopTasks_ 获取
+        // Store a null task in the timer entry; the actual task is looked up from loopTasks_
         TimerEntry entry{
             .id = id,
             .expireTime = Time::nowTimeStamp() + interval,
-            .task = nullptr,  // 循环任务不在此存储
+            .task = nullptr,  // loop task is not stored here
             .isLoop = true,
             .loopInterval = interval,
             .isValid = true,

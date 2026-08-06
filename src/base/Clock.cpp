@@ -44,7 +44,7 @@ void Clock::pause() noexcept {
     if (!isInited_.load(std::memory_order_relaxed)) {
         return;
     }
-    // 冻结当前 pts，避免 pause 后 time() 继续推进
+    // Freeze the current pts so time() stops advancing after pause
     auto now = Time::nowTimeStamp().point();
     auto last = lastUpdated_.load(std::memory_order_relaxed);
     auto pts = pts_.load(std::memory_order_relaxed);
@@ -65,7 +65,7 @@ void Clock::reset() noexcept {
 
 void Clock::setSpeed(double speed) noexcept {
     if (!isPaused_.load(std::memory_order_relaxed)) {
-        // 运行中：先冻结当前 pts，再改 speed，避免速度突变导致时间跳变
+        // While running: freeze the current pts before changing speed to avoid a time jump
         auto now = Time::nowTimeStamp().point();
         auto last = lastUpdated_.load(std::memory_order_relaxed);
         auto pts = pts_.load(std::memory_order_relaxed);

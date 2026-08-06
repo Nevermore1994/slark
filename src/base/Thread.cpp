@@ -109,7 +109,7 @@ void Thread::stop() noexcept {
 }
 
 void Thread::join() noexcept {
-    // 不能在 worker 自身线程上调用，否则 self-join 死锁
+    // Must not be called on the worker's own thread, otherwise self-join deadlocks
     if (worker_.joinable() && worker_.get_id() != std::this_thread::get_id()) {
         worker_.join();
     }
@@ -142,7 +142,8 @@ Expected<void> Thread::postTask(ThreadTask task) noexcept {
         return std::unexpected(Error::InvalidOperation);
     }
     {
-        // push 与 process() 中 cond_.wait 的谓词检查（mutex_ 内）互斥，避免丢失唤醒
+        // Mutual exclusion with the predicate check in process()'s cond_.wait (under mutex_)
+        // avoids a lost wakeup.
         std::lock_guard<std::mutex> lock(mutex_);
         taskQueue_.push(std::move(task));
     }
@@ -256,7 +257,7 @@ void Thread::process() noexcept {
 }
 
 milliseconds Thread::runRepeatTasks() noexcept {
-    // 一次加锁，收集到期任务和 taskPtr，同时计算下次最小等待时间
+    // Collect due tasks and taskPtr in one lock acquisition, computing the next minimum wait time
     struct DueThreadTask {
         TimerId id;
         std::shared_ptr<ThreadTask> taskPtr;
@@ -292,7 +293,6 @@ milliseconds Thread::runRepeatTasks() noexcept {
         (*taskPtr)();
     }
 
-    // 批量更新 lastRunTime
     auto now = Time::nowTimeStamp();
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -300,7 +300,6 @@ milliseconds Thread::runRepeatTasks() noexcept {
             auto it = std::ranges::find(repeatTasks_, id, &RepeatTask::id);
             if (it != repeatTasks_.end()) {
                 it->lastRunTime = now;
-                // 执行完后计算剩余时间
                 waitTime = std::min(waitTime, it->interval);
             }
         }

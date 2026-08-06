@@ -34,7 +34,7 @@ namespace Time {
 std::string localTimeStr() noexcept;
 }
 
-/// 输出日志：达到最低等级门槛则写文件，随后按平台输出到控制台
+/// Output a log: writes to file if it meets the minimum level threshold, then prints per platform
 void outputLog(LogType level, const std::string& log);
 
 #ifdef __clang__
@@ -85,7 +85,8 @@ inline bool logThrottled(uint64_t& lastUs, uint32_t intervalMs) noexcept {
 
 }  // namespace internal
 
-// 节流日志：同一调用点在 intervalMs 毫秒内只输出一次，用于逐帧/逐回调成功路径保留观测点
+// Throttled log: output at most once per intervalMs at the same call site,
+// keeping observation points on per-frame/per-callback success paths
 #define LogIThrottle(intervalMs, format, ...)                        \
     do {                                                             \
         static uint64_t kLastUs = 0;                                 \

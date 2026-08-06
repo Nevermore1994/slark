@@ -17,7 +17,7 @@ namespace slark {
 template <typename T, size_t N>
     requires std::is_trivially_copyable_v<T>
 class SPSCRingBuffer {
-    // 牺牲一个槽位区分空/满，实际可用容量 = kCapacity - 1
+    // Sacrifice one slot to distinguish empty/full; usable capacity = kCapacity - 1
     static constexpr size_t kCapacity = std::bit_ceil((N == 0) ? 2 : (N + 1));
     static constexpr size_t kMask = kCapacity - 1;
 
@@ -53,7 +53,7 @@ class SPSCRingBuffer {
         return true;
     }
 
-    /// 读取最多 count 个元素，返回实际读取数（0 ≤ 返回值 ≤ count）。
+    /// Read up to count elements, returns the number actually read (0 ≤ result ≤ count).
     uint32_t readUpTo(T* dst, uint32_t count) noexcept {
         if (count == 0 || dst == nullptr) {
             return 0;

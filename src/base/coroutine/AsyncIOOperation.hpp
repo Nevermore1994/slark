@@ -124,7 +124,8 @@ struct SharedCompletion {
         }
     }
 
-    // 外部取消（C-06）：设置 Cancelled 并唤醒挂起的协程，cleanup 照常执行
+    // External cancellation (C-06): set Cancelled and wake the suspended coroutine;
+    // cleanup runs as usual
     void requestCancel() noexcept {
         std::shared_ptr<ResumeGate> resumeGate;
         std::function<void()> cleanupTask;
@@ -196,7 +197,7 @@ class AsyncIOOperationBase {
         timeout_ = t;
     }
 
-    // 外部取消（C-06）：token 取消时唤醒挂起的协程
+    // External cancellation (C-06): token cancellation wakes the suspended coroutine
     void setCancellationToken(CancellationToken token) {
         if (token.isCancelled()) {
             completion_->requestCancel();

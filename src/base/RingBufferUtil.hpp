@@ -9,7 +9,7 @@
 
 namespace slark::detail {
 
-// 环形写入：src → dstArray[pos] 开始，到达末尾后绕回头部
+// Ring write: src → dstArray[pos], wraps to the head after reaching the end
 template <typename T>
 void wrapCopy(const T* src, T* dstArray, size_t capacity, size_t pos, uint32_t count) noexcept {
     auto first = std::min(static_cast<size_t>(count), capacity - pos);
@@ -19,7 +19,7 @@ void wrapCopy(const T* src, T* dstArray, size_t capacity, size_t pos, uint32_t c
     }
 }
 
-// 环形读取：srcArray[pos] 开始 → dst，到达末尾后绕回头部
+// Ring read: srcArray[pos] → dst, wraps to the head after reaching the end
 template <typename T>
 void wrapCopyFrom(const T* srcArray, size_t capacity, size_t pos, T* dst, uint32_t count) noexcept {
     auto first = std::min(static_cast<size_t>(count), capacity - pos);

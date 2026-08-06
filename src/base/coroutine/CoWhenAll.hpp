@@ -208,7 +208,7 @@ Task<void> whenAnyChild(std::shared_ptr<WhenAnyState<Ts...>> state,
 
     auto prev = state->completed.fetch_add(1, std::memory_order_acq_rel);
     if (prev == 0) {
-        // 首个完成者是 winner：记录索引与异常，唤醒父协程
+        // First finisher is the winner: record index and exception, wake the parent coroutine
         state->winnerIndex.store(I, std::memory_order_relaxed);
         if (error) {
             state->recordException(std::move(error));
@@ -217,7 +217,8 @@ Task<void> whenAnyChild(std::shared_ptr<WhenAnyState<Ts...>> state,
             gate->signal();
         }
     }
-    // loser 的结果保活在 results 中但从不读取；loser 异常吞掉，不影响 winner
+    // Loser results stay alive in results but are never read; loser exceptions are swallowed
+    // and do not affect the winner
 }
 
 }  // namespace detail
@@ -279,7 +280,7 @@ class WhenAnyAwaiter {
         (startOne<Is>(exec), ...);
     }
 
-    // 仅从 winner 索引对应结果构造 variant，其余 optional 不读取
+    // Build the variant only from the winner index's result; other optionals are not read
     template <size_t... Is>
     auto buildWinnerValue(size_t index, std::index_sequence<Is...>) {
         std::variant<WhenAllResultType<Ts>...> value;

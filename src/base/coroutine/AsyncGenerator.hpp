@@ -207,10 +207,11 @@ class AsyncGeneratorNextAwaiter {
 
 }  // namespace detail
 
-// 线程约束（C-08）：生产者与消费者必须由同一 executor/线程串行驱动。
-// next() / co_yield / 完成 / 析构不得跨线程并发调用；跨线程场景需先经
-// 事件投递（如 ownerThread_->postTask）串行化。若未来需要跨线程，
-// 必须将 consumerGate_/consumerState_ 改为互斥或原子状态机。
+// Thread constraint (C-08): producer and consumer must be driven serially by the same
+// executor/thread. next() / co_yield / completion / destruction must not be called
+// concurrently across threads; cross-thread scenarios must be serialized via event
+// dispatch (e.g. ownerThread_->postTask). If cross-thread support is ever needed,
+// consumerGate_/consumerState_ must be changed to a mutex or atomic state machine.
 template <typename T>
 class [[nodiscard]] AsyncGenerator : public NonCopyable {
  public:
