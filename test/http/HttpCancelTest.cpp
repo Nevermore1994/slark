@@ -111,6 +111,34 @@ TEST(HttpCancelTest, HttpRequestCancelCancelsExplicitTokenRequest) {
     EXPECT_TRUE(task.isDone());
 }
 
+TEST(HttpCancelTest, HttpRequestCancelCancelsAllActiveOperations) {
+    HttpRequest request;
+    RequestInfo info;
+    info.url = "not-a-valid-url";
+    info.methodType = HttpMethodType::Get;
+
+    CancellationToken firstExternalToken;
+    CancellationToken secondExternalToken;
+    auto firstRequest = request.asyncExecute(info, firstExternalToken);
+    auto secondRequest = request.asyncExecute(info, secondExternalToken);
+    request.cancel();
+
+    auto task = [&]() -> Task<void> {
+        auto firstResponse = co_await std::move(firstRequest);
+        auto secondResponse = co_await std::move(secondRequest);
+        EXPECT_EQ(firstResponse.error.retCode, slark::Error::Cancelled);
+        EXPECT_EQ(secondResponse.error.retCode, slark::Error::Cancelled);
+        EXPECT_FALSE(firstExternalToken.isCancelled());
+        EXPECT_FALSE(secondExternalToken.isCancelled());
+
+        auto thirdResponse = co_await request.asyncExecute(info);
+        EXPECT_EQ(thirdResponse.error.retCode, slark::Error::InvalidArgument);
+    }();
+
+    resumeUntilDone(task);
+    EXPECT_TRUE(task.isDone());
+}
+
 TEST(HttpCancelTest, CancelledRequestCanBeReused) {
     HttpRequest request;
     RequestInfo info;

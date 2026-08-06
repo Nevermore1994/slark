@@ -4,7 +4,10 @@
 
 #pragma once
 
+#include <atomic>
+#include <memory>
 #include <mutex>
+#include <vector>
 
 #include "AsyncGenerator.hpp"
 #include "CancellationToken.h"
@@ -28,11 +31,22 @@ class HttpRequest : public NonCopyable {
     void cancel() noexcept;
 
  private:
-    static Task<HttpResponse> executeWithToken(RequestInfo requestInfo, CancellationToken token);
-    CancellationToken beginOperation() noexcept;
+    struct OperationState final {
+        CancellationToken token;
+        std::atomic<bool> active{true};
+    };
+    using OperationStatePtr = std::shared_ptr<OperationState>;
+
+    static Task<HttpResponse> executeWithToken(RequestInfo requestInfo,
+                                               OperationStatePtr operation,
+                                               CancellationToken token);
+    static AsyncGenerator<StreamChunk> streamWithOperation(
+        AsyncGenerator<StreamChunk> generator,
+        OperationStatePtr operation);
+    OperationStatePtr beginOperation() noexcept;
 
     mutable std::mutex cancelMutex_;
-    CancellationToken cancelToken_;
+    std::vector<std::weak_ptr<OperationState>> operations_;
 };
 
 }  // namespace slark::http
