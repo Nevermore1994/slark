@@ -4,6 +4,7 @@
 #include "Url.h"
 
 #include <algorithm>
+#include <cctype>
 
 namespace slark::http {
 
@@ -24,6 +25,12 @@ bool isValidScheme(std::string_view scheme) noexcept {
 }
 
 namespace {
+
+bool containsInvalidUrlCharacter(std::string_view value) noexcept {
+    return std::any_of(value.begin(), value.end(), [](unsigned char c) {
+        return c <= 0x20 || c == 0x7f;
+    });
+}
 
 std::string_view extractComponents(std::string_view view,
                                    std::string& fragment,
@@ -116,6 +123,10 @@ void Url::parse(std::string_view url) noexcept {
         error_ = UrlError::EmptyUrl;
         return;
     }
+    if (containsInvalidUrlCharacter(url)) {
+        error_ = UrlError::InvalidCharacter;
+        return;
+    }
 
     constexpr auto kSchemeFlag = "://"sv;
     auto flagPos = url.find(kSchemeFlag);
@@ -150,6 +161,28 @@ void Url::parse(std::string_view url) noexcept {
         return;
     }
     error_ = UrlError::None;
+}
+
+std::string serializeAuthority(const Url& url, bool includeUserInfo) {
+    std::string result;
+    result.reserve(url.host.size() + url.userInfo.size() + url.port.size() + 4);
+
+    if (includeUserInfo && !url.userInfo.empty()) {
+        result.append(url.userInfo).append("@");
+    }
+
+    if (url.host.find(':') != std::string::npos) {
+        result.append("[").append(url.host).append("]");
+    } else {
+        result.append(url.host);
+    }
+
+    const bool isDefaultPort = (url.isHttp() && url.port == kHttpDefaultPort) ||
+                               (url.isHttps() && url.port == kHttpsDefaultPort);
+    if (!isDefaultPort && !url.port.empty()) {
+        result.append(":").append(url.port);
+    }
+    return result;
 }
 
 }  // namespace slark::http

@@ -86,11 +86,7 @@ std::string buildRequestString(const RequestInfo& info, const Url& url, bool kee
     result.append(" HTTP/1.1\r\n");
 
     if (!hasHost) {
-        result.append("Host: ").append(url.host);
-        if ((url.isHttp() && url.port != "80") || (url.isHttps() && url.port != "443")) {
-            result.append(":").append(url.port);
-        }
-        result.append(kCRLF);
+        result.append("Host: ").append(serializeAuthority(url, false)).append(kCRLF);
     }
     for (const auto& [key, value] : info.headers) {
         if (key.find('\r') != std::string::npos || key.find('\n') != std::string::npos ||

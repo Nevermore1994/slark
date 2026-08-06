@@ -167,15 +167,7 @@ class RedirectPolicy {
     static void appendAuthority(std::string& result, const Url& url) {
         result.append(url.scheme);
         result.append("://");
-        if (!url.userInfo.empty()) {
-            result.append(url.userInfo);
-            result.append("@");
-        }
-        result.append(url.host);
-        if ((url.isHttp() && url.port != "80") || (url.isHttps() && url.port != "443")) {
-            result.append(":");
-            result.append(url.port);
-        }
+        result.append(serializeAuthority(url));
     }
 
     static void appendRelativePath(std::string& result, const Url& url, std::string_view location) {

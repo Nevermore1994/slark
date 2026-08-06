@@ -29,6 +29,7 @@ enum class UrlError : uint8_t {
     InvalidPort,
     PortOutOfRange,
     InvalidIPv6,
+    InvalidCharacter,
 };
 
 struct Url {
@@ -93,6 +94,9 @@ struct Url {
     UrlError error_ = UrlError::None;
     std::string rawUrl_;
 };
+
+[[nodiscard]] std::string serializeAuthority(const Url& url,
+                                              bool includeUserInfo = true);
 
 inline void freeUrl(Url* url) noexcept {
     delete url;

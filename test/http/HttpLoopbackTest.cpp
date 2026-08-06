@@ -2,6 +2,8 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #include "HttpProcessor.h"
+#include "HttpUtil.hpp"
+#include "Url.h"
 
 #include <gtest/gtest.h>
 
@@ -170,4 +172,50 @@ TEST(HttpLoopbackTest, ChunkedResponseTruncatedAtPeerEofFails) {
         "5\r\nhel");
 
     EXPECT_EQ(response.error.retCode, Error::ConnectionReset);
+}
+
+TEST(HttpUtilLoopbackTest, IPv6HostUsesAuthorityBrackets) {
+    RequestInfo info;
+    info.url = "http://[2001:db8::1]:8080/path";
+    info.methodType = HttpMethodType::Get;
+    const Url url(info.url);
+
+    const auto request = Util::buildRequestString(info, url, false);
+
+    EXPECT_NE(request.find("Host: [2001:db8::1]:8080\r\n"), std::string::npos);
+}
+
+TEST(HttpUtilLoopbackTest, RejectsControlCharactersInUrlComponents) {
+    for (const auto urlText : {"http://example.com/path\r", "http://example.com/path\n",
+                               "http://example.com/path\t", "http://example.com/path "}) {
+        RequestInfo info;
+        info.url = urlText;
+        info.methodType = HttpMethodType::Get;
+        const Url url(info.url);
+
+        EXPECT_FALSE(url.isValid()) << urlText;
+        EXPECT_FALSE(Util::validateRequest(info, url)) << urlText;
+        EXPECT_TRUE(Util::buildRequestString(info, url, false).empty()) << urlText;
+    }
+
+    std::string nulUrl = "http://example.com/path";
+    nulUrl.push_back('\0');
+    nulUrl.append("tail");
+    RequestInfo nulInfo;
+    nulInfo.url = nulUrl;
+    nulInfo.methodType = HttpMethodType::Get;
+    const Url parsedNulUrl(nulInfo.url);
+    EXPECT_FALSE(parsedNulUrl.isValid());
+    EXPECT_FALSE(Util::validateRequest(nulInfo, parsedNulUrl));
+    EXPECT_TRUE(Util::buildRequestString(nulInfo, parsedNulUrl, false).empty());
+
+    std::string delUrl = "http://example.com/path";
+    delUrl.push_back('\x7f');
+    RequestInfo delInfo;
+    delInfo.url = delUrl;
+    delInfo.methodType = HttpMethodType::Get;
+    const Url parsedDelUrl(delInfo.url);
+    EXPECT_FALSE(parsedDelUrl.isValid());
+    EXPECT_FALSE(Util::validateRequest(delInfo, parsedDelUrl));
+    EXPECT_TRUE(Util::buildRequestString(delInfo, parsedDelUrl, false).empty());
 }
