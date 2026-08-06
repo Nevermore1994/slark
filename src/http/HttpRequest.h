@@ -28,10 +28,9 @@ class HttpRequest : public NonCopyable {
     void cancel() noexcept;
 
  private:
-    Task<HttpResponse> executeWithToken(RequestInfo requestInfo, CancellationToken token);
+    static Task<HttpResponse> executeWithToken(RequestInfo requestInfo, CancellationToken token);
     CancellationToken beginOperation() noexcept;
 
-    HttpProcessor processor_;
     mutable std::mutex cancelMutex_;
     CancellationToken cancelToken_;
 };

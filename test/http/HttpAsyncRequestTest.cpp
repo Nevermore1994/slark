@@ -130,6 +130,52 @@ TEST(HttpAsyncRequestTest, AsyncExecuteInvalidUrl) {
     EXPECT_TRUE(coro.isDone());
 }
 
+TEST(HttpAsyncRequestTest, LazyTaskOutlivesHttpRequest) {
+    RequestInfo info;
+    info.url = "not-a-valid-url";
+    info.methodType = HttpMethodType::Get;
+
+    Task<HttpResponse> requestTask;
+    {
+        HttpRequest request;
+        requestTask = request.asyncExecute(info);
+    }
+
+    requestTask.resume();
+    ASSERT_TRUE(requestTask.isDone());
+    const auto response = requestTask.result();
+    EXPECT_EQ(response.error.retCode, slark::Error::InvalidArgument);
+}
+
+TEST(HttpAsyncRequestTest, LazyGeneratorOutlivesHttpRequest) {
+    RequestInfo info;
+    info.url = "not-a-valid-url";
+    info.methodType = HttpMethodType::Get;
+
+    AsyncGenerator<StreamChunk> generator;
+    {
+        HttpRequest request;
+        generator = request.streamingExecute(info);
+    }
+
+    Error observedError = slark::Error::Success;
+    auto consumer = [&]() -> Task<void> {
+        auto chunk = co_await generator.next();
+        EXPECT_TRUE(chunk.has_value());
+        if (!chunk.has_value()) {
+            co_return;
+        }
+        EXPECT_TRUE(chunk->hasError());
+        if (chunk->hasError()) {
+            observedError = chunk->error.retCode;
+        }
+    }();
+    consumer.resume();
+
+    ASSERT_TRUE(consumer.isDone());
+    EXPECT_EQ(observedError, slark::Error::InvalidArgument);
+}
+
 TEST(HttpAsyncRequestTest, AsyncExecuteHttps) {
     auto coro = []() -> Task<void> {
         RequestInfo info;

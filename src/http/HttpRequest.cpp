@@ -23,7 +23,7 @@ Task<HttpResponse> HttpRequest::executeWithToken(RequestInfo requestInfo,
                                                  CancellationToken token) {
     LogI("[HttpRequest::asyncExecute] url={} method={}", requestInfo.url,
          static_cast<int>(requestInfo.methodType));
-    auto result = co_await processor_.process(requestInfo, std::move(token));
+    auto result = co_await HttpProcessor::process(requestInfo, std::move(token));
 
     if (result.has_value()) {
         LogI("[HttpRequest::asyncExecute] done, status={} url={}",
@@ -58,8 +58,8 @@ AsyncGenerator<StreamChunk> HttpRequest::streamingExecute(const RequestInfo& req
     LogI("[HttpRequest::streamingExecute] url={} method={}", requestInfo.url,
          static_cast<int>(requestInfo.methodType));
     auto operationToken = beginOperation();
-    return processor_.processStreaming(requestInfo,
-                                       CancellationToken::link(token, std::move(operationToken)));
+    return HttpProcessor::processStreaming(
+        requestInfo, CancellationToken::link(token, std::move(operationToken)));
 }
 
 }  // namespace slark::http

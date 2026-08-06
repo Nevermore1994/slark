@@ -21,14 +21,14 @@ class HttpProcessor : public NonCopyable {
     HttpProcessor() = default;
     ~HttpProcessor() = default;
 
-    Task<ResponseResult> process(RequestInfo requestInfo, CancellationToken token = {});
+    static Task<ResponseResult> process(RequestInfo requestInfo, CancellationToken token = {});
 
-    AsyncGenerator<StreamChunk> processStreaming(RequestInfo requestInfo,
-                                                 CancellationToken token = {});
+    static AsyncGenerator<StreamChunk> processStreaming(RequestInfo requestInfo,
+                                                         CancellationToken token = {});
 
  private:
-    AsyncGenerator<HttpResponseEvent> processEvents(RequestInfo requestInfo,
-                                                     CancellationToken token = {});
+    static AsyncGenerator<HttpResponseEvent> processEvents(RequestInfo requestInfo,
+                                                           CancellationToken token = {});
 
     struct ParsedRequest {
         std::optional<Url> url;
@@ -36,14 +36,13 @@ class HttpProcessor : public NonCopyable {
         ErrorInfo error;
     };
 
-    Task<ResponseResult> aggregateEvents(RequestInfo requestInfo, CancellationToken token);
+    static Task<ResponseResult> aggregateEvents(RequestInfo requestInfo, CancellationToken token);
 
-    AsyncGenerator<HttpResponseEvent> executeEventsSingle(RequestInfo requestInfo,
-                                                          CancellationToken token);
+    static AsyncGenerator<HttpResponseEvent> executeEventsSingle(RequestInfo requestInfo,
+                                                                 CancellationToken token);
 
     [[nodiscard]] static ParsedRequest parseUrl(const std::string& urlStr);
 
-    RedirectPolicy redirectPolicy_;
 };
 
 }  // namespace slark::http

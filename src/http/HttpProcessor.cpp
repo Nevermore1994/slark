@@ -253,7 +253,7 @@ HttpProcessor::ParsedRequest HttpProcessor::parseUrl(const std::string& urlStr) 
 }
 
 Task<ResponseResult> HttpProcessor::process(RequestInfo requestInfo, CancellationToken token) {
-    co_return co_await aggregateEvents(std::move(requestInfo), std::move(token));
+    return aggregateEvents(std::move(requestInfo), std::move(token));
 }
 
 Task<ResponseResult> HttpProcessor::aggregateEvents(RequestInfo requestInfo,
@@ -306,6 +306,7 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::processEvents(RequestInfo reque
                                                                 CancellationToken token) {
     auto currentInfo = std::move(requestInfo);
     int32_t redirectCount = 0;
+    RedirectPolicy redirectPolicy;
 
     while (true) {
         auto events = executeEventsSingle(currentInfo, token);
@@ -328,8 +329,8 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::processEvents(RequestInfo reque
                 HttpResponse headerResponse;
                 headerResponse.statusCode = event->header.httpStatusCode;
                 headerResponse.headers = event->header.headers;
-                if (redirectPolicy_.shouldRedirect(headerResponse, currentInfo, redirectCount)) {
-                    auto location = redirectPolicy_.extractRedirectLocation(event->header.headers);
+                if (redirectPolicy.shouldRedirect(headerResponse, currentInfo, redirectCount)) {
+                    auto location = redirectPolicy.extractRedirectLocation(event->header.headers);
                     if (location.has_value()) {
                         auto redirectRequest = RedirectPolicy::buildRedirectRequest(
                             currentInfo, event->header.httpStatusCode, std::move(*location));
