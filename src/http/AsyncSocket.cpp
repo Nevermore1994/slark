@@ -290,8 +290,8 @@ Task<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
         }
 
         if (result == 0) {
-            LogW("[AsyncSocket::asyncReceive] peer closed (EOF)");
-            co_return std::unexpected(Error::ConnectionReset);
+            LogI("[AsyncSocket::asyncReceive] peer closed (EOF)");
+            co_return size_t{0};
         }
 
         if (transport_->needsRetry(result)) {
