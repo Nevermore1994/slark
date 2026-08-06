@@ -23,6 +23,7 @@ inline int64_t streamProgressLogBytes() {
 Error mapLegacyErrorToUnified(Error error) noexcept {
     switch (error) {
         case Error::ConnectionTimeout:
+            return slark::Error::ConnectionTimeout;
         case Error::ConnectionReset:
         case Error::ConnectionRefused:
         case Error::BrokenPipe:

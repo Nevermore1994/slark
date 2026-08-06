@@ -10,6 +10,8 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -113,6 +115,83 @@ class LoopbackHttpServer final {
     std::thread worker_;
 };
 
+class LoopbackBlackholeServer final {
+ public:
+    LoopbackBlackholeServer() {
+        listenFd_ = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (listenFd_ < 0) {
+            throw std::runtime_error("failed to create blackhole socket");
+        }
+
+        int reuseAddress = 1;
+        ::setsockopt(listenFd_, SOL_SOCKET, SO_REUSEADDR, &reuseAddress, sizeof(reuseAddress));
+
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        address.sin_port = htons(0);
+        if (::bind(listenFd_, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) < 0 ||
+            ::listen(listenFd_, 1) < 0) {
+            ::close(listenFd_);
+            listenFd_ = -1;
+            throw std::runtime_error("failed to bind blackhole socket");
+        }
+
+        socklen_t addressLength = sizeof(address);
+        if (::getsockname(listenFd_, reinterpret_cast<sockaddr*>(&address), &addressLength) < 0) {
+            ::close(listenFd_);
+            listenFd_ = -1;
+            throw std::runtime_error("failed to get blackhole port");
+        }
+        port_ = ntohs(address.sin_port);
+        worker_ = std::thread([this] { holdConnection(); });
+    }
+
+    ~LoopbackBlackholeServer() {
+        if (listenFd_ >= 0) {
+            ::shutdown(listenFd_, SHUT_RDWR);
+        }
+        {
+            std::lock_guard lock(mutex_);
+            stop_ = true;
+        }
+        condition_.notify_one();
+        if (worker_.joinable()) {
+            worker_.join();
+        }
+        if (listenFd_ >= 0) {
+            ::close(listenFd_);
+        }
+    }
+
+    LoopbackBlackholeServer(const LoopbackBlackholeServer&) = delete;
+    LoopbackBlackholeServer& operator=(const LoopbackBlackholeServer&) = delete;
+
+    [[nodiscard]] uint16_t port() const noexcept {
+        return port_;
+    }
+
+ private:
+    void holdConnection() noexcept {
+        const int clientFd = ::accept(listenFd_, nullptr, nullptr);
+        if (clientFd < 0) {
+            return;
+        }
+
+        std::unique_lock lock(mutex_);
+        condition_.wait(lock, [this] { return stop_; });
+        lock.unlock();
+        ::close(clientFd);
+    }
+
+    int listenFd_ = -1;
+    uint16_t port_ = 0;
+    std::mutex mutex_;
+    std::condition_variable condition_;
+    bool stop_ = false;
+    std::thread worker_;
+};
+
 HttpResponse executeLoopback(const std::string& response) {
     LoopbackHttpServer server(response);
 
@@ -172,6 +251,40 @@ TEST(HttpLoopbackTest, ChunkedResponseTruncatedAtPeerEofFails) {
         "5\r\nhel");
 
     EXPECT_EQ(response.error.retCode, Error::ConnectionReset);
+}
+
+TEST(HttpLoopbackTest, WriteTimeoutPreservesConnectionTimeout) {
+    LoopbackBlackholeServer server;
+    RequestInfo info;
+    info.url = "http://127.0.0.1:" + std::to_string(server.port()) + "/";
+    info.methodType = HttpMethodType::Post;
+    info.ipVersion = IPVersion::V4;
+    info.connectTimeout = std::chrono::seconds(2);
+    info.writeTimeout = std::chrono::milliseconds(100);
+    info.readTimeout = std::chrono::seconds(2);
+    info.readIdleTimeout = std::chrono::seconds(2);
+    info.body = std::make_unique<Data>(std::string(8 * 1024 * 1024, 'x'));
+
+    ThreadPool pool(ThreadPoolConfig{2});
+    std::atomic<bool> done{false};
+    HttpResponse result;
+    auto task = [&]() -> Task<void> {
+        HttpProcessor processor;
+        auto response = co_await processor.process(info);
+        if (response.has_value()) {
+            result = std::move(response.value());
+        } else {
+            result.error = response.error();
+        }
+        done.store(true);
+    }();
+    task.resume();
+
+    for (int i = 0; i < 200 && !done.load(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(done.load());
+    EXPECT_EQ(result.error.retCode, Error::ConnectionTimeout);
 }
 
 TEST(HttpUtilLoopbackTest, IPv6HostUsesAuthorityBrackets) {
