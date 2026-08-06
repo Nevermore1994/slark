@@ -60,32 +60,17 @@ HttpResponse executeSync(const RequestInfo& info) {
     auto waiter = std::make_shared<SyncWaiter>();
     auto result = std::make_shared<HttpResponse>();
 
-    HttpResponseHandler handler;
-    handler.onHeader = [result](const RequestInfo&, ResponseHeader&& header) {
-        result->statusCode = header.httpStatusCode;
-        result->headers = std::move(header.headers);
-    };
-    handler.onData = [result](const RequestInfo&, DataPtr data) {
-        if (data) {
-            if (!result->body) {
-                result->body = std::move(data);
-            } else {
-                result->body->append(ConstByteSpan(data->data(), data->size()));
-            }
+    auto testTask = [&]() -> Task<void> {
+        try {
+            auto request = std::make_shared<HttpRequest>();
+            *result = co_await request->asyncExecute(info);
+        } catch (...) {
+            result->error = ErrorInfo{slark::Error::Failed, 0};
         }
-    };
-    handler.onCompleted = [result, waiter](const RequestInfo&) {
-        result->error = ErrorInfo{slark::Error::Success, 0};
         waiter->notify();
-    };
-    handler.onError = [result, waiter](const RequestInfo&, ErrorInfo error) {
-        result->error = error;
-        waiter->notify();
-    };
+    }();
 
-    auto request = std::make_shared<HttpRequest>();
-    request->asyncExecute(info, std::move(handler));
-
+    testTask.resume();
     EXPECT_TRUE(waiter->wait()) << "Request timed out: " << info.url;
     return std::move(*result);
 }

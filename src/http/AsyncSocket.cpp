@@ -316,127 +316,6 @@ Task<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
     }
 }
 
-Task<DataPtr> AsyncSocket::asyncReceiveAll(std::chrono::milliseconds timeout) {
-    if (socket_ == kInvalidSocket || !transport_) {
-        co_return nullptr;
-    }
-
-    Time::Deadline deadline(timeout);
-    auto data = std::make_unique<Data>();
-    data->resize(kDefaultReadSize);
-
-    int32_t waitCount = 0;
-    size_t totalReceived = 0;
-    while (true) {
-        if (deadline.isExpired()) {
-            if (perf_) {
-                perf_->transport.timeoutSource = TimeoutSource::ReadOverall;
-            }
-            break;
-        }
-
-        ssize_t result =
-            transport_->read(data->data() + totalReceived, data->size() - totalReceived);
-        if (result > 0) {
-            totalReceived += static_cast<size_t>(result);
-            if (data->size() - totalReceived < static_cast<size_t>(kDefaultReadSize)) {
-                // Grow progressively: double below the threshold, fixed step above it
-                auto currentSize = data->size();
-                auto newSize = (currentSize < kGrowthThreshold) ? currentSize * 2
-                                                                : currentSize + kGrowthStepSize;
-                if (newSize > kMaxReceiveBufferSize) {
-                    break;
-                }
-                data->resize(newSize);
-            }
-            continue;
-        }
-
-        if (result == 0) {
-            break;
-        }
-
-        if (transport_->needsRetry(result)) {
-            waitCount++;
-            bool ready = co_await waitFdReadyWithTimeout(socket_, transport_->retryInterest(result),
-                                                         deadline);
-            if (!ready) {
-                if (perf_) {
-                    perf_->transport.timeoutSource = TimeoutSource::ReadOverall;
-                }
-                break;
-            }
-            continue;
-        }
-
-        break;
-    }
-
-    if (perf_) {
-        perf_->transport.receiveWaitCount += waitCount;
-    }
-    data->resize(totalReceived);
-    co_return std::move(data);
-}
-
-Task<bool> AsyncSocket::asyncReceiveStreaming(HttpResponseParser& parser,
-                                              std::chrono::milliseconds timeout,
-                                              CancellationToken token) {
-    if (socket_ == kInvalidSocket || !transport_) {
-        co_return false;
-    }
-
-    Time::Deadline deadline(timeout);
-    std::array<Byte, kDefaultReadSize> readBuffer{};
-    int32_t waitCount = 0;
-
-    while (!parser.isCompleted() && !parser.hasError()) {
-        if (token.isCancelled()) {
-            co_return false;
-        }
-
-        if (deadline.isExpired()) {
-            if (perf_) {
-                perf_->transport.timeoutSource = TimeoutSource::ReadOverall;
-            }
-            co_return false;
-        }
-
-        ssize_t result = transport_->read(readBuffer.data(), readBuffer.size());
-        if (result > 0) {
-            parser.feed(readBuffer.data(), static_cast<size_t>(result));
-            continue;
-        }
-
-        if (result == 0) {
-            // Connection closed, notify the parser that EOF arrived
-            parser.onEof();
-            break;
-        }
-
-        if (transport_->needsRetry(result)) {
-            waitCount++;
-            bool ready = co_await waitFdReadyWithTimeout(socket_, transport_->retryInterest(result),
-                                                         deadline, &token);
-            if (!ready) {
-                if (perf_) {
-                    perf_->transport.timeoutSource =
-                        token.isCancelled() ? TimeoutSource::None : TimeoutSource::ReadIdle;
-                }
-                co_return false;
-            }
-            continue;
-        }
-
-        co_return false;
-    }
-
-    if (perf_) {
-        perf_->transport.receiveWaitCount += waitCount;
-    }
-    co_return parser.isCompleted();
-}
-
 void AsyncSocket::close() noexcept {
     if (transport_) {
         transport_->shutdown();
@@ -456,27 +335,27 @@ TLSTransport::~TLSTransport() {
     shutdown();
 }
 
-Task<bool> TLSTransport::performHandshake(std::chrono::milliseconds timeout,
-                                          CancellationToken token) {
+Task<Error> TLSTransport::performHandshake(std::chrono::milliseconds timeout,
+                                           CancellationToken token) {
     if (!sslPtr_) {
         LogW("TLS handshake failed: SSL create failed");
-        co_return false;
+        co_return Error::HttpSslError;
     }
 
     Time::Deadline deadline(timeout);
     while (true) {
         if (token.isCancelled()) {
-            co_return false;
+            co_return Error::Cancelled;
         }
         if (deadline.isExpired()) {
             LogW("TLS handshake timeout");
-            co_return false;
+            co_return Error::ConnectionTimeout;
         }
 
         int32_t result = SSL_connect(sslPtr_.get());
         if (result == 1) {
             LogI("[TLSTransport::performHandshake] TLS handshake ok");
-            co_return true;
+            co_return Error::Success;
         }
 
         int32_t sslError = SSL_get_error(sslPtr_.get(), result);
@@ -486,13 +365,13 @@ Task<bool> TLSTransport::performHandshake(std::chrono::milliseconds timeout,
             bool ready = co_await waitFdReadyWithTimeout(fd_, interest, deadline, &token);
             if (!ready) {
                 LogW("TLS handshake failed: waitFdReady timeout");
-                co_return false;
+                co_return token.isCancelled() ? Error::Cancelled : Error::ConnectionTimeout;
             }
         } else {
             const char* errStr = ERR_reason_error_string(ERR_get_error());
             LogW("TLS handshake failed: sslError={}, errStr={}, errno={}", sslError,
                  errStr ? errStr : "unknown", errno);
-            co_return false;
+            co_return Error::HttpSslHandshakeFailed;
         }
     }
 }

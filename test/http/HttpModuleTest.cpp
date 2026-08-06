@@ -4,9 +4,13 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <array>
 #include <chrono>
-#include <condition_variable>
+#include <string_view>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include "CancellationToken.h"
 #include "HttpRequest.h"
@@ -18,6 +22,31 @@
 
 using namespace slark;
 using namespace slark::http;
+
+namespace {
+
+size_t countRequestHeaders(const std::string& request, std::string_view name) {
+    size_t count = 0;
+    size_t lineStart = 0;
+    while (lineStart < request.size()) {
+        const auto lineEnd = request.find("\r\n", lineStart);
+        if (lineEnd == std::string::npos) {
+            break;
+        }
+        const auto line = std::string_view(request).substr(lineStart, lineEnd - lineStart);
+        if (line.empty()) {
+            break;
+        }
+        const auto colon = line.find(':');
+        if (colon != std::string_view::npos && StringUtil::iequals(line.substr(0, colon), name)) {
+            ++count;
+        }
+        lineStart = lineEnd + 2;
+    }
+    return count;
+}
+
+}  // namespace
 
 TEST(UrlTest, ParseHttpUrl) {
     Url url("http://example.com/path?query=value#fragment");
@@ -192,6 +221,153 @@ TEST(HttpUtilTest, BuildGetRequest) {
     EXPECT_THAT(request, ::testing::HasSubstr("User-Agent: TestAgent"));
 }
 
+TEST(HttpUtilTest, BuildHeadRequest) {
+    RequestInfo info;
+    info.url = "http://example.com/path";
+    info.methodType = HttpMethodType::Head;
+
+    const Url url(info.url);
+    const auto request = Util::buildRequestString(info, url, false);
+
+    EXPECT_THAT(request, ::testing::HasSubstr("HEAD /path HTTP/1.1"));
+}
+
+TEST(HttpUtilTest, AllMethodNamesAreStable) {
+    const std::array<std::pair<HttpMethodType, std::string_view>, 8> methods = {{
+        {HttpMethodType::Unknown, "Unknown"}, {HttpMethodType::Get, "GET"},
+        {HttpMethodType::Post, "POST"},       {HttpMethodType::Put, "PUT"},
+        {HttpMethodType::Patch, "PATCH"},     {HttpMethodType::Delete, "DELETE"},
+        {HttpMethodType::Options, "OPTIONS"}, {HttpMethodType::Head, "HEAD"},
+    }};
+    for (const auto& [method, name] : methods) {
+        EXPECT_EQ(Util::getMethodName(method), name);
+    }
+}
+
+TEST(HttpUtilTest, UnknownMethodIsRejectedBeforeSerialization) {
+    RequestInfo info;
+    info.url = "http://example.com/path";
+    info.methodType = HttpMethodType::Unknown;
+    const Url url(info.url);
+
+    EXPECT_FALSE(Util::validateRequest(info, url));
+    EXPECT_TRUE(Util::buildRequestString(info, url, false).empty());
+}
+
+TEST(HttpUtilTest, BuildRequestDoesNotDuplicateControlledHeaders) {
+    RequestInfo info;
+    info.url = "http://example.com/path";
+    info.methodType = HttpMethodType::Post;
+    info.headers = {{"host", "custom.example"}, {"CONTENT-LENGTH", "3"},
+                    {"connection", "close"}};
+    info.body = std::make_unique<Data>("abc");
+
+    const Url url(info.url);
+    const auto request = Util::buildRequestString(info, url, true);
+
+    EXPECT_EQ(countRequestHeaders(request, "Host"), 1u);
+    EXPECT_EQ(countRequestHeaders(request, "Content-Length"), 1u);
+    EXPECT_EQ(countRequestHeaders(request, "Connection"), 1u);
+    EXPECT_THAT(request, ::testing::HasSubstr("host: custom.example\r\n"));
+    EXPECT_THAT(request, ::testing::HasSubstr("CONTENT-LENGTH: 3\r\n"));
+    EXPECT_THAT(request, ::testing::HasSubstr("connection: close\r\n"));
+}
+
+TEST(HttpUtilTest, RejectsHeaderInjection) {
+    for (const auto& header : {std::pair{"X-Test", "safe\r\nInjected: value"},
+                               std::pair{"X\r\n-Test", "safe"}}) {
+        RequestInfo info;
+        info.url = "http://example.com/path";
+        info.methodType = HttpMethodType::Get;
+        info.headers = {{header.first, header.second}};
+
+        const Url url(info.url);
+        EXPECT_FALSE(Util::validateRequest(info, url));
+        EXPECT_TRUE(Util::buildRequestString(info, url, false).empty());
+    }
+}
+
+TEST(HttpUtilTest, RejectsCaseInsensitiveDuplicateHeaders) {
+    RequestInfo info;
+    info.url = "http://example.com/path";
+    info.methodType = HttpMethodType::Get;
+    info.headers = {{"X-Test", "one"}, {"x-test", "two"}};
+
+    const Url url(info.url);
+    EXPECT_FALSE(Util::validateRequest(info, url));
+    EXPECT_TRUE(Util::buildRequestString(info, url, false).empty());
+}
+
+TEST(HttpUtilTest, RejectsInvalidRequestFramingHeaders) {
+    const std::array<std::pair<std::string_view, std::string_view>, 5> invalidHeaders = {{
+        {"Transfer-Encoding", "chunked"}, {"Connection", "upgrade"},
+        {"Connection", "invalid"},      {"Content-Length", "-1"},
+        {"Content-Length", "3abc"},
+    }};
+    for (const auto& [name, value] : invalidHeaders) {
+        RequestInfo info;
+        info.url = "http://example.com/path";
+        info.methodType = HttpMethodType::Post;
+        info.body = std::make_unique<Data>("abc");
+        info.headers = {{std::string(name), std::string(value)}};
+
+        const Url url(info.url);
+        EXPECT_FALSE(Util::validateRequest(info, url)) << name << ": " << value;
+        EXPECT_TRUE(Util::buildRequestString(info, url, false).empty()) << name << ": " << value;
+    }
+}
+
+TEST(HttpUtilTest, RequestContentLengthMustMatchBody) {
+    RequestInfo info;
+    info.url = "http://example.com/path";
+    info.methodType = HttpMethodType::Post;
+    info.body = std::make_unique<Data>("abc");
+    const Url url(info.url);
+
+    for (const auto value : {"0", "2", "4", "9223372036854775808"}) {
+        info.headers = {{"Content-Length", value}};
+        EXPECT_FALSE(Util::validateRequest(info, url)) << "value=" << value;
+        EXPECT_TRUE(Util::buildRequestString(info, url, false).empty()) << "value=" << value;
+    }
+
+    info.headers = {{"Content-Length", "3"}};
+    const auto request = Util::buildRequestString(info, url, false);
+    EXPECT_FALSE(request.empty());
+    EXPECT_EQ(countRequestHeaders(request, "Content-Length"), 1u);
+}
+
+TEST(HttpUtilTest, EmptyBodyContentLengthMustBeZero) {
+    RequestInfo info;
+    info.url = "http://example.com/path";
+    info.methodType = HttpMethodType::Post;
+    const Url url(info.url);
+
+    info.headers = {{"Content-Length", "3"}};
+    EXPECT_FALSE(Util::validateRequest(info, url));
+    info.headers = {{"Content-Length", "0"}};
+    EXPECT_TRUE(Util::validateRequest(info, url));
+}
+
+TEST(HttpUtilTest, RequestHostAndConnectionContracts) {
+    RequestInfo info;
+    info.url = "http://example.com:8080/path";
+    info.methodType = HttpMethodType::Get;
+    const Url url(info.url);
+
+    auto request = Util::buildRequestString(info, url, false);
+    EXPECT_EQ(countRequestHeaders(request, "Host"), 1u);
+    EXPECT_THAT(request, ::testing::HasSubstr("Host: example.com:8080\r\n"));
+    EXPECT_THAT(request, ::testing::HasSubstr("Connection: close\r\n"));
+
+    info.headers = {{"HOST", "custom.example"}, {"CONNECTION", "CLOSE"}};
+    EXPECT_TRUE(Util::validateRequest(info, url));
+    request = Util::buildRequestString(info, url, true);
+    EXPECT_EQ(countRequestHeaders(request, "Host"), 1u);
+    EXPECT_EQ(countRequestHeaders(request, "Connection"), 1u);
+    EXPECT_THAT(request, ::testing::HasSubstr("HOST: custom.example\r\n"));
+    EXPECT_THAT(request, ::testing::HasSubstr("CONNECTION: CLOSE\r\n"));
+}
+
 TEST(HttpUtilTest, BuildPostRequest) {
     RequestInfo info;
     info.url = "http://example.com/api";
@@ -257,7 +433,10 @@ TEST(TypeTest, RequestInfoWithBody) {
 TEST(TypeTest, HttpResponseDefaults) {
     HttpResponse response;
     EXPECT_EQ(response.statusCode, HttpStatusCode::Unknown);
-    EXPECT_TRUE(response.isSuccess());
+    EXPECT_FALSE(response.isSuccess());
+    EXPECT_FALSE(response.hasValidResponse());
+    EXPECT_FALSE(response.isTransportSuccess());
+    EXPECT_FALSE(response.isHttpSuccess());
     EXPECT_FALSE(response.isOk());
 }
 
@@ -411,6 +590,36 @@ TEST(HttpIntegrationTest, UrlAndRequestInfo) {
     std::string request = Util::buildRequestString(info, url, keepAlive);
     EXPECT_THAT(request, ::testing::HasSubstr("GET /v1/users?id=123 HTTP/1.1"));
     EXPECT_THAT(request, ::testing::HasSubstr("Host: api.example.com"));
+}
+
+TEST(HttpResponseTest, SuccessSemanticsDistinguishTransportAndHttpStatus) {
+    HttpResponse empty;
+    EXPECT_FALSE(empty.hasValidResponse());
+    EXPECT_FALSE(empty.isTransportSuccess());
+    EXPECT_FALSE(empty.isSuccess());
+
+    HttpResponse ok;
+    ok.statusCode = HttpStatusCode::OK;
+    ok.error = ErrorInfo{Error::Success};
+    EXPECT_TRUE(ok.hasValidResponse());
+    EXPECT_TRUE(ok.isTransportSuccess());
+    EXPECT_TRUE(ok.isHttpSuccess());
+    EXPECT_TRUE(ok.isSuccess());
+
+    HttpResponse redirect;
+    redirect.statusCode = HttpStatusCode::Found;
+    redirect.error = ErrorInfo{Error::Success};
+    EXPECT_TRUE(redirect.isTransportSuccess());
+    EXPECT_FALSE(redirect.isHttpSuccess());
+    EXPECT_TRUE(redirect.isSuccess());
+
+    HttpResponse error;
+    error.statusCode = HttpStatusCode::NotFound;
+    error.error = ErrorInfo{Error::HttpError};
+    EXPECT_TRUE(error.hasValidResponse());
+    EXPECT_FALSE(error.isTransportSuccess());
+    EXPECT_FALSE(error.isHttpSuccess());
+    EXPECT_FALSE(error.isSuccess());
 }
 
 TEST(HttpIntegrationTest, ParserWithRealResponse) {

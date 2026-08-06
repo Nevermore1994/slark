@@ -27,35 +27,7 @@ constexpr int kNoSignal = MSG_NOSIGNAL;
 constexpr int kNoSignal = 0;
 #endif
 
-constexpr int32_t kDefaultReadSize = 16 * 1024;             // 16KB
-constexpr size_t kGrowthThreshold = 256 * 1024;             // 256KB, grow by a fixed step above this
-constexpr size_t kGrowthStepSize = 128 * 1024;              // 128KB fixed step
-constexpr size_t kMaxReceiveBufferSize = 64 * 1024 * 1024;  // 64MB cap
-constexpr int32_t kSocketError = kInvalid;
-constexpr int32_t kRetryCode = EINTR;
-constexpr int32_t kAgainCode = EAGAIN;
-constexpr int32_t kBusyCode = EINPROGRESS;
-constexpr int32_t kMaxAgainRetryCount = 16;
-
-inline int32_t getLastError() noexcept {
-    return errno;
-}
-
-// EINTR retry wrapper
-template <typename Func>
-std::pair<ssize_t, int32_t> retryOnInterrupt(Func&& func, int32_t maxRetry = kMaxRetryCount) {
-    for (int32_t i = 0; i < maxRetry; ++i) {
-        ssize_t result = func();
-        if (result >= 0) {
-            return {result, 0};
-        }
-        auto err = getLastError();
-        if (err != kRetryCode) {
-            return {result, err};
-        }
-    }
-    return {-1, kRetryCode};
-}
+constexpr int32_t kDefaultReadSize = 16 * 1024;
 
 using AddressInfoPtr = std::unique_ptr<addrinfo, decltype(&freeaddrinfo)>;
 

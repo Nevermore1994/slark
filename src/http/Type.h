@@ -7,7 +7,6 @@
 #include <chrono>
 #include <cstdint>
 #include <expected>
-#include <functional>
 #include <string>
 #include <unordered_map>
 
@@ -17,7 +16,6 @@
 namespace slark::http {
 
 constexpr int32_t kInvalid = -1;
-constexpr int32_t kMaxRetryCount = 64;
 
 #ifdef __clang__
 #pragma clang diagnostic push
@@ -163,20 +161,13 @@ struct RequestPerf {
     int64_t totalRequestTimeMs = 0;
     std::string host;
 
-    void reset() noexcept {
-        connection = ConnectionPoolPerf{};
-        transport = TransportPerf{};
-        parser = ParserPerf{};
-        totalRequestTimeMs = 0;
-        host.clear();
-    }
-
-    [[nodiscard]] std::string summary() const;
 };
 
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
+
+constexpr uint64_t kDefaultMaxResponseBodySize = 64ULL * 1024ULL * 1024ULL;
 
 struct RequestInfo {
     bool isAllowRedirect = true;
@@ -191,6 +182,7 @@ struct RequestInfo {
     std::chrono::milliseconds readTimeout{std::chrono::seconds(30)};
     std::chrono::milliseconds readIdleTimeout{std::chrono::seconds(30)};
     std::chrono::milliseconds writeTimeout{std::chrono::seconds(30)};
+    uint64_t maxResponseBodySize = kDefaultMaxResponseBodySize;
     std::string reqId;
     std::string tag;
     RequestPerf perf;
@@ -222,15 +214,58 @@ struct ResponseHeader {
     HttpStatusCode httpStatusCode = HttpStatusCode::Unknown;
     std::string reasonPhrase;
 
-    [[nodiscard]] bool isNeedRedirect() const noexcept {
-        return httpStatusCode == HttpStatusCode::MovedPermanently ||   // 301
-               httpStatusCode == HttpStatusCode::Found ||              // 302
-               httpStatusCode == HttpStatusCode::SeeOther ||           // 303
-               httpStatusCode == HttpStatusCode::TemporaryRedirect ||  // 307
-               httpStatusCode == HttpStatusCode::PermanentRedirect;    // 308
+    ResponseHeader() = default;
+};
+
+enum class HttpResponseEventType : uint8_t {
+    Connected,
+    Headers,
+    Data,
+    Completed,
+    Error,
+};
+
+struct HttpResponseEvent {
+    HttpResponseEventType type = HttpResponseEventType::Error;
+    ResponseHeader header;
+    DataPtr data;
+    RequestPerf perf;
+    ErrorInfo error;
+
+    static HttpResponseEvent makeConnected() {
+        HttpResponseEvent event;
+        event.type = HttpResponseEventType::Connected;
+        return event;
     }
 
-    ResponseHeader() = default;
+    static HttpResponseEvent makeHeaders(ResponseHeader responseHeader) {
+        HttpResponseEvent event;
+        event.type = HttpResponseEventType::Headers;
+        event.header = std::move(responseHeader);
+        return event;
+    }
+
+    static HttpResponseEvent makeData(DataPtr body) {
+        HttpResponseEvent event;
+        event.type = HttpResponseEventType::Data;
+        event.data = std::move(body);
+        return event;
+    }
+
+    static HttpResponseEvent makeCompleted(RequestPerf responsePerf) {
+        HttpResponseEvent event;
+        event.type = HttpResponseEventType::Completed;
+        event.perf = std::move(responsePerf);
+        return event;
+    }
+
+    static HttpResponseEvent makeError(ErrorInfo responseError, RequestPerf responsePerf = {}) {
+        HttpResponseEvent event;
+        event.type = HttpResponseEventType::Error;
+        event.error = std::move(responseError);
+        event.perf = std::move(responsePerf);
+        return event;
+    }
 };
 
 struct HttpResponse {
@@ -241,8 +276,22 @@ struct HttpResponse {
     ErrorInfo error;
     RequestPerf perf;
 
+    [[nodiscard]] bool hasValidResponse() const noexcept {
+        const auto code = static_cast<uint16_t>(statusCode);
+        return code >= 100 && code < 600;
+    }
+
+    [[nodiscard]] bool isTransportSuccess() const noexcept {
+        return error.retCode == slark::Error::Success && hasValidResponse();
+    }
+
+    [[nodiscard]] bool isHttpSuccess() const noexcept {
+        const auto code = static_cast<uint16_t>(statusCode);
+        return isTransportSuccess() && code >= 200 && code < 300;
+    }
+
     [[nodiscard]] bool isSuccess() const noexcept {
-        return error.retCode == slark::Error::Success;
+        return isTransportSuccess();
     }
 
     [[nodiscard]] bool isOk() const noexcept {
@@ -298,14 +347,6 @@ struct StreamChunk {
                            .statusCode = code,
                            .headers = std::move(hdrs)};
     }
-};
-
-struct HttpResponseHandler {
-    std::function<void(const RequestInfo&)> onConnected;
-    std::function<void(const RequestInfo&, ResponseHeader&&)> onHeader;
-    std::function<void(const RequestInfo&, DataPtr)> onData;
-    std::function<void(const RequestInfo&)> onCompleted;
-    std::function<void(const RequestInfo&, ErrorInfo)> onError;
 };
 
 using ResponseResult = std::expected<HttpResponse, ErrorInfo>;

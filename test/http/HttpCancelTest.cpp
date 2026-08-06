@@ -84,6 +84,59 @@ TEST(HttpCancelTest, CancelDuringTcpConnectPhase) {
     EXPECT_LT(elapsed, 2000) << "cancellation must penetrate TCP connect and return immediately";
 }
 
+TEST(HttpCancelTest, HttpRequestCancelCancelsExplicitTokenRequest) {
+    CancellationToken externalToken;
+    HttpRequest request;
+
+    RequestInfo info;
+    info.url = "http://httpbingo.org/delay/5";
+    info.methodType = HttpMethodType::Get;
+    info.connectTimeout = std::chrono::milliseconds(3000);
+    info.readTimeout = std::chrono::milliseconds(10000);
+
+    auto requestTask = request.asyncExecute(info, externalToken);
+    auto task = [&]() -> Task<void> {
+        auto response = co_await std::move(requestTask);
+        EXPECT_EQ(response.error.retCode, slark::Error::Cancelled);
+        EXPECT_FALSE(externalToken.isCancelled());
+    }();
+
+    std::thread canceller([&request]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        request.cancel();
+    });
+
+    resumeUntilDone(task);
+    canceller.join();
+    EXPECT_TRUE(task.isDone());
+}
+
+TEST(HttpCancelTest, CancelledRequestCanBeReused) {
+    HttpRequest request;
+    RequestInfo info;
+    info.url = "http://httpbingo.org/delay/5";
+    info.methodType = HttpMethodType::Get;
+    info.connectTimeout = std::chrono::milliseconds(3000);
+    info.readTimeout = std::chrono::milliseconds(10000);
+
+    auto firstRequest = request.asyncExecute(info);
+    request.cancel();
+
+    auto task = [&]() -> Task<void> {
+        auto firstResponse = co_await std::move(firstRequest);
+        EXPECT_EQ(firstResponse.error.retCode, slark::Error::Cancelled);
+
+        RequestInfo invalidInfo;
+        invalidInfo.url = "not-a-url";
+        invalidInfo.methodType = HttpMethodType::Get;
+        auto secondResponse = co_await request.asyncExecute(invalidInfo);
+        EXPECT_EQ(secondResponse.error.retCode, slark::Error::InvalidArgument);
+    }();
+
+    resumeUntilDone(task);
+    EXPECT_TRUE(task.isDone());
+}
+
 TEST(HttpCancelTest, CancelDuringTlsPhase) {
     CancellationToken token;
 

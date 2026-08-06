@@ -8,8 +8,8 @@
 #include <sstream>
 #include <utility>
 
-#include "HttpUtil.hpp"
 #include "Log.hpp"
+#include "StringUtil.h"
 
 namespace slark {
 

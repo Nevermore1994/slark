@@ -10,7 +10,6 @@
 
 #include "CoroutineScheduler.hpp"
 #include "DataView.hpp"
-#include "HttpUtil.hpp"
 #include "Log.hpp"
 #include "LogConfig.h"
 #include "M3U8Parser.h"
@@ -187,7 +186,7 @@ Task<void> HLSStream::fetchPlaylist(std::shared_ptr<http::HttpRequest> request,
                                     uint64_t generation,
                                     uint64_t operationId) {
     std::weak_ptr<HLSStream> weakStream = weak_from_this();
-    auto response = co_await request->asyncExecute(info, request->cancelToken());
+    auto response = co_await request->asyncExecute(info);
     if (!control->alive.load()) {
         co_return;
     }
@@ -376,7 +375,7 @@ void HLSStream::downloadSegment(uint32_t segIndex) {
                            std::weak_ptr<StreamControl> weakControl,
                            std::shared_ptr<Thread> ownerThread, uint32_t segIdx,
                            uint64_t generation, uint64_t operationId) -> Task<void> {
-        auto gen = req->streamingExecute(info, req->cancelToken());
+        auto gen = req->streamingExecute(info);
         while (true) {
             auto chunk = co_await gen.next();
             if (!chunk.has_value()) {

@@ -10,8 +10,6 @@
 #include <string_view>
 
 #include "CancellationToken.h"
-#include "Data.h"
-#include "HttpResponseParser.h"
 #include "HttpsHelper.h"
 #include "IOContext.h"
 #include "Socket.hpp"
@@ -73,9 +71,8 @@ class TLSTransport final : public ITransport {
     TLSTransport(Socket fd, const std::string& hostname);
     ~TLSTransport();
 
-    /// @return true on handshake success, false on failure (does not throw)
-    Task<bool> performHandshake(std::chrono::milliseconds timeout,
-                                CancellationToken token = CancellationToken{});
+    Task<Error> performHandshake(std::chrono::milliseconds timeout,
+                                 CancellationToken token = CancellationToken{});
 
     ssize_t write(const void* data, size_t size) noexcept override;
     ssize_t read(void* buffer, size_t size) noexcept override;
@@ -122,16 +119,6 @@ class IAsyncSocket {
                                                  std::chrono::milliseconds timeout,
                                                  CancellationToken token) = 0;
 
-    virtual Task<DataPtr> asyncReceiveAll(
-        std::chrono::milliseconds timeout = kDefaultReadTimeout) = 0;
-
-    // Streaming receive: read and feed the parser incrementally, triggering onHeader / onData.
-    // The token checks cancellation during streaming for fast response.
-    virtual Task<bool> asyncReceiveStreaming(
-        HttpResponseParser& parser,
-        std::chrono::milliseconds timeout = kDefaultReadTimeout,
-        CancellationToken token = CancellationToken{}) = 0;
-
     virtual void close() noexcept = 0;
     [[nodiscard]] virtual bool isValid() const noexcept = 0;
     [[nodiscard]] virtual Socket getFd() const noexcept = 0;
@@ -167,12 +154,6 @@ class AsyncSocket final : public IAsyncSocket, public NonCopyable {
                                          size_t size,
                                          std::chrono::milliseconds timeout,
                                          CancellationToken token) override;
-
-    Task<DataPtr> asyncReceiveAll(std::chrono::milliseconds timeout = kDefaultReadTimeout) override;
-
-    Task<bool> asyncReceiveStreaming(HttpResponseParser& parser,
-                                     std::chrono::milliseconds timeout = kDefaultReadTimeout,
-                                     CancellationToken token = CancellationToken{}) override;
 
     void close() noexcept override;
 

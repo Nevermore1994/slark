@@ -4,18 +4,23 @@
 #include "HttpRequest.h"
 
 #include "Log.hpp"
-#include "Random.hpp"
 
 namespace slark::http {
 
 Task<HttpResponse> HttpRequest::asyncExecute(const RequestInfo& requestInfo) {
-    // Unify request cancellation state: the no-token overload forwards the internal
-    // cancelToken_, ensuring cancel() can interrupt requests started by asyncExecute (C-05)
-    co_return co_await asyncExecute(requestInfo, cancelToken_);
+    auto operationToken = beginOperation();
+    return executeWithToken(requestInfo, std::move(operationToken));
 }
 
 Task<HttpResponse> HttpRequest::asyncExecute(const RequestInfo& requestInfo,
                                              CancellationToken token) {
+    auto operationToken = beginOperation();
+    return executeWithToken(requestInfo,
+                            CancellationToken::link(token, std::move(operationToken)));
+}
+
+Task<HttpResponse> HttpRequest::executeWithToken(RequestInfo requestInfo,
+                                                 CancellationToken token) {
     LogI("[HttpRequest::asyncExecute] url={} method={}", requestInfo.url,
          static_cast<int>(requestInfo.methodType));
     auto result = co_await processor_.process(requestInfo, std::move(token));
@@ -33,31 +38,28 @@ Task<HttpResponse> HttpRequest::asyncExecute(const RequestInfo& requestInfo,
     co_return response;
 }
 
-void HttpRequest::asyncExecute(const RequestInfo& requestInfo, HttpResponseHandler&& handler) {
-    LogI("[HttpRequest::asyncExecute(cb)] url={} method={}", requestInfo.url,
-         static_cast<int>(requestInfo.methodType));
-    auto launcher = [this](const RequestInfo& req, CancellationToken token) -> Task<HttpResponse> {
-        co_return co_await asyncExecute(req, std::move(token));
-    };
-
-    callbackBridge_ =
-        detail::startCallbackBridge(std::move(launcher), std::move(handler), requestInfo);
+CancellationToken HttpRequest::beginOperation() noexcept {
+    std::lock_guard<std::mutex> lock(cancelMutex_);
+    cancelToken_ = CancellationToken{};
+    return cancelToken_;
 }
 
-std::shared_ptr<HttpRequest> HttpRequest::create(const RequestInfo& requestInfo,
-                                                 HttpResponseHandler&& handler) {
-    auto request = std::make_shared<HttpRequest>();
-    request->asyncExecute(requestInfo, std::move(handler));
-    return request;
+void HttpRequest::cancel() noexcept {
+    CancellationToken token;
+    {
+        std::lock_guard<std::mutex> lock(cancelMutex_);
+        token = cancelToken_;
+    }
+    token.cancel();
 }
 
 AsyncGenerator<StreamChunk> HttpRequest::streamingExecute(const RequestInfo& requestInfo,
                                                           CancellationToken token) {
     LogI("[HttpRequest::streamingExecute] url={} method={}", requestInfo.url,
          static_cast<int>(requestInfo.methodType));
-    // Unify request cancellation state: combine the caller's token with the internal
-    // cancelToken_; either cancels the stream, so cancel() and external tokens both work (C-04)
-    return processor_.processStreaming(requestInfo, CancellationToken::link(token, cancelToken_));
+    auto operationToken = beginOperation();
+    return processor_.processStreaming(requestInfo,
+                                       CancellationToken::link(token, std::move(operationToken)));
 }
 
 }  // namespace slark::http

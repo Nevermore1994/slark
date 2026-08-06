@@ -63,6 +63,7 @@ enum class Error : uint16_t {
     HttpChunkedError = 405,
     HttpSslError = 406,
     HttpSslHandshakeFailed = 407,
+    HttpResponseBodyTooLarge = 408,
 
     MediaOpenFailed = 500,
     MediaEndOfFile = 501,

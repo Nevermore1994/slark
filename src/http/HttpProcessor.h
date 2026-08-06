@@ -6,7 +6,6 @@
 
 #include "AsyncGenerator.hpp"
 #include "CancellationToken.h"
-#include "Channel.hpp"
 #include "ConnectionPool.h"
 #include "RedirectPolicy.h"
 #include "Task.hpp"
@@ -22,45 +21,29 @@ class HttpProcessor : public NonCopyable {
     HttpProcessor() = default;
     ~HttpProcessor() = default;
 
-    Task<ResponseResult> process(const RequestInfo& requestInfo, CancellationToken token = {});
+    Task<ResponseResult> process(RequestInfo requestInfo, CancellationToken token = {});
 
-    AsyncGenerator<StreamChunk> processStreaming(const RequestInfo& requestInfo,
+    AsyncGenerator<StreamChunk> processStreaming(RequestInfo requestInfo,
                                                  CancellationToken token = {});
 
  private:
+    AsyncGenerator<HttpResponseEvent> processEvents(RequestInfo requestInfo,
+                                                     CancellationToken token = {});
+
     struct ParsedRequest {
         std::optional<Url> url;
         bool isValid = false;
         ErrorInfo error;
     };
 
-    Task<ResponseResult> doRequest(const RequestInfo& requestInfo,
-                                   int32_t redirectCount,
-                                   CancellationToken& token);
+    Task<ResponseResult> aggregateEvents(RequestInfo requestInfo, CancellationToken token);
 
-    Task<ResponseResult> executeSingle(const RequestInfo& requestInfo, CancellationToken& token);
-
-    AsyncGenerator<StreamChunk> executeStreamingSingle(const RequestInfo& requestInfo,
-                                                       CancellationToken token);
+    AsyncGenerator<HttpResponseEvent> executeEventsSingle(RequestInfo requestInfo,
+                                                          CancellationToken token);
 
     [[nodiscard]] static ParsedRequest parseUrl(const std::string& urlStr);
 
     RedirectPolicy redirectPolicy_;
 };
-
-inline AsyncGenerator<StreamChunk> channelToGenerator(ReceiverPtr<StreamChunk> receiver) {
-    while (true) {
-        auto result = receiver->receive();
-        if (!result.has_value()) {
-            co_return;
-        }
-        auto chunk = std::move(result.value());
-        const bool isFinal = chunk.isFinal || chunk.hasError();
-        co_yield std::move(chunk);
-        if (isFinal) {
-            co_return;
-        }
-    }
-}
 
 }  // namespace slark::http

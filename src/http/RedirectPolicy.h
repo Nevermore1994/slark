@@ -30,8 +30,12 @@ class RedirectPolicy {
     [[nodiscard]] std::optional<std::string> extractRedirectLocation(
         const std::unordered_map<std::string, std::string>& headers) const {
         for (const auto& [k, v] : headers) {
-            if (StringUtil::iequals(k, "Location") && !v.empty()) {
-                return v;
+            if (!StringUtil::iequals(k, "Location")) {
+                continue;
+            }
+            auto location = trimOws(v);
+            if (!location.empty() && location.find_first_of("\r\n") == std::string::npos) {
+                return location;
             }
         }
         return std::nullopt;
@@ -48,13 +52,15 @@ class RedirectPolicy {
         RequestInfo redirectRequest = original;
         redirectRequest.url = std::move(*resolvedUrl);
 
-        // Strip sensitive headers on cross-domain redirects to prevent credential leaks
-        // to third-party domains
         Url origUrl(original.url);
         Url newUrl(redirectRequest.url);
-        if (origUrl.host != newUrl.host) {
-            for (const auto& key : {"Authorization", "Cookie", "Proxy-Authorization"}) {
-                redirectRequest.headers.erase(key);
+        if (!sameOrigin(origUrl, newUrl)) {
+            for (auto it = redirectRequest.headers.begin(); it != redirectRequest.headers.end();) {
+                if (isSensitiveHeader(it->first)) {
+                    it = redirectRequest.headers.erase(it);
+                } else {
+                    ++it;
+                }
             }
         }
 
@@ -89,40 +95,73 @@ class RedirectPolicy {
     }
 
  private:
-    // Resolve a redirect URL, handling relative paths; returns nullopt on https→http downgrade
+    [[nodiscard]] static std::string trimOws(std::string_view value) {
+        while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
+            value.remove_prefix(1);
+        }
+        while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) {
+            value.remove_suffix(1);
+        }
+        return std::string(value);
+    }
+
+    [[nodiscard]] static bool isSensitiveHeader(std::string_view name) noexcept {
+        return StringUtil::iequals(name, "Authorization") ||
+               StringUtil::iequals(name, "Cookie") ||
+               StringUtil::iequals(name, "Proxy-Authorization");
+    }
+
+    [[nodiscard]] static bool sameOrigin(const Url& lhs, const Url& rhs) noexcept {
+        return lhs.isValid() && rhs.isValid() && StringUtil::iequals(lhs.scheme, rhs.scheme) &&
+               StringUtil::iequals(lhs.host, rhs.host) && lhs.portNumber() == rhs.portNumber();
+    }
+
+    [[nodiscard]] static std::optional<std::string> validateResolvedUrl(
+        const Url& original,
+        std::string resolved) {
+        Url target(resolved);
+        if (!target.isValid() || !target.isSupportScheme()) {
+            return std::nullopt;
+        }
+        if (original.isHttps() && target.isHttp()) {
+            return std::nullopt;
+        }
+        return resolved;
+    }
+
+    // Resolve a redirect URL, handling relative paths and rejecting unsafe schemes/downgrades.
     [[nodiscard]] static std::optional<std::string> resolveRedirectUrl(std::string_view originalUrl,
                                                                        std::string_view location) {
-        // Absolute URL (includes scheme)
-        if (location.starts_with("http:") || location.starts_with("https:")) {
-            // Reject https → http downgrade redirects to prevent MITM attacks
-            Url origUrl(originalUrl);
-            if (origUrl.isHttps() && location.starts_with("http:") &&
-                !location.starts_with("https:")) {
-                return std::nullopt;
-            }
-            return std::string(location);
+        auto locationValue = trimOws(location);
+        if (locationValue.empty() || locationValue.find_first_of("\r\n") != std::string::npos) {
+            return std::nullopt;
         }
 
-        // Parse the original URL to obtain the base
         Url url(originalUrl);
-        if (!url.isValid()) {
-            return std::string(location);
+        if (!url.isValid() || !url.isSupportScheme()) {
+            return std::nullopt;
+        }
+
+        if (locationValue.starts_with("//")) {
+            return validateResolvedUrl(url, url.scheme + ":" + locationValue);
+        }
+
+        if (locationValue.find("://") != std::string::npos) {
+            return validateResolvedUrl(url, locationValue);
+        }
+
+        const auto firstPathDelimiter = locationValue.find_first_of("/?#");
+        const auto schemeDelimiter = locationValue.find(':');
+        if (schemeDelimiter != std::string::npos &&
+            (firstPathDelimiter == std::string::npos || schemeDelimiter < firstPathDelimiter)) {
+            return std::nullopt;
         }
 
         std::string result;
-        result.reserve(originalUrl.size() + location.size());
-
-        // Protocol-relative path (//host/path)
-        if (location.starts_with("//")) {
-            result.append(url.scheme);
-            result.append(":");
-            result.append(location);
-            return result;
-        }
-
+        result.reserve(originalUrl.size() + locationValue.size());
         appendAuthority(result, url);
-        appendRelativePath(result, url, location);
-        return result;
+        appendRelativePath(result, url, locationValue);
+        return validateResolvedUrl(url, std::move(result));
     }
 
     static void appendAuthority(std::string& result, const Url& url) {

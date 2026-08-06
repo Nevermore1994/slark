@@ -74,6 +74,19 @@ TEST(HttpProcessorTest, ProcessReturns404) {
     EXPECT_EQ(response.error.retCode, Error::HttpError);
 }
 
+TEST(HttpProcessorTest, ProcessRejectsResponseBodyAboveLimit) {
+    RequestInfo info;
+    info.url = "http://httpbingo.org/stream-bytes/1024";
+    info.methodType = HttpMethodType::Get;
+    info.connectTimeout = std::chrono::seconds(5);
+    info.readTimeout = std::chrono::seconds(10);
+    info.maxResponseBodySize = 128;
+
+    auto response = executeSync(info);
+    EXPECT_EQ(response.error.retCode, Error::HttpResponseBodyTooLarge);
+    EXPECT_EQ(response.body, nullptr);
+}
+
 TEST(HttpProcessorTest, ProcessCancelledDuringRequest) {
     CancellationToken token;
     RequestInfo info;
@@ -112,6 +125,39 @@ TEST(HttpProcessorTest, ProcessTimeout) {
     info.readTimeout = std::chrono::milliseconds(500);
     auto response = executeSync(info);
     EXPECT_EQ(response.error.retCode, Error::ConnectionTimeout);
+}
+
+TEST(HttpProcessorTest, StreamingRejectsResponseBodyAboveLimit) {
+    RequestInfo info;
+    info.url = "http://httpbingo.org/stream-bytes/1024";
+    info.methodType = HttpMethodType::Get;
+    info.connectTimeout = std::chrono::seconds(5);
+    info.readTimeout = std::chrono::seconds(10);
+    info.maxResponseBodySize = 128;
+
+    ThreadPool pool(ThreadPoolConfig{2});
+    std::atomic<bool> done{false};
+    Error error = Error::Success;
+    auto task = [&]() -> Task<void> {
+        HttpProcessor processor;
+        auto gen = processor.processStreaming(info);
+        while (true) {
+            auto chunk = co_await gen.next();
+            if (!chunk.has_value()) {
+                break;
+            }
+            if (chunk->hasError()) {
+                error = chunk->error.retCode;
+            }
+        }
+        done = true;
+    }();
+    task.resume();
+    for (int i = 0; i < 200 && !done.load(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(done.load());
+    EXPECT_EQ(error, Error::HttpResponseBodyTooLarge);
 }
 
 TEST(HttpProcessorTest, StreamingGetReturnsChunks) {

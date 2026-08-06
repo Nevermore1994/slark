@@ -3,138 +3,19 @@
 //
 #pragma once
 
-#include <netdb.h>
-
-#include <sstream>
-#include <string_view>
-#include <tuple>
-
-#include "Socket.hpp"
-#include "StringUtil.h"
 #include "Type.h"
 #include "Url.h"
 
-namespace slark::http {
-struct RequestInfo;
-}  // namespace slark::http
-
 namespace slark::http::Util {
 
-AddressInfoPtr resolveAddress(const std::string& host,
-                              const std::string& port,
-                              IPVersion ipVersion);
-
-AddressInfoPtr resolveAddress(const Url& url, IPVersion ipVersion);
-
-namespace util_detail {
-
-template <typename T>
-constexpr bool tryParseNumericType(const std::string& v, T& value) {
-    if constexpr (std::is_same_v<double, T> || std::is_same_v<float, T> ||
-                  std::is_same_v<uint32_t, T> || std::is_same_v<int32_t, T> ||
-                  std::is_same_v<uint64_t, T> || std::is_same_v<int64_t, T>) {
-        auto result = StringUtil::fromChars<T>(v);
-        if (!result) {
-            return false;
-        }
-        value = *result;
-        return true;
-    }
-    return false;
-}
-
-template <typename T>
-bool tryParseNonNumericType(const std::string& v, T& value) {
-    if constexpr (std::is_same_v<std::string, T> || std::is_same_v<std::string_view, T>) {
-        value = v;
-        return true;
-    }
-    if constexpr (std::is_same_v<bool, T>) {
-        std::istringstream(v) >> std::boolalpha >> value;
-        return true;
-    }
-    if constexpr (std::is_same_v<char, T>) {
-        auto result = StringUtil::fromChars<int32_t>(v);
-        if (!result) {
-            return false;
-        }
-        value = static_cast<char>(*result);
-        return true;
-    }
-    if constexpr (std::is_same_v<unsigned char, T>) {
-        auto result = StringUtil::fromChars<uint32_t>(v);
-        if (!result) {
-            return false;
-        }
-        value = static_cast<unsigned char>(*result);
-        return true;
-    }
-    return false;
-}
-
-}  // namespace util_detail
-
-template <typename T>
-bool parseFieldValue(const std::unordered_map<std::string, std::string>& headers,
-                     const std::string& key,
-                     T& value) {
-    for (const auto& [k, v] : headers) {
-        if (StringUtil::iequals(k, key)) {
-            if (util_detail::tryParseNumericType(v, value)) {
-                return true;
-            }
-            if (util_detail::tryParseNonNumericType(v, value)) {
-                return true;
-            }
-            return false;
-        }
-    }
-    return false;
-}
-
 std::string getMethodName(HttpMethodType type);
-std::string base64Encode(const std::string& str);
 
-struct ChunkParseContext {
-    int64_t chunkSize = 0;
-    bool isCompleted = false;
-};
-
-struct ChunkParseCallbacks {
-    std::function<void(Error, int32_t)> onError;
-    std::function<void(DataPtr)> onData;
-};
-
-bool parseChunkData(DataPtr& data,
-                    ChunkParseContext& context,
-                    const ChunkParseCallbacks& callbacks) noexcept;
-
-std::tuple<bool, int64_t> parseResponseHeader(DataView data, ResponseHeader& response) noexcept;
+/// Validate request method and framing-sensitive headers before opening a connection.
+bool validateRequest(const RequestInfo& info, const Url& url) noexcept;
 
 /// Build an HTTP request string (request line + headers)
 std::string buildRequestString(const RequestInfo& info,
                                const Url& url,
                                bool keepAlive = false) noexcept;
-
-/// Parse a complete HTTP response from raw response data
-struct ParsedResponse {
-    HttpStatusCode statusCode = HttpStatusCode::Unknown;
-    std::unordered_map<std::string, std::string> headers;
-    std::string reasonPhrase;
-    DataPtr body;
-    bool shouldCloseConnection = false;
-
-    HttpResponse toResponse() noexcept {
-        HttpResponse response;
-        response.statusCode = statusCode;
-        response.headers = std::move(headers);
-        response.reasonPhrase = std::move(reasonPhrase);
-        response.body = std::move(body);
-        response.error = ErrorInfo{slark::Error::Success};
-        return response;
-    }
-};
-
-bool parseRawResponse(const void* data, size_t size, ParsedResponse& out) noexcept;
 
 }  // namespace slark::http::Util

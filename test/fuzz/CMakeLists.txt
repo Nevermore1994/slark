@@ -67,11 +67,10 @@ gtest_discover_tests(CoreFuzz_test
 )
 
 # =============================================================================
-# HttpFuzz_test — HTTP 响应解析器 + HttpUtil + URL + HttpProcessor 随机测试
+# HttpFuzz_test — HTTP 响应解析器 + URL + HttpProcessor 随机测试
 # =============================================================================
 add_executable(HttpFuzz_test
     ${CMAKE_CURRENT_SOURCE_DIR}/HttpResponseParserFuzzTest.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/HttpUtilFuzzTest.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/UrlFuzzTest.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/HttpProcessorFuzzTest.cpp
 )

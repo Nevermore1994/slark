@@ -28,6 +28,9 @@ Task<bool> resolveAndConnect(AsyncSocket& socket,
     }
     if (!addrInfo) {
         LogW("[co_acquire_connection] DNS resolution failed for {}", host);
+        if (perf) {
+            perf->connection.connectResult = slark::Error::DnsResolveFailed;
+        }
         co_return false;
     }
 
@@ -43,11 +46,15 @@ Task<bool> resolveAndConnect(AsyncSocket& socket,
         LogW("[co_acquire_connection] Connect timeout for {}", host);
         if (perf) {
             perf->transport.timeoutSource = TimeoutSource::Connect;
+            perf->connection.connectResult = slark::Error::ConnectionTimeout;
         }
         co_return false;
     } catch (const std::exception& e) {
         LogW("[co_acquire_connection] Connect failed: {} {}", host, e.what());
         DnsResolver::instance().invalidate(host);
+        if (perf) {
+            perf->connection.connectResult = slark::Error::ConnectionFailed;
+        }
         co_return false;
     }
     if (token.isCancelled()) {
@@ -70,19 +77,23 @@ Task<bool> performTlsHandshake(AsyncSocket& socket,
     auto tlsTransport = std::make_unique<TLSTransport>(socket.getFd(), host);
     auto tlsTimeout = tlsHandshakeTimeout.count() > 0 ? tlsHandshakeTimeout : kDefaultTlsTimeout;
     auto tlsStart = Time::nowTimeStamp();
-    bool tlsOk = co_await tlsTransport->performHandshake(tlsTimeout, token);
+    auto tlsResult = co_await tlsTransport->performHandshake(tlsTimeout, token);
     auto tlsEnd = Time::nowTimeStamp();
 
     if (perf) {
         perf->connection.tlsHandshakeTimeMs = (tlsEnd - tlsStart).toMilliSeconds().count();
     }
-    if (token.isCancelled()) {
+    if (tlsResult == slark::Error::Cancelled || token.isCancelled()) {
         co_return false;
     }
-    if (!tlsOk) {
-        LogW("[co_acquire_connection] TLS handshake failed: host={}", host);
+    if (tlsResult != slark::Error::Success) {
+        LogW("[co_acquire_connection] TLS handshake failed: host={} error={}", host,
+             static_cast<int>(tlsResult));
         if (perf) {
-            perf->transport.timeoutSource = TimeoutSource::TlsHandshake;
+            perf->connection.connectResult = tlsResult;
+            if (tlsResult == slark::Error::ConnectionTimeout) {
+                perf->transport.timeoutSource = TimeoutSource::TlsHandshake;
+            }
         }
         co_return false;
     }
@@ -110,6 +121,9 @@ Task<std::unique_ptr<PooledConnection>> co_acquire_connection(
 
     auto socket = std::make_unique<AsyncSocket>(ipVersion);
     if (!socket) {
+        if (perf) {
+            perf->connection.connectResult = slark::Error::ConnectionFailed;
+        }
         co_return nullptr;
     }
 

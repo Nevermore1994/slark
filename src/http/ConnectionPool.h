@@ -10,7 +10,6 @@
 #include "AsyncSocket.h"
 #include "CancellationToken.h"
 #include "Clock.h"
-#include "HttpResponseParser.h"
 #include "Task.hpp"
 
 namespace slark::http {
@@ -51,12 +50,6 @@ class PooledConnection {
                                       std::chrono::milliseconds timeout,
                                       CancellationToken token) {
         co_return co_await socket_->asyncSend(data, timeout, token);
-    }
-
-    Task<bool> asyncReceiveStreaming(HttpResponseParser& parser,
-                                     std::chrono::milliseconds timeout,
-                                     CancellationToken token = CancellationToken{}) {
-        co_return co_await socket_->asyncReceiveStreaming(parser, timeout, token);
     }
 
     void close() {

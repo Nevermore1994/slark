@@ -52,7 +52,7 @@ auto HttpStream::open(const OpenParams& params) -> StreamResult<StreamInfo> {
 void HttpStream::close() noexcept {
     LogI("[HttpStream::close] url={} pos={} state={}", params_.uri, position_.load(),
          static_cast<int>(state_.load()));
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_);
     closing_ = true;
     ++generation_;
     cancelCurrentOperation(kCloseWaitTimeout.count());
@@ -63,7 +63,7 @@ void HttpStream::close() noexcept {
 }
 
 void HttpStream::start() noexcept {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_);
     startLocked();
 }
 
@@ -108,7 +108,7 @@ void HttpStream::startLocked() noexcept {
                          std::weak_ptr<StreamControl> weakControl,
                          std::shared_ptr<Thread> ownerThread, uint64_t generation,
                          uint64_t operationId) -> Task<void> {
-        auto gen = req->streamingExecute(info, req->cancelToken());
+        auto gen = req->streamingExecute(info);
         while (true) {
             auto chunk = co_await gen.next();
             if (!chunk.has_value()) {
@@ -124,16 +124,19 @@ void HttpStream::startLocked() noexcept {
                 co_return;
             }
 
-            auto event = HttpStream::StreamEvent{generation, operationId, std::move(*chunk)};
-            if (!ownerThread->postTask([weakStream, event = std::move(event)]() mutable {
-                    auto s = weakStream.lock();
-                    if (!s) {
-                        return;
-                    }
-                    s->onEvent(std::move(event));
-                })) {
+            auto delivered = std::make_shared<CompletionAwaiter<void>>();
+            auto event = HttpStream::StreamEvent{
+                generation, operationId, std::move(*chunk), delivered};
+            if (!ownerThread->postTask(
+                    [weakStream, delivered, event = std::move(event)]() mutable {
+                        if (auto s = weakStream.lock()) {
+                            s->onEvent(std::move(event));
+                        }
+                        delivered->complete();
+                    })) {
                 co_return;
             }
+            co_await *delivered;
         }
     };
 
@@ -143,7 +146,7 @@ void HttpStream::startLocked() noexcept {
 }
 
 void HttpStream::pause() noexcept {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_);
     if (state_ != StreamState::Reading) {
         LogI("[HttpStream::pause] noop, state={}", static_cast<int>(state_.load()));
         return;
@@ -158,7 +161,7 @@ void HttpStream::pause() noexcept {
 }
 
 auto HttpStream::seek(uint64_t position) -> StreamResult<void> {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_);
     if (rangeCapability_ != RangeCapability::Supported) {
         LogW("[HttpStream::seek] reject, server does not support Range, capability={} pos={}",
              static_cast<int>(rangeCapability_), position);
@@ -177,7 +180,7 @@ auto HttpStream::seek(uint64_t position) -> StreamResult<void> {
 }
 
 void HttpStream::updateRange(Range range) noexcept {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_);
     readRange_ = range;
 }
 
@@ -204,7 +207,7 @@ void HttpStream::cancelCurrentOperation(uint64_t timeoutMs) noexcept {
 }
 
 void HttpStream::onEvent(StreamEvent event) noexcept {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_);
     if (event.generation != generation_ || !operation_ ||
         event.operationId != operation_->operationId) {
         return;

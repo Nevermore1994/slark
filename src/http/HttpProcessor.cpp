@@ -35,8 +35,7 @@ Error mapLegacyErrorToUnified(Error error) noexcept {
     }
 }
 
-// Establish a connection and send the request (headers + body), shared by
-// executeSingle/executeStreamingSingle
+// 建立连接并发送请求头和请求体，供统一事件源使用。
 struct RequestSetup {
     std::unique_ptr<PooledConnection> conn;
     ErrorInfo error;
@@ -54,6 +53,9 @@ Task<RequestSetup> setupConnectionAndSend(std::string_view tag,
     if (token.isCancelled()) {
         co_return RequestSetup{nullptr, ErrorInfo{slark::Error::Cancelled}};
     }
+    if (!Util::validateRequest(requestInfo, url)) {
+        co_return RequestSetup{nullptr, ErrorInfo{slark::Error::InvalidArgument}};
+    }
     auto conn = co_await co_acquire_connection(url.host, url.portNumber(), url.scheme,
                                                requestInfo.ipVersion, requestInfo.connectTimeout,
                                                requestInfo.tlsHandshakeTimeout, &perf, token);
@@ -63,8 +65,14 @@ Task<RequestSetup> setupConnectionAndSend(std::string_view tag,
         }
         LogE("[HttpProcessor::{}] connect failed: timeoutSource={} url={}", tag,
              static_cast<int>(perf.transport.timeoutSource), requestInfo.url);
+        if (perf.connection.connectResult == slark::Error::HttpSslError ||
+            perf.connection.connectResult == slark::Error::HttpSslHandshakeFailed ||
+            perf.connection.connectResult == slark::Error::DnsResolveFailed) {
+            co_return RequestSetup{nullptr, ErrorInfo{perf.connection.connectResult}};
+        }
         if (perf.transport.timeoutSource == TimeoutSource::Connect ||
-            perf.transport.timeoutSource == TimeoutSource::TlsHandshake) {
+            perf.transport.timeoutSource == TimeoutSource::TlsHandshake ||
+            perf.connection.connectResult == slark::Error::ConnectionTimeout) {
             co_return RequestSetup{nullptr, ErrorInfo{slark::Error::ConnectionTimeout}};
         }
         co_return RequestSetup{nullptr, ErrorInfo{slark::Error::ConnectionFailed}};
@@ -108,36 +116,33 @@ Task<RequestSetup> setupConnectionAndSend(std::string_view tag,
     co_return RequestSetup{std::move(conn), ErrorInfo{}};
 }
 
-HttpResponseParser::Callbacks makeStreamingCallbacks(
-    HttpStatusCode& statusCode,
-    std::unordered_map<std::string, std::string>& pendingHeaders,
-    bool& hasPendingHeader,
-    DataPtr& pendingBodyChunk,
-    bool& hasPendingBody,
-    RequestPerf& perf,
-    bool& parseError,
-    Error& parseErrorCode) {
+HttpResponseParser::Callbacks makeEventCallbacks(ResponseHeader& header,
+                                                   bool& hasHeaders,
+                                                   DataPtr& pendingBody,
+                                                   RequestPerf& perf,
+                                                   bool& parseError,
+                                                   Error& parseErrorCode) {
     HttpResponseParser::Callbacks callbacks;
-    callbacks.onStatusLine = [&statusCode](HttpStatusCode code, const std::string&) {
-        statusCode = code;
+    callbacks.onStatusLine = [&header](HttpStatusCode code, const std::string& reason) {
+        header.httpStatusCode = code;
+        header.reasonPhrase = reason;
     };
-    callbacks.onHeaders = [&pendingHeaders, &hasPendingHeader](
+    callbacks.onHeaders = [&header, &hasHeaders](
                               std::unordered_map<std::string, std::string>&& headers) {
-        pendingHeaders = std::move(headers);
-        hasPendingHeader = true;
+        header.headers = std::move(headers);
+        hasHeaders = true;
     };
-    callbacks.onBodyData = [&pendingBodyChunk, &hasPendingBody, &perf](const Byte* data,
-                                                                       size_t size) {
-        if (!pendingBodyChunk) {
-            pendingBodyChunk = std::make_unique<Data>();
+    callbacks.onBodyData = [&pendingBody, &perf](const Byte* data, size_t size) {
+        if (!pendingBody) {
+            pendingBody = std::make_unique<Data>();
         }
-        pendingBodyChunk->append(ConstByteSpan(data, size));
-        hasPendingBody = true;
+        pendingBody->append(ConstByteSpan(data, size));
         perf.parser.bodySize += static_cast<int64_t>(size);
     };
-    callbacks.onError = [&parseError, &parseErrorCode](Error code) {
+    callbacks.onError = [&parseError, &parseErrorCode, &perf](Error code) {
         parseError = true;
         parseErrorCode = code;
+        perf.parser.parseResult = code;
     };
     return callbacks;
 }
@@ -157,7 +162,7 @@ struct StreamReadResult {
     bool shouldExit = false;
     bool isEof = false;
     size_t bytesRead = 0;
-    StreamChunk exitChunk;
+    ErrorInfo error;
 };
 
 Task<StreamReadResult> readStreamChunk(std::unique_ptr<PooledConnection>& conn,
@@ -170,7 +175,7 @@ Task<StreamReadResult> readStreamChunk(std::unique_ptr<PooledConnection>& conn,
 
     if (token.isCancelled()) {
         result.shouldExit = true;
-        result.exitChunk = StreamChunk::makeError(ErrorInfo{slark::Error::Cancelled});
+        result.error = ErrorInfo{slark::Error::Cancelled};
         co_return result;
     }
 
@@ -179,7 +184,7 @@ Task<StreamReadResult> readStreamChunk(std::unique_ptr<PooledConnection>& conn,
         LogE("[HttpProcessor::readStreamChunk] overall deadline expired: bodySize={} url={}",
              perf.parser.bodySize, requestInfo.url);
         result.shouldExit = true;
-        result.exitChunk = StreamChunk::makeError(ErrorInfo{slark::Error::ConnectionTimeout});
+        result.error = ErrorInfo{slark::Error::ConnectionTimeout};
         co_return result;
     }
 
@@ -188,16 +193,17 @@ Task<StreamReadResult> readStreamChunk(std::unique_ptr<PooledConnection>& conn,
         LogE("[HttpProcessor::readStreamChunk] socket invalid: bodySize={} url={}",
              perf.parser.bodySize, requestInfo.url);
         result.shouldExit = true;
-        result.exitChunk = StreamChunk::makeError(ErrorInfo{slark::Error::ConnectionReset});
+        result.error = ErrorInfo{slark::Error::ConnectionReset};
         co_return result;
     }
 
-    auto readResult = co_await socket->asyncReceive(readBuffer.data(), readBuffer.size(),
-                                                     requestInfo.readIdleTimeout, token);
+    const auto readTimeout = std::min(requestInfo.readIdleTimeout, overallDeadline.remaining());
+    auto readResult =
+        co_await socket->asyncReceive(readBuffer.data(), readBuffer.size(), readTimeout, token);
     if (!readResult.has_value()) {
         if (token.isCancelled()) {
             result.shouldExit = true;
-            result.exitChunk = StreamChunk::makeError(ErrorInfo{slark::Error::Cancelled});
+            result.error = ErrorInfo{slark::Error::Cancelled};
             co_return result;
         }
         auto errorInfo =
@@ -208,13 +214,13 @@ Task<StreamReadResult> readStreamChunk(std::unique_ptr<PooledConnection>& conn,
                  static_cast<int>(perf.transport.timeoutSource), perf.parser.bodySize,
                  requestInfo.url);
             result.shouldExit = true;
-            result.exitChunk = StreamChunk::makeError(std::move(*errorInfo));
+            result.error = std::move(*errorInfo);
             co_return result;
         }
         LogE("[HttpProcessor::readStreamChunk] read error: err={} bodySize={} url={}",
              static_cast<int>(readResult.error()), perf.parser.bodySize, requestInfo.url);
         result.shouldExit = true;
-        result.exitChunk = StreamChunk::makeError(ErrorInfo{slark::Error::ConnectionReset});
+        result.error = ErrorInfo{slark::Error::ConnectionReset};
         co_return result;
     }
 
@@ -225,69 +231,6 @@ Task<StreamReadResult> readStreamChunk(std::unique_ptr<PooledConnection>& conn,
 
     result.bytesRead = *readResult;
     co_return result;
-}
-
-HttpResponseParser::Callbacks makeResponseCallbacks(HttpResponse& response,
-                                                    DataPtr& bodyData,
-                                                    RequestPerf& perf,
-                                                    bool& parseOk) {
-    HttpResponseParser::Callbacks callbacks;
-    callbacks.onStatusLine = [&response](HttpStatusCode code, const std::string& reason) {
-        response.statusCode = code;
-        response.reasonPhrase = reason;
-    };
-    callbacks.onHeaders = [&response](std::unordered_map<std::string, std::string>&& headers) {
-        response.headers = std::move(headers);
-    };
-    callbacks.onBodyData = [&bodyData, &perf](const Byte* data, size_t size) {
-        bodyData->append(ConstByteSpan(data, size));
-        perf.parser.bodySize += static_cast<int64_t>(size);
-    };
-    callbacks.onError = [&parseOk, &perf](Error code) {
-        parseOk = false;
-        perf.parser.parseResult = code;
-    };
-    return callbacks;
-}
-
-void buildResponse(HttpResponse& response,
-                   const HttpResponseParser& parser,
-                   DataPtr& bodyData,
-                   RequestPerf& perf,
-                   Time::TimePoint requestStart) {
-    response.body = bodyData->empty() ? nullptr : std::move(bodyData);
-    if (parser.isHttpError()) {
-        response.error =
-            ErrorInfo{slark::Error::HttpError, static_cast<int32_t>(response.statusCode)};
-    } else {
-        response.error = ErrorInfo{slark::Error::Success};
-    }
-    auto requestEnd = Time::nowTimeStamp();
-    perf.totalRequestTimeMs = (requestEnd - requestStart).toMilliSeconds().count();
-    response.perf = perf;
-}
-
-// Determine whether a chunk triggers a redirect, returning the next request;
-// returns nullopt when no redirect is needed
-std::optional<RequestInfo> extractRedirectTarget(const RedirectPolicy& policy,
-                                                 const StreamChunk& chunk,
-                                                 const RequestInfo& currentInfo,
-                                                 int32_t redirectCount) {
-    if (chunk.statusCode == HttpStatusCode::Unknown || chunk.headers.empty()) {
-        return std::nullopt;
-    }
-    HttpResponse headerResp;
-    headerResp.statusCode = chunk.statusCode;
-    headerResp.headers = chunk.headers;
-    if (!policy.shouldRedirect(headerResp, currentInfo, redirectCount)) {
-        return std::nullopt;
-    }
-    auto location = policy.extractRedirectLocation(chunk.headers);
-    if (!location.has_value()) {
-        return std::nullopt;
-    }
-    return RedirectPolicy::buildRedirectRequest(currentInfo, chunk.statusCode,
-                                                std::move(*location));
 }
 
 }  // namespace
@@ -308,255 +251,251 @@ HttpProcessor::ParsedRequest HttpProcessor::parseUrl(const std::string& urlStr) 
     return result;
 }
 
-Task<ResponseResult> HttpProcessor::process(const RequestInfo& requestInfo,
-                                            CancellationToken token) {
-    co_return co_await doRequest(requestInfo, 0, token);
+Task<ResponseResult> HttpProcessor::process(RequestInfo requestInfo, CancellationToken token) {
+    co_return co_await aggregateEvents(std::move(requestInfo), std::move(token));
 }
 
-Task<ResponseResult> HttpProcessor::doRequest(const RequestInfo& requestInfo,
-                                              int32_t redirectCount,
-                                              CancellationToken& token) {
-    auto result = co_await executeSingle(requestInfo, token);
-    if (!result.has_value()) {
-        co_return result;
-    }
-
-    auto& response = result.value();
-    if (redirectPolicy_.shouldRedirect(response, requestInfo, redirectCount)) {
-        auto location = redirectPolicy_.extractRedirectLocation(response.headers);
-        if (location.has_value()) {
-            auto redirectRequest = RedirectPolicy::buildRedirectRequest(
-                requestInfo, response.statusCode, std::move(location.value()));
-            if (!redirectRequest.has_value()) {
-                co_return std::unexpected(ErrorInfo{slark::Error::SchemeDowngradeBlocked});
-            }
-            co_return co_await doRequest(*redirectRequest, redirectCount + 1, token);
-        }
-    }
-
-    co_return std::move(response);
-}
-
-Task<ResponseResult> HttpProcessor::executeSingle(const RequestInfo& requestInfo,
-                                                  CancellationToken& token) {
-    auto requestStart = Time::nowTimeStamp();
-    RequestPerf perf;
-    perf.host = requestInfo.url;
-
-    LogI("[HttpProcessor::executeSingle] enter url={} method={}", requestInfo.url,
-         static_cast<int>(requestInfo.methodType));
-
-    if (token.isCancelled()) {
-        co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
-    }
-
-    auto parsed = parseUrl(requestInfo.url);
-    if (!parsed.isValid) {
-        LogE("[HttpProcessor::executeSingle] parseUrl failed: retCode={} originCode={} url={}",
-             static_cast<int>(parsed.error.retCode), parsed.error.originErrorCode, requestInfo.url);
-        co_return std::unexpected(parsed.error);
-    }
-
-    auto setup =
-        co_await setupConnectionAndSend("executeSingle", requestInfo, *parsed.url, perf, token);
-    if (setup.hasError()) {
-        co_return std::unexpected(setup.error);
-    }
-    auto conn = std::move(setup.conn);
-
+Task<ResponseResult> HttpProcessor::aggregateEvents(RequestInfo requestInfo,
+                                                     CancellationToken token) {
+    auto events = processEvents(std::move(requestInfo), token);
     HttpResponse response;
-    DataPtr bodyData = std::make_unique<Data>();
-    bool parseOk = true;
+    DataPtr body = std::make_unique<Data>();
+    bool hasHeaders = false;
 
-    HttpResponseParser parser(makeResponseCallbacks(response, bodyData, perf, parseOk));
-    parser.setPerf(&perf);
-    parser.setRequestMethod(requestInfo.methodType);
-    auto streamResult =
-        co_await conn->asyncReceiveStreaming(parser, requestInfo.readTimeout, token);
-
-    // Distinguish cancellation, timeout and disconnection
-    if (!streamResult) {
-        if (token.isCancelled()) {
-            co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
+    while (true) {
+        auto event = co_await events.next();
+        if (!event.has_value()) {
+            co_return std::unexpected(ErrorInfo{slark::Error::ConnectionReset});
         }
-        LogE("[HttpProcessor::executeSingle] receive failed: timeoutSource={} url={}",
-             static_cast<int>(perf.transport.timeoutSource), requestInfo.url);
-        // asyncReceiveStreaming returning false means a read failure; check perf for timeout
-        if (perf.transport.timeoutSource != TimeoutSource::None) {
-            co_return std::unexpected(ErrorInfo{slark::Error::ConnectionTimeout});
+
+        switch (event->type) {
+            case HttpResponseEventType::Connected:
+                break;
+            case HttpResponseEventType::Headers:
+                response.statusCode = event->header.httpStatusCode;
+                response.reasonPhrase = event->header.reasonPhrase;
+                response.headers = std::move(event->header.headers);
+                hasHeaders = true;
+                break;
+            case HttpResponseEventType::Data:
+                if (event->data) {
+                    body->append(ConstByteSpan(event->data->data(), event->data->length()));
+                }
+                break;
+            case HttpResponseEventType::Completed:
+                response.body = body->empty() ? nullptr : std::move(body);
+                response.error = (response.statusCode >= HttpStatusCode::BadRequest)
+                                     ? ErrorInfo{slark::Error::HttpError,
+                                                 static_cast<int32_t>(response.statusCode)}
+                                     : ErrorInfo{slark::Error::Success};
+                response.perf = std::move(event->perf);
+                co_return std::move(response);
+            case HttpResponseEventType::Error:
+                if (event->error.retCode == slark::Error::HttpError && hasHeaders) {
+                    response.error = event->error;
+                    response.perf = std::move(event->perf);
+                    co_return std::move(response);
+                }
+                co_return std::unexpected(event->error);
         }
-        co_return std::unexpected(ErrorInfo{slark::Error::ConnectionReset});
     }
-
-    if (!parseOk || !parser.isCompleted()) {
-        LogE("[HttpProcessor::executeSingle] parse failed: parseOk={} completed={} url={}", parseOk,
-             parser.isCompleted(), requestInfo.url);
-        co_return std::unexpected(ErrorInfo{slark::Error::ConnectionReset});
-    }
-
-    if (parser.shouldCloseConnection()) {
-        conn->close();
-    }
-
-    buildResponse(response, parser, bodyData, perf, requestStart);
-
-    LogI("[HttpProcessor::executeSingle] done: status={} bodySize={} elapsedMs={} url={}",
-         static_cast<int>(response.statusCode), perf.parser.bodySize, perf.totalRequestTimeMs,
-         requestInfo.url);
-
-    co_return std::move(response);
 }
 
-AsyncGenerator<StreamChunk> HttpProcessor::executeStreamingSingle(const RequestInfo& requestInfo,
-                                                                  CancellationToken token) {
-    RequestPerf perf;
-    perf.host = requestInfo.url;
+AsyncGenerator<HttpResponseEvent> HttpProcessor::processEvents(RequestInfo requestInfo,
+                                                                CancellationToken token) {
+    auto currentInfo = std::move(requestInfo);
+    int32_t redirectCount = 0;
 
-    LogI("[HttpProcessor::executeStreamingSingle] enter url={} method={}", requestInfo.url,
-         static_cast<int>(requestInfo.methodType));
+    while (true) {
+        auto events = executeEventsSingle(currentInfo, token);
+        std::optional<HttpResponseEvent> connectedEvent;
+        bool redirected = false;
 
-    auto parsed = parseUrl(requestInfo.url);
-    if (!parsed.isValid) {
-        LogE("[HttpProcessor::executeStreamingSingle] parseUrl failed: retCode={} originCode={} "
-             "url={}",
-             static_cast<int>(parsed.error.retCode), parsed.error.originErrorCode, requestInfo.url);
-        co_yield StreamChunk::makeError(parsed.error);
-        co_return;
-    }
+        while (true) {
+            auto event = co_await events.next();
+            if (!event.has_value()) {
+                co_yield HttpResponseEvent::makeError(ErrorInfo{slark::Error::ConnectionReset});
+                co_return;
+            }
 
-    auto setup = co_await setupConnectionAndSend("executeStreamingSingle", requestInfo, *parsed.url,
-                                                 perf, token);
-    if (setup.hasError()) {
-        co_yield StreamChunk::makeError(setup.error);
-        co_return;
-    }
-    auto conn = std::move(setup.conn);
+            if (event->type == HttpResponseEventType::Connected) {
+                connectedEvent = std::move(*event);
+                continue;
+            }
 
-    HttpStatusCode statusCode = HttpStatusCode::Unknown;
-    std::unordered_map<std::string, std::string> pendingHeaders;
-    DataPtr pendingBodyChunk;
-    bool hasPendingHeader = false;
-    bool hasPendingBody = false;
-    bool parseError = false;
-    Error parseErrorCode = slark::Error::Success;
+            if (event->type == HttpResponseEventType::Headers) {
+                HttpResponse headerResponse;
+                headerResponse.statusCode = event->header.httpStatusCode;
+                headerResponse.headers = event->header.headers;
+                if (redirectPolicy_.shouldRedirect(headerResponse, currentInfo, redirectCount)) {
+                    auto location = redirectPolicy_.extractRedirectLocation(event->header.headers);
+                    if (location.has_value()) {
+                        auto redirectRequest = RedirectPolicy::buildRedirectRequest(
+                            currentInfo, event->header.httpStatusCode, std::move(*location));
+                        if (!redirectRequest.has_value()) {
+                            co_yield HttpResponseEvent::makeError(
+                                ErrorInfo{slark::Error::SchemeDowngradeBlocked});
+                            co_return;
+                        }
+                        currentInfo = std::move(*redirectRequest);
+                        ++redirectCount;
+                        redirected = true;
+                        break;
+                    }
+                }
+            }
 
-    HttpResponseParser parser(makeStreamingCallbacks(statusCode, pendingHeaders, hasPendingHeader,
-                                                     pendingBodyChunk, hasPendingBody, perf,
-                                                     parseError, parseErrorCode));
-    parser.setPerf(&perf);
-    parser.setRequestMethod(requestInfo.methodType);
+            if (connectedEvent.has_value()) {
+                co_yield std::move(*connectedEvent);
+                connectedEvent.reset();
+            }
 
-    constexpr size_t kReadBufferSize = 16384;
-    std::array<Byte, kReadBufferSize> readBuffer{};
-    Time::Deadline overallDeadline(requestInfo.readTimeout);
-
-    int64_t lastLoggedSize = 0;
-    size_t recvLoops = 0;
-    while (!parser.isCompleted() && !parser.hasError()) {
-        auto chunk = co_await readStreamChunk(conn, readBuffer, overallDeadline,
-                                               requestInfo, perf, token);
-        if (chunk.shouldExit) {
-            co_yield std::move(chunk.exitChunk);
-            co_return;
-        }
-        if (chunk.isEof) {
-            LogI("[HttpProcessor::executeStreamingSingle] EOF: bodySize={} url={}",
-                 perf.parser.bodySize, requestInfo.url);
-            parser.onEof();
-            break;
-        }
-        ++recvLoops;
-        parser.feed(readBuffer.data(), chunk.bytesRead);
-
-        if (hasPendingHeader) {
-            LogI("[HttpProcessor::executeStreamingSingle] header: status={} bodySize={} url={}",
-                 static_cast<int>(statusCode), perf.parser.bodySize, requestInfo.url);
-            co_yield StreamChunk::makeHeader(statusCode, std::move(pendingHeaders));
-            hasPendingHeader = false;
-            if (parser.isHttpError()) {
-                co_yield StreamChunk::makeError(
-                    ErrorInfo{slark::Error::HttpError, static_cast<int32_t>(statusCode)});
+            const bool terminal = event->type == HttpResponseEventType::Completed ||
+                                  event->type == HttpResponseEventType::Error;
+            co_yield std::move(*event);
+            if (terminal) {
                 co_return;
             }
         }
 
-        if (hasPendingBody) {
-            co_yield StreamChunk::makeData(std::move(pendingBodyChunk));
-            pendingBodyChunk.reset();
-            hasPendingBody = false;
+        if (!redirected) {
+            co_return;
+        }
+    }
+}
+
+AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(
+    RequestInfo requestInfo,
+    CancellationToken token) {
+    const auto requestStart = Time::nowTimeStamp();
+    RequestPerf perf;
+    perf.host = requestInfo.url;
+
+    LogI("[HttpProcessor::executeEventsSingle] enter url={} method={}", requestInfo.url,
+         static_cast<int>(requestInfo.methodType));
+
+    if (token.isCancelled()) {
+        co_yield HttpResponseEvent::makeError(ErrorInfo{slark::Error::Cancelled}, std::move(perf));
+        co_return;
+    }
+
+    auto parsed = parseUrl(requestInfo.url);
+    if (!parsed.isValid) {
+        co_yield HttpResponseEvent::makeError(parsed.error, std::move(perf));
+        co_return;
+    }
+
+    auto setup = co_await setupConnectionAndSend("executeEventsSingle", requestInfo, *parsed.url,
+                                                 perf, token);
+    if (setup.hasError()) {
+        co_yield HttpResponseEvent::makeError(setup.error, std::move(perf));
+        co_return;
+    }
+    auto conn = std::move(setup.conn);
+    co_yield HttpResponseEvent::makeConnected();
+
+    ResponseHeader header;
+    bool hasHeaders = false;
+    DataPtr pendingBody;
+    bool parseError = false;
+    Error parseErrorCode = slark::Error::Success;
+    HttpResponseParser parser(
+        makeEventCallbacks(header, hasHeaders, pendingBody, perf, parseError, parseErrorCode));
+    parser.setPerf(&perf);
+    parser.setRequestMethod(requestInfo.methodType);
+    parser.setMaxResponseBodySize(requestInfo.maxResponseBodySize);
+
+    constexpr size_t kReadBufferSize = 16384;
+    std::array<Byte, kReadBufferSize> readBuffer{};
+    Time::Deadline overallDeadline(requestInfo.readTimeout);
+    int64_t lastLoggedSize = 0;
+    size_t recvLoops = 0;
+
+    while (!parser.isCompleted() && !parser.hasError()) {
+        auto read = co_await readStreamChunk(conn, readBuffer, overallDeadline, requestInfo, perf,
+                                             token);
+        if (read.shouldExit) {
+            co_yield HttpResponseEvent::makeError(std::move(read.error), std::move(perf));
+            co_return;
+        }
+        if (read.isEof) {
+            parser.onEof();
+            break;
+        }
+
+        ++recvLoops;
+        parser.feed(readBuffer.data(), read.bytesRead);
+
+        if (hasHeaders) {
+            const auto statusCode = header.httpStatusCode;
+            co_yield HttpResponseEvent::makeHeaders(std::move(header));
+            hasHeaders = false;
+            if (parser.isHttpError()) {
+                co_yield HttpResponseEvent::makeError(
+                    ErrorInfo{slark::Error::HttpError, static_cast<int32_t>(statusCode)},
+                    std::move(perf));
+                co_return;
+            }
+        }
+
+        if (pendingBody) {
+            co_yield HttpResponseEvent::makeData(std::move(pendingBody));
         }
 
         if (perf.parser.bodySize - lastLoggedSize >= streamProgressLogBytes()) {
-            LogI("[HttpProcessor::executeStreamingSingle] progress: bodySize={} recvLoops={} "
-                 "url={}",
+            LogI("[HttpProcessor::executeEventsSingle] progress: bodySize={} recvLoops={} url={}",
                  perf.parser.bodySize, recvLoops, requestInfo.url);
             lastLoggedSize = perf.parser.bodySize;
         }
 
         if (parseError) {
-            LogE("[HttpProcessor::executeStreamingSingle] parse error: err={} bodySize={} url={}",
-                 static_cast<int>(parseErrorCode), perf.parser.bodySize, requestInfo.url);
-            co_yield StreamChunk::makeError(ErrorInfo{parseErrorCode});
+            co_yield HttpResponseEvent::makeError(ErrorInfo{parseErrorCode}, std::move(perf));
             co_return;
         }
     }
 
-    if (parser.hasError() || parseError) {
-        LogE("[HttpProcessor::executeStreamingSingle] exit with parseError: err={} bodySize={} "
-             "url={}",
-             static_cast<int>(parseErrorCode), perf.parser.bodySize, requestInfo.url);
-        co_yield StreamChunk::makeError(ErrorInfo{parseErrorCode});
-    } else {
-        LogI("[HttpProcessor::executeStreamingSingle] exit ok: bodySize={} recvLoops={} url={}",
-             perf.parser.bodySize, recvLoops, requestInfo.url);
-        co_yield StreamChunk::makeFinal();
+    if (parser.hasError() || parseError || !parser.isCompleted()) {
+        const auto error = parseErrorCode == slark::Error::Success
+                               ? ErrorInfo{slark::Error::ConnectionReset}
+                               : ErrorInfo{parseErrorCode};
+        co_yield HttpResponseEvent::makeError(error, std::move(perf));
+        co_return;
     }
 
-    if (parser.shouldCloseConnection()) {
+    perf.totalRequestTimeMs =
+        (Time::nowTimeStamp() - requestStart).toMilliSeconds().count();
+    const bool shouldClose = parser.shouldCloseConnection();
+    co_yield HttpResponseEvent::makeCompleted(std::move(perf));
+    if (shouldClose) {
         conn->close();
     }
 }
 
-AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(const RequestInfo& requestInfo,
+AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(RequestInfo requestInfo,
                                                             CancellationToken token) {
-    LogI("[HttpProcessor::processStreaming] enter url={} method={}", requestInfo.url,
-         static_cast<int>(requestInfo.methodType));
-
-    auto checkCancelled = [&token]() -> std::optional<StreamChunk> {
-        if (token.isCancelled()) {
-            return StreamChunk::makeError(ErrorInfo{slark::Error::Cancelled});
-        }
-        return std::nullopt;
-    };
-
-    if (auto c = checkCancelled()) {
-        co_yield std::move(*c);
-        co_return;
-    }
-
-    // Streaming redirect orchestration (C-09): follows 301/302/307/308, limits hop count
-    auto currentInfo = requestInfo;
-    int32_t redirectCount = 0;
+    auto events = processEvents(std::move(requestInfo), std::move(token));
     while (true) {
-        auto gen = executeStreamingSingle(currentInfo, token);
-        while (true) {
-            auto chunk = co_await gen.next();
-            if (!chunk.has_value()) {
+        auto event = co_await events.next();
+        if (!event.has_value()) {
+            co_return;
+        }
+
+        switch (event->type) {
+            case HttpResponseEventType::Connected:
+                break;
+            case HttpResponseEventType::Headers:
+                co_yield StreamChunk::makeHeader(event->header.httpStatusCode,
+                                                 std::move(event->header.headers));
+                break;
+            case HttpResponseEventType::Data:
+                co_yield StreamChunk::makeData(std::move(event->data));
+                break;
+            case HttpResponseEventType::Completed:
+                co_yield StreamChunk::makeFinal();
                 co_return;
-            }
-            if (auto next =
-                    extractRedirectTarget(redirectPolicy_, *chunk, currentInfo, redirectCount)) {
-                currentInfo = std::move(*next);
-                redirectCount++;
-                LogI("[HttpProcessor::processStreaming] redirect to {} count={}", currentInfo.url,
-                     redirectCount);
-                break;  // drop the current response and issue a new request
-            }
-            const bool isTerminal = chunk->isFinal || chunk->hasError();
-            co_yield std::move(*chunk);
-            if (isTerminal) {
+            case HttpResponseEventType::Error:
+                co_yield StreamChunk::makeError(std::move(event->error));
                 co_return;
-            }
         }
     }
 }

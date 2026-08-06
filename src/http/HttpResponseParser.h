@@ -46,6 +46,10 @@ class HttpResponseParser {
         requestMethod_ = method;
     }
 
+    void setMaxResponseBodySize(uint64_t size) noexcept {
+        maxResponseBodySize_ = size;
+    }
+
     void setPerf(RequestPerf* perf) noexcept {
         perf_ = perf;
     }
@@ -126,6 +130,11 @@ class HttpResponseParser {
 
     static std::string_view stateName(State s) noexcept;
 
+    [[nodiscard]] bool isInformationalResponse() const noexcept {
+        const auto code = static_cast<uint16_t>(statusCode_);
+        return code >= 100 && code < 200 && statusCode_ != HttpStatusCode::SwitchingProtocols;
+    }
+
     std::string findHeader(std::string_view key) const;
 
     // Unified failure exit to avoid duplicated state changes and callbacks
@@ -153,6 +162,7 @@ class HttpResponseParser {
         }
         // 204 No Content and 304 Not Modified have no body
         if (statusCode_ == HttpStatusCode::NoContent ||
+            statusCode_ == HttpStatusCode::ResetContent ||
             statusCode_ == HttpStatusCode::NotModified) {
             return true;
         }
@@ -178,9 +188,12 @@ class HttpResponseParser {
     HttpMethodType requestMethod_ = HttpMethodType::Unknown;
 
     int64_t contentLength_ = -1;
+    bool contentLengthSeen_ = false;
     int64_t bodyReceived_ = 0;
+    uint64_t maxResponseBodySize_ = kDefaultMaxResponseBodySize;
     int64_t currentChunkSize_ = 0;
     int64_t chunkBytesRead_ = 0;
+    bool expectingChunkDataCrlf_ = false;
     size_t trailerBytesRead_ = 0;
 
     RequestPerf* perf_ = nullptr;

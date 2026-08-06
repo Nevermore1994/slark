@@ -96,7 +96,7 @@ TEST(HttpResponseParserFuzzTest, LargeContentLength) {
 
     fuzzFeed(parser, "HTTP/1.1 200 OK\r\nContent-Length: 99999999\r\n\r\n");
     EXPECT_FALSE(parser.isCompleted());
-    EXPECT_FALSE(errored);
+    EXPECT_TRUE(errored);
 }
 
 TEST(HttpResponseParserFuzzTest, RepeatedResetAndFeed) {

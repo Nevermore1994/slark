@@ -57,6 +57,7 @@ std::string_view toString(Error error) noexcept {
         {Error::HttpChunkedError, "HTTP chunked encoding error"},
         {Error::HttpSslError, "HTTP SSL error"},
         {Error::HttpSslHandshakeFailed, "HTTP SSL handshake failed"},
+        {Error::HttpResponseBodyTooLarge, "HTTP response body too large"},
         {Error::MediaOpenFailed, "Media open failed"},
         {Error::MediaEndOfFile, "Media end of file"},
         {Error::MediaHeaderParsed, "Media header parsed"},

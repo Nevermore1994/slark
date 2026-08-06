@@ -2,8 +2,10 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
 #include "Data.h"
@@ -22,6 +24,12 @@ struct ParseResult {
     bool completed = false;
     bool errored = false;
     Error errorCode = Error::Success;
+    size_t statusLineCount = 0;
+    size_t headersCount = 0;
+    size_t bodyChunkCount = 0;
+    size_t completedCount = 0;
+    size_t errorCount = 0;
+    std::string callbackOrder;
 };
 
 class ParserTestHelper {
@@ -31,19 +39,29 @@ class ParserTestHelper {
 
     ParserTestHelper() {
         callbacks.onStatusLine = [this](HttpStatusCode code, const std::string& reason) {
+            ++result.statusLineCount;
+            result.callbackOrder.push_back('S');
             result.statusCode = code;
             result.reasonPhrase = reason;
         };
         callbacks.onHeaders = [this](std::unordered_map<std::string, std::string>&& h) {
+            ++result.headersCount;
+            result.callbackOrder.push_back('H');
             result.headers = std::move(h);
         };
         callbacks.onBodyData = [this](const Byte* data, size_t size) {
+            ++result.bodyChunkCount;
+            result.callbackOrder.push_back('B');
             result.body.append(reinterpret_cast<const char*>(data), size);
         };
         callbacks.onCompleted = [this]() {
+            ++result.completedCount;
+            result.callbackOrder.push_back('C');
             result.completed = true;
         };
         callbacks.onError = [this](Error code) {
+            ++result.errorCount;
+            result.callbackOrder.push_back('E');
             result.errored = true;
             result.errorCode = code;
         };
@@ -89,6 +107,7 @@ TEST(HttpResponseParserTest, ParseSimpleResponse) {
     EXPECT_EQ(helper.result.statusCode, HttpStatusCode::OK);
     EXPECT_EQ(helper.result.body, "Hello");
     EXPECT_EQ(helper.result.headers["content-type"], "text/plain");
+    EXPECT_EQ(helper.result.callbackOrder, "SHBC");
 }
 
 TEST(HttpResponseParserTest, ParseChunkedResponse) {
@@ -98,6 +117,28 @@ TEST(HttpResponseParserTest, ParseChunkedResponse) {
     helper.feed("5\r\nHello\r\n0\r\n\r\n");
     EXPECT_TRUE(helper.isCompleted());
     EXPECT_EQ(helper.result.body, "Hello");
+}
+
+TEST(HttpResponseParserTest, CompletedParserIgnoresFurtherInput) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK");
+    helper.feed("HTTP/1.1 500 Error\r\nContent-Length: 3\r\n\r\nERR");
+    EXPECT_TRUE(helper.isCompleted());
+    EXPECT_FALSE(helper.hasError());
+    EXPECT_EQ(helper.result.body, "OK");
+    EXPECT_EQ(helper.result.statusLineCount, 1u);
+    EXPECT_EQ(helper.result.headersCount, 1u);
+    EXPECT_EQ(helper.result.completedCount, 1u);
+    EXPECT_EQ(helper.result.errorCount, 0u);
+}
+
+TEST(HttpResponseParserTest, ErrorParserIgnoresFurtherInput) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nContent-Length: invalid\r\n\r\n");
+    helper.feed("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+    EXPECT_TRUE(helper.hasError());
+    EXPECT_EQ(helper.result.completedCount, 0u);
+    EXPECT_EQ(helper.result.errorCount, 1u);
 }
 
 TEST(HttpResponseParserTest, ParseChunkedWithMultipleChunks) {
@@ -124,6 +165,26 @@ TEST(HttpResponseParserTest, ParseNoContentLengthResponse) {
     helper.rawParser()->onEof();
     EXPECT_TRUE(helper.isCompleted());
     EXPECT_EQ(helper.result.body, "partial data");
+}
+
+TEST(HttpResponseParserTest, FixedLengthBodyTruncatedAtEofFails) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhel");
+    EXPECT_FALSE(helper.isCompleted());
+    helper.rawParser()->onEof();
+    EXPECT_TRUE(helper.hasError());
+    EXPECT_EQ(helper.result.errorCode, Error::ConnectionReset);
+    EXPECT_EQ(helper.result.completedCount, 0u);
+    EXPECT_EQ(helper.result.errorCount, 1u);
+}
+
+TEST(HttpResponseParserTest, EofBeforeHeadersFails) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nContent-Length: 5\r\n");
+    helper.rawParser()->onEof();
+    EXPECT_TRUE(helper.hasError());
+    EXPECT_EQ(helper.result.errorCode, Error::ConnectionReset);
+    EXPECT_EQ(helper.result.errorCount, 1u);
 }
 
 TEST(HttpResponseParserTest, Reset) {
@@ -153,9 +214,10 @@ TEST(HttpResponseParserTest, HttpErrorDetection) {
     EXPECT_TRUE(helper.rawParser()->isHttpError());
 }
 
-TEST(HttpResponseParserTest, InformationalStatusNotError) {
+TEST(HttpResponseParserTest, SwitchingProtocolsIsFinalResponse) {
     ParserTestHelper helper;
     helper.feed("HTTP/1.1 101 Switching Protocols\r\n\r\n");
+    EXPECT_TRUE(helper.isCompleted());
     EXPECT_FALSE(helper.rawParser()->isHttpError());
 }
 
@@ -196,28 +258,218 @@ TEST(HttpResponseParserTest, HeadRequestHasNoBody) {
     EXPECT_TRUE(helper.result.body.empty());
 }
 
-TEST(HttpResponseParserTest, DISABLED_InformationalAndNoBodyStatusCompleteImmediately) {
-    for (const auto& line : {"HTTP/1.1 100 Continue\r\n\r\n", "HTTP/1.1 204 No Content\r\n\r\n",
-                             "HTTP/1.1 304 Not Modified\r\n\r\n"}) {
+TEST(HttpResponseParserTest, InformationalResponseContinuesToFinalResponse) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 100 Continue\r\n\r\n"
+                "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nHello");
+    EXPECT_TRUE(helper.isCompleted());
+    EXPECT_FALSE(helper.hasError());
+    EXPECT_EQ(helper.result.statusCode, HttpStatusCode::OK);
+    EXPECT_EQ(helper.result.body, "Hello");
+    EXPECT_EQ(helper.result.statusLineCount, 2u);
+    EXPECT_EQ(helper.result.headersCount, 1u);
+    EXPECT_EQ(helper.result.completedCount, 1u);
+    EXPECT_EQ(helper.result.errorCount, 0u);
+    EXPECT_EQ(helper.result.callbackOrder, "SSHBC");
+}
+
+TEST(HttpResponseParserTest, MultipleInformationalResponsesAreSkipped) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 100 Continue\r\nX-Info: one\r\n\r\n"
+                "HTTP/1.1 102 Processing\r\nX-Info: two\r\n\r\n"
+                "HTTP/1.1 103 Early Hints\r\nLink: </style.css>\r\n\r\n"
+                "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK");
+    EXPECT_TRUE(helper.isCompleted());
+    EXPECT_FALSE(helper.hasError());
+    EXPECT_EQ(helper.result.statusCode, HttpStatusCode::OK);
+    EXPECT_EQ(helper.result.body, "OK");
+    EXPECT_EQ(helper.result.statusLineCount, 4u);
+    EXPECT_EQ(helper.result.headersCount, 1u);
+    EXPECT_EQ(helper.result.completedCount, 1u);
+    EXPECT_EQ(helper.result.errorCount, 0u);
+    EXPECT_EQ(helper.result.callbackOrder, "SSSSHBC");
+}
+
+TEST(HttpResponseParserTest, InformationalFramingHeadersDoNotCreateBody) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 100 Continue\r\nContent-Length: 5\r\n\r\n"
+                "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK");
+    EXPECT_TRUE(helper.isCompleted());
+    EXPECT_FALSE(helper.hasError());
+    EXPECT_EQ(helper.result.body, "OK");
+    EXPECT_EQ(helper.result.headersCount, 1u);
+    EXPECT_EQ(helper.result.bodyChunkCount, 1u);
+
+    ParserTestHelper chunkedHelper;
+    chunkedHelper.feed("HTTP/1.1 102 Processing\r\nTransfer-Encoding: chunked\r\n\r\n"
+                       "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK");
+    EXPECT_TRUE(chunkedHelper.isCompleted());
+    EXPECT_FALSE(chunkedHelper.hasError());
+    EXPECT_EQ(chunkedHelper.result.body, "OK");
+    EXPECT_EQ(chunkedHelper.result.headersCount, 1u);
+}
+
+TEST(HttpResponseParserTest, InformationalResponsesWorkAcrossByteSlices) {
+    const std::string raw = "HTTP/1.1 102 Processing\r\n\r\n"
+                            "HTTP/1.1 103 Early Hints\r\n\r\n"
+                            "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK";
+    for (const size_t slice : {size_t{1}, size_t{2}, size_t{7}}) {
         ParserTestHelper helper;
-        helper.feed(line);
-        EXPECT_TRUE(helper.isCompleted()) << line;
-        EXPECT_TRUE(helper.result.body.empty()) << line;
+        helper.feedInSlices(raw, slice);
+        EXPECT_TRUE(helper.isCompleted()) << "slice=" << slice;
+        EXPECT_FALSE(helper.hasError()) << "slice=" << slice;
+        EXPECT_EQ(helper.result.statusLineCount, 3u) << "slice=" << slice;
+        EXPECT_EQ(helper.result.headersCount, 1u) << "slice=" << slice;
+        EXPECT_EQ(helper.result.completedCount, 1u) << "slice=" << slice;
     }
 }
 
-TEST(HttpResponseParserTest, DuplicateContentLengthTakesLastValue) {
+TEST(HttpResponseParserTest, SwitchingProtocolsDoesNotParseFollowingResponse) {
     ParserTestHelper helper;
-    helper.feed("HTTP/1.1 200 OK\r\nContent-Length: 5\r\nContent-Length: 3\r\n\r\nabc");
+    helper.feed("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\r\n"
+                "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK");
+    EXPECT_TRUE(helper.isCompleted());
+    EXPECT_FALSE(helper.hasError());
+    EXPECT_EQ(helper.result.statusLineCount, 1u);
+    EXPECT_EQ(helper.result.headersCount, 1u);
+    EXPECT_EQ(helper.result.completedCount, 1u);
+    EXPECT_EQ(helper.result.bodyChunkCount, 0u);
+    EXPECT_EQ(helper.result.callbackOrder, "SHC");
+}
+
+TEST(HttpResponseParserTest, NoBodyResponsesIgnoreFramingHeaders) {
+    const std::array<std::string_view, 4> statusLines = {
+        "HTTP/1.1 204 No Content", "HTTP/1.1 205 Reset Content",
+        "HTTP/1.1 304 Not Modified", "HTTP/1.1 200 OK"};
+    const std::array<std::string_view, 2> framingHeaders = {
+        "Content-Length: 5\r\n", "Transfer-Encoding: chunked\r\n"};
+
+    for (const auto statusLine : statusLines) {
+        for (const auto framingHeader : framingHeaders) {
+            ParserTestHelper helper;
+            const auto response = std::string(statusLine) + "\r\n" + std::string(framingHeader) +
+                                   "\r\nunexpected";
+            if (statusLine == "HTTP/1.1 200 OK") {
+                helper.rawParser()->setRequestMethod(HttpMethodType::Head);
+            }
+            helper.feed(response);
+            EXPECT_TRUE(helper.isCompleted()) << statusLine << " / " << framingHeader;
+            EXPECT_FALSE(helper.hasError()) << statusLine << " / " << framingHeader;
+            EXPECT_TRUE(helper.result.body.empty()) << statusLine << " / " << framingHeader;
+            EXPECT_EQ(helper.result.bodyChunkCount, 0u) << statusLine << " / " << framingHeader;
+            EXPECT_EQ(helper.result.headersCount, 1u) << statusLine << " / " << framingHeader;
+            EXPECT_EQ(helper.result.completedCount, 1u) << statusLine << " / " << framingHeader;
+            EXPECT_EQ(helper.result.callbackOrder, "SHC") << statusLine << " / " << framingHeader;
+        }
+    }
+}
+
+TEST(HttpResponseParserTest, HeadResponseWithChunkedFramingHasNoBody) {
+    ParserTestHelper helper;
+    helper.rawParser()->setRequestMethod(HttpMethodType::Head);
+    helper.feed("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+                "5\r\nHello\r\n0\r\n\r\n");
+    EXPECT_TRUE(helper.isCompleted());
+    EXPECT_FALSE(helper.hasError());
+    EXPECT_TRUE(helper.result.body.empty());
+    EXPECT_EQ(helper.result.bodyChunkCount, 0u);
+    EXPECT_EQ(helper.result.callbackOrder, "SHC");
+}
+
+TEST(HttpResponseParserTest, ResetContentHasNoBody) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 205 Reset Content\r\nContent-Length: 5\r\n\r\n");
+    EXPECT_TRUE(helper.isCompleted());
+    EXPECT_TRUE(helper.result.body.empty());
+}
+
+TEST(HttpResponseParserTest, SameDuplicateContentLengthIsAccepted) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nContent-Length: 3\r\nContent-Length: 3\r\n\r\nabc");
     EXPECT_TRUE(helper.isCompleted());
     EXPECT_EQ(helper.result.body, "abc");
 }
 
-TEST(HttpResponseParserTest, DISABLED_InvalidContentLengthTrailingCharsFails) {
+TEST(HttpResponseParserTest, ConflictingContentLengthFails) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nContent-Length: 5\r\nContent-Length: 3\r\n\r\nabc");
+    EXPECT_TRUE(helper.hasError());
+    EXPECT_EQ(helper.result.errorCode, Error::HttpResponseInvalid);
+}
+
+TEST(HttpResponseParserTest, FixedLengthBodyLimitRejectsBeforeBodyRead) {
+    ParserTestHelper helper;
+    helper.rawParser()->setMaxResponseBodySize(4);
+    helper.feed("HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nHello");
+    EXPECT_TRUE(helper.hasError());
+    EXPECT_EQ(helper.result.errorCode, Error::HttpResponseBodyTooLarge);
+    EXPECT_TRUE(helper.result.body.empty());
+    EXPECT_EQ(helper.result.errorCount, 1u);
+    EXPECT_EQ(helper.result.completedCount, 0u);
+}
+
+TEST(HttpResponseParserTest, ChunkedBodyLimitRejectsBeforeExceedingChunk) {
+    ParserTestHelper helper;
+    helper.rawParser()->setMaxResponseBodySize(4);
+    helper.feed("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+                "3\r\nabc\r\n2\r\nde\r\n0\r\n\r\n");
+    EXPECT_TRUE(helper.hasError());
+    EXPECT_EQ(helper.result.errorCode, Error::HttpResponseBodyTooLarge);
+    EXPECT_EQ(helper.result.body, "abc");
+    EXPECT_EQ(helper.result.completedCount, 0u);
+}
+
+TEST(HttpResponseParserTest, UnknownLengthBodyLimitRejectsAccumulatedData) {
+    ParserTestHelper helper;
+    helper.rawParser()->setMaxResponseBodySize(4);
+    helper.feed("HTTP/1.1 200 OK\r\n\r\n12345");
+    EXPECT_TRUE(helper.hasError());
+    EXPECT_EQ(helper.result.errorCode, Error::HttpResponseBodyTooLarge);
+    EXPECT_TRUE(helper.result.body.empty());
+}
+
+TEST(HttpResponseParserTest, ZeroBodyLimitAllowsEmptyResponse) {
+    ParserTestHelper helper;
+    helper.rawParser()->setMaxResponseBodySize(0);
+    helper.feed("HTTP/1.1 204 No Content\r\nContent-Length: 5\r\n\r\n");
+    EXPECT_TRUE(helper.isCompleted());
+    EXPECT_FALSE(helper.hasError());
+    EXPECT_EQ(helper.result.completedCount, 1u);
+}
+
+TEST(HttpResponseParserTest, InvalidContentLengthTrailingCharsFails) {
     ParserTestHelper helper;
     helper.feed("HTTP/1.1 200 OK\r\nContent-Length: 5abc\r\n\r\n");
     EXPECT_TRUE(helper.hasError());
     EXPECT_EQ(helper.result.errorCode, Error::HttpResponseInvalid);
+}
+
+TEST(HttpResponseParserTest, InvalidContentLengthValuesFail) {
+    for (const auto value : {"", "-1", "+1", "0x1", "1abc",
+                             "9223372036854775808"}) {
+        ParserTestHelper helper;
+        helper.feed(std::string("HTTP/1.1 200 OK\r\nContent-Length: ") + value + "\r\n\r\n");
+        EXPECT_TRUE(helper.hasError()) << "value=" << value;
+        EXPECT_EQ(helper.result.errorCode, Error::HttpResponseInvalid) << "value=" << value;
+        EXPECT_EQ(helper.result.completedCount, 0u) << "value=" << value;
+        EXPECT_EQ(helper.result.errorCount, 1u) << "value=" << value;
+    }
+}
+
+TEST(HttpResponseParserTest, ContentLengthAllowsOptionalWhitespace) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nContent-Length: \t5 \t\r\n\r\nHello");
+    EXPECT_TRUE(helper.isCompleted());
+    EXPECT_FALSE(helper.hasError());
+    EXPECT_EQ(helper.result.body, "Hello");
+}
+
+TEST(HttpResponseParserTest, SameDuplicateContentLengthWithDifferentCaseIsAccepted) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nContent-Length: 3\r\ncontent-length: 3\r\n\r\nabc");
+    EXPECT_TRUE(helper.isCompleted());
+    EXPECT_FALSE(helper.hasError());
+    EXPECT_EQ(helper.result.body, "abc");
 }
 
 TEST(HttpResponseParserTest, HeaderLineWithoutColonIsIgnored) {
@@ -244,6 +496,109 @@ TEST(HttpResponseParserTest, OversizedChunkSizeFails) {
     helper.feed("FFFFFFFFFFFFFFFF;\r\n");
     EXPECT_TRUE(helper.hasError());
     EXPECT_EQ(helper.result.errorCode, Error::HttpChunkedError);
+}
+
+TEST(HttpResponseParserTest, NegativeChunkSizeFails) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n-1\r\n");
+    EXPECT_TRUE(helper.hasError());
+    EXPECT_EQ(helper.result.errorCode, Error::HttpChunkedError);
+}
+
+TEST(HttpResponseParserTest, TransferEncodingAndContentLengthConflictFails) {
+    for (const auto& headers : {"Transfer-Encoding: chunked\r\nContent-Length: 5\r\n",
+                                "Content-Length: 5\r\nTransfer-Encoding: chunked\r\n"}) {
+        ParserTestHelper helper;
+        helper.feed(std::string("HTTP/1.1 200 OK\r\n") + headers + "\r\n");
+        EXPECT_TRUE(helper.hasError()) << headers;
+        EXPECT_EQ(helper.result.errorCode, Error::HttpResponseInvalid) << headers;
+    }
+}
+
+TEST(HttpResponseParserTest, UnsupportedTransferEncodingFails) {
+    for (const auto encoding : {"chunkedness", "gzip", "gzip, chunked"}) {
+        ParserTestHelper helper;
+        helper.feed(std::string("HTTP/1.1 200 OK\r\nTransfer-Encoding: ") + encoding +
+                    "\r\n\r\n");
+        EXPECT_TRUE(helper.hasError()) << "encoding=" << encoding;
+        EXPECT_EQ(helper.result.errorCode, Error::HttpResponseInvalid) << "encoding=" << encoding;
+    }
+}
+
+TEST(HttpResponseParserTest, TransferEncodingChunkedIsCaseInsensitive) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nTransfer-Encoding: \tChunked \t\r\n\r\n"
+                "0\r\n\r\n");
+    EXPECT_TRUE(helper.isCompleted());
+    EXPECT_FALSE(helper.hasError());
+    EXPECT_EQ(helper.result.completedCount, 1u);
+}
+
+TEST(HttpResponseParserTest, InvalidChunkSizeValuesFail) {
+    for (const auto value : {"", "+1", "-1", "0x1", "g", "1g"}) {
+        ParserTestHelper helper;
+        helper.feed("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n");
+        helper.feed(std::string(value) + "\r\n");
+        helper.rawParser()->onEof();
+        EXPECT_TRUE(helper.hasError()) << "value=" << value;
+        EXPECT_EQ(helper.result.errorCode, Error::HttpChunkedError) << "value=" << value;
+        EXPECT_EQ(helper.result.errorCount, 1u) << "value=" << value;
+    }
+}
+
+TEST(HttpResponseParserTest, ChunkExtensionIsAccepted) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+                "5;foo=bar\r\nHello\r\n0\r\n\r\n");
+    EXPECT_TRUE(helper.isCompleted());
+    EXPECT_FALSE(helper.hasError());
+    EXPECT_EQ(helper.result.body, "Hello");
+}
+
+TEST(HttpResponseParserTest, ChunkDataMissingAtEofFails) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+                "5\r\nhel");
+    EXPECT_FALSE(helper.isCompleted());
+    helper.rawParser()->onEof();
+    EXPECT_TRUE(helper.hasError());
+    EXPECT_EQ(helper.result.errorCode, Error::ConnectionReset);
+}
+
+TEST(HttpResponseParserTest, ChunkDataWithoutTrailingCrlfFailsAtEof) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+                "5\r\nHello");
+    EXPECT_FALSE(helper.isCompleted());
+    helper.rawParser()->onEof();
+    EXPECT_TRUE(helper.hasError());
+    EXPECT_EQ(helper.result.errorCode, Error::ConnectionReset);
+}
+
+TEST(HttpResponseParserTest, MalformedTrailerFails) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+                "0\r\nMalformedTrailer\r\n\r\n");
+    EXPECT_TRUE(helper.hasError());
+    EXPECT_EQ(helper.result.errorCode, Error::HttpResponseInvalid);
+}
+
+TEST(HttpResponseParserTest, MultipleTrailersAreAccepted) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+                "0\r\nX-One: one\r\nX-Two: two\r\n\r\n");
+    EXPECT_TRUE(helper.isCompleted());
+    EXPECT_FALSE(helper.hasError());
+}
+
+TEST(HttpResponseParserTest, TrailerSizeLimitIsEnforced) {
+    ParserTestHelper helper;
+    std::string response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n";
+    response.append(16 * 1024, 'a');
+    response.append("\r\n\r\n");
+    helper.feed(response);
+    EXPECT_TRUE(helper.hasError());
+    EXPECT_EQ(helper.result.errorCode, Error::HttpResponseInvalid);
 }
 
 TEST(HttpResponseParserTest, StatusLineWithoutReasonPhraseFails) {

@@ -3,6 +3,8 @@
 //
 #include "HttpResponseParser.h"
 
+#include <charconv>
+
 #include "DataView.hpp"
 #include "Error.h"
 #include "Log.hpp"
@@ -13,9 +15,26 @@
 namespace slark::http {
 
 namespace {
+
 inline int64_t parserLogChunkBytes() {
     return static_cast<int64_t>(getLogConfig().progressLogBytes);
 }
+
+bool parseNonNegativeInt64(std::string_view text, int base, int64_t& value) noexcept {
+    if (text.empty() || base < 2 || base > 36 || text.front() == '-' || text.front() == '+') {
+        return false;
+    }
+
+    int64_t parsed = 0;
+    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), parsed, base);
+    if (error != std::errc() || end != text.data() + text.size() || parsed < 0) {
+        return false;
+    }
+
+    value = parsed;
+    return true;
+}
+
 }  // namespace
 
 bool HttpResponseParser::checkHeaderOverflow(size_t appendSize) noexcept {
@@ -81,9 +100,11 @@ void HttpResponseParser::reset() noexcept {
     statusCode_ = HttpStatusCode::Unknown;
     shouldClose_ = false;
     contentLength_ = -1;
+    contentLengthSeen_ = false;
     bodyReceived_ = 0;
     currentChunkSize_ = 0;
     chunkBytesRead_ = 0;
+    expectingChunkDataCrlf_ = false;
     trailerBytesRead_ = 0;
     lastLoggedBodyReceived_ = 0;
 }
@@ -171,37 +192,55 @@ void HttpResponseParser::processStatusLine() {
 }
 
 void HttpResponseParser::determineBodyMode() {
-    auto transferEncoding = findHeader("Transfer-Encoding");
-    if (!transferEncoding.empty() &&
-        StringUtil::toLower(transferEncoding).find("chunked") != std::string::npos) {
+    if (shouldSkipBody()) {
+        LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength={} "
+             "shouldSkipBody=true -> Completed",
+             headers_.size(), contentLength_);
+        state_ = State::Completed;
+        return;
+    }
+
+    if (contentLength_ >= 0 &&
+        static_cast<uint64_t>(contentLength_) > maxResponseBodySize_) {
+        LogE("[HttpResponseParser::processHeaders] response body exceeds limit: length={} limit={}",
+             contentLength_, maxResponseBodySize_);
+        fail(slark::Error::HttpResponseBodyTooLarge);
+        return;
+    }
+
+    const auto transferEncoding = findHeader("Transfer-Encoding");
+    if (!transferEncoding.empty() && contentLengthSeen_) {
+        LogE("[HttpResponseParser::processHeaders] both Transfer-Encoding and Content-Length present");
+        fail(slark::Error::HttpResponseInvalid);
+        return;
+    }
+
+    if (!transferEncoding.empty()) {
+        auto encoding = std::string_view(transferEncoding);
+        while (!encoding.empty() && (encoding.front() == ' ' || encoding.front() == '\t')) {
+            encoding.remove_prefix(1);
+        }
+        while (!encoding.empty() && (encoding.back() == ' ' || encoding.back() == '\t')) {
+            encoding.remove_suffix(1);
+        }
+        if (!StringUtil::iequals(encoding, "chunked")) {
+            LogE("[HttpResponseParser::processHeaders] unsupported Transfer-Encoding: {}",
+                 transferEncoding);
+            fail(slark::Error::HttpResponseInvalid);
+            return;
+        }
         state_ = State::ChunkSize;
         LogI("[HttpResponseParser::processHeaders] headers done: count={} transferEncoding=chunked "
              "shouldClose={} -> {}",
              headers_.size(), shouldClose_, stateName(state_));
         return;
     }
-    auto contentLengthStr = findHeader("Content-Length");
-    if (!contentLengthStr.empty()) {
-        auto clResult = StringUtil::fromChars<int64_t>(contentLengthStr);
-        if (!clResult || *clResult < 0) {
-            LogE("[HttpResponseParser::processHeaders] invalid Content-Length: {}",
-                 contentLengthStr);
-            fail(slark::Error::HttpResponseInvalid);
-            return;
-        }
-        contentLength_ = *clResult;
-    }
 
-    if (shouldSkipBody()) {
-        LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength={} "
-             "shouldSkipBody=true -> Completed",
-             headers_.size(), contentLength_);
-        complete();
-    } else if (contentLength_ == 0) {
+    if (contentLength_ == 0) {
         LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength=0 -> "
              "Completed",
              headers_.size());
-        complete();
+        state_ = State::Completed;
     } else {
         state_ = State::BodyFixed;
         LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength={} "
@@ -212,9 +251,16 @@ void HttpResponseParser::determineBodyMode() {
 
 void HttpResponseParser::processHeaders() {
     auto data = readableData();
-    auto pos = data.find(kHeaderEnd);
-    if (pos == std::string_view::npos) {
-        return;
+    size_t pos = 0;
+    size_t headerEndSize = kHeaderEnd.size();
+    if (data.starts_with(kCRLF)) {
+        headerEndSize = kCRLF.size();
+    } else {
+        const auto headerEndPos = data.find(kHeaderEnd);
+        if (headerEndPos == std::string_view::npos) {
+            return;
+        }
+        pos = headerEndPos;
     }
 
     auto headerBlock = data.substr(0, pos);
@@ -231,8 +277,29 @@ void HttpResponseParser::processHeaders() {
         if (colonPos != std::string_view::npos) {
             auto name = StringUtil::toLower(std::string(line.substr(0, colonPos)));
             auto value = line.substr(colonPos + 1);
-            while (!value.empty() && value.front() == ' ') {
+            while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
                 value.remove_prefix(1);
+            }
+            while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) {
+                value.remove_suffix(1);
+            }
+
+            if (name == "content-length") {
+                int64_t parsedLength = 0;
+                if (!parseNonNegativeInt64(value, 10, parsedLength)) {
+                    LogE("[HttpResponseParser::processHeaders] invalid Content-Length: {}",
+                         std::string(value));
+                    fail(slark::Error::HttpResponseInvalid);
+                    return;
+                }
+                if (contentLengthSeen_ && contentLength_ != parsedLength) {
+                    LogE("[HttpResponseParser::processHeaders] conflicting Content-Length values: {} and {}",
+                         contentLength_, parsedLength);
+                    fail(slark::Error::HttpResponseInvalid);
+                    return;
+                }
+                contentLength_ = parsedLength;
+                contentLengthSeen_ = true;
             }
             headers_[std::move(name)] = std::string(value);
         }
@@ -240,15 +307,33 @@ void HttpResponseParser::processHeaders() {
         lineStart = lineEnd + kCRLF.size();
     }
 
-    consume(pos + kHeaderEnd.size());
+    consume(pos + headerEndSize);
 
     auto connValue = findHeader("Connection");
-    shouldClose_ = (!connValue.empty() && StringUtil::iequals(connValue, "close"));
+    shouldClose_ = shouldClose_ || (!connValue.empty() && StringUtil::iequals(connValue, "close"));
+
+    if (isInformationalResponse()) {
+        headers_.clear();
+        contentLength_ = -1;
+        contentLengthSeen_ = false;
+        bodyReceived_ = 0;
+        currentChunkSize_ = 0;
+        chunkBytesRead_ = 0;
+        expectingChunkDataCrlf_ = false;
+        state_ = State::StatusLine;
+        return;
+    }
 
     determineBodyMode();
+    if (state_ == State::Error) {
+        return;
+    }
 
     if (callbacks_.onHeaders) {
         callbacks_.onHeaders(std::unordered_map<std::string, std::string>(headers_));
+    }
+    if (state_ == State::Completed) {
+        complete();
     }
 }
 
@@ -263,6 +348,15 @@ void HttpResponseParser::processBodyFixed() {
     if (contentLength_ > 0) {
         auto remaining = contentLength_ - bodyReceived_;
         auto toConsume = std::min(available, remaining);
+        if (toConsume > 0 &&
+            static_cast<uint64_t>(bodyReceived_) + static_cast<uint64_t>(toConsume) >
+                maxResponseBodySize_) {
+            LogE("[HttpResponseParser::processBodyFixed] response body exceeds limit: received={} "
+                 "next={} limit={}",
+                 bodyReceived_, toConsume, maxResponseBodySize_);
+            fail(slark::Error::HttpResponseBodyTooLarge);
+            return;
+        }
 
         if (toConsume > 0 && callbacks_.onBodyData) {
             callbacks_.onBodyData(reinterpret_cast<const Byte*>(data.data()),
@@ -283,6 +377,14 @@ void HttpResponseParser::processBodyFixed() {
         }
     } else {
         // Content-Length unknown, consume all available data
+        if (static_cast<uint64_t>(bodyReceived_) + static_cast<uint64_t>(available) >
+            maxResponseBodySize_) {
+            LogE("[HttpResponseParser::processBodyFixed] response body exceeds limit: received={} "
+                 "available={} limit={}",
+                 bodyReceived_, available, maxResponseBodySize_);
+            fail(slark::Error::HttpResponseBodyTooLarge);
+            return;
+        }
         if (callbacks_.onBodyData) {
             callbacks_.onBodyData(reinterpret_cast<const Byte*>(data.data()), data.size());
         }
@@ -301,9 +403,20 @@ void HttpResponseParser::processBodyFixed() {
 void HttpResponseParser::processChunkSize() {
     auto data = readableData();
 
-    // Skip exactly one CRLF between chunks (strictly per RFC 7230 §4.1)
-    if (data.starts_with(kCRLF)) {
+    if (expectingChunkDataCrlf_) {
+        if (data.empty()) {
+            return;
+        }
+        if (data.size() < kCRLF.size() && data.front() == '\r') {
+            return;
+        }
+        if (!data.starts_with(kCRLF)) {
+            LogE("[HttpResponseParser::processChunkSize] missing chunk data CRLF");
+            fail(slark::Error::HttpChunkedError);
+            return;
+        }
         consume(kCRLF.size());
+        expectingChunkDataCrlf_ = false;
         data = readableData();
     }
 
@@ -320,13 +433,12 @@ void HttpResponseParser::processChunkSize() {
         sizeStr = sizeStr.substr(0, semicolonPos);
     }
 
-    auto chunkSizeResult = StringUtil::fromChars<int64_t>(sizeStr, 16);
-    if (!chunkSizeResult) {
+    int64_t chunkSize = 0;
+    if (!parseNonNegativeInt64(sizeStr, 16, chunkSize)) {
         LogE("[HttpResponseParser::processChunkSize] invalid chunk size: {}", std::string(sizeStr));
         fail(slark::Error::HttpChunkedError);
         return;
     }
-    auto chunkSize = *chunkSizeResult;
 
     consume(pos + kCRLF.size());
 
@@ -336,6 +448,15 @@ void HttpResponseParser::processChunkSize() {
         // Last chunk, move to trailer processing
         state_ = State::ChunkTrailer;
     } else {
+        if (static_cast<uint64_t>(bodyReceived_) > maxResponseBodySize_ ||
+            static_cast<uint64_t>(chunkSize) >
+                maxResponseBodySize_ - static_cast<uint64_t>(bodyReceived_)) {
+            LogE("[HttpResponseParser::processChunkSize] response body exceeds limit: received={} "
+                 "chunk={} limit={}",
+                 bodyReceived_, chunkSize, maxResponseBodySize_);
+            fail(slark::Error::HttpResponseBodyTooLarge);
+            return;
+        }
         currentChunkSize_ = chunkSize;
         chunkBytesRead_ = 0;
         state_ = State::ChunkData;
@@ -361,10 +482,12 @@ void HttpResponseParser::processChunkData() {
                               static_cast<size_t>(toConsume));
     }
 
+    bodyReceived_ += toConsume;
     chunkBytesRead_ += toConsume;
     consume(static_cast<size_t>(toConsume));
 
     if (chunkBytesRead_ >= currentChunkSize_) {
+        expectingChunkDataCrlf_ = true;
         state_ = State::ChunkSize;
     }
 }
@@ -397,6 +520,14 @@ void HttpResponseParser::processChunkTrailer() {
              perf_ ? perf_->parser.chunkCount : 0);
         complete();
     } else {
+        const auto trailerLine = data.substr(0, pos);
+        const auto colonPos = trailerLine.find(':');
+        if (colonPos == std::string_view::npos || colonPos == 0) {
+            LogE("[HttpResponseParser::processChunkTrailer] malformed trailer");
+            fail(slark::Error::HttpResponseInvalid);
+            return;
+        }
+
         // Skip the trailer header, counting only the bytes actually consumed this time
         auto consumed = pos + kCRLF.size();
         trailerBytesRead_ += consumed;
