@@ -135,8 +135,6 @@ class HttpResponseParser {
         return code >= 100 && code < 200 && statusCode_ != HttpStatusCode::SwitchingProtocols;
     }
 
-    std::string findHeader(std::string_view key) const;
-
     // Unified failure exit to avoid duplicated state changes and callbacks
     void fail(Error code) noexcept {
         state_ = State::Error;
@@ -189,6 +187,8 @@ class HttpResponseParser {
 
     int64_t contentLength_ = -1;
     bool contentLengthSeen_ = false;
+    bool transferEncodingSeen_ = false;
+    std::string transferEncodingValue_;
     int64_t bodyReceived_ = 0;
     uint64_t maxResponseBodySize_ = kDefaultMaxResponseBodySize;
     int64_t currentChunkSize_ = 0;

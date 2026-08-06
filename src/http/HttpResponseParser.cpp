@@ -3,7 +3,9 @@
 //
 #include "HttpResponseParser.h"
 
+#include <algorithm>
 #include <charconv>
+#include <cctype>
 
 #include "DataView.hpp"
 #include "Error.h"
@@ -33,6 +35,63 @@ bool parseNonNegativeInt64(std::string_view text, int base, int64_t& value) noex
 
     value = parsed;
     return true;
+}
+
+bool isHeaderNameToken(std::string_view name) noexcept {
+    if (name.empty()) {
+        return false;
+    }
+    return std::all_of(name.begin(), name.end(), [](unsigned char c) {
+        return std::isalnum(c) || c == '!' || c == '#' || c == '$' || c == '%' || c == '&' ||
+               c == '\'' || c == '*' || c == '+' || c == '-' || c == '.' || c == '^' || c == '_' ||
+               c == '`' || c == '|' || c == '~';
+    });
+}
+
+bool isHeaderValueValid(std::string_view value) noexcept {
+    return std::all_of(value.begin(), value.end(), [](unsigned char c) {
+        return c == '\t' || (c >= 0x20 && c != 0x7f);
+    });
+}
+
+std::string_view trimOws(std::string_view value) noexcept {
+    while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
+        value.remove_prefix(1);
+    }
+    while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) {
+        value.remove_suffix(1);
+    }
+    return value;
+}
+
+bool hasHeaderToken(std::string_view value, std::string_view target) noexcept {
+    while (true) {
+        const auto comma = value.find(',');
+        const auto token = trimOws(value.substr(0, comma));
+        if (!token.empty() && StringUtil::iequals(token, target)) {
+            return true;
+        }
+        if (comma == std::string_view::npos) {
+            return false;
+        }
+        value.remove_prefix(comma + 1);
+    }
+}
+
+bool isSingleChunkedTransferEncoding(std::string_view value) noexcept {
+    bool foundChunked = false;
+    while (true) {
+        const auto comma = value.find(',');
+        const auto token = trimOws(value.substr(0, comma));
+        if (token.empty() || !StringUtil::iequals(token, "chunked") || foundChunked) {
+            return false;
+        }
+        foundChunked = true;
+        if (comma == std::string_view::npos) {
+            return true;
+        }
+        value.remove_prefix(comma + 1);
+    }
 }
 
 }  // namespace
@@ -101,6 +160,8 @@ void HttpResponseParser::reset() noexcept {
     shouldClose_ = false;
     contentLength_ = -1;
     contentLengthSeen_ = false;
+    transferEncodingSeen_ = false;
+    transferEncodingValue_.clear();
     bodyReceived_ = 0;
     currentChunkSize_ = 0;
     chunkBytesRead_ = 0;
@@ -208,24 +269,16 @@ void HttpResponseParser::determineBodyMode() {
         return;
     }
 
-    const auto transferEncoding = findHeader("Transfer-Encoding");
-    if (!transferEncoding.empty() && contentLengthSeen_) {
+    if (transferEncodingSeen_ && contentLengthSeen_) {
         LogE("[HttpResponseParser::processHeaders] both Transfer-Encoding and Content-Length present");
         fail(slark::Error::HttpResponseInvalid);
         return;
     }
 
-    if (!transferEncoding.empty()) {
-        auto encoding = std::string_view(transferEncoding);
-        while (!encoding.empty() && (encoding.front() == ' ' || encoding.front() == '\t')) {
-            encoding.remove_prefix(1);
-        }
-        while (!encoding.empty() && (encoding.back() == ' ' || encoding.back() == '\t')) {
-            encoding.remove_suffix(1);
-        }
-        if (!StringUtil::iequals(encoding, "chunked")) {
+    if (transferEncodingSeen_) {
+        if (!isSingleChunkedTransferEncoding(transferEncodingValue_)) {
             LogE("[HttpResponseParser::processHeaders] unsupported Transfer-Encoding: {}",
-                 transferEncoding);
+                 transferEncodingValue_);
             fail(slark::Error::HttpResponseInvalid);
             return;
         }
@@ -273,49 +326,68 @@ void HttpResponseParser::processHeaders() {
         }
 
         auto line = headerBlock.substr(lineStart, lineEnd - lineStart);
-        auto colonPos = line.find(':');
-        if (colonPos != std::string_view::npos) {
-            auto name = StringUtil::toLower(std::string(line.substr(0, colonPos)));
-            auto value = line.substr(colonPos + 1);
-            while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
-                value.remove_prefix(1);
-            }
-            while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) {
-                value.remove_suffix(1);
-            }
-
-            if (name == "content-length") {
-                int64_t parsedLength = 0;
-                if (!parseNonNegativeInt64(value, 10, parsedLength)) {
-                    LogE("[HttpResponseParser::processHeaders] invalid Content-Length: {}",
-                         std::string(value));
-                    fail(slark::Error::HttpResponseInvalid);
-                    return;
-                }
-                if (contentLengthSeen_ && contentLength_ != parsedLength) {
-                    LogE("[HttpResponseParser::processHeaders] conflicting Content-Length values: {} and {}",
-                         contentLength_, parsedLength);
-                    fail(slark::Error::HttpResponseInvalid);
-                    return;
-                }
-                contentLength_ = parsedLength;
-                contentLengthSeen_ = true;
-            }
-            headers_[std::move(name)] = std::string(value);
+        const auto colonPos = line.find(':');
+        if (colonPos == std::string_view::npos) {
+            LogE("[HttpResponseParser::processHeaders] header line has no colon: {}",
+                 StringUtil::toSafeLogString(line));
+            fail(slark::Error::HttpResponseInvalid);
+            return;
         }
+
+        auto name = StringUtil::toLower(std::string(line.substr(0, colonPos)));
+        if (!isHeaderNameToken(name)) {
+            LogE("[HttpResponseParser::processHeaders] invalid header name: {}",
+                 StringUtil::toSafeLogString(name));
+            fail(slark::Error::HttpResponseInvalid);
+            return;
+        }
+
+        auto value = trimOws(line.substr(colonPos + 1));
+        if (!isHeaderValueValid(value)) {
+            LogE("[HttpResponseParser::processHeaders] invalid header value: {}",
+                 StringUtil::toSafeLogString(value));
+            fail(slark::Error::HttpResponseInvalid);
+            return;
+        }
+
+        if (name == "content-length") {
+            int64_t parsedLength = 0;
+            if (!parseNonNegativeInt64(value, 10, parsedLength)) {
+                LogE("[HttpResponseParser::processHeaders] invalid Content-Length: {}",
+                     std::string(value));
+                fail(slark::Error::HttpResponseInvalid);
+                return;
+            }
+            if (contentLengthSeen_ && contentLength_ != parsedLength) {
+                LogE("[HttpResponseParser::processHeaders] conflicting Content-Length values: {} and {}",
+                     contentLength_, parsedLength);
+                fail(slark::Error::HttpResponseInvalid);
+                return;
+            }
+            contentLength_ = parsedLength;
+            contentLengthSeen_ = true;
+        } else if (name == "transfer-encoding") {
+            if (transferEncodingSeen_) {
+                transferEncodingValue_.append(",");
+            }
+            transferEncodingValue_.append(value);
+            transferEncodingSeen_ = true;
+        } else if (name == "connection" && hasHeaderToken(value, "close")) {
+            shouldClose_ = true;
+        }
+        headers_[std::move(name)] = std::string(value);
 
         lineStart = lineEnd + kCRLF.size();
     }
 
     consume(pos + headerEndSize);
 
-    auto connValue = findHeader("Connection");
-    shouldClose_ = shouldClose_ || (!connValue.empty() && StringUtil::iequals(connValue, "close"));
-
     if (isInformationalResponse()) {
         headers_.clear();
         contentLength_ = -1;
         contentLengthSeen_ = false;
+        transferEncodingSeen_ = false;
+        transferEncodingValue_.clear();
         bodyReceived_ = 0;
         currentChunkSize_ = 0;
         chunkBytesRead_ = 0;
@@ -533,15 +605,6 @@ void HttpResponseParser::processChunkTrailer() {
         trailerBytesRead_ += consumed;
         consume(consumed);
     }
-}
-
-std::string HttpResponseParser::findHeader(std::string_view key) const {
-    for (const auto& [k, v] : headers_) {
-        if (StringUtil::iequals(k, key)) {
-            return v;
-        }
-    }
-    return {};
 }
 
 }  // namespace slark::http

@@ -472,11 +472,11 @@ TEST(HttpResponseParserTest, SameDuplicateContentLengthWithDifferentCaseIsAccept
     EXPECT_EQ(helper.result.body, "abc");
 }
 
-TEST(HttpResponseParserTest, HeaderLineWithoutColonIsIgnored) {
+TEST(HttpResponseParserTest, HeaderLineWithoutColonFails) {
     ParserTestHelper helper;
     helper.feed("HTTP/1.1 200 OK\r\nBadHeaderNoColon\r\nContent-Length: 0\r\n\r\n");
-    EXPECT_TRUE(helper.isCompleted());
-    EXPECT_FALSE(helper.hasError());
+    EXPECT_TRUE(helper.hasError());
+    EXPECT_EQ(helper.result.errorCode, Error::HttpResponseInvalid);
 }
 
 TEST(HttpResponseParserTest, OversizedHeaderFails) {
@@ -532,6 +532,28 @@ TEST(HttpResponseParserTest, TransferEncodingChunkedIsCaseInsensitive) {
     EXPECT_TRUE(helper.isCompleted());
     EXPECT_FALSE(helper.hasError());
     EXPECT_EQ(helper.result.completedCount, 1u);
+}
+
+TEST(HttpResponseParserTest, RepeatedTransferEncodingFails) {
+    for (const auto headers : {"Transfer-Encoding: chunked\r\nTransfer-Encoding: chunked\r\n",
+                               "Transfer-Encoding: gzip, chunked\r\n",
+                               "Transfer-Encoding: chunked, gzip\r\n",
+                               "Transfer-Encoding: chunked, chunked\r\n"}) {
+        ParserTestHelper helper;
+        helper.feed(std::string("HTTP/1.1 200 OK\r\n") + headers + "\r\n");
+        EXPECT_TRUE(helper.hasError()) << headers;
+        EXPECT_EQ(helper.result.errorCode, Error::HttpResponseInvalid) << headers;
+    }
+}
+
+TEST(HttpResponseParserTest, ConnectionCloseTokenIsRecognized) {
+    for (const auto value : {"keep-alive, close", "close, keep-alive"}) {
+        ParserTestHelper helper;
+        helper.feed(std::string("HTTP/1.1 200 OK\r\nConnection: ") + value +
+                    "\r\nContent-Length: 0\r\n\r\n");
+        EXPECT_TRUE(helper.isCompleted()) << value;
+        EXPECT_TRUE(helper.rawParser()->shouldCloseConnection()) << value;
+    }
 }
 
 TEST(HttpResponseParserTest, InvalidChunkSizeValuesFail) {
