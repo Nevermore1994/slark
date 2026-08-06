@@ -148,10 +148,10 @@ class BufferMonitor {
     BackpressureConfig config_;
     IBufferMonitorDelegate& delegate_;
 
-    // demux 侧状态
+    // demux-side state
     bool streamPaused_ = false;
     bool demuxEof_ = false;
-    bool backpressurePaused_ = false;  // 快速推帧期间跳过背压控制
+    bool backpressurePaused_ = false;  // skip backpressure during fast frame pushing
 
     bool audioDecoderPaused_ = false;
     bool videoDecoderPaused_ = false;

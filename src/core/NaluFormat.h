@@ -7,8 +7,8 @@
 namespace slark {
 
 enum class NaluFormat {
-    AVCC,    // 4字节长度前缀
-    AnnexB,  // 4字节起始码 00 00 00 01
+    AVCC,    // 4-byte length prefix
+    AnnexB,  // 4-byte start code 00 00 00 01
 };
 
 }  // namespace slark

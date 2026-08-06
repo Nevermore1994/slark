@@ -67,7 +67,7 @@ bool TSDemuxer::parsePacket(DataView data, uint32_t tsIndex, DemuxerResult& resu
         data = data.substr(1);
     }
 
-    // PID 分发表
+    // PID dispatch table
     if (header.pid == 0) {
         parseTSPAT(data);
     } else if (header.pid == pat_.pmtPid) {
@@ -103,8 +103,8 @@ bool TSDemuxer::parseTSPAT(DataView data) noexcept {
     pat_.currentNextIndicator = static_cast<uint8_t>(data[5]) & 0x01;
     data = data.substr(8);
     if (pat_.currentNextIndicator == 1) {
-        // sectionLength 从第3字节起算，减去 transport_stream_id(2) + version/section(2) +
-        // last_section(1) + crc32(4)
+        // sectionLength counts from byte 3; subtract transport_stream_id(2) +
+        // version/section(2) + last_section(1) + crc32(4)
         constexpr int32_t kPatFixedOverhead = 5 + 4;
         if (pat_.sectionLength < kPatFixedOverhead) {
             LogE("pat section length too small: {}", pat_.sectionLength);
@@ -135,7 +135,7 @@ bool TSDemuxer::parseTSPMT(DataView view) noexcept {
     pmt_.sectionLength = static_cast<uint16_t>(((view[1] & 0x0f) << 8) | view[2]);
     pmt_.progamInfoLength = static_cast<uint16_t>(((view[10] & 0x0f) << 8) | view[11]);
     view = view.substr(12);
-    // sectionLength 从第3字节起算，减去固定字段(9字节) + program_info + crc32(4字节)
+    // sectionLength counts from byte 3; subtract fixed fields (9 bytes) + program_info + crc32(4 bytes)
     constexpr int32_t kPmtFixedOverhead = 9 + 4;
     if (pmt_.sectionLength < kPmtFixedOverhead + pmt_.progamInfoLength) {
         LogE("pmt section length too small: {}", pmt_.sectionLength);
@@ -265,7 +265,8 @@ std::vector<Range> TSDemuxer::collectNaluRanges(DataView view) noexcept {
         if (!findNaluUnit(view, range)) {
             break;
         }
-        // range.pos 是 nalu 数据起始，range.size 是 nalu 数据长度，跳过整个 nalu（含起始码）
+        // range.pos is the nalu data start, range.size the nalu length; skip the whole
+        // nalu (including its start code)
         uint64_t naluEnd = range.pos.value_or(0) + static_cast<uint64_t>(range.size.value_or(0));
         view = view.substr(naluEnd);
         range.shift(static_cast<int64_t>(globalPos));
@@ -425,7 +426,8 @@ void TSDemuxer::resetData() noexcept {
     videoFixInfo_.reset();
     videoESFrame_.reset();
     audioESFrame_.reset();
-    // seek 后需要重置解析状态，否则 fps 计算和 header 通知会使用旧数据
+    // Reset parse state after seek, otherwise fps calculation and header notification
+    // would use stale data
     parseInfo_.reset();
     LogI("[seek info] reset data");
 }

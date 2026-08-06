@@ -27,7 +27,7 @@ void PlaySession::record(const std::string& stage, int64_t durationUs) {
     }
 
     std::unique_lock<std::shared_mutex> wlock(statsMutex_);
-    // 阶段数量上限防护
+    // Guard against exceeding the stage count limit
     if (stageStats_.size() >= kMaxStageCount) {
         LogW("[Perf] stage count limit reached ({}), ignoring: {}", kMaxStageCount, stage);
         return;
@@ -84,7 +84,7 @@ void PlaySession::markFirstFrame() noexcept {
 }
 
 void PlaySession::finish(bool success) {
-    // 幂等保护：仅第一次调用生效
+    // Idempotency guard: only the first call takes effect
     bool expected = false;
     if (!finished_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
         return;
@@ -93,7 +93,7 @@ void PlaySession::finish(bool success) {
     endUs_.store(static_cast<int64_t>(Time::nowTimeStamp().point()), std::memory_order_release);
     success_.store(success, std::memory_order_release);
 
-    // 通过全局单例上报，避免头文件循环依赖
+    // Report through the global singleton to avoid circular header dependencies
     extern void perfMonitorReportSession(PlaySession&);
     perfMonitorReportSession(*this);
 }

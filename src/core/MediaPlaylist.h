@@ -43,10 +43,10 @@ class MediaPlaylist {
         return segments_.size();
     }
 
-    /// 返回匹配的 segment 索引，无匹配返回 std::nullopt
+    /// Return the matching segment index, or std::nullopt when there is no match
     [[nodiscard]] std::optional<uint32_t> findSegmentByTime(double time) const noexcept;
 
-    /// 返回匹配的 segment 索引，无匹配返回 std::nullopt
+    /// Return the matching segment index, or std::nullopt when there is no match
     [[nodiscard]] std::optional<uint32_t> findSegmentByIndex(uint32_t index) const noexcept;
 
     [[nodiscard]] const std::vector<Variant>& variants() const noexcept {

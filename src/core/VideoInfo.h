@@ -44,7 +44,7 @@ struct IVideoRender : public IPipelineComponent {
     void start() noexcept override = 0;
     void pause() noexcept override = 0;
 
-    // VideoRender 无需 close / flush 资源释放，提供默认空实现
+    // VideoRender has no close/flush resources to release, provide default no-op implementations
     void close() noexcept override {}
 
     void flush() noexcept override {}
@@ -57,7 +57,8 @@ struct IVideoRender : public IPipelineComponent {
     virtual void notifyRenderInfo() noexcept = 0;
     virtual void renderEnd() noexcept = 0;
 
-    /// Push 模式：仅用于起播首帧和 seek 首帧的快速上屏，其余帧由 VSync 驱动拉取
+    /// Push mode: used only for fast first-frame display at startup and after seek;
+    /// other frames are pulled by VSync
     virtual void pushFrame(AVFrameRefPtr frame) noexcept = 0;
 
     virtual ~IVideoRender() = default;
@@ -71,7 +72,7 @@ struct IVideoRender : public IPipelineComponent {
         playerId_ = playerId;
     }
 
-    /// 注入视频时间更新回调，renderFrameComplete 后同步更新 ClockSync::videoTime_
+    /// Inject the video time updater, syncing ClockSync::videoTime_ after renderFrameComplete
     void setVideoTimeUpdater(std::function<void(Time::TimePoint)> updater) noexcept {
         videoTimeUpdater_ = std::move(updater);
     }

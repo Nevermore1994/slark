@@ -38,7 +38,7 @@ struct DecoderConfig {
 struct DecoderData {
     AVFrameRefPtr frame;
     Error error = Error::Success;
-    uint64_t seekEpoch{0};  ///< dispatch 时捕获的 seek epoch，回调时用于 stale 判断
+    uint64_t seekEpoch{0};  ///< seek epoch captured at dispatch, used for stale detection in callbacks
 };
 
 using DecoderReceiveFunc = std::function<void(DecoderData)>;

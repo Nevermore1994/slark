@@ -174,7 +174,7 @@ struct FrameTrace {
 };
 
 /**
- * @brief RAII span，析构时自动记录结束时间
+ * @brief RAII span that automatically records the end time on destruction
  */
 class ScopedSpan {
  public:

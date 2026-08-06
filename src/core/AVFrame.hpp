@@ -125,7 +125,7 @@ struct AVFrame {
     int64_t pts = 0;
     int64_t dts = 0;
     uint64_t offset = 0;
-    uint64_t seekEpoch = 0;  ///< dispatch 时捕获的 seek epoch，回调时用于 stale 判断
+    uint64_t seekEpoch = 0;  ///< seek epoch captured at dispatch, used for stale detection in callbacks
     std::unique_ptr<Data> data;
     void* opaque = nullptr;
     std::shared_ptr<FrameInfo> info;

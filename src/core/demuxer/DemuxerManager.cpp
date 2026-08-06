@@ -31,7 +31,7 @@ bool DemuxerManager::contains(DemuxerType type) const noexcept {
 }
 
 DemuxerType DemuxerManager::probeDemuxType(DataView data) const noexcept {
-    // 按固定顺序探测，避免 unordered_map 迭代顺序不稳定
+    // Probe in a fixed order to avoid unstable unordered_map iteration
     static const std::array<DemuxerType, 3> kProbeOrder = {
         DemuxerType::MP4,
         DemuxerType::HLS,

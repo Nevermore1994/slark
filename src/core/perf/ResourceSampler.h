@@ -19,9 +19,10 @@ namespace slark::perf {
 class PlaySession;
 
 /**
- * @brief 后台资源采样器，定期采样 CPU/内存并推送给活跃的 PlaySession
+ * @brief Background resource sampler, periodically samples CPU/memory and pushes
+ *        snapshots to active PlaySessions
  *
- * 线程安全：start/stop/register/unregister 均可跨线程调用。
+ * Thread safety: start/stop/register/unregister are all callable from any thread.
  */
 class ResourceSampler {
  public:
@@ -54,7 +55,7 @@ class ResourceSampler {
     std::mutex sessionsMutex_;
     std::vector<std::weak_ptr<PlaySession>> activeSessions_;
 
-    // 平台相关的 CPU 计算状态
+    // Platform-specific CPU computation state
     int64_t prevProcTimeUs_{0};
     int64_t prevWallTimeUs_{0};
 

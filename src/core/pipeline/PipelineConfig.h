@@ -16,19 +16,19 @@ enum class MediaSourceType : uint8_t {
 };
 
 struct BackpressureConfig {
-    double demuxHighWatermarkDuration = 10.0;      // 待解码队列触发 pause IO/demux 的上限（秒）
-    double demuxLowWatermarkDuration = 3.0;        // 待解码队列触发 resume IO/demux 的下限（秒）
-    double startBufferDuration = 2.0;              // 起播预缓冲 / 卡顿后重新缓冲目标（秒）
-    double rebufferScale = 1.5;                    // 出现卡顿后，startBufferDuration 按此系数放大
-    int32_t audioDecoderHighWatermarkFrames = 16;  // 待渲染音频队列触发暂停解码器的上限（帧）
-    int32_t audioDecoderLowWatermarkFrames = 4;    // 待渲染音频队列触发恢复解码器的下限（帧）
-    int32_t videoDecoderHighWatermarkFrames = 8;   // 待渲染视频队列触发暂停解码器的上限（帧）
-    int32_t videoDecoderLowWatermarkFrames = 2;    // 待渲染视频队列触发恢复解码器的下限（帧）
-    int32_t maxDropPerVsync = 8;                   // 单次 vsync 最大追帧丢帧数，防止 vsync 超时
-    int64_t seekFastForwardMs = 100;               // 跳帧窗口（ms）
-    double avSyncThresholdSec = 0.1;               // AV 同步阈值（秒），视频落后超过此值开始追帧
-    bool isLiveSource = false;                     // 是否为直播源
-    bool isNetworkSource = false;                  // 是否为网络源（HTTP/HLS）
+    double demuxHighWatermarkDuration = 10.0;      // decoded-queue high watermark triggering pause IO/demux (s)
+    double demuxLowWatermarkDuration = 3.0;        // decoded-queue low watermark triggering resume IO/demux (s)
+    double startBufferDuration = 2.0;              // startup prebuffer / post-stall rebuffer target (s)
+    double rebufferScale = 1.5;                    // startBufferDuration multiplier after a stall
+    int32_t audioDecoderHighWatermarkFrames = 16;  // audio render-queue high watermark pausing the decoder (frames)
+    int32_t audioDecoderLowWatermarkFrames = 4;    // audio render-queue low watermark resuming the decoder (frames)
+    int32_t videoDecoderHighWatermarkFrames = 8;   // video render-queue high watermark pausing the decoder (frames)
+    int32_t videoDecoderLowWatermarkFrames = 2;    // video render-queue low watermark resuming the decoder (frames)
+    int32_t maxDropPerVsync = 8;                   // max chase-drop frames per vsync, prevents vsync timeout
+    int64_t seekFastForwardMs = 100;               // frame-skip window (ms)
+    double avSyncThresholdSec = 0.1;               // A/V sync threshold (s); chase starts when video lags beyond it
+    bool isLiveSource = false;                     // whether the source is live
+    bool isNetworkSource = false;                  // whether the source is network (HTTP/HLS)
 
     [[nodiscard]] static BackpressureConfig forLocal() noexcept {
         BackpressureConfig cfg;

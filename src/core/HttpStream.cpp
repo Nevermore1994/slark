@@ -260,8 +260,8 @@ void HttpStream::updateRangeCapability(RangeCapability capability) noexcept {
 }
 
 void HttpStream::handleHeader(const http::StreamChunk& chunk) noexcept {
-    // Range 能力判定收敛到 validateRangeResponse（以协议行为为准），
-    // 此处只解析元数据，不再依赖 Accept-Ranges 头。
+    // Range capability is converged in validateRangeResponse (based on protocol behavior);
+    // here we only parse metadata and no longer rely on the Accept-Ranges header.
     if (!validateRangeResponse(chunk)) {
         return;
     }
@@ -312,16 +312,18 @@ bool HttpStream::failRangeValidation(slark::Error error,
 bool HttpStream::validateRangeResponse(const http::StreamChunk& chunk) noexcept {
     const auto kStatus = chunk.statusCode;
 
-    // 请求被明确拒绝（416）：目标超出资源范围
+    // Request explicitly rejected (416): target is out of the resource range
     if (kStatus == http::HttpStatusCode::RangeNotSatisfiable) {
         return failRangeValidation(
             Error::OutOfRange, 416,
             std::format("416, requested range not satisfiable: {}", readRange_.toString()));
     }
 
-    // 服务器忽略 Range 返回 200 全量：
-    // - 请求从 0 开始（或未带 Range）：数据仍从 0 顺序提供，可降级播放
-    // - 请求非 0 位置：全量数据从 0 开始与预期错位，视为错误
+    // Server ignores Range and returns a 200 full body:
+    // - Request starting from 0 (or without Range): data is still sequential from 0,
+    //   playback can degrade gracefully
+    // - Request at a non-zero position: full body starts at 0, misaligned with expectations,
+    //   treated as an error
     if (kStatus != http::HttpStatusCode::PartialContent) {
         const bool startFromZero = !readRange_.isValid() || readRange_.start() == 0;
         if (!startFromZero) {
@@ -337,7 +339,8 @@ bool HttpStream::validateRangeResponse(const http::StreamChunk& chunk) noexcept 
         return true;
     }
 
-    // 206：服务器实际接受了 Range 请求，能力以行为为准（部分服务器 206 响应省略 Accept-Ranges 头）
+    // 206: the server actually accepted the Range request; capability is based on behavior
+    // (some servers omit the Accept-Ranges header in 206 responses)
     updateRangeCapability(RangeCapability::Supported);
 
     if (!readRange_.isValid()) {

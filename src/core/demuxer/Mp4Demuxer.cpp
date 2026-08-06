@@ -25,7 +25,7 @@ bool isContainerBox(std::string_view symbol) noexcept {
 }
 
 static int32_t rotationFromMatrix(const int32_t matrix[9]) noexcept {
-    // matrix[0..4] = a,b,c,d,? (单位矩阵 = 1<<16)
+    // matrix[0..4] = a,b,c,d,? (identity matrix = 1<<16)
     constexpr int32_t kUnity = 1 << 16;
     if (matrix[0] == 0 && matrix[1] == kUnity && matrix[3] == -kUnity && matrix[4] == 0) {
         return 90;
@@ -139,7 +139,7 @@ void TrackContext::seek(uint64_t pos) noexcept {
         return;
     }
 
-    // 二分找到 pos 所在的 chunk（chunkOffsets 单调递增）
+    // Binary search for the chunk containing pos (chunkOffsets are monotonically increasing)
     const auto& chunks = stco->chunkOffsets;
     auto it = std::upper_bound(chunks.begin(), chunks.end(), pos);
     if (it != chunks.begin()) {
@@ -147,7 +147,8 @@ void TrackContext::seek(uint64_t pos) noexcept {
     }
     const auto chunkIndex = static_cast<uint32_t>(std::distance(chunks.begin(), it));
 
-    // 通过 stsc 表直接计算 chunk 前的累计 sample 数，O(stsc entries) 通常极小
+    // Compute the cumulative sample count before the chunk via the stsc table;
+    // O(stsc entries) is usually tiny
     uint32_t sampleBeforeChunk = 0;
     uint32_t samplesPerChunk = 1;
     const auto& entries = stsc->entrys;
@@ -164,7 +165,7 @@ void TrackContext::seek(uint64_t pos) noexcept {
         sampleBeforeChunk += (nextFirstChunk - firstChunk) * entries[i].samplesPerChunk;
     }
 
-    // 在 chunk 内线性扫描找到精确 sample（samplesPerChunk 通常很小）
+    // Linearly scan within the chunk for the exact sample (samplesPerChunk is usually small)
     uint32_t sampleInChunk = 0;
     uint64_t sampleStart = chunks[chunkIndex];
     while (sampleInChunk < samplesPerChunk) {
@@ -187,7 +188,7 @@ void TrackContext::seek(uint64_t pos) noexcept {
         sampleIndex = keyIt != keyIndexs.begin() ? *std::prev(keyIt) : keyIndexs.front();
     }
 
-    // 直接通过 stts 累加计算目标 sample 的 dts，避免逐帧推进
+    // Compute the target sample's dts by accumulating stts directly, avoiding frame-by-frame advance
     reset();
     seekToSample(sampleIndex);
 
@@ -198,7 +199,8 @@ void TrackContext::seek(uint64_t pos) noexcept {
 
 namespace {
 
-// 在 RLE 表中定位第 targetIndex 个元素，返回 {entryIndex, offsetInEntry}，未找到返回 nullopt
+// Locate the targetIndex-th element in an RLE table, returning {entryIndex, offsetInEntry},
+// or nullopt when not found
 template <typename Entry, typename CountFn>
 std::optional<std::pair<uint32_t, uint32_t>> seekInRle(const std::vector<Entry>& entries,
                                                        uint32_t targetIndex,
@@ -219,7 +221,7 @@ std::optional<std::pair<uint32_t, uint32_t>> seekInRle(const std::vector<Entry>&
 void TrackContext::seekToSample(uint32_t targetSampleIndex) noexcept {
     const uint32_t idx = targetSampleIndex > 0 ? targetSampleIndex - 1 : 0;
 
-    // stsc: 定位 chunk 和 chunk 内偏移
+    // stsc: locate the chunk and the offset within it
     uint32_t stscAccumulated = 0;
     for (size_t i = 0; i < stsc->entrys.size(); ++i) {
         const auto& entry = stsc->entrys[i];
@@ -245,7 +247,7 @@ void TrackContext::seekToSample(uint32_t targetSampleIndex) noexcept {
         stscAccumulated += entryTotal;
     }
 
-    // stts: 定位 dts
+    // stts: locate the dts
     dts = 0;
     if (auto r = seekInRle(stts->entrys, idx, [](const auto& e) {
             return e.sampleCount;
@@ -259,7 +261,7 @@ void TrackContext::seekToSample(uint32_t targetSampleIndex) noexcept {
             static_cast<int64_t>(sttsEntrySampleIndex) * stts->entrys[sttsEntryIndex].sampleDelta;
     }
 
-    // ctts: 定位 pts
+    // ctts: locate the pts
     if (!ctts) {
         pts = dts;
     } else if (auto r = seekInRle(ctts->entrys, idx, [](const auto& e) {
@@ -409,7 +411,7 @@ AVFramePtrArray TrackContext::parseNaluFrames(AVFramePtr frame,
         sizeView.readNumberBE(naluSize, headerSize);
         const uint32_t totalSize = naluSize + headerSize;
         if (pos + totalSize > rawView.length()) {
-            break;  // 防止越界
+            break;  // prevent out-of-bounds access
         }
 
         uint8_t naluHeader = 0;
@@ -434,7 +436,7 @@ AVFramePtrArray TrackContext::parseNaluFrames(AVFramePtr frame,
         pos += totalSize;
         const bool isLast = (pos >= rawView.length());
 
-        // 最后一个 NALU 直接 move frame，其余 copy；data 统一切片
+        // Move the last NALU's frame directly, copy the others; data is uniformly sliced
         auto newFrame = isLast ? std::move(frame) : frame->copy();
         newFrame->duration = duration;
         newFrame->info = std::move(info);
@@ -687,7 +689,7 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
         handleBoxInMoov(box, mdhdBox, parentBox);
 
         if (box->info.symbol == "elst") {
-            // elst 在 mdhd/stsd 之前，暂存等 track 创建后关联
+            // elst comes before mdhd/stsd; stash it until the track is created
             if (currentTrackId > 0) {
                 pendingElst[currentTrackId] = std::dynamic_pointer_cast<BoxElst>(box);
             }
@@ -718,7 +720,7 @@ void Mp4Demuxer::parseTkhd(const BoxRefPtr& box, Buffer& buffer, uint32_t& track
         buffer.skip(4 + 4);
     }
     buffer.read4ByteBE(trackId);
-    // 跳到 matrix 字段: reserved(4) + duration(4/8) + reserved(8) + layer(2) +
+    // Skip to the matrix field: reserved(4) + duration(4/8) + reserved(8) + layer(2) +
     // alternate_group(2) + volume(2) + reserved(2)
     if (tkhdVersion == 1) {
         buffer.skip(4 + 8 + 8 + 2 + 2 + 2 + 2);
@@ -752,7 +754,8 @@ bool Mp4Demuxer::advancePastBox(const BoxRefPtr& box,
                                 std::stack<BoxRefPtr>& parentBox,
                                 Buffer& buffer,
                                 bool& res) noexcept {
-    // udta/meta 在 moov 顶层时跳过深度遍历，避免异常大的 size 吞掉后续 trak
+    // Skip deep traversal for udta/meta at the moov top level to avoid an oversized
+    // size swallowing subsequent traks
     if ((box->info.symbol == "udta" || box->info.symbol == "meta") && parentBox.size() == 1) {
         LogD("parseMoovBox: skip '{}' as leaf at moov top level, size={}", box->info.symbol,
              box->info.size);
@@ -768,7 +771,7 @@ bool Mp4Demuxer::advancePastBox(const BoxRefPtr& box,
         return true;
     }
     if (isContainerBox(box->info.symbol)) {
-        // 容器边界校验：子容器超出父容器范围时降级为 leaf skip
+        // Container bounds check: degrade to leaf skip when a child exceeds its parent
         if (box->info.end() > parentBox.top()->info.end()) {
             LogW("parseMoovBox: container '{}' [{},{}) exceeds parent '{}' [{},{}), skip as "
                  "leaf",
@@ -784,7 +787,7 @@ bool Mp4Demuxer::advancePastBox(const BoxRefPtr& box,
         return true;
     }
     auto skipEnd = box->info.start + box->info.size;
-    // 钳制 leaf box skip 不超出父容器边界
+    // Clamp the leaf box skip within the parent container boundary
     auto parentEnd = parentBox.top()->info.start + parentBox.top()->info.size;
     if (skipEnd > parentEnd) {
         LogW("parseMoovBox: leaf '{}' skip [{},{}) clamped to parent '{}' end {}", box->info.symbol,
@@ -922,7 +925,7 @@ bool Mp4Demuxer::handleMdatBox(const BoxRefPtr& box, Buffer& buffer, bool res, b
     if (res) {
         return true;
     }
-    // moov 尚未解析到（位于 mdat 之后），尝试探测其位置并跳过
+    // moov not yet parsed (located after mdat); probe its position and skip to it
     int64_t moovStart = 0;
     uint32_t moovSize = 0;
     if (probeMoovBox(buffer, moovStart, moovSize)) {
@@ -966,7 +969,7 @@ void Mp4Demuxer::handleSidxBox(const BoxRefPtr& box, Buffer& buffer) noexcept {
         segTime += entry.subsegmentDuration;
         totalSegDuration += entry.subsegmentDuration;
     }
-    // fMP4 的 mvhd.duration 可能为 0，从 sidx 总 duration 补算
+    // fMP4's mvhd.duration may be 0; backfill from the sidx total duration
     if (totalDuration_.second() <= 0.0 && !tracks_.empty()) {
         auto& firstTrack = tracks_.begin()->second;
         if (firstTrack->mdhd) {
@@ -1137,7 +1140,7 @@ void Mp4Demuxer::initData() noexcept {
     auto mvhdBox = std::dynamic_pointer_cast<BoxMvhd>(rootBox_->getChild("moov")->getChild("mvhd"));
     totalDuration_ =
         CTime(static_cast<double>(mvhdBox->duration) / static_cast<double>(mvhdBox->timeScale));
-    // fMP4 的 mvhd.duration 可能为 0，后面 parse 到 sidx 后会补算
+    // fMP4's mvhd.duration may be 0; backfilled later once sidx is parsed
     for (auto& [codecId, track] : tracks_) {
         initTrack(track);
         if (!track->stsd) {
@@ -1163,16 +1166,16 @@ CTime Mp4Demuxer::computeTotalDuration() const noexcept {
     if (!isFragmented_) {
         return totalDuration_;
     }
-    // fMP4: 优先从 sidx segment 计算
+    // fMP4: prefer computing from sidx segments
     double maxDuration = 0.0;
     for (const auto& [codecId, track] : tracks_) {
         double timeScale = static_cast<double>(track->mdhd ? track->mdhd->timeScale : 1);
         uint64_t totalTicks = 0;
-        // 从 sidx segment 累加
+        // Accumulate from sidx segments
         for (const auto& seg : track->sidxSegments) {
             totalTicks = std::max(totalTicks, seg.startTime + seg.duration);
         }
-        // 从 fragment sample 累加
+        // Accumulate from fragment samples
         if (totalTicks == 0 && track->fragmentDurationTicks > 0) {
             totalTicks = track->fragmentDurationTicks;
         }
@@ -1258,7 +1261,7 @@ DemuxerResult Mp4Demuxer::parseData(DataPacket& packet) noexcept {
     while (!buffer_->empty()) {
         auto parseTrack = findEarliestTrack();
         if (!parseTrack) {
-            // 跳过后被跳过的 sample，重新找在范围内的 track
+            // After skipping stale samples, re-locate a track within range
             if (!advanceStaleTracks()) {
                 break;
             }
@@ -1417,7 +1420,8 @@ void TrackContext::seekToFragment(uint64_t pos) noexcept {
         fragSampleIndex = 0;
         return;
     }
-    // 定位到 pos 前最近的 sample，视频再从该位置找 keyframe 保证解码起点
+    // Locate the nearest sample before pos; video then finds a keyframe from there
+    // to guarantee the decode start point
     auto it = std::lower_bound(fragSamples.begin(), fragSamples.end(), pos,
                                [](const FragSample& s, uint64_t p) {
                                    return s.offset < p;
@@ -1488,7 +1492,7 @@ void TrackContext::appendFragmentSamples(const BoxRefPtr& moofBox, uint64_t moof
         }
         appendTrafSamples(trafChild, moofOffset);
     }
-    // 更新 fragment 总 duration（取最大 dts + duration）
+    // Update the fragment total duration (take max dts + duration)
     if (!fragSamples.empty()) {
         uint64_t lastEnd =
             static_cast<uint64_t>(fragSamples.back().dts + fragSamples.back().duration);
@@ -1530,7 +1534,7 @@ int64_t TrackContext::appendTrunSamples(const std::shared_ptr<BoxTrun>& trunBox,
                                         int64_t baseDecodeTime) noexcept {
     uint64_t dataOffset = baseOffset;
     if (trunBox->flags & BoxTrun::kDataOffsetPresent) {
-        // dataOffset 有符号（ISO-BMFF 允许负值），int64 计算避免无符号下溢
+        // dataOffset is signed (ISO-BMFF allows negatives); use int64 to avoid unsigned underflow
         const int64_t resolvedOffset = static_cast<int64_t>(baseOffset) + trunBox->dataOffset;
         if (resolvedOffset < 0) {
             LogW("appendTrunSamples: negative trun data offset, skip, trackId={}", trackId);

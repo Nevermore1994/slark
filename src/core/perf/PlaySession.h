@@ -19,43 +19,43 @@
 namespace slark::perf {
 
 /**
- * @brief 一次完整播放会话的性能跟踪
+ * @brief Performance tracking for one complete playback session
  *
- * 生命周期：play → (record/markMilestone/recordFrame) → finish
- * finish() 保证幂等，多次调用只有第一次生效。
+ * Lifecycle: play -> (record/markMilestone/recordFrame) -> finish
+ * finish() is idempotent; only the first call takes effect.
  */
 class PlaySession : public std::enable_shared_from_this<PlaySession> {
  public:
     static constexpr size_t kMaxStageCount = 128;
 
     /**
-     * @param sessionId 唯一会话 ID（由 PerfMonitor 分配）
-     * @param url       播放资源标识
+     * @param sessionId unique session ID (allocated by PerfMonitor)
+     * @param url       playback resource identifier
      */
     PlaySession(std::string sessionId, std::string url);
 
-    // 记录阶段耗时，超过 kMaxStageCount 时丢弃并打印警告
+    // Record a stage duration; dropped with a warning once kMaxStageCount is reached
     void record(const std::string& stage, int64_t durationUs);
 
-    // 累计帧渲染统计
+    // Accumulate frame rendering stats
     void recordFrame(int64_t frameDurationUs) noexcept;
 
-    // 记录生命周期事件时间点
+    // Record a lifecycle event timestamp
     void recordEvent(const std::string& eventName, int64_t timestampUs);
 
-    // 打里程碑（仅记录关键节点，不重要的节点不要调用）
+    // Record a milestone (key nodes only; do not call for unimportant ones)
     void markMilestone(std::string_view label);
 
-    // 以日志输出所有里程碑相对会话起始时间的耗时（替代 DebugInfo::print）
+    // Log all milestone durations relative to session start (replaces DebugInfo::print)
     void printMilestones() const noexcept;
 
-    // 记录首帧渲染时刻，重复调用只有第一次生效
+    // Record the first-frame render time; only the first call takes effect
     void markFirstFrame() noexcept;
 
-    // 标记会话结束，触发 PerfMonitor 上报（幂等）
+    // Mark the session end and trigger the PerfMonitor report (idempotent)
     void finish(bool success);
 
-    // ResourceSampler 回调，推送资源采样快照
+    // ResourceSampler callback, pushing a resource sample snapshot
     void onResourceSample(const ResourceSnapshot& snap);
 
     [[nodiscard]] std::unordered_map<std::string, PerfStats> stageStatsSnapshot() const;
@@ -92,7 +92,7 @@ class PlaySession : public std::enable_shared_from_this<PlaySession> {
     int64_t startUs_{0};
     std::atomic<int64_t> endUs_{0};
     std::atomic<int64_t> firstFrameUs_{0};
-    // 0 表示未到达首帧
+    // 0 means first frame was never reached
     std::atomic<bool> success_{false};
     std::atomic<bool> finished_{false};
 

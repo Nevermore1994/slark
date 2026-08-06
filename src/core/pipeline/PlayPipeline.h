@@ -54,9 +54,9 @@ enum class PipelineState : uint8_t {
     Built,
     Playing,
     Paused,
-    TearingDown,  // teardown 已发起，等待组件退出
-    Ended,        // 正常播放结束（RenderEnd 已触发）
-    Faulted,      // 不可恢复错误，终态
+    TearingDown,  // teardown initiated, waiting for components to exit
+    Ended,        // normal playback end (RenderEnd already fired)
+    Faulted,      // unrecoverable error, terminal state
 };
 
 struct ReadinessTracker {
@@ -65,7 +65,7 @@ struct ReadinessTracker {
     bool liveVideoKeyframeSeen = false;
     bool liveAudioPacketSeen = false;
     bool readyFired = false;
-    std::atomic<bool> firstFrameRendered{false};  ///< 首帧已渲染，之后才启用 AV Sync 和背压 Hold
+    std::atomic<bool> firstFrameRendered{false};  ///< first frame rendered; AV sync and backpressure Hold enabled afterwards
 };
 
 class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
@@ -104,7 +104,7 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     void drainPendingTasks() noexcept;
 
-    // 高频 tick（playerThreadTickMs）：背压调节 + 音频推帧
+    // High-frequency tick (playerThreadTickMs): backpressure regulation + audio frame pushing
     void onFastTick() noexcept;
 
     void setStreamControl(StreamControlFunc pauseStream, StreamControlFunc resumeStream) noexcept;
@@ -165,7 +165,7 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
                          std::shared_ptr<AudioInfo> audioInfo,
                          float volume) noexcept;
 
-    /// header 解析完成后调用，pipeline 内部创建 video decoder。
+    /// Called after the header is parsed; the pipeline creates the video decoder internally.
     void setupVideoTrack(DecoderType type, std::shared_ptr<VideoDecoderConfig> config) noexcept;
 
     void setVideoFps(double fps) noexcept {
@@ -251,17 +251,18 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     [[nodiscard]] bool isDecodedFrameSkippable(const DecoderData& data) noexcept;
 
-    /// seek 首帧 push 路径：直接推帧渲染并更新首帧/seek 状态
+    /// Seek first-frame push path: pushes the frame for rendering and updates first-frame/seek state
     void handleSeekFirstFrame(const AVFrameRefPtr& frame, bool isSeekFirstFrame) noexcept;
 
     [[nodiscard]] SeekStrategy resolveSeekStrategy(double targetSec) const noexcept;
 
     void onSeekFrameConsumed(TrackType track) noexcept;
 
-    /// FastForwardInGOP：不重定位 demuxer、不 flush 解码器，快进消费 [current, target) 的音视频
+    /// FastForwardInGOP: no demuxer relocation or decoder flush; fast-forward consuming
+    /// [current, target) audio/video
     void fastForwardInGOP(CTime target) noexcept;
 
-    /// SeekToKeyframe：暂停-flush-重定位-恢复
+    /// SeekToKeyframe: pause-flush-relocate-resume
     void performKeyframeSeek(CTime target, SeekStrategy strategy) noexcept;
 
     [[nodiscard]] AVFrameRefPtr popVideoFrame() noexcept;
@@ -351,7 +352,7 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     ReadinessTracker readiness_;
 
-    // dataEnqueued 去抖标志，仅 ownerThread 消费，decoder 线程写
+    // dataEnqueued debounce flag: consumed only on the ownerThread, written by decoder threads
     std::atomic<bool> dataEnqueuedPending_{false};
 
     std::vector<std::shared_ptr<IPipelineComponent>> components_;

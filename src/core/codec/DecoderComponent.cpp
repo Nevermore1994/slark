@@ -117,7 +117,8 @@ void DecoderComponent::stop() noexcept {
     }
     if (decodeWorker_) {
         decodeWorker_->stop();
-        decodeWorker_->join();  // 同步等 worker 退出，避免 loop 仍在跑而成员被 reset 导致 UAF
+        decodeWorker_->join();  // synchronously wait for the worker to exit, avoiding UAF if
+                                // members are reset while the loop still runs
         ThreadManager::shareInstance().remove(decodeWorker_);
         decodeWorker_.reset();
     }
@@ -138,7 +139,7 @@ void DecoderComponent::processPendingOutputs(Thread& thread) noexcept {
         count++;
         auto res = decoder_->renderOutput();
         if (res == Error::Success) {
-            // 每帧成功输出，不记录避免刷屏
+            // skip logging successful frames to avoid log flooding
         } else if (res == Error::CodecAgain) {
             decoder_->clearPendingOutput();
             break;
@@ -161,7 +162,7 @@ AVFrameRefPtr DecoderComponent::waitForFrame(Thread& thread) noexcept {
         flushed_.store(false, std::memory_order_release);
         return nullptr;
     }
-    // flush 兜底：清空窗口期残帧
+    // Flush fallback: drain leftover frames from the window period
     if (flushed_.load(std::memory_order_acquire)) {
         LogD("waitForFrame: flushed, drain channel");
         (void)receiver_->tryReceiveAll();
@@ -222,18 +223,20 @@ void DecoderComponent::runLoop(Thread& thread) noexcept {
         }
 
         if (frame->isEOS) {
-            // EOS 帧也设置 epoch，确保回调时 epoch 正确
+            // EOS frames also set the epoch so callbacks observe the correct epoch
             if (decoder_) {
                 decoder_->setCurrentSeekEpoch(frame->seekEpoch);
             }
             auto res = decoder_->decode(frame);
             LogI("push eos frame, res:{}", toString(res));
-            // 推送 EOS 后立即排空可能的残留输出（如 CSD config 帧触发 codec 产出的空输出）
+            // Drain any leftover output right after EOS (e.g. empty outputs the codec
+            // produces for CSD config frames)
             processPendingOutputs(thread);
             continue;
         }
 
-        // 在 decode 前设置当前 epoch，decoder 回调时将其注入 DecoderData
+        // Set the current epoch before decoding; the decoder injects it into DecoderData
+        // in callbacks
         if (decoder_) {
             decoder_->setCurrentSeekEpoch(frame->seekEpoch);
         }

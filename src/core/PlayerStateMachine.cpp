@@ -10,7 +10,7 @@
 namespace slark {
 
 bool PlayerStateMachine::isValidTransition(PlayerState from, PlayerState to) noexcept {
-    // [from][to] 布尔转移表，行/列索引与 PlayerState 枚举值一致
+    // [from][to] boolean transition table; row/column indices match the PlayerState enum values
     static constexpr std::array<std::array<bool, 11>, 11> kTransitions = {{
         /* NotInited   */ {
             {false, true, false, false, false, false, false, false, false, false, false}},

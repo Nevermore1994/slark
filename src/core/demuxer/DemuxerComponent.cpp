@@ -27,7 +27,8 @@ void DemuxerComponent::stop() noexcept {
     }
     if (worker_) {
         worker_->stop();
-        worker_->join();  // 同步等 worker 退出，避免 loop 仍在跑而成员被 reset 导致 UAF
+        worker_->join();  // synchronously wait for the worker to exit, avoiding UAF if
+                          // members are reset while the loop still runs
         ThreadManager::shareInstance().remove(worker_);
         worker_.reset();
     }
@@ -243,15 +244,16 @@ void DemuxerComponent::seekToPos(uint64_t pos) noexcept {
         return;
     }
     demuxer->seekPos(pos);
-    // HLS 的 pos 是 segment index，不能作为 byte offset 通知 IO 层
+    // For HLS, pos is a segment index, not a byte offset that can be passed to the IO layer
     if (demuxer->type() != DemuxerType::HLS) {
-        // IO 正处在 pause 状态，排空 flush→seekToPos 窗口期 IO 可能已写入的陈旧数据
+        // IO is paused; drain stale data that IO may have written during the
+        // flush→seekToPos window
         if (receiver_) {
             (void)receiver_->tryReceiveAll();
         }
-        // pendingSeekVerifiedOffset_ 兜底过滤任何遗漏的过期包
+        // pendingSeekVerifiedOffset_ filters out any missed stale packets
         pendingSeekVerifiedOffset_.store(pos, std::memory_order_release);
-        // 同步 IO seek → IO 从新位置发送的数据 offset 需匹配 expectedOffset
+        // Synchronous IO seek: data sent from the new position must match expectedOffset
         invokeSeekFunc(Range(pos));
     }
 }

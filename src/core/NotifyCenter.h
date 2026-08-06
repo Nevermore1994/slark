@@ -33,7 +33,8 @@ class NotifyCenter {
  private:
     std::string playerId_;
     Synchronized<IPlayerObserverPtr, std::shared_mutex> observer_;
-    // 以下两个字段仅在 ownerThread 的 repeat task 中访问，依赖单线程串行语义，无需 atomic
+    // These fields are only accessed in the ownerThread repeat task; single-threaded
+    // serial semantics make atomics unnecessary
     double lastNotifyPlayedTime_ = 0;
     double lastNotifyCacheTime_ = 0;
 

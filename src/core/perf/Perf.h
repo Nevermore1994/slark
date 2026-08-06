@@ -15,7 +15,7 @@
 #define SLARK_PERF_CONCAT_INNER(a, b) a##b
 #define SLARK_PERF_CONCAT(a, b) SLARK_PERF_CONCAT_INNER(a, b)
 
-/ 对 FrameTrace 指针直接创建 ScopedSpan
+// Create a ScopedSpan directly from a FrameTrace pointer
 #define SLARK_TRACE_SPAN(tracePtr, spanName)                                                    \
     std::optional<::slark::perf::ScopedSpan> SLARK_PERF_CONCAT(_slark_span_, __LINE__);         \
     do {                                                                                        \
@@ -27,7 +27,7 @@
         }                                                                                       \
     } while (0)
 
-    / 从携带 frameTrace() 方法的数据对象提取 FrameTrace 并创建 ScopedSpan
+    // Extract FrameTrace from an object with a frameTrace() method and create a ScopedSpan
 #define SLARK_TRACE_NODE(data, nodeName)                                                        \
     std::optional<::slark::perf::ScopedSpan> SLARK_PERF_CONCAT(_slark_node_, __LINE__);         \
     do {                                                                                        \
@@ -39,7 +39,7 @@
         }                                                                                       \
     } while (0)
 
-    / 对 PlaySession 指针打里程碑
+    // Record a milestone on a PlaySession pointer
 #define SLARK_TRACE_MILESTONE(session, label)                                  \
     do {                                                                       \
         if (::slark::perf::PerfMonitor::instance().isEnabled() && (session)) { \
@@ -47,7 +47,7 @@
         }                                                                      \
     } while (0)
 
-    / 对 PlaySession 指针记录阶段耗时
+    // Record a stage duration on a PlaySession pointer
 #define SLARK_TRACE_RECORD(session, stage, durationUs)                                     \
     do {                                                                                   \
         if (::slark::perf::PerfMonitor::instance().isSessionTraceEnabled() && (session)) { \

@@ -159,8 +159,9 @@ void PlayPipeline::teardown() noexcept {
         LogE("PlayPipeline teardown timeout, entering Faulted");
         enterFaultedState();
     }
-    // 不论是否 timeout，teardown 都已"尽力而为"，最终置 Idle 让 owner 可以安全释放，
-    // 避免上层反复重入 teardown 触发死循环。Faulted 仅作为错误事件上报副作用。
+    // Regardless of timeout, teardown is best-effort and ends in Idle so the owner can
+    // release safely, avoiding re-entrant teardown loops. Faulted is only a side effect
+    // for error event reporting.
     pipelineState_.store(PipelineState::Idle, std::memory_order_release);
 }
 
@@ -386,7 +387,7 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
         if (isDecodeCompleted()) {
             checkPlaybackComplete();
         }
-        // 关键路径节流日志：避免逐帧刷屏，同时保留音画同步排查线索
+        // Throttled log on the hot path: avoids per-frame flooding while keeping A/V-sync clues
         LogIThrottle(1000,
                      "requestVideoFrame HOLD, diff={:.3f}, masterTime={:.3f}, "
                      "videoTime={:.3f}, cacheEndTime={:.3f}, playbackRate={:.3f}",
@@ -597,7 +598,8 @@ void PlayPipeline::checkPlaybackComplete() noexcept {
         if (state != PipelineState::Playing && state != PipelineState::Paused) {
             return;
         }
-        // 首帧渲染约束仅对有视频的媒体有效；纯音频无视频帧，以队列排空为结束条件
+        // The first-frame constraint only applies to media with video; audio-only media
+        // ends when the queues drain
         if (mediaInfo_.hasVideo && !readiness_.firstFrameRendered.load(std::memory_order_acquire)) {
             return;
         }
@@ -626,7 +628,7 @@ bool PlayPipeline::isAudioReadyForPlaybackEnd() const noexcept {
     if (dec && dec->isCompleted()) {
         return true;
     }
-    // 视频已结束且音频数据排空时强制认定音频完成
+    // Force audio completion when video is done and audio data has drained
     if (videoDecoder_) {
         if (auto videoDec = videoDecoder_->decoder(); videoDec && videoDec->isCompleted()) {
             bool audioQueueEmpty = true;
@@ -684,7 +686,7 @@ AVFrameRefPtr PlayPipeline::skipDiscardFramesDuringSeek(AVFrameRefPtr frame) noe
     while (frame->isDiscard) {
         auto next = popVideoFrame();
         if (!next) {
-            // 所有帧均为 discard 且队列已空 → decoder 若已 EOF 则标记 seeked
+            // All frames were discard and the queue is empty; if the decoder hit EOF, mark seeked
             auto dec = videoDecoder_ ? videoDecoder_->decoder() : nullptr;
             if (dec && dec->isCompleted() && !seekContext_->isVideoSeeked()) {
                 onSeekFrameConsumed(TrackType::Video);
@@ -1233,8 +1235,9 @@ void PlayPipeline::stopComponents() noexcept {
         videoDecoder_->stop();
     }
     if (demuxer_) {
-        // 注意：必须调 stop()（同步 join worker），否则 joinWithTimeout 会一直等到超时。
-        // close() 仅清资源不停 worker，不能用在 teardown 路径上。
+        // Note: must call stop() (synchronously joins the worker), otherwise joinWithTimeout
+        // would spin until timeout. close() only frees resources without stopping the worker
+        // and cannot be used on the teardown path.
         demuxer_->stop();
     }
     if (audioRender_) {

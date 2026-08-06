@@ -23,7 +23,8 @@ using FactoryResult = std::expected<T, FactoryError>;
 
 class StreamFactory {
  public:
-    // ownerThread：网络流（HttpStream/HLSStream）构造函数注入，本地文件流忽略
+    // ownerThread: injected into network streams (HttpStream/HLSStream) constructors,
+    // ignored by local file streams
     static FactoryResult<std::shared_ptr<IStream>> createStream(
         const std::string& uri, std::shared_ptr<Thread> ownerThread = nullptr);
 

@@ -49,7 +49,8 @@ void BufferMonitor::onHeartbeat() noexcept {
             regulateDataFlow();
         }
     }
-    // 重缓冲期间持续检查退出条件，不依赖 streamPaused_（BufferingStart 可能未暂停流）
+    // Keep checking the exit condition during rebuffering, independent of streamPaused_
+    // (BufferingStart may not have paused the stream)
     checkRebufferComplete();
     if (!decoderEof_) {
         regulateDecoderFlow();
@@ -105,11 +106,11 @@ void BufferMonitor::regulateDecoderFlow() noexcept {
 }
 
 void BufferMonitor::regulateDataFlow() noexcept {
-    // 首帧渲染前跳过背压控制，允许快速推帧
+    // Skip backpressure before the first frame renders to allow fast frame pushing
     if (!readyFired_) {
         return;
     }
-    // 快速推帧期间跳过背压控制，保证 demuxer 不被水位线阻塞
+    // Skip backpressure during fast frame pushing so the demuxer is not blocked by watermarks
     if (backpressurePaused_) {
         return;
     }
@@ -119,8 +120,9 @@ void BufferMonitor::regulateDataFlow() noexcept {
         return;
     }
 
-    // 低于重新缓冲水位线时触发 BufferingStart
-    // 必须在 pause/resume 之前检查，避免 resume 后 isRebuffering_ 被清除导致误触发
+    // Trigger BufferingStart when below the rebuffer watermark.
+    // Must be checked before pause/resume so a resume clearing isRebuffering_ cannot
+    // falsely re-trigger it.
     auto rebufferThreshold = config_.startBufferDuration * config_.rebufferScale;
     if (duration <= rebufferThreshold) {
         if (!isRebuffering_ && readyFired_) {

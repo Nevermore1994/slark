@@ -49,13 +49,14 @@ Player::Impl::Impl(std::unique_ptr<PlayerParams> params)
 Player::Impl::~Impl() {
     isStopped_ = true;
     if (ownerThread_) {
-        // 不变量：ownerThread_ 生命周期严格覆盖其 worker 函数。
-        // 必须在外部线程析构，禁止 worker 自销毁 → 见下方 assert。
+        // Invariant: ownerThread_'s lifetime strictly covers its worker function.
+        // Must be destroyed on an external thread; the worker must not self-destroy
+        // (see the assert below).
         LogA(ownerThread_->getId() != std::this_thread::get_id(),
              "~Impl must not run on ownerThread_");
         ownerThread_->stop();
-        ownerThread_->join();  // 同步等 worker 退出，杜绝并发 reset/UAF
-        forceCleanup();        // 此时无并发，清理安全
+        ownerThread_->join();  // synchronously wait for the worker to exit, no concurrent reset/UAF
+        forceCleanup();        // no concurrency here, safe to clean up
         ownerThread_.reset();
     }
     GLContextManager::shareInstance().removeMainContext(playerId_);
@@ -104,8 +105,9 @@ void Player::Impl::seek(double time, bool isAccurate) noexcept {
         LogI("receive accurate seek:{}, isAccurate:{}", time, isAccurate);
         return;
     }
-    // 拖拽 seek：写 pendingSeekTarget_，由 processPendingSeek 消费
-    // 不更新 pendingSeekTimeUs_（debounce 只在第一次触发时有用，后续由 seek in progress 控制）
+    // Drag seek: store pendingSeekTarget_, consumed by processPendingSeek.
+    // pendingSeekTimeUs_ is not updated (debounce only matters on the first trigger;
+    // later ones are governed by the in-progress seek).
     pendingSeekTarget_.store(time, std::memory_order_release);
     ownerThread_->start();
     LogI("receive seek:{}, isAccurate:{}", time, isAccurate);
@@ -135,7 +137,7 @@ void Player::Impl::init() noexcept {
     sender_ = std::move(sp);
     receiver_ = std::move(rp);
 
-    // ownerThread_ 在 setupDataProvider 之前创建，setupDataProvider 通过 setOwnerThread 注入
+    // ownerThread_ is created before setupDataProvider, which injects it via setOwnerThread
     ownerThread_ = Thread::create("playerThread");
 
     if (!setupDataProvider()) {
@@ -228,7 +230,8 @@ bool Player::Impl::setupDataProvider() noexcept {
         }
         self->notifyPlayerEvent(PlayerEvent::OnError,
                                 self->formatErrorValue(err, originErrorCode, host));
-        // 切 Error 会 doStop() 销毁 pipeline_，投递到 ownerThread 串行执行避免并发 UAF
+        // Switching to Error calls doStop() which destroys pipeline_; post to the ownerThread
+        // to serialize execution and avoid a concurrent UAF
         if (self->sender_) {
             self->sender_->post(buildEvent(EventType::ReadError));
             if (self->ownerThread_) {
@@ -241,13 +244,14 @@ bool Player::Impl::setupDataProvider() noexcept {
         LogI("data source complete.");
     };
 
-    // 网络流（HttpStream/HLSStream）需要 owner 线程绑定：open() 内经 StreamFactory 构造函数注入
+    // Network streams (HttpStream/HLSStream) need owner-thread binding: injected via the
+    // StreamFactory constructor inside open()
     mediaSourceManager_.setOwnerThread(ownerThread_);
     if (!mediaSourceManager_.open(path, std::move(onData), std::move(onError),
                                   std::move(onComplete))) {
         LogE("open media source failed, path:{}", path);
         setState(PlayerState::Error);
-        // open 失败时没有 originErrorCode，host 从 URI 解析
+        // No originErrorCode on open failure; parse the host from the URI
         const Error err = isNetworkLink(path) ? Error::NetworkError : Error::IOError;
         notifyPlayerEvent(PlayerEvent::OnError,
                           formatErrorValue(err, 0, StringUtil::extractHostFromUri(path)));
@@ -282,7 +286,8 @@ bool Player::Impl::createDemuxerComponent() noexcept {
         if (!res.has_value()) {
             self->notifyPlayerEvent(PlayerEvent::OnError,
                                     std::to_string(static_cast<uint32_t>(res.error())));
-            // 同 onError：投递到 ownerThread 执行，避免在 demuxer 线程并发销毁 pipeline_
+            // Same as onError: post to the ownerThread to avoid destroying pipeline_
+            // concurrently on the demuxer thread
             if (self->sender_) {
                 self->sender_->send(buildEvent(EventType::ReadError));
                 if (self->ownerThread_) {
@@ -330,7 +335,7 @@ void Player::Impl::buildPipeline() noexcept {
             }
             self->mediaSourceManager_.start();
         });
-    // 注入 HLS 时间 seek 回调，PlayPipeline 检测到 HLS 时走此路径
+    // Inject the HLS time-seek callback; PlayPipeline uses this path when HLS is detected
     pipeline_->setSeekByTimeFunc([weak = weak_from_this()](double timeSec) -> StreamResult<void> {
         auto self = weak.lock();
         if (!self) {
@@ -338,7 +343,7 @@ void Player::Impl::buildPipeline() noexcept {
         }
         return self->mediaSourceManager_.seekByTime(timeSec);
     });
-    // 传递 stream 类型，供 PlayPipeline::seek 区分 HLS/HTTP/File 路径
+    // Pass the stream type so PlayPipeline::seek can distinguish HLS/HTTP/File paths
     pipeline_->setStreamType(mediaSourceManager_.streamType());
     pipeline_->setDemuxerComponent(demuxerComponent_);
     if (auto render = videoRender_.load()) {
@@ -434,12 +439,13 @@ void Player::Impl::preparePlayerInfo() noexcept {
 }
 
 void Player::Impl::process() noexcept {
-    // 取本地强引用保活整个 process 周期，避免期间 pipeline_ 被 reset 导致 UAF
+    // Keep a strong local reference for the whole process cycle so a pipeline_ reset
+    // cannot cause a UAF in between
     auto pipeline = pipeline_;
     if (!pipeline) {
         return;
     }
-    // 懒绑定：确保 PlayPipeline 的 ownerThreadId_ 指向 playerThread
+    // Lazy binding: make PlayPipeline's ownerThreadId_ point to the playerThread
     std::call_once(bindOwnerThreadFlag_, [&pipeline] {
         pipeline->bindToCurrentThread();
     });
@@ -476,7 +482,7 @@ void Player::Impl::doStop() noexcept {
     LogI("do stop start");
     isStopped_.store(true, std::memory_order_release);
     {
-        // 与 forceCleanup 互斥，防止双线程同时 teardown
+        // Mutually exclude forceCleanup to prevent concurrent teardown from two threads
         std::lock_guard<std::mutex> lock(releaseMutex_);
         if (isReleased_.load(std::memory_order_acquire)) {
             LogI("do stop: already released by forceCleanup, skip");
@@ -490,7 +496,7 @@ void Player::Impl::doStop() noexcept {
         ownerThread_->cancelRepeatTask(cacheTickTaskId_);
     }
     mediaSourceManager_.close();
-    // 先关闭 Channel，触发 DemuxerComponent worker 收到 Closed 自然退出
+    // Close the Channel first so the DemuxerComponent worker exits naturally on Closed
     dataPacketSender_.reset();
 
     if (pipeline_) {
@@ -501,7 +507,7 @@ void Player::Impl::doStop() noexcept {
     notifyCenter_.resetNotifyState();
     stats_.reset();
 
-    // ownerThread_ 的 stop/join 由 ~Impl() 在外部线程执行，此处不操作
+    // ownerThread_'s stop/join is handled by ~Impl() on an external thread, not here
     GLContextManager::shareInstance().removeMainContext(playerId_);
     cond_.notify_all();
     LogI("do stop end");
@@ -519,7 +525,8 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
         return;
     }
 
-    // 非精准 seek in-flight merge：直接更新 target 到 pipeline，不切状态
+    // Non-accurate seek in-flight merge: update the target in the pipeline without
+    // switching state
     if (!seekRequest.isAccurate && seekRequest_.isValid()) {
         LogI("in-flight drag seek merge to {:.3f}s", seekTime);
         if (auto req = seekRequest_.load()) {
@@ -664,15 +671,15 @@ void Player::Impl::processPendingSeek() noexcept {
         return;
     }
 
-    // 精准 seek 进行中时保留 pending，等完成后消费
+    // Keep the pending seek while an accurate seek is in flight; consume it after completion
     if (seekRequest_.isValid()) {
         if (auto req = seekRequest_.load(); req && req->isAccurate) {
             return;
         }
-        // 非精准 seek 进行中：继续往下走，doSeek 中会走 in-flight merge
+        // Non-accurate seek in flight: continue; doSeek performs the in-flight merge
     }
 
-    // 同一 tick 内精准 seek 刚完成时跳过，等下一 tick 再处理拖拽 seek
+    // Skip if an accurate seek just completed in this tick; handle the drag seek next tick
     bool expected = true;
     if (seekJustCompleted_.compare_exchange_strong(expected, false, std::memory_order_acq_rel)) {
         return;
@@ -761,7 +768,7 @@ void Player::Impl::handleDecoderFailed(std::optional<PipelineError> error) noexc
 
 void Player::Impl::handlePipelineError(PipelineEvent event,
                                        std::optional<PipelineError> error) noexcept {
-    // 如果已经在停止或出错状态，忽略此类错误（可能是 stop 过程中触发的）
+    // Ignore these errors when already stopping or failed (they may be triggered mid-stop)
     auto currentState = state();
     if (currentState == PlayerState::Stop || currentState == PlayerState::Error) {
         LogW("pipeline error ignored, event:{}, error:{}, current state:{}",
@@ -804,7 +811,7 @@ void Player::Impl::notifyPlayerEvent(PlayerEvent event, std::string value) noexc
 std::string Player::Impl::formatErrorValue(Error err,
                                            int32_t originErrorCode,
                                            std::string_view host) noexcept {
-    // value = "slarkError|originErrorCode|host"，上层按 `|` 切分
+    // value = "slarkError|originErrorCode|host", split by '|' in the upper layer
     return std::to_string(static_cast<uint32_t>(err)) + "|" + std::to_string(originErrorCode) +
            "|" + std::string(host);
 }

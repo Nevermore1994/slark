@@ -39,9 +39,10 @@ std::expected<BoxInfo, bool> Box::tryParseBoxInfo(Buffer& buffer) noexcept {
         info.size = buffer.totalSize() - buffer.pos() + info.headerSize;
     }
     info.symbol = Util::toStringBE<uint32_t>(info.type);
-    // 警告但不拒绝：非可打印 ASCII 的 box type 可能是垃圾数据，仍尝试跳过
-    // 注意：box type 可能含非法 UTF-8 字节（如 0xff），直接 LogW("{}") 会通过
-    // JNI NewStringUTF 传给 Android 日志系统导致 SIGABRT，必须转义
+    // Warn but do not reject: a non-printable-ASCII box type may be garbage, still try to skip.
+    // Note: box type may contain invalid UTF-8 bytes (e.g. 0xff); passing them directly to
+    // LogW("{}") reaches Android's logging via JNI NewStringUTF and causes SIGABRT,
+    // so they must be escaped.
     for (auto c : info.symbol) {
         if (c < 0x20 || c > 0x7E) {
             LogW("tryParseBoxInfo: invalid box type 0x{:02X}{:02X}{:02X}{:02X} at pos:{}",
@@ -1008,7 +1009,7 @@ bool BoxTkhd::decode(Buffer& buffer) noexcept {
     buffer.read2ByteBE(reinterpret_cast<uint16_t&>(layer));
     buffer.read2ByteBE(reinterpret_cast<uint16_t&>(alternateGroup));
     buffer.readByte(reinterpret_cast<uint8_t&>(volume));
-    buffer.skip(1 + 2);  // reserved(1) + matrix 前 8 个值
+    buffer.skip(1 + 2);  // reserved(1) + first 8 matrix values
     for (auto& m : matrix) {
         uint32_t v = 0;
         buffer.read4ByteBE(v);

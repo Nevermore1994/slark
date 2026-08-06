@@ -27,7 +27,7 @@ class MediaSourceManager : public NonCopyMovable {
     MediaSourceManager() = default;
     ~MediaSourceManager() = default;
 
-    // owner 线程唯一归属方：创建网络流时经 StreamFactory 构造函数注入
+    // Single owning thread: injected into network streams via the StreamFactory constructor
     void setOwnerThread(std::shared_ptr<Thread> ownerThread) noexcept {
         ownerThread_ = std::move(ownerThread);
     }

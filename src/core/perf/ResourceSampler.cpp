@@ -78,7 +78,8 @@ void ResourceSampler::sampleLoop() {
     while (running_.load(std::memory_order_relaxed)) {
         auto snap = sampleOnce();
 
-        // 先拷贝快照，释放锁后再回调，避免持锁期间执行重操作
+        // Copy the snapshot first, then call back after releasing the lock,
+        // avoiding heavy work while holding the lock
         std::vector<std::shared_ptr<PlaySession>> liveSessions;
         {
             std::lock_guard<std::mutex> lock(sessionsMutex_);
@@ -162,7 +163,8 @@ double ResourceSampler::calcCpuUsage() {
     if (prevSysTicks_ > 0 && sysTicks > prevSysTicks_) {
         int64_t deltaSys = sysTicks - prevSysTicks_;
         int64_t deltaProc = procTicks - prevProcTicks_;
-        // 单核归一化：进程 tick / 系统总 tick * 100，与 Apple 端口径一致
+        // Per-core normalization: process ticks / total system ticks * 100, consistent
+        // with the Apple port
         usage = static_cast<double>(deltaProc) / static_cast<double>(deltaSys) * 100.0;
     }
     prevProcTicks_ = procTicks;

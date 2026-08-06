@@ -74,7 +74,7 @@ class TrackContext {
     };
 
     std::vector<SidxSegment> sidxSegments;
-    // fMP4: 从所有 fragment sample 累加的总 duration（timeScale 单位 ticks）
+    // fMP4: total duration accumulated from all fragment samples (in timeScale ticks)
     uint64_t fragmentDurationTicks = 0;
     int32_t rotationDegrees = 0;
 
@@ -136,13 +136,13 @@ class TrackContext {
 
     void appendTrafSamples(const BoxRefPtr& trafChild, uint64_t moofOffset) noexcept;
 
-    // 返回处理后的下一个 trun 的 baseDecodeTime
+    // Returns the baseDecodeTime for the next trun after processing
     int64_t appendTrunSamples(const std::shared_ptr<BoxTrun>& trunBox,
                               const std::shared_ptr<BoxTfhd>& tfhdBox,
                               uint64_t baseOffset,
                               int64_t baseDecodeTime) noexcept;
 
-    /// calcIndex 的三个独立状态机推进
+    /// Advance the three independent state machines of calcIndex
     void advanceStscState() noexcept;
     void advanceSttsState() noexcept;
     void advanceCttsState() noexcept;
@@ -220,12 +220,12 @@ class Mp4Demuxer : public IDemuxer {
                                 Buffer& buffer,
                                 bool& res) noexcept;
 
-    // 返回 false 时调用方应终止 open 解析
+    // When false is returned the caller must abort the open parsing
     bool handleMdatBox(const BoxRefPtr& box, Buffer& buffer, bool res, bool& eof) noexcept;
 
     void handleSidxBox(const BoxRefPtr& box, Buffer& buffer) noexcept;
 
-    // open() 的 box 分发 + skip 逻辑，返回 false 时终止循环
+    // open()'s box dispatch + skip logic; returns false to terminate the loop
     bool processOpenBox(const BoxRefPtr& box, Buffer& buffer, bool& res, bool& eof) noexcept;
 
     [[nodiscard]] std::shared_ptr<TrackContext> findEarliestTrack() const noexcept;

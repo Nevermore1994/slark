@@ -16,7 +16,7 @@ namespace slark {
 constexpr uint32_t kInvalidPos = static_cast<uint32_t>(std::string_view::npos);
 
 bool isNetworkLink(const std::string& path) noexcept {
-    // starts_with 替代 std::regex：noexcept 函数内 regex 抛异常是 UB
+    // starts_with instead of std::regex: throwing inside a noexcept function is UB
     std::string_view view(path);
     return view.starts_with("http://") || view.starts_with("https://");
 }
@@ -26,7 +26,7 @@ bool isHlsLink(const std::string& url) noexcept {
     if (!view.starts_with("http://") && !view.starts_with("https://")) {
         return false;
     }
-    // 移除查询参数后检查扩展名
+    // Strip query parameters, then check the extension
     auto queryPos = view.find('?');
     auto path = (queryPos != std::string_view::npos) ? view.substr(0, queryPos) : view;
     auto endsWithIcase = [path](std::string_view suffix) {
@@ -113,7 +113,7 @@ std::tuple<uint32_t, uint32_t> parseHevcSliceType(DataView naluView, uint8_t nal
     auto sliceView = naluView.substr(2);
     Golomb::readBits(sliceView, offset, 1);  // first_slice_segment_in_pic_flag
     if (naluType == 19 || naluType == 20) {
-        Golomb::readBits(sliceView, offset, 1);  // no_output_of_prior_pics_flag（仅 IDR）
+        Golomb::readBits(sliceView, offset, 1);  // no_output_of_prior_pics_flag (IDR only)
     }
     uint32_t sliceSegmentAddr = Golomb::readUe(sliceView, offset);  // slice_segment_address
     uint32_t sliceType = Golomb::readUe(sliceView, offset);         // slice_type

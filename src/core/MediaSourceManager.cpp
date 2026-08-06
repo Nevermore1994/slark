@@ -21,7 +21,7 @@ bool MediaSourceManager::open(const std::string& uri,
 
     auto detectedType = StreamFactory::detectStreamType(uri);
 
-    // 网络流构造时需要 owner 线程注入；本地文件流不依赖
+    // Network streams need the owner thread injected at construction; local file streams do not
     if (detectedType == StreamType::Http || detectedType == StreamType::HLS) {
         LogA(ownerThread_ != nullptr,
              "setOwnerThread must be called before open for network streams");

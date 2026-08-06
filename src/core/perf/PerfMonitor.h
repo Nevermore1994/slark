@@ -22,7 +22,8 @@ namespace slark::perf {
 class PlaySession;
 
 /**
- * @brief 性能监控全局单例，统一管理 perf 配置、会话注册和数据上报
+ * @brief Global singleton for performance monitoring, managing perf config, session
+ *        registration and data reporting
  */
 class PerfMonitor {
  public:
