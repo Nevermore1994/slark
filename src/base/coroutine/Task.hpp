@@ -146,7 +146,7 @@ class TaskAwaiter {
     }
 
     bool await_ready() const noexcept {
-        return !handle_ || handle_.done();
+        return !handle_ || handle_.promise().frameControl()->isDone(handle_);
     }
 
     template <typename ParentPromise>
@@ -196,7 +196,7 @@ class [[nodiscard]] Task : public NonCopyable {
     }
 
     [[nodiscard]] bool isDone() const noexcept {
-        return !handle_ || handle_.done();
+        return !handle_ || handle_.promise().frameControl()->isDone(handle_);
     }
 
     void resume() noexcept {
@@ -208,6 +208,9 @@ class [[nodiscard]] Task : public NonCopyable {
     T result() {
         if (!handle_) {
             throw std::runtime_error("Task is not valid");
+        }
+        if (!isDone()) {
+            throw std::runtime_error("Task is not complete");
         }
         return handle_.promise().result();
     }

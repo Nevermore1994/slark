@@ -19,6 +19,11 @@ class CoroutineFrameControl final {
     CoroutineFrameControl(const CoroutineFrameControl&) = delete;
     CoroutineFrameControl& operator=(const CoroutineFrameControl&) = delete;
 
+    bool isDone(std::coroutine_handle<> handle) const noexcept {
+        std::lock_guard lock(mutex_);
+        return destroyed_ || !handle || handle.done();
+    }
+
     bool resume(std::coroutine_handle<> handle) noexcept {
         std::coroutine_handle<> deferredHandle;
         {
@@ -60,7 +65,7 @@ class CoroutineFrameControl final {
     }
 
  private:
-    std::recursive_mutex mutex_;
+    mutable std::recursive_mutex mutex_;
     std::condition_variable_any condition_;
     bool destroyed_{false};
     uint32_t activeResumes_{0};

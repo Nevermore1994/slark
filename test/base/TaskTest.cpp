@@ -1,13 +1,26 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 
 #include "Task.hpp"
+#include "Awaitable.hpp"
 
 #include <gtest/gtest.h>
+
+#include <chrono>
+#include <memory>
+#include <thread>
 
 using namespace slark;
 
 Task<int> simpleIntTask(int value) {
     co_return value;
+}
+
+Task<void> suspendedTask(std::shared_ptr<CompletionAwaiter<void>> awaiter) {
+    co_await *awaiter;
+}
+
+Task<int> suspendedIntTask(std::shared_ptr<CompletionAwaiter<int>> awaiter) {
+    co_return co_await *awaiter;
 }
 
 TEST(TaskTest, CreateAndResume) {
@@ -19,6 +32,36 @@ TEST(TaskTest, CreateAndResume) {
 
     EXPECT_TRUE(task.isDone());
     EXPECT_EQ(task.result(), 42);
+}
+
+TEST(TaskTest, ResultBeforeCompletionThrows) {
+    auto awaiter = std::make_shared<CompletionAwaiter<int>>();
+    auto task = suspendedIntTask(awaiter);
+    task.resume();
+
+    EXPECT_FALSE(task.isDone());
+    EXPECT_THROW(task.result(), std::runtime_error);
+
+    awaiter->complete(42);
+    EXPECT_TRUE(task.isDone());
+    EXPECT_EQ(task.result(), 42);
+}
+
+TEST(TaskTest, IsDoneCanBeObservedWhileAnotherThreadCompletes) {
+    auto awaiter = std::make_shared<CompletionAwaiter<void>>();
+    auto task = suspendedTask(awaiter);
+    task.resume();
+
+    std::thread completer([awaiter] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        awaiter->complete();
+    });
+
+    while (!task.isDone()) {
+        std::this_thread::yield();
+    }
+    completer.join();
+    EXPECT_TRUE(task.isDone());
 }
 
 TEST(TaskTest, VoidTask) {
