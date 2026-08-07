@@ -106,6 +106,10 @@ class HttpResponseParser {
         return shouldClose_;
     }
 
+    [[nodiscard]] bool isHttp10() const noexcept {
+        return isHttp10_;
+    }
+
     [[nodiscard]] bool isBodyUnknownLength() const noexcept {
         return state_ == State::BodyFixed && contentLength_ < 0;
     }
@@ -182,7 +186,10 @@ class HttpResponseParser {
     size_t readPos_ = 0;  // logical consume position, avoids frequent erases
     std::unordered_map<std::string, std::string> headers_;
     HttpStatusCode statusCode_ = HttpStatusCode::Unknown;
+    bool isHttp10_ = false;
     bool shouldClose_ = false;
+    bool connectionCloseSeen_ = false;
+    bool connectionKeepAliveSeen_ = false;
     HttpMethodType requestMethod_ = HttpMethodType::Unknown;
 
     int64_t contentLength_ = -1;

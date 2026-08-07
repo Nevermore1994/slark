@@ -167,7 +167,8 @@ TEST_F(HttpModuleParserTest, ShouldCloseConnection) {
                          "Content-Length: 0\r\n"
                          "\r\n";
     parser_->feed(reinterpret_cast<const Byte*>(http10), strlen(http10));
-    EXPECT_FALSE(parser_->shouldCloseConnection());
+    EXPECT_TRUE(parser_->shouldCloseConnection());
+    EXPECT_TRUE(parser_->isHttp10());
 
     parser_ = std::make_unique<HttpResponseParser>(HttpResponseParser::Callbacks{});
     const char* http11Close = "HTTP/1.1 200 OK\r\n"

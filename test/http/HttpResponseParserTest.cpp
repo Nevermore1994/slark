@@ -239,6 +239,49 @@ TEST(HttpResponseParserTest, KeepAliveConnection) {
     helper.feed("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
     EXPECT_TRUE(helper.isCompleted());
     EXPECT_FALSE(helper.rawParser()->shouldCloseConnection());
+    EXPECT_FALSE(helper.rawParser()->isHttp10());
+}
+
+TEST(HttpResponseParserTest, Http10DefaultsToClose) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.0 200 OK\r\nContent-Length: 0\r\n\r\n");
+    EXPECT_TRUE(helper.isCompleted());
+    EXPECT_TRUE(helper.rawParser()->isHttp10());
+    EXPECT_TRUE(helper.rawParser()->shouldCloseConnection());
+}
+
+TEST(HttpResponseParserTest, Http10KeepAliveOverridesDefaultClose) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.0 200 OK\r\nConnection: keep-alive\r\n"
+                "Content-Length: 0\r\n\r\n");
+    EXPECT_TRUE(helper.isCompleted());
+    EXPECT_FALSE(helper.rawParser()->shouldCloseConnection());
+}
+
+TEST(HttpResponseParserTest, RepeatedConnectionHeadersKeepCloseToken) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nConnection: keep-alive\r\n"
+                "Connection: close\r\nContent-Length: 0\r\n\r\n");
+    EXPECT_TRUE(helper.isCompleted());
+    EXPECT_TRUE(helper.rawParser()->shouldCloseConnection());
+}
+
+TEST(HttpResponseParserTest, UnsupportedHttpVersionFails) {
+    for (const auto statusLine : {"HTTP/1.2 200 OK", "HTTP/2.0 200 OK", "XHTTP/1.1 200 OK"}) {
+        ParserTestHelper helper;
+        helper.feed(std::string(statusLine) + "\r\nContent-Length: 0\r\n\r\n");
+        EXPECT_TRUE(helper.hasError()) << statusLine;
+        EXPECT_EQ(helper.result.errorCode, Error::HttpResponseInvalid) << statusLine;
+    }
+}
+
+TEST(HttpResponseParserTest, StatusCodeMustHaveThreeDigits) {
+    for (const auto statusLine : {"HTTP/1.1 20 OK", "HTTP/1.1 2000 OK", "HTTP/1.1 abc OK"}) {
+        ParserTestHelper helper;
+        helper.feed(std::string(statusLine) + "\r\nContent-Length: 0\r\n\r\n");
+        EXPECT_TRUE(helper.hasError()) << statusLine;
+        EXPECT_EQ(helper.result.errorCode, Error::HttpResponseInvalid) << statusLine;
+    }
 }
 
 TEST(HttpResponseParserTest, StateTracking) {

@@ -157,7 +157,10 @@ void HttpResponseParser::reset() noexcept {
     readPos_ = 0;
     headers_.clear();
     statusCode_ = HttpStatusCode::Unknown;
+    isHttp10_ = false;
     shouldClose_ = false;
+    connectionCloseSeen_ = false;
+    connectionKeepAliveSeen_ = false;
     contentLength_ = -1;
     contentLengthSeen_ = false;
     transferEncodingSeen_ = false;
@@ -202,17 +205,15 @@ void HttpResponseParser::processStatusLine() {
     }
 
     auto line = data.substr(0, pos);
-
-    // "HTTP/1.1 200 OK"
-    constexpr std::string_view kHTTPFlag = "HTTP/";
-    if (line.find(kHTTPFlag) == std::string_view::npos) {
-        LogE("[HttpResponseParser::processStatusLine] missing HTTP/ flag, line={}",
+    constexpr std::string_view kHttpPrefix = "HTTP/";
+    if (!line.starts_with(kHttpPrefix)) {
+        LogE("[HttpResponseParser::processStatusLine] invalid HTTP/ prefix, line={}",
              StringUtil::toSafeLogString(line));
         fail(slark::Error::HttpResponseInvalid);
         return;
     }
 
-    auto firstSpace = line.find(' ');
+    const auto firstSpace = line.find(' ', kHttpPrefix.size());
     if (firstSpace == std::string_view::npos) {
         LogE("[HttpResponseParser::processStatusLine] malformed status line, line={}",
              StringUtil::toSafeLogString(line));
@@ -220,8 +221,17 @@ void HttpResponseParser::processStatusLine() {
         return;
     }
 
-    auto afterVersion = line.substr(firstSpace + 1);
-    auto secondSpace = afterVersion.find(' ');
+    const auto version = line.substr(kHttpPrefix.size(), firstSpace - kHttpPrefix.size());
+    if (version != "1.0" && version != "1.1") {
+        LogE("[HttpResponseParser::processStatusLine] unsupported HTTP version: {}", version);
+        fail(slark::Error::HttpResponseInvalid);
+        return;
+    }
+    isHttp10_ = version == "1.0";
+    shouldClose_ = isHttp10_;
+
+    const auto afterVersion = line.substr(firstSpace + 1);
+    const auto secondSpace = afterVersion.find(' ');
     if (secondSpace == std::string_view::npos) {
         LogE("[HttpResponseParser::processStatusLine] missing reason phrase, line={}",
              StringUtil::toSafeLogString(line));
@@ -229,8 +239,17 @@ void HttpResponseParser::processStatusLine() {
         return;
     }
 
-    auto statusCodeStr = afterVersion.substr(0, secondSpace);
-    auto reasonPhrase = afterVersion.substr(secondSpace + 1);
+    const auto statusCodeStr = afterVersion.substr(0, secondSpace);
+    const auto reasonPhrase = afterVersion.substr(secondSpace + 1);
+    if (statusCodeStr.size() != 3 ||
+        !std::all_of(statusCodeStr.begin(), statusCodeStr.end(), [](unsigned char c) {
+            return std::isdigit(c);
+        })) {
+        LogE("[HttpResponseParser::processStatusLine] invalid status code: {}",
+             StringUtil::toSafeLogString(statusCodeStr));
+        fail(slark::Error::HttpResponseInvalid);
+        return;
+    }
 
     auto codeResult = StringUtil::fromChars<int32_t>(statusCodeStr);
     if (!codeResult) {
@@ -244,8 +263,8 @@ void HttpResponseParser::processStatusLine() {
     consume(pos + kCRLF.size());
     state_ = State::Headers;
 
-    LogI("[HttpResponseParser::processStatusLine] status={} reason={} -> {}",
-         static_cast<int>(statusCode_), std::string(reasonPhrase), stateName(state_));
+    LogI("[HttpResponseParser::processStatusLine] version={} status={} reason={} -> {}",
+         version, static_cast<int>(statusCode_), std::string(reasonPhrase), stateName(state_));
 
     if (callbacks_.onStatusLine) {
         callbacks_.onStatusLine(statusCode_, std::string(reasonPhrase));
@@ -372,8 +391,10 @@ void HttpResponseParser::processHeaders() {
             }
             transferEncodingValue_.append(value);
             transferEncodingSeen_ = true;
-        } else if (name == "connection" && hasHeaderToken(value, "close")) {
-            shouldClose_ = true;
+        } else if (name == "connection") {
+            connectionCloseSeen_ = connectionCloseSeen_ || hasHeaderToken(value, "close");
+            connectionKeepAliveSeen_ =
+                connectionKeepAliveSeen_ || hasHeaderToken(value, "keep-alive");
         }
         headers_[std::move(name)] = std::string(value);
 
@@ -381,6 +402,7 @@ void HttpResponseParser::processHeaders() {
     }
 
     consume(pos + headerEndSize);
+    shouldClose_ = connectionCloseSeen_ || (isHttp10_ && !connectionKeepAliveSeen_);
 
     if (isInformationalResponse()) {
         headers_.clear();
@@ -388,6 +410,9 @@ void HttpResponseParser::processHeaders() {
         contentLengthSeen_ = false;
         transferEncodingSeen_ = false;
         transferEncodingValue_.clear();
+        connectionCloseSeen_ = false;
+        connectionKeepAliveSeen_ = false;
+        shouldClose_ = isHttp10_;
         bodyReceived_ = 0;
         currentChunkSize_ = 0;
         chunkBytesRead_ = 0;
