@@ -130,6 +130,29 @@ TEST(RedirectPolicyTest, BuildRedirectWithLocationOnly) {
     EXPECT_EQ(result->url, "http://example.com/new");
 }
 
+TEST(RedirectPolicyTest, RedirectTargetUsesPublicOnlyByDefault) {
+    RequestInfo req;
+    req.url = "http://example.com/old";
+
+    auto result = RedirectPolicy::buildRedirectRequest(req, HttpStatusCode::Found,
+                                                       "http://other.example/new");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(result->isRedirectTarget);
+    EXPECT_EQ(result->networkAddressPolicy, NetworkAddressPolicy::PublicOnly);
+}
+
+TEST(RedirectPolicyTest, RedirectTargetCanExplicitlyAllowPrivateAddresses) {
+    RequestInfo req;
+    req.url = "http://example.com/old";
+    req.networkAddressPolicy = NetworkAddressPolicy::AllowAny;
+
+    auto result = RedirectPolicy::buildRedirectRequest(req, HttpStatusCode::Found,
+                                                       "http://127.0.0.1/new");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(result->isRedirectTarget);
+    EXPECT_EQ(result->networkAddressPolicy, NetworkAddressPolicy::AllowAny);
+}
+
 TEST(RedirectPolicyTest, ResolveRelativePath) {
     RequestInfo req;
     req.url = "http://example.com/path/old";

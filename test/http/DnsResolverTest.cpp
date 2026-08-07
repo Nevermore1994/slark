@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
+#include "ConnectionPool.h"
 #include "DnsResolver.h"
 
 #include <arpa/inet.h>
@@ -94,6 +95,49 @@ TEST_F(DnsResolverTest, ConnectAddressRejectsUnsupportedOrOversizedAddress) {
     oversized.ai_addrlen = sizeof(sockaddr_storage) + 1;
     oversized.ai_addr = reinterpret_cast<sockaddr*>(&source);
     EXPECT_FALSE(makeConnectAddress(&oversized).has_value());
+}
+
+TEST_F(DnsResolverTest, PublicAddressPolicyClassifiesReservedAndMappedAddresses) {
+    auto makeAddress = [](int family, const char* text) {
+        sockaddr_storage storage{};
+        addrinfo info{};
+        info.ai_family = family;
+        info.ai_addrlen = family == AF_INET ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
+        info.ai_addr = reinterpret_cast<sockaddr*>(&storage);
+        if (family == AF_INET) {
+            auto* address = reinterpret_cast<sockaddr_in*>(&storage);
+            address->sin_family = AF_INET;
+            EXPECT_EQ(inet_pton(AF_INET, text, &address->sin_addr), 1);
+        } else {
+            auto* address = reinterpret_cast<sockaddr_in6*>(&storage);
+            address->sin6_family = AF_INET6;
+            EXPECT_EQ(inet_pton(AF_INET6, text, &address->sin6_addr), 1);
+        }
+        return makeConnectAddress(&info);
+    };
+
+    EXPECT_FALSE(isPublicConnectAddress(*makeAddress(AF_INET, "127.0.0.1")));
+    EXPECT_FALSE(isPublicConnectAddress(*makeAddress(AF_INET, "192.168.1.1")));
+    EXPECT_TRUE(isPublicConnectAddress(*makeAddress(AF_INET, "8.8.8.8")));
+    EXPECT_FALSE(isPublicConnectAddress(*makeAddress(AF_INET6, "::ffff:127.0.0.1")));
+    EXPECT_FALSE(isPublicConnectAddress(*makeAddress(AF_INET6, "2001:db8::1")));
+    EXPECT_TRUE(isPublicConnectAddress(*makeAddress(AF_INET6, "2001:4860:4860::8888")));
+}
+
+TEST_F(DnsResolverTest, PublicOnlyConnectionRejectsLoopbackBeforeSocketConnect) {
+    RequestPerf perf;
+    auto task = co_acquire_connection("127.0.0.1", 80, "http", IPVersion::V4,
+                                      NetworkAddressPolicy::PublicOnly,
+                                      std::chrono::milliseconds(500),
+                                      std::chrono::milliseconds(500), &perf);
+    task.resume();
+    for (int i = 0; i < 200 && !task.isDone(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    ASSERT_TRUE(task.isDone());
+    EXPECT_EQ(task.result(), nullptr);
+    EXPECT_EQ(perf.connection.connectResult, Error::HttpRedirectError);
 }
 
 TEST_F(DnsResolverTest, SecondResolveShouldHitCache) {

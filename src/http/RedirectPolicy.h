@@ -52,6 +52,7 @@ class RedirectPolicy {
         }
         RequestInfo redirectRequest = original;
         redirectRequest.url = std::move(*resolvedUrl);
+        redirectRequest.isRedirectTarget = true;
 
         Url origUrl(original.url);
         Url newUrl(redirectRequest.url);

@@ -169,8 +169,15 @@ struct RequestPerf {
 
 constexpr uint64_t kDefaultMaxResponseBodySize = 64ULL * 1024ULL * 1024ULL;
 
+enum class NetworkAddressPolicy : uint8_t {
+    AllowAny,
+    PublicOnly,
+};
+
 struct RequestInfo {
     bool isAllowRedirect = true;
+    bool isRedirectTarget = false;
+    NetworkAddressPolicy networkAddressPolicy = NetworkAddressPolicy::PublicOnly;
     IPVersion ipVersion = IPVersion::Auto;
     std::string url;
     HttpMethodType methodType = HttpMethodType::Unknown;

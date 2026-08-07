@@ -76,6 +76,7 @@ Task<std::unique_ptr<PooledConnection>> co_acquire_connection(
     uint16_t port,
     std::string scheme,
     IPVersion ipVersion = IPVersion::V4,
+    NetworkAddressPolicy addressPolicy = NetworkAddressPolicy::AllowAny,
     std::chrono::milliseconds connectTimeout = std::chrono::milliseconds{0},
     std::chrono::milliseconds tlsHandshakeTimeout = std::chrono::milliseconds{0},
     RequestPerf* perf = nullptr,

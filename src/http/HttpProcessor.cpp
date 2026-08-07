@@ -57,9 +57,11 @@ Task<RequestSetup> setupConnectionAndSend(std::string_view tag,
     if (!Util::validateRequest(requestInfo, url)) {
         co_return RequestSetup{nullptr, ErrorInfo{slark::Error::InvalidArgument}};
     }
-    auto conn = co_await co_acquire_connection(url.host, url.portNumber(), url.scheme,
-                                               requestInfo.ipVersion, requestInfo.connectTimeout,
-                                               requestInfo.tlsHandshakeTimeout, &perf, token);
+    auto conn = co_await co_acquire_connection(
+        url.host, url.portNumber(), url.scheme, requestInfo.ipVersion,
+        requestInfo.isRedirectTarget ? requestInfo.networkAddressPolicy
+                                     : NetworkAddressPolicy::AllowAny,
+        requestInfo.connectTimeout, requestInfo.tlsHandshakeTimeout, &perf, token);
     if (!conn || !conn->isValid()) {
         if (token.isCancelled()) {
             co_return RequestSetup{nullptr, ErrorInfo{slark::Error::Cancelled}};
@@ -68,7 +70,8 @@ Task<RequestSetup> setupConnectionAndSend(std::string_view tag,
              static_cast<int>(perf.transport.timeoutSource), requestInfo.url);
         if (perf.connection.connectResult == slark::Error::HttpSslError ||
             perf.connection.connectResult == slark::Error::HttpSslHandshakeFailed ||
-            perf.connection.connectResult == slark::Error::DnsResolveFailed) {
+            perf.connection.connectResult == slark::Error::DnsResolveFailed ||
+            perf.connection.connectResult == slark::Error::HttpRedirectError) {
             co_return RequestSetup{nullptr, ErrorInfo{perf.connection.connectResult}};
         }
         if (perf.transport.timeoutSource == TimeoutSource::Connect ||

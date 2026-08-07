@@ -56,6 +56,48 @@ inline std::optional<ConnectAddress> makeConnectAddress(const addrinfo* info) no
     return address;
 }
 
+inline bool isPublicIpv4(uint32_t value) noexcept {
+    return (value & 0xff000000u) != 0x00000000u &&
+           (value & 0xff000000u) != 0x7f000000u &&
+           (value & 0xff000000u) != 0x0a000000u &&
+           (value & 0xffc00000u) != 0x64400000u &&
+           (value & 0xffff0000u) != 0xa9fe0000u &&
+           (value & 0xfff00000u) != 0xac100000u &&
+           (value & 0xffffff00u) != 0xc0000000u &&
+           (value & 0xffffff00u) != 0xc0000200u &&
+           (value & 0xffff0000u) != 0xc0a80000u &&
+           (value & 0xfffe0000u) != 0xc6120000u &&
+           (value & 0xffffff00u) != 0xc6336400u &&
+           (value & 0xffffff00u) != 0xcb007100u &&
+           (value & 0xf0000000u) != 0xe0000000u &&
+           (value & 0xf0000000u) != 0xf0000000u;
+}
+
+inline bool isPublicConnectAddress(const ConnectAddress& address) noexcept {
+    if (!address.isValid()) {
+        return false;
+    }
+
+    if (address.family == AF_INET) {
+        uint32_t value = 0;
+        std::memcpy(&value, &reinterpret_cast<const sockaddr_in&>(address.storage).sin_addr,
+                    sizeof(value));
+        return isPublicIpv4(ntohl(value));
+    }
+
+    const auto& address6 = reinterpret_cast<const sockaddr_in6&>(address.storage).sin6_addr;
+    if (IN6_IS_ADDR_V4MAPPED(&address6)) {
+        uint32_t mapped = 0;
+        std::memcpy(&mapped, &address6.s6_addr[12], sizeof(mapped));
+        return isPublicIpv4(ntohl(mapped));
+    }
+    return !IN6_IS_ADDR_UNSPECIFIED(&address6) && !IN6_IS_ADDR_LOOPBACK(&address6) &&
+           !IN6_IS_ADDR_LINKLOCAL(&address6) && !IN6_IS_ADDR_SITELOCAL(&address6) &&
+           !IN6_IS_ADDR_MULTICAST(&address6) &&
+           std::memcmp(address6.s6_addr, "\x20\x01\x0d\xb8", 4) != 0 &&
+           (address6.s6_addr[0] & 0xfeu) != 0xfcu;
+}
+
 using AddressInfoPtr = std::unique_ptr<addrinfo, decltype(&freeaddrinfo)>;
 
 inline AddressInfoPtr makeAddressInfo(addrinfo* info) {

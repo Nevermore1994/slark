@@ -17,6 +17,7 @@ Task<std::unique_ptr<AsyncSocket>> resolveAndConnect(
     const std::string& host,
     uint16_t port,
     IPVersion ipVersion,
+    NetworkAddressPolicy addressPolicy,
     std::chrono::milliseconds connectTimeout,
     std::chrono::milliseconds& connectMs,
     RequestPerf* perf,
@@ -38,6 +39,7 @@ Task<std::unique_ptr<AsyncSocket>> resolveAndConnect(
     Time::Deadline deadline(timeout);
     bool timedOut = false;
     bool failed = false;
+    bool policyRejected = false;
 
     for (const auto* candidate = addrInfo.get(); candidate; candidate = candidate->ai_next) {
         if (token.isCancelled()) {
@@ -53,6 +55,12 @@ Task<std::unique_ptr<AsyncSocket>> resolveAndConnect(
         if (!candidateAddress) {
             failed = true;
             LogW("[co_acquire_connection] Invalid DNS address candidate for {}", host);
+            continue;
+        }
+        if (addressPolicy == NetworkAddressPolicy::PublicOnly &&
+            !isPublicConnectAddress(*candidateAddress)) {
+            LogW("[co_acquire_connection] rejected non-public address for {}", host);
+            policyRejected = true;
             continue;
         }
 
@@ -88,7 +96,9 @@ Task<std::unique_ptr<AsyncSocket>> resolveAndConnect(
     }
 
     if (perf) {
-        if (timedOut || deadline.isExpired()) {
+        if (policyRejected && !failed && !timedOut) {
+            perf->connection.connectResult = slark::Error::HttpRedirectError;
+        } else if (timedOut || deadline.isExpired()) {
             perf->transport.timeoutSource = TimeoutSource::Connect;
             perf->connection.connectResult = slark::Error::ConnectionTimeout;
         } else {
@@ -144,6 +154,7 @@ Task<std::unique_ptr<PooledConnection>> co_acquire_connection(
     uint16_t port,
     std::string scheme,
     IPVersion ipVersion,
+    NetworkAddressPolicy addressPolicy,
     std::chrono::milliseconds connectTimeout,
     std::chrono::milliseconds tlsHandshakeTimeout,
     RequestPerf* perf,
@@ -153,8 +164,8 @@ Task<std::unique_ptr<PooledConnection>> co_acquire_connection(
     }
 
     std::chrono::milliseconds connectMs{0};
-    auto socket = co_await resolveAndConnect(host, port, ipVersion, connectTimeout, connectMs, perf,
-                                             token);
+    auto socket = co_await resolveAndConnect(host, port, ipVersion, addressPolicy, connectTimeout,
+                                             connectMs, perf, token);
     if (!socket) {
         co_return nullptr;
     }
