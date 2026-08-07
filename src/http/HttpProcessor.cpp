@@ -117,12 +117,14 @@ Task<RequestSetup> setupConnectionAndSend(std::string_view tag,
     co_return RequestSetup{std::move(conn), ErrorInfo{}};
 }
 
-HttpResponseParser::Callbacks makeEventCallbacks(ResponseHeader& header,
-                                                   bool& hasHeaders,
-                                                   DataPtr& pendingBody,
-                                                   RequestPerf& perf,
-                                                   bool& parseError,
-                                                   Error& parseErrorCode) {
+HttpResponseParser::Callbacks makeEventCallbacks(
+    ResponseHeader& header,
+    bool& hasHeaders,
+    std::unordered_map<std::string, std::string>& trailers,
+    DataPtr& pendingBody,
+    RequestPerf& perf,
+    bool& parseError,
+    Error& parseErrorCode) {
     HttpResponseParser::Callbacks callbacks;
     callbacks.onStatusLine = [&header](HttpStatusCode code, const std::string& reason) {
         header.httpStatusCode = code;
@@ -132,6 +134,9 @@ HttpResponseParser::Callbacks makeEventCallbacks(ResponseHeader& header,
                               std::unordered_map<std::string, std::string>&& headers) {
         header.headers = std::move(headers);
         hasHeaders = true;
+    };
+    callbacks.onTrailers = [&trailers](std::unordered_map<std::string, std::string>&& values) {
+        trailers = std::move(values);
     };
     callbacks.onBodyData = [&pendingBody, &perf](const Byte* data, size_t size) {
         if (!pendingBody) {
@@ -284,6 +289,7 @@ Task<ResponseResult> HttpProcessor::aggregateEvents(RequestInfo requestInfo,
                 }
                 break;
             case HttpResponseEventType::Completed:
+                response.trailers = std::move(event->trailers);
                 response.body = body->empty() ? nullptr : std::move(body);
                 response.error = (response.statusCode >= HttpStatusCode::BadRequest)
                                      ? ErrorInfo{slark::Error::HttpError,
@@ -399,10 +405,11 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(
     ResponseHeader header;
     bool hasHeaders = false;
     DataPtr pendingBody;
+    std::unordered_map<std::string, std::string> trailers;
     bool parseError = false;
     Error parseErrorCode = slark::Error::Success;
-    HttpResponseParser parser(
-        makeEventCallbacks(header, hasHeaders, pendingBody, perf, parseError, parseErrorCode));
+    HttpResponseParser parser(makeEventCallbacks(header, hasHeaders, trailers, pendingBody, perf,
+                                                 parseError, parseErrorCode));
     parser.setPerf(&perf);
     parser.setRequestMethod(requestInfo.methodType);
     parser.setMaxResponseBodySize(requestInfo.maxResponseBodySize);
@@ -467,7 +474,7 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(
     perf.totalRequestTimeMs =
         (Time::nowTimeStamp() - requestStart).toMilliSeconds().count();
     const bool shouldClose = parser.shouldCloseConnection();
-    co_yield HttpResponseEvent::makeCompleted(std::move(perf));
+    co_yield HttpResponseEvent::makeCompleted(std::move(perf), std::move(trailers));
     if (shouldClose) {
         conn->close();
     }
@@ -493,7 +500,7 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(RequestInfo requestI
                 co_yield StreamChunk::makeData(std::move(event->data));
                 break;
             case HttpResponseEventType::Completed:
-                co_yield StreamChunk::makeFinal();
+                co_yield StreamChunk::makeFinal(std::move(event->trailers));
                 co_return;
             case HttpResponseEventType::Error:
                 co_yield StreamChunk::makeError(std::move(event->error));

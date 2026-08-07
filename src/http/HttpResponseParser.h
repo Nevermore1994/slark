@@ -34,6 +34,7 @@ class HttpResponseParser {
     struct Callbacks {
         std::function<void(HttpStatusCode, const std::string&)> onStatusLine;
         std::function<void(std::unordered_map<std::string, std::string>&&)> onHeaders;
+        std::function<void(std::unordered_map<std::string, std::string>&&)> onTrailers;
         std::function<void(const Byte*, size_t)> onBodyData;
         std::function<void()> onCompleted;
         std::function<void(Error)> onError;
@@ -118,6 +119,10 @@ class HttpResponseParser {
         return headers_;
     }
 
+    [[nodiscard]] const std::unordered_map<std::string, std::string>& trailers() const noexcept {
+        return trailers_;
+    }
+
     void reset() noexcept;
 
  private:
@@ -185,6 +190,7 @@ class HttpResponseParser {
     std::string buffer_;
     size_t readPos_ = 0;  // logical consume position, avoids frequent erases
     std::unordered_map<std::string, std::string> headers_;
+    std::unordered_map<std::string, std::string> trailers_;
     HttpStatusCode statusCode_ = HttpStatusCode::Unknown;
     bool isHttp10_ = false;
     bool shouldClose_ = false;

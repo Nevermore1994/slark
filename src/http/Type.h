@@ -228,6 +228,7 @@ enum class HttpResponseEventType : uint8_t {
 struct HttpResponseEvent {
     HttpResponseEventType type = HttpResponseEventType::Error;
     ResponseHeader header;
+    std::unordered_map<std::string, std::string> trailers;
     DataPtr data;
     RequestPerf perf;
     ErrorInfo error;
@@ -252,9 +253,12 @@ struct HttpResponseEvent {
         return event;
     }
 
-    static HttpResponseEvent makeCompleted(RequestPerf responsePerf) {
+    static HttpResponseEvent makeCompleted(
+        RequestPerf responsePerf,
+        std::unordered_map<std::string, std::string> responseTrailers = {}) {
         HttpResponseEvent event;
         event.type = HttpResponseEventType::Completed;
+        event.trailers = std::move(responseTrailers);
         event.perf = std::move(responsePerf);
         return event;
     }
@@ -271,6 +275,7 @@ struct HttpResponseEvent {
 struct HttpResponse {
     HttpStatusCode statusCode = HttpStatusCode::Unknown;
     std::unordered_map<std::string, std::string> headers;
+    std::unordered_map<std::string, std::string> trailers;
     DataPtr body;
     std::string reasonPhrase;
     ErrorInfo error;
@@ -314,6 +319,7 @@ struct StreamChunk {
     ErrorInfo error;                                       // error info (only valid on error)
     HttpStatusCode statusCode = HttpStatusCode::Unknown;   // HTTP status code (carried by the first chunk)
     std::unordered_map<std::string, std::string> headers;  // response headers (carried by the first chunk)
+    std::unordered_map<std::string, std::string> trailers; // final response metadata
 
     [[nodiscard]] bool hasError() const noexcept {
         return error.retCode != slark::Error::Success;
@@ -324,11 +330,20 @@ struct StreamChunk {
     }
 
     static StreamChunk makeData(DataPtr d) {
-        return StreamChunk{.data = std::move(d), .isFinal = false, .error = {}, .headers = {}};
+        return StreamChunk{.data = std::move(d),
+                           .isFinal = false,
+                           .error = {},
+                           .headers = {},
+                           .trailers = {}};
     }
 
-    static StreamChunk makeFinal() {
-        return StreamChunk{.data = nullptr, .isFinal = true, .error = {}, .headers = {}};
+    static StreamChunk makeFinal(
+        std::unordered_map<std::string, std::string> responseTrailers = {}) {
+        return StreamChunk{.data = nullptr,
+                           .isFinal = true,
+                           .error = {},
+                           .headers = {},
+                           .trailers = std::move(responseTrailers)};
     }
 
     static StreamChunk makeError(ErrorInfo err) {
@@ -336,7 +351,8 @@ struct StreamChunk {
                            .isFinal = true,
                            .error = std::move(err),
                            .statusCode = HttpStatusCode::Unknown,
-                           .headers = {}};
+                           .headers = {},
+                           .trailers = {}};
     }
 
     static StreamChunk makeHeader(HttpStatusCode code,
@@ -345,7 +361,8 @@ struct StreamChunk {
                            .isFinal = false,
                            .error = {},
                            .statusCode = code,
-                           .headers = std::move(hdrs)};
+                           .headers = std::move(hdrs),
+                           .trailers = {}};
     }
 };
 

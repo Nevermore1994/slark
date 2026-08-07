@@ -406,6 +406,7 @@ void HttpResponseParser::processHeaders() {
 
     if (isInformationalResponse()) {
         headers_.clear();
+        trailers_.clear();
         contentLength_ = -1;
         contentLengthSeen_ = false;
         transferEncodingSeen_ = false;
@@ -615,15 +616,33 @@ void HttpResponseParser::processChunkTrailer() {
         consume(kCRLF.size());
         LogI("[HttpResponseParser::processChunkTrailer] complete after trailer, totalChunks={}",
              perf_ ? perf_->parser.chunkCount : 0);
+        if (callbacks_.onTrailers) {
+            callbacks_.onTrailers(std::unordered_map<std::string, std::string>(trailers_));
+        }
         complete();
     } else {
         const auto trailerLine = data.substr(0, pos);
         const auto colonPos = trailerLine.find(':');
-        if (colonPos == std::string_view::npos || colonPos == 0) {
-            LogE("[HttpResponseParser::processChunkTrailer] malformed trailer");
+        if (colonPos == std::string_view::npos) {
+            LogE("[HttpResponseParser::processChunkTrailer] trailer has no colon");
             fail(slark::Error::HttpResponseInvalid);
             return;
         }
+
+        auto name = StringUtil::toLower(std::string(trailerLine.substr(0, colonPos)));
+        if (!isHeaderNameToken(name)) {
+            LogE("[HttpResponseParser::processChunkTrailer] invalid trailer name: {}",
+                 StringUtil::toSafeLogString(name));
+            fail(slark::Error::HttpResponseInvalid);
+            return;
+        }
+        const auto value = trimOws(trailerLine.substr(colonPos + 1));
+        if (!isHeaderValueValid(value)) {
+            LogE("[HttpResponseParser::processChunkTrailer] invalid trailer value");
+            fail(slark::Error::HttpResponseInvalid);
+            return;
+        }
+        trailers_[std::move(name)] = std::string(value);
 
         // Skip the trailer header, counting only the bytes actually consumed this time
         auto consumed = pos + kCRLF.size();

@@ -20,6 +20,7 @@ struct ParseResult {
     HttpStatusCode statusCode = HttpStatusCode::Unknown;
     std::string reasonPhrase;
     std::unordered_map<std::string, std::string> headers;
+    std::unordered_map<std::string, std::string> trailers;
     std::string body;
     bool completed = false;
     bool errored = false;
@@ -48,6 +49,10 @@ class ParserTestHelper {
             ++result.headersCount;
             result.callbackOrder.push_back('H');
             result.headers = std::move(h);
+        };
+        callbacks.onTrailers = [this](std::unordered_map<std::string, std::string>&& values) {
+            result.callbackOrder.push_back('T');
+            result.trailers = std::move(values);
         };
         callbacks.onBodyData = [this](const Byte* data, size_t size) {
             ++result.bodyChunkCount;
@@ -117,6 +122,20 @@ TEST(HttpResponseParserTest, ParseChunkedResponse) {
     helper.feed("5\r\nHello\r\n0\r\n\r\n");
     EXPECT_TRUE(helper.isCompleted());
     EXPECT_EQ(helper.result.body, "Hello");
+}
+
+TEST(HttpResponseParserTest, ExposesChunkedTrailersSeparately) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+                "1\r\na\r\n0\r\nX-Checksum: abc\r\nx-meta: value \t\r\n\r\n");
+
+    EXPECT_TRUE(helper.isCompleted());
+    EXPECT_FALSE(helper.hasError());
+    EXPECT_EQ(helper.result.body, "a");
+    EXPECT_EQ(helper.result.trailers["x-checksum"], "abc");
+    EXPECT_EQ(helper.result.trailers["x-meta"], "value");
+    EXPECT_EQ(helper.rawParser()->trailers().at("x-checksum"), "abc");
+    EXPECT_EQ(helper.result.callbackOrder, "SHBTC");
 }
 
 TEST(HttpResponseParserTest, CompletedParserIgnoresFurtherInput) {

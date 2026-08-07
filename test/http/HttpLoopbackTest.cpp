@@ -15,6 +15,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <unordered_map>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -192,16 +193,20 @@ class LoopbackBlackholeServer final {
     std::thread worker_;
 };
 
-HttpResponse executeLoopback(const std::string& response) {
-    LoopbackHttpServer server(response);
-
+RequestInfo makeLoopbackRequest(uint16_t port) {
     RequestInfo info;
-    info.url = "http://127.0.0.1:" + std::to_string(server.port()) + "/";
+    info.url = "http://127.0.0.1:" + std::to_string(port) + "/";
     info.methodType = HttpMethodType::Get;
     info.ipVersion = IPVersion::V4;
     info.connectTimeout = std::chrono::seconds(2);
     info.readTimeout = std::chrono::seconds(2);
     info.readIdleTimeout = std::chrono::seconds(2);
+    return info;
+}
+
+HttpResponse executeLoopback(const std::string& response) {
+    LoopbackHttpServer server(response);
+    auto info = makeLoopbackRequest(server.port());
 
     ThreadPool pool(ThreadPoolConfig{2});
     std::atomic<bool> done{false};
@@ -223,6 +228,37 @@ HttpResponse executeLoopback(const std::string& response) {
     }
     EXPECT_TRUE(done.load());
     return result;
+}
+
+StreamChunk executeStreamingLoopback(const std::string& response) {
+    LoopbackHttpServer server(response);
+    auto info = makeLoopbackRequest(server.port());
+
+    ThreadPool pool(ThreadPoolConfig{2});
+    std::atomic<bool> done{false};
+    StreamChunk finalChunk = StreamChunk::makeError(ErrorInfo{Error::ConnectionReset});
+    auto task = [&]() -> Task<void> {
+        HttpProcessor processor;
+        auto generator = processor.processStreaming(info);
+        while (true) {
+            auto chunk = co_await generator.next();
+            if (!chunk.has_value()) {
+                break;
+            }
+            if (chunk->isFinal) {
+                finalChunk = std::move(*chunk);
+                break;
+            }
+        }
+        done.store(true);
+    }();
+    task.resume();
+
+    for (int i = 0; i < 200 && !done.load(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(done.load());
+    return finalChunk;
 }
 
 }  // namespace
@@ -251,6 +287,30 @@ TEST(HttpLoopbackTest, ChunkedResponseTruncatedAtPeerEofFails) {
         "5\r\nhel");
 
     EXPECT_EQ(response.error.retCode, Error::ConnectionReset);
+}
+
+TEST(HttpLoopbackTest, AggregatedResponseExposesChunkedTrailers) {
+    const auto response = executeLoopback(
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+        "5\r\nhello\r\n0\r\nX-Checksum: abc123\r\n\r\n");
+
+    EXPECT_EQ(response.error.retCode, Error::Success);
+    ASSERT_NE(response.body, nullptr);
+    EXPECT_EQ(std::string(reinterpret_cast<const char*>(response.body->data()),
+                          response.body->length()),
+              "hello");
+    EXPECT_EQ(response.trailers.at("x-checksum"), "abc123");
+    EXPECT_EQ(response.headers.count("x-checksum"), 0u);
+}
+
+TEST(HttpLoopbackTest, StreamingFinalChunkExposesChunkedTrailers) {
+    const auto finalChunk = executeStreamingLoopback(
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+        "5\r\nhello\r\n0\r\nX-Checksum: stream123\r\n\r\n");
+
+    EXPECT_TRUE(finalChunk.isFinal);
+    EXPECT_FALSE(finalChunk.hasError());
+    EXPECT_EQ(finalChunk.trailers.at("x-checksum"), "stream123");
 }
 
 TEST(HttpLoopbackTest, WriteTimeoutPreservesConnectionTimeout) {
