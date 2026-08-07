@@ -1,7 +1,7 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-#include "ConnectionPool.h"
+#include "ConnectionFactory.h"
 #include "DnsResolver.h"
 
 #include <arpa/inet.h>
@@ -127,7 +127,7 @@ TEST_F(DnsResolverTest, PublicAddressPolicyClassifiesReservedAndMappedAddresses)
 
 TEST_F(DnsResolverTest, PublicOnlyConnectionRejectsLoopbackBeforeSocketConnect) {
     RequestPerf perf;
-    auto task = co_acquire_connection("127.0.0.1", 80, "http", IPVersion::V4,
+    auto task = openConnection("127.0.0.1", 80, "http", IPVersion::V4,
                                       NetworkAddressPolicy::PublicOnly,
                                       std::chrono::milliseconds(500),
                                       std::chrono::milliseconds(500), &perf);
@@ -145,7 +145,7 @@ TEST_F(DnsResolverTest, PublicOnlyConnectionRejectsLoopbackBeforeSocketConnect) 
 
 TEST_F(DnsResolverTest, ConnectionFactoryReturnsDnsError) {
     RequestPerf perf;
-    auto task = co_acquire_connection("this.host.does.not.exist.invalid", 80, "http",
+    auto task = openConnection("this.host.does.not.exist.invalid", 80, "http",
                                       IPVersion::V4, NetworkAddressPolicy::AllowAny,
                                       std::chrono::milliseconds(500),
                                       std::chrono::milliseconds(500), &perf);
@@ -164,7 +164,7 @@ TEST_F(DnsResolverTest, ConnectionFactoryReturnsDnsError) {
 TEST_F(DnsResolverTest, ConnectionFactoryReturnsCancellationError) {
     CancellationToken token;
     token.cancel();
-    auto task = co_acquire_connection("localhost", 80, "http", IPVersion::V4,
+    auto task = openConnection("localhost", 80, "http", IPVersion::V4,
                                       NetworkAddressPolicy::AllowAny,
                                       std::chrono::milliseconds(500),
                                       std::chrono::milliseconds(500), nullptr, token);

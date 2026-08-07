@@ -16,16 +16,16 @@
 namespace slark::http {
 
 // RAII wrapper owning a connection, closes it automatically on destruction
-class PooledConnection {
+class OwnedConnection {
  public:
-    PooledConnection(std::unique_ptr<IAsyncSocket> socket) : socket_(std::move(socket)) {}
+    OwnedConnection(std::unique_ptr<IAsyncSocket> socket) : socket_(std::move(socket)) {}
 
-    ~PooledConnection() {
+    ~OwnedConnection() {
         close();
     }
 
-    PooledConnection(PooledConnection&&) noexcept = default;
-    PooledConnection& operator=(PooledConnection&&) noexcept = default;
+    OwnedConnection(OwnedConnection&&) noexcept = default;
+    OwnedConnection& operator=(OwnedConnection&&) noexcept = default;
 
     IAsyncSocket& operator*() noexcept {
         return *socket_;
@@ -70,11 +70,11 @@ class PooledConnection {
     std::unique_ptr<IAsyncSocket> socket_;
 };
 
-using ConnectionResult = std::expected<std::unique_ptr<PooledConnection>, ErrorInfo>;
+using OpenConnectionResult = std::expected<std::unique_ptr<OwnedConnection>, ErrorInfo>;
 
-// Establish a new connection (DNS + TCP + optional TLS). Cancellation at any stage
-// terminates immediately and the connection is not recycled.
-Task<ConnectionResult> co_acquire_connection(
+// Establish a new connection (DNS + TCP + optional TLS). The returned connection is
+// owned by the caller and closes automatically when it is destroyed.
+Task<OpenConnectionResult> openConnection(
     std::string host,
     uint16_t port,
     std::string scheme,

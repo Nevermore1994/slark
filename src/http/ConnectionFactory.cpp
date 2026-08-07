@@ -1,7 +1,7 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-#include "ConnectionPool.h"
+#include "ConnectionFactory.h"
 
 #include "DnsResolver.h"
 #include "IOContext.h"
@@ -28,7 +28,7 @@ Task<std::expected<std::unique_ptr<AsyncSocket>, ErrorInfo>> resolveAndConnect(
         co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
     }
     if (!addrInfo) {
-        LogW("[co_acquire_connection] DNS resolution failed for {}", host);
+        LogW("[openConnection] DNS resolution failed for {}", host);
         if (perf) {
             perf->connection.connectResult = slark::Error::DnsResolveFailed;
         }
@@ -57,13 +57,13 @@ Task<std::expected<std::unique_ptr<AsyncSocket>, ErrorInfo>> resolveAndConnect(
 
         auto candidateAddress = makeConnectAddress(candidate);
         if (!candidateAddress) {
-            LogW("[co_acquire_connection] invalid address candidate for {}", host);
+            LogW("[openConnection] invalid address candidate for {}", host);
             continue;
         }
         if (addressPolicy == NetworkAddressPolicy::PublicOnly &&
             !isPublicConnectAddress(*candidateAddress)) {
             policyRejected = true;
-            LogW("[co_acquire_connection] rejected non-public address for {}", host);
+            LogW("[openConnection] rejected non-public address for {}", host);
             continue;
         }
 
@@ -74,10 +74,10 @@ Task<std::expected<std::unique_ptr<AsyncSocket>, ErrorInfo>> resolveAndConnect(
         try {
             co_await socket->asyncConnect(std::move(*candidateAddress), remaining, token);
         } catch (const CancelledException&) {
-            LogW("[co_acquire_connection] connect cancelled for {}", host);
+            LogW("[openConnection] connect cancelled for {}", host);
             co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
         } catch (const TimeoutException&) {
-            LogW("[co_acquire_connection] connect timeout for {}", host);
+            LogW("[openConnection] connect timeout for {}", host);
             if (perf) {
                 perf->transport.timeoutSource = TimeoutSource::Connect;
                 perf->connection.connectResult = slark::Error::ConnectionTimeout;
@@ -85,7 +85,7 @@ Task<std::expected<std::unique_ptr<AsyncSocket>, ErrorInfo>> resolveAndConnect(
             co_return std::unexpected(ErrorInfo{slark::Error::ConnectionTimeout});
         } catch (const std::exception& e) {
             lastError = ErrorInfo{slark::Error::ConnectionFailed};
-            LogW("[co_acquire_connection] address candidate failed: {} {}", host, e.what());
+            LogW("[openConnection] address candidate failed: {} {}", host, e.what());
             continue;
         }
 
@@ -97,7 +97,7 @@ Task<std::expected<std::unique_ptr<AsyncSocket>, ErrorInfo>> resolveAndConnect(
             perf->connection.connectTimeMs = connectMs.count();
             perf->connection.connectResult = slark::Error::Success;
         }
-        LogI("[co_acquire_connection] connected: host={} port={} remainingMs={}", host, port,
+        LogI("[openConnection] connected: host={} port={} remainingMs={}", host, port,
              deadline.remaining().count());
         co_return socket;
     }
@@ -133,7 +133,7 @@ Task<Error> performTlsHandshake(AsyncSocket& socket,
         co_return slark::Error::Cancelled;
     }
     if (tlsResult != slark::Error::Success) {
-        LogW("[co_acquire_connection] TLS handshake failed: host={} error={}", host,
+        LogW("[openConnection] TLS handshake failed: host={} error={}", host,
              static_cast<int>(tlsResult));
         if (perf) {
             perf->connection.connectResult = tlsResult;
@@ -144,7 +144,7 @@ Task<Error> performTlsHandshake(AsyncSocket& socket,
         co_return tlsResult;
     }
     socket.setTransport(std::move(tlsTransport));
-    LogI("[co_acquire_connection] TLS handshake ok: host={} elapsedMs={}", host,
+    LogI("[openConnection] TLS handshake ok: host={} elapsedMs={}", host,
          (tlsEnd - tlsStart).toMilliSeconds().count());
 #endif
     co_return slark::Error::Success;
@@ -152,7 +152,7 @@ Task<Error> performTlsHandshake(AsyncSocket& socket,
 
 }  // namespace
 
-Task<ConnectionResult> co_acquire_connection(
+Task<OpenConnectionResult> openConnection(
     std::string host,
     uint16_t port,
     std::string scheme,
@@ -194,10 +194,10 @@ Task<ConnectionResult> co_acquire_connection(
         perf->connection.connectResult = slark::Error::Success;
     }
 
-    LogI("[co_acquire_connection] acquired: host={} port={} scheme={} connectMs={}", host, port,
+    LogI("[openConnection] acquired: host={} port={} scheme={} connectMs={}", host, port,
          scheme, connectMs.count());
 
-    co_return std::make_unique<PooledConnection>(std::move(socket));
+    co_return std::make_unique<OwnedConnection>(std::move(socket));
 }
 
 }  // namespace slark::http

@@ -6,7 +6,7 @@
 
 #include "AsyncGenerator.hpp"
 #include "CancellationToken.h"
-#include "ConnectionPool.h"
+#include "ConnectionFactory.h"
 #include "RedirectPolicy.h"
 #include "Task.hpp"
 #include "Type.h"

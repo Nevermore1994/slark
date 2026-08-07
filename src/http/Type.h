@@ -127,10 +127,8 @@ enum class TimeoutSource : uint8_t {
     ReadOverall,
 };
 
-// Connection pool performance stats
-struct ConnectionPoolPerf {
-    bool reuseAttempted = false;
-    bool reuseSucceeded = false;
+// Connection establishment performance stats
+struct ConnectionPerf {
     int64_t connectTimeMs = 0;
     int64_t tlsHandshakeTimeMs = 0;
     Error connectResult = Error::Success;
@@ -155,7 +153,7 @@ struct ParserPerf {
 
 // Request-level performance stats
 struct RequestPerf {
-    ConnectionPoolPerf connection;
+    ConnectionPerf connection;
     TransportPerf transport;
     ParserPerf parser;
     int64_t totalRequestTimeMs = 0;

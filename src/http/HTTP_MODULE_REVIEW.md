@@ -69,7 +69,7 @@ void TLSTransport::shutdown() noexcept {
 
 ### 6. 连接池复用未检测半关闭 (half-close)
 
-**文件**: `ConnectionPool.cpp:106`
+**文件**: `ConnectionFactory.cpp:106`
 ```cpp
 if (connInfo->isValid && connInfo->socket && connInfo->socket->isValid()) {
     // ...
@@ -127,9 +127,9 @@ auto* context = SSL_CTX_new(TLS_client_method());
 **原因**: 未设置 ALPN 扩展。部分 CDN（如 Cloudflare）可能根据 ALPN 协商决定行为。若未来需支持 HTTP/2 则必须配置 ALPN。  
 **建议**: 添加 `SSL_CTX_set_alpn_protos(context, "\x08http/1.1", 9)` 明确声明协议。
 
-### 11. ConnectionPool cleanup 使用 std::thread 而非协程
+### 11. Connection reuse cleanup 使用 std::thread 而非协程
 
-**文件**: `ConnectionPool.cpp:382`
+**文件**: `ConnectionFactory.cpp:382`
 ```cpp
 cleanupThread_.emplace([this] {
     cleanupIdleConnections();

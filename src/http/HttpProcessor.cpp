@@ -4,7 +4,7 @@
 #include "HttpProcessor.h"
 
 #include "Clock.h"
-#include "ConnectionPool.h"
+#include "ConnectionFactory.h"
 #include "CoroutineScheduler.hpp"
 #include "HttpResponseParser.h"
 #include "HttpUtil.hpp"
@@ -36,7 +36,7 @@ Error mapLegacyErrorToUnified(Error error) noexcept {
     }
 }
 
-Task<ConnectionResult> acquireConnection(const RequestInfo& requestInfo,
+Task<OpenConnectionResult> openRequestConnection(const RequestInfo& requestInfo,
                                           const Url& url,
                                           RequestPerf& perf,
                                           CancellationToken& token) {
@@ -44,13 +44,13 @@ Task<ConnectionResult> acquireConnection(const RequestInfo& requestInfo,
         co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
     }
 
-    auto result = co_await co_acquire_connection(
+    auto result = co_await openConnection(
         url.host, url.portNumber(), url.scheme, requestInfo.ipVersion,
         requestInfo.isRedirectTarget ? requestInfo.networkAddressPolicy
                                      : NetworkAddressPolicy::AllowAny,
         requestInfo.connectTimeout, requestInfo.tlsHandshakeTimeout, &perf, token);
     if (!result) {
-        LogE("[HttpProcessor::acquireConnection] failed: error={} url={}",
+        LogE("[HttpProcessor::openRequestConnection] failed: error={} url={}",
              static_cast<int>(result.error().retCode), requestInfo.url);
         co_return std::unexpected(result.error());
     }
@@ -63,7 +63,7 @@ Task<ConnectionResult> acquireConnection(const RequestInfo& requestInfo,
     co_return std::move(conn);
 }
 
-Task<ErrorInfo> sendRequestPart(PooledConnection& conn,
+Task<ErrorInfo> sendRequestPart(OwnedConnection& conn,
                                 std::string_view data,
                                 const RequestInfo& requestInfo,
                                 CancellationToken& token,
@@ -86,7 +86,7 @@ Task<ErrorInfo> sendRequestPart(PooledConnection& conn,
     co_return ErrorInfo{error};
 }
 
-Task<ErrorInfo> sendRequest(PooledConnection& conn,
+Task<ErrorInfo> sendRequest(OwnedConnection& conn,
                             const RequestInfo& requestInfo,
                             const Url& url,
                             CancellationToken& token) {
@@ -155,7 +155,7 @@ struct StreamReadResult {
     ErrorInfo error;
 };
 
-Task<StreamReadResult> readStreamChunk(std::unique_ptr<PooledConnection>& conn,
+Task<StreamReadResult> readStreamChunk(std::unique_ptr<OwnedConnection>& conn,
                                        std::array<Byte, 16384>& readBuffer,
                                        const Time::Deadline& overallDeadline,
                                        const RequestInfo& requestInfo,
@@ -383,7 +383,7 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(
         co_return;
     }
 
-    auto connectionResult = co_await acquireConnection(requestInfo, *parsed.url, perf, token);
+    auto connectionResult = co_await openRequestConnection(requestInfo, *parsed.url, perf, token);
     if (!connectionResult) {
         co_yield HttpResponseEvent::makeError(connectionResult.error(), std::move(perf));
         co_return;
