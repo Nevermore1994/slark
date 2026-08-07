@@ -74,6 +74,18 @@ TEST(HttpProcessorTest, ProcessReturns404) {
     EXPECT_EQ(response.error.retCode, Error::HttpError);
 }
 
+TEST(HttpProcessorTest, ProcessPropagatesDnsError) {
+    RequestInfo info;
+    info.url = "http://this.host.does.not.exist.invalid/";
+    info.methodType = HttpMethodType::Get;
+    info.connectTimeout = std::chrono::milliseconds(500);
+    info.readTimeout = std::chrono::milliseconds(500);
+
+    const auto response = executeSync(info);
+
+    EXPECT_EQ(response.error.retCode, Error::DnsResolveFailed);
+}
+
 TEST(HttpProcessorTest, ProcessRejectsResponseBodyAboveLimit) {
     RequestInfo info;
     info.url = "http://httpbingo.org/stream-bytes/1024";

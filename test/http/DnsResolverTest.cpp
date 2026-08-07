@@ -9,6 +9,7 @@
 #include <netinet/in.h>
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -136,8 +137,43 @@ TEST_F(DnsResolverTest, PublicOnlyConnectionRejectsLoopbackBeforeSocketConnect) 
     }
 
     ASSERT_TRUE(task.isDone());
-    EXPECT_EQ(task.result(), nullptr);
+    const auto result = task.result();
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().retCode, Error::HttpRedirectError);
     EXPECT_EQ(perf.connection.connectResult, Error::HttpRedirectError);
+}
+
+TEST_F(DnsResolverTest, ConnectionFactoryReturnsDnsError) {
+    RequestPerf perf;
+    auto task = co_acquire_connection("this.host.does.not.exist.invalid", 80, "http",
+                                      IPVersion::V4, NetworkAddressPolicy::AllowAny,
+                                      std::chrono::milliseconds(500),
+                                      std::chrono::milliseconds(500), &perf);
+    task.resume();
+    for (int i = 0; i < 500 && !task.isDone(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    ASSERT_TRUE(task.isDone());
+    const auto result = task.result();
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().retCode, Error::DnsResolveFailed);
+    EXPECT_EQ(perf.connection.connectResult, Error::DnsResolveFailed);
+}
+
+TEST_F(DnsResolverTest, ConnectionFactoryReturnsCancellationError) {
+    CancellationToken token;
+    token.cancel();
+    auto task = co_acquire_connection("localhost", 80, "http", IPVersion::V4,
+                                      NetworkAddressPolicy::AllowAny,
+                                      std::chrono::milliseconds(500),
+                                      std::chrono::milliseconds(500), nullptr, token);
+    task.resume();
+
+    ASSERT_TRUE(task.isDone());
+    const auto result = task.result();
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().retCode, Error::Cancelled);
 }
 
 TEST_F(DnsResolverTest, SecondResolveShouldHitCache) {
