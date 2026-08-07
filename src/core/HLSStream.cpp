@@ -25,7 +25,10 @@ constexpr std::chrono::milliseconds kWaitSettleTimeout{500};
 constexpr std::chrono::milliseconds kCloseWaitTimeout{5000};
 }  // namespace
 
-HLSStream::HLSStream(std::shared_ptr<Thread> ownerThread) : ownerThread_(std::move(ownerThread)) {}
+HLSStream::HLSStream(std::shared_ptr<Thread> ownerThread)
+    : ownerThread_(std::move(ownerThread)),
+      controlSession_(std::make_shared<http::Http1Session>()),
+      mediaSession_(std::make_shared<http::Http1Session>()) {}
 
 HLSStream::~HLSStream() {
     close();
@@ -63,6 +66,8 @@ void HLSStream::close() noexcept {
     ++generation_;
     cancelPlaylistOp(kCloseWaitTimeout.count());
     cancelSegmentOp(kCloseWaitTimeout.count());
+    controlSession_->close();
+    mediaSession_->close();
     if (refreshTimerId_.isValid()) {
         ownerThread_->cancelRepeatTask(refreshTimerId_);
         refreshTimerId_ = {};
@@ -113,6 +118,8 @@ void HLSStream::start() noexcept {
     http::RequestInfo requestInfo;
     requestInfo.url = params_.uri;
     requestInfo.methodType = http::HttpMethodType::Get;
+    requestInfo.connectionMode = http::HttpConnectionMode::KeepAlive;
+    requestInfo.session = controlSession_;
 
     auto task = fetchPlaylist(request, requestInfo, control, gen, opId);
     playlistOp_.emplace(PlaylistOp{gen, opId, request, std::move(task), std::move(control)});
@@ -129,6 +136,8 @@ void HLSStream::pause() noexcept {
     ++generation_;
     cancelSegmentOp(kWaitSettleTimeout.count());
     cancelPlaylistOp(kWaitSettleTimeout.count());
+    controlSession_->close();
+    mediaSession_->close();
     if (refreshTimerId_.isValid()) {
         ownerThread_->cancelRepeatTask(refreshTimerId_);
         refreshTimerId_ = {};
@@ -167,6 +176,8 @@ StreamResult<void> HLSStream::seekByTime(double timeSec) {
     ++generation_;
     cancelSegmentOp(kWaitSettleTimeout.count());
     cancelPlaylistOp(kWaitSettleTimeout.count());
+    controlSession_->close();
+    mediaSession_->close();
     if (retryTimerId_.isValid()) {
         ownerThread_->cancelRepeatTask(retryTimerId_);
         retryTimerId_ = {};
@@ -206,6 +217,7 @@ void HLSStream::onPlaylistEvent(PlaylistEvent event) noexcept {
         event.operationId != playlistOp_->operationId) {
         return;
     }
+    playlistOp_.reset();
     handlePlaylistResponse(std::move(event.response));
 }
 
@@ -262,6 +274,8 @@ void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
         http::RequestInfo requestInfo;
         requestInfo.url = variantUrl;
         requestInfo.methodType = http::HttpMethodType::Get;
+        requestInfo.connectionMode = http::HttpConnectionMode::KeepAlive;
+        requestInfo.session = controlSession_;
 
         auto task = fetchPlaylist(request, requestInfo, control, gen, opId);
         playlistOp_.emplace(PlaylistOp{gen, opId, request, std::move(task), std::move(control)});
@@ -366,6 +380,8 @@ void HLSStream::downloadSegment(uint32_t segIndex) {
     http::RequestInfo requestInfo;
     requestInfo.url = resolveUrl(segment.uri);
     requestInfo.methodType = http::HttpMethodType::Get;
+    requestInfo.connectionMode = http::HttpConnectionMode::KeepAlive;
+    requestInfo.session = mediaSession_;
 
     std::weak_ptr<HLSStream> weakThis = shared_from_this();
     std::weak_ptr<StreamControl> weakControl = control;
@@ -524,6 +540,8 @@ void HLSStream::refreshPlaylist() {
     http::RequestInfo requestInfo;
     requestInfo.url = mediaPlaylistUrl_;
     requestInfo.methodType = http::HttpMethodType::Get;
+    requestInfo.connectionMode = http::HttpConnectionMode::KeepAlive;
+    requestInfo.session = controlSession_;
 
     auto task = fetchPlaylist(request, requestInfo, control, gen, opId);
     playlistOp_.emplace(PlaylistOp{gen, opId, request, std::move(task), std::move(control)});

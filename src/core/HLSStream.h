@@ -9,6 +9,7 @@
 #include <mutex>
 #include <optional>
 
+#include "Http1Session.h"
 #include "HttpRequest.h"
 #include "IStream.h"
 #include "M3U8Parser.h"
@@ -132,6 +133,8 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
 
     std::optional<PlaylistOp> playlistOp_;
     std::optional<SegmentOp> segmentOp_;
+    std::shared_ptr<http::Http1Session> controlSession_;
+    std::shared_ptr<http::Http1Session> mediaSession_;
     uint64_t generation_ = 0;
     uint64_t nextOperationId_ = 1;
     bool closing_ = false;
