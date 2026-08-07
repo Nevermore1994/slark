@@ -2,7 +2,7 @@ name: Slark Build
 
 on:
   push:
-    branches: ["main", "develop"]
+    branches: ["main", "develop", "feat/**"]
   pull_request:
     branches: ["main"]
 
@@ -101,13 +101,8 @@ jobs:
           path: build-ios-${{ matrix.arch }}/deps/openssl
           key: openssl-ios-${{ matrix.arch }}-${{ env.OPENSSL_VERSION }}-${{ hashFiles('cmake/OpenSSL.cmake') }}
 
-      - name: Setup iOS toolchain
-        run: |
-          # Download ios-cmake toolchain if not exists
-          if [ ! -f "cmake/ios.toolchain.cmake" ]; then
-            curl -L -o cmake/ios.toolchain.cmake \
-              https://raw.githubusercontent.com/leetal/ios-cmake/master/ios.toolchain.cmake
-          fi
+      - name: Verify iOS toolchain
+        run: test -f ios.toolchain.cmake
 
       - name: Configure CMake for iOS
         run: |
@@ -116,11 +111,11 @@ jobs:
             -DCMAKE_SYSTEM_NAME=iOS \
             -DPLATFORM=${{ matrix.platform }} \
             -DDEPLOYMENT_TARGET=16.5 \
-            -DENABLE_BITCODE=ON \
+            -DENABLE_BITCODE=OFF \
             -DENABLE_ARC=ON \
             -DENABLE_VISIBILITY=OFF \
             -DBUILD_PLATFORM=iOS \
-            -DCMAKE_TOOLCHAIN_FILE=cmake/ios.toolchain.cmake
+            -DCMAKE_TOOLCHAIN_FILE=ios.toolchain.cmake
 
       - name: Build for iOS
         run: cmake --build build-ios-${{ matrix.arch }} --config ${{ env.BUILD_TYPE }} -j $(sysctl -n hw.ncpu)
@@ -134,15 +129,16 @@ jobs:
             -DPLATFORM=${{ matrix.platform }} \
             -DDEPLOYMENT_TARGET=16.5 \
             -DBUILD_PLATFORM=iOS \
-            -DCMAKE_TOOLCHAIN_FILE=cmake/ios.toolchain.cmake
+            -DCMAKE_TOOLCHAIN_FILE=ios.toolchain.cmake
 
       - name: Upload iOS build artifacts
         uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: ios-${{ matrix.arch }}-build
+          name: ios-${{ matrix.target }}-${{ matrix.arch }}-build
           path: |
-            build-ios-${{ matrix.arch }}/*.a
+            build-ios-${{ matrix.arch }}/${{ env.BUILD_TYPE }}-${{ matrix.target }}/slark.framework
+          if-no-files-found: error
           retention-days: 7
 
   # ============================================================================
@@ -171,6 +167,20 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install Android toolchain
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager \
+            "platforms;android-29" \
+            "build-tools;35.0.0" \
+            "ndk;27.0.12077973" \
+            "cmake;3.22.1"
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME}}"
+          ndk_root="${sdk_root}/ndk/27.0.12077973"
+          test -f "${ndk_root}/build/cmake/android.toolchain.cmake"
+          echo "ANDROID_NDK_ROOT=${ndk_root}" >> "${GITHUB_ENV}"
+
       - name: Cache OpenSSL source
         id: cache-openssl-source
         uses: actions/cache@v4
@@ -194,7 +204,8 @@ jobs:
             -DANDROID_PLATFORM=android-29 \
             -DANDROID_STL=c++_shared \
             -DBUILD_PLATFORM=Android \
-            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake
+            -DDISABLE_TEST=ON \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake"
 
       - name: Build for Android
         run: cmake --build build-android-${{ matrix.abi }} --config ${{ env.BUILD_TYPE }} -j $(sysctl -n hw.ncpu)
@@ -205,7 +216,8 @@ jobs:
         with:
           name: android-${{ matrix.abi }}-build
           path: |
-            build-android-${{ matrix.abi }}/*.a
+            build-android-${{ matrix.abi }}/**/*.so
+          if-no-files-found: error
           retention-days: 7
 
   # ============================================================================
