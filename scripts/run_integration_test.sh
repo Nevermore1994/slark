@@ -69,14 +69,15 @@ collect_instrumentation() {
 # ─── iOS: gtest binary (test/iOS + ios.toolchain.cmake), simctl install + launch ───
 run_ios() {
     local BUILD_DIR="${ROOT_DIR}/cmake-build-Debug/iOSTest"
-    local DEVICE_NAME="${1:-iPhone 17 Pro}"
+    local DEVICE_NAME="${1:-${SLARK_IOS_SIMULATOR_DEVICE:-}}"
     shift || true
     local BUNDLE_ID="com.slark.PlayerMediaIntegrationTest"
 
-    if [ ! -f "${BUILD_DIR}/CMakeCache.txt" ]; then
+    if [ ! -f "${BUILD_DIR}/CMakeCache.txt" ] || \
+       ! grep -q '^PLATFORM:STRING=SIMULATORARM64$' "${BUILD_DIR}/CMakeCache.txt"; then
         cmake -B "${BUILD_DIR}" -G Xcode \
             -DCMAKE_TOOLCHAIN_FILE="${ROOT_DIR}/ios.toolchain.cmake" \
-            -DPLATFORM=OS64 -DDEPLOYMENT_TARGET=16.5 -DENABLE_BITCODE=FALSE \
+            -DPLATFORM=SIMULATORARM64 -DDEPLOYMENT_TARGET=16.5 -DENABLE_BITCODE=FALSE \
             -DCMAKE_BUILD_TYPE=Debug "${ROOT_DIR}/test/iOS"
     fi
 
@@ -96,11 +97,28 @@ run_ios() {
     /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string ${BUNDLE_ID}" "${APP}/Info.plist"
 
     local UDID
-    UDID=$(xcrun simctl list devices available | grep -E "${DEVICE_NAME} \(" | grep -oE '[0-9A-F-]{36}' | head -1)
-    if [ -z "${UDID}" ]; then
-        echo "simulator not found: ${DEVICE_NAME}"
+    local device_info
+    device_info=$(xcrun simctl list devices available | awk -v requested="${DEVICE_NAME}" '
+        /^[[:space:]]+iPhone / {
+            line = $0
+            if (match(line, /\([0-9A-F-]+\)/)) {
+                udid = substr(line, RSTART + 1, RLENGTH - 2)
+                name = line
+                sub(/^[[:space:]]+/, "", name)
+                sub(/ \([0-9A-F-]+\).*/, "", name)
+                if (requested == "" || name == requested) {
+                    print name "	" udid
+                    exit
+                }
+            }
+        }')
+    if [ -z "${device_info}" ]; then
+        echo "iOS simulator not found: ${DEVICE_NAME:-any iPhone}"
+        xcrun simctl list devices available
         exit 1
     fi
+    DEVICE_NAME="${device_info%%$'	'*}"
+    UDID="${device_info##*$'	'}"
     xcrun simctl boot "${UDID}" 2>/dev/null || true
     xcrun simctl bootstatus "${UDID}" -b >/dev/null
 
@@ -113,10 +131,15 @@ run_ios() {
     SIMCTL_CHILD_SLARK_TEST_MEDIA_DIR="${ROOT_DIR}/test_sample" \
         xcrun simctl launch --console "${UDID}" "${BUNDLE_ID}" --gtest_color=no "$@" \
         >"${OUTPUT_DIR}/ios_test.log" 2>&1
+    local ios_exit=$?
     set -e
 
     echo -e "${CYAN}[iOS] Test results:${NC}"
     collect_gtest "iOS" "${OUTPUT_DIR}/ios_test.log"
+    if [ "${ios_exit}" -ne 0 ] || [ "${FAIL_COUNT}" -gt 0 ]; then
+        echo -e "${RED}[iOS] Test run failed (exit=${ios_exit}), see ${OUTPUT_DIR}/ios_test.log${NC}"
+        exit 1
+    fi
 }
 
 # ─── Android: instrumentation tests (gradle build + adb on emulator only) ────────
@@ -124,7 +147,7 @@ run_ios() {
 # we only assemble APKs via gradle, then install + am instrument on the emulator
 # explicitly so tests always run on the emulator.
 run_android() {
-    local SDK="${ANDROID_HOME:-${HOME}/Library/Android/sdk}"
+    local SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-${HOME}/Library/Android/sdk}}"
     local ADB="${SDK}/platform-tools/adb"
     local EMULATOR="${SDK}/emulator/emulator"
     local AVD_NAME="slark_test"
@@ -142,7 +165,16 @@ run_android() {
         "${EMULATOR}" -avd "${AVD_NAME}" -no-window -gpu swiftshader_indirect -no-snapshot \
             >/tmp/slark_emulator.log 2>&1 &
         "${ADB}" wait-for-device
-        serial="$("${ADB}" devices | awk '$1 ~ /^emulator-[0-9]+/ && $2 == "device" {print $1; exit}')"
+        for _ in $(seq 1 30); do
+            serial="$("${ADB}" devices | awk '$1 ~ /^emulator-[0-9]+/ && $2 == "device" {print $1; exit}')"
+            [ -n "${serial}" ] && break
+            sleep 1
+        done
+    fi
+    if [ -z "${serial}" ]; then
+        echo "emulator did not become available to adb"
+        cat /tmp/slark_emulator.log 2>/dev/null || true
+        exit 1
     fi
 
     local booted=0
@@ -190,10 +222,15 @@ run_android() {
 
     echo -e "${CYAN}[Android] Test results:${NC}"
     collect_instrumentation "Android" "${OUTPUT_DIR}/android_test.log"
+    local instrumentation_crashed=0
+    if grep -Eq 'Process crashed|INSTRUMENTATION_RESULT: shortMsg=' "${OUTPUT_DIR}/android_test.log"; then
+        instrumentation_crashed=1
+        echo -e "${RED}[Android] Instrumentation process crashed${NC}"
+    fi
 
-    # am instrument exited non-zero with no parsed failures -> abnormal run
-    if [ "${android_exit}" -ne 0 ] && [ "${FAIL_COUNT}" -eq 0 ]; then
-        echo -e "${RED}[Android] Run failed (exit=${android_exit}), see ${OUTPUT_DIR}/android_test.log${NC}"
+    if [ "${android_exit}" -ne 0 ] || [ "${instrumentation_crashed}" -ne 0 ] || [ "${FAIL_COUNT}" -gt 0 ]; then
+        echo -e "${RED}[Android] Test run failed (exit=${android_exit}), see ${OUTPUT_DIR}/android_test.log${NC}"
+        exit 1
     fi
 }
 

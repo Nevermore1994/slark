@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Cache OpenSSL source
         id: cache-openssl-source
@@ -61,6 +63,51 @@ jobs:
             build/*.dylib
           retention-days: 7
 
+  linux-build:
+    name: Linux Build and Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev
+
+      - name: Cache FetchContent
+        uses: actions/cache@v4
+        with:
+          path: .fetchcontent_cache
+          key: fetchcontent-linux-${{ hashFiles('cmake/gtest.cmake') }}
+
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build-linux \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DBUILD_PLATFORM=PC \
+            -DDISABLE_TEST=OFF \
+            -DDISABLE_HTTP=OFF
+
+      - name: Build and test
+        run: |
+          cmake --build build-linux --config ${{ env.BUILD_TYPE }} --parallel "$(nproc)"
+          ctest --test-dir build-linux --output-on-failure \
+            --output-junit test-results.xml
+
+      - name: Upload Linux test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-test-results
+          path: build-linux/test-results.xml
+          if-no-files-found: warn
+          retention-days: 7
+
   # ============================================================================
   # iOS Build
   # ============================================================================
@@ -86,6 +133,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Cache OpenSSL source
         id: cache-openssl-source
@@ -99,7 +148,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build-ios-${{ matrix.arch }}/deps/openssl
-          key: openssl-ios-${{ matrix.arch }}-${{ env.OPENSSL_VERSION }}-${{ hashFiles('cmake/OpenSSL.cmake') }}
+          key: openssl-ios-${{ matrix.target }}-${{ matrix.arch }}-${{ env.OPENSSL_VERSION }}-${{ hashFiles('cmake/OpenSSL.cmake') }}
 
       - name: Verify iOS toolchain
         run: test -f ios.toolchain.cmake
@@ -157,6 +206,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -220,13 +271,98 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  ios-test:
+    name: iOS Simulator Tests
+    runs-on: macos-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Verify Xcode and simulator tools
+        run: |
+          xcodebuild -version
+          xcrun simctl list runtimes
+
+      - name: Run iOS simulator tests
+        run: ./scripts/run_integration_test.sh ios
+
+      - name: Upload iOS test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-test-results
+          path: test/output/**/ios_*.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  android-test:
+    name: Android Instrumentation Tests
+    runs-on: macos-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android test environment
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          case "$(uname -m)" in
+            arm64) emulator_abi=arm64-v8a ;;
+            x86_64) emulator_abi=x86_64 ;;
+            *) echo "Unsupported runner architecture: $(uname -m)"; exit 1 ;;
+          esac
+          system_image="system-images;android-35;google_apis;${emulator_abi}"
+          sdkmanager \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "platform-tools" \
+            "emulator" \
+            "cmake;3.22.1" \
+            "ndk;27.0.12077973" \
+            "ndk;29.0.13113456" \
+            "${system_image}"
+          echo no | avdmanager create avd \
+            --force \
+            --name slark_test \
+            --package "${system_image}" \
+            --device pixel_2
+
+      - name: Run Android instrumentation tests
+        run: ./scripts/run_integration_test.sh android
+
+      - name: Upload Android test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-results
+          path: test/output/**/android_*.log
+          if-no-files-found: warn
+          retention-days: 7
+
   # ============================================================================
   # Summary Job
   # ============================================================================
   build-summary:
     name: Build Summary
     runs-on: ubuntu-latest
-    needs: [macos-build, ios-build, android-build]
+    needs: [macos-build, linux-build, ios-build, android-build, ios-test, android-test]
     if: always()
     
     steps:
@@ -236,13 +372,19 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| macOS | ${{ needs.macos-build.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| iOS (arm64) | ${{ needs.ios-build.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Android (arm64-v8a) | ${{ needs.android-build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| macOS build/test | ${{ needs.macos-build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Linux build/test | ${{ needs.linux-build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| iOS build | ${{ needs.ios-build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| iOS simulator test | ${{ needs.ios-test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Android build | ${{ needs.android-build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Android instrumentation test | ${{ needs.android-test.result }} |" >> $GITHUB_STEP_SUMMARY
           
           if [ "${{ needs.macos-build.result }}" != "success" ] || \
+             [ "${{ needs.linux-build.result }}" != "success" ] || \
              [ "${{ needs.ios-build.result }}" != "success" ] || \
-             [ "${{ needs.android-build.result }}" != "success" ]; then
+             [ "${{ needs.ios-test.result }}" != "success" ] || \
+             [ "${{ needs.android-build.result }}" != "success" ] || \
+             [ "${{ needs.android-test.result }}" != "success" ]; then
             echo ""
             echo "❌ Some builds failed. Please check the logs."
             exit 1

@@ -278,16 +278,28 @@ build_openssl_multi_arch() {
 
         local sdk_path
         sdk_path=$(xcrun --show-sdk-path --sdk "$sdk_type")
+        local clang_path
+        clang_path=$(xcrun --find --sdk "$sdk_type" clang)
         local target_flag="${arch}-apple-ios${ios_deployment_target}"
         [[ "$sdk_type" == "iphonesimulator" ]] && target_flag="${target_flag}-simulator"
-        local cflags="-target ${target_flag} -isysroot ${sdk_path}"
+        local cflags="-arch ${arch} -target ${target_flag} -isysroot ${sdk_path} -fno-common"
+        local ios_config="${build_dir}/Configurations/15-ios.conf"
+
+        if [[ ! -f "$ios_config" ]]; then
+            print_error "OpenSSL iOS 配置不存在: $ios_config"
+            exit 1
+        fi
+        if ! grep -q -- '-mios-version-min=7\.0\.0' "$ios_config"; then
+            print_error "未找到 OpenSSL 3.0.13 的旧 iOS 部署参数: $ios_config"
+            exit 1
+        fi
+        perl -0pi -e 's/ -mios-version-min=7\.0\.0//g' "$ios_config"
 
         pushd "$build_dir" > /dev/null
-        CC=clang CFLAGS="$cflags" \
+        CC="$clang_path" CFLAGS="$cflags" LDFLAGS="-isysroot ${sdk_path}" \
         ./Configure "$openssl_target" \
             --prefix="$install_dir" \
             --openssldir="$install_dir/ssl" \
-            --sysroot="$sdk_path" \
             no-shared no-tests no-legacy no-module || { print_error "OpenSSL configure failed: ${arch}/${sdk_type}"; exit 1; }
 
         make -j"$ncpu" build_libs || { print_error "OpenSSL build failed: ${arch}/${sdk_type}"; exit 1; }

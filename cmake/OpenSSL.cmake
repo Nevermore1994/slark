@@ -180,13 +180,51 @@ function(_openssl_build_ios OPENSSL_SOURCE_DIR)
             set(_target_triple "${IOS_ARCH}-apple-ios${IOS_DEPLOYMENT_TARGET}")
         endif()
 
-        # Configure for this architecture
         execute_process(
-            COMMAND sh -c
-            "./Configure ${OPENSSL_TARGET} \
-                 --prefix=${OPENSSL_ARCH_INSTALL_DIR} \
-                 --openssldir=${OPENSSL_ARCH_INSTALL_DIR}/ssl \
-                 no-shared no-tests no-legacy no-module"
+            COMMAND xcrun --sdk "${SDK_NAME}" --show-sdk-path
+            OUTPUT_VARIABLE IOS_SDK_PATH
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE SDK_RESULT
+        )
+        execute_process(
+            COMMAND xcrun --sdk "${SDK_NAME}" --find clang
+            OUTPUT_VARIABLE IOS_CLANG
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE CLANG_RESULT
+        )
+
+        if(NOT SDK_RESULT EQUAL 0 OR NOT EXISTS "${IOS_SDK_PATH}")
+            message(FATAL_ERROR "Unable to locate iOS SDK: ${SDK_NAME}")
+        endif()
+        if(NOT CLANG_RESULT EQUAL 0 OR NOT EXISTS "${IOS_CLANG}")
+            message(FATAL_ERROR "Unable to locate clang for iOS SDK: ${SDK_NAME}")
+        endif()
+
+        # OpenSSL 3.0.13 的 ios64-xcrun 带有过时的 iOS 7.0 部署参数。
+        # 只修改独立构建副本，避免污染缓存中的原始源码。
+        set(OPENSSL_IOS_CONFIG_FILE "${OPENSSL_BUILD_DIR}/Configurations/15-ios.conf")
+        if(NOT EXISTS "${OPENSSL_IOS_CONFIG_FILE}")
+            message(FATAL_ERROR "OpenSSL iOS configuration not found: ${OPENSSL_IOS_CONFIG_FILE}")
+        endif()
+        file(READ "${OPENSSL_IOS_CONFIG_FILE}" OPENSSL_IOS_CONFIG)
+        string(REPLACE " -mios-version-min=7.0.0" "" OPENSSL_IOS_CONFIG_FIXED
+            "${OPENSSL_IOS_CONFIG}")
+        if("${OPENSSL_IOS_CONFIG_FIXED}" STREQUAL "${OPENSSL_IOS_CONFIG}")
+            message(FATAL_ERROR "Expected legacy iOS deployment flag not found in OpenSSL configuration")
+        endif()
+        file(WRITE "${OPENSSL_IOS_CONFIG_FILE}" "${OPENSSL_IOS_CONFIG_FIXED}")
+
+        # 在 Configure 阶段固定编译器、target 和 SDK，避免 make 阶段覆盖掉 -isysroot。
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E env
+                "CC=${IOS_CLANG}"
+                "CFLAGS=-arch ${IOS_ARCH} -target ${_target_triple} -isysroot ${IOS_SDK_PATH} -fno-common"
+                "LDFLAGS=-isysroot ${IOS_SDK_PATH}"
+                "./Configure"
+                "${OPENSSL_TARGET}"
+                "--prefix=${OPENSSL_ARCH_INSTALL_DIR}"
+                "--openssldir=${OPENSSL_ARCH_INSTALL_DIR}/ssl"
+                no-shared no-tests no-legacy no-module
             WORKING_DIRECTORY "${OPENSSL_BUILD_DIR}"
             RESULT_VARIABLE CONFIGURE_RESULT
         )
@@ -198,10 +236,9 @@ function(_openssl_build_ios OPENSSL_SOURCE_DIR)
         include(ProcessorCount)
         ProcessorCount(NPROC)
 
-        # Build only libraries
-        # 通过 CFLAGS 追加 -target 覆盖 OpenSSL xcrun wrapper 的默认设置，确保模拟器使用正确的 ABI
+        # Build only libraries; all platform flags come from Configure.
         execute_process(
-            COMMAND make -j${NPROC} build_libs "CFLAGS=-target ${_target_triple}"
+            COMMAND make -j${NPROC} build_libs
             WORKING_DIRECTORY "${OPENSSL_BUILD_DIR}"
             RESULT_VARIABLE BUILD_RESULT
         )
