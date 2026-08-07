@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstdint>
 #include <expected>
+#include <memory>
 #include <string>
 #include <unordered_map>
 
@@ -14,6 +15,8 @@
 #include "Error.h"
 
 namespace slark::http {
+
+class Http1Session;
 
 constexpr int32_t kInvalid = -1;
 
@@ -37,6 +40,11 @@ enum class HttpMethodType : uint8_t {
     Delete = 5,
     Options = 6,
     Head = 7,
+};
+
+enum class HttpConnectionMode : uint8_t {
+    Close,
+    KeepAlive,
 };
 
 enum class HttpStatusCode : uint16_t {
@@ -187,6 +195,8 @@ struct RequestInfo {
     std::chrono::milliseconds readTimeout{std::chrono::seconds(30)};
     std::chrono::milliseconds readIdleTimeout{std::chrono::seconds(30)};
     std::chrono::milliseconds writeTimeout{std::chrono::seconds(30)};
+    HttpConnectionMode connectionMode = HttpConnectionMode::Close;
+    std::shared_ptr<Http1Session> session;
     uint64_t maxResponseBodySize = kDefaultMaxResponseBodySize;
     std::string reqId;
     std::string tag;

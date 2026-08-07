@@ -6,6 +6,7 @@
 #include "Clock.h"
 #include "ConnectionFactory.h"
 #include "CoroutineScheduler.hpp"
+#include "Http1Session.h"
 #include "HttpResponseParser.h"
 #include "HttpUtil.hpp"
 #include "Log.hpp"
@@ -315,7 +316,7 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::processEvents(RequestInfo reque
                 continue;
             }
 
-            if (event->type == HttpResponseEventType::Headers) {
+            if (event->type == HttpResponseEventType::Headers && !redirected) {
                 HttpResponse headerResponse;
                 headerResponse.statusCode = event->header.httpStatusCode;
                 headerResponse.headers = event->header.headers;
@@ -332,9 +333,17 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::processEvents(RequestInfo reque
                         currentInfo = std::move(*redirectRequest);
                         ++redirectCount;
                         redirected = true;
-                        break;
                     }
                 }
+            }
+
+            const bool terminal = event->type == HttpResponseEventType::Completed ||
+                                  event->type == HttpResponseEventType::Error;
+            if (redirected) {
+                if (terminal) {
+                    break;
+                }
+                continue;
             }
 
             if (connectedEvent.has_value()) {
@@ -342,8 +351,6 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::processEvents(RequestInfo reque
                 connectedEvent.reset();
             }
 
-            const bool terminal = event->type == HttpResponseEventType::Completed ||
-                                  event->type == HttpResponseEventType::Error;
             co_yield std::move(*event);
             if (terminal) {
                 co_return;
@@ -381,6 +388,29 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(
         co_yield HttpResponseEvent::makeError(
             ErrorInfo{slark::Error::InvalidArgument}, std::move(perf));
         co_return;
+    }
+
+    if (requestInfo.connectionMode == HttpConnectionMode::KeepAlive) {
+        if (!requestInfo.session) {
+            co_yield HttpResponseEvent::makeError(
+                ErrorInfo{slark::Error::InvalidOperation}, std::move(perf));
+            co_return;
+        }
+        auto sessionEvents = requestInfo.session->executeEvents(std::move(requestInfo), token);
+        while (true) {
+            auto event = co_await sessionEvents.next();
+            if (!event.has_value()) {
+                co_yield HttpResponseEvent::makeError(
+                    ErrorInfo{slark::Error::ConnectionReset}, std::move(perf));
+                co_return;
+            }
+            const bool terminal = event->type == HttpResponseEventType::Completed ||
+                                  event->type == HttpResponseEventType::Error;
+            co_yield std::move(*event);
+            if (terminal) {
+                co_return;
+            }
+        }
     }
 
     auto connectionResult = co_await openRequestConnection(requestInfo, *parsed.url, perf, token);

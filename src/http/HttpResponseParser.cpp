@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <charconv>
 #include <cctype>
+#include <utility>
 
 #include "DataView.hpp"
 #include "Error.h"
@@ -151,11 +152,11 @@ void HttpResponseParser::feed(const Byte* data, size_t size) {
     }
 }
 
-void HttpResponseParser::reset() noexcept {
+void HttpResponseParser::resetForNextResponse() noexcept {
+    compact();
     state_ = State::StatusLine;
-    buffer_.clear();
-    readPos_ = 0;
     headers_.clear();
+    trailers_.clear();
     statusCode_ = HttpStatusCode::Unknown;
     isHttp10_ = false;
     shouldClose_ = false;
@@ -170,7 +171,21 @@ void HttpResponseParser::reset() noexcept {
     chunkBytesRead_ = 0;
     expectingChunkDataCrlf_ = false;
     trailerBytesRead_ = 0;
+    bodyUsesEof_ = false;
+    endedByEof_ = false;
     lastLoggedBodyReceived_ = 0;
+}
+
+std::string HttpResponseParser::takeUnreadData() noexcept {
+    compact();
+    readPos_ = 0;
+    return std::exchange(buffer_, {});
+}
+
+void HttpResponseParser::reset() noexcept {
+    buffer_.clear();
+    readPos_ = 0;
+    resetForNextResponse();
 }
 
 std::string_view HttpResponseParser::stateName(State s) noexcept {
@@ -315,6 +330,10 @@ void HttpResponseParser::determineBodyMode() {
         state_ = State::Completed;
     } else {
         state_ = State::BodyFixed;
+        if (contentLength_ < 0) {
+            bodyUsesEof_ = true;
+            shouldClose_ = true;
+        }
         LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength={} "
              "shouldClose={} -> BodyFixed",
              headers_.size(), contentLength_, shouldClose_);

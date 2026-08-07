@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
 #include "Data.h"
@@ -69,6 +70,7 @@ class HttpResponseParser {
 
         // Only a body with unknown length uses EOF as its end marker
         if (state_ == State::BodyFixed && contentLength_ < 0) {
+            endedByEof_ = true;
             complete();
         } else if (state_ == State::StatusLine || state_ == State::Headers) {
             // Connection dropped before headers were fully received
@@ -107,13 +109,38 @@ class HttpResponseParser {
         return shouldClose_;
     }
 
+    [[nodiscard]] bool canReuseConnection() const noexcept {
+        return state_ == State::Completed && !isHttp10_ && !shouldClose_ && !bodyUsesEof_ &&
+               statusCode_ != HttpStatusCode::SwitchingProtocols;
+    }
+
+    [[nodiscard]] HttpStatusCode statusCode() const noexcept {
+        return statusCode_;
+    }
+
     [[nodiscard]] bool isHttp10() const noexcept {
         return isHttp10_;
     }
 
     [[nodiscard]] bool isBodyUnknownLength() const noexcept {
-        return state_ == State::BodyFixed && contentLength_ < 0;
+        return bodyUsesEof_;
     }
+
+    [[nodiscard]] bool endedByEof() const noexcept {
+        return endedByEof_;
+    }
+
+    void resetForNextResponse() noexcept;
+
+    [[nodiscard]] std::string_view unreadData() const noexcept {
+        return std::string_view(buffer_).substr(readPos_);
+    }
+
+    [[nodiscard]] bool hasUnreadData() const noexcept {
+        return readPos_ < buffer_.size();
+    }
+
+    [[nodiscard]] std::string takeUnreadData() noexcept;
 
     [[nodiscard]] const std::unordered_map<std::string, std::string>& headers() const noexcept {
         return headers_;
@@ -208,6 +235,8 @@ class HttpResponseParser {
     int64_t chunkBytesRead_ = 0;
     bool expectingChunkDataCrlf_ = false;
     size_t trailerBytesRead_ = 0;
+    bool bodyUsesEof_ = false;
+    bool endedByEof_ = false;
 
     RequestPerf* perf_ = nullptr;
 
