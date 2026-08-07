@@ -4,6 +4,7 @@
 #pragma once
 
 #include <chrono>
+#include <expected>
 #include <memory>
 #include <string>
 
@@ -69,9 +70,11 @@ class PooledConnection {
     std::unique_ptr<IAsyncSocket> socket_;
 };
 
+using ConnectionResult = std::expected<std::unique_ptr<PooledConnection>, ErrorInfo>;
+
 // Establish a new connection (DNS + TCP + optional TLS). Cancellation at any stage
 // terminates immediately and the connection is not recycled.
-Task<std::unique_ptr<PooledConnection>> co_acquire_connection(
+Task<ConnectionResult> co_acquire_connection(
     std::string host,
     uint16_t port,
     std::string scheme,

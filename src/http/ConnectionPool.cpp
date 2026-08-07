@@ -13,7 +13,7 @@ static constexpr std::chrono::milliseconds kDefaultTlsTimeout{std::chrono::secon
 
 namespace {
 
-Task<std::unique_ptr<AsyncSocket>> resolveAndConnect(
+Task<std::expected<std::unique_ptr<AsyncSocket>, ErrorInfo>> resolveAndConnect(
     const std::string& host,
     uint16_t port,
     IPVersion ipVersion,
@@ -25,65 +25,72 @@ Task<std::unique_ptr<AsyncSocket>> resolveAndConnect(
     auto addrInfo =
         co_await DnsResolver::instance().resolveAsync(host, std::to_string(port), ipVersion, token);
     if (token.isCancelled()) {
-        co_return nullptr;
+        co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
     }
     if (!addrInfo) {
         LogW("[co_acquire_connection] DNS resolution failed for {}", host);
         if (perf) {
             perf->connection.connectResult = slark::Error::DnsResolveFailed;
         }
-        co_return nullptr;
+        co_return std::unexpected(ErrorInfo{slark::Error::DnsResolveFailed});
     }
 
     const auto timeout = connectTimeout.count() > 0 ? connectTimeout : kDefaultConnectTimeout;
     Time::Deadline deadline(timeout);
-    bool timedOut = false;
-    bool failed = false;
     bool policyRejected = false;
+    bool attemptedConnection = false;
+    ErrorInfo lastError{slark::Error::ConnectionFailed};
 
     for (const auto* candidate = addrInfo.get(); candidate; candidate = candidate->ai_next) {
         if (token.isCancelled()) {
-            co_return nullptr;
+            co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
         }
+
         const auto remaining = deadline.remaining();
         if (remaining <= std::chrono::milliseconds(0)) {
-            timedOut = true;
-            break;
+            if (perf) {
+                perf->transport.timeoutSource = TimeoutSource::Connect;
+                perf->connection.connectResult = slark::Error::ConnectionTimeout;
+            }
+            co_return std::unexpected(ErrorInfo{slark::Error::ConnectionTimeout});
         }
 
         auto candidateAddress = makeConnectAddress(candidate);
         if (!candidateAddress) {
-            failed = true;
-            LogW("[co_acquire_connection] Invalid DNS address candidate for {}", host);
+            LogW("[co_acquire_connection] invalid address candidate for {}", host);
             continue;
         }
         if (addressPolicy == NetworkAddressPolicy::PublicOnly &&
             !isPublicConnectAddress(*candidateAddress)) {
-            LogW("[co_acquire_connection] rejected non-public address for {}", host);
             policyRejected = true;
+            LogW("[co_acquire_connection] rejected non-public address for {}", host);
             continue;
         }
 
+        attemptedConnection = true;
         auto socket = std::make_unique<AsyncSocket>(ipVersion);
         socket->setPerf(perf);
         const auto connectStart = Time::nowTimeStamp();
         try {
             co_await socket->asyncConnect(std::move(*candidateAddress), remaining, token);
         } catch (const CancelledException&) {
-            LogW("[co_acquire_connection] Connect cancelled for {}", host);
-            co_return nullptr;
+            LogW("[co_acquire_connection] connect cancelled for {}", host);
+            co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
         } catch (const TimeoutException&) {
-            LogW("[co_acquire_connection] Connect timeout for {}", host);
-            timedOut = true;
-            break;
+            LogW("[co_acquire_connection] connect timeout for {}", host);
+            if (perf) {
+                perf->transport.timeoutSource = TimeoutSource::Connect;
+                perf->connection.connectResult = slark::Error::ConnectionTimeout;
+            }
+            co_return std::unexpected(ErrorInfo{slark::Error::ConnectionTimeout});
         } catch (const std::exception& e) {
-            failed = true;
-            LogW("[co_acquire_connection] Address candidate failed: {} {}", host, e.what());
+            lastError = ErrorInfo{slark::Error::ConnectionFailed};
+            LogW("[co_acquire_connection] address candidate failed: {} {}", host, e.what());
             continue;
         }
 
         if (token.isCancelled()) {
-            co_return nullptr;
+            co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
         }
         connectMs = (Time::nowTimeStamp() - connectStart).toMilliSeconds();
         if (perf) {
@@ -95,27 +102,23 @@ Task<std::unique_ptr<AsyncSocket>> resolveAndConnect(
         co_return socket;
     }
 
-    if (perf) {
-        if (policyRejected && !failed && !timedOut) {
-            perf->connection.connectResult = slark::Error::HttpRedirectError;
-        } else if (timedOut || deadline.isExpired()) {
-            perf->transport.timeoutSource = TimeoutSource::Connect;
-            perf->connection.connectResult = slark::Error::ConnectionTimeout;
-        } else {
-            perf->connection.connectResult = slark::Error::ConnectionFailed;
-        }
+    if (policyRejected && !attemptedConnection) {
+        lastError = ErrorInfo{slark::Error::HttpRedirectError};
     }
-    if (failed && !timedOut) {
+    if (perf) {
+        perf->connection.connectResult = lastError.retCode;
+    }
+    if (attemptedConnection && lastError.retCode == slark::Error::ConnectionFailed) {
         DnsResolver::instance().invalidate(host);
     }
-    co_return nullptr;
+    co_return std::unexpected(lastError);
 }
 
-Task<bool> performTlsHandshake(AsyncSocket& socket,
-                               const std::string& host,
-                               std::chrono::milliseconds tlsHandshakeTimeout,
-                               RequestPerf* perf,
-                               CancellationToken& token) {
+Task<Error> performTlsHandshake(AsyncSocket& socket,
+                                const std::string& host,
+                                std::chrono::milliseconds tlsHandshakeTimeout,
+                                RequestPerf* perf,
+                                CancellationToken& token) {
 #if ENABLE_HTTPS
     auto tlsTransport = std::make_unique<TLSTransport>(socket.getFd(), host);
     auto tlsTimeout = tlsHandshakeTimeout.count() > 0 ? tlsHandshakeTimeout : kDefaultTlsTimeout;
@@ -127,7 +130,7 @@ Task<bool> performTlsHandshake(AsyncSocket& socket,
         perf->connection.tlsHandshakeTimeMs = (tlsEnd - tlsStart).toMilliSeconds().count();
     }
     if (tlsResult == slark::Error::Cancelled || token.isCancelled()) {
-        co_return false;
+        co_return slark::Error::Cancelled;
     }
     if (tlsResult != slark::Error::Success) {
         LogW("[co_acquire_connection] TLS handshake failed: host={} error={}", host,
@@ -138,18 +141,18 @@ Task<bool> performTlsHandshake(AsyncSocket& socket,
                 perf->transport.timeoutSource = TimeoutSource::TlsHandshake;
             }
         }
-        co_return false;
+        co_return tlsResult;
     }
     socket.setTransport(std::move(tlsTransport));
     LogI("[co_acquire_connection] TLS handshake ok: host={} elapsedMs={}", host,
          (tlsEnd - tlsStart).toMilliSeconds().count());
 #endif
-    co_return true;
+    co_return slark::Error::Success;
 }
 
 }  // namespace
 
-Task<std::unique_ptr<PooledConnection>> co_acquire_connection(
+Task<ConnectionResult> co_acquire_connection(
     std::string host,
     uint16_t port,
     std::string scheme,
@@ -164,16 +167,25 @@ Task<std::unique_ptr<PooledConnection>> co_acquire_connection(
     }
 
     std::chrono::milliseconds connectMs{0};
-    auto socket = co_await resolveAndConnect(host, port, ipVersion, addressPolicy, connectTimeout,
-                                             connectMs, perf, token);
-    if (!socket) {
-        co_return nullptr;
+    auto socketResult = co_await resolveAndConnect(host, port, ipVersion, addressPolicy,
+                                                    connectTimeout, connectMs, perf, token);
+    if (!socketResult) {
+        co_return std::unexpected(socketResult.error());
     }
+    auto socket = std::move(*socketResult);
 
 #if ENABLE_HTTPS
     if (scheme == "https") {
-        if (!co_await performTlsHandshake(*socket, host, tlsHandshakeTimeout, perf, token)) {
-            co_return nullptr;
+        const auto tlsError = co_await performTlsHandshake(*socket, host, tlsHandshakeTimeout, perf,
+                                                           token);
+        if (tlsError != slark::Error::Success) {
+            if (perf) {
+                perf->connection.connectResult = tlsError;
+                if (tlsError == slark::Error::ConnectionTimeout) {
+                    perf->transport.timeoutSource = TimeoutSource::TlsHandshake;
+                }
+            }
+            co_return std::unexpected(ErrorInfo{tlsError});
         }
     }
 #endif

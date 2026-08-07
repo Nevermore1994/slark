@@ -36,27 +36,6 @@ Error mapLegacyErrorToUnified(Error error) noexcept {
     }
 }
 
-using ConnectionResult = std::expected<std::unique_ptr<PooledConnection>, ErrorInfo>;
-
-ErrorInfo classifyConnectionError(const RequestPerf& perf) noexcept {
-    switch (perf.connection.connectResult) {
-        case slark::Error::HttpSslError:
-        case slark::Error::HttpSslHandshakeFailed:
-        case slark::Error::DnsResolveFailed:
-        case slark::Error::HttpRedirectError:
-            return ErrorInfo{perf.connection.connectResult};
-        default:
-            break;
-    }
-
-    if (perf.transport.timeoutSource == TimeoutSource::Connect ||
-        perf.transport.timeoutSource == TimeoutSource::TlsHandshake ||
-        perf.connection.connectResult == slark::Error::ConnectionTimeout) {
-        return ErrorInfo{slark::Error::ConnectionTimeout};
-    }
-    return ErrorInfo{slark::Error::ConnectionFailed};
-}
-
 Task<ConnectionResult> acquireConnection(const RequestInfo& requestInfo,
                                           const Url& url,
                                           RequestPerf& perf,
@@ -65,22 +44,21 @@ Task<ConnectionResult> acquireConnection(const RequestInfo& requestInfo,
         co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
     }
 
-    auto conn = co_await co_acquire_connection(
+    auto result = co_await co_acquire_connection(
         url.host, url.portNumber(), url.scheme, requestInfo.ipVersion,
         requestInfo.isRedirectTarget ? requestInfo.networkAddressPolicy
                                      : NetworkAddressPolicy::AllowAny,
         requestInfo.connectTimeout, requestInfo.tlsHandshakeTimeout, &perf, token);
-    if (!conn || !conn->isValid()) {
-        if (token.isCancelled()) {
-            co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
-        }
-        const auto error = classifyConnectionError(perf);
-        LogE("[HttpProcessor::acquireConnection] failed: error={} timeoutSource={} url={}",
-             static_cast<int>(error.retCode), static_cast<int>(perf.transport.timeoutSource),
-             requestInfo.url);
-        co_return std::unexpected(error);
+    if (!result) {
+        LogE("[HttpProcessor::acquireConnection] failed: error={} url={}",
+             static_cast<int>(result.error().retCode), requestInfo.url);
+        co_return std::unexpected(result.error());
     }
 
+    auto conn = std::move(*result);
+    if (!conn || !conn->isValid()) {
+        co_return std::unexpected(ErrorInfo{slark::Error::ConnectionFailed});
+    }
     conn->setPerf(&perf);
     co_return std::move(conn);
 }
