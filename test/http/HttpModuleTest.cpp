@@ -222,6 +222,18 @@ TEST(HttpUtilTest, BuildGetRequest) {
     EXPECT_THAT(request, ::testing::HasSubstr("User-Agent: TestAgent"));
 }
 
+TEST(HttpUtilTest, DefaultRequestConnectionIsClose) {
+    RequestInfo info;
+    info.url = "http://example.com/path";
+    info.methodType = HttpMethodType::Get;
+
+    const Url url(info.url);
+    const auto request = Util::buildRequestString(info, url);
+
+    EXPECT_THAT(request, ::testing::HasSubstr("Connection: close\r\n"));
+    EXPECT_THAT(request, ::testing::Not(::testing::HasSubstr("Connection: keep-alive\r\n")));
+}
+
 TEST(HttpUtilTest, BuildHeadRequest) {
     RequestInfo info;
     info.url = "http://example.com/path";

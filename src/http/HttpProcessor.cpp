@@ -86,8 +86,7 @@ Task<RequestSetup> setupConnectionAndSend(std::string_view tag,
     if (token.isCancelled()) {
         co_return RequestSetup{std::move(conn), ErrorInfo{slark::Error::Cancelled}};
     }
-    bool keepAlive = true;
-    auto requestStr = Util::buildRequestString(requestInfo, url, keepAlive);
+    const auto requestStr = Util::buildRequestString(requestInfo, url, false);
     auto sendResult = co_await conn->asyncSend(requestStr, requestInfo.writeTimeout, token);
     if (!sendResult) {
         if (token.isCancelled()) {
