@@ -36,27 +36,35 @@ Error mapLegacyErrorToUnified(Error error) noexcept {
     }
 }
 
-// 建立连接并发送请求头和请求体，供统一事件源使用。
-struct RequestSetup {
-    std::unique_ptr<PooledConnection> conn;
-    ErrorInfo error;
+using ConnectionResult = std::expected<std::unique_ptr<PooledConnection>, ErrorInfo>;
 
-    [[nodiscard]] bool hasError() const noexcept {
-        return error.retCode != slark::Error::Success;
+ErrorInfo classifyConnectionError(const RequestPerf& perf) noexcept {
+    switch (perf.connection.connectResult) {
+        case slark::Error::HttpSslError:
+        case slark::Error::HttpSslHandshakeFailed:
+        case slark::Error::DnsResolveFailed:
+        case slark::Error::HttpRedirectError:
+            return ErrorInfo{perf.connection.connectResult};
+        default:
+            break;
     }
-};
 
-Task<RequestSetup> setupConnectionAndSend(std::string_view tag,
-                                          const RequestInfo& requestInfo,
+    if (perf.transport.timeoutSource == TimeoutSource::Connect ||
+        perf.transport.timeoutSource == TimeoutSource::TlsHandshake ||
+        perf.connection.connectResult == slark::Error::ConnectionTimeout) {
+        return ErrorInfo{slark::Error::ConnectionTimeout};
+    }
+    return ErrorInfo{slark::Error::ConnectionFailed};
+}
+
+Task<ConnectionResult> acquireConnection(const RequestInfo& requestInfo,
                                           const Url& url,
                                           RequestPerf& perf,
                                           CancellationToken& token) {
     if (token.isCancelled()) {
-        co_return RequestSetup{nullptr, ErrorInfo{slark::Error::Cancelled}};
+        co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
     }
-    if (!Util::validateRequest(requestInfo, url)) {
-        co_return RequestSetup{nullptr, ErrorInfo{slark::Error::InvalidArgument}};
-    }
+
     auto conn = co_await co_acquire_connection(
         url.host, url.portNumber(), url.scheme, requestInfo.ipVersion,
         requestInfo.isRedirectTarget ? requestInfo.networkAddressPolicy
@@ -64,59 +72,55 @@ Task<RequestSetup> setupConnectionAndSend(std::string_view tag,
         requestInfo.connectTimeout, requestInfo.tlsHandshakeTimeout, &perf, token);
     if (!conn || !conn->isValid()) {
         if (token.isCancelled()) {
-            co_return RequestSetup{nullptr, ErrorInfo{slark::Error::Cancelled}};
+            co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
         }
-        LogE("[HttpProcessor::{}] connect failed: timeoutSource={} url={}", tag,
-             static_cast<int>(perf.transport.timeoutSource), requestInfo.url);
-        if (perf.connection.connectResult == slark::Error::HttpSslError ||
-            perf.connection.connectResult == slark::Error::HttpSslHandshakeFailed ||
-            perf.connection.connectResult == slark::Error::DnsResolveFailed ||
-            perf.connection.connectResult == slark::Error::HttpRedirectError) {
-            co_return RequestSetup{nullptr, ErrorInfo{perf.connection.connectResult}};
-        }
-        if (perf.transport.timeoutSource == TimeoutSource::Connect ||
-            perf.transport.timeoutSource == TimeoutSource::TlsHandshake ||
-            perf.connection.connectResult == slark::Error::ConnectionTimeout) {
-            co_return RequestSetup{nullptr, ErrorInfo{slark::Error::ConnectionTimeout}};
-        }
-        co_return RequestSetup{nullptr, ErrorInfo{slark::Error::ConnectionFailed}};
+        const auto error = classifyConnectionError(perf);
+        LogE("[HttpProcessor::acquireConnection] failed: error={} timeoutSource={} url={}",
+             static_cast<int>(error.retCode), static_cast<int>(perf.transport.timeoutSource),
+             requestInfo.url);
+        co_return std::unexpected(error);
     }
+
     conn->setPerf(&perf);
+    co_return std::move(conn);
+}
 
+Task<ErrorInfo> sendRequestPart(PooledConnection& conn,
+                                std::string_view data,
+                                const RequestInfo& requestInfo,
+                                CancellationToken& token,
+                                std::string_view partName) {
     if (token.isCancelled()) {
-        co_return RequestSetup{std::move(conn), ErrorInfo{slark::Error::Cancelled}};
-    }
-    const auto requestStr = Util::buildRequestString(requestInfo, url, false);
-    auto sendResult = co_await conn->asyncSend(requestStr, requestInfo.writeTimeout, token);
-    if (!sendResult) {
-        if (token.isCancelled()) {
-            co_return RequestSetup{std::move(conn), ErrorInfo{slark::Error::Cancelled}};
-        }
-        LogE("[HttpProcessor::{}] send failed: legacyErr={} url={}", tag,
-             static_cast<int>(sendResult.error()), requestInfo.url);
-        co_return RequestSetup{std::move(conn),
-                               ErrorInfo{mapLegacyErrorToUnified(sendResult.error())}};
+        co_return ErrorInfo{slark::Error::Cancelled};
     }
 
-    if (requestInfo.bodyEmpty()) {
-        co_return RequestSetup{std::move(conn), ErrorInfo{}};
+    auto result = co_await conn.asyncSend(data, requestInfo.writeTimeout, token);
+    if (result) {
+        co_return ErrorInfo{};
     }
     if (token.isCancelled()) {
-        co_return RequestSetup{std::move(conn), ErrorInfo{slark::Error::Cancelled}};
+        co_return ErrorInfo{slark::Error::Cancelled};
     }
-    std::string_view bodyView(reinterpret_cast<const char*>(requestInfo.body->data()),
-                              requestInfo.body->size());
-    auto bodyResult = co_await conn->asyncSend(bodyView, requestInfo.writeTimeout, token);
-    if (!bodyResult) {
-        if (token.isCancelled()) {
-            co_return RequestSetup{std::move(conn), ErrorInfo{slark::Error::Cancelled}};
-        }
-        LogE("[HttpProcessor::{}] sendBody failed: legacyErr={} url={}", tag,
-             static_cast<int>(bodyResult.error()), requestInfo.url);
-        co_return RequestSetup{std::move(conn),
-                               ErrorInfo{mapLegacyErrorToUnified(bodyResult.error())}};
+
+    const auto error = mapLegacyErrorToUnified(result.error());
+    LogE("[HttpProcessor::sendRequestPart] {} failed: error={} legacyErr={} url={}", partName,
+         static_cast<int>(error), static_cast<int>(result.error()), requestInfo.url);
+    co_return ErrorInfo{error};
+}
+
+Task<ErrorInfo> sendRequest(PooledConnection& conn,
+                            const RequestInfo& requestInfo,
+                            const Url& url,
+                            CancellationToken& token) {
+    const auto request = Util::buildRequestString(requestInfo, url, false);
+    auto error = co_await sendRequestPart(conn, request, requestInfo, token, "headers");
+    if (error.retCode != slark::Error::Success || requestInfo.bodyEmpty()) {
+        co_return error;
     }
-    co_return RequestSetup{std::move(conn), ErrorInfo{}};
+
+    const std::string_view body(reinterpret_cast<const char*>(requestInfo.body->data()),
+                                requestInfo.body->size());
+    co_return co_await sendRequestPart(conn, body, requestInfo, token, "body");
 }
 
 HttpResponseParser::Callbacks makeEventCallbacks(
@@ -395,13 +399,24 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(
         co_return;
     }
 
-    auto setup = co_await setupConnectionAndSend("executeEventsSingle", requestInfo, *parsed.url,
-                                                 perf, token);
-    if (setup.hasError()) {
-        co_yield HttpResponseEvent::makeError(setup.error, std::move(perf));
+    if (!Util::validateRequest(requestInfo, *parsed.url)) {
+        co_yield HttpResponseEvent::makeError(
+            ErrorInfo{slark::Error::InvalidArgument}, std::move(perf));
         co_return;
     }
-    auto conn = std::move(setup.conn);
+
+    auto connectionResult = co_await acquireConnection(requestInfo, *parsed.url, perf, token);
+    if (!connectionResult) {
+        co_yield HttpResponseEvent::makeError(connectionResult.error(), std::move(perf));
+        co_return;
+    }
+    auto conn = std::move(*connectionResult);
+
+    const auto sendError = co_await sendRequest(*conn, requestInfo, *parsed.url, token);
+    if (sendError.retCode != slark::Error::Success) {
+        co_yield HttpResponseEvent::makeError(sendError, std::move(perf));
+        co_return;
+    }
     co_yield HttpResponseEvent::makeConnected();
 
     ResponseHeader header;
