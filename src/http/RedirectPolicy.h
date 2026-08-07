@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
 #include "Type.h"
@@ -129,11 +130,94 @@ class RedirectPolicy {
         return resolved;
     }
 
-    // Resolve a redirect URL, handling relative paths and rejecting unsafe schemes/downgrades.
+    struct ReferenceParts final {
+        std::string_view path;
+        std::string_view query;
+        std::string_view fragment;
+        bool hasQuery = false;
+        bool hasFragment = false;
+    };
+
+    [[nodiscard]] static ReferenceParts splitReference(std::string_view reference) noexcept {
+        ReferenceParts parts;
+        const auto fragmentPos = reference.find('#');
+        if (fragmentPos != std::string_view::npos) {
+            parts.hasFragment = true;
+            parts.fragment = reference.substr(fragmentPos + 1);
+            reference = reference.substr(0, fragmentPos);
+        }
+
+        const auto queryPos = reference.find('?');
+        if (queryPos != std::string_view::npos) {
+            parts.hasQuery = true;
+            parts.query = reference.substr(queryPos + 1);
+            parts.path = reference.substr(0, queryPos);
+        } else {
+            parts.path = reference;
+        }
+        return parts;
+    }
+
+    static void removeLastPathSegment(std::string& output) {
+        const auto slash = output.rfind('/');
+        if (slash == std::string::npos) {
+            output.clear();
+        } else {
+            output.erase(slash);
+        }
+    }
+
+    [[nodiscard]] static std::string removeDotSegments(std::string_view input) {
+        std::string output;
+        output.reserve(input.size());
+        while (!input.empty()) {
+            if (input.starts_with("../")) {
+                input.remove_prefix(3);
+            } else if (input.starts_with("./")) {
+                input.remove_prefix(2);
+            } else if (input == "/.") {
+                input = "/";
+            } else if (input.starts_with("/./")) {
+                input.remove_prefix(2);
+            } else if (input == "/..") {
+                input = "/";
+                removeLastPathSegment(output);
+            } else if (input.starts_with("/../")) {
+                input.remove_prefix(3);
+                removeLastPathSegment(output);
+            } else if (input == "." || input == "..") {
+                input = {};
+            } else {
+                auto segmentEnd = input.find('/', input.front() == '/' ? 1 : 0);
+                if (segmentEnd == std::string_view::npos) {
+                    output.append(input);
+                    input = {};
+                } else {
+                    output.append(input.substr(0, segmentEnd));
+                    input.remove_prefix(segmentEnd);
+                }
+            }
+        }
+        return output;
+    }
+
+    [[nodiscard]] static std::string mergePaths(const Url& url, std::string_view path) {
+        std::string_view basePath = url.path;
+        if (basePath.empty()) {
+            basePath = "/";
+        }
+        const auto lastSlash = basePath.rfind('/');
+        if (lastSlash == std::string_view::npos) {
+            return "/" + std::string(path);
+        }
+        return std::string(basePath.substr(0, lastSlash + 1)) + std::string(path);
+    }
+
+    // Resolve a redirect URL according to RFC 3986 section 5.2.
     [[nodiscard]] static std::optional<std::string> resolveRedirectUrl(std::string_view originalUrl,
                                                                        std::string_view location) {
         auto locationValue = trimOws(location);
-        if (locationValue.empty() || locationValue.find_first_of("\r\n") != std::string::npos) {
+        if (locationValue.find_first_of("\r\n") != std::string::npos) {
             return std::nullopt;
         }
 
@@ -146,21 +230,46 @@ class RedirectPolicy {
             return validateResolvedUrl(url, url.scheme + ":" + locationValue);
         }
 
-        if (locationValue.find("://") != std::string::npos) {
+        const auto firstPathDelimiter = locationValue.find_first_of("/?#");
+        const auto schemeDelimiter = locationValue.find(':');
+        if (schemeDelimiter != std::string_view::npos &&
+            (firstPathDelimiter == std::string_view::npos || schemeDelimiter < firstPathDelimiter)) {
             return validateResolvedUrl(url, locationValue);
         }
 
-        const auto firstPathDelimiter = locationValue.find_first_of("/?#");
-        const auto schemeDelimiter = locationValue.find(':');
-        if (schemeDelimiter != std::string::npos &&
-            (firstPathDelimiter == std::string::npos || schemeDelimiter < firstPathDelimiter)) {
-            return std::nullopt;
+        const auto reference = splitReference(locationValue);
+        const auto basePath = url.path.empty() ? "/" : url.path;
+        std::string targetPath;
+        std::string targetQuery;
+        bool hasQuery = reference.hasQuery;
+
+        if (reference.path.empty()) {
+            targetPath = basePath;
+            if (reference.hasQuery) {
+                targetQuery = reference.query;
+            } else {
+                targetQuery = url.query;
+                hasQuery = !url.query.empty();
+            }
+        } else if (reference.path.starts_with('/')) {
+            targetPath = removeDotSegments(reference.path);
+        } else {
+            targetPath = removeDotSegments(mergePaths(url, reference.path));
+        }
+        if (reference.hasQuery) {
+            targetQuery = reference.query;
         }
 
         std::string result;
-        result.reserve(originalUrl.size() + locationValue.size());
+        result.reserve(originalUrl.size() + locationValue.size() + 4);
         appendAuthority(result, url);
-        appendRelativePath(result, url, locationValue);
+        result.append(targetPath.empty() ? "/" : targetPath);
+        if (hasQuery) {
+            result.append("?").append(targetQuery);
+        }
+        if (reference.hasFragment) {
+            result.append("#").append(reference.fragment);
+        }
         return validateResolvedUrl(url, std::move(result));
     }
 
@@ -168,36 +277,6 @@ class RedirectPolicy {
         result.append(url.scheme);
         result.append("://");
         result.append(serializeAuthority(url));
-    }
-
-    static void appendRelativePath(std::string& result, const Url& url, std::string_view location) {
-        if (location.starts_with('?')) {
-            result.append(url.path.empty() ? "/" : url.path);
-            result.append(location);
-            return;
-        }
-        if (location.starts_with('#')) {
-            result.append(url.path.empty() ? "/" : url.path);
-            if (!url.query.empty()) {
-                result.append("?");
-                result.append(url.query);
-            }
-            result.append(location);
-            return;
-        }
-        if (location.starts_with('/')) {
-            result.append(location);
-            return;
-        }
-        // Relative path, computed from the original path
-        std::string basePath = url.path.empty() ? "/" : url.path;
-        auto lastSlash = basePath.rfind('/');
-        if (lastSlash != std::string::npos) {
-            result.append(basePath.substr(0, lastSlash + 1));
-        } else {
-            result.append("/");
-        }
-        result.append(location);
     }
 };
 

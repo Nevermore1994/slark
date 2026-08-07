@@ -2,6 +2,10 @@
 
 #include <gtest/gtest.h>
 
+#include <string_view>
+#include <utility>
+#include <vector>
+
 #include "StringUtil.h"
 #include "Type.h"
 
@@ -227,4 +231,50 @@ TEST(RedirectPolicyTest, LocationWhitespaceIsTrimmedAndInjectionRejected) {
 
     EXPECT_FALSE(RedirectPolicy::buildRedirectRequest(
         req, HttpStatusCode::Found, "/new\r\nX-Leak: value"));
+}
+
+TEST(RedirectPolicyTest, ResolvesRfc3986RelativeReferences) {
+    RequestInfo req;
+    req.url = "http://a/b/c/d;p?q";
+
+    const std::vector<std::pair<std::string_view, std::string_view>> cases = {
+        {"g", "http://a/b/c/g"},
+        {"./g", "http://a/b/c/g"},
+        {"g/", "http://a/b/c/g/"},
+        {"/g", "http://a/g"},
+        {"?y", "http://a/b/c/d;p?y"},
+        {"g?y", "http://a/b/c/g?y"},
+        {"#s", "http://a/b/c/d;p?q#s"},
+        {"g#s", "http://a/b/c/g#s"},
+        {";x", "http://a/b/c/;x"},
+        {"g;x?y#s", "http://a/b/c/g;x?y#s"},
+        {".", "http://a/b/c/"},
+        {"..", "http://a/b/"},
+        {"../g", "http://a/b/g"},
+        {"../..", "http://a/"},
+        {"../../g", "http://a/g"},
+    };
+
+    for (const auto& [location, expected] : cases) {
+        const auto result = RedirectPolicy::buildRedirectRequest(req, HttpStatusCode::Found, location);
+        ASSERT_TRUE(result.has_value()) << location;
+        EXPECT_EQ(result->url, expected) << location;
+    }
+}
+
+TEST(RedirectPolicyTest, EmptyAndQueryOnlyReferencesFollowBaseQueryRules) {
+    RequestInfo req;
+    req.url = "http://example.com/path/item?old=1#old-fragment";
+
+    auto empty = RedirectPolicy::buildRedirectRequest(req, HttpStatusCode::Found, "");
+    ASSERT_TRUE(empty.has_value());
+    EXPECT_EQ(empty->url, "http://example.com/path/item?old=1");
+
+    auto emptyQuery = RedirectPolicy::buildRedirectRequest(req, HttpStatusCode::Found, "?");
+    ASSERT_TRUE(emptyQuery.has_value());
+    EXPECT_EQ(emptyQuery->url, "http://example.com/path/item?");
+
+    auto fragment = RedirectPolicy::buildRedirectRequest(req, HttpStatusCode::Found, "#new");
+    ASSERT_TRUE(fragment.has_value());
+    EXPECT_EQ(fragment->url, "http://example.com/path/item?old=1#new");
 }
