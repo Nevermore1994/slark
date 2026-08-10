@@ -21,6 +21,8 @@ class Player {
 
     void stop() noexcept;
 
+    void stopAndWait() noexcept;
+
     void pause() noexcept;
 
     void seek(double time, bool isAccurate = false) noexcept;

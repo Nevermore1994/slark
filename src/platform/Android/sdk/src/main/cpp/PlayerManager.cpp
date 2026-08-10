@@ -71,7 +71,7 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_doAction(JNIEnv* env,
                 player->pause();
             } break;
             case Action::Release: {
-                player->stop();
+                player->stopAndWait();
                 PlayerObserverManager::shareInstance().remove(playerId);
                 VideoRenderManager::shareInstance().remove(playerId);
                 PlayerManager::shareInstance().remove(playerId);

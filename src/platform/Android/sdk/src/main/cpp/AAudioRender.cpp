@@ -5,11 +5,20 @@
 #include "AAudioRender.h"
 
 #include <algorithm>
-#include <thread>
 
 #include "Log.hpp"
 
 namespace slark {
+
+AAudioRender::CallbackScope::CallbackScope(AAudioRender* render) noexcept : render_(render) {
+    entered_ = render_ != nullptr && render_->tryEnterCallback();
+}
+
+AAudioRender::CallbackScope::~CallbackScope() {
+    if (entered_) {
+        render_->leaveCallback();
+    }
+}
 
 AAudioRender::AAudioRender(std::shared_ptr<AudioInfo> audioInfo)
     : IAudioRender(std::move(audioInfo)) {
@@ -17,11 +26,55 @@ AAudioRender::AAudioRender(std::shared_ptr<AudioInfo> audioInfo)
 }
 
 AAudioRender::~AAudioRender() {
+    closing_.store(true, std::memory_order_release);
     releaseStream();
 }
 
+bool AAudioRender::tryEnterCallback() noexcept {
+    auto state = callbackState_.load(std::memory_order_relaxed);
+    while ((state & kCallbackGateClosed) == 0) {
+        if ((state & kCallbackCountMask) == kCallbackCountMask) {
+            return false;
+        }
+        if (callbackState_.compare_exchange_weak(state, state + 1, std::memory_order_acquire,
+                                                 std::memory_order_relaxed)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void AAudioRender::leaveCallback() noexcept {
+    const auto previous = callbackState_.fetch_sub(1, std::memory_order_release);
+    if ((previous & kCallbackCountMask) == 1) {
+        callbackWaitCondition_.notify_all();
+    }
+}
+
+void AAudioRender::closeCallbackGateAndWait() noexcept {
+    callbackState_.fetch_or(kCallbackGateClosed, std::memory_order_acq_rel);
+    std::unique_lock lock(callbackWaitMutex_);
+    callbackWaitCondition_.wait(lock, [this] {
+        return (callbackState_.load(std::memory_order_acquire) & kCallbackCountMask) == 0;
+    });
+}
+
+void AAudioRender::openCallbackGate() noexcept {
+    callbackState_.fetch_and(kCallbackCountMask, std::memory_order_release);
+}
+
 void AAudioRender::initStream() noexcept {
-    AAudio_createStreamBuilder(&builder_);
+    std::lock_guard lock(streamMutex_);
+    if (closing_.load(std::memory_order_acquire)) {
+        return;
+    }
+
+    auto result = AAudio_createStreamBuilder(&builder_);
+    if (result != AAUDIO_OK || builder_ == nullptr) {
+        LogE("AAudio createStreamBuilder failed: {}", AAudio_convertResultToText(result));
+        status_ = RenderStatus::Error;
+        return;
+    }
     AAudioStreamBuilder_setDataCallback(builder_, dataCallback, this);
     AAudioStreamBuilder_setErrorCallback(builder_, errorCallback, this);
     AAudioStreamBuilder_setDirection(builder_, AAUDIO_DIRECTION_OUTPUT);
@@ -30,17 +83,29 @@ void AAudioRender::initStream() noexcept {
     AAudioStreamBuilder_setFormat(builder_, AAUDIO_FORMAT_PCM_I16);
     AAudioStreamBuilder_setPerformanceMode(builder_, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
 
-    auto result = AAudioStreamBuilder_openStream(builder_, &stream_);
+    result = AAudioStreamBuilder_openStream(builder_, &stream_);
     if (result != AAUDIO_OK) {
         LogE("AAudio openStream failed: {}", AAudio_convertResultToText(result));
+        AAudioStreamBuilder_delete(builder_);
+        builder_ = nullptr;
         status_ = RenderStatus::Error;
         return;
     }
+    if (closing_.load(std::memory_order_acquire)) {
+        AAudioStream_close(stream_);
+        stream_ = nullptr;
+        AAudioStreamBuilder_delete(builder_);
+        builder_ = nullptr;
+        return;
+    }
     flushBaseFrames_.store(0, std::memory_order_release);
+    openCallbackGate();
     status_ = RenderStatus::Ready;
 }
 
 void AAudioRender::releaseStream() noexcept {
+    closeCallbackGateAndWait();
+    std::lock_guard lock(streamMutex_);
     if (stream_) {
         AAudioStream_close(stream_);
         stream_ = nullptr;
@@ -56,6 +121,11 @@ aaudio_data_callback_result_t AAudioRender::dataCallback(AAudioStream* /*stream*
                                                          void* audioData,
                                                          int32_t numFrames) {
     auto* render = static_cast<AAudioRender*>(userData);
+    CallbackScope callback(render);
+    if (!callback || numFrames <= 0 || audioData == nullptr) {
+        return AAUDIO_CALLBACK_RESULT_STOP;
+    }
+
     auto bytesPerFrame = static_cast<uint32_t>(render->audioInfo_->bytePerSample());
     auto size = static_cast<uint32_t>(numFrames) * bytesPerFrame;
     auto dataPtr = static_cast<uint8_t*>(audioData);
@@ -86,40 +156,56 @@ void AAudioRender::errorCallback(AAudioStream* /*stream*/,
                                  void* userData,
                                  aaudio_result_t error) noexcept {
     auto* render = static_cast<AAudioRender*>(userData);
+    CallbackScope callback(render);
+    if (!callback) {
+        return;
+    }
+
+    render->recoveryError_.store(error, std::memory_order_release);
+    render->recoveryRequested_.store(true, std::memory_order_release);
+}
+
+void AAudioRender::recoverIfNeeded() noexcept {
+    if (!recoveryRequested_.exchange(false, std::memory_order_acq_rel)) {
+        return;
+    }
+    const auto error = recoveryError_.exchange(AAUDIO_OK, std::memory_order_acq_rel);
     LogE("AAudio stream error: {}", AAudio_convertResultToText(error));
-    const auto prevStatus = render->status_.load();
-    std::thread([self = render->shared_from_this(), prevStatus] {
-        self->releaseStream();
-        self->initStream();
-        if (prevStatus == RenderStatus::Playing) {
-            self->play();
-        }
-    }).detach();
+    const auto previousStatus = status_.load(std::memory_order_acquire);
+    releaseStream();
+    if (closing_.load(std::memory_order_acquire)) {
+        return;
+    }
+    initStream();
+    if (previousStatus == RenderStatus::Playing) {
+        play();
+    }
 }
 
 void AAudioRender::play() noexcept {
-    if (!isNormal() || status_ == RenderStatus::Playing) {
+    recoverIfNeeded();
+    std::lock_guard lock(streamMutex_);
+    if (closing_.load(std::memory_order_acquire) || !isNormal() ||
+        status_ == RenderStatus::Playing || !stream_) {
         return;
     }
-    if (!stream_) {
-        return;
-    }
+    openCallbackGate();
     auto result = AAudioStream_requestStart(stream_);
     if (result != AAUDIO_OK) {
         LogE("AAudio requestStart failed: {}", AAudio_convertResultToText(result));
+        closeCallbackGateAndWait();
         return;
     }
     aaudio_stream_state_t nextState = AAUDIO_STREAM_STATE_UNINITIALIZED;
     AAudioStream_waitForStateChange(stream_, AAUDIO_STREAM_STATE_STARTING, &nextState,
-                                    200'000'000LL);  // 200ms timeout
+                                    200'000'000LL);
     status_ = RenderStatus::Playing;
 }
 
 void AAudioRender::pause() noexcept {
-    if (status_ == RenderStatus::Pause || status_ == RenderStatus::Stop) {
-        return;
-    }
-    if (!stream_) {
+    closeCallbackGateAndWait();
+    std::lock_guard lock(streamMutex_);
+    if (status_ == RenderStatus::Pause || status_ == RenderStatus::Stop || !stream_) {
         return;
     }
     auto streamState = AAudioStream_getState(stream_);
@@ -136,6 +222,8 @@ void AAudioRender::pause() noexcept {
 }
 
 void AAudioRender::stop() noexcept {
+    closeCallbackGateAndWait();
+    std::lock_guard lock(streamMutex_);
     if (status_ == RenderStatus::Stop) {
         return;
     }
@@ -148,11 +236,16 @@ void AAudioRender::stop() noexcept {
                                             200'000'000LL);
         }
         AAudioStream_requestStop(stream_);
+        aaudio_stream_state_t stoppedState = AAUDIO_STREAM_STATE_UNINITIALIZED;
+        AAudioStream_waitForStateChange(stream_, AAUDIO_STREAM_STATE_STOPPING, &stoppedState,
+                                        500'000'000LL);
     }
     status_ = RenderStatus::Stop;
 }
 
 void AAudioRender::flush() noexcept {
+    closeCallbackGateAndWait();
+    std::lock_guard lock(streamMutex_);
     if (!stream_) {
         return;
     }
@@ -181,6 +274,8 @@ void AAudioRender::setVolume(float volume) noexcept {
 }
 
 Time::TimeDelta AAudioRender::getHardwareLatency() noexcept {
+    recoverIfNeeded();
+    std::lock_guard lock(streamMutex_);
     if (!stream_) {
         return Time::TimeDelta(0);
     }

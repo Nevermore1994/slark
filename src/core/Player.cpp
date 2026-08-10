@@ -63,6 +63,12 @@ void Player::stop() noexcept {
     pimpl_->updateState(PlayerState::Stop);
 }
 
+void Player::stopAndWait() noexcept {
+    if (pimpl_) {
+        pimpl_->stopAndWait();
+    }
+}
+
 void Player::pause() noexcept {
     if (!pimpl_) {
         LogE("Player is not initialized.");

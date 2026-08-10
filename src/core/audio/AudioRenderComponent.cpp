@@ -18,15 +18,11 @@ AudioRenderComponent::AudioRenderComponent(std::shared_ptr<AudioInfo> info)
 }
 
 AudioRenderComponent::~AudioRenderComponent() {
-    if (auto pimpl = pimpl_.load()) {
-        pimpl->stop();
-    }
-    audioBuffer_.reset();
-    pimpl_.reset();
+    close();
+    dataPlane_.reset();
 }
 
 void AudioRenderComponent::init() noexcept {
-    renderedDataLength_.store(0, std::memory_order_release);
     maxPlayedTimeUs_.store(0, std::memory_order_release);
     offsetTime_ = {};
     clock_.reset();
@@ -35,33 +31,33 @@ void AudioRenderComponent::init() noexcept {
         LogE("audio info is nullptr");
         return;
     }
-    audioBuffer_ = std::make_unique<SPSCRingBuffer<uint8_t, kAudioBufferSize>>();
+    dataPlane_ = std::make_shared<AudioDataPlane>();
 
     auto pimpl = createAudioRender(audioInfo_);
     if (!pimpl) {
         LogE("createAudioRender failed");
         return;
     }
-    pimpl->setProvider([this](uint8_t* data, uint32_t size, AudioDataFlag& /*flag*/) -> uint32_t {
+    auto dataPlane = dataPlane_;
+    pimpl->setProvider([dataPlane = std::move(dataPlane)](uint8_t* data,
+                                                          uint32_t size,
+                                                          AudioDataFlag& /*flag*/) -> uint32_t {
+        AudioDataPlane::AccessScope access(dataPlane.get());
+        if (!access) {
+            return 0;
+        }
         uint32_t read = size;
-        if (!audioBuffer_->readExact(data, size)) {
+        if (!dataPlane->buffer.readExact(data, size)) {
             read = 0;
-            if (decoderCompleted_.load(std::memory_order_acquire)) {
-                read = audioBuffer_->readUpTo(data, size);
+            if (dataPlane->decoderCompleted.load(std::memory_order_acquire)) {
+                read = dataPlane->buffer.readUpTo(data, size);
             }
             if (read == 0) {
-                LogI("request audio data failed");
                 return 0;
             }
             std::fill_n(data + read, size - read, 0);
         }
-        auto rendered = renderedDataLength_.fetch_add(read, std::memory_order_relaxed) + read;
-        auto clockTime = offsetTime_ + audioInfo_->dataLen2TimePoint(rendered);
-        clock_.setTime(clockTime);
-        auto played = playedTime();
-        if (auto updater = audioTimeUpdater_.load()) {
-            (*updater)(played);
-        }
+        dataPlane->renderedDataLength.fetch_add(read, std::memory_order_relaxed);
         return size;
     });
     pimpl_.reset(std::move(pimpl));
@@ -77,22 +73,35 @@ bool AudioRenderComponent::process(AVFrameRefPtr frame) noexcept {
         LogE("frame data is nullptr");
         return false;
     }
-    return audioBuffer_->writeExact(frame->data->data(),
-                                    static_cast<uint32_t>(frame->data->length()));
+    if (!dataPlane_) {
+        return false;
+    }
+    AudioDataPlane::AccessScope access(dataPlane_.get());
+    return access && dataPlane_->buffer.writeExact(
+                         frame->data->data(), static_cast<uint32_t>(frame->data->length()));
 }
 
 void AudioRenderComponent::reset() noexcept {
-    if (audioBuffer_) {
-        audioBuffer_->reset();
+    auto impl = pimpl_.load();
+    if (impl) {
+        impl->flush();
     }
-    renderedDataLength_.store(0, std::memory_order_release);
+    if (dataPlane_) {
+        dataPlane_->closeAndWait();
+        dataPlane_->buffer.reset();
+        dataPlane_->renderedDataLength.store(0, std::memory_order_release);
+        dataPlane_->offsetTimeUs.store(0, std::memory_order_release);
+        dataPlane_->decoderCompleted.store(false, std::memory_order_release);
+        if (impl) {
+            dataPlane_->open();
+        }
+    }
+    if (impl) {
+        impl->reset();
+    }
     maxPlayedTimeUs_.store(0, std::memory_order_release);
     offsetTime_ = {};
     clock_.reset();
-    decoderCompleted_.store(false, std::memory_order_release);
-    if (auto impl = pimpl_.load()) {
-        impl->reset();
-    }
 }
 
 std::shared_ptr<AudioInfo> AudioRenderComponent::audioInfo() const noexcept {
@@ -131,6 +140,25 @@ void AudioRenderComponent::stop() noexcept {
     }
 }
 
+void AudioRenderComponent::close() noexcept {
+    auto pimpl = pimpl_.swap(nullptr);
+    if (!pimpl) {
+        if (dataPlane_) {
+            dataPlane_->closeAndWait();
+        }
+        audioTimeUpdater_.reset();
+        renderEndCallback_ = {};
+        return;
+    }
+    pimpl->stop();
+    if (dataPlane_) {
+        dataPlane_->closeAndWait();
+    }
+    pimpl->setProvider(RequestAudioDataFunc{});
+    audioTimeUpdater_.reset();
+    renderEndCallback_ = {};
+}
+
 void AudioRenderComponent::setVolume(float volume) noexcept {
     if (auto pimpl = pimpl_.load()) {
         pimpl->setVolume(volume);
@@ -140,29 +168,55 @@ void AudioRenderComponent::setVolume(float volume) noexcept {
 }
 
 void AudioRenderComponent::flush() noexcept {
-    if (audioBuffer_) {
-        audioBuffer_->reset();
-    }
-    decoderCompleted_.store(false, std::memory_order_release);
-    if (auto pimpl = pimpl_.load()) {
+    auto pimpl = pimpl_.load();
+    if (pimpl) {
         pimpl->flush();
     } else {
         LogE("audio render is nullptr.");
+    }
+    if (dataPlane_) {
+        dataPlane_->closeAndWait();
+        dataPlane_->buffer.reset();
+        dataPlane_->renderedDataLength.store(0, std::memory_order_release);
+        dataPlane_->decoderCompleted.store(false, std::memory_order_release);
+        if (pimpl) {
+            dataPlane_->open();
+        }
     }
 }
 
 void AudioRenderComponent::seek(double time) noexcept {
-    if (audioBuffer_) {
-        audioBuffer_->reset();
-    }
-    renderedDataLength_.store(0, std::memory_order_release);
-    maxPlayedTimeUs_.store(Time::TimePoint::fromSeconds(time).point(), std::memory_order_release);
-    offsetTime_ = Time::TimePoint::fromSeconds(time);
-    clock_.setTime(offsetTime_);
-    if (auto pimpl = pimpl_.load()) {
+    auto pimpl = pimpl_.load();
+    if (pimpl) {
         pimpl->flush();
     } else {
         LogE("audio render is nullptr.");
+    }
+    if (dataPlane_) {
+        dataPlane_->closeAndWait();
+        dataPlane_->buffer.reset();
+        dataPlane_->renderedDataLength.store(0, std::memory_order_release);
+        dataPlane_->offsetTimeUs.store(Time::TimePoint::fromSeconds(time).point(),
+                                       std::memory_order_release);
+        if (pimpl) {
+            dataPlane_->open();
+        }
+    }
+    maxPlayedTimeUs_.store(Time::TimePoint::fromSeconds(time).point(), std::memory_order_release);
+    offsetTime_ = Time::TimePoint::fromSeconds(time);
+    clock_.setTime(offsetTime_);
+}
+
+void AudioRenderComponent::updateAudioTime() noexcept {
+    if (!dataPlane_ || !audioInfo_) {
+        return;
+    }
+    const auto rendered = dataPlane_->renderedDataLength.load(std::memory_order_acquire);
+    const auto offset = Time::TimePoint(
+        dataPlane_->offsetTimeUs.load(std::memory_order_acquire));
+    clock_.setTime(offset + audioInfo_->dataLen2TimePoint(rendered));
+    if (auto updater = audioTimeUpdater_.load()) {
+        (*updater)(playedTime());
     }
 }
 

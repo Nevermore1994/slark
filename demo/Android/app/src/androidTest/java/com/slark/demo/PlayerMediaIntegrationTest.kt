@@ -113,19 +113,22 @@ class PlayerMediaIntegrationTest {
             states = states,
             events = events
         )
-        player.prepare()
-        assertTrue("wav should reach Prepared", waitForPrepared(player))
-        player.play()
-        // PlayEnd arrives before the Completed state; the Completed callback may lag across
-        // threads, so query JNI state() as a fallback to avoid a callback-timing race
-        assertTrue("wav should complete in 15s", latch.await(15, TimeUnit.SECONDS))
-        assertTrue("PlayEnd event received", events.contains(SlarkPlayerEvent.PlayEnd))
-        val completedViaQuery = waitForState(player, SlarkPlayerState.Completed, 3000)
-        assertTrue(
-            "Completed state reached (callback=$states)",
-            states.contains(SlarkPlayerState.Completed) || completedViaQuery
-        )
-        player.release()
+        try {
+            player.prepare()
+            assertTrue("wav should reach Prepared", waitForPrepared(player))
+            player.play()
+            // PlayEnd arrives before the Completed state; the Completed callback may lag across
+            // threads, so query JNI state() as a fallback to avoid a callback-timing race
+            assertTrue("wav should complete in 15s", latch.await(15, TimeUnit.SECONDS))
+            assertTrue("PlayEnd event received", events.contains(SlarkPlayerEvent.PlayEnd))
+            val completedViaQuery = waitForState(player, SlarkPlayerState.Completed, 3000)
+            assertTrue(
+                "Completed state reached (callback=$states)",
+                states.contains(SlarkPlayerState.Completed) || completedViaQuery
+            )
+        } finally {
+            player.release()
+        }
     }
 
     @Test
@@ -139,15 +142,18 @@ class PlayerMediaIntegrationTest {
             onEvent = { if (it == SlarkPlayerEvent.PlayEnd) latch.countDown() },
             events = events
         )
-        player.prepare()
-        assertTrue("wav should reach Prepared", waitForPrepared(player))
-        player.play()
-        // Wait for playback to start
-        Thread.sleep(500)
-        player.seekTo(1.5, false)
-        assertTrue("wav should finish after seek in 15s", latch.await(15, TimeUnit.SECONDS))
-        assertTrue("PlayEnd after seek", events.contains(SlarkPlayerEvent.PlayEnd))
-        player.release()
+        try {
+            player.prepare()
+            assertTrue("wav should reach Prepared", waitForPrepared(player))
+            player.play()
+            // Wait for playback to start
+            Thread.sleep(500)
+            player.seekTo(1.5, false)
+            assertTrue("wav should finish after seek in 15s", latch.await(15, TimeUnit.SECONDS))
+            assertTrue("PlayEnd after seek", events.contains(SlarkPlayerEvent.PlayEnd))
+        } finally {
+            player.release()
+        }
     }
 
     @Test
@@ -160,9 +166,12 @@ class PlayerMediaIntegrationTest {
             onEvent = { if (it == SlarkPlayerEvent.OnError) latch.countDown() },
             states = states
         )
-        player.prepare()
-        assertTrue("missing file should report error in 10s", latch.await(10, TimeUnit.SECONDS))
-        assertTrue("Error state reached", states.contains(SlarkPlayerState.Error))
-        player.release()
+        try {
+            player.prepare()
+            assertTrue("missing file should report error in 10s", latch.await(10, TimeUnit.SECONDS))
+            assertTrue("Error state reached", states.contains(SlarkPlayerState.Error))
+        } finally {
+            player.release()
+        }
     }
 }

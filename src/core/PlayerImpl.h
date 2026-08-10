@@ -43,6 +43,8 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
 
     void updateState(PlayerState state) noexcept;
 
+    void stopAndWait() noexcept;
+
     void setLoop(bool isLoop) noexcept;
 
     void setVolume(float volume) noexcept;
@@ -177,6 +179,7 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
 
     std::mutex releaseMutex_;
     std::condition_variable cond_;
+    bool stopCompleted_ = false;
 
     std::once_flag bindOwnerThreadFlag_;
 };

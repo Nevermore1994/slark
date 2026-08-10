@@ -78,8 +78,11 @@ void Player::Impl::forceCleanup() noexcept {
     mediaSourceManager_.close();
     dataPacketSender_.reset();
     if (pipeline_) {
-        pipeline_->teardown();
-        pipeline_.reset();
+        if (pipeline_->teardown()) {
+            pipeline_.reset();
+        } else {
+            LogE("force cleanup: pipeline teardown incomplete, retaining pipeline");
+        }
     }
     demuxerComponent_.reset();
     notifyCenter_.resetNotifyState();
@@ -478,6 +481,27 @@ void Player::Impl::doPause() noexcept {
     pipeline_->pause();
 }
 
+void Player::Impl::stopAndWait() noexcept {
+    if (!ownerThread_ || ownerThread_->getId() == std::this_thread::get_id()) {
+        updateState(PlayerState::Stop);
+        return;
+    }
+
+    {
+        std::lock_guard lock(releaseMutex_);
+        stopCompleted_ = false;
+    }
+    updateState(PlayerState::Stop);
+    {
+        std::unique_lock lock(releaseMutex_);
+        cond_.wait(lock, [this] {
+            return stopCompleted_;
+        });
+    }
+    ownerThread_->stop();
+    ownerThread_->join();
+}
+
 void Player::Impl::doStop() noexcept {
     LogI("do stop start");
     isStopped_.store(true, std::memory_order_release);
@@ -486,6 +510,8 @@ void Player::Impl::doStop() noexcept {
         std::lock_guard<std::mutex> lock(releaseMutex_);
         if (isReleased_.load(std::memory_order_acquire)) {
             LogI("do stop: already released by forceCleanup, skip");
+            stopCompleted_ = true;
+            cond_.notify_all();
             return;
         }
         isReleased_ = true;
@@ -500,8 +526,11 @@ void Player::Impl::doStop() noexcept {
     dataPacketSender_.reset();
 
     if (pipeline_) {
-        pipeline_->teardown();
-        pipeline_.reset();
+        if (pipeline_->teardown()) {
+            pipeline_.reset();
+        } else {
+            LogE("do stop: pipeline teardown incomplete, retaining pipeline");
+        }
     }
     demuxerComponent_.reset();
     notifyCenter_.resetNotifyState();
@@ -509,6 +538,10 @@ void Player::Impl::doStop() noexcept {
 
     // ownerThread_'s stop/join is handled by ~Impl() on an external thread, not here
     GLContextManager::shareInstance().removeMainContext(playerId_);
+    {
+        std::lock_guard lock(releaseMutex_);
+        stopCompleted_ = true;
+    }
     cond_.notify_all();
     LogI("do stop end");
 }

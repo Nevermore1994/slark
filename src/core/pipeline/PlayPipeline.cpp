@@ -39,7 +39,7 @@ PlayPipeline::PlayPipeline(BackpressureConfig config) noexcept : config_(std::mo
 PlayPipeline::~PlayPipeline() {
     const auto s = pipelineState_.load(std::memory_order_acquire);
     if (s != PipelineState::Idle && s != PipelineState::TearingDown) {
-        teardown();
+        (void)teardown();
     }
 }
 
@@ -145,24 +145,26 @@ void PlayPipeline::flush() noexcept {
     }
 }
 
-void PlayPipeline::teardown() noexcept {
+bool PlayPipeline::teardown() noexcept {
     const auto cur = pipelineState_.load(std::memory_order_acquire);
-    if (cur == PipelineState::Idle || cur == PipelineState::TearingDown) {
-        return;
+    if (cur == PipelineState::Idle) {
+        return true;
+    }
+    if (cur == PipelineState::TearingDown) {
+        return false;
     }
     pipelineState_.store(PipelineState::TearingDown, std::memory_order_release);
     LogI("PlayPipeline teardown");
-    stopComponents();
     bufferMonitor_.reset();
+    stopComponents();
     const bool joined = joinWithTimeout(kTeardownTimeout);
     if (!joined) {
-        LogE("PlayPipeline teardown timeout, entering Faulted");
+        LogE("PlayPipeline teardown timeout, keeping pipeline alive");
         enterFaultedState();
+        return false;
     }
-    // Regardless of timeout, teardown is best-effort and ends in Idle so the owner can
-    // release safely, avoiding re-entrant teardown loops. Faulted is only a side effect
-    // for error event reporting.
     pipelineState_.store(PipelineState::Idle, std::memory_order_release);
+    return true;
 }
 
 void PlayPipeline::applyLiveConfig() noexcept {
@@ -580,6 +582,9 @@ void PlayPipeline::onFastTick() noexcept {
     assert(isOnOwnerThread());
     if (pipelineState_.load(std::memory_order_acquire) >= PipelineState::TearingDown) {
         return;
+    }
+    if (audioRender_) {
+        audioRender_->updateAudioTime();
     }
     if (auto* monitor = bufferMonitor_.get()) {
         monitor->onHeartbeat();
@@ -1226,6 +1231,9 @@ void PlayPipeline::openDecoderInternal(std::shared_ptr<DecoderComponent> decoder
 }
 
 void PlayPipeline::stopComponents() noexcept {
+    if (demuxer_) {
+        demuxer_->stop();
+    }
     audioFrameSender_.reset();
     videoFrameSender_.reset();
     if (audioDecoder_) {
@@ -1233,12 +1241,6 @@ void PlayPipeline::stopComponents() noexcept {
     }
     if (videoDecoder_) {
         videoDecoder_->stop();
-    }
-    if (demuxer_) {
-        // Note: must call stop() (synchronously joins the worker), otherwise joinWithTimeout
-        // would spin until timeout. close() only frees resources without stopping the worker
-        // and cannot be used on the teardown path.
-        demuxer_->stop();
     }
     if (audioRender_) {
         audioRender_->close();

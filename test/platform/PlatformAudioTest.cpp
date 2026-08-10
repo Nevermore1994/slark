@@ -78,3 +78,13 @@ TEST(PlatformAudioTest, ResetDoesNotCrash) {
     auto component = std::make_unique<AudioRenderComponent>(info);
     component->reset();
 }
+
+TEST(PlatformAudioTest, CloseIsIdempotent) {
+    auto info = std::make_shared<AudioInfo>();
+    info->sampleRate = 44100;
+    info->channels = 2;
+    auto component = std::make_unique<AudioRenderComponent>(info);
+    EXPECT_NO_THROW(component->close());
+    EXPECT_NO_THROW(component->close());
+    EXPECT_FALSE(component->isRunning());
+}

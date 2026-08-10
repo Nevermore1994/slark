@@ -82,7 +82,7 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     void flush() noexcept;
 
-    void teardown() noexcept;
+    [[nodiscard]] bool teardown() noexcept;
 
     void seek(CTime target, bool isAccurate = true) noexcept;
 
