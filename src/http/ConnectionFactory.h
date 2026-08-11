@@ -53,7 +53,7 @@ class OwnedConnection {
         co_return co_await socket_->asyncSend(data, timeout, token);
     }
 
-    void close() {
+    void close() noexcept {
         if (socket_) {
             socket_->close();
             socket_.reset();

@@ -18,7 +18,7 @@ TEST(UrlFuzzTest, RandomStringsDoNotCrash) {
         std::string input;
         input.reserve(len);
         for (size_t j = 0; j < len; ++j) {
-            input.push_back(charDist(rng));
+            input.push_back(static_cast<char>(charDist(rng)));
         }
         EXPECT_NO_THROW({
             Url url(input);
@@ -107,12 +107,12 @@ TEST(UrlFuzzTest, LongQueryAndFragment) {
         std::uniform_int_distribution<size_t> lenDist(0, 4096);
         size_t queryLen = lenDist(rng);
         for (size_t j = 0; j < queryLen; ++j) {
-            input.push_back(charDist(rng));
+            input.push_back(static_cast<char>(charDist(rng)));
         }
         input += "#frag";
         size_t fragLen = lenDist(rng);
         for (size_t j = 0; j < fragLen; ++j) {
-            input.push_back(charDist(rng));
+            input.push_back(static_cast<char>(charDist(rng)));
         }
         EXPECT_NO_THROW({
             Url url(input);

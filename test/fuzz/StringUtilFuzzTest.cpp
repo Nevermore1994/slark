@@ -18,19 +18,19 @@ TEST(StringUtilFuzzTest, RandomStringsDoNotCrash) {
         std::string input;
         input.reserve(len);
         for (size_t j = 0; j < len; ++j) {
-            input.push_back(charDist(rng));
+            input.push_back(static_cast<char>(charDist(rng)));
         }
         EXPECT_NO_THROW({
-            StringUtil::split(input, ",");
-            StringUtil::split(input, "\n");
-            StringUtil::split(input, "::");
-            StringUtil::removeSpace(input);
-            StringUtil::toLower(input);
-            StringUtil::startsWith(input, "http");
-            StringUtil::endsWith(input, ".com");
-            StringUtil::contains(input, "test");
-            StringUtil::extractHostFromUri(input);
-            StringUtil::toSafeLogString(input);
+            (void)StringUtil::split(input, ",");
+            (void)StringUtil::split(input, "\n");
+            (void)StringUtil::split(input, "::");
+            (void)StringUtil::removeSpace(input);
+            (void)StringUtil::toLower(input);
+            (void)StringUtil::startsWith(input, "http");
+            (void)StringUtil::endsWith(input, ".com");
+            (void)StringUtil::contains(input, "test");
+            (void)StringUtil::extractHostFromUri(input);
+            (void)StringUtil::toSafeLogString(input);
         });
     }
 }
@@ -48,10 +48,10 @@ TEST(StringUtilFuzzTest, HighAsciiAndBinary) {
             input.push_back(static_cast<char>(byteDist(rng)));
         }
         EXPECT_NO_THROW({
-            StringUtil::toSafeLogString(input);
-            StringUtil::extractHostFromUri(input);
-            StringUtil::removeSpace(input);
-            StringUtil::toLower(input);
+            (void)StringUtil::toSafeLogString(input);
+            (void)StringUtil::extractHostFromUri(input);
+            (void)StringUtil::removeSpace(input);
+            (void)StringUtil::toLower(input);
         });
     }
 }
@@ -81,9 +81,9 @@ TEST(StringUtilFuzzTest, FromCharsEdgeCases) {
     };
     for (const auto& input : inputs) {
         EXPECT_NO_THROW({
-            StringUtil::fromChars<int>(input);
-            StringUtil::fromChars<float>(input);
-            StringUtil::fromChars<uint64_t>(input);
+            (void)StringUtil::fromChars<int>(input);
+            (void)StringUtil::fromChars<float>(input);
+            (void)StringUtil::fromChars<uint64_t>(input);
         });
     }
 }
@@ -98,9 +98,9 @@ TEST(StringUtilFuzzTest, LongStrings) {
             input[rng() % len] = static_cast<char>(rng() & 0xFF);
         }
         EXPECT_NO_THROW({
-            StringUtil::toSafeLogString(input);
-            StringUtil::split(input, ",");
-            StringUtil::extractHostFromUri(input);
+            (void)StringUtil::toSafeLogString(input);
+            (void)StringUtil::split(input, ",");
+            (void)StringUtil::extractHostFromUri(input);
         });
     }
 }
@@ -119,13 +119,13 @@ TEST(StringUtilFuzzTest, EmptyAndWhitespaceVariants) {
     };
     for (const auto& input : inputs) {
         EXPECT_NO_THROW({
-            StringUtil::split(input, " ");
-            StringUtil::removeSpace(input);
-            StringUtil::toLower(input);
-            StringUtil::extractHostFromUri(input);
-            StringUtil::toSafeLogString(input);
-            StringUtil::startsWith(input, "");
-            StringUtil::endsWith(input, "");
+            (void)StringUtil::split(input, " ");
+            (void)StringUtil::removeSpace(input);
+            (void)StringUtil::toLower(input);
+            (void)StringUtil::extractHostFromUri(input);
+            (void)StringUtil::toSafeLogString(input);
+            (void)StringUtil::startsWith(input, "");
+            (void)StringUtil::endsWith(input, "");
         });
     }
 }

@@ -186,7 +186,7 @@ class GeneratorState final {
         auto producer = producer_;
         bool destroyNow = false;
         if (producer) {
-            // 先与已经进入 ResumeGate::Resuming 的 signal 交接，之后再修改 state。
+            // First synchronize with a signal already entering ResumeGate::Resuming, then update state.
             destroyNow = frameControl_->destroy(producer);
         }
 

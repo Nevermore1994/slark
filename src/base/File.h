@@ -81,7 +81,6 @@ class WriteFile : public FileBase {
 
  private:
     uint32_t checkEveryN_ = kCheckCount;
-    uint32_t checkCount_ = 0;
     uint64_t writeSize_ = 0;
     uint32_t writeCount_ = 0;
 };

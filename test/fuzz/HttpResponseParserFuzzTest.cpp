@@ -114,7 +114,7 @@ TEST(HttpResponseParserFuzzTest, RepeatedResetAndFeed) {
 TEST(HttpResponseParserFuzzTest, TruncatedHeaders) {
     HttpResponseParser::Callbacks callbacks;
     bool errored = false;
-    callbacks.onError = [&](Error e) {
+    callbacks.onError = [&](Error) {
         errored = true;
     };
     HttpResponseParser parser(callbacks);
@@ -126,7 +126,7 @@ TEST(HttpResponseParserFuzzTest, TruncatedHeaders) {
 
 TEST(HttpResponseParserFuzzTest, ManyHeaders) {
     HttpResponseParser::Callbacks callbacks;
-    int headerCount = 0;
+    size_t headerCount = 0;
     callbacks.onHeaders = [&](auto&& h) {
         headerCount = h.size();
     };
