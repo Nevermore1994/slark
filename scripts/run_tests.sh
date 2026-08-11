@@ -2,7 +2,7 @@
 # Run all tests in parallel (base / core / integration / http / platform / fuzz)
 #
 # Output: detailed results -> test/output/<YYYYMMDD_HHMMSS>/
-#         terminal         -> per-group stats + final failed-test summary
+#         terminal         -> aggregate stats + final failed-test summary
 #
 # Usage:
 #   ./scripts/run_tests.sh              # Debug build + run all tests
@@ -29,9 +29,31 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# Extra args passed to ctest (-L, --gtest_filter, etc.)
-shift 2>/dev/null || true
-CTEST_ARGS="$@"
+# Extra args passed to ctest. `--gtest_filter` is translated to CTest regex
+# because gtest_discover_tests executes one discovered test per CTest entry.
+shift || true
+CTEST_ARGS=()
+GTEST_FILTER=""
+while (($# > 0)); do
+    case "$1" in
+        --gtest_filter=*)
+            GTEST_FILTER="${1#*=}"
+            shift
+            ;;
+        --gtest_filter)
+            if (($# < 2)); then
+                echo "--gtest_filter requires a value" >&2
+                exit 2
+            fi
+            GTEST_FILTER="$2"
+            shift 2
+            ;;
+        *)
+            CTEST_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
 
 # Output directory
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
@@ -45,17 +67,25 @@ echo " Build Type : ${BUILD_TYPE}"
 echo " Build Dir  : ${BUILD_DIR}"
 echo " Build Jobs : ${BUILD_JOBS}"
 echo " Output Dir : ${OUTPUT_DIR}"
-echo " CTest Args : ${CTEST_ARGS:-<none>}"
+if ((${#CTEST_ARGS[@]} > 0)); then
+    CTEST_ARGS_DISPLAY="${CTEST_ARGS[*]}"
+else
+    CTEST_ARGS_DISPLAY="<none>"
+fi
+echo " CTest Args : ${CTEST_ARGS_DISPLAY}"
 echo -e "${CYAN}============================================${NC}"
 
 # ─── 1. Configure ───────────────────────────────────────────────────────────────
 echo ""
 echo -e "${YELLOW}[1/3] Configuring CMake...${NC}"
-cmake -S "${PROJECT_DIR}" \
+if ! cmake -S "${PROJECT_DIR}" \
       -B "${BUILD_DIR}" \
       -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
       -DBUILD_PLATFORM=PC \
-      -DDISABLE_HTTP=OFF
+      -DDISABLE_HTTP=OFF; then
+    echo -e "${RED}CMake configure failed${NC}" >&2
+    exit 1
+fi
 
 # ─── 2. Build ───────────────────────────────────────────────────────────────────
 echo ""
@@ -65,97 +95,79 @@ if [ -d "${PROJECT_DIR}/src/core" ]; then
     TARGETS="${TARGETS} CoreIntegration_test PlayerMediaIntegration_test"
 fi
 # shellcheck disable=SC2086
-cmake --build "${BUILD_DIR}" \
+if ! cmake --build "${BUILD_DIR}" \
       --target ${TARGETS} \
-      -j"${BUILD_JOBS}"
+      -j"${BUILD_JOBS}"; then
+    echo -e "${RED}Test target build failed${NC}" >&2
+    exit 1
+fi
 
 # ─── 3. Run ─────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${YELLOW}[3/3] Running tests in parallel...${NC}"
 cd "${BUILD_DIR}"
 
-# Parse label filter from ctest args; if -L given, run only matching labels
-HAS_LABEL_FILTER=false
-if echo "${CTEST_ARGS}" | grep -Eq '\-L[ =]'; then
-    HAS_LABEL_FILTER=true
-fi
+TEST_JOBS="${TEST_JOBS:-${BUILD_JOBS}}"
+TEST_LOG="${OUTPUT_DIR}/ctest.log"
+TEST_JUNIT="${OUTPUT_DIR}/ctest_junit.xml"
+CTEST_RUN_ARGS=(
+    --output-on-failure
+    --output-junit "${TEST_JUNIT}"
+    --no-tests=error
+    --parallel "${TEST_JOBS}"
+)
 
-run_test_group() {
-    local labels="$1"
-    local group_name="$2"
-    local group_tag="$(echo "${labels}" | tr ' ' '_')"
-    local output_file="${OUTPUT_DIR}/${group_tag}.log"
-    local fail_file="${OUTPUT_DIR}/${group_tag}_failed.log"
+# A single CTest process is intentional. Running several CTest processes against
+# one build tree races while gtest_discover_tests regenerates *_tests.cmake.
+# CTest itself still runs individual discovered tests in parallel.
+if [[ -n "${GTEST_FILTER}" ]]; then
+    glob_to_regex() {
+        printf '%s' "$1" | sed -e 's/[.[\\^$()+{}|]/\\&/g' -e 's/\*/.*/g' -e 's/?/./g'
+    }
 
-    echo -e "  ${CYAN}[${group_name}]${NC} starting..."
-
-    # Build label args: -L can be given multiple times to match multiple labels
-    local label_args=""
-    for label in ${labels}; do
-        label_args="${label_args} -L ${label}"
-    done
-
-    # Run ctest, redirect stdout+stderr to file
-    # ${CTEST_ARGS} (e.g. --gtest_filter) is forwarded to each test
-    # Note: --output-on-failure must appear only once
-    ctest \
-        ${label_args} \
-        --output-junit "${OUTPUT_DIR}/${group_tag}_junit.xml" \
-        ${CTEST_ARGS} \
-        --output-on-failure \
-        > "${output_file}" 2>&1
-    local exit_code=$?
-
-    # Extract failed test names to a separate file (guard against missing log)
-    if [ -f "${output_file}" ]; then
-        awk '/The following tests FAILED:/{flag=1; next} /^$/{flag=0} flag' "${output_file}" \
-            | sed 's/^[[:space:]]*//' \
-            | grep -v '^$' \
-            | grep -v '^Errors while running' \
-            > "${fail_file}" 2>/dev/null || true
+    positive_filter="${GTEST_FILTER%%-*}"
+    negative_filter=""
+    if [[ "${GTEST_FILTER}" == *-* ]]; then
+        negative_filter="${GTEST_FILTER#*-}"
     fi
 
-    return ${exit_code}
-}
+    if [[ -n "${positive_filter}" && "${positive_filter}" != "*" ]]; then
+        IFS=':' read -r -a positive_patterns <<< "${positive_filter}"
+        positive_regex=""
+        for pattern in "${positive_patterns[@]}"; do
+            [[ -z "${pattern}" ]] && continue
+            pattern_regex="$(glob_to_regex "${pattern}")"
+            if [[ -n "${positive_regex}" ]]; then
+                positive_regex+="|"
+            fi
+            positive_regex+="${pattern_regex}"
+        done
+        [[ -n "${positive_regex}" ]] && CTEST_RUN_ARGS+=(--tests-regex "^(${positive_regex})$")
+    fi
 
-# Launch six test groups in parallel
-BASE_PID=""; CORE_PID=""; INTEG_PID=""; HTTP_PID=""; PLATFORM_PID=""; FUZZ_PID=""
-BASE_EXIT=0; CORE_EXIT=0; INTEG_EXIT=0; HTTP_EXIT=0; PLATFORM_EXIT=0; FUZZ_EXIT=0
-
-if [ "${HAS_LABEL_FILTER}" = true ]; then
-    # User specified a label filter; run ctest directly
-    ctest ${CTEST_ARGS} --output-on-failure > "${OUTPUT_DIR}/filtered.log" 2>&1
-    FINAL_EXIT=$?
-else
-    # Launch six test groups in parallel
-    run_test_group "base" "Base Test" &
-    BASE_PID=$!
-
-    run_test_group "core" "Core Test" &
-    CORE_PID=$!
-
-    run_test_group "integration" "Integration Test" &
-    INTEG_PID=$!
-
-    run_test_group "http" "HTTP Test" &
-    HTTP_PID=$!
-
-    run_test_group "platform" "Platform Test" &
-    PLATFORM_PID=$!
-
-    run_test_group "fuzz" "Fuzz Test" &
-    FUZZ_PID=$!
-
-    # Wait for all groups
-    wait ${BASE_PID};     BASE_EXIT=$?
-    wait ${CORE_PID};     CORE_EXIT=$?
-    wait ${INTEG_PID};    INTEG_EXIT=$?
-    wait ${HTTP_PID};     HTTP_EXIT=$?
-    wait ${PLATFORM_PID}; PLATFORM_EXIT=$?
-    wait ${FUZZ_PID};     FUZZ_EXIT=$?
-
-    FINAL_EXIT=$((BASE_EXIT | CORE_EXIT | INTEG_EXIT | HTTP_EXIT | PLATFORM_EXIT | FUZZ_EXIT))
+    if [[ -n "${negative_filter}" ]]; then
+        IFS=':' read -r -a negative_patterns <<< "${negative_filter}"
+        negative_regex=""
+        for pattern in "${negative_patterns[@]}"; do
+            [[ -z "${pattern}" ]] && continue
+            pattern_regex="$(glob_to_regex "${pattern}")"
+            if [[ -n "${negative_regex}" ]]; then
+                negative_regex+="|"
+            fi
+            negative_regex+="${pattern_regex}"
+        done
+        [[ -n "${negative_regex}" ]] && CTEST_RUN_ARGS+=(-E "^(${negative_regex})$")
+    fi
 fi
+
+CTEST_RUN_ARGS+=("${CTEST_ARGS[@]}")
+ctest "${CTEST_RUN_ARGS[@]}" >"${TEST_LOG}" 2>&1
+FINAL_EXIT=$?
+
+awk '/The following tests FAILED:/{flag=1; next} flag && NF {print}' "${TEST_LOG}" \
+    | sed 's/^[[:space:]]*//' \
+    | grep -v '^Errors while running' \
+    > "${OUTPUT_DIR}/failed_tests.log" 2>/dev/null || true
 
 # ─── 4. Summary ─────────────────────────────────────────────────────────────────
 echo ""
@@ -163,88 +175,46 @@ echo -e "${CYAN}============================================${NC}"
 echo -e "${CYAN} Test Summary${NC}"
 echo -e "${CYAN}============================================${NC}"
 
-ALL_FAILED=()
-TOTAL_PASS=0
-TOTAL_FAIL=0
-
-collect_results() {
-    local group_tag="$1"
-    local group_name="$2"
-    local output_file="${OUTPUT_DIR}/${group_tag}.log"
-    local fail_file="${OUTPUT_DIR}/${group_tag}_failed.log"
-
-    if [ ! -f "${output_file}" ]; then
-        return
-    fi
-
-    local summary="$(grep -E '^[0-9]+% tests passed' "${output_file}" | tail -1)"
-    local total_tests="$(echo "${summary}" | grep -oE 'out of [0-9]+' | grep -oE '[0-9]+')"
-    local pass_pct="$(echo "${summary}" | grep -oE '^[0-9]+' | head -1)"
-    local fail_count=0
-
-    if [ -z "${total_tests}" ]; then
-        total_tests=0
-    fi
-    if [ -z "${pass_pct}" ]; then
-        pass_pct=0
-    fi
-
-    if [ -f "${fail_file}" ] && [ -s "${fail_file}" ]; then
-        fail_count="$(wc -l < "${fail_file}" | tr -d ' ')"
-    fi
-
-    TOTAL_PASS=$((TOTAL_PASS + total_tests - fail_count))
-    TOTAL_FAIL=$((TOTAL_FAIL + fail_count))
-
-    if [ "${fail_count}" -gt 0 ]; then
-        echo -e " ${RED}✗ ${group_name}${NC}: ${total_tests} tests, ${RED}${fail_count} failed${NC}"
-        while IFS= read -r failed_test; do
-            ALL_FAILED+=("${group_name} :: ${failed_test}")
-        done < "${fail_file}"
+SUMMARY_LINE="$(grep -E '[0-9]+% tests passed, [0-9]+ tests failed out of [0-9]+' "${TEST_LOG}" | tail -1)"
+if [[ -n "${SUMMARY_LINE}" ]]; then
+    if [[ "${SUMMARY_LINE}" =~ ([0-9]+)%\ tests\ passed,\ ([0-9]+)\ tests\ failed\ out\ of\ ([0-9]+) ]]; then
+        PASS_COUNT="${BASH_REMATCH[1]}"
+        TOTAL_FAIL="${BASH_REMATCH[2]}"
+        TOTAL_TESTS="${BASH_REMATCH[3]}"
+        TOTAL_PASS=$((TOTAL_TESTS - TOTAL_FAIL))
     else
-        echo -e " ${GREEN}✓ ${group_name}${NC}: ${total_tests} tests all passed"
-    fi
-}
-
-if [ "${HAS_LABEL_FILTER}" = true ]; then
-    SUMMARY=$(grep -E '^[0-9]+% tests passed' "${OUTPUT_DIR}/filtered.log" | tail -1)
-    TOTAL_TESTS=$(echo "${SUMMARY}" | grep -oE 'out of [0-9]+' | grep -oE '[0-9]+')
-    echo -e " ${GREEN}Result${NC}: ${TOTAL_TESTS:-0} tests"
-    FAILED_TESTS=$(awk '/The following tests FAILED:/{flag=1; next} /^$/{flag=0} flag' "${OUTPUT_DIR}/filtered.log" | sed 's/^[[:space:]]*//' | grep -v '^$' | grep -v '^Errors while running')
-    if [ -n "${FAILED_TESTS}" ]; then
-        echo ""
-        echo -e "${RED}────────────────────────────────────────────${NC}"
-        echo -e "${RED} FAILED TESTS:${NC}"
-        echo -e "${RED}────────────────────────────────────────────${NC}"
-        echo "${FAILED_TESTS}" | while read -r line; do
-            echo -e "  ${RED}✗${NC} ${line}"
-        done
-        echo -e "${RED}────────────────────────────────────────────${NC}"
+        echo -e " ${RED}✗ Unable to parse CTest summary: ${SUMMARY_LINE}${NC}"
+        FINAL_EXIT=1
+        TOTAL_PASS=0
+        TOTAL_FAIL=0
+        TOTAL_TESTS=0
     fi
 else
-    echo ""
-    collect_results "base" "Base Test"
-    collect_results "core" "Core Test"
-    collect_results "integration" "Integration Test"
-    collect_results "http" "HTTP Test"
-    collect_results "platform" "Platform Test"
-    collect_results "fuzz" "Fuzz Test"
-
-    echo ""
-    if [ ${#ALL_FAILED[@]} -eq 0 ]; then
-        echo -e " ${GREEN}All ${TOTAL_PASS} tests passed ✓${NC}"
-    else
-        echo -e " ${GREEN}Passed  : ${TOTAL_PASS}${NC}"
-        echo -e " ${RED}Failed  : ${TOTAL_FAIL}${NC}"
-        echo ""
-        echo -e "${RED}────────────────────────────────────────────${NC}"
-        echo -e "${RED} FAILED TESTS:${NC}"
-        echo -e "${RED}────────────────────────────────────────────${NC}"
-        for failed in "${ALL_FAILED[@]}"; do
-            echo -e "  ${RED}✗${NC} ${failed}"
-        done
-        echo -e "${RED}────────────────────────────────────────────${NC}"
+    echo -e " ${RED}✗ Test discovery/execution failed; no valid CTest summary was produced${NC}"
+    if grep -Eq 'CMake Error|Errors while running CTest|No tests were found' "${TEST_LOG}"; then
+        echo -e " ${RED}  See ${TEST_LOG} for the discovery error${NC}"
     fi
+    FINAL_EXIT=1
+    TOTAL_PASS=0
+    TOTAL_FAIL=0
+    TOTAL_TESTS=0
+fi
+
+if [[ "${FINAL_EXIT}" -eq 0 && "${TOTAL_TESTS}" -gt 0 && "${TOTAL_FAIL}" -eq 0 ]]; then
+    echo -e " ${GREEN}All ${TOTAL_PASS} tests passed ✓${NC}"
+elif [[ "${TOTAL_TESTS}" -gt 0 ]]; then
+    echo -e " ${GREEN}Passed  : ${TOTAL_PASS}${NC}"
+    echo -e " ${RED}Failed  : ${TOTAL_FAIL}${NC}"
+else
+    echo -e " ${RED}No tests were counted; the run is considered failed${NC}"
+fi
+
+if [[ -s "${OUTPUT_DIR}/failed_tests.log" ]]; then
+    echo ""
+    echo -e "${RED} FAILED TESTS:${NC}"
+    while IFS= read -r failed_test; do
+        echo -e "  ${RED}✗${NC} ${failed_test}"
+    done < "${OUTPUT_DIR}/failed_tests.log"
 fi
 
 echo -e "${CYAN}============================================${NC}"

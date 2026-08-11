@@ -3,8 +3,11 @@ cmake_minimum_required(VERSION 3.20)
 # Google Test settings
 include(FetchContent)
 
-# 统一 FetchContent 缓存目录
-set(FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/.fetchcontent_cache" CACHE PATH "" FORCE)
+# 默认共享源码缓存；独立 sanitizer 构建可通过 SLARK_FETCHCONTENT_BASE_DIR 隔离二进制产物。
+set(SLARK_FETCHCONTENT_BASE_DIR
+    "${CMAKE_SOURCE_DIR}/.fetchcontent_cache"
+    CACHE PATH "FetchContent cache directory")
+set(FETCHCONTENT_BASE_DIR "${SLARK_FETCHCONTENT_BASE_DIR}" CACHE PATH "" FORCE)
 
 FetchContent_Declare(googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
