@@ -22,11 +22,13 @@ enum class DemuxerType {
     FLV,
     MP4,
     HLS,
+    TS,
     WAV,
 };
 
 struct DemuxerConfig {
     std::string filePath;
+    DemuxerType preferredType = DemuxerType::Unknown;
 };
 
 struct DemuxerInfo {
@@ -91,6 +93,13 @@ class IDemuxer : public NonCopyMovable {
     }
 
     virtual DemuxerResult parseData(DataPacket& packet) noexcept = 0;
+
+    virtual DemuxerResult endOfStream() noexcept {
+        isCompleted_ = true;
+        DemuxerResult result;
+        result.resultCode = DemuxerResultCode::FileEnd;
+        return result;
+    }
 
     [[nodiscard]] virtual uint64_t getSeekToPos(double) noexcept = 0;
 

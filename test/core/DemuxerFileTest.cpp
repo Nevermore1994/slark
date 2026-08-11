@@ -276,6 +276,63 @@ class TsDemuxerFileTest : public ::testing::Test {
     }
 };
 
+TEST_F(TsDemuxerFileTest, TsAdapterParsesSegmentAndEndsOnTerminalEvent) {
+    auto demuxer = DemuxerManager::shareInstance().create(DemuxerType::TS);
+    ASSERT_NE(demuxer, nullptr);
+
+    DemuxerConfig config;
+    config.preferredType = DemuxerType::TS;
+    demuxer->init(std::move(config));
+    auto emptyBuffer = std::make_unique<Buffer>();
+    ASSERT_TRUE(demuxer->open(emptyBuffer));
+
+    uint64_t fileSize = 0;
+    auto buffer = loadFile(kTsPath, fileSize);
+    ASSERT_NE(buffer, nullptr);
+    DataPacket packet;
+    packet.offset = 0;
+    packet.segmentIndex = 3;
+    packet.data = buffer->detachData();
+    auto result = demuxer->parseData(packet);
+    EXPECT_GT(result.videoFrames.size(), 0u);
+    EXPECT_GT(result.audioFrames.size(), 0u);
+    EXPECT_FALSE(demuxer->isCompleted());
+
+    auto endResult = demuxer->endOfStream();
+    EXPECT_EQ(endResult.resultCode, DemuxerResultCode::FileEnd);
+    EXPECT_TRUE(demuxer->isCompleted());
+}
+
+TEST_F(TsDemuxerFileTest, TsAdapterRejectsEmptyPacket) {
+    auto demuxer = DemuxerManager::shareInstance().create(DemuxerType::TS);
+    ASSERT_NE(demuxer, nullptr);
+    demuxer->init(DemuxerConfig{});
+    auto emptyBuffer = std::make_unique<Buffer>();
+    ASSERT_TRUE(demuxer->open(emptyBuffer));
+
+    DataPacket packet;
+    const auto result = demuxer->parseData(packet);
+    EXPECT_EQ(result.resultCode, DemuxerResultCode::Failed);
+    EXPECT_FALSE(demuxer->isCompleted());
+}
+
+TEST_F(TsDemuxerFileTest, TsAdapterFlushAndCloseResetLifecycleState) {
+    auto demuxer = DemuxerManager::shareInstance().create(DemuxerType::TS);
+    ASSERT_NE(demuxer, nullptr);
+    demuxer->init(DemuxerConfig{});
+    auto emptyBuffer = std::make_unique<Buffer>();
+    ASSERT_TRUE(demuxer->open(emptyBuffer));
+
+    ASSERT_EQ(demuxer->endOfStream().resultCode, DemuxerResultCode::FileEnd);
+    EXPECT_TRUE(demuxer->isCompleted());
+    demuxer->flush();
+    EXPECT_FALSE(demuxer->isCompleted());
+    EXPECT_TRUE(demuxer->isOpened());
+    demuxer->close();
+    EXPECT_FALSE(demuxer->isOpened());
+    EXPECT_FALSE(demuxer->isCompleted());
+}
+
 TEST_F(TsDemuxerFileTest, TsDemuxerHandlesEmptyBuffer) {
     auto audioInfo = std::shared_ptr<AudioInfo>();
     auto videoInfo = std::shared_ptr<VideoInfo>();

@@ -163,6 +163,65 @@ TEST(Data, rangeBasedFor) {
     ASSERT_EQ(result, "hello");
 }
 
+TEST(DataPacket, DefaultState) {
+    DataPacket packet;
+
+    EXPECT_EQ(packet.length(), 0u);
+    EXPECT_TRUE(packet.empty());
+    EXPECT_EQ(packet.offset, 0);
+    EXPECT_TRUE(packet.tag.empty());
+    EXPECT_EQ(packet.segmentIndex, 0u);
+    EXPECT_FALSE(packet.isLastChunk);
+    EXPECT_FALSE(packet.isEndOfStream);
+    EXPECT_EQ(packet.seekEpoch, 0u);
+}
+
+TEST(DataPacket, MovePreservesAllFields) {
+    DataPacket source;
+    source.data = Data::fromString("payload");
+    source.offset = 123;
+    source.tag = "7";
+    source.segmentIndex = 7;
+    source.isLastChunk = true;
+    source.isEndOfStream = false;
+    source.seekEpoch = 9;
+
+    DataPacket target = std::move(source);
+
+    ASSERT_NE(target.data, nullptr);
+    EXPECT_EQ(target.data->toStringView(), "payload");
+    EXPECT_EQ(target.offset, 123);
+    EXPECT_EQ(target.tag, "7");
+    EXPECT_EQ(target.segmentIndex, 7u);
+    EXPECT_TRUE(target.isLastChunk);
+    EXPECT_FALSE(target.isEndOfStream);
+    EXPECT_EQ(target.seekEpoch, 9u);
+}
+
+TEST(DataPacket, MoveAssignmentPreservesEndOfStreamMetadata) {
+    DataPacket source;
+    source.offset = -1;
+    source.tag = "terminal";
+    source.segmentIndex = 42;
+    source.isLastChunk = false;
+    source.isEndOfStream = true;
+    source.seekEpoch = 11;
+
+    DataPacket target;
+    target.data = Data::fromString("stale");
+    target.isLastChunk = true;
+
+    target = std::move(source);
+
+    EXPECT_EQ(target.data, nullptr);
+    EXPECT_EQ(target.offset, -1);
+    EXPECT_EQ(target.tag, "terminal");
+    EXPECT_EQ(target.segmentIndex, 42u);
+    EXPECT_FALSE(target.isLastChunk);
+    EXPECT_TRUE(target.isEndOfStream);
+    EXPECT_EQ(target.seekEpoch, 11u);
+}
+
 TEST(DataView, basicOperations) {
     DataView view("hello world");
     ASSERT_EQ(view.size(), 11u);

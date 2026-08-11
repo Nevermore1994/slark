@@ -8,6 +8,7 @@ namespace slark {
 
 void MediaPlaylist::addSegment(Segment segment) {
     segment.index = static_cast<uint32_t>(segments_.size());
+    segment.sequence = mediaSequence_ + segment.index;
     segments_.push_back(std::move(segment));
 }
 
@@ -45,6 +46,17 @@ std::optional<uint32_t> MediaPlaylist::findSegmentByIndex(uint32_t index) const 
         return std::nullopt;
     }
     return index;
+}
+
+std::optional<uint32_t> MediaPlaylist::findSegmentBySequence(uint64_t sequence) const noexcept {
+    const auto it = std::find_if(segments_.begin(), segments_.end(),
+                                 [sequence](const Segment& segment) {
+                                     return segment.sequence == sequence;
+                                 });
+    if (it == segments_.end()) {
+        return std::nullopt;
+    }
+    return it->index;
 }
 
 }  // namespace slark

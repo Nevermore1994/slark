@@ -14,6 +14,7 @@ namespace slark {
 
 struct Segment {
     uint32_t index = 0;
+    uint64_t sequence = 0;
     double duration = 0.0;
     double startTime = 0.0;
     std::string uri;
@@ -49,6 +50,8 @@ class MediaPlaylist {
     /// Return the matching segment index, or std::nullopt when there is no match
     [[nodiscard]] std::optional<uint32_t> findSegmentByIndex(uint32_t index) const noexcept;
 
+    [[nodiscard]] std::optional<uint32_t> findSegmentBySequence(uint64_t sequence) const noexcept;
+
     [[nodiscard]] const std::vector<Variant>& variants() const noexcept {
         return variants_;
     }
@@ -59,6 +62,14 @@ class MediaPlaylist {
 
     [[nodiscard]] double totalDuration() const noexcept {
         return totalDuration_;
+    }
+
+    [[nodiscard]] uint64_t mediaSequence() const noexcept {
+        return mediaSequence_;
+    }
+
+    [[nodiscard]] double targetDuration() const noexcept {
+        return targetDuration_;
     }
 
     [[nodiscard]] bool isLive() const noexcept {
@@ -77,6 +88,14 @@ class MediaPlaylist {
         totalDuration_ = duration;
     }
 
+    void setMediaSequence(uint64_t sequence) {
+        mediaSequence_ = sequence;
+    }
+
+    void setTargetDuration(double duration) {
+        targetDuration_ = duration;
+    }
+
     void setLive(bool live) {
         isLive_ = live;
     }
@@ -85,6 +104,8 @@ class MediaPlaylist {
     std::vector<Segment> segments_;
     std::vector<Variant> variants_;
     double totalDuration_ = 0.0;
+    uint64_t mediaSequence_ = 0;
+    double targetDuration_ = 0.0;
     bool isLive_ = false;
 };
 

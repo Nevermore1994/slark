@@ -66,6 +66,9 @@ StreamType StreamFactory::detectStreamType(const std::string& uri) {
 
 bool StreamFactory::isHLS(const std::string& uri) noexcept {
     std::string_view sv(uri);
+    if (const auto queryStart = sv.find_first_of("?#"); queryStart != std::string_view::npos) {
+        sv = sv.substr(0, queryStart);
+    }
     auto matchSuffix = [sv](std::string_view suffix) {
         if (sv.size() < suffix.size()) {
             return false;

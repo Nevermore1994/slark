@@ -118,12 +118,12 @@ class TSDemuxer {
 
     void resetData() noexcept;
 
-    bool parseData(Buffer& buffer, uint32_t tsIndex, DemuxerResult& result) noexcept;
+    bool parseData(Buffer& buffer, uint64_t tsIndex, DemuxerResult& result) noexcept;
 
  private:
     static bool checkPacket(Buffer& buffer, uint64_t& pos) noexcept;
 
-    bool parsePacket(DataView data, uint32_t tsIndex, DemuxerResult& result) noexcept;
+    bool parsePacket(DataView data, uint64_t tsIndex, DemuxerResult& result) noexcept;
 
     bool parseTSPAT(DataView data) noexcept;
 
@@ -131,7 +131,7 @@ class TSDemuxer {
 
     bool parseTSPes(DataView data, uint8_t payloadIndicator, TSPESFrame& pes) noexcept;
 
-    bool packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexcept;
+    bool packH264VideoPacket(uint64_t tsIndex, AVFramePtrArray& frames) noexcept;
 
     static void writeVideoData(AVFramePtr& frame, DataView view) noexcept;
 
@@ -148,7 +148,7 @@ class TSDemuxer {
 
     void initAudioInfoIfNeeded(const AACAdtsHeader& header, uint64_t sampleRate) noexcept;
 
-    bool packAudioPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexcept;
+    bool packAudioPacket(uint64_t tsIndex, AVFramePtrArray& frames) noexcept;
 
     void recalculatePtsDts(int64_t& pts, int64_t& dts, bool isAudio) noexcept;
 
@@ -209,6 +209,42 @@ class HLSDemuxer : public IDemuxer {
     std::unique_ptr<M3U8Parser> slinkParser_;
     std::unique_ptr<TSDemuxer> tsDemuxer_;
     std::string baseUrl_;
+};
+
+class TSDemuxerAdapter : public IDemuxer {
+ public:
+    TSDemuxerAdapter() {
+        type_ = DemuxerType::TS;
+    }
+
+    ~TSDemuxerAdapter() override = default;
+
+    void init(DemuxerConfig config) noexcept override;
+
+    bool open(std::unique_ptr<Buffer>& buffer) noexcept override;
+
+    void close() noexcept override;
+
+    void flush() noexcept override;
+
+    void seekPos(uint64_t pos) noexcept override;
+
+    DemuxerResult parseData(DataPacket& packet) noexcept override;
+
+    DemuxerResult endOfStream() noexcept override;
+
+    [[nodiscard]] uint64_t getSeekToPos(double) noexcept override {
+        return 0;
+    }
+
+    inline static const DemuxerInfo& info() noexcept {
+        static DemuxerInfo info = {DemuxerType::TS, "",
+                                   Reflection::enroll<TSDemuxerAdapter>("TSDemuxerAdapter")};
+        return info;
+    }
+
+ private:
+    std::unique_ptr<TSDemuxer> tsDemuxer_;
 };
 
 }  // namespace slark

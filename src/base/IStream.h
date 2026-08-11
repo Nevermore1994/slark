@@ -40,7 +40,7 @@ struct DataChunk {
     DataView data;
     DataRefPtr owner;
     uint64_t offset = 0;
-    uint32_t segmentIndex = 0;
+    uint64_t segmentIndex = 0;
     bool isLastChunk = false;
 
     [[nodiscard]] bool empty() const noexcept {

@@ -269,7 +269,11 @@ bool Player::Impl::createDemuxerComponent() noexcept {
     }
 
     DemuxerConfig config;
-    config.filePath = mediaSourceManager_.streamInfo().uri;
+    const auto streamInfo = mediaSourceManager_.streamInfo();
+    config.filePath = streamInfo.uri;
+    if (streamInfo.type == StreamType::HLS) {
+        config.preferredType = DemuxerType::TS;
+    }
     if (config.filePath.empty()) {
         LogE("demuxer config file path is empty.");
         return false;
@@ -415,6 +419,9 @@ void Player::Impl::preparePlayerInfo() noexcept {
     info_.hasAudio = demuxerComponent_->hasAudio();
     info_.hasVideo = demuxerComponent_->hasVideo();
     info_.duration = demuxerComponent_->totalDuration().second();
+    if (info_.duration <= 0.0) {
+        info_.duration = mediaSourceManager_.streamInfo().duration;
+    }
     info_.isSeekable = mediaSourceManager_.streamInfo().isSeekable;
     LogI("player info prepared, duration:{:.3f}s, hasAudio:{}, hasVideo:{}, isSeekable:{}",
          info_.duration, info_.hasAudio, info_.hasVideo, info_.isSeekable);

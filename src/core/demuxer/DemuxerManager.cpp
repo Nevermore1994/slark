@@ -24,6 +24,7 @@ void DemuxerManager::init() noexcept {
     demuxers_[Mp4Demuxer::info().type] = Mp4Demuxer::info();
     demuxers_[WAVDemuxer::info().type] = WAVDemuxer::info();
     demuxers_[HLSDemuxer::info().type] = HLSDemuxer::info();
+    demuxers_[TSDemuxerAdapter::info().type] = TSDemuxerAdapter::info();
 }
 
 bool DemuxerManager::contains(DemuxerType type) const noexcept {

@@ -401,6 +401,9 @@ struct DataPacket {
     DataPtr data = nullptr;
     int64_t offset = 0;
     std::string tag;
+    uint64_t segmentIndex = 0;
+    bool isLastChunk = false;
+    bool isEndOfStream = false;
     uint64_t seekEpoch = 0;  // seek epoch, incremented on each seek to isolate stale packets end-to-end
 
     DataPacket() = default;
@@ -414,12 +417,18 @@ struct DataPacket {
         : data(std::move(other.data)),
           offset(other.offset),
           tag(std::move(other.tag)),
+          segmentIndex(other.segmentIndex),
+          isLastChunk(other.isLastChunk),
+          isEndOfStream(other.isEndOfStream),
           seekEpoch(other.seekEpoch) {}
 
     DataPacket& operator=(DataPacket&& other) noexcept {
         data = std::move(other.data);
         offset = other.offset;
         tag = std::move(other.tag);
+        segmentIndex = other.segmentIndex;
+        isLastChunk = other.isLastChunk;
+        isEndOfStream = other.isEndOfStream;
         seekEpoch = other.seekEpoch;
         return *this;
     }

@@ -41,14 +41,20 @@ bool MediaSourceManager::open(const std::string& uri,
     OpenParams params;
     params.uri = uri;
 
-    params.onData = [onData = std::move(onData)](DataChunk chunk) {
-        if (!onData || chunk.empty()) {
+    // Share the callback so the EOS packet follows data packets on the same channel.
+    auto dataCallback = std::make_shared<StreamDataCallback>(std::move(onData));
+
+    params.onData = [dataCallback](DataChunk chunk) {
+        if (!dataCallback || !*dataCallback || chunk.empty()) {
             return;
         }
         DataPacket packet;
         packet.data = std::make_unique<Data>(chunk.data);
         packet.offset = static_cast<int64_t>(chunk.offset);
-        onData(std::move(packet));
+        packet.segmentIndex = chunk.segmentIndex;
+        packet.tag = std::to_string(chunk.segmentIndex);
+        packet.isLastChunk = chunk.isLastChunk;
+        (*dataCallback)(std::move(packet));
     };
 
     params.onError = [onError = std::move(onError)](Error err, int32_t originErrorCode) {
@@ -57,7 +63,16 @@ bool MediaSourceManager::open(const std::string& uri,
         }
     };
 
-    params.onComplete = std::move(onComplete);
+    params.onComplete = [dataCallback, onComplete = std::move(onComplete)]() mutable {
+        if (dataCallback && *dataCallback) {
+            DataPacket packet;
+            packet.isEndOfStream = true;
+            (*dataCallback)(std::move(packet));
+        }
+        if (onComplete) {
+            onComplete();
+        }
+    };
 
     auto openResult = stream_->open(params);
     if (!openResult.has_value()) {

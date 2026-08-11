@@ -39,7 +39,7 @@ static bool validateTSHeader(const TSHeader& header) noexcept {
     return true;
 }
 
-bool TSDemuxer::parsePacket(DataView data, uint32_t tsIndex, DemuxerResult& result) noexcept {
+bool TSDemuxer::parsePacket(DataView data, uint64_t tsIndex, DemuxerResult& result) noexcept {
     TSHeader header;
     data.readNumberLE(header.syncbyte, 1);
     header.payloadUinitIndicator = (static_cast<uint8_t>(data[1]) & 0x40) >> 6;
@@ -312,7 +312,7 @@ std::shared_ptr<VideoFrameInfo> TSDemuxer::makeVideoFrameInfo(uint8_t naluType,
     return info;
 }
 
-bool TSDemuxer::packH264VideoPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexcept {
+bool TSDemuxer::packH264VideoPacket(uint64_t tsIndex, AVFramePtrArray& frames) noexcept {
     if (videoESFrame_.mediaData.empty()) {
         LogI("media data is empty!");
         return false;
@@ -456,7 +456,7 @@ void TSDemuxer::initAudioInfoIfNeeded(const AACAdtsHeader& header, uint64_t samp
     audioInfo_->samplingFrequencyIndex = header.samplingIndex;
 }
 
-bool TSDemuxer::packAudioPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexcept {
+bool TSDemuxer::packAudioPacket(uint64_t tsIndex, AVFramePtrArray& frames) noexcept {
     if (audioESFrame_.mediaData.empty()) {
         LogI("media data is empty!");
         return false;
@@ -492,7 +492,7 @@ bool TSDemuxer::packAudioPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexc
         auto info = std::make_shared<AudioFrameInfo>();
         info->channels = header.channel;
         info->sampleRate = sampleRate;
-        info->refIndex = tsIndex;
+        info->refIndex = static_cast<uint32_t>(tsIndex);
         auto frame = std::make_unique<AVFrame>(AVFrameType::Audio);
         frame->data = std::make_unique<Data>(dataView);
         frame->duration = 1024 * 1000 / sampleRate;  // ms
@@ -509,7 +509,7 @@ bool TSDemuxer::packAudioPacket(uint32_t tsIndex, AVFramePtrArray& frames) noexc
     return true;
 }
 
-bool TSDemuxer::parseData(Buffer& buffer, uint32_t tsIndex, DemuxerResult& result) noexcept {
+bool TSDemuxer::parseData(Buffer& buffer, uint64_t tsIndex, DemuxerResult& result) noexcept {
     if (!buffer.require(kPacketSize)) {
         return false;
     }
@@ -571,7 +571,7 @@ DemuxerResult HLSDemuxer::parseData(DataPacket& packet) noexcept {
         return result;
     }
 
-    if (!tsDemuxer_->parseData(*buffer_, static_cast<uint32_t>(tsIndex), result)) {
+    if (!tsDemuxer_->parseData(*buffer_, tsIndex, result)) {
         LogE("parse ts data error! offset:{}, ts index:{}", packet.offset, tsIndex);
         result.resultCode = DemuxerResultCode::Failed;
     }
@@ -674,6 +674,75 @@ const std::vector<Segment>& HLSDemuxer::getTSInfos() const noexcept {
         return slinkParser_->playlist()->segments();
     }
     return mainParser_->playlist()->segments();
+}
+
+void TSDemuxerAdapter::init(DemuxerConfig config) noexcept {
+    IDemuxer::init(std::move(config));
+    buffer_ = std::make_unique<Buffer>();
+    tsDemuxer_ = std::make_unique<TSDemuxer>(audioInfo_, videoInfo_);
+}
+
+bool TSDemuxerAdapter::open(std::unique_ptr<Buffer>& buffer) noexcept {
+    if (!buffer_) {
+        buffer_ = std::make_unique<Buffer>();
+    }
+    if (!tsDemuxer_) {
+        tsDemuxer_ = std::make_unique<TSDemuxer>(audioInfo_, videoInfo_);
+    }
+    if (buffer && !buffer->empty()) {
+        if (!buffer_->append(buffer->detachData())) {
+            return false;
+        }
+    }
+    isOpened_ = true;
+    isCompleted_ = false;
+    return true;
+}
+
+void TSDemuxerAdapter::close() noexcept {
+    if (tsDemuxer_) {
+        tsDemuxer_->resetData();
+    }
+    buffer_.reset();
+    isOpened_ = false;
+    isCompleted_ = false;
+}
+
+void TSDemuxerAdapter::flush() noexcept {
+    IDemuxer::flush();
+    if (tsDemuxer_) {
+        tsDemuxer_->resetData();
+    }
+}
+
+void TSDemuxerAdapter::seekPos(uint64_t pos) noexcept {
+    IDemuxer::seekPos(pos);
+    if (tsDemuxer_) {
+        tsDemuxer_->resetData();
+    }
+}
+
+DemuxerResult TSDemuxerAdapter::parseData(DataPacket& packet) noexcept {
+    DemuxerResult result;
+    if (packet.empty() || !isOpened_ || !buffer_ || !tsDemuxer_) {
+        result.resultCode = DemuxerResultCode::Failed;
+        return result;
+    }
+    if (!buffer_->append(static_cast<uint64_t>(packet.offset), std::move(packet.data))) {
+        result.resultCode = DemuxerResultCode::InvalidData;
+        return result;
+    }
+    if (!tsDemuxer_->parseData(*buffer_, packet.segmentIndex, result)) {
+        result.resultCode = DemuxerResultCode::Failed;
+    }
+    return result;
+}
+
+DemuxerResult TSDemuxerAdapter::endOfStream() noexcept {
+    isCompleted_ = true;
+    DemuxerResult result;
+    result.resultCode = DemuxerResultCode::FileEnd;
+    return result;
 }
 
 }  // namespace slark

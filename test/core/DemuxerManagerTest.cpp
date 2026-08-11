@@ -16,7 +16,17 @@ TEST(DemuxerManagerTest, InitRegistersDemuxers) {
     auto& mgr = DemuxerManager::shareInstance();
     mgr.init();
     EXPECT_TRUE(mgr.contains(DemuxerType::MP4));
+    EXPECT_TRUE(mgr.contains(DemuxerType::TS));
     EXPECT_TRUE(mgr.contains(DemuxerType::WAV));
+}
+
+TEST(DemuxerManagerTest, CreateTsDemuxerSucceeds) {
+    auto& mgr = DemuxerManager::shareInstance();
+    mgr.init();
+
+    auto ts = mgr.create(DemuxerType::TS);
+    ASSERT_NE(ts, nullptr);
+    EXPECT_EQ(ts->type(), DemuxerType::TS);
 }
 
 TEST(DemuxerManagerTest, CreateDemuxer) {

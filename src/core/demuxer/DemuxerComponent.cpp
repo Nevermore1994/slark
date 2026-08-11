@@ -41,6 +41,8 @@ void DemuxerComponent::reset() noexcept {
         demuxer->close();
     }
     flushed_ = false;
+    pendingSeekVerifiedOffset_.store(0, std::memory_order_release);
+    probeBuffer_.reset();
     demuxer_.reset();
 }
 
@@ -107,12 +109,21 @@ void DemuxerComponent::runLoop(Thread& thread) noexcept {
             break;
         }
         DataPacket packet = std::move(*exp);
-        LogI("demuxer worker: received data packet offset={}, size={}", packet.offset,
-             packet.data ? packet.data->size() : 0);
 
         if (flushed_.load(std::memory_order_acquire)) {
             continue;
         }
+
+        if (packet.isEndOfStream) {
+            auto demuxer = demuxer_.load();
+            if (demuxer && demuxer->isOpened() && !demuxer->isCompleted()) {
+                invokeHandleResultFunc(demuxer->endOfStream());
+            }
+            continue;
+        }
+
+        LogI("demuxer worker: received data packet offset={}, size={}", packet.offset,
+             packet.data ? packet.data->size() : 0);
 
         auto expectedOffset = pendingSeekVerifiedOffset_.load(std::memory_order_acquire);
         if (expectedOffset != 0) {
@@ -126,8 +137,19 @@ void DemuxerComponent::runLoop(Thread& thread) noexcept {
 
         auto demuxer = demuxer_.load();
         if (!demuxer || !demuxer->isOpened()) {
-            openDemuxer(packet);
-            continue;
+            if (config_.preferredType == DemuxerType::Unknown) {
+                openDemuxer(packet);
+                continue;
+            }
+            if (!demuxer && !createDemuxer()) {
+                LogE("create preferred demuxer failed.");
+                continue;
+            }
+            if (!open()) {
+                LogE("open preferred demuxer failed.");
+                continue;
+            }
+            demuxer = demuxer_.load();
         }
 
 #ifdef SLARK_PERF_ENABLED
@@ -157,6 +179,16 @@ bool DemuxerComponent::open() noexcept {
         return false;
     }
     if (demuxer->isOpened()) {
+        return true;
+    }
+    if (config_.preferredType != DemuxerType::Unknown) {
+        auto emptyBuffer = std::make_unique<Buffer>();
+        if (!demuxer->open(emptyBuffer)) {
+            return false;
+        }
+        DemuxerResult result;
+        result.resultCode = DemuxerResultCode::ParsedHeader;
+        invokeHandleResultFunc(std::move(result));
         return true;
     }
     if (!demuxer->open(probeBuffer_)) {
@@ -217,8 +249,15 @@ bool DemuxerComponent::openDemuxer(DataPacket& packet) noexcept {
 }
 
 bool DemuxerComponent::createDemuxer() noexcept {
-    auto dataView = probeBuffer_->view();
-    auto demuxerType = DemuxerManager::shareInstance().probeDemuxType(dataView);
+    auto demuxerType = config_.preferredType;
+    DataView dataView;
+    if (demuxerType == DemuxerType::Unknown) {
+        if (!probeBuffer_) {
+            return false;
+        }
+        dataView = probeBuffer_->view();
+        demuxerType = DemuxerManager::shareInstance().probeDemuxType(dataView);
+    }
     if (demuxerType == DemuxerType::Unknown) {
         return false;
     }

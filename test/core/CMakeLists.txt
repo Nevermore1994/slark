@@ -33,12 +33,15 @@ set(CORE_TEST_SOURCES
     ${CORE_SRC_DIR}/perf/PlaySession.cpp
     ${DEMUXER_SRC_DIR}/M3U8Parser.cpp
     ${DEMUXER_SRC_DIR}/DemuxerManager.cpp
+    ${DEMUXER_SRC_DIR}/DemuxerComponent.cpp
     ${DEMUXER_SRC_DIR}/Mp4Box.cpp
     ${DEMUXER_SRC_DIR}/Mp4Demuxer.cpp
     ${DEMUXER_SRC_DIR}/HLSDemuxer.cpp
     ${DEMUXER_SRC_DIR}/WavDemuxer.cpp
     ${CORE_SRC_DIR}/HttpStream.cpp
     ${CORE_SRC_DIR}/HLSStream.cpp
+    ${CORE_SRC_DIR}/StreamFactory.cpp
+    ${CORE_SRC_DIR}/MediaSourceManager.cpp
 )
 
 add_executable(${PROJECT_NAME} ${TEST_FILES}
