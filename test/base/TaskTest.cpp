@@ -23,6 +23,16 @@ Task<int> suspendedIntTask(std::shared_ptr<CompletionAwaiter<int>> awaiter) {
     co_return co_await *awaiter;
 }
 
+template <typename Func>
+Task<void> runVoidTask(Func func) {
+    co_await func();
+}
+
+template <typename Func>
+Task<int> runIntTask(Func func) {
+    co_return co_await func();
+}
+
 TEST(TaskTest, CreateAndResume) {
     auto task = simpleIntTask(42);
     EXPECT_TRUE(task.isValid());
@@ -187,13 +197,13 @@ TEST(TaskTest, SymmetricTransfer_SimpleChild) {
 
 TEST(TaskTest, SymmetricTransfer_VoidChild) {
     bool childRan = false;
-    auto task = [&childRan]() -> Task<void> {
-        co_await [&childRan]() -> Task<void> {
+    auto task = runVoidTask([&childRan]() -> Task<void> {
+        co_await runVoidTask([&childRan]() -> Task<void> {
             childRan = true;
             co_return;
-        }();
+        });
         co_return;
-    }();
+    });
 
     task.resume();
     EXPECT_TRUE(task.isDone());

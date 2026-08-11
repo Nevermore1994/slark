@@ -56,19 +56,22 @@ RequestInfo makeRequest(std::string_view path, HttpMethodType method, DataRefPtr
     return info;
 }
 
+Task<void> executeRequestTask(RequestInfo info,
+                               std::shared_ptr<SyncWaiter> waiter,
+                               std::shared_ptr<HttpResponse> result) {
+    try {
+        auto request = std::make_shared<HttpRequest>();
+        *result = co_await request->asyncExecute(info);
+    } catch (...) {
+        result->error = ErrorInfo{slark::Error::Failed, 0};
+    }
+    waiter->notify();
+}
+
 HttpResponse executeSync(const RequestInfo& info) {
     auto waiter = std::make_shared<SyncWaiter>();
     auto result = std::make_shared<HttpResponse>();
-
-    auto testTask = [&]() -> Task<void> {
-        try {
-            auto request = std::make_shared<HttpRequest>();
-            *result = co_await request->asyncExecute(info);
-        } catch (...) {
-            result->error = ErrorInfo{slark::Error::Failed, 0};
-        }
-        waiter->notify();
-    }();
+    auto testTask = executeRequestTask(info, waiter, result);
 
     testTask.resume();
     EXPECT_TRUE(waiter->wait()) << "Request timed out: " << info.url;
@@ -465,17 +468,7 @@ TEST_F(HttpAdvancedTest, PostFormUrlEncoded) {
 HttpResponse executeCoroutine(const RequestInfo& info) {
     auto waiter = std::make_shared<SyncWaiter>();
     auto result = std::make_shared<HttpResponse>();
-
-    auto testTask = [&]() -> Task<void> {
-        try {
-            auto request = std::make_shared<HttpRequest>();
-            auto response = co_await request->asyncExecute(info);
-            *result = std::move(response);
-        } catch (const std::exception& e) {
-            result->error = ErrorInfo{slark::Error::Failed, 0};
-        }
-        waiter->notify();
-    }();
+    auto testTask = executeRequestTask(info, waiter, result);
 
     testTask.resume();
 

@@ -166,6 +166,8 @@ class AsyncIOOperationBase {
 
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
+        releaseTransferLeases(handle.promise());
+        markExternalAwait(handle.promise());
         auto gate = makeResumeGate(handle);
         if (!completion_->begin(gate)) {
             gate->disarm();

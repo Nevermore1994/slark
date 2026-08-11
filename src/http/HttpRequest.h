@@ -5,6 +5,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -16,6 +17,40 @@
 #include "Type.h"
 
 namespace slark::http {
+
+enum class OperationStatus : uint8_t {
+    Running,
+    Completed,
+    Cancelled,
+    Closed,
+    Failed,
+};
+
+struct OperationState final : std::enable_shared_from_this<OperationState> {
+    CancellationToken token;
+
+    ~OperationState();
+
+    [[nodiscard]] OperationStatus status() const noexcept {
+        return status_.load(std::memory_order_acquire);
+    }
+
+    [[nodiscard]] bool isActive() const noexcept {
+        return status() == OperationStatus::Running;
+    }
+
+    void bindExternalCancellation(const CancellationToken& token) noexcept;
+    void markCompleted() noexcept;
+    void markFailed() noexcept;
+    void cancel() noexcept;
+    void close() noexcept;
+
+ private:
+    bool transition(OperationStatus expected, OperationStatus desired) noexcept;
+
+    std::atomic<OperationStatus> status_{OperationStatus::Running};
+    CancellationTokenRegistration externalCancellation_;
+};
 
 class HttpRequest : public NonCopyable {
  public:
@@ -31,10 +66,6 @@ class HttpRequest : public NonCopyable {
     void cancel() noexcept;
 
  private:
-    struct OperationState final {
-        CancellationToken token;
-        std::atomic<bool> active{true};
-    };
     using OperationStatePtr = std::shared_ptr<OperationState>;
 
     static Task<HttpResponse> executeWithToken(RequestInfo requestInfo,

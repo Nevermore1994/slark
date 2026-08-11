@@ -21,11 +21,16 @@ template <typename T = void>
 class Task;
 
 struct TaskPromiseBase {
-    std::coroutine_handle<> continuation_;
+    ContinuationLink continuation_;
     IExecutor* executor_ = nullptr;
     std::shared_ptr<CoroutineFrameControl> frameControl_ =
         std::make_shared<CoroutineFrameControl>();
 
+ private:
+    ExecutionLease continuationLease_;
+    ExecutionLease incomingTransferLease_;
+
+ public:
     struct FinalAwaiter {
         bool await_ready() const noexcept {
             return false;
@@ -34,13 +39,18 @@ struct TaskPromiseBase {
         template <typename Promise>
         std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> h) noexcept {
             auto& promise = h.promise();
-            if (!promise.continuation_) {
+            releaseTransferLeases(promise);
+            auto continuation = std::move(promise.continuation_);
+            if (!continuation.isValid()) {
+                continuation.reset();
                 return std::noop_coroutine();
             }
 
-            auto continuation = promise.continuation_;
-            promise.continuation_ = nullptr;
-            return continuation;
+            *continuation.targetLeaseSlot = std::move(continuation.lease);
+            auto target = continuation.handle;
+            continuation.handle = nullptr;
+            continuation.control.reset();
+            return target;
         }
 
         void await_resume() noexcept {}
@@ -54,8 +64,32 @@ struct TaskPromiseBase {
         return {};
     }
 
-    void setContinuation(std::coroutine_handle<> cont) noexcept {
-        continuation_ = cont;
+    bool setContinuation(std::coroutine_handle<> cont,
+                         std::shared_ptr<CoroutineFrameControl> control,
+                         ExecutionLease* targetLeaseSlot) noexcept {
+        continuation_ =
+            ContinuationLink::create(cont, std::move(control), targetLeaseSlot);
+        return continuation_.isValid();
+    }
+
+    void releaseIncomingTransferLease() noexcept {
+        incomingTransferLease_.reset();
+    }
+
+    void releaseContinuationLease() noexcept {
+        continuationLease_.reset();
+    }
+
+    void releaseContinuation() noexcept {
+        continuation_.reset();
+    }
+
+    [[nodiscard]] ExecutionLease* continuationLeaseSlot() noexcept {
+        return &continuationLease_;
+    }
+
+    [[nodiscard]] ExecutionLease* incomingTransferLeaseSlot() noexcept {
+        return &incomingTransferLease_;
     }
 
     [[nodiscard]] std::shared_ptr<CoroutineFrameControl> frameControl() const noexcept {
@@ -131,18 +165,21 @@ class TaskAwaiter {
 
     explicit TaskAwaiter(handle_type handle) noexcept : handle_(handle) {}
 
-    TaskAwaiter(TaskAwaiter&& other) noexcept : handle_(std::exchange(other.handle_, nullptr)) {}
+    TaskAwaiter(TaskAwaiter&& other) noexcept
+        : handle_(std::exchange(other.handle_, nullptr)),
+          childLease_(std::move(other.childLease_)) {}
 
     TaskAwaiter& operator=(TaskAwaiter&& other) noexcept {
         if (this != &other) {
-            detail::destroyTaskFrame(std::exchange(handle_, nullptr));
+            destroyChild();
             handle_ = std::exchange(other.handle_, nullptr);
+            childLease_ = std::move(other.childLease_);
         }
         return *this;
     }
 
     ~TaskAwaiter() {
-        detail::destroyTaskFrame(std::exchange(handle_, nullptr));
+        destroyChild();
     }
 
     bool await_ready() const noexcept {
@@ -150,9 +187,26 @@ class TaskAwaiter {
     }
 
     template <typename ParentPromise>
+        requires ContinuationPromise<ParentPromise>
     std::coroutine_handle<> await_suspend(std::coroutine_handle<ParentPromise> awaiting) noexcept {
+        releaseTransferLeases(awaiting.promise());
+        if (!handle_) {
+            return awaiting;
+        }
+
         auto& childPromise = handle_.promise();
-        childPromise.setContinuation(awaiting);
+        childLease_ = childPromise.frameControl()->tryAcquire(handle_);
+        if (!childLease_) {
+            return awaiting;
+        }
+
+        bool continuationInstalled = childPromise.setContinuation(
+            awaiting, awaiting.promise().frameControl(),
+            awaiting.promise().continuationLeaseSlot());
+        if (!continuationInstalled) {
+            childLease_.reset();
+            return awaiting;
+        }
         if constexpr (requires { awaiting.promise().executor_; }) {
             childPromise.executor_ = awaiting.promise().executor_;
         }
@@ -160,11 +214,29 @@ class TaskAwaiter {
     }
 
     T await_resume() {
-        return handle_.promise().result();
+        auto& childPromise = handle_.promise();
+        childPromise.releaseContinuation();
+        childLease_.reset();
+        return childPromise.result();
     }
 
  private:
+    void destroyChild() noexcept {
+        if (!handle_) {
+            childLease_.reset();
+            return;
+        }
+        auto handle = handle_;
+        bool destroyNow = handle.promise().frameControl()->destroy(handle);
+        childLease_.reset();
+        handle_ = nullptr;
+        if (destroyNow) {
+            handle.destroy();
+        }
+    }
+
     handle_type handle_ = nullptr;
+    ExecutionLease childLease_;
 };
 
 template <typename T>

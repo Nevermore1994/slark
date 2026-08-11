@@ -14,12 +14,17 @@ using namespace slark::http;
 
 namespace {
 
+template <typename Func>
+Task<void> runVoidTask(Func func) {
+    co_await func();
+}
+
 HttpResponse executeSync(const RequestInfo& info) {
     ThreadPool pool(ThreadPoolConfig{2});
     std::atomic<bool> done{false};
     HttpResponse result;
 
-    auto task = [&]() -> Task<void> {
+    auto task = runVoidTask([&]() -> Task<void> {
         HttpProcessor processor;
         auto r = co_await processor.process(info);
         if (r.has_value()) {
@@ -28,7 +33,7 @@ HttpResponse executeSync(const RequestInfo& info) {
             result.error = r.error();
         }
         done = true;
-    }();
+    });
     task.resume();
     for (int i = 0; i < 200 && !done.load(); ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -109,7 +114,7 @@ TEST(HttpProcessorTest, ProcessCancelledDuringRequest) {
     ThreadPool pool(ThreadPoolConfig{2});
     std::atomic<bool> done{false};
     HttpResponse result;
-    auto task = [&]() -> Task<void> {
+    auto task = runVoidTask([&]() -> Task<void> {
         HttpProcessor processor;
         auto r = co_await processor.process(info, token);
         if (r.has_value()) {
@@ -118,7 +123,7 @@ TEST(HttpProcessorTest, ProcessCancelledDuringRequest) {
             result.error = r.error();
         }
         done = true;
-    }();
+    });
     task.resume();
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     token.cancel();
@@ -150,7 +155,7 @@ TEST(HttpProcessorTest, StreamingRejectsResponseBodyAboveLimit) {
     ThreadPool pool(ThreadPoolConfig{2});
     std::atomic<bool> done{false};
     Error error = Error::Success;
-    auto task = [&]() -> Task<void> {
+    auto task = runVoidTask([&]() -> Task<void> {
         HttpProcessor processor;
         auto gen = processor.processStreaming(info);
         while (true) {
@@ -163,7 +168,7 @@ TEST(HttpProcessorTest, StreamingRejectsResponseBodyAboveLimit) {
             }
         }
         done = true;
-    }();
+    });
     task.resume();
     for (int i = 0; i < 200 && !done.load(); ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -182,7 +187,7 @@ TEST(HttpProcessorTest, StreamingGetReturnsChunks) {
     std::atomic<bool> done{false};
     size_t totalBytes = 0;
     int32_t chunkCount = 0;
-    auto task = [&]() -> Task<void> {
+    auto task = runVoidTask([&]() -> Task<void> {
         HttpProcessor processor;
         auto gen = processor.processStreaming(info);
         while (true) {
@@ -196,7 +201,7 @@ TEST(HttpProcessorTest, StreamingGetReturnsChunks) {
             chunkCount++;
         }
         done = true;
-    }();
+    });
     task.resume();
     for (int i = 0; i < 200 && !done.load(); ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -218,7 +223,7 @@ TEST(HttpProcessorTest, StreamingFollowsRedirect) {
     HttpStatusCode lastStatus = HttpStatusCode::Unknown;
     size_t totalBytes = 0;
     int32_t chunkCount = 0;
-    auto task = [&]() -> Task<void> {
+    auto task = runVoidTask([&]() -> Task<void> {
         HttpProcessor processor;
         auto gen = processor.processStreaming(info);
         while (true) {
@@ -235,7 +240,7 @@ TEST(HttpProcessorTest, StreamingFollowsRedirect) {
             chunkCount++;
         }
         done = true;
-    }();
+    });
     task.resume();
     for (int i = 0; i < 200 && !done.load(); ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));

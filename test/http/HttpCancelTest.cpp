@@ -14,6 +14,11 @@ using namespace slark::http;
 
 namespace {
 
+template <typename Func>
+Task<void> runVoidTask(Func func) {
+    co_await func();
+}
+
 void resumeUntilDone(Task<void>& task, int32_t timeoutMs = 15000) {
     task.resume();
     auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
@@ -24,12 +29,47 @@ void resumeUntilDone(Task<void>& task, int32_t timeoutMs = 15000) {
 
 }  // namespace
 
+TEST(OperationStateTest, TerminalTransitionsAreSticky) {
+    auto completed = std::make_shared<OperationState>();
+    EXPECT_EQ(completed->status(), OperationStatus::Running);
+    completed->markCompleted();
+    EXPECT_EQ(completed->status(), OperationStatus::Completed);
+    completed->cancel();
+    completed->close();
+    completed->markFailed();
+    EXPECT_EQ(completed->status(), OperationStatus::Completed);
+
+    auto cancelled = std::make_shared<OperationState>();
+    cancelled->cancel();
+    EXPECT_EQ(cancelled->status(), OperationStatus::Cancelled);
+    cancelled->markCompleted();
+    EXPECT_EQ(cancelled->status(), OperationStatus::Cancelled);
+
+    auto closed = std::make_shared<OperationState>();
+    closed->close();
+    EXPECT_EQ(closed->status(), OperationStatus::Closed);
+
+    auto failed = std::make_shared<OperationState>();
+    failed->markFailed();
+    EXPECT_EQ(failed->status(), OperationStatus::Failed);
+}
+
+TEST(OperationStateTest, ExternalCancellationTransitionsOperation) {
+    auto operation = std::make_shared<OperationState>();
+    CancellationToken external;
+    operation->bindExternalCancellation(external);
+
+    external.cancel();
+
+    EXPECT_EQ(operation->status(), OperationStatus::Cancelled);
+    EXPECT_TRUE(operation->token.isCancelled());
+}
 
 TEST(HttpCancelTest, CancelDuringDnsPhase) {
     CancellationToken token;
     token.cancel();
 
-    auto task = [&token]() -> Task<void> {
+    auto task = runVoidTask([&token]() -> Task<void> {
         RequestInfo info;
         info.url = "http://httpbingo.org/get";
         info.methodType = HttpMethodType::Get;
@@ -41,7 +81,7 @@ TEST(HttpCancelTest, CancelDuringDnsPhase) {
 
         EXPECT_FALSE(response.isSuccess());
         EXPECT_EQ(response.error.retCode, slark::Error::Cancelled);
-    }();
+    });
 
     auto start = std::chrono::steady_clock::now();
     resumeUntilDone(task);
@@ -55,7 +95,7 @@ TEST(HttpCancelTest, CancelDuringDnsPhase) {
 TEST(HttpCancelTest, CancelDuringTcpConnectPhase) {
     CancellationToken token;
 
-    auto task = [&token]() -> Task<void> {
+    auto task = runVoidTask([&token]() -> Task<void> {
         RequestInfo info;
         info.url = "http://httpbingo.org/delay/5";
         info.methodType = HttpMethodType::Get;
@@ -67,7 +107,7 @@ TEST(HttpCancelTest, CancelDuringTcpConnectPhase) {
 
         EXPECT_FALSE(response.isSuccess());
         EXPECT_EQ(response.error.retCode, slark::Error::Cancelled);
-    }();
+    });
 
     std::thread canceller([&token]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -95,11 +135,11 @@ TEST(HttpCancelTest, HttpRequestCancelCancelsExplicitTokenRequest) {
     info.readTimeout = std::chrono::milliseconds(10000);
 
     auto requestTask = request.asyncExecute(info, externalToken);
-    auto task = [&]() -> Task<void> {
+    auto task = runVoidTask([&]() -> Task<void> {
         auto response = co_await std::move(requestTask);
         EXPECT_EQ(response.error.retCode, slark::Error::Cancelled);
         EXPECT_FALSE(externalToken.isCancelled());
-    }();
+    });
 
     std::thread canceller([&request]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -123,7 +163,7 @@ TEST(HttpCancelTest, HttpRequestCancelCancelsAllActiveOperations) {
     auto secondRequest = request.asyncExecute(info, secondExternalToken);
     request.cancel();
 
-    auto task = [&]() -> Task<void> {
+    auto task = runVoidTask([&]() -> Task<void> {
         auto firstResponse = co_await std::move(firstRequest);
         auto secondResponse = co_await std::move(secondRequest);
         EXPECT_EQ(firstResponse.error.retCode, slark::Error::Cancelled);
@@ -133,7 +173,7 @@ TEST(HttpCancelTest, HttpRequestCancelCancelsAllActiveOperations) {
 
         auto thirdResponse = co_await request.asyncExecute(info);
         EXPECT_EQ(thirdResponse.error.retCode, slark::Error::InvalidArgument);
-    }();
+    });
 
     resumeUntilDone(task);
     EXPECT_TRUE(task.isDone());
@@ -150,7 +190,7 @@ TEST(HttpCancelTest, CancelledRequestCanBeReused) {
     auto firstRequest = request.asyncExecute(info);
     request.cancel();
 
-    auto task = [&]() -> Task<void> {
+    auto task = runVoidTask([&]() -> Task<void> {
         auto firstResponse = co_await std::move(firstRequest);
         EXPECT_EQ(firstResponse.error.retCode, slark::Error::Cancelled);
 
@@ -159,7 +199,7 @@ TEST(HttpCancelTest, CancelledRequestCanBeReused) {
         invalidInfo.methodType = HttpMethodType::Get;
         auto secondResponse = co_await request.asyncExecute(invalidInfo);
         EXPECT_EQ(secondResponse.error.retCode, slark::Error::InvalidArgument);
-    }();
+    });
 
     resumeUntilDone(task);
     EXPECT_TRUE(task.isDone());
@@ -168,7 +208,7 @@ TEST(HttpCancelTest, CancelledRequestCanBeReused) {
 TEST(HttpCancelTest, CancelDuringTlsPhase) {
     CancellationToken token;
 
-    auto task = [&token]() -> Task<void> {
+    auto task = runVoidTask([&token]() -> Task<void> {
         RequestInfo info;
         info.url = "https://httpbingo.org/delay/5";
         info.methodType = HttpMethodType::Get;
@@ -180,7 +220,7 @@ TEST(HttpCancelTest, CancelDuringTlsPhase) {
 
         EXPECT_FALSE(response.isSuccess());
         EXPECT_EQ(response.error.retCode, slark::Error::Cancelled);
-    }();
+    });
 
     std::thread canceller([&token]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -233,7 +273,7 @@ TEST(HttpCancelTest, CancelAfterHeaderChunkStopsStream) {
 TEST(HttpCancelTest, CancelAndReadTimeoutRaceIsSafe) {
     CancellationToken token;
 
-    auto task = [&token]() -> Task<void> {
+    auto task = runVoidTask([&token]() -> Task<void> {
         RequestInfo info;
         info.url = "http://httpbingo.org/stream-bytes/10240";
         info.methodType = HttpMethodType::Get;
@@ -244,7 +284,7 @@ TEST(HttpCancelTest, CancelAndReadTimeoutRaceIsSafe) {
 
         EXPECT_TRUE(response.error.retCode == slark::Error::Cancelled ||
                     response.error.retCode == slark::Error::ConnectionTimeout);
-    }();
+    });
 
     std::thread canceller([&token]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(120));

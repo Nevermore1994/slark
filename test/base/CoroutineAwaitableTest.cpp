@@ -7,12 +7,27 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "Task.hpp"
 
 namespace {
+
+struct UncontrolledPromise {};
+
+template <typename Promise>
+concept CanAwaitTaskFrom = requires(slark::TaskAwaiter<void>& awaiter,
+                                    std::coroutine_handle<Promise> handle) {
+    awaiter.await_suspend(handle);
+};
+
+static_assert(slark::ContinuationPromise<slark::TaskPromise<void>>);
+static_assert(slark::ContinuationPromise<slark::detail::AsyncGeneratorPromise<int>>);
+static_assert(!slark::ContinuationPromise<UncontrolledPromise>);
+static_assert(!CanAwaitTaskFrom<UncontrolledPromise>);
 
 slark::Task<int> awaitCompletion(
     std::shared_ptr<slark::CompletionAwaiter<int>> awaiter) {
@@ -37,9 +52,142 @@ slark::Task<int> parentWithChild(
     co_return 42;
 }
 
+slark::Task<int> parentWithTwoCompletions(
+    std::shared_ptr<slark::CompletionAwaiter<void>> first,
+    std::shared_ptr<slark::CompletionAwaiter<void>> second) {
+    co_await childCompletion(std::move(first));
+    co_await *second;
+    co_return 42;
+}
+
+struct TaskFrameMarker {
+    std::shared_ptr<std::atomic<int>> destroyed;
+
+    ~TaskFrameMarker() {
+        destroyed->fetch_add(1, std::memory_order_relaxed);
+    }
+};
+
+slark::Task<void> trackedParentWithTwoCompletions(
+    std::shared_ptr<slark::CompletionAwaiter<void>> first,
+    std::shared_ptr<slark::CompletionAwaiter<void>> second,
+    std::shared_ptr<std::atomic<int>> destroyed) {
+    TaskFrameMarker marker{std::move(destroyed)};
+    co_await childCompletion(std::move(first));
+    co_await *second;
+}
+
+slark::Task<int> completedTask(int value) {
+    co_return value;
+}
+
+struct GeneratorFrameMarker {
+    std::shared_ptr<std::atomic<int>> destroyed;
+
+    ~GeneratorFrameMarker() {
+        destroyed->fetch_add(1, std::memory_order_relaxed);
+    }
+};
+
 slark::AsyncGenerator<int> twoValues() {
     co_yield 1;
     co_yield 2;
+}
+
+slark::AsyncGenerator<int> trackedValue(std::shared_ptr<std::atomic<int>> destroyed) {
+    GeneratorFrameMarker marker{std::move(destroyed)};
+    co_yield 1;
+}
+
+slark::Task<void> consumeAndDestroyAfterYield(std::shared_ptr<std::atomic<int>> destroyed) {
+    auto generator = trackedValue(std::move(destroyed));
+    auto value = co_await generator.next();
+    if (!value.has_value()) {
+        co_return;
+    }
+    generator = {};
+}
+
+slark::Task<void> consumeToFinalSuspend(std::shared_ptr<std::atomic<int>> destroyed) {
+    auto generator = trackedValue(std::move(destroyed));
+    auto value = co_await generator.next();
+    if (!value.has_value()) {
+        co_return;
+    }
+    co_await generator.next();
+}
+
+slark::Task<int> consumeMovedGenerator(std::shared_ptr<std::atomic<int>> destroyed) {
+    auto generator = trackedValue(std::move(destroyed));
+    auto value = co_await std::move(generator).next();
+    co_return value.value_or(0);
+}
+
+slark::AsyncGenerator<int> awaitBeforeYield(
+    std::shared_ptr<slark::CompletionAwaiter<void>> awaiter) {
+    co_await *awaiter;
+    co_yield 1;
+}
+
+slark::AsyncGenerator<int> trackedAwaitBeforeYield(
+    std::shared_ptr<slark::CompletionAwaiter<void>> awaiter,
+    std::shared_ptr<std::atomic<int>> destroyed,
+    std::atomic<int>* resumed,
+    std::atomic<int>* resumedAfterYield = nullptr) {
+    GeneratorFrameMarker marker{std::move(destroyed)};
+    co_await *awaiter;
+    resumed->fetch_add(1, std::memory_order_relaxed);
+    co_yield 1;
+    if (resumedAfterYield) {
+        resumedAfterYield->fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
+slark::AsyncGenerator<int> trackedThrowingGenerator(
+    std::shared_ptr<std::atomic<int>> destroyed) {
+    GeneratorFrameMarker marker{std::move(destroyed)};
+    co_yield 1;
+    throw std::runtime_error("tracked generator boom");
+}
+
+slark::Task<void> consumeOne(slark::AsyncGenerator<int>& generator,
+                             std::atomic<bool>* reachedEnd) {
+    auto value = co_await generator.next();
+    reachedEnd->store(!value.has_value(), std::memory_order_release);
+}
+
+slark::Task<void> consumeAndCloseAfterYield(
+    slark::AsyncGenerator<int>& generator,
+    std::atomic<bool>* received,
+    std::shared_ptr<std::atomic<int>> destroyed,
+    std::atomic<bool>* destroyDeferred) {
+    auto value = co_await generator.next();
+    if (value.has_value()) {
+        received->store(true, std::memory_order_release);
+        generator.close();
+        destroyDeferred->store(
+            destroyed->load(std::memory_order_relaxed) == 0, std::memory_order_release);
+    }
+}
+
+slark::Task<void> consumeTemporaryGenerator(
+    std::shared_ptr<slark::CompletionAwaiter<void>> awaiter,
+    std::shared_ptr<std::atomic<int>> destroyed,
+    std::atomic<int>* resumed,
+    std::atomic<bool>* reachedEnd) {
+    auto value = co_await trackedAwaitBeforeYield(
+                         std::move(awaiter), std::move(destroyed), resumed)
+                         .next();
+    reachedEnd->store(!value.has_value(), std::memory_order_release);
+}
+
+slark::Task<void> drainGenerator(slark::AsyncGenerator<int>& generator) {
+    while (true) {
+        auto value = co_await generator.next();
+        if (!value.has_value()) {
+            co_return;
+        }
+    }
 }
 
 slark::Task<int> consumeTwoValues() {
@@ -136,6 +284,298 @@ TEST(CompletionAwaiterTest, ChildCompletionDoesNotDeadlockFrameDestruction) {
     EXPECT_EQ(task.result(), 42);
 }
 
+TEST(CompletionAwaiterTest, PendingChildCannotResumeDestroyedParent) {
+    auto awaiter = std::make_shared<slark::CompletionAwaiter<void>>();
+    {
+        auto task = parentWithChild(awaiter);
+        task.resume();
+        ASSERT_FALSE(task.isDone());
+    }
+
+    EXPECT_NO_THROW(awaiter->complete());
+}
+
+TEST(TaskLeaseTest, MovedLeaseProtectsFrameAfterOwnerDestruction) {
+    slark::ExecutionLease lease;
+
+    {
+        auto task = completedTask(42);
+        auto handle = task.getHandle();
+        auto movedLease = handle.promise().frameControl()->tryAcquire(handle);
+        ASSERT_TRUE(movedLease);
+        lease = std::move(movedLease);
+        EXPECT_FALSE(movedLease);
+
+        task.resume();
+    }
+
+    EXPECT_TRUE(lease);
+    lease.reset();
+}
+
+TEST(GeneratorStateTest, CloseTransitionsToClosed) {
+    auto generator = twoValues();
+
+    EXPECT_EQ(generator.status(), slark::GeneratorStatus::Running);
+    generator.close();
+    EXPECT_EQ(generator.status(), slark::GeneratorStatus::Closed);
+    EXPECT_TRUE(generator.isDone());
+}
+
+TEST(GeneratorStateTest, CloseResumesPendingConsumerAsEndOfStream) {
+    auto awaiter = std::make_shared<slark::CompletionAwaiter<void>>();
+    auto generator = awaitBeforeYield(awaiter);
+    std::atomic<bool> reachedEnd{false};
+    auto consumer = consumeOne(generator, &reachedEnd);
+
+    consumer.resume();
+    ASSERT_FALSE(consumer.isDone());
+    ASSERT_EQ(generator.status(), slark::GeneratorStatus::Running);
+
+    generator.close();
+
+    EXPECT_TRUE(consumer.isDone());
+    EXPECT_TRUE(reachedEnd.load(std::memory_order_acquire));
+    EXPECT_EQ(generator.status(), slark::GeneratorStatus::Closed);
+
+    awaiter->complete();
+}
+
+TEST(GeneratorStateTest, OwnerDestructorClosesPendingConsumer) {
+    auto awaiter = std::make_shared<slark::CompletionAwaiter<void>>();
+    std::atomic<bool> reachedEnd{false};
+    std::optional<slark::Task<void>> consumer;
+
+    {
+        auto generator = awaitBeforeYield(awaiter);
+        consumer.emplace(consumeOne(generator, &reachedEnd));
+        consumer->resume();
+        ASSERT_FALSE(consumer->isDone());
+    }
+
+    ASSERT_TRUE(consumer->isDone());
+    EXPECT_TRUE(reachedEnd.load(std::memory_order_acquire));
+    awaiter->complete();
+}
+
+TEST(GeneratorCloseTest, CloseDuringExternalWaitPreventsLaterGateResume) {
+    auto awaiter = std::make_shared<slark::CompletionAwaiter<void>>();
+    auto destroyed = std::make_shared<std::atomic<int>>(0);
+    std::atomic<int> resumed{0};
+    std::atomic<bool> reachedEnd{false};
+    auto generator = trackedAwaitBeforeYield(awaiter, destroyed, &resumed);
+    auto consumer = consumeOne(generator, &reachedEnd);
+
+    consumer.resume();
+    ASSERT_FALSE(consumer.isDone());
+    EXPECT_EQ(generator.phase(), slark::GeneratorPhase::WaitingExternal);
+    ASSERT_TRUE(generator.getHandle());
+
+    generator.close();
+    EXPECT_EQ(generator.status(), slark::GeneratorStatus::Closed);
+    EXPECT_EQ(generator.phase(), slark::GeneratorPhase::FinalSuspended);
+    EXPECT_FALSE(generator.getHandle());
+    EXPECT_TRUE(consumer.isDone());
+    EXPECT_TRUE(reachedEnd.load(std::memory_order_acquire));
+    EXPECT_EQ(destroyed->load(std::memory_order_relaxed), 1);
+
+    awaiter->complete();
+    EXPECT_EQ(resumed.load(std::memory_order_relaxed), 0);
+    generator.close();
+    awaiter->complete();
+}
+
+TEST(GeneratorCloseTest, CloseAndCompletionRaceHasAtMostOneProducerResume) {
+    constexpr int kIterations = 200;
+    for (int i = 0; i < kIterations; ++i) {
+        auto awaiter = std::make_shared<slark::CompletionAwaiter<void>>();
+        auto destroyed = std::make_shared<std::atomic<int>>(0);
+        std::atomic<int> resumed{0};
+        std::atomic<bool> reachedEnd{false};
+        auto generator = trackedAwaitBeforeYield(awaiter, destroyed, &resumed);
+        auto consumer = consumeOne(generator, &reachedEnd);
+
+        consumer.resume();
+        ASSERT_FALSE(consumer.isDone());
+        std::atomic<bool> start{false};
+        std::thread completer([awaiter, &start] {
+            while (!start.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+            awaiter->complete();
+        });
+        start.store(true, std::memory_order_release);
+        generator.close();
+        completer.join();
+
+        EXPECT_TRUE(consumer.isDone());
+        EXPECT_EQ(generator.status(), slark::GeneratorStatus::Closed);
+        EXPECT_FALSE(generator.getHandle());
+        EXPECT_LE(resumed.load(std::memory_order_relaxed), 1);
+        EXPECT_EQ(destroyed->load(std::memory_order_relaxed), 1);
+        awaiter->complete();
+    }
+}
+
+TEST(GeneratorCloseTest, CloseDuringYieldHandoffDefersDestroyUntilLeaseRelease) {
+    auto awaiter = std::make_shared<slark::CompletionAwaiter<void>>();
+    auto destroyed = std::make_shared<std::atomic<int>>(0);
+    std::atomic<int> resumed{0};
+    std::atomic<int> resumedAfterYield{0};
+    std::atomic<bool> received{false};
+    std::atomic<bool> destroyDeferred{false};
+    auto generator = trackedAwaitBeforeYield(
+        awaiter, destroyed, &resumed, &resumedAfterYield);
+    auto consumer = consumeAndCloseAfterYield(
+        generator, &received, destroyed, &destroyDeferred);
+
+    consumer.resume();
+    ASSERT_FALSE(consumer.isDone());
+    awaiter->complete();
+
+    ASSERT_TRUE(consumer.isDone());
+    EXPECT_TRUE(received.load(std::memory_order_acquire));
+    EXPECT_TRUE(destroyDeferred.load(std::memory_order_acquire));
+    EXPECT_EQ(resumed.load(std::memory_order_relaxed), 1);
+    EXPECT_EQ(resumedAfterYield.load(std::memory_order_relaxed), 0);
+    EXPECT_EQ(generator.status(), slark::GeneratorStatus::Closed);
+    EXPECT_FALSE(generator.getHandle());
+    EXPECT_EQ(destroyed->load(std::memory_order_relaxed), 1);
+}
+
+TEST(GeneratorCloseTest, CloseAfterCompletedDestroysFrameWithoutChangingStatus) {
+    auto destroyed = std::make_shared<std::atomic<int>>(0);
+    auto generator = trackedValue(destroyed);
+    auto consumer = drainGenerator(generator);
+
+    consumer.resume();
+    ASSERT_TRUE(consumer.isDone());
+    ASSERT_EQ(generator.status(), slark::GeneratorStatus::Completed);
+    ASSERT_TRUE(generator.getHandle());
+
+    generator.close();
+    EXPECT_EQ(generator.status(), slark::GeneratorStatus::Completed);
+    EXPECT_FALSE(generator.getHandle());
+    EXPECT_EQ(destroyed->load(std::memory_order_relaxed), 1);
+    generator.close();
+    EXPECT_EQ(destroyed->load(std::memory_order_relaxed), 1);
+}
+
+TEST(GeneratorCloseTest, CloseAfterFailedDestroysFrameWithoutChangingStatus) {
+    auto destroyed = std::make_shared<std::atomic<int>>(0);
+    auto generator = trackedThrowingGenerator(destroyed);
+    auto consumer = drainGenerator(generator);
+
+    consumer.resume();
+    ASSERT_TRUE(consumer.isDone());
+    ASSERT_EQ(generator.status(), slark::GeneratorStatus::Failed);
+    ASSERT_TRUE(generator.getHandle());
+    EXPECT_THROW(consumer.result(), std::runtime_error);
+
+    generator.close();
+    EXPECT_EQ(generator.status(), slark::GeneratorStatus::Failed);
+    EXPECT_FALSE(generator.getHandle());
+    EXPECT_EQ(destroyed->load(std::memory_order_relaxed), 1);
+    generator.close();
+    EXPECT_EQ(destroyed->load(std::memory_order_relaxed), 1);
+}
+
+TEST(GeneratorCloseTest, DoubleCloseIsIdempotentAndDoesNotResumeConsumerTwice) {
+    auto awaiter = std::make_shared<slark::CompletionAwaiter<void>>();
+    auto destroyed = std::make_shared<std::atomic<int>>(0);
+    std::atomic<int> resumed{0};
+    std::atomic<bool> reachedEnd{false};
+    auto generator = trackedAwaitBeforeYield(awaiter, destroyed, &resumed);
+    auto consumer = consumeOne(generator, &reachedEnd);
+
+    consumer.resume();
+    ASSERT_FALSE(consumer.isDone());
+    generator.close();
+    generator.close();
+
+    ASSERT_TRUE(consumer.isDone());
+    EXPECT_TRUE(reachedEnd.load(std::memory_order_acquire));
+    EXPECT_EQ(generator.status(), slark::GeneratorStatus::Closed);
+    EXPECT_EQ(destroyed->load(std::memory_order_relaxed), 1);
+    awaiter->complete();
+    EXPECT_EQ(resumed.load(std::memory_order_relaxed), 0);
+}
+
+TEST(GeneratorCloseTest, DestroyingRvalueNextAwaiterClosesOwnedGenerator) {
+    auto awaiter = std::make_shared<slark::CompletionAwaiter<void>>();
+    auto destroyed = std::make_shared<std::atomic<int>>(0);
+    std::atomic<int> resumed{0};
+    std::atomic<bool> reachedEnd{false};
+
+    {
+        auto consumer = consumeTemporaryGenerator(awaiter, destroyed, &resumed, &reachedEnd);
+        consumer.resume();
+        ASSERT_FALSE(consumer.isDone());
+        consumer = slark::Task<void>{};
+    }
+
+    EXPECT_FALSE(reachedEnd.load(std::memory_order_acquire));
+    EXPECT_EQ(resumed.load(std::memory_order_relaxed), 0);
+    EXPECT_EQ(destroyed->load(std::memory_order_relaxed), 1);
+    awaiter->complete();
+    EXPECT_EQ(resumed.load(std::memory_order_relaxed), 0);
+}
+
+TEST(GeneratorStateTest, NormalReturnTransitionsToCompleted) {
+    auto generator = twoValues();
+    auto consumer = drainGenerator(generator);
+
+    consumer.resume();
+
+    ASSERT_TRUE(consumer.isDone());
+    EXPECT_EQ(generator.status(), slark::GeneratorStatus::Completed);
+}
+
+TEST(GeneratorStateTest, UnhandledExceptionTransitionsToFailed) {
+    auto generator = throwingGenerator();
+    auto consumer = drainGenerator(generator);
+
+    consumer.resume();
+
+    ASSERT_TRUE(consumer.isDone());
+    EXPECT_EQ(generator.status(), slark::GeneratorStatus::Failed);
+    EXPECT_THROW(consumer.result(), std::runtime_error);
+}
+
+TEST(CompletionAwaiterTest, ContinuationLeaseSurvivesUntilNextSuspension) {
+    auto first = std::make_shared<slark::CompletionAwaiter<void>>();
+    auto second = std::make_shared<slark::CompletionAwaiter<void>>();
+    auto task = parentWithTwoCompletions(first, second);
+
+    task.resume();
+    ASSERT_FALSE(task.isDone());
+
+    first->complete();
+    ASSERT_FALSE(task.isDone());
+
+    second->complete();
+    ASSERT_TRUE(task.isDone());
+    EXPECT_EQ(task.result(), 42);
+}
+
+TEST(CompletionAwaiterTest, TransferLeaseIsReleasedBeforePendingCompletion) {
+    auto first = std::make_shared<slark::CompletionAwaiter<void>>();
+    auto second = std::make_shared<slark::CompletionAwaiter<void>>();
+    auto destroyed = std::make_shared<std::atomic<int>>(0);
+
+    {
+        auto task = trackedParentWithTwoCompletions(first, second, destroyed);
+        task.resume();
+        ASSERT_FALSE(task.isDone());
+
+        first->complete();
+        ASSERT_FALSE(task.isDone());
+    }
+
+    EXPECT_EQ(destroyed->load(std::memory_order_relaxed), 1);
+    EXPECT_NO_THROW(second->complete());
+}
+
 TEST(AsyncGeneratorTest, ConsumerIsResumedAfterYield) {
     auto task = consumeTwoValues();
 
@@ -152,4 +592,46 @@ TEST(AsyncGeneratorTest, ProducerExceptionIsRethrownToConsumer) {
 
     ASSERT_TRUE(task.isDone());
     EXPECT_THROW(task.result(), std::runtime_error);
+}
+
+TEST(AsyncGeneratorTest, GeneratorCanBeDestroyedAfterYieldHandoff) {
+    auto destroyed = std::make_shared<std::atomic<int>>(0);
+    auto task = consumeAndDestroyAfterYield(destroyed);
+
+    task.resume();
+
+    ASSERT_TRUE(task.isDone());
+    EXPECT_EQ(destroyed->load(std::memory_order_relaxed), 1);
+}
+
+TEST(AsyncGeneratorTest, GeneratorCanBeDestroyedAfterFinalHandoff) {
+    auto destroyed = std::make_shared<std::atomic<int>>(0);
+    auto task = consumeToFinalSuspend(destroyed);
+
+    task.resume();
+
+    ASSERT_TRUE(task.isDone());
+    EXPECT_EQ(destroyed->load(std::memory_order_relaxed), 1);
+}
+
+TEST(AsyncGeneratorTest, RvalueNextOwnsAndDestroysGeneratorFrame) {
+    auto destroyed = std::make_shared<std::atomic<int>>(0);
+    auto task = consumeMovedGenerator(destroyed);
+
+    task.resume();
+
+    ASSERT_TRUE(task.isDone());
+    EXPECT_EQ(task.result(), 1);
+    EXPECT_EQ(destroyed->load(std::memory_order_relaxed), 1);
+}
+
+TEST(AsyncGeneratorTest, SynchronousHandoffRemainsStableUnderRepetition) {
+    constexpr int kIterations = 1000;
+    for (int i = 0; i < kIterations; ++i) {
+        auto destroyed = std::make_shared<std::atomic<int>>(0);
+        auto task = consumeToFinalSuspend(destroyed);
+        task.resume();
+        ASSERT_TRUE(task.isDone());
+        ASSERT_EQ(destroyed->load(std::memory_order_relaxed), 1);
+    }
 }

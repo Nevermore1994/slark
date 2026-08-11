@@ -3,8 +3,10 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <coroutine>
 #include <exception>
+#include <memory>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -18,9 +20,266 @@ namespace slark {
 template <typename T>
 class AsyncGenerator;
 
+enum class GeneratorStatus : uint8_t { Running, Completed, Closed, Failed };
+enum class GeneratorPhase : uint8_t {
+    InitialSuspended,
+    Executing,
+    WaitingConsumer,
+    WaitingExternal,
+    Yielded,
+    FinalSuspended,
+};
+
 namespace detail {
 
-enum class ConsumerState : uint8_t { None, Waiting, Resumed };
+enum class ConsumerState : uint8_t { None, Waiting };
+using GeneratorContinuation = ContinuationLink;
+
+template <typename T>
+class GeneratorState final {
+ public:
+    explicit GeneratorState(
+        std::coroutine_handle<> producer,
+        std::shared_ptr<CoroutineFrameControl> frameControl) noexcept
+        : producer_(producer), frameControl_(std::move(frameControl)) {}
+
+    [[nodiscard]] std::coroutine_handle<> producer() const noexcept {
+        return producer_;
+    }
+
+    void setProducer(std::coroutine_handle<> producer) noexcept {
+        producer_ = producer;
+    }
+
+    void clearProducer() noexcept {
+        producer_ = nullptr;
+    }
+
+    [[nodiscard]] std::shared_ptr<CoroutineFrameControl> frameControl() const noexcept {
+        return frameControl_;
+    }
+
+    [[nodiscard]] GeneratorStatus status() const noexcept {
+        return status_.load(std::memory_order_acquire);
+    }
+
+    bool transition(GeneratorStatus expected, GeneratorStatus desired) noexcept {
+        return status_.compare_exchange_strong(
+            expected, desired, std::memory_order_acq_rel, std::memory_order_acquire);
+    }
+
+    void setPhase(GeneratorPhase phase) noexcept {
+        phase_ = phase;
+    }
+
+    [[nodiscard]] GeneratorPhase phase() const noexcept {
+        return phase_;
+    }
+
+    void setFailure(std::exception_ptr failure) noexcept {
+        failure_ = std::move(failure);
+    }
+
+    [[nodiscard]] bool hasFailure() const noexcept {
+        return failure_ != nullptr;
+    }
+
+    void rethrowFailure() const {
+        if (failure_) {
+            std::rethrow_exception(failure_);
+        }
+    }
+
+    bool setWaitingConsumer(std::coroutine_handle<> consumer,
+                            std::shared_ptr<CoroutineFrameControl> frameControl,
+                            ExecutionLease* targetLeaseSlot,
+                            ExecutionLease* sourceLeaseSlot,
+                            uint64_t* generation) noexcept {
+        if (!sourceLeaseSlot) {
+            consumerState_ = ConsumerState::None;
+            return false;
+        }
+        consumerContinuation_ = ContinuationLink::registerTarget(
+            consumer, std::move(frameControl), targetLeaseSlot, sourceLeaseSlot);
+        if (!consumerContinuation_.isRegistered()) {
+            consumerState_ = ConsumerState::None;
+            return false;
+        }
+        ++consumerGeneration_;
+        if (generation) {
+            *generation = consumerGeneration_;
+        }
+        consumerState_ = ConsumerState::Waiting;
+        phase_ = GeneratorPhase::WaitingConsumer;
+        return true;
+    }
+
+    std::coroutine_handle<> beginConsumerTransfer(
+        std::coroutine_handle<> producer) noexcept {
+        if (consumerState_ != ConsumerState::Waiting ||
+            !consumerContinuation_.isRegistered() || !consumerContinuation_.sourceLeaseSlot) {
+            return nullptr;
+        }
+        auto consumer = std::move(consumerContinuation_);
+        if (!consumer.acquireTarget()) {
+            consumerState_ = ConsumerState::None;
+            return nullptr;
+        }
+        auto transferLease = frameControl_->tryAcquire(producer);
+        if (!transferLease) {
+            consumer.reset();
+            consumerState_ = ConsumerState::None;
+            return nullptr;
+        }
+        *consumer.targetLeaseSlot = std::move(consumer.lease);
+        *consumer.sourceLeaseSlot = std::move(transferLease);
+        consumer.sourceLeaseSlot = nullptr;
+        consumerState_ = ConsumerState::None;
+        phase_ = GeneratorPhase::Yielded;
+        auto target = consumer.handle;
+        consumer.handle = nullptr;
+        consumer.control.reset();
+        return target;
+    }
+
+    void cancelWaitingConsumer(std::coroutine_handle<> consumer, uint64_t generation) noexcept {
+        if (consumerState_ == ConsumerState::Waiting &&
+            consumerGeneration_ == generation && consumerContinuation_.handle.address() == consumer.address()) {
+            releaseConsumerContinuation();
+        }
+    }
+
+    void releaseConsumerContinuation() noexcept {
+        consumerContinuation_.reset();
+        consumerState_ = ConsumerState::None;
+    }
+
+    void setExternalGate(std::shared_ptr<ResumeGate> gate) noexcept {
+        if (status() == GeneratorStatus::Closed) {
+            if (gate) {
+                gate->disarm();
+            }
+            return;
+        }
+        auto previous = std::atomic_exchange_explicit(
+            &externalGate_, std::move(gate), std::memory_order_acq_rel);
+        if (previous) {
+            previous->disarm();
+        }
+    }
+
+    void disarmExternalGate() noexcept {
+        auto gate = std::atomic_exchange_explicit(
+            &externalGate_, std::shared_ptr<ResumeGate>{}, std::memory_order_acq_rel);
+        if (gate) {
+            gate->disarm();
+        }
+    }
+
+    void close() noexcept {
+        const auto currentStatus = status();
+        if (currentStatus == GeneratorStatus::Closed) {
+            return;
+        }
+        disarmExternalGate();
+
+        auto producer = producer_;
+        bool destroyNow = false;
+        if (producer) {
+            // 先与已经进入 ResumeGate::Resuming 的 signal 交接，之后再修改 state。
+            destroyNow = frameControl_->destroy(producer);
+        }
+
+        if (currentStatus == GeneratorStatus::Running) {
+            transition(GeneratorStatus::Running, GeneratorStatus::Closed);
+        }
+        disarmExternalGate();
+        phase_ = GeneratorPhase::FinalSuspended;
+
+        auto consumer = std::move(consumerContinuation_);
+        consumerState_ = ConsumerState::None;
+        producer_ = nullptr;
+        if (destroyNow) {
+            producer.destroy();
+        }
+
+        if (!consumer.isRegistered() || !consumer.acquireTarget()) {
+            consumer.reset();
+            return;
+        }
+        *consumer.targetLeaseSlot = std::move(consumer.lease);
+        auto target = consumer.handle;
+        auto targetControl = std::move(consumer.control);
+        consumer.handle = nullptr;
+        consumer.targetLeaseSlot = nullptr;
+        consumer.sourceLeaseSlot = nullptr;
+        targetControl->resume(target);
+    }
+
+ private:
+    std::coroutine_handle<> producer_;
+    std::shared_ptr<CoroutineFrameControl> frameControl_;
+    std::atomic<GeneratorStatus> status_{GeneratorStatus::Running};
+    GeneratorPhase phase_{GeneratorPhase::InitialSuspended};
+    std::exception_ptr failure_;
+    ContinuationLink consumerContinuation_;
+    std::shared_ptr<ResumeGate> externalGate_;
+    uint64_t consumerGeneration_{0};
+    ConsumerState consumerState_ = ConsumerState::None;
+};
+
+template <typename T>
+class PendingConsumerRegistration final {
+ public:
+    using state_type = GeneratorState<T>;
+
+    PendingConsumerRegistration() noexcept = default;
+
+    PendingConsumerRegistration(const PendingConsumerRegistration&) = delete;
+    PendingConsumerRegistration& operator=(const PendingConsumerRegistration&) = delete;
+
+    PendingConsumerRegistration(PendingConsumerRegistration&& other) noexcept
+        : state_(std::move(other.state_)),
+          consumer_(std::exchange(other.consumer_, nullptr)),
+          generation_(std::exchange(other.generation_, 0)) {}
+
+    PendingConsumerRegistration& operator=(PendingConsumerRegistration&& other) noexcept {
+        if (this != &other) {
+            reset();
+            state_ = std::move(other.state_);
+            consumer_ = std::exchange(other.consumer_, nullptr);
+            generation_ = std::exchange(other.generation_, 0);
+        }
+        return *this;
+    }
+
+    ~PendingConsumerRegistration() {
+        reset();
+    }
+
+    void assign(const std::shared_ptr<state_type>& state,
+                std::coroutine_handle<> consumer,
+                uint64_t generation) noexcept {
+        reset();
+        state_ = state;
+        consumer_ = consumer;
+        generation_ = generation;
+    }
+
+    void reset() noexcept {
+        if (auto state = state_.lock()) {
+            state->cancelWaitingConsumer(consumer_, generation_);
+        }
+        state_.reset();
+        consumer_ = nullptr;
+        generation_ = 0;
+    }
+
+ private:
+    std::weak_ptr<state_type> state_;
+    std::coroutine_handle<> consumer_;
+    uint64_t generation_{0};
+};
 
 template <typename Promise>
 class AsyncGeneratorYieldAwaiter {
@@ -31,11 +290,14 @@ class AsyncGeneratorYieldAwaiter {
         return false;
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<>) noexcept {
-        if (auto consumer = promise_.takeWaitingConsumer()) {
-            consumer->signal();
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> producer) noexcept {
+        releaseTransferLeases(producer.promise());
+        auto consumer = promise_.beginConsumerTransfer(producer);
+        if (!consumer) {
+            promise_.releaseConsumerContinuation();
+            return std::noop_coroutine();
         }
-        return std::noop_coroutine();
+        return consumer;
     }
 
     void await_resume() noexcept {}
@@ -52,13 +314,16 @@ class AsyncGeneratorFinalAwaiter {
     }
 
     template <typename Promise>
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> h) noexcept {
-        auto& promise = h.promise();
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> producer) noexcept {
+        auto& promise = producer.promise();
         promise.setCompleted();
-        if (auto consumer = promise.takeWaitingConsumer()) {
-            consumer->signal();
+        releaseTransferLeases(promise);
+        auto consumer = promise.beginConsumerTransfer(producer);
+        if (!consumer) {
+            promise.releaseConsumerContinuation();
+            return std::noop_coroutine();
         }
-        return std::noop_coroutine();
+        return consumer;
     }
 
     void await_resume() noexcept {}
@@ -69,6 +334,10 @@ class AsyncGeneratorPromise {
  public:
     using value_type = T;
     using reference_type = T&;
+    using state_type = GeneratorState<T>;
+
+    AsyncGeneratorPromise()
+        : state_(std::make_shared<state_type>(std::coroutine_handle<>{}, frameControl_)) {}
 
     std::suspend_always initial_suspend() noexcept {
         return {};
@@ -79,8 +348,12 @@ class AsyncGeneratorPromise {
     }
 
     void unhandled_exception() noexcept {
-        exception_ = std::current_exception();
-        setCompleted();
+        if (state_->status() == GeneratorStatus::Running) {
+            state_->setFailure(std::current_exception());
+            if (state_->transition(GeneratorStatus::Running, GeneratorStatus::Failed)) {
+                state_->setPhase(GeneratorPhase::FinalSuspended);
+            }
+        }
     }
 
     void return_void() noexcept {
@@ -90,6 +363,7 @@ class AsyncGeneratorPromise {
     AsyncGeneratorYieldAwaiter<AsyncGeneratorPromise<T>> yield_value(T value) noexcept(
         std::is_nothrow_move_constructible_v<T>) {
         value_.emplace(std::move(value));
+        state_->setPhase(GeneratorPhase::Yielded);
         return AsyncGeneratorYieldAwaiter<AsyncGeneratorPromise<T>>{*this};
     }
 
@@ -107,35 +381,89 @@ class AsyncGeneratorPromise {
         value_.reset();
     }
 
-    void rethrowIfException() {
-        if (exception_) {
-            std::rethrow_exception(exception_);
-        }
+    void rethrowIfException() const {
+        state_->rethrowFailure();
     }
 
     bool hasException() const noexcept {
-        return exception_ != nullptr;
+        return state_->hasFailure();
     }
 
     bool isCompleted() const noexcept {
-        return completed_.load(std::memory_order_acquire);
+        const auto status = state_->status();
+        return status == GeneratorStatus::Completed || status == GeneratorStatus::Closed ||
+               status == GeneratorStatus::Failed;
+    }
+
+    GeneratorStatus status() const noexcept {
+        return state_->status();
     }
 
     void setCompleted() noexcept {
-        completed_.store(true, std::memory_order_release);
+        state_->transition(GeneratorStatus::Running, GeneratorStatus::Completed);
+        state_->setPhase(GeneratorPhase::FinalSuspended);
     }
 
-    void setWaitingConsumer(std::shared_ptr<ResumeGate> consumer) noexcept {
-        consumerGate_ = std::move(consumer);
-        consumerState_ = ConsumerState::Waiting;
+    void markWaitingExternal() noexcept {
+        state_->setPhase(GeneratorPhase::WaitingExternal);
     }
 
-    std::shared_ptr<ResumeGate> takeWaitingConsumer() noexcept {
-        if (consumerState_ == ConsumerState::Waiting) {
-            consumerState_ = ConsumerState::Resumed;
-            return std::exchange(consumerGate_, nullptr);
-        }
-        return nullptr;
+    void markExecuting() noexcept {
+        state_->setPhase(GeneratorPhase::Executing);
+    }
+
+    [[nodiscard]] std::shared_ptr<state_type> state() const noexcept {
+        return state_;
+    }
+
+    void initializeState(std::coroutine_handle<> producer) noexcept {
+        state_->setProducer(producer);
+    }
+
+    bool setWaitingConsumer(std::coroutine_handle<> consumer,
+                            std::shared_ptr<CoroutineFrameControl> frameControl,
+                            ExecutionLease* targetLeaseSlot,
+                            ExecutionLease* sourceLeaseSlot,
+                            uint64_t* generation) noexcept {
+        return state_->setWaitingConsumer(
+            consumer, std::move(frameControl), targetLeaseSlot, sourceLeaseSlot, generation);
+    }
+
+    std::coroutine_handle<> beginConsumerTransfer(
+        std::coroutine_handle<> producer) noexcept {
+        return state_->beginConsumerTransfer(producer);
+    }
+
+    void cancelWaitingConsumer(std::coroutine_handle<> consumer, uint64_t generation) noexcept {
+        state_->cancelWaitingConsumer(consumer, generation);
+    }
+
+    void releaseConsumerContinuation() noexcept {
+        state_->releaseConsumerContinuation();
+    }
+
+    void releaseIncomingTransferLease() noexcept {
+        incomingTransferLease_.reset();
+    }
+
+    void close() noexcept {
+        state_->close();
+    }
+
+    void setExternalGate(std::shared_ptr<ResumeGate> gate) noexcept {
+        state_->setExternalGate(std::move(gate));
+    }
+
+    void releaseContinuationLease() noexcept {
+        continuationLease_.reset();
+    }
+
+    [[nodiscard]] ExecutionLease* continuationLeaseSlot() noexcept {
+        return &continuationLease_;
+    }
+
+    [[nodiscard]] ExecutionLease* incomingTransferLeaseSlot() noexcept {
+        return &incomingTransferLease_;
     }
 
     [[nodiscard]] std::shared_ptr<CoroutineFrameControl> frameControl() const noexcept {
@@ -144,12 +472,11 @@ class AsyncGeneratorPromise {
 
  private:
     std::optional<T> value_;
-    std::exception_ptr exception_;
-    std::shared_ptr<ResumeGate> consumerGate_;
+    ExecutionLease continuationLease_;
+    ExecutionLease incomingTransferLease_;
     std::shared_ptr<CoroutineFrameControl> frameControl_ =
         std::make_shared<CoroutineFrameControl>();
-    ConsumerState consumerState_ = ConsumerState::None;
-    std::atomic<bool> completed_{false};
+    std::shared_ptr<state_type> state_;
 };
 
 template <typename T>
@@ -157,52 +484,113 @@ class AsyncGeneratorNextAwaiter {
  public:
     using promise_type = AsyncGeneratorPromise<T>;
     using handle_type = std::coroutine_handle<promise_type>;
+    using state_type = GeneratorState<T>;
 
     AsyncGeneratorNextAwaiter() noexcept = default;
 
-    explicit AsyncGeneratorNextAwaiter(handle_type handle) noexcept : handle_(handle) {}
+    explicit AsyncGeneratorNextAwaiter(std::shared_ptr<state_type> state,
+                                       bool ownsState = false) noexcept
+        : state_(std::move(state)), ownsState_(ownsState) {}
+
+    AsyncGeneratorNextAwaiter(AsyncGeneratorNextAwaiter&& other) noexcept
+        : state_(std::move(other.state_)),
+          ownsState_(std::exchange(other.ownsState_, false)),
+          registration_(std::move(other.registration_)) {}
+
+    AsyncGeneratorNextAwaiter& operator=(AsyncGeneratorNextAwaiter&& other) noexcept {
+        if (this != &other) {
+            registration_.reset();
+            closeOwnedState();
+            state_ = std::move(other.state_);
+            ownsState_ = std::exchange(other.ownsState_, false);
+            registration_ = std::move(other.registration_);
+        }
+        return *this;
+    }
+
+    ~AsyncGeneratorNextAwaiter() {
+        registration_.reset();
+        closeOwnedState();
+    }
 
     bool await_ready() noexcept {
-        if (!handle_) {
+        if (!state_ || state_->status() != GeneratorStatus::Running) {
             return true;
         }
-        auto& promise = handle_.promise();
-        return promise.hasValue() || promise.isCompleted();
+        auto producer = state_->producer();
+        if (!producer) {
+            return true;
+        }
+        return std::coroutine_handle<promise_type>::from_address(producer.address())
+            .promise()
+            .hasValue();
     }
 
     template <typename ConsumerPromise>
+        requires ContinuationPromise<ConsumerPromise>
     std::coroutine_handle<> await_suspend(
         std::coroutine_handle<ConsumerPromise> consumer) noexcept {
-        auto& promise = handle_.promise();
+        releaseTransferLeases(consumer.promise());
+        if (!state_ || state_->status() != GeneratorStatus::Running) {
+            return consumer;
+        }
+        auto producer = state_->producer();
+        if (!producer) {
+            return consumer;
+        }
+        auto handle = std::coroutine_handle<promise_type>::from_address(producer.address());
+        auto& promise = handle.promise();
         if (promise.hasValue() || promise.isCompleted()) {
             return consumer;
         }
-        auto gate = makeResumeGate(consumer);
-        promise.setWaitingConsumer(gate);
-        if (!gate->arm()) {
+
+        uint64_t generation = 0;
+        if (!promise.setWaitingConsumer(
+                consumer, consumer.promise().frameControl(),
+                consumer.promise().continuationLeaseSlot(),
+                consumer.promise().incomingTransferLeaseSlot(), &generation)) {
             return consumer;
         }
-        return handle_;
+        promise.markExecuting();
+        registration_.assign(state_, consumer, generation);
+        return producer;
     }
 
     std::optional<T> await_resume() {
-        if (!handle_) {
+        auto state = state_;
+        registration_.reset();
+        if (!state) {
             return std::nullopt;
         }
-        auto& promise = handle_.promise();
-        if (promise.hasException()) {
-            promise.rethrowIfException();
+        if (state->status() == GeneratorStatus::Failed) {
+            state->rethrowFailure();
         }
+        auto producer = state->producer();
+        if (!producer) {
+            return std::nullopt;
+        }
+        auto handle = std::coroutine_handle<promise_type>::from_address(producer.address());
+        auto& promise = handle.promise();
+        std::optional<T> value;
         if (promise.hasValue()) {
-            auto value = std::move(promise.value());
+            value.emplace(std::move(promise.value()));
             promise.clearValue();
-            return value;
         }
-        return std::nullopt;
+        promise.releaseConsumerContinuation();
+        return value;
     }
 
  private:
-    handle_type handle_ = nullptr;
+    void closeOwnedState() noexcept {
+        if (ownsState_ && state_) {
+            state_->close();
+            ownsState_ = false;
+        }
+    }
+
+    std::shared_ptr<state_type> state_;
+    bool ownsState_ = false;
+    PendingConsumerRegistration<T> registration_;
 };
 
 }  // namespace detail
@@ -210,52 +598,71 @@ class AsyncGeneratorNextAwaiter {
 // Thread constraint (C-08): producer and consumer must be driven serially by the same
 // executor/thread. next() / co_yield / completion / destruction must not be called
 // concurrently across threads; cross-thread scenarios must be serialized via event
-// dispatch (e.g. ownerThread_->postTask). If cross-thread support is ever needed,
-// consumerGate_/consumerState_ must be changed to a mutex or atomic state machine.
+// dispatch (e.g. ownerThread_->postTask). The continuation control block only rejects
+// stale consumers; it does not make generator state concurrent-safe.
 template <typename T>
 class [[nodiscard]] AsyncGenerator : public NonCopyable {
  public:
     using value_type = T;
     using promise_type = detail::AsyncGeneratorPromise<T>;
     using handle_type = std::coroutine_handle<promise_type>;
+    using state_type = detail::GeneratorState<T>;
 
     AsyncGenerator() noexcept = default;
 
-    explicit AsyncGenerator(handle_type handle) noexcept : handle_(handle) {}
+    explicit AsyncGenerator(std::shared_ptr<state_type> state) noexcept : state_(std::move(state)) {}
 
     AsyncGenerator(AsyncGenerator&& other) noexcept
-        : handle_(std::exchange(other.handle_, nullptr)) {}
+        : state_(std::move(other.state_)) {}
 
     AsyncGenerator& operator=(AsyncGenerator&& other) noexcept {
         if (this != &other) {
-            destroyFrame();
-            handle_ = std::exchange(other.handle_, nullptr);
+            close();
+            state_ = std::move(other.state_);
         }
         return *this;
     }
 
     ~AsyncGenerator() {
-        destroyFrame();
+        close();
     }
 
     [[nodiscard]] bool isValid() const noexcept {
-        return handle_ != nullptr;
+        return state_ && state_->producer();
     }
 
     [[nodiscard]] bool isDone() const noexcept {
-        return !handle_ || handle_.done();
+        return !state_ || !state_->producer() ||
+               state_->status() != GeneratorStatus::Running;
+    }
+
+    [[nodiscard]] GeneratorStatus status() const noexcept {
+        return state_ ? state_->status() : GeneratorStatus::Closed;
+    }
+
+    [[nodiscard]] GeneratorPhase phase() const noexcept {
+        return state_ ? state_->phase() : GeneratorPhase::FinalSuspended;
     }
 
     [[nodiscard]] handle_type getHandle() const noexcept {
-        return handle_;
+        if (!state_ || !state_->producer()) {
+            return nullptr;
+        }
+        return handle_type::from_address(state_->producer().address());
+    }
+
+    void close() noexcept {
+        if (state_) {
+            state_->close();
+        }
     }
 
     auto next() & noexcept {
-        return detail::AsyncGeneratorNextAwaiter<T>{handle_};
+        return detail::AsyncGeneratorNextAwaiter<T>{state_};
     }
 
     auto next() && noexcept {
-        return detail::AsyncGeneratorNextAwaiter<T>{std::exchange(handle_, nullptr)};
+        return detail::AsyncGeneratorNextAwaiter<T>{std::move(state_), true};
     }
 
     template <typename Func>
@@ -284,17 +691,7 @@ class [[nodiscard]] AsyncGenerator : public NonCopyable {
     Task<Container<T>> collect();
 
  private:
-    void destroyFrame() noexcept {
-        if (!handle_) {
-            return;
-        }
-        auto handle = std::exchange(handle_, nullptr);
-        if (handle.promise().frameControl()->destroy(handle)) {
-            handle.destroy();
-        }
-    }
-
-    handle_type handle_ = nullptr;
+    std::shared_ptr<state_type> state_;
 };
 
 namespace detail {
@@ -573,7 +970,9 @@ namespace detail {
 
 template <typename T>
 AsyncGenerator<T> AsyncGeneratorPromise<T>::get_return_object() noexcept {
-    return AsyncGenerator<T>{std::coroutine_handle<AsyncGeneratorPromise<T>>::from_promise(*this)};
+    auto handle = std::coroutine_handle<AsyncGeneratorPromise<T>>::from_promise(*this);
+    initializeState(handle);
+    return AsyncGenerator<T>{state_};
 }
 
 }  // namespace detail

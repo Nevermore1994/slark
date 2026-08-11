@@ -8,28 +8,25 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <thread>
 #include <vector>
 
 namespace {
 
-using slark::CompletionAwaiter;
 using slark::ResumeGate;
 using slark::Task;
 
-Task<void> suspendedOn(std::shared_ptr<CompletionAwaiter<void>> awaiter) {
-    co_await *awaiter;
+Task<void> immediateTask() {
+    co_return;
 }
 
 struct GateFixture {
-    std::shared_ptr<CompletionAwaiter<void>> awaiter =
-        std::make_shared<CompletionAwaiter<void>>();
     Task<void> task;
     std::shared_ptr<ResumeGate> gate;
 
     GateFixture() {
-        task = suspendedOn(awaiter);
-        task.resume();
+        task = immediateTask();
         gate = slark::makeResumeGate(task.getHandle());
     }
 
@@ -84,13 +81,40 @@ TEST(ResumeGateTest, SignalBeforeArmAndDisarm) {
 }
 
 TEST(ResumeGateTest, SignalAfterFrameDestroyIsSafe) {
-    auto awaiter = std::make_shared<CompletionAwaiter<void>>();
     std::shared_ptr<ResumeGate> gate;
     {
-        auto task = suspendedOn(awaiter);
-        task.resume();
+        auto task = immediateTask();
         gate = slark::makeResumeGate(task.getHandle());
         gate->arm();
     }
     EXPECT_NO_THROW(gate->signal());
+}
+
+TEST(ResumeGateTest, ConcurrentSignalAndOwnerDestroyHaveSingleSafeOutcome) {
+    constexpr int kIterations = 200;
+    for (int i = 0; i < kIterations; ++i) {
+        std::optional<Task<void>> task;
+        task.emplace(immediateTask());
+        auto gate = slark::makeResumeGate(task->getHandle());
+        ASSERT_TRUE(gate->arm());
+
+        std::atomic<bool> start{false};
+        std::thread signaler([gate, &start] {
+            while (!start.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+            gate->signal();
+        });
+        std::thread owner([&task, &start] {
+            while (!start.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+            task.reset();
+        });
+
+        start.store(true, std::memory_order_release);
+        signaler.join();
+        owner.join();
+        EXPECT_NO_THROW(gate->signal());
+    }
 }

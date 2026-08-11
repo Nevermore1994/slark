@@ -29,6 +29,11 @@ using namespace slark::http;
 
 namespace {
 
+template <typename Func>
+Task<void> runVoidTask(Func func) {
+    co_await func();
+}
+
 class LoopbackHttpServer final {
  public:
     explicit LoopbackHttpServer(std::string response) : response_(std::move(response)) {
@@ -211,7 +216,7 @@ HttpResponse executeLoopback(const std::string& response) {
     ThreadPool pool(ThreadPoolConfig{2});
     std::atomic<bool> done{false};
     HttpResponse result;
-    auto task = [&]() -> Task<void> {
+    auto task = runVoidTask([&]() -> Task<void> {
         HttpProcessor processor;
         auto responseResult = co_await processor.process(info);
         if (responseResult.has_value()) {
@@ -220,7 +225,7 @@ HttpResponse executeLoopback(const std::string& response) {
             result.error = responseResult.error();
         }
         done.store(true);
-    }();
+    });
     task.resume();
 
     for (int i = 0; i < 200 && !done.load(); ++i) {
@@ -237,7 +242,7 @@ StreamChunk executeStreamingLoopback(const std::string& response) {
     ThreadPool pool(ThreadPoolConfig{2});
     std::atomic<bool> done{false};
     StreamChunk finalChunk = StreamChunk::makeError(ErrorInfo{Error::ConnectionReset});
-    auto task = [&]() -> Task<void> {
+    auto task = runVoidTask([&]() -> Task<void> {
         HttpProcessor processor;
         auto generator = processor.processStreaming(info);
         while (true) {
@@ -251,7 +256,7 @@ StreamChunk executeStreamingLoopback(const std::string& response) {
             }
         }
         done.store(true);
-    }();
+    });
     task.resume();
 
     for (int i = 0; i < 200 && !done.load(); ++i) {
@@ -328,7 +333,7 @@ TEST(HttpLoopbackTest, WriteTimeoutPreservesConnectionTimeout) {
     ThreadPool pool(ThreadPoolConfig{2});
     std::atomic<bool> done{false};
     HttpResponse result;
-    auto task = [&]() -> Task<void> {
+    auto task = runVoidTask([&]() -> Task<void> {
         HttpProcessor processor;
         auto response = co_await processor.process(info);
         if (response.has_value()) {
@@ -337,7 +342,7 @@ TEST(HttpLoopbackTest, WriteTimeoutPreservesConnectionTimeout) {
             result.error = response.error();
         }
         done.store(true);
-    }();
+    });
     task.resume();
 
     for (int i = 0; i < 200 && !done.load(); ++i) {

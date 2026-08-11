@@ -24,6 +24,8 @@ struct YieldAwaiter {
 
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
+        releaseTransferLeases(handle.promise());
+        markExternalAwait(handle.promise());
         gate_ = makeResumeGate(handle);
         auto weakGate = std::weak_ptr<ResumeGate>(gate_);
         CoroutineScheduler::instance().scheduleCallback(std::chrono::milliseconds(0), [weakGate]() {

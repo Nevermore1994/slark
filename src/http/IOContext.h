@@ -213,6 +213,8 @@ class FdReadyAwaiter {
 
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
+        releaseTransferLeases(handle.promise());
+        markExternalAwait(handle.promise());
         if (!gate_) {
             gate_ = makeResumeGate(handle);
         }
@@ -240,6 +242,12 @@ class FdReadyAwaiter {
 template <typename Awaiter>
 class CancellableAwaiter {
  public:
+    static_assert(
+        requires(Awaiter& awaiter, std::shared_ptr<ResumeGate> gate) {
+            awaiter.setResumeGate(std::move(gate));
+        },
+        "CancellableAwaiter requires an awaiter with a shared ResumeGate");
+
     CancellableAwaiter(Awaiter&& awaiter, slark::CancellationToken token) noexcept
         : awaiter_(std::move(awaiter)), token_(std::move(token)) {}
 
@@ -252,13 +260,13 @@ class CancellableAwaiter {
 
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
+        releaseTransferLeases(handle.promise());
+        markExternalAwait(handle.promise());
         if (token_.isCancelled()) {
             return false;
         }
         gate_ = makeResumeGate(handle);
-        if constexpr (requires(Awaiter& awaiter) { awaiter.setResumeGate(gate_); }) {
-            awaiter_.setResumeGate(gate_);
-        }
+        awaiter_.setResumeGate(gate_);
         auto weakGate = std::weak_ptr<ResumeGate>(gate_);
         cancelReg_ = token_.registerCallback([weakGate]() {
             if (auto gate = weakGate.lock()) {

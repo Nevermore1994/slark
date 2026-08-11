@@ -117,6 +117,8 @@ class WhenAllAwaiter {
 
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> h) noexcept {
+        releaseTransferLeases(h.promise());
+        markExternalAwait(h.promise());
         auto gate = makeResumeGate(h);
         state_->setContinuationGate(gate);
 
@@ -241,6 +243,8 @@ class WhenAnyAwaiter {
 
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> h) noexcept {
+        releaseTransferLeases(h.promise());
+        markExternalAwait(h.promise());
         auto gate = makeResumeGate(h);
         state_->setContinuationGate(gate);
         IExecutor* exec = defaultExecutor_ ? defaultExecutor_ : h.promise().executor_;

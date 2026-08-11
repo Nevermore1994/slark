@@ -19,6 +19,11 @@ using namespace slark::http;
 
 namespace {
 
+template <typename Func>
+Task<void> runVoidTask(Func func) {
+    co_await func();
+}
+
 void resumeAndWait(Task<void>& coro) {
     coro.resume();
     for (int32_t i = 0; i < 200 && !coro.isDone(); ++i) {
@@ -70,7 +75,7 @@ TEST(HttpAsyncRequestTest, AsyncExecuteWithPost) {
 TEST(HttpAsyncRequestTest, AsyncExecuteWithCancellation) {
     CancellationToken token;
 
-    auto coro = [&token]() -> Task<void> {
+    auto coro = runVoidTask([&token]() -> Task<void> {
         RequestInfo info;
         info.url = "http://httpbingo.org/delay/5";
         info.methodType = HttpMethodType::Get;
@@ -81,7 +86,7 @@ TEST(HttpAsyncRequestTest, AsyncExecuteWithCancellation) {
 
         EXPECT_FALSE(response.isSuccess());
         EXPECT_EQ(response.error.retCode, slark::Error::Cancelled);
-    }();
+    });
 
     std::thread canceller([&token]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -159,7 +164,7 @@ TEST(HttpAsyncRequestTest, LazyGeneratorOutlivesHttpRequest) {
     }
 
     Error observedError = slark::Error::Success;
-    auto consumer = [&]() -> Task<void> {
+    auto consumer = runVoidTask([&]() -> Task<void> {
         auto chunk = co_await generator.next();
         EXPECT_TRUE(chunk.has_value());
         if (!chunk.has_value()) {
@@ -169,7 +174,7 @@ TEST(HttpAsyncRequestTest, LazyGeneratorOutlivesHttpRequest) {
         if (chunk->hasError()) {
             observedError = chunk->error.retCode;
         }
-    }();
+    });
     consumer.resume();
 
     ASSERT_TRUE(consumer.isDone());
@@ -270,7 +275,7 @@ TEST(HttpAsyncRequestTest, ConcurrentRequests) {
 
     for (int32_t i = 0; i < kRequestCount; ++i) {
         auto coro =
-            std::make_shared<Task<void>>([&successCount, &failCount]() -> Task<void> {
+            std::make_shared<Task<void>>(runVoidTask([&successCount, &failCount]() -> Task<void> {
                 RequestInfo info;
                 info.url = "http://httpbingo.org/get";
                 info.methodType = HttpMethodType::Get;
@@ -284,7 +289,7 @@ TEST(HttpAsyncRequestTest, ConcurrentRequests) {
                 } else {
                     failCount++;
                 }
-            }());
+            }));
         coroutines.push_back(coro);
         coro->resume();
     }
@@ -481,7 +486,7 @@ TEST(HttpAsyncRequestTest, ServerErrorStatus) {
 TEST(HttpAsyncRequestIntegrationTest, ScheduledHttpRequest) {
     std::atomic<bool> completed{false};
 
-    auto coro = [&]() -> Task<void> {
+    auto coro = runVoidTask([&]() -> Task<void> {
         RequestInfo info;
         info.url = "http://httpbingo.org/get";
         info.methodType = HttpMethodType::Get;
@@ -492,7 +497,7 @@ TEST(HttpAsyncRequestIntegrationTest, ScheduledHttpRequest) {
 
         EXPECT_TRUE(response.isSuccess());
         completed = true;
-    }();
+    });
 
     resumeAndWait(coro);
     EXPECT_TRUE(coro.isDone());

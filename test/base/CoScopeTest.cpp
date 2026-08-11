@@ -22,14 +22,24 @@ Task<void> emptyTask() {
     co_return;
 }
 
+template <typename Func>
+Task<void> runVoidTask(Func func) {
+    co_await func();
+}
+
+template <typename Func>
+Task<int> runIntTask(Func func) {
+    co_return co_await func();
+}
+
 TEST(CoScopeTest, SpawnAndWait) {
     AsyncScope scope;
     int result = 0;
 
-    scope.spawn([&result]() -> Task<void> {
+    scope.spawn(runVoidTask([&result]() -> Task<void> {
         int v = co_await simpleInt(42);
         result = v;
-    }());
+    }));
 
     scope.waitAll();
     EXPECT_EQ(result, 42);
@@ -40,10 +50,10 @@ TEST(CoScopeTest, MultipleSpawns) {
     std::atomic<int> counter{0};
 
     for (int i = 0; i < 10; ++i) {
-        scope.spawn([&counter, i]() -> Task<void> {
+        scope.spawn(runVoidTask([&counter, i]() -> Task<void> {
             auto v = co_await simpleInt(i);
             counter.fetch_add(v);
-        }());
+        }));
     }
 
     scope.waitAll();
@@ -54,10 +64,10 @@ TEST(CoScopeTest, CancelAll) {
     AsyncScope scope;
     std::atomic<bool> ran{false};
 
-    scope.spawn([&ran]() -> Task<void> {
+    scope.spawn(runVoidTask([&ran]() -> Task<void> {
         ran = true;
         co_return;
-    }());
+    }));
 
     scope.cancelAll();
     scope.waitAll();
@@ -74,9 +84,9 @@ TEST(CoScopeTest, DestroyWithBlockedChildIsSafe) {
     auto blocker = std::make_shared<CompletionAwaiter<void>>();
     {
         AsyncScope scope;
-        scope.spawn([&blocker]() -> Task<void> {
+        scope.spawn(runVoidTask([&blocker]() -> Task<void> {
             co_await *blocker;
-        }());
+        }));
     }
     blocker->complete();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -96,18 +106,18 @@ TEST(CoWhenAllTest, TwoTasks) {
 TEST(CoWhenAllTest, VoidTasks) {
     bool a{false}, b{false};
 
-    auto task = [&]() -> Task<void> {
+    auto task = runVoidTask([&]() -> Task<void> {
         co_await when_all(
-            [&a]() -> Task<void> {
+            runVoidTask([&a]() -> Task<void> {
                 a = true;
                 co_return;
-            }(),
-            [&b]() -> Task<void> {
+            }),
+            runVoidTask([&b]() -> Task<void> {
                 b = true;
                 co_return;
-            }());
+            }));
         co_return;
-    }();
+    });
 
     task.resume();
     EXPECT_TRUE(a);
@@ -118,17 +128,17 @@ TEST(CoWhenAllTest, MixedTasksSeparate) {
     int intResult = 0;
     bool voidResult = false;
 
-    auto task = [&]() -> Task<void> {
+    auto task = runVoidTask([&]() -> Task<void> {
         co_await when_all(
-            [&intResult]() -> Task<void> {
+            runVoidTask([&intResult]() -> Task<void> {
                 intResult = co_await simpleInt(42);
-            }(),
-            [&voidResult]() -> Task<void> {
+            }),
+            runVoidTask([&voidResult]() -> Task<void> {
                 voidResult = true;
                 co_return;
-            }());
+            }));
         co_return;
-    }();
+    });
 
     task.resume();
     EXPECT_EQ(intResult, 42);
@@ -162,10 +172,10 @@ TEST(CoWhenAllTest, ExceptionInTask) {
 
 TEST(CoWhenAllTest, WhenAllWithExecutor) {
     auto exec = std::make_shared<InlineExecutor>();
-    auto task = [&]() -> Task<int> {
+    auto task = runIntTask([&]() -> Task<int> {
         auto [a, b] = co_await when_all(*exec, simpleInt(5), simpleInt(15));
         co_return a + b;
-    }();
+    });
 
     task.resume();
     EXPECT_EQ(task.result(), 20);
@@ -175,10 +185,10 @@ TEST(CoWhenAllTest, CoWhenAllInScope) {
     AsyncScope scope;
     int result = 0;
 
-    scope.spawn([&result]() -> Task<void> {
+    scope.spawn(runVoidTask([&result]() -> Task<void> {
         auto [a, b] = co_await when_all(simpleInt(7), simpleInt(8));
         result = a + b;
-    }());
+    }));
 
     scope.waitAll();
     EXPECT_EQ(result, 15);
@@ -188,10 +198,10 @@ TEST(TaskTest, TaskWithInlineExecutor) {
     InlineExecutor exec;
     bool ran = false;
 
-    auto task = [&]() -> Task<void> {
+    auto task = runVoidTask([&]() -> Task<void> {
         ran = true;
         co_return;
-    }();
+    });
 
     task.getHandle().resume();
     EXPECT_TRUE(ran);
@@ -231,17 +241,17 @@ TEST(TaskTest, ResumeDeepChain) {
         co_return 1;
     };
 
-    auto middle = [&]() -> Task<int> {
+    auto middle = runIntTask([&]() -> Task<int> {
         auto v = co_await deepest();
         co_return v + 2;
-    };
+    });
 
-    auto top = [&]() -> Task<int> {
-        auto v = co_await middle();
+    auto top = runIntTask([middle = std::move(middle)]() mutable -> Task<int> {
+        auto v = co_await std::move(middle);
         co_return v + 3;
-    };
+    });
 
-    auto t = top();
+    auto t = std::move(top);
     t.resume();
     EXPECT_EQ(t.result(), 6);
 }

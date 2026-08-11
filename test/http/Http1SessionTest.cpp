@@ -198,6 +198,11 @@ void waitFor(const std::atomic<bool>& done) {
     }
 }
 
+template <typename Func>
+Task<void> runVoidTask(Func func) {
+    co_await func();
+}
+
 std::string fixedResponse(std::string body, bool closeConnection = false) {
     return "HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(body.size()) +
            "\r\nConnection: " + (closeConnection ? "close" : "keep-alive") + "\r\n\r\n" + body;
@@ -211,7 +216,7 @@ TEST(Http1SessionTest, SequentialRequestsReuseOneConnection) {
     PairResult result;
 
     ThreadPool pool(ThreadPoolConfig{2});
-    auto task = [&]() -> Task<void> {
+    auto task = runVoidTask([&]() -> Task<void> {
         auto first = co_await HttpProcessor::process(makeRequest(server.port(), session));
         if (first) {
             result.first = std::move(*first);
@@ -225,7 +230,7 @@ TEST(Http1SessionTest, SequentialRequestsReuseOneConnection) {
             result.second.error = second.error();
         }
         result.done.store(true);
-    }();
+    });
     task.resume();
     waitFor(result.done);
 
@@ -246,7 +251,7 @@ TEST(Http1SessionTest, ConnectionCloseResponseForcesReconnect) {
     PairResult result;
 
     ThreadPool pool(ThreadPoolConfig{2});
-    auto task = [&]() -> Task<void> {
+    auto task = runVoidTask([&]() -> Task<void> {
         auto first = co_await HttpProcessor::process(makeRequest(server.port(), session));
         if (first) {
             result.first = std::move(*first);
@@ -260,7 +265,7 @@ TEST(Http1SessionTest, ConnectionCloseResponseForcesReconnect) {
             result.second.error = second.error();
         }
         result.done.store(true);
-    }();
+    });
     task.resume();
     waitFor(result.done);
 
@@ -358,13 +363,13 @@ TEST(Http1SessionTest, ParseErrorDiscardsConnectionBeforeNextRequest) {
     Error secondError = Error::Success;
 
     ThreadPool pool(ThreadPoolConfig{2});
-    auto task = [&]() -> Task<void> {
+    auto task = runVoidTask([&]() -> Task<void> {
         auto first = co_await HttpProcessor::process(makeRequest(server.port(), session));
         firstError = first ? Error::Success : first.error().retCode;
         auto second = co_await HttpProcessor::process(makeRequest(server.port(), session));
         secondError = second ? Error::Success : second.error().retCode;
         done.store(true, std::memory_order_release);
-    }();
+    });
     task.resume();
     waitFor(done);
 
@@ -384,11 +389,11 @@ TEST(Http1SessionTest, CancelledRequestDoesNotOpenConnection) {
     Error error = Error::Success;
 
     ThreadPool pool(ThreadPoolConfig{2});
-    auto task = [&]() -> Task<void> {
+    auto task = runVoidTask([&]() -> Task<void> {
         auto result = co_await HttpProcessor::process(makeRequest(server.port(), session), token);
         error = result ? Error::Success : result.error().retCode;
         done.store(true, std::memory_order_release);
-    }();
+    });
     task.resume();
     waitFor(done);
 
@@ -409,7 +414,7 @@ TEST(Http1SessionTest, ConcurrentRequestIsRejectedWithoutSharingConnection) {
     bool firstConnected = false;
 
     ThreadPool pool(ThreadPoolConfig{2});
-    auto task = [&]() -> Task<void> {
+    auto task = runVoidTask([&]() -> Task<void> {
         auto firstEvent = co_await firstEvents.next();
         firstConnected = firstEvent.has_value() &&
                          firstEvent->type == HttpResponseEventType::Connected;
@@ -420,7 +425,7 @@ TEST(Http1SessionTest, ConcurrentRequestIsRejectedWithoutSharingConnection) {
         while (co_await firstEvents.next()) {
         }
         done.store(true, std::memory_order_release);
-    }();
+    });
     task.resume();
     waitFor(done);
 

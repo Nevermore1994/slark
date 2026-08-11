@@ -33,7 +33,10 @@ class TimerAwaiter {
 
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
+        releaseTransferLeases(handle.promise());
+        markExternalAwait(handle.promise());
         gate_ = makeResumeGate(handle);
+        registerExternalGate(handle.promise(), gate_);
         auto weakGate = std::weak_ptr<ResumeGate>(gate_);
         timerId_ = CoroutineScheduler::instance().scheduleCallback(duration_, [weakGate]() {
             if (auto gate = weakGate.lock()) {
@@ -77,6 +80,8 @@ class CompletionAwaiter {
 
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
+        releaseTransferLeases(handle.promise());
+        markExternalAwait(handle.promise());
         auto gate = makeResumeGate(handle);
         {
             std::lock_guard lock(mutex_);
@@ -91,6 +96,7 @@ class CompletionAwaiter {
         std::lock_guard lock(mutex_);
         auto expected = Installing;
         if (state_.compare_exchange_strong(expected, Waiting, std::memory_order_acq_rel)) {
+            registerExternalGate(handle.promise(), gate);
             return gate_->arm();
         }
         gate_->disarm();
