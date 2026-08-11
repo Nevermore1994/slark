@@ -1,7 +1,7 @@
 # Slark C++20 协程框架设计
 
 > 状态：已实现
-> 更新：2026-07-21
+> 更新：2026-08-11
 > 作者：Nevermore-
 > 关联代码：`src/base/coroutine/`、`src/http/IOContext.h`、`src/core/HttpStream*`、`src/core/HLSStream*`
 
@@ -27,7 +27,7 @@
 5. [核心设计决策](#5-核心设计决策)
 6. [实际使用模式](#6-实际使用模式)
 7. [测试策略](#7-测试策略)
-8. [改造历史](#8-改造历史)
+8. [当前实现契约补充](#8-当前实现契约补充)
 
 ---
 
@@ -1097,27 +1097,316 @@ void cleanupGlobalState() {
 
 ---
 
-## 8. 改造历史
+## 8. 当前实现契约补充
 
-| 日期 | 变更 |
-|------|------|
-| 2026-07-16 | 初始设计文档（validFlag → 统一所有权方案） |
-| 2026-07-20 | 实际实现：`CoroutineControlBlock`、`SharedCoroutineHandle` 状态机、`PromiseBase` 统一入口 |
-| 2026-07-21 | 修复 `AsyncIOOperation` 双重检查竞态、补充测试、更新为框架设计文档 |
+本节只补充当前实现必须遵守的契约，不替换前文的设计和使用模式。
 
-### 文件清单
+### 8.1 当前核心对象
 
-| 文件 | 说明 |
-|------|------|
-| `src/base/coroutine/CoroutineControlBlock.hpp` | **新增**：生命周期仲裁者 |
-| `src/base/coroutine/Coroutine.hpp` | 重写：`shared_ptr<CoroutineControlBlock>`；`share()`；左值 `co_await` |
-| `src/base/coroutine/SharedCoroutineHandle.hpp` | 重写：`State` 状态机；`resumed_` CAS |
-| `src/base/coroutine/AsyncIOOperation.hpp` | 重写：`ResumePhase` 双重检查；`makeResumeHandle()` 统一入口 |
-| `src/base/coroutine/Awaitable.hpp` | 适配：TimerAwaiter/CompletionAwaiter 改用 `makeResumeHandle()` |
-| `src/base/coroutine/AsyncGenerator.hpp` | 适配：`weak_ptr` consumer 有效性检查 |
-| `src/base/coroutine/CoroutineScheduler.hpp` | 无变化 |
-| `src/base/coroutine/EventLoop.h/.cpp` | 无变化（API 一致） |
-| `src/base/coroutine/CancellationToken.h` | 无变化 |
-| `src/http/IOContext.h` | 适配：FdReadyAwaiter/CancellableFdReadyAwaiter 改用 `makeResumeHandle()` |
-| `test/base/CoroutineTest.cpp` | 新增生命周期/竞态测试 |
-| **删除** `CoroutineHandleRegistry.hpp` | 不再需要 |
+当前协程运行时由以下对象共同组成：
+
+```text
+CoroutineFrameControl
+    ├── ExecutionLease
+    ├── ContinuationLink
+    └── ResumeGate
+
+Task<T>
+    └── CoroutineFrameControl + continuation lease
+
+AsyncGenerator<T>
+    └── GeneratorState<T>
+        ├── producer handle
+        ├── producer frame control
+        ├── GeneratorStatus / GeneratorPhase
+        ├── pending consumer ContinuationLink
+        └── external ResumeGate
+
+HTTP operation
+    └── OperationState + OperationStatus
+```
+
+`std::coroutine_handle<>` 只是非 owning 句柄；只有 `CoroutineFrameControl` 的保护状态和实际 owner/lease 共同成立时，句柄才可以被恢复或销毁。
+
+当前实现的恢复路径分为两类：
+
+```text
+外部事件：event -> ResumeGate -> CoroutineFrameControl::resume(handle)
+内部交接：ContinuationLink + ExecutionLease -> 返回目标 handle
+                                           -> symmetric transfer
+```
+
+内部 symmetric transfer 不得再对同一个目标调用一次显式 `resume()`。
+
+### 8.2 FrameControl 与 ExecutionLease
+
+`CoroutineFrameControl` 是独立于 coroutine frame 的生命周期仲裁者，维护：
+
+```text
+activeResumes = 当前受控 resume 调用链数量
+activeLeases  = 当前 ExecutionLease 数量
+activeCount   = activeResumes + activeLeases
+```
+
+`tryAcquire(handle)` 的契约：
+
+1. 在 control mutex 内检查 `destroyed_`、句柄有效性；
+2. 检查通过后增加 `activeLeases`；
+3. 返回 move-only `ExecutionLease`；
+4. 失败时不得继续交付该句柄。
+
+`ExecutionLease` 只表示“frame 暂不能物理销毁”，不表示执行权、线程所有权、锁或 executor affinity。lease 的正常交接必须 move-transfer，禁止先 release 再重新 acquire。
+
+`resume(handle)` 的契约：
+
+1. 在 control mutex 内拒绝已销毁、无效或 `done()` 的句柄；
+2. 增加 `activeResumes` 后执行 `handle.resume()`；
+3. 返回前减少 `activeResumes`；
+4. 最后一个 active protection 释放时处理 `deferredHandle`；
+5. 同一 frame 不得并行执行两个 `resume()`。
+
+`destroy(handle)` 是销毁请求，不是等待接口：
+
+```text
+destroyed_ == false && activeCount == 0
+    -> destroyed_ = true
+    -> 返回 true，调用方执行 handle.destroy()
+
+destroyed_ == false && activeCount != 0
+    -> destroyed_ = true
+    -> 保存 deferredHandle
+    -> 返回 false，保护归零后销毁
+```
+
+调用方只有在首次 `destroy()` 返回 `true` 时才可以直接调用 `handle.destroy()`。重复 destroy 不得再次销毁。
+
+### 8.3 ContinuationLink 两阶段契约
+
+`ContinuationLink` 携带：
+
+```text
+handle + control + lease + targetLeaseSlot + sourceLeaseSlot
+```
+
+它有两个阶段：
+
+```text
+Empty
+  │ registerTarget()
+  ▼
+Registered
+  │ handle + control + lease slots，无 target lease
+  │
+  └─ acquireTarget()
+       ▼
+Transferred
+       handle + control + target lease
+```
+
+- `create()` 用于普通 continuation，注册后立即 acquire target lease。
+- `registerTarget()` 用于 generator pending consumer，只注册目标，不提前持有 consumer frame lease。
+- `acquireTarget()` 只能在真实 yield/final/close handoff 前调用。
+- link reset 或析构释放自身 lease；lease 已转移后由目标 promise 的 lease slot 管理。
+- acquire 失败时必须清除 link，不得交付目标句柄。
+
+### 8.4 ResumeGate 契约
+
+一个外部等待只能有一个负责恢复的 `ResumeGate`。包装 awaiter 和底层 awaiter 必须共享同一个 gate，不得各自创建恢复入口。
+
+```text
+Pending --arm()--> Armed --signal()--> Resuming
+    │                  │                  │
+    └--signal()--> Signaled              └--> frameControl.resume()
+
+Pending/Armed --disarm()--> Disarmed
+```
+
+状态语义：
+
+- `Pending`：gate 已创建，外部事件尚未完成注册；
+- `Armed`：外部事件可以竞争恢复；
+- `Signaled`：事件先于 arm 到达，后续 arm 返回 `false`，协程不挂起；
+- `Resuming`：唯一胜出者已取出 handle/control，正在执行受控 resume；
+- `Disarmed`：关闭状态，后续 signal no-op。
+
+`signal()` 必须满足 at-most-once：
+
+- `Pending -> Signaled` 只记录提前通知，不直接恢复；
+- `Armed -> Resuming` 只有一个胜出者；
+- `Signaled`、`Resuming`、`Disarmed` 不得重复恢复。
+
+`ResumeGate` 只仲裁恢复竞争，不能单独证明 frame 存活；恢复前仍必须经过 `CoroutineFrameControl` 的 destroyed/done 检查。
+
+### 8.5 GeneratorState 与 AsyncGenerator
+
+`GeneratorState<T>` 是 generator producer ownership 和状态协调的唯一共享状态，持有：
+
+```text
+producer handle
+producer frameControl
+GeneratorStatus
+GeneratorPhase
+failure exception_ptr
+pending consumer Registered ContinuationLink
+external ResumeGate
+consumer generation
+```
+
+`GeneratorStatus` 只有以下转换：
+
+```text
+Running -> Completed
+Running -> Failed
+Running -> Closed
+```
+
+终态不可逆。`Completed` 或 `Failed` 上调用 `close()` 仍执行 teardown，但保留原终态；重复 close、completion、failure 不得重复恢复或销毁。
+
+`GeneratorPhase` 的语义为：
+
+| phase | 语义 |
+|---|---|
+| `InitialSuspended` | producer 已创建，尚未驱动 |
+| `Executing` | producer 正在执行 |
+| `WaitingConsumer` | producer 等待下一次 `next()` |
+| `WaitingExternal` | producer 等待 timer、fd、completion 或 IO 事件 |
+| `Yielded` | producer 已产生 value，正在 handoff |
+| `FinalSuspended` | producer 已完成、失败或关闭 |
+
+phase 是 owner executor 上的状态，不是并发锁。
+
+### 8.6 `next()` 与 PendingConsumerRegistration
+
+`next()` 的 awaiter 在 pending consumer 阶段执行以下顺序：
+
+1. 释放 consumer 旧 transfer leases；
+2. 检查 generator status、producer handle 和已有 value；
+3. 通过 `registerTarget()` 注册 consumer continuation；
+4. generation 自增；
+5. 安装 typed `PendingConsumerRegistration<T>`；
+6. producer 标记 `Executing`；
+7. 返回 producer handle，执行 symmetric transfer。
+
+`PendingConsumerRegistration<T>` 持有：
+
+```text
+weak_ptr<GeneratorState<T>>
+consumer handle
+generation
+```
+
+它不持有 consumer frame lease。registration 析构或 reset 时，只撤销 state 中与 handle 和 generation 同时匹配的 pending link。这样 consumer frame 可以在 pending `next()` 期间销毁，awaiter 能通过 RAII 完成撤销，不需要向通用 frame control 注入 generator-specific callback。
+
+`await_resume()` 必须先 reset 当前 registration，然后：
+
+- `Failed`：重新抛出 producer 保存的异常；
+- producer 不存在：返回 `nullopt`；
+- 有 value：移动 value、清空 producer value 后返回；
+- 无 value：返回 `nullopt`，表示 EOS 或关闭。
+
+### 8.7 yield/final handoff
+
+producer 的 `co_yield` 和 `final_suspend` 交接必须遵守：
+
+1. 释放 producer 旧 transfer leases；
+2. 摘取 Registered consumer link；
+3. acquire consumer target lease；
+4. acquire producer transfer lease；
+5. 将 target lease move 到 consumer promise slot；
+6. 将 producer transfer lease move 到 consumer promise slot；
+7. 清除 state pending consumer；
+8. 返回 consumer handle，执行 symmetric transfer。
+
+任一 acquire 失败都必须清除 link，不得返回悬空句柄。pending consumer 在等待期间不应持有 lease，避免 owner destroy 被 pending lease 阻塞。
+
+### 8.8 `AsyncGenerator::close()` 生命周期契约
+
+`AsyncGenerator::close()` 是 owner executor/thread 上的同步逻辑关闭和 frame destroy request。它不是 graceful producer close，也不等待底层 IO、timer、线程池任务或 callback 完成；但可能因为 control mutex 短暂串行化，或同步恢复 pending consumer。
+
+close 的顺序固定为：
+
+```text
+1. 已 Closed：直接返回
+2. disarm 当前 external ResumeGate
+3. 对 producer 调用 frameControl.destroy(producer)
+4. Running -> Closed；Completed/Failed 保持原终态
+5. 再次 disarm external gate，覆盖 gate 安装竞态
+6. phase -> FinalSuspended
+7. 摘取 pending consumer Registered link
+8. producer_ = nullptr
+9. destroyNow == true 时调用 producer.destroy()
+10. handoff 前 acquire consumer target lease
+11. 成功则只恢复 consumer 一次，使 next() 收到 EOS
+```
+
+如果 external signal 已进入 `Resuming`，close 不抢夺这次受控 resume；destroy request 通过 active resume 保护转为 deferred destroy。若 close 先完成 gate disarm，之后 signal 必须 no-op。
+
+close 返回后，state 不得继续生产，producer handle 不得再被调用，external signal 不得重新启动 producer，pending consumer 不得被恢复两次，frame 不得被销毁两次。
+
+### 8.9 外部 await、取消与 IO
+
+timer、completion、fd 和 IO awaiter 的通用顺序是：
+
+```text
+releaseTransferLeases(promise)
+    -> markExternalAwait(promise)
+    -> 创建唯一 ResumeGate
+    -> 注册外部事件、取消和超时
+    -> arm gate
+    -> signal 竞争恢复
+    -> await_resume 读取结果并释放 registration/cleanup
+```
+
+注册完成前事件到达时，gate 必须进入 `Signaled`，arm 返回 `false`，协程不得挂起。
+
+`AsyncIOOperation` 的 `Completed`、`Failed`、`TimedOut`、`Cancelled` 由唯一终态竞争者提交。胜出者负责发布结果、保存错误、撤销 timer、提取 cleanup 和触发 gate；cleanup 在锁外执行。
+
+`CancellableAwaiter` 的外部取消回调必须与底层 awaiter 共享同一个 gate，不能形成两个独立 resume 入口。取消 callback 只能发出取消或 signal 请求，不能保存并直接访问已销毁 frame。
+
+### 8.10 OperationState 与 OperationStatus
+
+HTTP operation 层在协程状态机之上维护：
+
+```text
+enum class OperationStatus {
+    Running,
+    Completed,
+    Cancelled,
+    Closed,
+    Failed,
+};
+```
+
+合法转换为：
+
+```text
+Running -> Completed
+Running -> Cancelled
+Running -> Closed
+Running -> Failed
+```
+
+终态不可逆；重复 complete、fail、cancel、close 都是 no-op。
+
+- `OperationState::cancel()`：同步提交 `Running -> Cancelled`，并取消内部 token；不等待底层任务退出。
+- `OperationState::close()`：同步提交 `Running -> Closed`，并取消内部 token；不表示底层 IO 已完成。
+- operation 析构必须执行 close。
+- streaming 收到 EOS 时，如果 operation token 已取消，状态优先为 `Cancelled`；否则为 `Completed`。
+- `HttpRequest::cancel()` 必须调用每个 running operation 的 `OperationState::cancel()`，不能只调用 token.cancel()。
+
+### 8.11 执行域与禁止事项
+
+producer、consumer、`next()`、`co_yield`、completion、close，以及 generator state 的普通字段访问必须在同一 owner executor/thread 串行执行。跨线程只能投递到 owner executor。
+
+唯一允许和 owner close 竞争的跨线程入口是已注册 external `ResumeGate::signal()`；该竞争由 gate 状态和 frame control 的 active/destroyed/deferred 状态共同收敛。
+
+以下行为违反契约：
+
+1. 绕过 `CoroutineFrameControl` 直接恢复受控 frame；
+2. 为同一次外部等待创建两个独立 gate；
+3. 在 pending consumer 阶段用 lease 阻塞 owner frame 销毁；
+4. close 后继续使用 producer handle 或 promise；
+5. 跨线程直接调用同一 generator 的 `next()`、close 或 producer 状态操作；
+6. 用 `void*`、裸 awaiter `this` 或 generator-specific callback 注入通用 frame control；
+7. continuation handoff 先 release 再重新 acquire，制造销毁空窗；
+8. 把 `OperationStatus::Closed` 当作底层 HTTP/IO 已完成。
