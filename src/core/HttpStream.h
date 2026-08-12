@@ -131,6 +131,7 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
     uint64_t nextOperationId_ = 1;
     bool closing_ = false;
     uint64_t committedPosition_ = 0;  // position already delivered to onData
+    bool operationCoversSource_ = false;
 
     OpenParams params_;
     Range readRange_;

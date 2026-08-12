@@ -35,6 +35,7 @@ auto HttpStream::open(const OpenParams& params) -> StreamResult<StreamInfo> {
     params_ = params;
     readRange_ = params.range;
     committedPosition_ = readRange_.isValid() ? readRange_.start() : 0;
+    operationCoversSource_ = false;
 
     {
         std::lock_guard<std::mutex> lock(infoMutex_);
@@ -81,6 +82,8 @@ void HttpStream::startLocked() noexcept {
 
     readRange_ = Range(committedPosition_);
     position_ = committedPosition_;
+    contentLength_ = 0;
+    operationCoversSource_ = false;
     state_ = StreamState::Reading;
     isPaused_ = false;
     isRunning_ = true;
@@ -293,10 +296,18 @@ void HttpStream::handleHeader(const http::StreamChunk& chunk) noexcept {
         }
     }
 
+    uint64_t totalSize = 0;
+    {
+        std::lock_guard<std::mutex> lock(infoMutex_);
+        totalSize = info_.totalSize;
+    }
+    operationCoversSource_ = readRange_.start() == 0 && totalSize > 0 &&
+                             contentLength_ == totalSize;
+
     LogI("[HttpStream::handleHeader] status={} rangeCapability={} contentLength={} totalSize={} "
-         "url={}",
+         "coversSource={} url={}",
          static_cast<int>(chunk.statusCode), static_cast<int>(rangeCapability_), contentLength_,
-         info_.totalSize, params_.uri);
+         totalSize, operationCoversSource_, params_.uri);
 }
 
 bool HttpStream::failRangeValidation(slark::Error error,
@@ -405,11 +416,12 @@ void HttpStream::handleData(http::StreamChunk&& chunk) noexcept {
 }
 
 void HttpStream::handleFinal() noexcept {
-    isCompleted_ = true;
+    isCompleted_ = operationCoversSource_;
     state_ = StreamState::Completed;
     isRunning_ = false;
-    LogI("[HttpStream::handleFinal] totalReceived={} url={}", committedPosition_, params_.uri);
-    if (params_.onComplete) {
+    LogI("[HttpStream::handleFinal] totalReceived={} coversSource={} url={}", committedPosition_,
+         operationCoversSource_, params_.uri);
+    if (operationCoversSource_ && params_.onComplete) {
         params_.onComplete();
     }
 }

@@ -12,6 +12,18 @@
 
 namespace slark {
 
+namespace detail {
+
+constexpr uint64_t decodeMpegPts(DataView data, uint32_t offset) noexcept {
+    return ((static_cast<uint64_t>(data[offset]) & 0x0eULL) << 29) |
+           (static_cast<uint64_t>(data[offset + 1]) << 22) |
+           ((static_cast<uint64_t>(data[offset + 2]) & 0xfeULL) << 14) |
+           (static_cast<uint64_t>(data[offset + 3]) << 7) |
+           ((static_cast<uint64_t>(data[offset + 4]) & 0xfeULL) >> 1);
+}
+
+}  // namespace detail
+
 struct TSHeader {
     uint8_t syncbyte = 0;                // 8 bit
     uint8_t errorIndicator = 0;          // 1 bit

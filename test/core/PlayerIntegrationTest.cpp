@@ -6,12 +6,16 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <thread>
 
+#include "Data.h"
+#include "DemuxerComponent.h"
 #include "Player.h"
 #include "VideoInfo.h"
+#include "pipeline/PlayPipeline.h"
 
 using namespace slark;
 using ::testing::_;
@@ -30,6 +34,25 @@ struct MockPlayerObserver : public IPlayerObserver {
     MOCK_METHOD(void, notifyPlayedTime, (std::string_view playerId, double time), (override));
 };
 
+
+static constexpr const char* kTsPath = "../../test_sample/segment-0.ts";
+
+static DataPtr loadTsData() {
+    std::ifstream input(kTsPath, std::ios::binary | std::ios::ate);
+    if (!input) {
+        return nullptr;
+    }
+
+    const auto size = static_cast<uint64_t>(input.tellg());
+    input.seekg(0, std::ios::beg);
+    auto data = Data::create(size);
+    if (!data || !data->data()) {
+        return nullptr;
+    }
+    input.read(reinterpret_cast<char*>(data->data()), static_cast<std::streamsize>(size));
+    data->setSize(size);
+    return data;
+}
 
 static std::unique_ptr<PlayerParams> makeParams(const std::string& path = "/dev/null") {
     auto params = std::make_unique<PlayerParams>();
@@ -158,6 +181,51 @@ TEST(PlayerIntegrationTest, PrepareTransitionsOutOfNotInited) {
     auto state = waitForPrepared(player);
     EXPECT_NE(state, PlayerState::NotInited);
     safeDestroy(player);
+}
+
+TEST(PlayerIntegrationTest, PreferredTsHeaderIsEmittedOnlyAfterTracksAreKnown) {
+    auto data = loadTsData();
+    if (!data) {
+        GTEST_SKIP() << "segment-0.ts not found, skipping";
+    }
+
+    auto [sender, receiver] = Channel<DataPacket>::create();
+    DemuxerConfig config;
+    config.filePath = kTsPath;
+    config.preferredType = DemuxerType::TS;
+    auto demuxer = std::make_shared<DemuxerComponent>(std::move(receiver), std::move(config));
+
+    PlayPipeline pipeline(BackpressureConfig::forLocal());
+    pipeline.bindToCurrentThread();
+    std::atomic<int32_t> headerCount{0};
+    pipeline.setEventCallback([&headerCount](PipelineEvent event, std::optional<PipelineError>) {
+        if (event == PipelineEvent::DemuxHeaderParsed) {
+            headerCount.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+    pipeline.setDemuxerComponent(demuxer);
+    pipeline.build();
+
+    DataPacket packet;
+    packet.data = std::move(data);
+    packet.offset = 0;
+    ASSERT_TRUE(sender->send(std::move(packet)).has_value());
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (std::chrono::steady_clock::now() < deadline &&
+           headerCount.load(std::memory_order_relaxed) == 0) {
+        pipeline.drainPendingTasks();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    for (int32_t i = 0; i < 50; ++i) {
+        pipeline.drainPendingTasks();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    EXPECT_EQ(headerCount.load(std::memory_order_relaxed), 1);
+    EXPECT_TRUE(pipeline.mediaInfo().hasAudio);
+    EXPECT_TRUE(pipeline.mediaInfo().hasVideo);
+    EXPECT_TRUE(pipeline.teardown());
 }
 
 TEST(PlayerIntegrationTest, PrepareIsIdempotent) {

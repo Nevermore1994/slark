@@ -4,8 +4,10 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <string_view>
 
 #include "AVFrame.hpp"
@@ -43,6 +45,36 @@ std::unique_ptr<Buffer> loadFile(std::string_view path, uint64_t& outSize) {
     auto buffer = std::make_unique<Buffer>();
     buffer->append(0, std::move(data));
     return buffer;
+}
+
+std::optional<uint64_t> findMdatEnd(std::string_view path, uint64_t fileSize) {
+    std::ifstream ifs(std::string(path), std::ios::binary);
+    if (!ifs) {
+        return std::nullopt;
+    }
+
+    uint64_t offset = 0;
+    while (offset + 8 <= fileSize) {
+        std::array<uint8_t, 8> header{};
+        ifs.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
+        ifs.read(reinterpret_cast<char*>(header.data()), header.size());
+        if (ifs.gcount() != static_cast<std::streamsize>(header.size())) {
+            return std::nullopt;
+        }
+
+        const auto boxSize = (static_cast<uint64_t>(header[0]) << 24) |
+                             (static_cast<uint64_t>(header[1]) << 16) |
+                             (static_cast<uint64_t>(header[2]) << 8) | header[3];
+        const std::string_view boxType(reinterpret_cast<const char*>(header.data() + 4), 4);
+        if (boxSize < 8 || offset + boxSize > fileSize) {
+            return std::nullopt;
+        }
+        if (boxType == "mdat") {
+            return offset + boxSize;
+        }
+        offset += boxSize;
+    }
+    return std::nullopt;
 }
 
 struct ParseResult {
@@ -220,6 +252,32 @@ TEST_F(Mp4DemuxerFileTest, TotalDurationIsPositive) {
     EXPECT_GT(demuxer_->totalDuration().second(), 0.0);
 }
 
+TEST_F(Mp4DemuxerFileTest, HeaderOnlyRangeDoesNotSignalFileEnd) {
+    ASSERT_TRUE(demuxer_->open(probeBuffer_));
+    const auto mdatEnd = findMdatEnd(kMp4Path, fileSize_);
+    ASSERT_TRUE(mdatEnd.has_value());
+    const auto startOffset = *mdatEnd;
+    ASSERT_LT(startOffset, fileSize_);
+
+    std::ifstream ifs(kMp4Path, std::ios::binary);
+    ASSERT_TRUE(ifs);
+    ifs.seekg(static_cast<std::streamoff>(startOffset), std::ios::beg);
+    const auto readSize = fileSize_ - startOffset;
+    auto data = Data::create(readSize);
+    ASSERT_NE(data, nullptr);
+    ifs.read(reinterpret_cast<char*>(data->data()), static_cast<std::streamsize>(readSize));
+    ASSERT_EQ(static_cast<uint64_t>(ifs.gcount()), readSize);
+    data->setSize(readSize);
+
+    DataPacket packet;
+    packet.offset = static_cast<int64_t>(startOffset);
+    packet.data = std::move(data);
+    const auto result = demuxer_->parseData(packet);
+
+    EXPECT_NE(result.resultCode, DemuxerResultCode::FileEnd);
+    EXPECT_FALSE(demuxer_->isCompleted());
+}
+
 TEST_F(Mp4DemuxerFileTest, ParseDataProducesFrames) {
     ASSERT_TRUE(demuxer_->open(probeBuffer_));
 
@@ -266,6 +324,21 @@ TEST_F(Mp4DemuxerFileTest, SeekToBeginningProducesKeyFrame) {
     EXPECT_GT(result.keyFrames, 0u) << "seek to beginning should produce a key frame";
 }
 
+
+std::array<Byte, 5> encodeMpegPts(uint64_t pts) {
+    return {static_cast<Byte>(0x21 | ((pts >> 29) & 0x0e)),
+            static_cast<Byte>(pts >> 22),
+            static_cast<Byte>(((pts >> 14) & 0xfe) | 0x01),
+            static_cast<Byte>(pts >> 7),
+            static_cast<Byte>(((pts << 1) & 0xfe) | 0x01)};
+}
+
+TEST(TsDemuxerTest, DecodesMpegPtsUsingStandardBitLayout) {
+    constexpr uint64_t kPts = 0x1ABCDE123ULL;
+    const auto encoded = encodeMpegPts(kPts);
+
+    EXPECT_EQ(detail::decodeMpegPts(DataView::fromArray(encoded), 0), kPts);
+}
 
 class TsDemuxerFileTest : public ::testing::Test {
  protected:

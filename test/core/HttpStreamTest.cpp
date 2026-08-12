@@ -272,6 +272,24 @@ TEST_F(HttpStreamTest, H1_OpenStartReceivesDataAndCompletes) {
     EXPECT_TRUE(stream_->isCompleted());
 }
 
+TEST_F(HttpStreamTest, H2_RangeCompletionDoesNotSignalSourceEof) {
+    auto params = makeParams();
+    params.uri = server_.url();
+    params.range = Range(32768);
+    std::atomic<bool> completed{false};
+    params.onComplete = [&completed]() {
+        completed = true;
+    };
+
+    ASSERT_TRUE(stream_->open(params).has_value());
+    stream_->start();
+
+    EXPECT_TRUE(waitUntil([&]() { return stream_->position() >= kMockBodySize; }));
+    EXPECT_EQ(stream_->state(), StreamState::Completed);
+    EXPECT_FALSE(stream_->isCompleted());
+    EXPECT_FALSE(completed.load());
+}
+
 TEST_F(HttpStreamTest, H2_SeekAfterHeaderSetsNewRange) {
     auto params = makeParams();
     params.uri = server_.url();

@@ -41,6 +41,7 @@ void DemuxerComponent::reset() noexcept {
         demuxer->close();
     }
     flushed_ = false;
+    pendingSeekVerification_.store(false, std::memory_order_release);
     pendingSeekVerifiedOffset_.store(0, std::memory_order_release);
     probeBuffer_.reset();
     demuxer_.reset();
@@ -114,6 +115,17 @@ void DemuxerComponent::runLoop(Thread& thread) noexcept {
             continue;
         }
 
+        if (pendingSeekVerification_.load(std::memory_order_acquire)) {
+            const auto expectedOffset = pendingSeekVerifiedOffset_.load(std::memory_order_acquire);
+            if (packet.isEndOfStream || packet.offset < 0 ||
+                static_cast<uint64_t>(packet.offset) != expectedOffset) {
+                LogW("discard stale packet offset={}, expected={}, eos={}", packet.offset,
+                     expectedOffset, packet.isEndOfStream);
+                continue;
+            }
+            pendingSeekVerification_.store(false, std::memory_order_release);
+        }
+
         if (packet.isEndOfStream) {
             auto demuxer = demuxer_.load();
             if (demuxer && demuxer->isOpened() && !demuxer->isCompleted()) {
@@ -124,16 +136,6 @@ void DemuxerComponent::runLoop(Thread& thread) noexcept {
 
         LogI("demuxer worker: received data packet offset={}, size={}", packet.offset,
              packet.data ? packet.data->size() : 0);
-
-        auto expectedOffset = pendingSeekVerifiedOffset_.load(std::memory_order_acquire);
-        if (expectedOffset != 0) {
-            if (static_cast<uint64_t>(packet.offset) != expectedOffset) {
-                LogW("open: discard stale packet offset={}, expected={}", packet.offset,
-                     expectedOffset);
-                continue;
-            }
-            pendingSeekVerifiedOffset_.store(0, std::memory_order_release);
-        }
 
         auto demuxer = demuxer_.load();
         if (!demuxer || !demuxer->isOpened()) {
@@ -195,8 +197,12 @@ bool DemuxerComponent::open() noexcept {
         if (auto seekTo = demuxer->pendingSeekPos(); seekTo.has_value()) {
             demuxer->resetPendingSeek();
             probeBuffer_.reset();
-            invokeSeekFunc(Range(*seekTo));
             pendingSeekVerifiedOffset_.store(*seekTo, std::memory_order_release);
+            pendingSeekVerification_.store(true, std::memory_order_release);
+            if (receiver_) {
+                (void)receiver_->tryReceiveAll();
+            }
+            invokeSeekFunc(Range(*seekTo));
             flushed_.store(false, std::memory_order_release);
         }
         return false;
@@ -206,10 +212,16 @@ bool DemuxerComponent::open() noexcept {
          static_cast<int32_t>(demuxer->type()), probeBuffer_ ? probeBuffer_->length() : 0);
 
     if (auto headerInfo = demuxer->headerInfo(); headerInfo && headerInfo->headerLength > 0) {
-        demuxer->seekPos(headerInfo->headerLength);
-        invokeSeekFunc(Range(headerInfo->headerLength));
-        flushed_ = false;
-        LogI("demuxer seek to:{}", headerInfo->headerLength);
+        const auto seekPos = headerInfo->headerLength;
+        demuxer->seekPos(seekPos);
+        pendingSeekVerifiedOffset_.store(seekPos, std::memory_order_release);
+        pendingSeekVerification_.store(true, std::memory_order_release);
+        if (receiver_) {
+            (void)receiver_->tryReceiveAll();
+        }
+        invokeSeekFunc(Range(seekPos));
+        flushed_.store(false, std::memory_order_release);
+        LogI("demuxer seek to:{}", seekPos);
     }
 
     DemuxerResult result;
@@ -292,6 +304,7 @@ void DemuxerComponent::seekToPos(uint64_t pos) noexcept {
         }
         // pendingSeekVerifiedOffset_ filters out any missed stale packets
         pendingSeekVerifiedOffset_.store(pos, std::memory_order_release);
+        pendingSeekVerification_.store(true, std::memory_order_release);
         // Synchronous IO seek: data sent from the new position must match expectedOffset
         invokeSeekFunc(Range(pos));
     }

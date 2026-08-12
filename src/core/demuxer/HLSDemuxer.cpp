@@ -172,10 +172,7 @@ void TSDemuxer::updateStreamInfo(uint8_t streamType, uint16_t pid) noexcept {
 }
 
 static int64_t parsePtsValue(DataView data, uint32_t offset) noexcept {
-    return static_cast<int64_t>(((data[offset] & 0x0e) << 28) | ((data[offset + 1] & 0xff) << 20) |
-                                ((data[offset + 2] & 0xfe) << 12) |
-                                ((data[offset + 3] & 0xff) << 5) |
-                                ((data[offset + 4] & 0xfe) >> 1));
+    return static_cast<int64_t>(detail::decodeMpegPts(data, offset));
 }
 
 static void parsePesPtsDts(DataView data,
@@ -376,8 +373,9 @@ bool TSDemuxer::packH264VideoPacket(uint64_t tsIndex, AVFramePtrArray& frames) n
 void TSDemuxer::recalculatePtsDts(int64_t& pts, int64_t& dts, bool isAudio) noexcept {
     // Offset to handle wraparound
     auto& fixInfo = isAudio ? audioFixInfo_ : videoFixInfo_;
-    if (dts < fixInfo.preDtsTime) {
-        fixInfo.offset += TSPtsFixInfo::kMaxPTS;
+    constexpr auto kHalfPtsRange = static_cast<int64_t>(TSPtsFixInfo::kMaxPTS / 2);
+    if (dts < fixInfo.preDtsTime && fixInfo.preDtsTime - dts > kHalfPtsRange) {
+        fixInfo.offset += static_cast<int64_t>(TSPtsFixInfo::kMaxPTS);
         LogI("dts wraparound:{}, {}, offset:{}", dts, fixInfo.preDtsTime, fixInfo.offset);
     }
     fixInfo.preDtsTime = dts;

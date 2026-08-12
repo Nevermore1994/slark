@@ -1329,9 +1329,11 @@ bool Mp4Demuxer::isCompleted() const noexcept {
     }
     if (!isCompleted && !isFragmented_) {
         auto mediaDataBox = rootBox_->getChild("mdat");
-        if (mediaDataBox &&
-            buffer_->pos() >= (mediaDataBox->info.size + mediaDataBox->info.start)) {
-            isCompleted = true;
+        if (mediaDataBox) {
+            const auto mediaDataEnd = mediaDataBox->info.size + mediaDataBox->info.start;
+            if (buffer_->offset() < mediaDataEnd && buffer_->pos() >= mediaDataEnd) {
+                isCompleted = true;
+            }
         }
     }
     return isCompleted;
