@@ -62,6 +62,10 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
         metadataCallback_ = std::move(callback);
     }
 
+    void setProductionGate(std::function<bool()> gate) noexcept {
+        productionGate_ = std::move(gate);
+    }
+
  private:
     struct StreamControl {
         std::atomic<bool> alive{true};
@@ -175,6 +179,7 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
     std::atomic<int32_t> lastErrorOriginCode_{0};
 
     MetadataCallback metadataCallback_;
+    std::function<bool()> productionGate_;
 };
 
 }  // namespace slark

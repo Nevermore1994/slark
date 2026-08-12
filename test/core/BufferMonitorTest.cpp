@@ -141,10 +141,6 @@ TEST(BufferMonitorTest, RebufferingEndsOnHeartbeatWhenStreamNeverPaused) {
 
     EXPECT_CALL(delegate, demuxedDuration())
         .WillOnce(Return(3.0))
-        .WillOnce(Return(3.0))
-        .WillOnce(Return(4.0))
-        .WillOnce(Return(4.0))
-        .WillOnce(Return(4.0))
         .WillRepeatedly(Return(4.0));
     EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);
     EXPECT_CALL(delegate, pauseStream()).Times(0);
@@ -176,7 +172,10 @@ TEST(BufferMonitorTest, RebufferingEndsWhenStreamResumesAndDurationRecovered) {
     EXPECT_CALL(delegate, demuxedDuration())
         .WillOnce(Return(3.0))
         .WillOnce(Return(12.0))
-        .WillRepeatedly(Return(3.0));
+        .WillOnce(Return(1.0))
+        .WillOnce(Return(1.0))
+        .WillOnce(Return(4.0))
+        .WillRepeatedly(Return(4.0));
     EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);
     EXPECT_CALL(delegate, pauseStream()).Times(1);
     EXPECT_CALL(delegate, resumeStream()).Times(1);
@@ -191,12 +190,6 @@ TEST(BufferMonitorTest, RebufferingEndsWhenStreamResumesAndDurationRecovered) {
     monitor.startPrebuffering();
     monitor.onHeartbeat();
     monitor.onHeartbeat();
-    monitor.onStarvation(false);
-    monitor.onStarvation(false);
-    monitor.onStarvation(false);
-    monitor.onStarvation(false);
-    monitor.onStarvation(false);
-    EXPECT_TRUE(monitor.isRebuffering());
     monitor.onHeartbeat();
     EXPECT_FALSE(monitor.isRebuffering());
 }
@@ -276,47 +269,62 @@ TEST(BufferMonitorTest, DecoderEofSkipsDecoderFlowRegulation) {
 }
 
 
-TEST(BufferMonitorTest, BackpressurePausedSkipsDataFlowRegulation) {
+TEST(BufferMonitorTest, PrebufferRegulatesDataFlow) {
     MockDelegate delegate;
     auto cfg = BackpressureConfig::forNetwork();
+    cfg.startBufferDuration = 30.0;
+    cfg.demuxHighWatermarkDuration = 20.0;
+    cfg.demuxLowWatermarkDuration = 10.0;
 
     EXPECT_CALL(delegate, demuxedDuration()).WillRepeatedly(Return(25.0));
-    EXPECT_CALL(delegate, resumeStream()).Times(0);
-    EXPECT_CALL(delegate, pauseStream()).Times(0);
-    EXPECT_CALL(delegate, onDropOldest()).Times(0);
-    EXPECT_CALL(delegate, audioDecodedFrameCount()).WillRepeatedly(Return(0));
-    EXPECT_CALL(delegate, videoDecodedFrameCount()).WillRepeatedly(Return(0));
-
-    BufferMonitor monitor(cfg, delegate);
-    monitor.pauseBackpressure();
-    monitor.onHeartbeat();
-}
-
-TEST(BufferMonitorTest, BackpressurePausedResumesStreamWhenPreviouslyPaused) {
-    MockDelegate delegate;
-    auto cfg = BackpressureConfig::forNetwork();
-
-    EXPECT_CALL(delegate, demuxedDuration())
-        .WillOnce(Return(0.0))
-        .WillOnce(Return(3.0))
-        .WillOnce(Return(12.0))
-        .WillRepeatedly(Return(25.0));
-    EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);
     EXPECT_CALL(delegate, pauseStream()).Times(1);
-    EXPECT_CALL(delegate, resumeStream()).Times(1);
-    EXPECT_CALL(delegate, onDropOldest()).Times(0);
     EXPECT_CALL(delegate, audioDecodedFrameCount()).WillRepeatedly(Return(0));
     EXPECT_CALL(delegate, videoDecodedFrameCount()).WillRepeatedly(Return(0));
 
     BufferMonitor monitor(cfg, delegate);
     monitor.startPrebuffering();
     monitor.onHeartbeat();
-    monitor.onHeartbeat();
-    monitor.onHeartbeat();
-    monitor.pauseBackpressure();
+    EXPECT_TRUE(monitor.isPrebuffering());
+}
+
+TEST(BufferMonitorTest, BackpressureDoesNotDependOnFirstFramePresentation) {
+    MockDelegate delegate;
+    auto cfg = BackpressureConfig::forNetwork();
+    cfg.startBufferDuration = 0.0;
+
+    EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);
+    EXPECT_CALL(delegate, demuxedDuration()).WillRepeatedly(Return(25.0));
+    EXPECT_CALL(delegate, pauseStream()).Times(1);
+    EXPECT_CALL(delegate, audioDecodedFrameCount()).WillRepeatedly(Return(0));
+    EXPECT_CALL(delegate, videoDecodedFrameCount()).WillRepeatedly(Return(0));
+
+    BufferMonitor monitor(cfg, delegate);
+    monitor.startPrebuffering();
     monitor.onHeartbeat();
 }
 
+TEST(BufferMonitorTest, PrebufferRegulatesBeforeReadyCompletes) {
+    MockDelegate delegate;
+    auto cfg = BackpressureConfig::forNetwork();
+    cfg.startBufferDuration = 3.0;
+    cfg.demuxHighWatermarkDuration = 1.5;
+
+    EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);
+    EXPECT_CALL(delegate, demuxedDuration())
+        .WillOnce(Return(2.0))
+        .WillRepeatedly(Return(4.0));
+    EXPECT_CALL(delegate, pauseStream()).Times(1);
+    EXPECT_CALL(delegate, audioDecodedFrameCount()).WillRepeatedly(Return(0));
+    EXPECT_CALL(delegate, videoDecodedFrameCount()).WillRepeatedly(Return(0));
+
+    BufferMonitor monitor(cfg, delegate);
+    monitor.startPrebuffering();
+    EXPECT_TRUE(monitor.isPrebuffering());
+    monitor.onHeartbeat();
+    EXPECT_TRUE(monitor.isPrebuffering());
+    monitor.onHeartbeat();
+    EXPECT_FALSE(monitor.isPrebuffering());
+}
 
 TEST(BufferMonitorTest, ResetClearsAllState) {
     MockDelegate delegate;

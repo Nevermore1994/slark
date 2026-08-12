@@ -47,13 +47,12 @@ class BufferMonitor {
 
     void reset() noexcept;
 
-    void pauseBackpressure() noexcept {
-        backpressurePaused_ = true;
-        resumeStream();
+    void pauseStreamForOperation() noexcept {
+        pauseStream();
     }
 
-    void resumeBackpressure() noexcept {
-        backpressurePaused_ = false;
+    void resumeStreamForOperation() noexcept {
+        resumeStream();
     }
 
     void setDemuxEof() noexcept {
@@ -83,9 +82,9 @@ class BufferMonitor {
     }
 
  private:
-    void regulateDataFlow() noexcept;
+    void regulateDataFlow(double duration, bool allowBufferingEvents) noexcept;
     void regulateDecoderFlow() noexcept;
-    void checkPrebufferComplete() noexcept;
+    void checkPrebufferComplete(double duration) noexcept;
     void checkRebufferComplete() noexcept;
 
     [[nodiscard]] double demuxedDuration() const noexcept {
@@ -151,7 +150,6 @@ class BufferMonitor {
     // demux-side state
     bool streamPaused_ = false;
     bool demuxEof_ = false;
-    bool backpressurePaused_ = false;  // skip backpressure during fast frame pushing
 
     bool audioDecoderPaused_ = false;
     bool videoDecoderPaused_ = false;

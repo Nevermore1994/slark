@@ -70,9 +70,6 @@ void PlayPipeline::start() noexcept {
     }
 
     if (cur == PipelineState::Paused || cur == PipelineState::Built) {
-        if (demuxer_) {
-            demuxer_->start();
-        }
         if (audioRender_) {
             audioRender_->start();
         }
@@ -233,10 +230,6 @@ void PlayPipeline::seek(CTime target, bool isAccurate) noexcept {
     }
     SLARK_TRACE_MILESTONE(playSession_.lock().get(), "seek_start");
 
-    if (bufferMonitor_) {
-        bufferMonitor_->pauseBackpressure();
-    }
-
     if (strategy == SeekStrategy::FastForwardInGOP) {
         fastForwardInGOP(target);
     } else {
@@ -287,7 +280,11 @@ void PlayPipeline::performKeyframeSeek(CTime target, SeekStrategy strategy) noex
     if (videoDecoder_) {
         videoDecoder_->pause();
     }
-    pauseStream();
+    if (bufferMonitor_) {
+        bufferMonitor_->pauseStreamForOperation();
+    } else {
+        pauseStream();
+    }
     flush();
     if (audioRender_) {
         audioRender_->seek(targetSec);
@@ -314,7 +311,11 @@ void PlayPipeline::performKeyframeSeek(CTime target, SeekStrategy strategy) noex
     if (videoDecoder_) {
         videoDecoder_->resume();
     }
-    resumeStream();
+    if (bufferMonitor_) {
+        bufferMonitor_->resumeStreamForOperation();
+    } else {
+        resumeStream();
+    }
     LogI("seek to keyframe for {:.3f}s (strategy={}), epoch={}", targetSec,
          static_cast<int32_t>(strategy), seekContext_->currentEpoch());
 }
@@ -329,6 +330,10 @@ Time::TimePoint PlayPipeline::audioTime() noexcept {
 
 double PlayPipeline::cachedDuration() const noexcept {
     return demuxedDuration();
+}
+
+bool PlayPipeline::canProduceSourceData() const noexcept {
+    return demuxedDuration() < config_.demuxHighWatermarkDuration;
 }
 
 double PlayPipeline::maxBufferedPts() const noexcept {
@@ -415,13 +420,12 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
     }
 
     bufferMonitor_->resetStarvationCount();
+    markFirstFrameRenderedIfNeeded();
     LogIThrottle(2000,
                  "requestVideoFrame POP pts={:.3f} dts={:.3f} isDiscard={}, masterTime={:.3f}, "
                  "videoTime={:.3f}, diff={:.3f}",
                  frame->ptsTime(), frame->dtsTime(), frame->isDiscard, masterTime, videoTime, diff);
     clockSync_->setVideoTime(Time::TimePoint::fromSeconds(frame->ptsTime()));
-
-    markFirstFrameRenderedIfNeeded();
 
     if (seekContext_->isSeekPending() && !frame->isDiscard) {
         onSeekFrameConsumed(TrackType::Video);
@@ -894,23 +898,12 @@ void PlayPipeline::handleSeekFirstFrame(const AVFrameRefPtr& frame,
         render->pushFrame(frame);
     }
     clockSync_->setVideoTime(Time::TimePoint::fromSeconds(frame->ptsTime()));
-    bool expected = false;
-    const bool needFirstFrame = readiness_.firstFrameRendered.compare_exchange_strong(
-        expected, true, std::memory_order_acq_rel);
-    postToOwnerThread([this, needFirstFrame, isSeekFirstFrame] {
-        if (needFirstFrame) {
-            if (auto session = playSession_.lock()) {
-                session->markFirstFrame();
-                SLARK_TRACE_MILESTONE(session.get(), "first_video_frame");
-            }
-            fireEvent(PipelineEvent::FirstFrameRendered);
-            LogI("first frame rendered");
-        }
-        if (isSeekFirstFrame) {
+    if (isSeekFirstFrame) {
+        postToOwnerThread([this] {
             onSeekFrameConsumed(TrackType::Video);
             LogI("video seek completed");
-        }
-    });
+        });
+    }
 }
 
 void PlayPipeline::onVideoDecoded(DecoderData data) noexcept {
@@ -1074,8 +1067,13 @@ void PlayPipeline::handleDemuxHeader(const std::shared_ptr<IDemuxer>& demuxer) n
     if (mediaInfo_.hasAudio || mediaInfo_.hasVideo) {
         return;
     }
-    mediaInfo_.hasAudio = demuxer->hasAudio();
-    mediaInfo_.hasVideo = demuxer->hasVideo();
+    const bool hasAudio = demuxer->hasAudio();
+    const bool hasVideo = demuxer->hasVideo();
+    if (!hasAudio && !hasVideo) {
+        return;
+    }
+    mediaInfo_.hasAudio = hasAudio;
+    mediaInfo_.hasVideo = hasVideo;
     clockSync_->setHasAudio(mediaInfo_.hasAudio);
     auto duration = demuxer->totalDuration();
     if (duration.isValid()) {

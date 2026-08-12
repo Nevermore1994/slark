@@ -26,10 +26,10 @@ namespace {
 static constexpr double kSeekThreshold = 0.05;
 
 BackpressureConfig buildBackpressureConfig(StreamType type, bool isLive) {
-    if (isLive || type == StreamType::HLS) {
+    if (isLive) {
         return BackpressureConfig::forLive();
     }
-    if (type == StreamType::Http) {
+    if (type == StreamType::Http || type == StreamType::HLS) {
         return BackpressureConfig::forNetwork();
     }
     return BackpressureConfig::forLocal();
@@ -342,6 +342,10 @@ void Player::Impl::buildPipeline() noexcept {
             }
             self->mediaSourceManager_.start();
         });
+    mediaSourceManager_.setProductionGate([weak = weak_from_this()] {
+        const auto self = weak.lock();
+        return !self || !self->pipeline_ || self->pipeline_->canProduceSourceData();
+    });
     // Inject the HLS time-seek callback; PlayPipeline uses this path when HLS is detected
     pipeline_->setSeekByTimeFunc([weak = weak_from_this()](double timeSec) -> StreamResult<void> {
         auto self = weak.lock();
@@ -377,7 +381,11 @@ void Player::Impl::createAudioComponent(const PlayerSetting& setting) noexcept {
     auto config = std::make_shared<AudioDecoderConfig>();
     config->playerId = playerId_;
     config->initWithAudioInfo(audioInfo);
-    pipeline_->setupAudioTrack(decodeType, config, audioInfo, setting.volume / 100.0f);
+    auto pipeline = pipeline_;
+    pipeline->setupAudioTrack(decodeType, config, audioInfo, setting.volume / 100.0f);
+    if (pipeline_ != pipeline || isStopped_ || isReleased_) {
+        return;
+    }
     LogI("audio track setup, decoderType:{}", static_cast<uint32_t>(decodeType));
 }
 
@@ -404,14 +412,22 @@ void Player::Impl::createVideoComponent(const PlayerSetting& setting) noexcept {
     auto config = std::make_shared<VideoDecoderConfig>();
     config->playerId = playerId_;
     config->initWithVideoInfo(videoInfo);
-    pipeline_->setVideoFps(static_cast<double>(videoInfo->fps));
-    pipeline_->setupVideoTrack(decodeType, config);
+    auto pipeline = pipeline_;
+    pipeline->setVideoFps(static_cast<double>(videoInfo->fps));
+    pipeline->setupVideoTrack(decodeType, config);
+    if (pipeline_ != pipeline || isStopped_ || isReleased_) {
+        return;
+    }
     LogI("video track setup, decoderType:{}", static_cast<uint32_t>(decodeType));
 }
 
 void Player::Impl::preparePlayerInfo() noexcept {
     if (!demuxerComponent_) {
         LogE("demuxer component is not created.");
+        return;
+    }
+    if (info_.isValid) {
+        LogW("ignore duplicate DemuxHeaderParsed event");
         return;
     }
 
@@ -442,10 +458,15 @@ void Player::Impl::preparePlayerInfo() noexcept {
         createVideoComponent(setting);
     }
 
+    if (!pipeline_ || isStopped_ || isReleased_ || state() == PlayerState::Error) {
+        return;
+    }
     setState(PlayerState::Buffering);
+    if (!pipeline_ || isStopped_ || isReleased_) {
+        return;
+    }
     pipeline_->build();
     ownerThread_->start();
-    mediaSourceManager_.start();
 }
 
 void Player::Impl::process() noexcept {
@@ -477,7 +498,6 @@ void Player::Impl::doPlay() noexcept {
     }
     ownerThread_->start();
     pipeline_->start();
-    mediaSourceManager_.start();
 }
 
 void Player::Impl::doPause() noexcept {
@@ -596,7 +616,6 @@ void Player::Impl::doLoop() noexcept {
     }
     LogI("do loop");
     pipeline_->seek(CTime(0.0));
-    mediaSourceManager_.start();
     pipeline_->start();
 }
 

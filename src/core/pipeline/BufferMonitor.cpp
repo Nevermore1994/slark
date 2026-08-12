@@ -21,11 +21,13 @@ void BufferMonitor::onDemuxedDataEnqueued() noexcept {
     }
     lastCheckTime_ = now;
 
+    const double duration = demuxedDuration();
     if (isPrebuffering_) {
-        checkPrebufferComplete();
-        return;
+        regulateDataFlow(duration, false);
+        checkPrebufferComplete(duration);
+    } else {
+        regulateDataFlow(duration, true);
     }
-    regulateDataFlow();
 }
 
 void BufferMonitor::onDecodedDataEnqueued() noexcept {
@@ -43,10 +45,12 @@ void BufferMonitor::onDecodedDataEnqueued() noexcept {
 
 void BufferMonitor::onHeartbeat() noexcept {
     if (!demuxEof_) {
+        const double duration = demuxedDuration();
         if (isPrebuffering_) {
-            checkPrebufferComplete();
+            regulateDataFlow(duration, false);
+            checkPrebufferComplete(duration);
         } else {
-            regulateDataFlow();
+            regulateDataFlow(duration, true);
         }
     }
     // Keep checking the exit condition during rebuffering, independent of streamPaused_
@@ -68,7 +72,6 @@ void BufferMonitor::startPrebuffering() noexcept {
 }
 
 void BufferMonitor::reset() noexcept {
-    streamPaused_ = false;
     demuxEof_ = false;
     audioDecoderPaused_ = false;
     videoDecoderPaused_ = false;
@@ -105,17 +108,7 @@ void BufferMonitor::regulateDecoderFlow() noexcept {
     }
 }
 
-void BufferMonitor::regulateDataFlow() noexcept {
-    // Skip backpressure before the first frame renders to allow fast frame pushing
-    if (!readyFired_) {
-        return;
-    }
-    // Skip backpressure during fast frame pushing so the demuxer is not blocked by watermarks
-    if (backpressurePaused_) {
-        return;
-    }
-    double duration = demuxedDuration();
-
+void BufferMonitor::regulateDataFlow(double duration, bool allowBufferingEvents) noexcept {
     if (demuxEof_) {
         return;
     }
@@ -124,7 +117,7 @@ void BufferMonitor::regulateDataFlow() noexcept {
     // Must be checked before pause/resume so a resume clearing isRebuffering_ cannot
     // falsely re-trigger it.
     auto rebufferThreshold = config_.startBufferDuration * config_.rebufferScale;
-    if (duration <= rebufferThreshold) {
+    if (allowBufferingEvents && duration <= rebufferThreshold) {
         if (!isRebuffering_ && readyFired_) {
             isRebuffering_ = true;
             LogI("start rebuffering:{}", duration);
@@ -142,11 +135,11 @@ void BufferMonitor::regulateDataFlow() noexcept {
     }
 }
 
-void BufferMonitor::checkPrebufferComplete() noexcept {
+void BufferMonitor::checkPrebufferComplete(double duration) noexcept {
     if (!isPrebuffering_) {
         return;
     }
-    if (demuxedDuration() >= config_.startBufferDuration) {
+    if (duration >= config_.startBufferDuration) {
         isPrebuffering_ = false;
         if (!readyFired_) {
             readyFired_ = true;

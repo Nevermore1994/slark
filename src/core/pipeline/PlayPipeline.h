@@ -65,7 +65,7 @@ struct ReadinessTracker {
     bool liveVideoKeyframeSeen = false;
     bool liveAudioPacketSeen = false;
     bool readyFired = false;
-    std::atomic<bool> firstFrameRendered{false};  ///< first frame rendered; AV sync and backpressure Hold enabled afterwards
+    std::atomic<bool> firstFrameRendered{false};
 };
 
 class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
@@ -97,6 +97,8 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
     }
 
     [[nodiscard]] double cachedDuration() const noexcept;
+
+    [[nodiscard]] bool canProduceSourceData() const noexcept;
 
     [[nodiscard]] double cacheEndTime() const noexcept;
 

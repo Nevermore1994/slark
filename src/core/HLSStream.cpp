@@ -140,8 +140,9 @@ void HLSStream::start() noexcept {
     LogI("[HLSStream::start] url={}", params_.uri);
 
     if (playlist_ && !mediaPlaylistUrl_.empty()) {
-        ++generation_;
-        cancelSegmentOp(kWaitSettleTimeout.count());
+        if (!segmentOp_) {
+            ++generation_;
+        }
         downloadSegments();
         return;
     }
@@ -159,11 +160,8 @@ void HLSStream::pause() noexcept {
         return;
     }
 
-    ++generation_;
-    cancelSegmentOp(kWaitSettleTimeout.count());
     cancelPlaylistOp(kWaitSettleTimeout.count());
     controlSession_->close();
-    mediaSession_->close();
     if (refreshTimerId_.isValid()) {
         ownerThread_->cancelRepeatTask(refreshTimerId_);
         refreshTimerId_ = {};
@@ -394,6 +392,10 @@ std::optional<std::string> HLSStream::selectVariantUri(uint32_t bandwidth) {
 
 void HLSStream::downloadSegments() {
     if (isPaused_ || !isRunning_ || !playlist_ || segmentOp_) {
+        return;
+    }
+    if (productionGate_ && !productionGate_()) {
+        LogIThrottle(1000, "[HLSStream::downloadSegments] waiting for buffer capacity");
         return;
     }
 

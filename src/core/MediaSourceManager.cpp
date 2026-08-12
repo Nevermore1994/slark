@@ -5,6 +5,7 @@
 #include "MediaSourceManager.h"
 
 #include "Data.h"
+#include "HLSStream.h"
 #include "Log.hpp"
 
 namespace slark {
@@ -99,6 +100,13 @@ void MediaSourceManager::pause() noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     if (stream_) {
         stream_->pause();
+    }
+}
+
+void MediaSourceManager::setProductionGate(std::function<bool()> gate) noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (auto* hls = dynamic_cast<HLSStream*>(stream_.get())) {
+        hls->setProductionGate(std::move(gate));
     }
 }
 

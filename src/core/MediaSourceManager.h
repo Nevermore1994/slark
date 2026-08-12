@@ -39,6 +39,7 @@ class MediaSourceManager : public NonCopyMovable {
 
     void start() noexcept;
     void pause() noexcept;
+    void setProductionGate(std::function<bool()> gate) noexcept;
     void close() noexcept;
 
     [[nodiscard]] StreamResult<void> seek(uint64_t position) noexcept;

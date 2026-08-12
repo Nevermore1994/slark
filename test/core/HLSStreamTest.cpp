@@ -456,6 +456,30 @@ TEST_F(HLSStreamTest, L1_MasterVariantMediaSegmentFlow) {
     EXPECT_EQ(server_.connectionCount(), 2);
 }
 
+TEST_F(HLSStreamTest, ProductionGateStopsSchedulingNextSegment) {
+    std::atomic<bool> allowProduction{false};
+    std::atomic<bool> completed{false};
+    stream_->setProductionGate([&allowProduction] {
+        return allowProduction.load(std::memory_order_acquire);
+    });
+
+    auto params = makeParams();
+    params.uri = server_.masterUrl();
+    params.onComplete = [&completed] { completed.store(true, std::memory_order_release); };
+    ASSERT_TRUE(stream_->open(params).has_value());
+
+    stream_->start();
+    ASSERT_TRUE(waitUntil([&] { return server_.requestCount("/media.m3u8") == 1; }));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    EXPECT_EQ(server_.requestCount("/seg0.ts"), 0);
+
+    allowProduction.store(true, std::memory_order_release);
+    stream_->start();
+    EXPECT_TRUE(waitUntil([&] { return completed.load(std::memory_order_acquire); }));
+    EXPECT_EQ(server_.requestCount("/seg0.ts"), 1);
+    EXPECT_EQ(server_.requestCount("/seg1.ts"), 1);
+}
+
 TEST_F(HLSStreamTest, ByteRangeSegmentsUsePartialContentRequests) {
     server_.setByteRangePlaylist(true);
     std::atomic<uint64_t> totalBytes{0};
