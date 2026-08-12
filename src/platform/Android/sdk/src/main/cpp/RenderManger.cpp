@@ -137,7 +137,7 @@ static jboolean RenderManager_swapGLBuffers(const std::string& playerId, jint te
     if (result == EGL_FALSE) {
         LogE("failed to swap buffers for playerId: {} error: {}", playerId, eglGetError());
     }
-    if (textureId != 0) {
+    if (result == EGL_TRUE && textureId != 0) {
         auto render = VideoRenderManager::shareInstance().find(playerId);
         if (render) {
             render->renderFrameComplete(textureId);
@@ -305,16 +305,14 @@ Java_com_slark_sdk_VulkanRenderThread_destroyVulkanContext(JNIEnv* env,
     VulkanContextManager::shareInstance().remove(playerId);
 }
 
-extern "C" JNIEXPORT void JNICALL Java_com_slark_sdk_VulkanRenderThread_drawFrame(JNIEnv* env,
-                                                                                  jobject /*thiz*/,
-                                                                                  jstring player_id,
-                                                                                  jint textureId,
-                                                                                  jint width,
-                                                                                  jint height) {
+extern "C" JNIEXPORT jboolean JNICALL Java_com_slark_sdk_VulkanRenderThread_drawFrame(JNIEnv* env,
+                                                                                          jobject /*thiz*/,
+                                                                                          jstring player_id,
+                                                                                          jint textureId,
+                                                                                          jint width,
+                                                                                          jint height) {
     auto ctx = VulkanContextManager::shareInstance().find(JNI::FromJVM::str(env, player_id));
-    if (ctx) {
-        ctx->drawFrame(textureId, width, height);
-    }
+    return ctx && ctx->drawFrame(textureId, width, height) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT void JNICALL

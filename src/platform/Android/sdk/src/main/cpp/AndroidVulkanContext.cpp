@@ -980,29 +980,21 @@ void AndroidVulkanContext::blitOESToHardwareBuffer(int32_t textureId,
     }
 }
 
-void AndroidVulkanContext::drawFrame(int32_t textureId, int32_t width, int32_t height) noexcept {
+bool AndroidVulkanContext::drawFrame(int32_t textureId, int32_t width, int32_t height) noexcept {
     if (!isInit_) {
-        return;
+        return false;
     }
 
-    // The EGL context is thread-bound; rebind every frame (no cached flag, avoiding stale
-    // state after multi-threading or recreation)
     if (eglContext_) {
         eglContext_->attachContext(eglPbuffer_);
     }
 
-    // 90/270 rotation swaps width and height to keep the content aspect ratio
     const bool swapWH = (rotation_ == 90 || rotation_ == 270);
     const int32_t renderW = swapWH ? height : width;
     const int32_t renderH = swapWH ? width : height;
-
-    // Use screen size for the HWB to avoid Vulkan-side stretching (HWB matches the
-    // swapchain size). doBlitOES letterboxes based on the content size renderW/renderH.
     blitOESToHardwareBuffer(textureId, frameWidth_, frameHeight_, renderW, renderH);
-    // Skip this frame when the blit failed (hwbImage_ invalid) to avoid submitting an
-    // illegal image barrier to Vulkan
     if (hwbImage_ == VK_NULL_HANDLE) {
-        return;
+        return false;
     }
 
     vkWaitForFences(device_, 1, &inFlightFences_[currentFrame_], VK_TRUE, UINT64_MAX);
@@ -1013,11 +1005,11 @@ void AndroidVulkanContext::drawFrame(int32_t textureId, int32_t width, int32_t h
                                             VK_NULL_HANDLE, &imageIndex);
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         recreateSwapchain(nullptr, frameWidth_, frameHeight_);
-        return;
+        return false;
     }
     if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
         LogE("vkAcquireNextImageKHR failed: {}", static_cast<int32_t>(result));
-        return;
+        return false;
     }
 
     vkResetFences(device_, 1, &inFlightFences_[currentFrame_]);
@@ -1038,13 +1030,11 @@ void AndroidVulkanContext::drawFrame(int32_t textureId, int32_t width, int32_t h
     if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, inFlightFences_[currentFrame_]) !=
         VK_SUCCESS) {
         LogE("vkQueueSubmit failed");
-        // The fence was reset but a failed submit never signals it; submit an empty
-        // submit to signal the fence and avoid a next-frame WaitForFences deadlock
         vkQueueWaitIdle(graphicsQueue_);
         VkSubmitInfo emptySubmit{};
         emptySubmit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         vkQueueSubmit(graphicsQueue_, 1, &emptySubmit, inFlightFences_[currentFrame_]);
-        return;
+        return false;
     }
 
     VkPresentInfoKHR presentInfo{};
@@ -1056,15 +1046,21 @@ void AndroidVulkanContext::drawFrame(int32_t textureId, int32_t width, int32_t h
     presentInfo.pImageIndices = &imageIndex;
 
     result = vkQueuePresentKHR(presentQueue_, &presentInfo);
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         recreateSwapchain(nullptr, frameWidth_, frameHeight_);
-        return;
+        return false;
+    }
+    if (result == VK_SUBOPTIMAL_KHR) {
+        recreateSwapchain(nullptr, frameWidth_, frameHeight_);
+        return true;
     }
     if (result != VK_SUCCESS) {
         LogE("vkQueuePresentKHR failed: {}", static_cast<int32_t>(result));
+        return false;
     }
 
     currentFrame_ = (currentFrame_ + 1) % kMaxFramesInFlight;
+    return true;
 }
 
 void AndroidVulkanContext::renderHardwareBufferToSwapchain(uint32_t imageIndex) noexcept {

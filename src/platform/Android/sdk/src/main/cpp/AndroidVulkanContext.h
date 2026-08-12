@@ -33,7 +33,7 @@ class AndroidVulkanContext {
 
     bool recreateSwapchain(ANativeWindow* window, int32_t width, int32_t height) noexcept;
 
-    void drawFrame(int32_t textureId, int32_t width, int32_t height) noexcept;
+    [[nodiscard]] bool drawFrame(int32_t textureId, int32_t width, int32_t height) noexcept;
 
     void setRotation(int32_t rotation) noexcept {
         rotation_ = rotation;

@@ -27,8 +27,9 @@ class VulkanRenderThread(
             SlarkLog.w(logTag, "drawAndPresent: skip invalid texture: $pendingTexture")
             return
         }
-        drawFrame(playerId, pendingTexture.textureId, pendingTexture.width, pendingTexture.height)
-        presentVulkanFrame(playerId, if (pendingTexture.isBackup) 0 else pendingTexture.textureId)
+        if (drawFrame(playerId, pendingTexture.textureId, pendingTexture.width, pendingTexture.height)) {
+            presentVulkanFrame(playerId, if (pendingTexture.isBackup) 0 else pendingTexture.textureId)
+        }
     }
 
     override fun applyRotation(rotation: Int) {
@@ -51,7 +52,7 @@ class VulkanRenderThread(
 
     private external fun createVulkanContext(playerId: String, surface: Surface, width: Int, height: Int): Boolean
     private external fun destroyVulkanContext(playerId: String)
-    private external fun drawFrame(playerId: String, textureId: Int, width: Int, height: Int)
+    private external fun drawFrame(playerId: String, textureId: Int, width: Int, height: Int): Boolean
     private external fun presentVulkanFrame(playerId: String, textureId: Int)
     private external fun getBackupTextureId(playerId: String): RenderTexture?
     private external fun rebuildVulkanSurface(playerId: String, surface: Surface)
