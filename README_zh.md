@@ -223,6 +223,9 @@ cd slark
 - [ ] HDR 内容支持
 - [ ] 变速播放 (0.5x - 2.0x)
 - [ ] 支持直播流
+- [ ] 支持 HLS fMP4（Fragmented MP4）播放
+- [ ] 支持 HLS `EXT-X-MAP` 初始化片段
+- [ ] 完善 HLS `EXT-X-DISCONTINUITY` 时间轴与解码器切换
 
 ## 📄 许可证
 

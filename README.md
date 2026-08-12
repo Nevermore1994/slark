@@ -224,7 +224,10 @@ For detailed API documentation, please refer to:
 - [ ] Support H265 & AV1
 - [ ] HDR content support 
 - [ ] Variable playback speed (0.5x - 2.0x)
-- [ ] Support live streaming 
+- [ ] Support live streaming
+- [ ] Support HLS fMP4 (Fragmented MP4) playback
+- [ ] Support HLS `EXT-X-MAP` initialization segments
+- [ ] Complete HLS `EXT-X-DISCONTINUITY` timeline and decoder transitions
 
 
 ## 📄 License
