@@ -39,6 +39,7 @@ class MediaCodecDecoder(
     private val codecLock = Any()
     @Volatile
     private var codecGeneration = 0L
+    private val isReleased = AtomicBoolean(false)
 
     private var callbackThread: HandlerThread? = null
     private var callbackHandler: Handler? = null
@@ -206,31 +207,54 @@ class MediaCodecDecoder(
     }
 
     fun release() {
-        isRunning.set(false)
+        var decoderToRelease: MediaCodec? = null
+        var threadToStop: HandlerThread? = null
+        synchronized(codecLock) {
+            if (!isReleased.compareAndSet(false, true)) {
+                return
+            }
+            isRunning.set(false)
+            codecGeneration++
+            drainNonBlocking(inputBufferQueue)
+            drainNonBlocking(outputBufferQueue)
+            decoderToRelease = decoder
+            decoder = null
+            threadToStop = callbackThread
+            callbackThread = null
+            callbackHandler = null
+        }
+
         outputBufferQueue.offer(-1 to MediaCodec.BufferInfo())
-        flush()
-        decoder?.let { MediaCodecDecoderPool.releaseDecoder(mediaInfo, it) }
-        decoder = null
-        callbackThread?.quitSafely()
-        callbackThread = null
-        callbackHandler = null
+        threadToStop?.let { thread ->
+            thread.quitSafely()
+            if (Looper.myLooper() != thread.looper) {
+                thread.join()
+            }
+        }
+        decoderToRelease?.let { MediaCodecDecoderPool.releaseDecoder(mediaInfo, it) }
         surface?.release()
         surface = null
     }
 
     fun flush() {
+        if (isReleased.get() || !isRunning.get()) {
+            return
+        }
         val handler = callbackHandler
         if (handler == null || Looper.myLooper() == handler.looper) {
             flushLocked()
             return
         }
         val latch = CountDownLatch(1)
-        handler.post {
-            try {
-                flushLocked()
-            } finally {
-                latch.countDown()
-            }
+        if (!handler.post {
+                try {
+                    flushLocked()
+                } finally {
+                    latch.countDown()
+                }
+            }) {
+            SlarkLog.w(LOG_TAG, "flush skipped because callback thread is stopping")
+            return
         }
         if (!latch.await(500, TimeUnit.MILLISECONDS)) {
             SlarkLog.e(LOG_TAG, "flush timeout waiting on callback thread")
@@ -239,12 +263,26 @@ class MediaCodecDecoder(
 
     private fun flushLocked() {
         synchronized(codecLock) {
-            decoder?.flush()
-            drainNonBlocking(inputBufferQueue)
-            drainNonBlocking(outputBufferQueue)
-            isCompleted.set(false)
-            decoder?.start()
-            codecGeneration++
+            if (isReleased.get() || !isRunning.get()) {
+                drainNonBlocking(inputBufferQueue)
+                drainNonBlocking(outputBufferQueue)
+                return
+            }
+            val dec = decoder ?: return
+            try {
+                dec.flush()
+                drainNonBlocking(inputBufferQueue)
+                drainNonBlocking(outputBufferQueue)
+                isCompleted.set(false)
+                dec.start()
+                codecGeneration++
+            } catch (e: Exception) {
+                isRunning.set(false)
+                codecGeneration++
+                drainNonBlocking(inputBufferQueue)
+                drainNonBlocking(outputBufferQueue)
+                SlarkLog.w(LOG_TAG, "flush skipped for invalid codec state: ${e.message}")
+            }
         }
     }
 
@@ -389,7 +427,7 @@ class MediaCodecDecoder(
             return decoder.requestVideoFrame(waitTime, width, height)
         }
 
-        @JvmStatic
+        @JvmStatic @Synchronized
         fun releaseDecoder(decoderId: String) {
             decoders.remove(decoderId)?.release()
         }
