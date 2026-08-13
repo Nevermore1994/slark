@@ -741,8 +741,8 @@ void PlayPipeline::notifySeekIfDecoderCompleted() noexcept {
 AVFrameRefPtr PlayPipeline::skipFramesBeforeTarget(AVFrameRefPtr frame, double target) noexcept {
     int32_t maxSkip = seekContext_->maxSkipFrames();
     int32_t skipped = 0;
-    while ((frame && frame->ptsTime() < target) || skipped < maxSkip) {
-        skipped++;
+    while (frame && frame->ptsTime() < target && skipped < maxSkip) {
+        ++skipped;
         frame = popVideoFrame();
     }
     return frame;
