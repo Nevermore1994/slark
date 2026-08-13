@@ -61,13 +61,16 @@ struct MockVideoRender : public IVideoRender {
 
     void renderEnd() noexcept override {}
 
-    void pushFrame(AVFrameRefPtr /*frame*/) noexcept override {}
+    void pushFrame(AVFrameRefPtr /*frame*/) noexcept override {
+        pushFrameCount_.fetch_add(1, std::memory_order_relaxed);
+    }
 
     ~MockVideoRender() override {
         pause();
     }
 
     std::atomic<bool> running_{false};
+    std::atomic<int32_t> pushFrameCount_{0};
     std::thread thread_;
 };
 
@@ -259,14 +262,21 @@ TEST_F(PlayerMediaIntegrationTest, Mp4PlaysToCompletion) {
     }
     auto player = std::make_unique<Player>(makeParams(mediaPath(kMp4File)));
     auto observer = std::make_shared<RecordingObserver>();
+    auto render = std::make_shared<MockVideoRender>();
     player->addObserver(observer);
-    player->setRenderImpl(std::make_shared<MockVideoRender>());
+    player->setRenderImpl(render);
     auto state = prepareAndWait(*player);
     if (state == PlayerState::Error) {
         GTEST_SKIP() << "current environment cannot decode media, skipping";
     }
 
     player->play();
+    ASSERT_TRUE(waitUntil([&observer] {
+        return observer->hasEvent(PlayerEvent::FirstFrameRendered);
+    })) << "mp4 video first frame should render";
+    std::this_thread::sleep_for(300ms);
+    EXPECT_EQ(render->pushFrameCount_.load(std::memory_order_relaxed), 1)
+        << "normal playback must pull frames after the initial pushed frame";
     EXPECT_TRUE(waitUntil(
         [&player] {
             return player->currentPlayedTime() > 3.0;

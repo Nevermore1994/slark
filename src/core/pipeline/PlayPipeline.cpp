@@ -899,6 +899,9 @@ void PlayPipeline::handleSeekFirstFrame(const AVFrameRefPtr& frame,
         render->pushFrame(frame);
     }
     clockSync_->setVideoTime(Time::TimePoint::fromSeconds(frame->ptsTime()));
+    if (!isSeekFirstFrame) {
+        markFirstFrameRenderedIfNeeded();
+    }
     if (isSeekFirstFrame) {
         postToOwnerThread([this] {
             onSeekFrameConsumed(TrackType::Video);
