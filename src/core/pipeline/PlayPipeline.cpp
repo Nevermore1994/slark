@@ -198,10 +198,11 @@ void PlayPipeline::seek(CTime target, bool isAccurate) noexcept {
 
     const double targetSec = target.second();
 
-    if (seekContext_->isSeekPending() && !isAccurate) {
-        seekContext_->updateTarget(targetSec);
-        LogI("seek pending, target updated: target={:.3f}s", targetSec);
-        return;
+    if (!isAccurate && seekContext_->isSeekPending()) {
+        if (seekContext_->updateTarget(targetSec)) {
+            LogI("seek pending, target updated: target={:.3f}s", targetSec);
+            return;
+        }
     }
 
     const double currentSec = clockSync_->masterTime().second();
@@ -830,7 +831,7 @@ bool PlayPipeline::isDecodedFrameSkippable(const DecoderData& data) noexcept {
     if (data.frame->isEOS) {
         return true;
     }
-    return seekContext_->isEpochStale(seekContext_->currentEpoch());
+    return seekContext_->isEpochStale(data.seekEpoch);
 }
 
 void PlayPipeline::onAudioDecoded(DecoderData data) noexcept {
@@ -1110,15 +1111,12 @@ bool PlayPipeline::dispatchAudioFrames(AVFramePtrArray& frames, uint64_t epoch) 
     if (!audioFrameSender_) {
         return false;
     }
-    const auto seekTarget = seekContext_->targetSeekTime();
     bool enqueued = false;
     for (auto& frame : frames) {
         if (seekContext_->isEpochStale(epoch)) {
             break;
         }
-        if (seekTarget && frame->ptsTime() < *seekTarget) {
-            continue;
-        }
+        frame->seekEpoch = epoch;
         const double pts = frame->ptsTime();
         double prev = lastEnqueuedAudioPts_.load(std::memory_order_acquire);
         while (pts > prev &&
@@ -1140,6 +1138,7 @@ bool PlayPipeline::dispatchVideoFrames(AVFramePtrArray& frames, uint64_t epoch) 
         if (seekContext_->isEpochStale(epoch)) {
             break;
         }
+        frame->seekEpoch = epoch;
         const double framePts = frame->ptsTime();
         if (frame->info && frame->info->isKeyFrame()) {
             seekContext_->updateGOPRange(framePts, seekContext_->gopEndPts());
@@ -1161,13 +1160,14 @@ bool PlayPipeline::dispatchVideoFrames(AVFramePtrArray& frames, uint64_t epoch) 
     return enqueued;
 }
 
-void PlayPipeline::injectEosFrames() noexcept {
+void PlayPipeline::injectEosFrames(uint64_t epoch) noexcept {
     if (eosInjected_.exchange(true, std::memory_order_acq_rel)) {
         return;
     }
     if (audioFrameSender_) {
         auto eos = std::make_shared<AVFrame>(AVFrameType::Audio);
         eos->isEOS = true;
+        eos->seekEpoch = epoch;
         auto audioInfo = std::make_shared<AudioFrameInfo>();
         audioInfo->isEndOfStream = true;
         eos->info = std::move(audioInfo);
@@ -1176,6 +1176,7 @@ void PlayPipeline::injectEosFrames() noexcept {
     if (videoFrameSender_) {
         auto eos = std::make_shared<AVFrame>(AVFrameType::Video);
         eos->isEOS = true;
+        eos->seekEpoch = epoch;
         auto videoInfo = std::make_shared<VideoFrameInfo>();
         videoInfo->isEndOfStream = true;
         eos->info = std::move(videoInfo);
@@ -1190,7 +1191,7 @@ void PlayPipeline::dispatchFrames(DemuxerResult&& result, uint64_t epoch) noexce
     bool hasVideo = dispatchVideoFrames(result.videoFrames, epoch);
 
     if (result.resultCode == DemuxerResultCode::FileEnd) {
-        injectEosFrames();
+        injectEosFrames(epoch);
         hasAudio = hasAudio || audioDecoder_ != nullptr;
         hasVideo = hasVideo || videoDecoder_ != nullptr;
         if (bufferMonitor_) {

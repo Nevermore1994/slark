@@ -186,6 +186,10 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
         return seekContext_->currentEpoch();
     }
 
+    [[nodiscard]] bool isSeekPending() const noexcept {
+        return seekContext_->isSeekPending();
+    }
+
  private:
     [[nodiscard]] double demuxedDuration() const noexcept override;
 
@@ -233,7 +237,7 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     bool dispatchVideoFrames(AVFramePtrArray& frames, uint64_t epoch) noexcept;
 
-    void injectEosFrames() noexcept;
+    void injectEosFrames(uint64_t epoch) noexcept;
 
     void notifyDataEnqueued() noexcept;
 

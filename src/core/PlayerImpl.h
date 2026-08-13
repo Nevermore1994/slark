@@ -7,6 +7,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
 
 #include "Channel.hpp"
 #include "DemuxerComponent.h"
@@ -143,15 +144,12 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
     [[nodiscard]] double demuxedDuration() const noexcept;
 
  private:
-    static constexpr int64_t kSeekDebounceUs = 100000;
-
     std::atomic_bool isStopped_ = false;
     std::atomic_bool isReleased_ = false;
     Synchronized<PlayerState, std::shared_mutex> state_;
-    AtomicSharedPtr<PlayerSeekRequest> seekRequest_;
+    std::optional<PlayerSeekRequest> seekRequest_;
 
     std::atomic<double> pendingSeekTarget_{-1.0};
-    std::atomic<uint64_t> pendingSeekTimeUs_{0};
     std::atomic<bool> seekJustCompleted_{false};
     PlayerInfo info_;
     std::string playerId_;

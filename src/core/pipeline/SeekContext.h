@@ -28,6 +28,9 @@ class SeekContext : public NonCopyMovable {
         seekEpoch_.fetch_add(1, std::memory_order_acq_rel);
         activeSeekTimeSec_.store(target.second(), std::memory_order_release);
         strategy_.store(static_cast<uint8_t>(strategy), std::memory_order_release);
+        gopKeyframePts_.store(kNoSeekTime, std::memory_order_release);
+        gopEndPts_.store(kNoSeekTime, std::memory_order_release);
+        maxSkipFrames_.store(0, std::memory_order_release);
         isSeekPending_.store(true, std::memory_order_release);
         isVideoSeeked_.store(false, std::memory_order_release);
         isAudioSeeked_.store(false, std::memory_order_release);
@@ -39,8 +42,12 @@ class SeekContext : public NonCopyMovable {
         gopEndPts_.store(gopEndPts, std::memory_order_release);
     }
 
-    void updateTarget(double sec) noexcept {
+    [[nodiscard]] bool updateTarget(double sec) noexcept {
+        if (!isSeekPending_.load(std::memory_order_acquire)) {
+            return false;
+        }
         activeSeekTimeSec_.store(sec, std::memory_order_release);
+        return true;
     }
 
     [[nodiscard]] SeekStrategy strategy() const noexcept {

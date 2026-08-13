@@ -112,9 +112,7 @@ void Player::Impl::seek(double time, bool isAccurate) noexcept {
         LogI("receive accurate seek:{}, isAccurate:{}", time, isAccurate);
         return;
     }
-    // Drag seek: store pendingSeekTarget_, consumed by processPendingSeek.
-    // pendingSeekTimeUs_ is not updated (debounce only matters on the first trigger;
-    // later ones are governed by the in-progress seek).
+    // Drag seek keeps only the latest target until the owner thread consumes it.
     pendingSeekTarget_.store(time, std::memory_order_release);
     ownerThread_->start();
     LogI("receive seek:{}, isAccurate:{}", time, isAccurate);
@@ -601,11 +599,10 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
 
     // Non-accurate seek in-flight merge: update the target in the pipeline without
     // switching state
-    if (!seekRequest.isAccurate && seekRequest_.isValid()) {
+    if (!seekRequest.isAccurate && seekRequest_.has_value() &&
+        pipeline_->isSeekPending()) {
         LogI("in-flight drag seek merge to {:.3f}s", seekTime);
-        if (auto req = seekRequest_.load()) {
-            req->seekTime = seekTime;
-        }
+        seekRequest_->seekTime = seekTime;
         pipeline_->seek(CTime(seekTime), false);
         return;
     }
@@ -618,7 +615,7 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
 
     seekRequest.startTime = Time::nowTimeStamp();
     seekRequest.seekEpoch = pipeline_->nextSeekEpoch();
-    seekRequest_.reset(std::make_shared<PlayerSeekRequest>(seekRequest));
+    seekRequest_ = seekRequest;
     LogI("do seek to:{:.3f}s, accurate:{}", seekTime, seekRequest.isAccurate);
     setState(PlayerState::Buffering);
     pipeline_->seek(CTime(seekTime), seekRequest.isAccurate);
@@ -775,11 +772,8 @@ void Player::Impl::processPendingSeek() noexcept {
     }
 
     // Keep the pending seek while an accurate seek is in flight; consume it after completion
-    if (seekRequest_.isValid()) {
-        if (auto req = seekRequest_.load(); req && req->isAccurate) {
-            return;
-        }
-        // Non-accurate seek in flight: continue; doSeek performs the in-flight merge
+    if (seekRequest_ && seekRequest_->isAccurate) {
+        return;
     }
 
     // Skip if an accurate seek just completed in this tick; handle the drag seek next tick
@@ -850,14 +844,15 @@ void Player::Impl::handlePipelineEvent(PipelineEvent event,
 }
 
 void Player::Impl::handleSeekCompleted() noexcept {
-    if (auto seekRequest = seekRequest_.load()) {
-        if (seekRequest->seekEpoch != pipeline_->currentSeekEpoch()) {
+    if (seekRequest_) {
+        if (seekRequest_->seekEpoch != pipeline_->currentSeekEpoch()) {
             return;
         }
         LogI("seek done, cost time:{}",
-             (Time::nowTimeStamp() - seekRequest->startTime).toMilliSeconds());
+             (Time::nowTimeStamp() - seekRequest_->startTime).toMilliSeconds());
+        const bool isAccurate = seekRequest_->isAccurate;
         seekRequest_.reset();
-        if (seekRequest->isAccurate) {
+        if (isAccurate) {
             seekJustCompleted_.store(true, std::memory_order_release);
         }
         notifyPlayerEvent(PlayerEvent::SeekDone);

@@ -143,6 +143,7 @@ struct AVFrame {
         pts = 0;
         dts = 0;
         offset = 0;
+        seekEpoch = 0;
         if (data) {
             data->reset();
         }
@@ -167,6 +168,7 @@ struct AVFrame {
         frame->pts = pts;
         frame->dts = dts;
         frame->offset = offset;
+        frame->seekEpoch = seekEpoch;
         frame->timeScale = timeScale;
         frame->duration = duration;
         if (data) {
