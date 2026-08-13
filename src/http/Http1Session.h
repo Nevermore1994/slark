@@ -45,16 +45,18 @@ class Http1Session final : public NonCopyable, public std::enable_shared_from_th
         ErrorInfo error;
     };
 
+    using ConnectionResult = std::expected<std::shared_ptr<OwnedConnection>, ErrorInfo>;
+
     struct BusyGuard final {
         Http1Session* session = nullptr;
         void release() noexcept;
         ~BusyGuard();
     };
 
-    Task<std::shared_ptr<OwnedConnection>> acquireConnection(const RequestInfo& requestInfo,
-                                                             const Url& url,
-                                                             RequestPerf& perf,
-                                                             CancellationToken& token);
+    Task<ConnectionResult> acquireConnection(const RequestInfo& requestInfo,
+                                              const Url& url,
+                                              RequestPerf& perf,
+                                              CancellationToken& token);
 
     void discardConnection(const std::shared_ptr<OwnedConnection>& connection) noexcept;
 
@@ -80,6 +82,7 @@ class Http1Session final : public NonCopyable, public std::enable_shared_from_th
     std::string pendingReadData_;
     std::chrono::steady_clock::time_point lastActivity_{};
     uint64_t generation_ = 0;
+    CancellationToken closeToken_;
     std::atomic<bool> busy_{false};
 };
 

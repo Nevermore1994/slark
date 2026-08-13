@@ -76,6 +76,18 @@ Task<std::expected<std::unique_ptr<AsyncSocket>, ErrorInfo>> resolveAndConnect(
         } catch (const CancelledException&) {
             LogW("[openConnection] connect cancelled for {}", host);
             co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
+        } catch (const NetworkException& e) {
+            lastError = ErrorInfo{e.error()};
+            LogW("[openConnection] address candidate failed: {} error={}", host,
+                 static_cast<int>(e.error()));
+            if (e.error() == slark::Error::ConnectionTimeout) {
+                if (perf) {
+                    perf->transport.timeoutSource = TimeoutSource::Connect;
+                    perf->connection.connectResult = e.error();
+                }
+                co_return std::unexpected(lastError);
+            }
+            continue;
         } catch (const TimeoutException&) {
             LogW("[openConnection] connect timeout for {}", host);
             if (perf) {

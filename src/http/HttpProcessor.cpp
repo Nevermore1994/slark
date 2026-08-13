@@ -24,16 +24,21 @@ inline int64_t streamProgressLogBytes() {
 Error mapLegacyErrorToUnified(Error error) noexcept {
     switch (error) {
         case Error::ConnectionTimeout:
-            return slark::Error::ConnectionTimeout;
         case Error::ConnectionReset:
         case Error::ConnectionRefused:
         case Error::BrokenPipe:
         case Error::SocketClosed:
         case Error::SocketError:
+        case Error::InvalidSocket:
         case Error::ConnectionFailed:
-            return slark::Error::ConnectionReset;
+        case Error::NetworkError:
+        case Error::DnsResolveFailed:
+        case Error::HttpSslError:
+        case Error::HttpSslHandshakeFailed:
+        case Error::Cancelled:
+            return error;
         default:
-            return slark::Error::Failed;
+            return slark::Error::NetworkError;
     }
 }
 
@@ -138,15 +143,13 @@ HttpResponseParser::Callbacks makeEventCallbacks(
     return callbacks;
 }
 
-std::optional<ErrorInfo> classifyStreamReadError(Error error,
-                                                 bool overallExpired,
-                                                 RequestPerf& perf) noexcept {
-    if (error != Error::ConnectionTimeout) {
-        return std::nullopt;
+ErrorInfo classifyStreamReadError(Error error, bool overallExpired, RequestPerf& perf) noexcept {
+    const auto unifiedError = mapLegacyErrorToUnified(error);
+    if (unifiedError == Error::ConnectionTimeout) {
+        perf.transport.timeoutSource =
+            overallExpired ? TimeoutSource::ReadOverall : TimeoutSource::ReadIdle;
     }
-    perf.transport.timeoutSource =
-        overallExpired ? TimeoutSource::ReadOverall : TimeoutSource::ReadIdle;
-    return ErrorInfo{slark::Error::ConnectionTimeout};
+    return ErrorInfo{unifiedError};
 }
 
 struct StreamReadResult {
@@ -199,19 +202,17 @@ Task<StreamReadResult> readStreamChunk(std::unique_ptr<OwnedConnection>& conn,
         }
         auto errorInfo =
             classifyStreamReadError(readResult.error(), overallDeadline.isExpired(), perf);
-        if (errorInfo.has_value()) {
+        if (errorInfo.retCode == slark::Error::ConnectionTimeout) {
             LogE("[HttpProcessor::readStreamChunk] read timeout: timeoutSource={} bodySize={} "
                  "url={}",
                  static_cast<int>(perf.transport.timeoutSource), perf.parser.bodySize,
                  requestInfo.url);
-            result.shouldExit = true;
-            result.error = std::move(*errorInfo);
-            co_return result;
+        } else {
+            LogE("[HttpProcessor::readStreamChunk] read error: err={} bodySize={} url={}",
+                 static_cast<int>(errorInfo.retCode), perf.parser.bodySize, requestInfo.url);
         }
-        LogE("[HttpProcessor::readStreamChunk] read error: err={} bodySize={} url={}",
-             static_cast<int>(readResult.error()), perf.parser.bodySize, requestInfo.url);
         result.shouldExit = true;
-        result.error = ErrorInfo{slark::Error::ConnectionReset};
+        result.error = std::move(errorInfo);
         co_return result;
     }
 
@@ -256,7 +257,8 @@ Task<ResponseResult> HttpProcessor::aggregateEvents(RequestInfo requestInfo,
     while (true) {
         auto event = co_await events.next();
         if (!event.has_value()) {
-            co_return std::unexpected(ErrorInfo{slark::Error::ConnectionReset});
+            co_return std::unexpected(token.isCancelled() ? ErrorInfo{slark::Error::Cancelled}
+                                                          : ErrorInfo{slark::Error::ConnectionReset});
         }
 
         switch (event->type) {
@@ -307,7 +309,9 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::processEvents(RequestInfo reque
         while (true) {
             auto event = co_await events.next();
             if (!event.has_value()) {
-                co_yield HttpResponseEvent::makeError(ErrorInfo{slark::Error::ConnectionReset});
+                co_yield HttpResponseEvent::makeError(
+                    token.isCancelled() ? ErrorInfo{slark::Error::Cancelled}
+                                         : ErrorInfo{slark::Error::ConnectionReset});
                 co_return;
             }
 
@@ -401,7 +405,9 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(
             auto event = co_await sessionEvents.next();
             if (!event.has_value()) {
                 co_yield HttpResponseEvent::makeError(
-                    ErrorInfo{slark::Error::ConnectionReset}, std::move(perf));
+                    token.isCancelled() ? ErrorInfo{slark::Error::Cancelled}
+                                         : ErrorInfo{slark::Error::ConnectionReset},
+                    std::move(perf));
                 co_return;
             }
             const bool terminal = event->type == HttpResponseEventType::Completed ||

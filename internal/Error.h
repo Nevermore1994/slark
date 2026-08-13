@@ -115,4 +115,17 @@ class CancelledException : public std::runtime_error {
         : std::runtime_error(std::string(message)) {}
 };
 
+class NetworkException : public std::runtime_error {
+ public:
+    explicit NetworkException(Error error, std::string_view message = "Network error")
+        : std::runtime_error(std::string(message)), error_(error) {}
+
+    [[nodiscard]] Error error() const noexcept {
+        return error_;
+    }
+
+ private:
+    Error error_;
+};
+
 }  // namespace slark

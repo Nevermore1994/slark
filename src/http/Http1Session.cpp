@@ -23,16 +23,21 @@ constexpr auto kIdleTimeout = std::chrono::seconds(30);
 Error mapLegacyErrorToUnified(Error error) noexcept {
     switch (error) {
         case Error::ConnectionTimeout:
-            return slark::Error::ConnectionTimeout;
         case Error::ConnectionReset:
         case Error::ConnectionRefused:
         case Error::BrokenPipe:
         case Error::SocketClosed:
         case Error::SocketError:
+        case Error::InvalidSocket:
         case Error::ConnectionFailed:
-            return slark::Error::ConnectionReset;
+        case Error::NetworkError:
+        case Error::DnsResolveFailed:
+        case Error::HttpSslError:
+        case Error::HttpSslHandshakeFailed:
+        case Error::Cancelled:
+            return error;
         default:
-            return slark::Error::Failed;
+            return slark::Error::NetworkError;
     }
 }
 
@@ -95,15 +100,13 @@ HttpResponseParser::Callbacks makeEventCallbacks(
     return callbacks;
 }
 
-std::optional<ErrorInfo> classifyReadError(Error error,
-                                           bool overallExpired,
-                                           RequestPerf& perf) noexcept {
-    if (error != Error::ConnectionTimeout) {
-        return std::nullopt;
+ErrorInfo classifyReadError(Error error, bool overallExpired, RequestPerf& perf) noexcept {
+    const auto unifiedError = mapLegacyErrorToUnified(error);
+    if (unifiedError == Error::ConnectionTimeout) {
+        perf.transport.timeoutSource =
+            overallExpired ? TimeoutSource::ReadOverall : TimeoutSource::ReadIdle;
     }
-    perf.transport.timeoutSource =
-        overallExpired ? TimeoutSource::ReadOverall : TimeoutSource::ReadIdle;
-    return ErrorInfo{slark::Error::ConnectionTimeout};
+    return ErrorInfo{unifiedError};
 }
 
 }  // namespace
@@ -141,7 +144,7 @@ std::optional<Url> Http1Session::parseUrl(const std::string& urlString, ErrorInf
     return url;
 }
 
-Task<std::shared_ptr<OwnedConnection>> Http1Session::acquireConnection(
+Task<Http1Session::ConnectionResult> Http1Session::acquireConnection(
     const RequestInfo& requestInfo,
     const Url& url,
     RequestPerf& perf,
@@ -170,7 +173,7 @@ Task<std::shared_ptr<OwnedConnection>> Http1Session::acquireConnection(
         staleConnection->close();
     }
     if (token.isCancelled()) {
-        co_return nullptr;
+        co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
     }
 
     auto result = co_await openConnection(
@@ -179,12 +182,12 @@ Task<std::shared_ptr<OwnedConnection>> Http1Session::acquireConnection(
                                      : NetworkAddressPolicy::AllowAny,
         requestInfo.connectTimeout, requestInfo.tlsHandshakeTimeout, &perf, token);
     if (!result) {
-        co_return nullptr;
+        co_return std::unexpected(result.error());
     }
 
     auto newConnection = std::shared_ptr<OwnedConnection>(std::move(*result));
     if (!newConnection || !newConnection->isValid()) {
-        co_return nullptr;
+        co_return std::unexpected(ErrorInfo{slark::Error::ConnectionFailed});
     }
 
     bool discard = token.isCancelled();
@@ -204,7 +207,9 @@ Task<std::shared_ptr<OwnedConnection>> Http1Session::acquireConnection(
 
     if (discard) {
         newConnection->close();
-        co_return nullptr;
+        co_return std::unexpected(token.isCancelled()
+                                      ? ErrorInfo{slark::Error::Cancelled}
+                                      : ErrorInfo{slark::Error::ConnectionReset});
     }
     if (newConnection) {
         co_return newConnection;
@@ -212,7 +217,7 @@ Task<std::shared_ptr<OwnedConnection>> Http1Session::acquireConnection(
 
     std::lock_guard<std::mutex> lock(mutex_);
     if (!connection_ || !connection_->isValid()) {
-        co_return nullptr;
+        co_return std::unexpected(ErrorInfo{slark::Error::ConnectionFailed});
     }
     connection_->setPerf(&perf);
     co_return connection_;
@@ -292,9 +297,8 @@ Task<Http1Session::StreamReadResult> Http1Session::readStreamChunk(
             result.error = ErrorInfo{slark::Error::Cancelled};
             co_return result;
         }
-        auto errorInfo = classifyReadError(readResult.error(), overallDeadline.isExpired(), perf);
         result.shouldExit = true;
-        result.error = errorInfo.value_or(ErrorInfo{slark::Error::ConnectionReset});
+        result.error = classifyReadError(readResult.error(), overallDeadline.isExpired(), perf);
         co_return result;
     }
     if (*readResult == 0) {
@@ -308,6 +312,12 @@ Task<Http1Session::StreamReadResult> Http1Session::readStreamChunk(
 
 AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo requestInfo,
                                                                CancellationToken token) {
+    CancellationToken sessionToken;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        sessionToken = closeToken_;
+    }
+    auto effectiveToken = CancellationToken::link(token, sessionToken);
     if (busy_.exchange(true, std::memory_order_acq_rel)) {
         co_yield HttpResponseEvent::makeError(ErrorInfo{slark::Error::InvalidOperation});
         co_return;
@@ -317,7 +327,7 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo reques
     RequestPerf perf;
     perf.host = requestInfo.url;
     const auto requestStart = Time::nowTimeStamp();
-    if (token.isCancelled()) {
+    if (effectiveToken.isCancelled()) {
         busyGuard.release();
         co_yield HttpResponseEvent::makeError(ErrorInfo{slark::Error::Cancelled}, std::move(perf));
         co_return;
@@ -336,16 +346,16 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo reques
         co_return;
     }
 
-    auto connection = co_await acquireConnection(requestInfo, *parsedUrl, perf, token);
-    if (!connection) {
-        const auto error = token.isCancelled() ? ErrorInfo{slark::Error::Cancelled}
-                                                : ErrorInfo{slark::Error::ConnectionFailed};
+    auto connectionResult =
+        co_await acquireConnection(requestInfo, *parsedUrl, perf, effectiveToken);
+    if (!connectionResult) {
         busyGuard.release();
-        co_yield HttpResponseEvent::makeError(error, std::move(perf));
+        co_yield HttpResponseEvent::makeError(connectionResult.error(), std::move(perf));
         co_return;
     }
+    auto connection = std::move(*connectionResult);
 
-    const auto sendError = co_await sendRequest(connection, requestInfo, *parsedUrl, token);
+    const auto sendError = co_await sendRequest(connection, requestInfo, *parsedUrl, effectiveToken);
     if (sendError.retCode != slark::Error::Success) {
         discardConnection(connection);
         busyGuard.release();
@@ -380,7 +390,7 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo reques
             parser.feed(reinterpret_cast<const Byte*>(pending.data()), pending.size());
         } else {
             auto read = co_await readStreamChunk(connection, readBuffer, overallDeadline, requestInfo,
-                                                 perf, token);
+                                                 perf, effectiveToken);
             if (read.shouldExit) {
                 discardConnection(connection);
                 busyGuard.release();
@@ -426,7 +436,7 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo reques
         co_return;
     }
 
-    if (token.isCancelled()) {
+    if (effectiveToken.isCancelled()) {
         discardConnection(connection);
         busyGuard.release();
         co_yield HttpResponseEvent::makeError(ErrorInfo{slark::Error::Cancelled}, std::move(perf));
@@ -464,14 +474,18 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo reques
 
 void Http1Session::close() noexcept {
     std::shared_ptr<OwnedConnection> connection;
+    CancellationToken tokenToCancel;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         ++generation_;
         connection = std::move(connection_);
+        tokenToCancel = closeToken_;
+        closeToken_ = CancellationToken{};
         origin_.reset();
         pendingReadData_.clear();
         lastActivity_ = {};
     }
+    tokenToCancel.cancel();
     if (connection) {
         connection->close();
     }

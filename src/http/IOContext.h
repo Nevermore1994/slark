@@ -3,6 +3,7 @@
 #pragma once
 
 #include <arpa/inet.h>
+#include <cerrno>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -24,6 +25,28 @@
 namespace slark::http {
 
 using slark::IOResult;
+
+inline Error mapConnectErrno(int error) noexcept {
+    switch (error) {
+        case ETIMEDOUT:
+            return Error::ConnectionTimeout;
+        case ECONNREFUSED:
+            return Error::ConnectionRefused;
+        case ECONNRESET:
+            return Error::ConnectionReset;
+        case EAGAIN:
+            return Error::WouldBlock;
+#if EWOULDBLOCK != EAGAIN
+        case EWOULDBLOCK:
+            return Error::WouldBlock;
+#endif
+        case EBADF:
+        case ENOTSOCK:
+            return Error::InvalidSocket;
+        default:
+            return Error::SocketError;
+    }
+}
 
 class IOContext : public slark::EventLoop {
  public:
@@ -70,18 +93,23 @@ class AsyncConnect : public slark::AsyncIOOperationBase<AsyncConnect, void> {
 
     IOResult<void> await_resume() {
         auto s = getState();
-        if (s == slark::IOOpState::Failed || s == slark::IOOpState::TimedOut) {
+        if (s == slark::IOOpState::Failed || s == slark::IOOpState::TimedOut ||
+            s == slark::IOOpState::Cancelled) {
             return std::unexpected(getError().value_or(Error::NetworkError));
         }
-        if (s == slark::IOOpState::Completed || s == slark::IOOpState::Pending) {
+        if (s == slark::IOOpState::Completed || s == slark::IOOpState::Waiting ||
+            s == slark::IOOpState::Pending) {
             int32_t soError = 0;
             socklen_t len = sizeof(soError);
             if (getsockopt(fd_, SOL_SOCKET, SO_ERROR, &soError, &len) == 0 && soError == 0) {
                 return {};
             }
-            return std::unexpected(Error::ConnectionRefused);
+            if (soError != 0) {
+                return std::unexpected(mapConnectErrno(soError));
+            }
+            return std::unexpected(mapConnectErrno(errno));
         }
-        return {};
+        return std::unexpected(Error::NetworkError);
     }
 
     void startOperation() noexcept override {
@@ -93,17 +121,25 @@ class AsyncConnect : public slark::AsyncIOOperationBase<AsyncConnect, void> {
     }
 
     void doConnect(const sockaddr* addr, socklen_t addrLen) noexcept {
-        int32_t result = ::connect(fd_, addr, addrLen);
-        if (result == 0) {
-            complete();
-        } else if (errno == EINPROGRESS) {
-            setCleanup([fd = fd_, gate = ioGate()]() {
-                IOContext::instance().unregisterContinuation(fd, FdInterest::Write, gate);
-            });
-            IOContext::instance().registerContinuation(fd_, FdInterest::Write, ioGate());
-            IOContext::instance().setWritable(fd_, true);
-        } else {
-            fail(Error::ConnectionRefused);
+        while (true) {
+            int32_t result = ::connect(fd_, addr, addrLen);
+            if (result == 0) {
+                complete();
+                return;
+            }
+            if (errno == EINTR) {
+                continue;
+            }
+            if (errno == EINPROGRESS || errno == EALREADY || errno == EAGAIN) {
+                setCleanup([fd = fd_, gate = ioGate()]() {
+                    IOContext::instance().unregisterContinuation(fd, FdInterest::Write, gate);
+                });
+                IOContext::instance().registerContinuation(fd_, FdInterest::Write, ioGate());
+                IOContext::instance().setWritable(fd_, true);
+                return;
+            }
+            fail(mapConnectErrno(errno));
+            return;
         }
     }
 
@@ -118,19 +154,29 @@ class AsyncRead : public slark::AsyncIOOperationBase<AsyncRead, size_t> {
     }
 
     void startOperation() noexcept override {
-        ssize_t result = ::read(fd_, buffer_, size_);
-        if (result > 0) {
-            complete(static_cast<size_t>(result));
-        } else if (result == 0) {
-            fail(Error::ConnectionReset);
-        } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            setCleanup([fd = fd_, gate = ioGate()]() {
-                IOContext::instance().unregisterContinuation(fd, FdInterest::Read, gate);
-            });
-            IOContext::instance().registerContinuation(fd_, FdInterest::Read, ioGate());
-            IOContext::instance().setReadable(fd_, true);
-        } else {
+        while (true) {
+            ssize_t result = ::read(fd_, buffer_, size_);
+            if (result > 0) {
+                complete(static_cast<size_t>(result));
+                return;
+            }
+            if (result == 0) {
+                fail(Error::ConnectionReset);
+                return;
+            }
+            if (errno == EINTR) {
+                continue;
+            }
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                setCleanup([fd = fd_, gate = ioGate()]() {
+                    IOContext::instance().unregisterContinuation(fd, FdInterest::Read, gate);
+                });
+                IOContext::instance().registerContinuation(fd_, FdInterest::Read, ioGate());
+                IOContext::instance().setReadable(fd_, true);
+                return;
+            }
             fail(Error::NetworkError);
+            return;
         }
     }
 
@@ -155,17 +201,25 @@ class AsyncWrite : public slark::AsyncIOOperationBase<AsyncWrite, size_t> {
     }
 
     void startOperation() noexcept override {
-        auto result = ::write(fd_, buffer_, size_);
-        if (result >= 0) {
-            complete(static_cast<size_t>(result));
-        } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            setCleanup([fd = fd_, gate = ioGate()]() {
-                IOContext::instance().unregisterContinuation(fd, FdInterest::Write, gate);
-            });
-            IOContext::instance().registerContinuation(fd_, FdInterest::Write, ioGate());
-            IOContext::instance().setWritable(fd_, true);
-        } else {
+        while (true) {
+            auto result = ::write(fd_, buffer_, size_);
+            if (result >= 0) {
+                complete(static_cast<size_t>(result));
+                return;
+            }
+            if (errno == EINTR) {
+                continue;
+            }
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                setCleanup([fd = fd_, gate = ioGate()]() {
+                    IOContext::instance().unregisterContinuation(fd, FdInterest::Write, gate);
+                });
+                IOContext::instance().registerContinuation(fd_, FdInterest::Write, ioGate());
+                IOContext::instance().setWritable(fd_, true);
+                return;
+            }
             fail(Error::BrokenPipe);
+            return;
         }
     }
 

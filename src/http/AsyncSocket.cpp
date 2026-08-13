@@ -74,10 +74,7 @@ Task<void> tcpConnect(Socket socket,
         if (error == Error::Cancelled) {
             throw CancelledException("Connection cancelled");
         }
-        if (error == Error::ConnectionTimeout) {
-            throw TimeoutException("Connection timeout");
-        }
-        throw std::runtime_error("Connection failed");
+        throw NetworkException(error, "Connection failed");
     }
 }
 
@@ -213,6 +210,9 @@ Task<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data,
 
         if (transport_->needsRetry(result)) {
             retryCount++;
+            if (transport_->retryImmediately(result)) {
+                continue;
+            }
             bool ready = co_await waitFdReadyWithTimeout(socket_, transport_->retryInterest(result),
                                                          deadline, &token);
             if (!ready) {
@@ -228,9 +228,10 @@ Task<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data,
             continue;
         }
 
-        LogE("[AsyncSocket::asyncSend] broken pipe: sent={}/{} errno={}", totalSent, data.size(),
-             errno);
-        co_return std::unexpected(Error::BrokenPipe);
+        const auto error = transport_->classifyError(result);
+        LogE("[AsyncSocket::asyncSend] write error: sent={}/{} error={} errno={}", totalSent,
+             data.size(), static_cast<int>(error), errno);
+        co_return std::unexpected(error);
     }
 
     if (perf_) {
@@ -277,12 +278,21 @@ Task<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
         }
 
         if (result == 0) {
-            LogI("[AsyncSocket::asyncReceive] peer closed (EOF)");
-            co_return size_t{0};
+            if (transport_->isCleanEof(result)) {
+                LogI("[AsyncSocket::asyncReceive] peer closed (EOF)");
+                co_return size_t{0};
+            }
+            const auto error = transport_->classifyError(result);
+            LogE("[AsyncSocket::asyncReceive] peer closed with transport error={}",
+                 static_cast<int>(error));
+            co_return std::unexpected(error);
         }
 
         if (transport_->needsRetry(result)) {
             waitCount++;
+            if (transport_->retryImmediately(result)) {
+                continue;
+            }
             bool ready = co_await waitFdReadyWithTimeout(socket_, transport_->retryInterest(result),
                                                          deadline, &token);
             if (!ready) {
@@ -298,8 +308,10 @@ Task<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
             continue;
         }
 
-        LogE("[AsyncSocket::asyncReceive] read error: errno={}", errno);
-        co_return std::unexpected(Error::ConnectionReset);
+        const auto error = transport_->classifyError(result);
+        LogE("[AsyncSocket::asyncReceive] read error: error={} errno={}",
+             static_cast<int>(error), errno);
+        co_return std::unexpected(error);
     }
 }
 
@@ -339,7 +351,9 @@ Task<Error> TLSTransport::performHandshake(std::chrono::milliseconds timeout,
             co_return Error::ConnectionTimeout;
         }
 
+        errno = 0;
         int32_t result = SSL_connect(sslPtr_.get());
+        const int32_t savedErrno = errno;
         if (result == 1) {
             LogI("[TLSTransport::performHandshake] TLS handshake ok");
             co_return Error::Success;
@@ -347,8 +361,21 @@ Task<Error> TLSTransport::performHandshake(std::chrono::milliseconds timeout,
 
         int32_t sslError = SSL_get_error(sslPtr_.get(), result);
         if (sslError == SSL_ERROR_WANT_READ || sslError == SSL_ERROR_WANT_WRITE) {
-            auto interest = (sslError == SSL_ERROR_WANT_READ) ? FdReadyAwaiter::Interest::Read
+            lastInterest_ = (sslError == SSL_ERROR_WANT_READ) ? FdReadyAwaiter::Interest::Read
                                                               : FdReadyAwaiter::Interest::Write;
+            bool ready = co_await waitFdReadyWithTimeout(fd_, lastInterest_, deadline, &token);
+            if (!ready) {
+                LogW("TLS handshake failed: waitFdReady timeout");
+                co_return token.isCancelled() ? Error::Cancelled : Error::ConnectionTimeout;
+            }
+        } else if (sslError == SSL_ERROR_SYSCALL && savedErrno == EINTR) {
+            continue;
+        } else if (sslError == SSL_ERROR_SYSCALL &&
+                   (savedErrno == EAGAIN || savedErrno == EWOULDBLOCK)) {
+            const auto interest = SSL_want_write(sslPtr_.get())
+                                      ? FdReadyAwaiter::Interest::Write
+                                      : FdReadyAwaiter::Interest::Read;
+            lastInterest_ = interest;
             bool ready = co_await waitFdReadyWithTimeout(fd_, interest, deadline, &token);
             if (!ready) {
                 LogW("TLS handshake failed: waitFdReady timeout");
@@ -357,15 +384,18 @@ Task<Error> TLSTransport::performHandshake(std::chrono::milliseconds timeout,
         } else {
             const char* errStr = ERR_reason_error_string(ERR_get_error());
             LogW("TLS handshake failed: sslError={}, errStr={}, errno={}", sslError,
-                 errStr ? errStr : "unknown", errno);
+                 errStr ? errStr : "unknown", savedErrno);
             co_return Error::HttpSslHandshakeFailed;
         }
     }
 }
 
 ssize_t TLSTransport::write(const void* data, size_t size) noexcept {
+    lastInterest_ = FdReadyAwaiter::Interest::Write;
+    errno = 0;
     auto writeSize = static_cast<int32_t>(std::min(size, static_cast<size_t>(INT32_MAX)));
     int32_t result = SSL_write(sslPtr_.get(), data, writeSize);
+    lastErrno_ = errno;
     if (result <= 0) {
         lastSslError_ = SSL_get_error(sslPtr_.get(), result);
     }
@@ -373,21 +403,54 @@ ssize_t TLSTransport::write(const void* data, size_t size) noexcept {
 }
 
 ssize_t TLSTransport::read(void* buffer, size_t size) noexcept {
+    lastInterest_ = FdReadyAwaiter::Interest::Read;
+    errno = 0;
     auto readSize = static_cast<int32_t>(std::min(size, static_cast<size_t>(INT32_MAX)));
     int32_t result = SSL_read(sslPtr_.get(), buffer, readSize);
+    lastErrno_ = errno;
     if (result <= 0) {
         lastSslError_ = SSL_get_error(sslPtr_.get(), result);
     }
     return result;
 }
 
-bool TLSTransport::needsRetry(ssize_t) const noexcept {
-    return lastSslError_ == SSL_ERROR_WANT_READ || lastSslError_ == SSL_ERROR_WANT_WRITE;
+bool TLSTransport::needsRetry(ssize_t result) const noexcept {
+    if (lastSslError_ == SSL_ERROR_WANT_READ || lastSslError_ == SSL_ERROR_WANT_WRITE) {
+        return true;
+    }
+    return result < 0 && lastSslError_ == SSL_ERROR_SYSCALL &&
+           (lastErrno_ == EAGAIN || lastErrno_ == EWOULDBLOCK || lastErrno_ == EINTR);
+}
+
+bool TLSTransport::retryImmediately(ssize_t) const noexcept {
+    return lastSslError_ == SSL_ERROR_SYSCALL && lastErrno_ == EINTR;
+}
+
+bool TLSTransport::isCleanEof(ssize_t result) const noexcept {
+    return result == 0 && lastSslError_ == SSL_ERROR_ZERO_RETURN;
+}
+
+Error TLSTransport::classifyError(ssize_t result) const noexcept {
+    if (lastSslError_ == SSL_ERROR_SSL) {
+        return Error::HttpSslError;
+    }
+    if (lastSslError_ == SSL_ERROR_ZERO_RETURN) {
+        return Error::SocketClosed;
+    }
+    if (lastSslError_ == SSL_ERROR_SYSCALL) {
+        return result == 0 ? Error::ConnectionReset : mapTransportErrno(lastErrno_);
+    }
+    return Error::SocketError;
 }
 
 FdReadyAwaiter::Interest TLSTransport::retryInterest(ssize_t) const noexcept {
-    return (lastSslError_ == SSL_ERROR_WANT_READ) ? FdReadyAwaiter::Interest::Read
-                                                  : FdReadyAwaiter::Interest::Write;
+    if (lastSslError_ == SSL_ERROR_WANT_READ) {
+        return FdReadyAwaiter::Interest::Read;
+    }
+    if (lastSslError_ == SSL_ERROR_WANT_WRITE) {
+        return FdReadyAwaiter::Interest::Write;
+    }
+    return lastInterest_;
 }
 
 void TLSTransport::shutdown() noexcept {

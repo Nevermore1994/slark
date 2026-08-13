@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <cerrno>
 #include <chrono>
 #include <expected>
 #include <memory>
@@ -23,6 +24,27 @@ constexpr std::chrono::milliseconds kDefaultConnectTimeout{std::chrono::seconds{
 constexpr std::chrono::milliseconds kDefaultReadTimeout{std::chrono::seconds{30}};
 constexpr std::chrono::milliseconds kDefaultWriteTimeout{std::chrono::seconds{30}};
 
+inline Error mapTransportErrno(int error) noexcept {
+    switch (error) {
+        case EPIPE:
+            return Error::BrokenPipe;
+        case ECONNRESET:
+        case ECONNABORTED:
+            return Error::ConnectionReset;
+        case EBADF:
+        case ENOTSOCK:
+            return Error::InvalidSocket;
+        case EAGAIN:
+            return Error::WouldBlock;
+#if EWOULDBLOCK != EAGAIN
+        case EWOULDBLOCK:
+            return Error::WouldBlock;
+#endif
+        default:
+            return Error::SocketError;
+    }
+}
+
 // Transport strategy interface for read/write abstraction
 class ITransport {
  public:
@@ -30,6 +52,9 @@ class ITransport {
     virtual ssize_t write(const void* data, size_t size) noexcept = 0;
     virtual ssize_t read(void* buffer, size_t size) noexcept = 0;
     virtual bool needsRetry(ssize_t result) const noexcept = 0;
+    virtual bool retryImmediately(ssize_t result) const noexcept = 0;
+    virtual bool isCleanEof(ssize_t result) const noexcept = 0;
+    virtual Error classifyError(ssize_t result) const noexcept = 0;
     virtual FdReadyAwaiter::Interest retryInterest(ssize_t result) const noexcept = 0;
     virtual void shutdown() noexcept = 0;
 };
@@ -51,6 +76,18 @@ class PlainTransport final : public ITransport {
 
     bool needsRetry(ssize_t result) const noexcept override {
         return result < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR);
+    }
+
+    bool retryImmediately(ssize_t) const noexcept override {
+        return errno == EINTR;
+    }
+
+    bool isCleanEof(ssize_t result) const noexcept override {
+        return result == 0;
+    }
+
+    Error classifyError(ssize_t) const noexcept override {
+        return mapTransportErrno(errno);
     }
 
     FdReadyAwaiter::Interest retryInterest(ssize_t) const noexcept override {
@@ -77,6 +114,9 @@ class TLSTransport final : public ITransport {
     ssize_t write(const void* data, size_t size) noexcept override;
     ssize_t read(void* buffer, size_t size) noexcept override;
     bool needsRetry(ssize_t result) const noexcept override;
+    bool retryImmediately(ssize_t result) const noexcept override;
+    bool isCleanEof(ssize_t result) const noexcept override;
+    Error classifyError(ssize_t result) const noexcept override;
     FdReadyAwaiter::Interest retryInterest(ssize_t result) const noexcept override;
     void shutdown() noexcept override;
 
@@ -88,6 +128,8 @@ class TLSTransport final : public ITransport {
     Socket fd_;
     SSLPtr sslPtr_;
     mutable int32_t lastSslError_ = 0;
+    mutable int32_t lastErrno_ = 0;
+    FdReadyAwaiter::Interest lastInterest_ = FdReadyAwaiter::Interest::Read;
 };
 #endif
 
