@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include "AVFrame.hpp"
+
 using namespace slark;
 
 TEST(SeekContextTest, InitiallyNoSeekPending) {
@@ -28,6 +30,33 @@ TEST(SeekContextTest, CompleteSeekClearsPending) {
 TEST(SeekContextTest, CompleteSeekWithoutBeginReturnsFalse) {
     SeekContext ctx;
     EXPECT_FALSE(ctx.completeSeek());
+}
+
+TEST(SeekContextTest, UpdateTargetAfterCompletionIsRejected) {
+    SeekContext ctx;
+    (void)ctx.beginSeek(CTime(5.0), SeekStrategy::SeekToKeyframe);
+    ASSERT_TRUE(ctx.completeSeek());
+
+    EXPECT_FALSE(ctx.updateTarget(7.0));
+    EXPECT_FALSE(ctx.targetSeekTime().has_value());
+}
+
+TEST(SeekContextTest, BeginSeekResetsPreviousTrackAndGopState) {
+    SeekContext ctx;
+    (void)ctx.beginSeek(CTime(5.0), SeekStrategy::FastForwardInGOP);
+    ctx.updateGOPRange(3.0, 8.0);
+    ctx.setMaxSkipFrames(12);
+    ctx.markVideoSeeked();
+    ctx.markAudioSeeked();
+    ASSERT_TRUE(ctx.completeSeek());
+
+    (void)ctx.beginSeek(CTime(15.0), SeekStrategy::SeekToKeyframe);
+
+    EXPECT_FALSE(ctx.isVideoSeeked());
+    EXPECT_FALSE(ctx.isAudioSeeked());
+    EXPECT_EQ(ctx.gopKeyframePts(), -1.0);
+    EXPECT_EQ(ctx.gopEndPts(), -1.0);
+    EXPECT_EQ(ctx.maxSkipFrames(), 0);
 }
 
 TEST(SeekContextTest, EpochIncrementsOnBeginSeek) {
@@ -58,7 +87,7 @@ TEST(SeekContextTest, UpdateGOPRange) {
 TEST(SeekContextTest, UpdateTarget) {
     SeekContext ctx;
     (void)ctx.beginSeek(CTime(5.0), SeekStrategy::SeekToKeyframe);
-    ctx.updateTarget(7.0);
+    ASSERT_TRUE(ctx.updateTarget(7.0));
     EXPECT_DOUBLE_EQ(*ctx.targetSeekTime(), 7.0);
 }
 
@@ -69,7 +98,7 @@ TEST(SeekContextTest, UpdateTargetPreservesSeekTransaction) {
     ctx.markVideoSeeked();
     ctx.markAudioSeeked();
 
-    ctx.updateTarget(7.0);
+    ASSERT_TRUE(ctx.updateTarget(7.0));
 
     EXPECT_EQ(ctx.currentEpoch(), epoch);
     EXPECT_TRUE(ctx.isSeekPending());
@@ -82,8 +111,8 @@ TEST(SeekContextTest, UpdateTargetKeepsLatestValue) {
     SeekContext ctx;
     (void)ctx.beginSeek(CTime(1.0), SeekStrategy::SeekToKeyframe);
 
-    ctx.updateTarget(2.0);
-    ctx.updateTarget(3.0);
+    ASSERT_TRUE(ctx.updateTarget(2.0));
+    ASSERT_TRUE(ctx.updateTarget(3.0));
 
     ASSERT_TRUE(ctx.targetSeekTime().has_value());
     EXPECT_DOUBLE_EQ(*ctx.targetSeekTime(), 3.0);
@@ -144,4 +173,23 @@ TEST(SeekContextTest, BeginSeekWhilePending) {
     SeekContext ctx;
     (void)ctx.beginSeek(CTime(1.0), SeekStrategy::SeekToKeyframe);
     EXPECT_TRUE(ctx.beginSeek(CTime(2.0), SeekStrategy::SeekToKeyframe));
+}
+
+TEST(SeekEpochTest, FrameCopyPreservesEpoch) {
+    AVFrame frame(AVFrameType::Video);
+    frame.seekEpoch = 7;
+
+    auto copy = frame.copy();
+
+    ASSERT_NE(copy, nullptr);
+    EXPECT_EQ(copy->seekEpoch, 7u);
+}
+
+TEST(SeekEpochTest, FrameResetClearsEpoch) {
+    AVFrame frame(AVFrameType::Video);
+    frame.seekEpoch = 7;
+
+    frame.reset();
+
+    EXPECT_EQ(frame.seekEpoch, 0u);
 }
