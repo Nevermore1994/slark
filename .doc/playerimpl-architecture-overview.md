@@ -42,7 +42,9 @@ Player::seek(time)
 HttpStream/HLSStream::onError
     └── PlayerImpl::onError lambda（IO 线程）
             ├── notifyPlayerEvent(OnError, errorCode)
-            └── setState(Error) → doStop()
+            └── post EventType::ReadError
+                    └── ownerThread: handleEvent
+                            └── setState(Error) → doStop()
 ```
 
 ### seek 失败
@@ -84,6 +86,6 @@ NotInited → Initializing → Prepared → Buffering ⇄ Playing
 ## 相关变更记录
 
 - **2026-06**：
-  - `onError` 回调去重，直接调用 `setState(Error)` 进入错误状态，不再发送 `EventType::ReadError` 事件
+  - IO `onError` 只负责上报错误并向 ownerThread 投递 `EventType::ReadError`，由 ownerThread 串行进入 `Error`/`doStop()`
   - `setHandleSeekFunc` 回调感知 `seek()` 失败，立即上报错误
   - `buildPipeline` 注入 `seekByTimeFunc_` 和 `streamType`，支持 HLS 时间 seek 路径

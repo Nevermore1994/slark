@@ -16,6 +16,7 @@ using namespace slark;
 using ::testing::_;
 using ::testing::Eq;
 using ::testing::InSequence;
+using ::testing::Invoke;
 
 
 class MockObserver : public IPlayerObserver {
@@ -51,6 +52,20 @@ TEST(NotifyCenterTest, NoNotifyAfterRemoveObserver) {
     center.addObserver(observer);
     center.removeObserver();
     center.notifyPlayerState(PlayerState::Playing);
+}
+
+TEST(NotifyCenterTest, ObserverCanRemoveItselfDuringNotification) {
+    NotifyCenter center("player-1");
+    auto observer = std::make_shared<MockObserver>();
+
+    EXPECT_CALL(*observer, notifyPlayerState("player-1", PlayerState::Playing))
+        .WillOnce(Invoke([&center](std::string_view, PlayerState) {
+            center.removeObserver();
+        }));
+
+    center.addObserver(observer);
+    center.notifyPlayerState(PlayerState::Playing);
+    center.notifyPlayerState(PlayerState::Pause);
 }
 
 TEST(NotifyCenterTest, NoNotifyWhenObserverExpired) {

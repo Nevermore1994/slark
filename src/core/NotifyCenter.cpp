@@ -26,19 +26,23 @@ void NotifyCenter::removeObserver() noexcept {
 }
 
 void NotifyCenter::notifyPlayerState(PlayerState state) noexcept {
-    observer_.withReadLock([this, state](auto& observer) {
-        if (auto ptr = observer.lock(); ptr) {
-            ptr->notifyPlayerState(playerId_, state);
-        }
+    IPlayerObserverRefPtr observer;
+    observer_.withReadLock([&observer](const auto& weakObserver) {
+        observer = weakObserver.lock();
     });
+    if (observer) {
+        observer->notifyPlayerState(playerId_, state);
+    }
 }
 
 void NotifyCenter::notifyPlayerEvent(PlayerEvent event, std::string value) noexcept {
-    observer_.withReadLock([this, event, value = std::move(value)](auto& observer) {
-        if (auto ptr = observer.lock(); ptr) {
-            ptr->notifyPlayerEvent(playerId_, event, value);
-        }
+    IPlayerObserverRefPtr observer;
+    observer_.withReadLock([&observer](const auto& weakObserver) {
+        observer = weakObserver.lock();
     });
+    if (observer) {
+        observer->notifyPlayerEvent(playerId_, event, value);
+    }
 }
 
 double NotifyCenter::resolveCurrentTime(double duration,
@@ -79,11 +83,13 @@ void NotifyCenter::notifyPlayedTime(double duration,
     }
 
     lastNotifyPlayedTime_ = time;
-    observer_.withReadLock([this, time](auto& observer) {
-        if (auto ptr = observer.lock(); ptr) {
-            ptr->notifyPlayedTime(playerId_, time);
-        }
+    IPlayerObserverRefPtr observer;
+    observer_.withReadLock([&observer](const auto& weakObserver) {
+        observer = weakObserver.lock();
     });
+    if (observer) {
+        observer->notifyPlayedTime(playerId_, time);
+    }
 }
 
 void NotifyCenter::notifyCacheTime(double cachedDuration) noexcept {

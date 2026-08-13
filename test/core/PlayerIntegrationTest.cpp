@@ -329,6 +329,17 @@ TEST(PlayerIntegrationTest, StopAndWaitAfterPrepareCompletesBeforeReturn) {
     EXPECT_TRUE(player.state() == PlayerState::Stop || player.state() == PlayerState::Error);
 }
 
+TEST(PlayerIntegrationTest, StopAndWaitAfterErrorIsIdempotent) {
+    Player player(makeParams(""));
+    player.prepare();
+    ASSERT_EQ(player.state(), PlayerState::Error);
+
+    player.stopAndWait();
+    player.stopAndWait();
+
+    EXPECT_EQ(player.state(), PlayerState::Error);
+}
+
 TEST(PlayerIntegrationTest, DestructorDuringInitializingDoesNotCrash) {
     {
         Player player(makeParams());

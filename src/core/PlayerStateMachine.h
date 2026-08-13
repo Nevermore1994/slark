@@ -5,11 +5,9 @@
 #pragma once
 
 #include <expected>
-#include <optional>
 
 #include "Event.h"
 #include "Player.h"
-#include "pipeline/PipelineEvent.h"
 
 namespace slark {
 
@@ -23,8 +21,6 @@ class PlayerStateMachine {
     [[nodiscard]] static std::expected<PlayerState, bool> getStateFromEvent(
         EventType event) noexcept;
 
-    [[nodiscard]] static std::expected<PlayerState, bool> getStateFromPipelineEvent(
-        PipelineEvent event) noexcept;
 };
 
 }  // namespace slark

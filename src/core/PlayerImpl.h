@@ -109,6 +109,11 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
 
     void notifyCacheTime() noexcept;
 
+    [[nodiscard]] bool tryTransitionState(PlayerState nextState,
+                                           PlayerState& previousState) noexcept;
+
+    void applyStateAction(PlayerState state) noexcept;
+
     void setState(PlayerState state) noexcept;
 
     bool createDemuxerComponent() noexcept;

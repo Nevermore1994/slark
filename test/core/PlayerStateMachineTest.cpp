@@ -154,36 +154,6 @@ TEST(PlayerStateMachineTest, NonStatefulEventsReturnUnexpected) {
 }
 
 
-TEST(PlayerStateMachineTest, PipelineDecoderFailedMapsToError) {
-    for (auto ev : {PipelineEvent::AudioDecoderFailed, PipelineEvent::VideoDecoderFailed,
-                    PipelineEvent::ReadError, PipelineEvent::DecodeError}) {
-        auto result = PlayerStateMachine::getStateFromPipelineEvent(ev);
-        ASSERT_TRUE(result.has_value()) << "event=" << static_cast<int32_t>(ev);
-        EXPECT_EQ(*result, PlayerState::Error) << "event=" << static_cast<int32_t>(ev);
-    }
-}
-
-TEST(PlayerStateMachineTest, PipelineBufferingStartMapsToBuffering) {
-    auto result = PlayerStateMachine::getStateFromPipelineEvent(PipelineEvent::BufferingStart);
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(*result, PlayerState::Buffering);
-}
-
-TEST(PlayerStateMachineTest, PipelineRenderEndMapsToCompleted) {
-    auto result = PlayerStateMachine::getStateFromPipelineEvent(PipelineEvent::RenderEnd);
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(*result, PlayerState::Completed);
-}
-
-TEST(PlayerStateMachineTest, PipelineNonStatefulEventsReturnUnexpected) {
-    for (auto ev : {PipelineEvent::DemuxHeaderParsed, PipelineEvent::PipelineReady,
-                    PipelineEvent::FirstFrameRendered, PipelineEvent::BufferingEnd,
-                    PipelineEvent::SeekCompleted}) {
-        auto result = PlayerStateMachine::getStateFromPipelineEvent(ev);
-        EXPECT_FALSE(result.has_value()) << "event=" << static_cast<int32_t>(ev);
-    }
-}
-
 
 TEST(PlayerStateMachineTest, NormalPlaybackPath) {
     using S = PlayerState;

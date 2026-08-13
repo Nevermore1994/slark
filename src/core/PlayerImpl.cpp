@@ -474,6 +474,9 @@ void Player::Impl::process() noexcept {
     // cannot cause a UAF in between
     auto pipeline = pipeline_;
     if (!pipeline) {
+        if (receiver_) {
+            handleEvent(receiver_->tryReceiveAll());
+        }
         return;
     }
     // Lazy binding: make PlayPipeline's ownerThreadId_ point to the playerThread
@@ -514,16 +517,21 @@ void Player::Impl::stopAndWait() noexcept {
         return;
     }
 
+    bool stopCompleted = false;
     {
         std::lock_guard lock(releaseMutex_);
-        stopCompleted_ = false;
+        stopCompleted = stopCompleted_;
     }
-    updateState(PlayerState::Stop);
-    {
-        std::unique_lock lock(releaseMutex_);
-        cond_.wait(lock, [this] {
-            return stopCompleted_;
-        });
+    if (!stopCompleted) {
+        if (ownerThread_->isRunning()) {
+            updateState(PlayerState::Stop);
+            std::unique_lock lock(releaseMutex_);
+            cond_.wait(lock, [this] {
+                return stopCompleted_;
+            });
+        } else {
+            forceCleanup();
+        }
     }
     ownerThread_->stop();
     ownerThread_->join();
@@ -619,34 +627,52 @@ void Player::Impl::doLoop() noexcept {
     pipeline_->start();
 }
 
-void Player::Impl::setState(PlayerState state) noexcept {
-    PlayerState oldState = PlayerState::Unknown;
-    bool isChanged = false;
-    state_.withWriteLock([state, &isChanged, &oldState](auto& nowState) {
-        if (nowState == state) {
+bool Player::Impl::tryTransitionState(PlayerState nextState,
+                                       PlayerState& previousState) noexcept {
+    bool changed = false;
+    state_.withWriteLock([nextState, &changed, &previousState](auto& currentState) {
+        if (currentState == nextState) {
             return;
         }
-        if (!PlayerStateMachine::isValidTransition(nowState, state)) {
-            LogW("invalid state transition: {} -> {}", static_cast<uint32_t>(nowState),
-                 static_cast<uint32_t>(state));
+        if (!PlayerStateMachine::isValidTransition(currentState, nextState)) {
+            LogW("invalid state transition: {} -> {}", static_cast<uint32_t>(currentState),
+                 static_cast<uint32_t>(nextState));
             return;
         }
-        oldState = nowState;
-        nowState = state;
-        isChanged = true;
+        previousState = currentState;
+        currentState = nextState;
+        changed = true;
     });
-    if (!isChanged) {
+    return changed;
+}
+
+void Player::Impl::applyStateAction(PlayerState state) noexcept {
+    switch (state) {
+        case PlayerState::Playing:
+            doPlay();
+            break;
+        case PlayerState::Pause:
+        case PlayerState::Completed:
+            doPause();
+            break;
+        case PlayerState::Stop:
+        case PlayerState::Error:
+            doStop();
+            break;
+        default:
+            break;
+    }
+}
+
+void Player::Impl::setState(PlayerState state) noexcept {
+    PlayerState previousState = PlayerState::Unknown;
+    if (!tryTransitionState(state, previousState)) {
         return;
     }
 
-    LogI("setState: {} -> {}", static_cast<uint32_t>(oldState), static_cast<uint32_t>(state));
-    if (state == PlayerState::Playing) {
-        doPlay();
-    } else if (state == PlayerState::Pause || state == PlayerState::Completed) {
-        doPause();
-    } else if (state == PlayerState::Stop || state == PlayerState::Error) {
-        doStop();
-    }
+    LogI("setState: {} -> {}", static_cast<uint32_t>(previousState),
+         static_cast<uint32_t>(state));
+    applyStateAction(state);
     notifyPlayerState(state);
 }
 
@@ -687,33 +713,45 @@ void Player::Impl::handleSettingUpdate(Event& t) noexcept {
 
 void Player::Impl::handleEvent(std::deque<EventPtr>&& events) noexcept {
     PlayerState changeState = PlayerState::Unknown;
-    auto currentState = state();
-    bool hasPendingSeek = pendingSeekTarget_.load(std::memory_order_acquire) >= 0.0;
+    const auto currentState = state();
+    const bool hasPendingSeek = pendingSeekTarget_.load(std::memory_order_acquire) >= 0.0;
+    bool terminalStateSeen = false;
     for (auto& event : events) {
-        if (!event) {
+        if (!event || terminalStateSeen) {
             continue;
         }
         if (event->type == EventType::Seek) {
-            auto seekRequest = std::any_cast<PlayerSeekRequest>(event->data);
-            doSeek(seekRequest);
-        } else if (EventType::UpdateSetting < event->type &&
-                   event->type < EventType::UpdateSettingEnd) {
-            handleSettingUpdate(*event);
-        } else if (auto state = PlayerStateMachine::getStateFromEvent(event->type);
-                   state.has_value()) {
-            if (currentState == PlayerState::Stop || currentState == PlayerState::Error) {
-                continue;
+            if (currentState != PlayerState::Stop && currentState != PlayerState::Error) {
+                auto seekRequest = std::any_cast<PlayerSeekRequest>(event->data);
+                doSeek(seekRequest);
             }
-            if (currentState == PlayerState::Completed && *state == PlayerState::Playing) {
-                LogI("replay from completed, seek to 0");
-                doSeek(PlayerSeekRequest{.isAccurate = false, .seekTime = 0.0});
-            }
-            if (hasPendingSeek && *state == PlayerState::Playing) {
-                stats_.resumeAfterBuffering = true;
-                continue;
-            }
-            changeState = state.value();
+            continue;
         }
+        if (EventType::UpdateSetting < event->type &&
+            event->type < EventType::UpdateSettingEnd) {
+            if (currentState != PlayerState::Stop && currentState != PlayerState::Error) {
+                handleSettingUpdate(*event);
+            }
+            continue;
+        }
+        auto nextState = PlayerStateMachine::getStateFromEvent(event->type);
+        if (!nextState.has_value()) {
+            continue;
+        }
+        if (currentState == PlayerState::Stop ||
+            (currentState == PlayerState::Error && *nextState != PlayerState::Stop)) {
+            continue;
+        }
+        if (currentState == PlayerState::Completed && *nextState == PlayerState::Playing) {
+            LogI("replay from completed, seek to 0");
+            doSeek(PlayerSeekRequest{.isAccurate = false, .seekTime = 0.0});
+        }
+        if (hasPendingSeek && *nextState == PlayerState::Playing) {
+            stats_.resumeAfterBuffering = true;
+            continue;
+        }
+        changeState = *nextState;
+        terminalStateSeen = *nextState == PlayerState::Stop || *nextState == PlayerState::Error;
     }
 
     if (changeState != PlayerState::Unknown) {
