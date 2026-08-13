@@ -1,6 +1,8 @@
+#include "AsyncSocket.h"
 #include "IOContext.h"
 
 #include <gtest/gtest.h>
+#include <cerrno>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -22,6 +24,21 @@ TEST(IOContextTest, SingletonInstance) {
     auto& ctx1 = IOContext::instance();
     auto& ctx2 = IOContext::instance();
     EXPECT_EQ(&ctx1, &ctx2);
+}
+
+TEST(IOContextTest, ConnectErrnoPreservesNetworkMeaning) {
+    EXPECT_EQ(mapConnectErrno(ETIMEDOUT), Error::ConnectionTimeout);
+    EXPECT_EQ(mapConnectErrno(ECONNREFUSED), Error::ConnectionRefused);
+    EXPECT_EQ(mapConnectErrno(ECONNRESET), Error::ConnectionReset);
+    EXPECT_EQ(mapConnectErrno(EBADF), Error::InvalidSocket);
+    EXPECT_EQ(mapConnectErrno(EIO), Error::SocketError);
+}
+
+TEST(IOContextTest, TransportErrnoPreservesWriteMeaning) {
+    EXPECT_EQ(mapTransportErrno(EPIPE), Error::BrokenPipe);
+    EXPECT_EQ(mapTransportErrno(ECONNRESET), Error::ConnectionReset);
+    EXPECT_EQ(mapTransportErrno(EBADF), Error::InvalidSocket);
+    EXPECT_EQ(mapTransportErrno(EIO), Error::SocketError);
 }
 
 TEST(IOContextTest, RegisterAndUnregisterSocket) {

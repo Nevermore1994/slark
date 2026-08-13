@@ -209,6 +209,31 @@ RequestInfo makeLoopbackRequest(uint16_t port) {
     return info;
 }
 
+uint16_t reserveUnusedLoopbackPort() {
+    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        throw std::runtime_error("failed to create port probe socket");
+    }
+
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = htons(0);
+    if (::bind(fd, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) < 0) {
+        ::close(fd);
+        throw std::runtime_error("failed to reserve loopback port");
+    }
+
+    socklen_t addressLength = sizeof(address);
+    if (::getsockname(fd, reinterpret_cast<sockaddr*>(&address), &addressLength) < 0) {
+        ::close(fd);
+        throw std::runtime_error("failed to read reserved loopback port");
+    }
+    const auto port = ntohs(address.sin_port);
+    ::close(fd);
+    return port;
+}
+
 HttpResponse executeLoopback(const std::string& response) {
     LoopbackHttpServer server(response);
     auto info = makeLoopbackRequest(server.port());
@@ -277,6 +302,33 @@ TEST(HttpLoopbackTest, UnknownLengthResponseCompletesOnPeerEof) {
     EXPECT_EQ(std::string(reinterpret_cast<const char*>(response.body->data()),
                           response.body->length()),
               "hello");
+}
+
+TEST(HttpLoopbackTest, ConnectionRefusedPreservesTransportError) {
+    const auto port = reserveUnusedLoopbackPort();
+    auto info = makeLoopbackRequest(port);
+
+    ThreadPool pool(ThreadPoolConfig{2});
+    std::atomic<bool> done{false};
+    HttpResponse result;
+    auto task = runVoidTask([&]() -> Task<void> {
+        HttpProcessor processor;
+        auto response = co_await processor.process(info);
+        if (response) {
+            result = std::move(*response);
+        } else {
+            result.error = response.error();
+        }
+        done.store(true, std::memory_order_release);
+    });
+    task.resume();
+
+    for (int i = 0; i < 200 && !done.load(std::memory_order_acquire); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    ASSERT_TRUE(done.load(std::memory_order_acquire));
+    EXPECT_EQ(result.error.retCode, Error::ConnectionRefused);
 }
 
 TEST(HttpLoopbackTest, FixedLengthResponseTruncatedAtPeerEofFails) {

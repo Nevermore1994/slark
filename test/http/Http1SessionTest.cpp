@@ -17,7 +17,9 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -169,6 +171,112 @@ class KeepAliveServer final {
     bool combineResponses_ = false;
     std::atomic<int> acceptCount_{0};
     std::atomic<int> requestCount_{0};
+    std::thread worker_;
+};
+
+class BlockingHttpServer final {
+ public:
+    BlockingHttpServer() {
+        listenFd_ = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (listenFd_ < 0) {
+            throw std::runtime_error("failed to create blocking server socket");
+        }
+
+        int reuseAddress = 1;
+        ::setsockopt(listenFd_, SOL_SOCKET, SO_REUSEADDR, &reuseAddress, sizeof(reuseAddress));
+
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        address.sin_port = htons(0);
+        if (::bind(listenFd_, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) < 0 ||
+            ::listen(listenFd_, 1) < 0) {
+            ::close(listenFd_);
+            listenFd_ = -1;
+            throw std::runtime_error("failed to bind blocking server socket");
+        }
+
+        socklen_t addressLength = sizeof(address);
+        if (::getsockname(listenFd_, reinterpret_cast<sockaddr*>(&address), &addressLength) < 0) {
+            ::close(listenFd_);
+            listenFd_ = -1;
+            throw std::runtime_error("failed to get blocking server port");
+        }
+        port_ = ntohs(address.sin_port);
+        worker_ = std::thread([this] { serve(); });
+    }
+
+    ~BlockingHttpServer() {
+        {
+            std::lock_guard lock(mutex_);
+            stop_ = true;
+        }
+        condition_.notify_all();
+        if (listenFd_ >= 0) {
+            ::shutdown(listenFd_, SHUT_RDWR);
+            ::close(listenFd_);
+            listenFd_ = -1;
+        }
+        if (worker_.joinable()) {
+            worker_.join();
+        }
+    }
+
+    BlockingHttpServer(const BlockingHttpServer&) = delete;
+    BlockingHttpServer& operator=(const BlockingHttpServer&) = delete;
+
+    [[nodiscard]] uint16_t port() const noexcept {
+        return port_;
+    }
+
+    bool waitForRequest(std::chrono::milliseconds timeout) {
+        std::unique_lock lock(mutex_);
+        return condition_.wait_for(lock, timeout, [this] { return requestReceived_; });
+    }
+
+ private:
+    static bool receiveRequest(int fd) {
+        std::array<char, 4096> buffer{};
+        std::string request;
+        while (request.find("\r\n\r\n") == std::string::npos) {
+            const auto received = ::recv(fd, buffer.data(), buffer.size(), 0);
+            if (received <= 0) {
+                return false;
+            }
+            request.append(buffer.data(), static_cast<size_t>(received));
+        }
+        return true;
+    }
+
+    void serve() noexcept {
+        const int listenFd = listenFd_;
+        const int clientFd = ::accept(listenFd, nullptr, nullptr);
+        if (clientFd < 0) {
+            return;
+        }
+
+        if (!receiveRequest(clientFd)) {
+            ::close(clientFd);
+            return;
+        }
+        {
+            std::lock_guard lock(mutex_);
+            requestReceived_ = true;
+        }
+        condition_.notify_all();
+
+        std::unique_lock lock(mutex_);
+        condition_.wait(lock, [this] { return stop_; });
+        lock.unlock();
+        ::close(clientFd);
+    }
+
+    int listenFd_ = -1;
+    uint16_t port_ = 0;
+    std::mutex mutex_;
+    std::condition_variable condition_;
+    bool requestReceived_ = false;
+    bool stop_ = false;
     std::thread worker_;
 };
 
@@ -400,6 +508,55 @@ TEST(Http1SessionTest, CancelledRequestDoesNotOpenConnection) {
     ASSERT_TRUE(done.load(std::memory_order_acquire));
     EXPECT_EQ(error, Error::Cancelled);
     EXPECT_EQ(server.acceptCount(), 0);
+}
+
+TEST(Http1SessionTest, CloseCancelsActiveReadWithoutWaitingForReadTimeout) {
+    BlockingHttpServer server;
+    auto session = std::make_shared<Http1Session>();
+    std::atomic<bool> connected{false};
+    std::atomic<bool> done{false};
+    Error error = Error::Success;
+
+    ThreadPool pool(ThreadPoolConfig{2});
+    auto task = runVoidTask([&]() -> Task<void> {
+        CancellationToken token;
+        auto events = session->executeEvents(makeRequest(server.port(), session), token);
+        auto connectedEvent = co_await events.next();
+        if (!connectedEvent || connectedEvent->type != HttpResponseEventType::Connected) {
+            error = Error::ConnectionFailed;
+            done.store(true, std::memory_order_release);
+            co_return;
+        }
+        connected.store(true, std::memory_order_release);
+
+        auto terminalEvent = co_await events.next();
+        if (terminalEvent && terminalEvent->type == HttpResponseEventType::Error) {
+            error = terminalEvent->error.retCode;
+        } else {
+            error = Error::NetworkError;
+        }
+        done.store(true, std::memory_order_release);
+    });
+    task.resume();
+
+    ASSERT_TRUE(server.waitForRequest(std::chrono::seconds(2)));
+    for (int i = 0; i < 200 && !connected.load(std::memory_order_acquire); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(connected.load(std::memory_order_acquire));
+
+    const auto start = std::chrono::steady_clock::now();
+    session->close();
+    for (int i = 0; i < 100 && !done.load(std::memory_order_acquire); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             std::chrono::steady_clock::now() - start)
+                             .count();
+
+    ASSERT_TRUE(done.load(std::memory_order_acquire));
+    EXPECT_EQ(error, Error::Cancelled);
+    EXPECT_LT(elapsed, 1000);
 }
 
 TEST(Http1SessionTest, ConcurrentRequestIsRejectedWithoutSharingConnection) {
