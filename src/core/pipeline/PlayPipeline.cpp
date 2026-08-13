@@ -197,8 +197,14 @@ void PlayPipeline::seek(CTime target, bool isAccurate) noexcept {
     }
 
     const double targetSec = target.second();
-    const double currentSec = clockSync_->masterTime().second();
 
+    if (seekContext_->isSeekPending() && !isAccurate) {
+        seekContext_->updateTarget(targetSec);
+        LogI("seek pending, target updated: target={:.3f}s", targetSec);
+        return;
+    }
+
+    const double currentSec = clockSync_->masterTime().second();
     constexpr double kMinSeekDistance = 0.05;
     if (std::abs(targetSec - currentSec) <= kMinSeekDistance) {
         std::ignore = seekContext_->beginSeek(target, resolveSeekStrategy(targetSec));
@@ -209,11 +215,6 @@ void PlayPipeline::seek(CTime target, bool isAccurate) noexcept {
         LogI("seek distance too small, skip seek and notify completed: target={:.3f}s, "
              "current={:.3f}s",
              targetSec, currentSec);
-        return;
-    }
-
-    if (seekContext_->isSeekPending() && !isAccurate) {
-        LogI("seek pending, ignored: target={:.3f}s, isAccurate={}", targetSec, isAccurate);
         return;
     }
 

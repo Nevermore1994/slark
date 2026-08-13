@@ -95,6 +95,10 @@ void Player::Impl::seek(double time, bool isAccurate) noexcept {
         LogE("error!! not init");
         return;
     }
+    if (isStopped_.load(std::memory_order_acquire) ||
+        isReleased_.load(std::memory_order_acquire)) {
+        return;
+    }
     if (!info_.isSeekable) {
         LogW("[Player::Impl::seek] reject, media not seekable: time={:.3f}s isAccurate={}", time,
              isAccurate);
@@ -559,6 +563,8 @@ void Player::Impl::doStop() noexcept {
     mediaSourceManager_.close();
     // Close the Channel first so the DemuxerComponent worker exits naturally on Closed
     dataPacketSender_.reset();
+    pendingSeekTarget_.store(-1.0, std::memory_order_release);
+    seekRequest_.reset();
 
     if (pipeline_) {
         if (pipeline_->teardown()) {
@@ -782,7 +788,10 @@ void Player::Impl::processPendingSeek() noexcept {
         return;
     }
 
-    pendingSeekTarget_.store(-1.0, std::memory_order_release);
+    target = pendingSeekTarget_.exchange(-1.0, std::memory_order_acq_rel);
+    if (target < 0.0) {
+        return;
+    }
     doSeek(PlayerSeekRequest{.isAccurate = false, .seekTime = target});
 }
 

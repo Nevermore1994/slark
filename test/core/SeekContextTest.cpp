@@ -62,6 +62,33 @@ TEST(SeekContextTest, UpdateTarget) {
     EXPECT_DOUBLE_EQ(*ctx.targetSeekTime(), 7.0);
 }
 
+TEST(SeekContextTest, UpdateTargetPreservesSeekTransaction) {
+    SeekContext ctx;
+    (void)ctx.beginSeek(CTime(5.0), SeekStrategy::SeekToKeyframe);
+    const auto epoch = ctx.currentEpoch();
+    ctx.markVideoSeeked();
+    ctx.markAudioSeeked();
+
+    ctx.updateTarget(7.0);
+
+    EXPECT_EQ(ctx.currentEpoch(), epoch);
+    EXPECT_TRUE(ctx.isSeekPending());
+    EXPECT_TRUE(ctx.isVideoSeeked());
+    EXPECT_TRUE(ctx.isAudioSeeked());
+    EXPECT_DOUBLE_EQ(*ctx.targetSeekTime(), 7.0);
+}
+
+TEST(SeekContextTest, UpdateTargetKeepsLatestValue) {
+    SeekContext ctx;
+    (void)ctx.beginSeek(CTime(1.0), SeekStrategy::SeekToKeyframe);
+
+    ctx.updateTarget(2.0);
+    ctx.updateTarget(3.0);
+
+    ASSERT_TRUE(ctx.targetSeekTime().has_value());
+    EXPECT_DOUBLE_EQ(*ctx.targetSeekTime(), 3.0);
+}
+
 TEST(SeekContextTest, StrategyAccess) {
     SeekContext ctx;
     (void)ctx.beginSeek(CTime(0.0), SeekStrategy::FastForwardInGOP);
