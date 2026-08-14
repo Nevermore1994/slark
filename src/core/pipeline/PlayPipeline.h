@@ -111,7 +111,7 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     void setStreamControl(StreamControlFunc pauseStream, StreamControlFunc resumeStream) noexcept;
 
-    void setSeekByTimeFunc(std::function<StreamResult<void>(double)> func) noexcept {
+    void setSeekByTimeFunc(std::function<StreamResult<void>(double, uint64_t)> func) noexcept {
         seekByTimeFunc_ = std::move(func);
     }
 
@@ -334,7 +334,7 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
     StreamControlFunc pauseStreamFunc_;
     StreamControlFunc resumeStreamFunc_;
     std::function<void()> wakeupCallback_;
-    std::function<StreamResult<void>(double)> seekByTimeFunc_;
+    std::function<StreamResult<void>(double, uint64_t)> seekByTimeFunc_;
 
     std::weak_ptr<perf::PlaySession> playSession_;
 

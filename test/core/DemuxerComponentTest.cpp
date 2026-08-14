@@ -77,6 +77,20 @@ struct ResultState {
 
 }  // namespace
 
+TEST(DemuxerComponentTest, SourceOperationGenerationIsMonotonic) {
+    auto [sender, receiver] = Channel<DataPacket>::create();
+    DemuxerConfig config;
+    DemuxerComponent component(std::move(receiver), std::move(config));
+
+    const auto first = component.beginSourceOperation();
+    const auto second = component.beginSourceOperation();
+
+    EXPECT_EQ(first, 1u);
+    EXPECT_EQ(second, 2u);
+    EXPECT_TRUE(component.isCurrentSourceGeneration(second));
+    EXPECT_FALSE(component.isCurrentSourceGeneration(first));
+}
+
 TEST(DemuxerComponentTest, InitialSeekDiscardsQueuedPacketsAndEos) {
     auto firstData = loadData(kMp4Path, 0, 65536);
     if (!firstData) {
@@ -108,15 +122,17 @@ TEST(DemuxerComponentTest, InitialSeekDiscardsQueuedPacketsAndEos) {
         });
 
     auto* senderPtr = sender.get();
-    component.setHandleSeekFunc([senderPtr](Range range) {
+    component.setHandleSeekFunc([senderPtr](Range range, uint64_t generation) {
         DataPacket packet;
-        packet.offset = static_cast<int64_t>(range.start());
+        packet.sourceGeneration = generation;
+        packet.offset = range.start();
         packet.data = loadData(kMp4Path, range.start(), 65536);
         if (packet.data) {
             senderPtr->post(std::move(packet));
         }
         DataPacket eos;
         eos.isEndOfStream = true;
+        eos.sourceGeneration = generation;
         senderPtr->post(std::move(eos));
     });
 
@@ -126,7 +142,7 @@ TEST(DemuxerComponentTest, InitialSeekDiscardsQueuedPacketsAndEos) {
     ASSERT_TRUE(sender->send(std::move(firstPacket)).has_value());
     for (const auto offset : {uint64_t{65536}, uint64_t{131072}}) {
         DataPacket stalePacket;
-        stalePacket.offset = static_cast<int64_t>(offset);
+        stalePacket.offset = offset;
         stalePacket.data = loadData(kMp4Path, offset, 65536);
         ASSERT_NE(stalePacket.data, nullptr);
         ASSERT_TRUE(sender->send(std::move(stalePacket)).has_value());

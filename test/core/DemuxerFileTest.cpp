@@ -107,7 +107,7 @@ ParseResult feedAllData(IDemuxer& demuxer,
         data->setSize(readSize);
 
         DataPacket packet;
-        packet.offset = static_cast<int64_t>(offset);
+        packet.offset = offset;
         packet.data = std::move(data);
 
         auto res = demuxer.parseData(packet);
@@ -270,7 +270,7 @@ TEST_F(Mp4DemuxerFileTest, HeaderOnlyRangeDoesNotSignalFileEnd) {
     data->setSize(readSize);
 
     DataPacket packet;
-    packet.offset = static_cast<int64_t>(startOffset);
+    packet.offset = startOffset;
     packet.data = std::move(data);
     const auto result = demuxer_->parseData(packet);
 

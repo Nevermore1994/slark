@@ -1252,7 +1252,7 @@ DemuxerResult Mp4Demuxer::parseData(DataPacket& packet) noexcept {
     if (packet.empty() || !isOpened_) {
         return {DemuxerResultCode::Failed, AVFramePtrArray(), AVFramePtrArray()};
     }
-    if (!buffer_->append(static_cast<uint64_t>(packet.offset), std::move(packet.data))) {
+    if (!buffer_->append(packet.offset, std::move(packet.data))) {
         LogE("parseData: buffer append failed, offset:{}", packet.offset);
         return {DemuxerResultCode::InvalidData, AVFramePtrArray(), AVFramePtrArray()};
     }

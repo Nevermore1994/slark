@@ -12,7 +12,7 @@
 
 namespace slark {
 
-using HandleSeekFunc = std::function<void(Range)>;
+using HandleSeekFunc = std::function<void(Range, uint64_t)>;
 using HandleDemuxResultFunc =
     std::function<void(const std::shared_ptr<IDemuxer>&, DemuxerResult&&)>;
 
@@ -55,6 +55,14 @@ class DemuxerComponent : public IPipelineComponent, public slark::NonCopyMovable
     void seekToPos(uint64_t pos) noexcept;
 
     void seekToTime(double time) noexcept;
+
+    [[nodiscard]] bool isCurrentSourceGeneration(uint64_t generation) const noexcept {
+        return generation == sourceGeneration_.load(std::memory_order_acquire);
+    }
+
+    [[nodiscard]] uint64_t beginSourceOperation() noexcept {
+        return sourceGeneration_.fetch_add(1, std::memory_order_acq_rel) + 1;
+    }
 
     [[nodiscard]] uint64_t getSeekToPos(double time) noexcept;
 
@@ -156,6 +164,8 @@ class DemuxerComponent : public IPipelineComponent, public slark::NonCopyMovable
 
     void postToWorker(ThreadTask task) noexcept;
 
+    void seekToPosOnWorker(uint64_t pos, uint64_t generation) noexcept;
+
     void invokeHandleResultFunc(DemuxerResult&& result) noexcept {
         auto func = handleResultFunc_.load();
         if (func) {
@@ -163,10 +173,10 @@ class DemuxerComponent : public IPipelineComponent, public slark::NonCopyMovable
         }
     }
 
-    void invokeSeekFunc(Range range) noexcept {
+    void invokeSeekFunc(Range range, uint64_t generation) noexcept {
         auto func = handleSeekFunc_.load();
         if (func) {
-            std::invoke(*func, range);
+            std::invoke(*func, range, generation);
         }
     }
 
@@ -186,6 +196,7 @@ class DemuxerComponent : public IPipelineComponent, public slark::NonCopyMovable
     std::atomic_bool isClosed_ = false;
     std::atomic_bool pendingSeekVerification_{false};
     std::atomic<uint64_t> pendingSeekVerifiedOffset_{0};
+    std::atomic<uint64_t> sourceGeneration_{0};
     std::weak_ptr<perf::PlaySession> session_;
 };
 

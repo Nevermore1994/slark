@@ -36,6 +36,7 @@ auto HttpStream::open(const OpenParams& params) -> StreamResult<StreamInfo> {
     readRange_ = params.range;
     committedPosition_ = readRange_.isValid() ? readRange_.start() : 0;
     operationCoversSource_ = false;
+    sourceGeneration_ = 0;
 
     {
         std::lock_guard<std::mutex> lock(infoMutex_);
@@ -163,7 +164,7 @@ void HttpStream::pause() noexcept {
     LogI("[HttpStream::pause] committedPos={}", committedPosition_);
 }
 
-auto HttpStream::seek(uint64_t position) -> StreamResult<void> {
+auto HttpStream::seek(uint64_t position, uint64_t sourceGeneration) -> StreamResult<void> {
     std::unique_lock<std::mutex> lock(mutex_);
     if (rangeCapability_ != RangeCapability::Supported) {
         LogW("[HttpStream::seek] reject, server does not support Range, capability={} pos={}",
@@ -175,6 +176,7 @@ auto HttpStream::seek(uint64_t position) -> StreamResult<void> {
     cancelCurrentOperation(kWaitSettleTimeout.count());
 
     committedPosition_ = position;
+    sourceGeneration_ = sourceGeneration;
     isCompleted_ = false;
     state_ = StreamState::Ready;
     LogI("[HttpStream::seek] pos={} url={}", position, params_.uri);
@@ -401,6 +403,7 @@ void HttpStream::handleData(http::StreamChunk&& chunk) noexcept {
             .owner = std::move(buffer),
             .offset = committedPosition_,
             .segmentIndex = 0,
+            .sourceGeneration = sourceGeneration_,
             .isLastChunk = chunk.isFinal,
         });
     }
@@ -422,7 +425,7 @@ void HttpStream::handleFinal() noexcept {
     LogI("[HttpStream::handleFinal] totalReceived={} coversSource={} url={}", committedPosition_,
          operationCoversSource_, params_.uri);
     if (operationCoversSource_ && params_.onComplete) {
-        params_.onComplete();
+        params_.onComplete(sourceGeneration_);
     }
 }
 

@@ -35,7 +35,7 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
     void close() noexcept override;
     void start() noexcept override;
     void pause() noexcept override;
-    auto seek(uint64_t position) -> StreamResult<void> override;
+    auto seek(uint64_t position, uint64_t sourceGeneration) -> StreamResult<void> override;
     void updateRange(Range range) noexcept override;
 
     [[nodiscard]] StreamState state() const noexcept override {
@@ -128,6 +128,7 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
     // ---- Owner thread exclusive ----
     std::optional<StreamOperation> operation_;
     uint64_t generation_ = 0;
+    uint64_t sourceGeneration_ = 0;
     uint64_t nextOperationId_ = 1;
     bool closing_ = false;
     uint64_t committedPosition_ = 0;  // position already delivered to onData

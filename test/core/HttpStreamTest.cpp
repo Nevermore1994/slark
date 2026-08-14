@@ -232,7 +232,7 @@ class HttpStreamTest : public ::testing::Test {
 OpenParams makeParams() {
     OpenParams params;
     params.onData = [](DataChunk) {};
-    params.onComplete = [] {};
+    params.onComplete = [](uint64_t) {};
     params.onError = [](Error, int32_t) {};
     return params;
 }
@@ -258,7 +258,7 @@ TEST_F(HttpStreamTest, H1_OpenStartReceivesDataAndCompletes) {
     params.onData = [&totalBytes](DataChunk chunk) {
         totalBytes.fetch_add(chunk.size(), std::memory_order_relaxed);
     };
-    params.onComplete = [&completed]() {
+    params.onComplete = [&completed](uint64_t) {
         completed = true;
     };
 
@@ -277,7 +277,7 @@ TEST_F(HttpStreamTest, H2_RangeCompletionDoesNotSignalSourceEof) {
     params.uri = server_.url();
     params.range = Range(32768);
     std::atomic<bool> completed{false};
-    params.onComplete = [&completed]() {
+    params.onComplete = [&completed](uint64_t) {
         completed = true;
     };
 
@@ -294,8 +294,12 @@ TEST_F(HttpStreamTest, H2_SeekAfterHeaderSetsNewRange) {
     auto params = makeParams();
     params.uri = server_.url();
     std::atomic<uint64_t> totalBytes{0};
-    params.onData = [&totalBytes](DataChunk chunk) {
+    std::atomic<bool> sawSeekGeneration{false};
+    params.onData = [&totalBytes, &sawSeekGeneration](DataChunk chunk) {
         totalBytes.fetch_add(chunk.size(), std::memory_order_relaxed);
+        if (chunk.sourceGeneration == 7) {
+            sawSeekGeneration.store(true, std::memory_order_release);
+        }
     };
 
     ASSERT_TRUE(stream_->open(params).has_value());
@@ -303,10 +307,11 @@ TEST_F(HttpStreamTest, H2_SeekAfterHeaderSetsNewRange) {
 
     EXPECT_TRUE(waitUntil([&]() { return stream_->info().isSeekable; }));
 
-    auto seekResult = stream_->seek(32768);
+    auto seekResult = stream_->seek(32768, 7);
     ASSERT_TRUE(seekResult.has_value());
     EXPECT_EQ(stream_->position(), 32768u);
     EXPECT_TRUE(waitUntil([&]() { return stream_->position() >= kMockBodySize; }));
+    EXPECT_TRUE(sawSeekGeneration.load(std::memory_order_acquire));
     EXPECT_EQ(stream_->state(), StreamState::Completed);
 }
 
@@ -328,7 +333,7 @@ TEST_F(HttpStreamTest, H2b_SeekWorksWhen206OmitsAcceptRangesHeader) {
 
     EXPECT_TRUE(waitUntil([&]() { return stream->info().isSeekable; }));
 
-    auto seekResult = stream->seek(32768);
+    auto seekResult = stream->seek(32768, 0);
     ASSERT_TRUE(seekResult.has_value());
     EXPECT_TRUE(waitUntil([&]() { return stream->position() >= kMockBodySize; }));
     EXPECT_EQ(stream->state(), StreamState::Completed);
@@ -379,7 +384,7 @@ TEST_F(HttpStreamTest, H2d_SeekRejectedWhenServerIgnoresRange) {
     stream->start();
 
     EXPECT_TRUE(waitUntil([&]() { return stream->position() >= kMockBodySize; }));
-    auto seekResult = stream->seek(1024);
+    auto seekResult = stream->seek(1024, 0);
     EXPECT_FALSE(seekResult.has_value());
     EXPECT_EQ(seekResult.error(), Error::StreamNotReady);
     stream->close();

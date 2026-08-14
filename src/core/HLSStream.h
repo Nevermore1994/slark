@@ -29,8 +29,8 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
     void close() noexcept override;
     void start() noexcept override;
     void pause() noexcept override;
-    StreamResult<void> seek(uint64_t position) override;
-    StreamResult<void> seekByTime(double timeSec) override;
+    StreamResult<void> seek(uint64_t position, uint64_t sourceGeneration) override;
+    StreamResult<void> seekByTime(double timeSec, uint64_t sourceGeneration) override;
     void updateRange(Range range) noexcept override;
 
     [[nodiscard]] StreamState state() const noexcept override {
@@ -145,6 +145,7 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
     std::shared_ptr<http::Http1Session> controlSession_;
     std::shared_ptr<http::Http1Session> mediaSession_;
     uint64_t generation_ = 0;
+    uint64_t sourceGeneration_ = 0;
     uint64_t nextOperationId_ = 1;
     bool closing_ = false;
     bool started_ = false;

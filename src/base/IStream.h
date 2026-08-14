@@ -41,6 +41,7 @@ struct DataChunk {
     DataRefPtr owner;
     uint64_t offset = 0;
     uint64_t segmentIndex = 0;
+    uint64_t sourceGeneration = 0;
     bool isLastChunk = false;
 
     [[nodiscard]] bool empty() const noexcept {
@@ -72,7 +73,7 @@ using MetadataCallback = std::function<void(std::shared_ptr<void>)>;
 
 using ErrorCallback = std::function<void(Error /*err*/, int32_t /*originErrorCode*/)>;
 
-using CompletionCallback = std::function<void()>;
+using CompletionCallback = std::function<void(uint64_t sourceGeneration)>;
 
 struct OpenParams {
     std::string uri;
@@ -93,10 +94,10 @@ class IStream {
     virtual void close() noexcept = 0;
     virtual void start() noexcept = 0;
     virtual void pause() noexcept = 0;
-    virtual auto seek(uint64_t position) -> StreamResult<void> = 0;
+    virtual auto seek(uint64_t position, uint64_t sourceGeneration) -> StreamResult<void> = 0;
 
     /// Time-based seek; returns InvalidOperation by default. HLS implements this interface.
-    virtual auto seekByTime(double /*timeSec*/) -> StreamResult<void> {
+    virtual auto seekByTime(double /*timeSec*/, uint64_t /*sourceGeneration*/) -> StreamResult<void> {
         return std::unexpected(Error::InvalidOperation);
     }
 

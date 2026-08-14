@@ -388,7 +388,7 @@ class HLSStreamTest : public ::testing::Test {
 OpenParams makeParams() {
     OpenParams params;
     params.onData = [](DataChunk) {};
-    params.onComplete = [] {};
+    params.onComplete = [](uint64_t) {};
     params.onError = [](Error, int32_t) {};
     return params;
 }
@@ -418,7 +418,7 @@ TEST_F(HLSStreamTest, L1_MasterVariantMediaSegmentFlow) {
         std::lock_guard lock(chunkMutex);
         chunks.emplace_back(std::move(chunk));
     };
-    params.onComplete = [&completed]() {
+    params.onComplete = [&completed](uint64_t) {
         completed = true;
     };
 
@@ -465,7 +465,9 @@ TEST_F(HLSStreamTest, ProductionGateStopsSchedulingNextSegment) {
 
     auto params = makeParams();
     params.uri = server_.masterUrl();
-    params.onComplete = [&completed] { completed.store(true, std::memory_order_release); };
+    params.onComplete = [&completed](uint64_t) {
+        completed.store(true, std::memory_order_release);
+    };
     ASSERT_TRUE(stream_->open(params).has_value());
 
     stream_->start();
@@ -492,7 +494,7 @@ TEST_F(HLSStreamTest, ByteRangeSegmentsUsePartialContentRequests) {
         EXPECT_EQ(chunk.size(), 256u);
         EXPECT_TRUE(chunk.isLastChunk);
     };
-    params.onComplete = [&completed]() {
+    params.onComplete = [&completed](uint64_t) {
         completed = true;
     };
     params.onError = [&failed](Error, int32_t) {
@@ -534,7 +536,7 @@ TEST_F(HLSStreamTest, SegmentReconnectsAfterTruncatedResponse) {
     auto params = makeParams();
     params.uri = server_.masterUrl();
     std::atomic<bool> completed{false};
-    params.onComplete = [&completed]() {
+    params.onComplete = [&completed](uint64_t) {
         completed = true;
     };
 
@@ -582,7 +584,7 @@ TEST_F(HLSStreamTest, LivePlaylistEndListTransitionCompletesTheStream) {
     std::atomic<bool> failed{false};
     auto params = makeParams();
     params.uri = server_.masterUrl();
-    params.onComplete = [&completed]() {
+    params.onComplete = [&completed](uint64_t) {
         completed = true;
     };
     params.onError = [&failed](Error, int32_t) {
@@ -613,7 +615,7 @@ TEST_F(HLSStreamTest, LiveRefreshUsesMediaSequenceWithoutDuplicateDownloadsOrEos
         std::lock_guard lock(dataMutex);
         sequences.push_back(chunk.segmentIndex);
     };
-    params.onComplete = [&completed]() {
+    params.onComplete = [&completed](uint64_t) {
         completed = true;
     };
     params.onError = [&failed](Error, int32_t) {
@@ -649,7 +651,7 @@ TEST_F(HLSStreamTest, InitialMediaPlaylistFailureRetriesBeforeReportingError) {
 
     auto params = makeParams();
     params.uri = server_.masterUrl();
-    params.onComplete = [&completed]() {
+    params.onComplete = [&completed](uint64_t) {
         completed = true;
     };
     params.onError = [&failed](Error, int32_t) {
@@ -672,7 +674,7 @@ TEST_F(HLSStreamTest, PlaylistFailureReportsAfterBoundedRetries) {
     std::atomic<bool> failed{false};
     auto params = makeParams();
     params.uri = server_.masterUrl();
-    params.onComplete = [&completed]() {
+    params.onComplete = [&completed](uint64_t) {
         completed = true;
     };
     params.onError = [&failed](Error, int32_t) {
@@ -713,7 +715,7 @@ TEST_F(HLSStreamTest, L3_SeekByTimeRestartsFromTargetSegment) {
     params.onData = [&totalBytes](DataChunk chunk) {
         totalBytes.fetch_add(chunk.size(), std::memory_order_relaxed);
     };
-    params.onComplete = [&completed]() {
+    params.onComplete = [&completed](uint64_t) {
         completed = true;
     };
 
@@ -721,7 +723,7 @@ TEST_F(HLSStreamTest, L3_SeekByTimeRestartsFromTargetSegment) {
     stream_->start();
     EXPECT_TRUE(waitUntil([&]() { return totalBytes.load() > 0; }, 15000));
 
-    auto res = stream_->seekByTime(1.5);
+    auto res = stream_->seekByTime(1.5, 1);
     ASSERT_TRUE(res.has_value());
     EXPECT_TRUE(waitUntil([&]() { return completed.load(); }, 15000));
     EXPECT_TRUE(stream_->isCompleted());
@@ -745,7 +747,7 @@ TEST_F(HLSStreamTest, L5_ConcurrentStartSeekCloseIsSafe) {
     });
     std::thread t2([this]() {
         for (int i = 0; i < 5; ++i) {
-            stream_->seekByTime(0.5);
+            stream_->seekByTime(0.5, 1);
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
     });

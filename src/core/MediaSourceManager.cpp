@@ -51,10 +51,11 @@ bool MediaSourceManager::open(const std::string& uri,
         }
         DataPacket packet;
         packet.data = std::make_unique<Data>(chunk.data);
-        packet.offset = static_cast<int64_t>(chunk.offset);
+        packet.offset = chunk.offset;
         packet.segmentIndex = chunk.segmentIndex;
         packet.tag = std::to_string(chunk.segmentIndex);
         packet.isLastChunk = chunk.isLastChunk;
+        packet.sourceGeneration = chunk.sourceGeneration;
         (*dataCallback)(std::move(packet));
     };
 
@@ -64,10 +65,12 @@ bool MediaSourceManager::open(const std::string& uri,
         }
     };
 
-    params.onComplete = [dataCallback, onComplete = std::move(onComplete)]() mutable {
+    params.onComplete = [dataCallback, onComplete = std::move(onComplete)](
+                             uint64_t sourceGeneration) mutable {
         if (dataCallback && *dataCallback) {
             DataPacket packet;
             packet.isEndOfStream = true;
+            packet.sourceGeneration = sourceGeneration;
             (*dataCallback)(std::move(packet));
         }
         if (onComplete) {
@@ -120,20 +123,22 @@ void MediaSourceManager::close() noexcept {
     streamInfo_ = {};
 }
 
-StreamResult<void> MediaSourceManager::seek(uint64_t position) noexcept {
+StreamResult<void> MediaSourceManager::seek(uint64_t position,
+                                              uint64_t sourceGeneration) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!stream_) {
         return std::unexpected(Error::StreamNotReady);
     }
-    return stream_->seek(position);
+    return stream_->seek(position, sourceGeneration);
 }
 
-StreamResult<void> MediaSourceManager::seekByTime(double timeSec) noexcept {
+StreamResult<void> MediaSourceManager::seekByTime(double timeSec,
+                                                    uint64_t sourceGeneration) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!stream_) {
         return std::unexpected(Error::StreamNotReady);
     }
-    return stream_->seekByTime(timeSec);
+    return stream_->seekByTime(timeSec, sourceGeneration);
 }
 
 void MediaSourceManager::updateRange(Range range) noexcept {

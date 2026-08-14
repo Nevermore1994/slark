@@ -562,7 +562,7 @@ DemuxerResult HLSDemuxer::parseData(DataPacket& packet) noexcept {
         seekTsIndex_ = kInvalidTSIndex;  // reset
     }
 
-    if (!buffer_->append(static_cast<uint64_t>(packet.offset), std::move(packet.data))) {
+    if (!buffer_->append(packet.offset, std::move(packet.data))) {
         LogE("discard data, ts index:{}, data offset:{}, parse offset:{}", tsIndex, packet.offset,
              buffer_->offset());
         result.resultCode = DemuxerResultCode::InvalidData;
@@ -726,7 +726,7 @@ DemuxerResult TSDemuxerAdapter::parseData(DataPacket& packet) noexcept {
         result.resultCode = DemuxerResultCode::Failed;
         return result;
     }
-    if (!buffer_->append(static_cast<uint64_t>(packet.offset), std::move(packet.data))) {
+    if (!buffer_->append(packet.offset, std::move(packet.data))) {
         result.resultCode = DemuxerResultCode::InvalidData;
         return result;
     }

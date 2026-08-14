@@ -43,6 +43,7 @@ void DemuxerComponent::reset() noexcept {
     flushed_ = false;
     pendingSeekVerification_.store(false, std::memory_order_release);
     pendingSeekVerifiedOffset_.store(0, std::memory_order_release);
+    sourceGeneration_.store(0, std::memory_order_release);
     probeBuffer_.reset();
     demuxer_.reset();
 }
@@ -110,6 +111,19 @@ void DemuxerComponent::runLoop(Thread& thread) noexcept {
             break;
         }
         DataPacket packet = std::move(*exp);
+        const auto activeGeneration = sourceGeneration_.load(std::memory_order_acquire);
+        if (packet.sourceGeneration < activeGeneration) {
+            LogW("discard stale source packet generation={}, active={}",
+                 packet.sourceGeneration, activeGeneration);
+            continue;
+        }
+        if (packet.sourceGeneration > activeGeneration) {
+            sourceGeneration_.store(packet.sourceGeneration, std::memory_order_release);
+        }
+        if (packet.sourceGeneration == 0 && activeGeneration != 0) {
+            LogW("discard source packet without generation, active={}", activeGeneration);
+            continue;
+        }
 
         if (flushed_.load(std::memory_order_acquire)) {
             continue;
@@ -117,8 +131,7 @@ void DemuxerComponent::runLoop(Thread& thread) noexcept {
 
         if (pendingSeekVerification_.load(std::memory_order_acquire)) {
             const auto expectedOffset = pendingSeekVerifiedOffset_.load(std::memory_order_acquire);
-            if (packet.isEndOfStream || packet.offset < 0 ||
-                static_cast<uint64_t>(packet.offset) != expectedOffset) {
+            if (packet.isEndOfStream || packet.offset != expectedOffset) {
                 LogW("discard stale packet offset={}, expected={}, eos={}", packet.offset,
                      expectedOffset, packet.isEndOfStream);
                 continue;
@@ -129,7 +142,9 @@ void DemuxerComponent::runLoop(Thread& thread) noexcept {
         if (packet.isEndOfStream) {
             auto demuxer = demuxer_.load();
             if (demuxer && demuxer->isOpened() && !demuxer->isCompleted()) {
-                invokeHandleResultFunc(demuxer->endOfStream());
+                auto result = demuxer->endOfStream();
+                result.sourceGeneration = packet.sourceGeneration;
+                invokeHandleResultFunc(std::move(result));
             }
             continue;
         }
@@ -159,6 +174,7 @@ void DemuxerComponent::runLoop(Thread& thread) noexcept {
         auto t0 = Time::nowTimeStamp().point();
 #endif
         auto result = demuxer->parseData(packet);
+        result.sourceGeneration = packet.sourceGeneration;
 #ifdef SLARK_PERF_ENABLED
         auto durationUs = static_cast<int64_t>(Time::nowTimeStamp().point() - t0);
         SLARK_TRACE_RECORD(session.get(), "demux", durationUs);
@@ -190,6 +206,7 @@ bool DemuxerComponent::open() noexcept {
         }
         DemuxerResult result;
         result.resultCode = DemuxerResultCode::ParsedHeader;
+        result.sourceGeneration = sourceGeneration_.load(std::memory_order_acquire);
         invokeHandleResultFunc(std::move(result));
         return true;
     }
@@ -202,7 +219,8 @@ bool DemuxerComponent::open() noexcept {
             if (receiver_) {
                 (void)receiver_->tryReceiveAll();
             }
-            invokeSeekFunc(Range(*seekTo));
+            const auto generation = beginSourceOperation();
+            invokeSeekFunc(Range(*seekTo), generation);
             flushed_.store(false, std::memory_order_release);
         }
         return false;
@@ -219,13 +237,15 @@ bool DemuxerComponent::open() noexcept {
         if (receiver_) {
             (void)receiver_->tryReceiveAll();
         }
-        invokeSeekFunc(Range(seekPos));
+        const auto generation = sourceGeneration_.load(std::memory_order_acquire);
+        invokeSeekFunc(Range(seekPos), generation);
         flushed_.store(false, std::memory_order_release);
-        LogI("demuxer seek to:{}", seekPos);
+        LogI("demuxer seek to:{} generation={}", seekPos, generation);
     }
 
     DemuxerResult result;
     result.resultCode = DemuxerResultCode::ParsedHeader;
+    result.sourceGeneration = sourceGeneration_.load(std::memory_order_acquire);
     invokeHandleResultFunc(std::move(result));
 
     probeBuffer_.reset();
@@ -286,6 +306,13 @@ bool DemuxerComponent::createDemuxer() noexcept {
 }
 
 void DemuxerComponent::seekToPos(uint64_t pos) noexcept {
+    const auto generation = beginSourceOperation();
+    postToWorker([this, pos, generation] {
+        seekToPosOnWorker(pos, generation);
+    });
+}
+
+void DemuxerComponent::seekToPosOnWorker(uint64_t pos, uint64_t generation) noexcept {
     if (isClosed_) {
         LogE("demuxer component is closed.");
         return;
@@ -297,16 +324,12 @@ void DemuxerComponent::seekToPos(uint64_t pos) noexcept {
     demuxer->seekPos(pos);
     // For HLS, pos is a segment index, not a byte offset that can be passed to the IO layer
     if (demuxer->type() != DemuxerType::HLS) {
-        // IO is paused; drain stale data that IO may have written during the
-        // flush→seekToPos window
         if (receiver_) {
             (void)receiver_->tryReceiveAll();
         }
-        // pendingSeekVerifiedOffset_ filters out any missed stale packets
         pendingSeekVerifiedOffset_.store(pos, std::memory_order_release);
         pendingSeekVerification_.store(true, std::memory_order_release);
-        // Synchronous IO seek: data sent from the new position must match expectedOffset
-        invokeSeekFunc(Range(pos));
+        invokeSeekFunc(Range(pos), generation);
     }
 }
 
@@ -334,7 +357,7 @@ void DemuxerComponent::seekToTime(double time) noexcept {
         }
         auto pos = demuxer->getSeekToPos(time);
         if (pos > 0) {
-            seekToPos(pos);
+            seekToPosOnWorker(pos, beginSourceOperation());
         }
     });
 }

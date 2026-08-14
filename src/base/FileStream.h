@@ -23,7 +23,7 @@ class FileStream : public IStream {
     void close() noexcept override;
     void start() noexcept override;
     void pause() noexcept override;
-    StreamResult<void> seek(uint64_t position) override;
+    StreamResult<void> seek(uint64_t position, uint64_t sourceGeneration) override;
     void updateRange(Range range) noexcept override;
 
     [[nodiscard]] StreamState state() const noexcept override {
@@ -76,8 +76,11 @@ class FileStream : public IStream {
     std::atomic<bool> shouldPause_{false};
     std::atomic<bool> pendingSeekFlag_{false};
     std::atomic<bool> eofReached_{false};
+    std::atomic<uint64_t> sourceGeneration_{0};
     uint64_t pendingSeekPos_ = 0;
+    uint64_t pendingSourceGeneration_ = 0;
     bool seekCompleted_ = false;
+    Error seekError_ = Error::Success;
 };
 
 }  // namespace slark

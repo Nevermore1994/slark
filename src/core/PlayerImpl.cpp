@@ -286,12 +286,13 @@ bool Player::Impl::createDemuxerComponent() noexcept {
     dataPacketSender_ = std::move(sender);
 
     demuxerComponent_ = std::make_shared<DemuxerComponent>(std::move(receiver), std::move(config));
-    demuxerComponent_->setHandleSeekFunc([weak = weak_from_this()](Range range) {
+    demuxerComponent_->setHandleSeekFunc([weak = weak_from_this()](Range range,
+                                                                     uint64_t generation) {
         auto self = weak.lock();
         if (!self || self->isStopped_) {
             return;
         }
-        auto res = self->mediaSourceManager_.seek(range.start());
+        auto res = self->mediaSourceManager_.seek(range.start(), generation);
         if (!res.has_value()) {
             self->notifyPlayerEvent(PlayerEvent::OnError,
                                     std::to_string(static_cast<uint32_t>(res.error())));
@@ -349,13 +350,14 @@ void Player::Impl::buildPipeline() noexcept {
         return !self || !self->pipeline_ || self->pipeline_->canProduceSourceData();
     });
     // Inject the HLS time-seek callback; PlayPipeline uses this path when HLS is detected
-    pipeline_->setSeekByTimeFunc([weak = weak_from_this()](double timeSec) -> StreamResult<void> {
-        auto self = weak.lock();
-        if (!self) {
-            return std::unexpected(Error::InvalidOperation);
-        }
-        return self->mediaSourceManager_.seekByTime(timeSec);
-    });
+    pipeline_->setSeekByTimeFunc(
+        [weak = weak_from_this()](double timeSec, uint64_t sourceGeneration) -> StreamResult<void> {
+            auto self = weak.lock();
+            if (!self) {
+                return std::unexpected(Error::InvalidOperation);
+            }
+            return self->mediaSourceManager_.seekByTime(timeSec, sourceGeneration);
+        });
     // Pass the stream type so PlayPipeline::seek can distinguish HLS/HTTP/File paths
     pipeline_->setStreamType(mediaSourceManager_.streamType());
     pipeline_->setDemuxerComponent(demuxerComponent_);

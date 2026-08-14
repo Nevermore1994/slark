@@ -57,6 +57,7 @@ struct DemuxerResult {
     DemuxerResultCode resultCode = DemuxerResultCode::Normal;
     AVFramePtrArray audioFrames;
     AVFramePtrArray videoFrames;
+    uint64_t sourceGeneration = 0;
 };
 
 class IDemuxer : public NonCopyMovable {

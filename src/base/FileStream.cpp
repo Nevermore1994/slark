@@ -40,6 +40,7 @@ StreamResult<StreamInfo> FileStream::open(const OpenParams& params) {
         }
     }
 
+    sourceGeneration_.store(0, std::memory_order_release);
     state_ = StreamState::Ready;
     return info_;
 }
@@ -99,7 +100,7 @@ void FileStream::pause() noexcept {
     isRunning_ = false;
 }
 
-auto FileStream::seek(uint64_t position) -> StreamResult<void> {
+auto FileStream::seek(uint64_t position, uint64_t sourceGeneration) -> StreamResult<void> {
     if (!file_) {
         return std::unexpected(Error::InvalidOperation);
     }
@@ -108,10 +109,15 @@ auto FileStream::seek(uint64_t position) -> StreamResult<void> {
         return std::unexpected(Error::OutOfRange);
     }
 
+    if (!thread_ || !thread_->joinable()) {
+        return std::unexpected(Error::StreamNotReady);
+    }
     {
         std::lock_guard lock(mutex_);
         pendingSeekPos_ = position;
+        pendingSourceGeneration_ = sourceGeneration;
         seekCompleted_ = false;
+        seekError_ = Error::Success;
     }
     pendingSeekFlag_.store(true, std::memory_order_release);
     notifyThread();
@@ -122,6 +128,10 @@ auto FileStream::seek(uint64_t position) -> StreamResult<void> {
                 return seekCompleted_;
             })) {
             LogW("seek: wait for completion timeout, pos={}", pendingSeekPos_);
+            return std::unexpected(Error::StreamNotReady);
+        }
+        if (seekError_ != Error::Success) {
+            return std::unexpected(seekError_);
         }
     }
     return {};
@@ -140,7 +150,7 @@ bool FileStream::deliverData(std::shared_ptr<Data> buffer, bool eof) noexcept {
         state_ = StreamState::Completed;
         isRunning_ = false;
         if (params_.onComplete) {
-            params_.onComplete();
+            params_.onComplete(sourceGeneration_.load(std::memory_order_acquire));
         }
         return false;
     }
@@ -165,6 +175,7 @@ bool FileStream::deliverData(std::shared_ptr<Data> buffer, bool eof) noexcept {
             .owner = std::move(buffer),
             .offset = position_,
             .segmentIndex = 0,
+            .sourceGeneration = sourceGeneration_.load(std::memory_order_acquire),
             .isLastChunk = isLast,
         });
     }
@@ -174,7 +185,7 @@ bool FileStream::deliverData(std::shared_ptr<Data> buffer, bool eof) noexcept {
         state_ = StreamState::Completed;
         isRunning_ = false;
         if (params_.onComplete) {
-            params_.onComplete();
+            params_.onComplete(sourceGeneration_.load(std::memory_order_acquire));
         }
         return false;
     }
@@ -190,19 +201,25 @@ void FileStream::processPendingSeek() noexcept {
     eofReached_.store(false, std::memory_order_release);
     isCompleted_ = false;
     uint64_t seekPos = 0;
+    uint64_t sourceGeneration = 0;
     {
         std::lock_guard lock(mutex_);
         seekPos = pendingSeekPos_;
+        sourceGeneration = pendingSourceGeneration_;
         pendingSeekFlag_.store(false, std::memory_order_release);
     }
+    Error seekError = Error::InvalidOperation;
     if (file_) {
         auto result = file_->seek(static_cast<int64_t>(seekPos));
         if (result) {
             position_ = seekPos;
+            sourceGeneration_.store(sourceGeneration, std::memory_order_release);
+            seekError = Error::Success;
         }
     }
     {
         std::lock_guard lock(mutex_);
+        seekError_ = seekError;
         seekCompleted_ = true;
     }
     cv_.notify_all();

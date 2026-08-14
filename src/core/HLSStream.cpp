@@ -64,6 +64,7 @@ HLSStream::~HLSStream() {
 
 StreamResult<StreamInfo> HLSStream::open(const OpenParams& params) {
     params_ = params;
+    sourceGeneration_ = 0;
 
     if (params.onMetadata) {
         metadataCallback_ = params.onMetadata;
@@ -181,11 +182,11 @@ void HLSStream::pause() noexcept {
     LogI("[HLSStream::pause] seg={} pos={}", currentSegmentIndex_.load(), position_.load());
 }
 
-StreamResult<void> HLSStream::seek(uint64_t /*position*/) {
+StreamResult<void> HLSStream::seek(uint64_t /*position*/, uint64_t /*sourceGeneration*/) {
     return std::unexpected(Error::InvalidOperation);
 }
 
-StreamResult<void> HLSStream::seekByTime(double timeSec) {
+StreamResult<void> HLSStream::seekByTime(double timeSec, uint64_t sourceGeneration) {
     LogI("[HLSStream::seekByTime] time={}", timeSec);
     std::lock_guard<std::mutex> lock(mutex_);
     if (!playlist_ || playlist_->segments().empty()) {
@@ -199,6 +200,7 @@ StreamResult<void> HLSStream::seekByTime(double timeSec) {
         return std::unexpected(Error::OutOfRange);
     }
     currentSegmentIndex_.store(*segOpt);
+    sourceGeneration_ = sourceGeneration;
     nextSegmentSequence_ = playlist_->segments()[*segOpt].sequence;
     hasNextSegmentSequence_ = true;
     position_ = 0;
@@ -420,7 +422,7 @@ void HLSStream::downloadSegments() {
         isRunning_ = false;
 
         if (params_.onComplete) {
-            params_.onComplete();
+            params_.onComplete(sourceGeneration_);
         }
         return;
     }
@@ -555,6 +557,7 @@ void HLSStream::handleSegmentChunk(http::StreamChunk&& chunk, uint64_t sequence)
                 .owner = std::move(buffer),
                 .offset = position_,
                 .segmentIndex = sequence,
+                .sourceGeneration = sourceGeneration_,
                 .isLastChunk = isLastChunk,
             });
         }

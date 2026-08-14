@@ -399,12 +399,12 @@ class Data {
 
 struct DataPacket {
     DataPtr data = nullptr;
-    int64_t offset = 0;
+    uint64_t offset = 0;
     std::string tag;
     uint64_t segmentIndex = 0;
     bool isLastChunk = false;
     bool isEndOfStream = false;
-    uint64_t seekEpoch = 0;  // seek epoch, incremented on each seek to isolate stale packets end-to-end
+    uint64_t sourceGeneration = 0;
 
     DataPacket() = default;
 
@@ -420,7 +420,7 @@ struct DataPacket {
           segmentIndex(other.segmentIndex),
           isLastChunk(other.isLastChunk),
           isEndOfStream(other.isEndOfStream),
-          seekEpoch(other.seekEpoch) {}
+          sourceGeneration(other.sourceGeneration) {}
 
     DataPacket& operator=(DataPacket&& other) noexcept {
         data = std::move(other.data);
@@ -429,7 +429,7 @@ struct DataPacket {
         segmentIndex = other.segmentIndex;
         isLastChunk = other.isLastChunk;
         isEndOfStream = other.isEndOfStream;
-        seekEpoch = other.seekEpoch;
+        sourceGeneration = other.sourceGeneration;
         return *this;
     }
 

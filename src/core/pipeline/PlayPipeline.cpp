@@ -293,11 +293,17 @@ void PlayPipeline::performKeyframeSeek(CTime target, SeekStrategy strategy) noex
     }
     clockSync_->seekTo(Time::TimePoint::fromSeconds(targetSec));
     if (mediaInfo_.streamType == StreamType::HLS) {
-        if (seekByTimeFunc_) {
-            auto res = seekByTimeFunc_(targetSec);
-            if (!res.has_value()) {
-                LogE("HLS seekByTime failed: {}", static_cast<uint32_t>(res.error()));
-            }
+        if (!seekByTimeFunc_) {
+            fireEvent(PipelineEvent::ReadError,
+                      PipelineError{.error = Error::InvalidOperation});
+            return;
+        }
+        const auto sourceGeneration = demuxer_ ? demuxer_->beginSourceOperation() : 0;
+        auto res = seekByTimeFunc_(targetSec, sourceGeneration);
+        if (!res.has_value()) {
+            LogE("HLS seekByTime failed: {}", static_cast<uint32_t>(res.error()));
+            fireEvent(PipelineEvent::ReadError, PipelineError{.error = res.error()});
+            return;
         }
     } else if (demuxer_) {
         auto pos = demuxer_->getSeekToPos(targetSec);
@@ -1058,9 +1064,15 @@ void PlayPipeline::connectComponents() noexcept {
             if (!demuxer) {
                 return;
             }
-            handleDemuxHeader(demuxer);
-            const uint64_t currentEpoch = seekContext_->currentEpoch();
-            dispatchFrames(std::move(result), currentEpoch);
+            auto resultHolder = std::make_shared<DemuxerResult>(std::move(result));
+            postToOwnerThread([this, demuxer, resultHolder] {
+                if (!demuxer_ ||
+                    !demuxer_->isCurrentSourceGeneration(resultHolder->sourceGeneration)) {
+                    return;
+                }
+                handleDemuxHeader(demuxer);
+                dispatchFrames(std::move(*resultHolder), seekContext_->currentEpoch());
+            });
         });
 }
 
