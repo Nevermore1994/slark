@@ -58,37 +58,23 @@ void PlayPipeline::build() noexcept {
 
 void PlayPipeline::start() noexcept {
     assert(isOnOwnerThread());
-    const auto current = playerState_.load(std::memory_order_acquire);
-    LogI("PlayPipeline start, current state:{}", static_cast<int>(current));
-    if (current == PlayerState::Error || current == PlayerState::Stop) {
-        fireEvent(PipelineEvent::ReadError, PipelineError{.error = Error::InvalidOperation});
+    if (!componentStarted_.load(std::memory_order_acquire) ||
+        tearingDown_.load(std::memory_order_acquire)) {
         return;
     }
-    if (current == PlayerState::Playing) {
-        return;
+    if (audioRender_) {
+        audioRender_->start();
     }
-
-    if (current == PlayerState::Pause || current == PlayerState::Prepared ||
-        current == PlayerState::Ready || current == PlayerState::Buffering ||
-        current == PlayerState::Completed) {
-        if (audioRender_) {
-            audioRender_->start();
-        }
-        if (auto render = videoRender_.load()) {
-            render->start();
-        }
+    if (auto render = videoRender_.load()) {
+        render->start();
     }
     clockSync_->setClockRunning(true);
 }
 
 void PlayPipeline::pause() noexcept {
     assert(isOnOwnerThread());
-    const auto current = playerState_.load(std::memory_order_acquire);
-    if (current == PlayerState::Error || current == PlayerState::Stop) {
-        fireEvent(PipelineEvent::ReadError, PipelineError{.error = Error::InvalidOperation});
-        return;
-    }
-    if (current == PlayerState::Pause) {
+    if (!componentStarted_.load(std::memory_order_acquire) ||
+        tearingDown_.load(std::memory_order_acquire)) {
         return;
     }
     if (audioRender_) {
@@ -102,10 +88,10 @@ void PlayPipeline::pause() noexcept {
 
 void PlayPipeline::flush() noexcept {
     assert(isOnOwnerThread());
-    if (playerState_.load(std::memory_order_acquire) == PlayerState::Error) {
-        fireEvent(PipelineEvent::ReadError, PipelineError{.error = Error::InvalidOperation});
+    if (tearingDown_.load(std::memory_order_acquire)) {
         return;
     }
+    completionPending_.store(false, std::memory_order_release);
 
     videoFrames_.withLock([](auto& m) {
         m.clear();
@@ -154,12 +140,10 @@ bool PlayPipeline::teardown() noexcept {
     const bool joined = joinWithTimeout(kTeardownTimeout);
     if (!joined) {
         LogE("PlayPipeline teardown timeout, keeping pipeline alive");
-        playerState_.store(PlayerState::Error, std::memory_order_release);
         fireEvent(PipelineEvent::ReadError, PipelineError{.error = Error::InvalidOperation});
         return false;
     }
     componentStarted_.store(false, std::memory_order_release);
-    playerState_.store(PlayerState::Stop, std::memory_order_release);
     return true;
 }
 
@@ -190,9 +174,7 @@ SeekStrategy PlayPipeline::resolveSeekStrategy(double targetSec) const noexcept 
 
 void PlayPipeline::seek(CTime target, bool isAccurate) noexcept {
     assert(isOnOwnerThread());
-    if (playerState_.load(std::memory_order_acquire) == PlayerState::Error ||
-        tearingDown_.load(std::memory_order_acquire)) {
-        fireEvent(PipelineEvent::ReadError, PipelineError{.error = Error::InvalidOperation});
+    if (tearingDown_.load(std::memory_order_acquire)) {
         return;
     }
 
@@ -386,10 +368,6 @@ bool PlayPipeline::isDecodeCompleted() const noexcept {
 AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
     recordVsyncInterval();
 
-    const auto state = playerState_.load(std::memory_order_acquire);
-    if (state != PlayerState::Playing) {
-        return nullptr;
-    }
     if (hasReachedPlaybackRangeEnd()) {
         checkPlaybackComplete();
         return nullptr;
@@ -596,11 +574,9 @@ void PlayPipeline::onBufferEvent(PipelineEvent event, std::optional<PipelineErro
     fireEvent(event, std::move(error));
 }
 
-void PlayPipeline::onFastTick() noexcept {
+void PlayPipeline::onFastTick(bool isPlaying) noexcept {
     assert(isOnOwnerThread());
-    if (tearingDown_.load(std::memory_order_acquire) ||
-        playerState_.load(std::memory_order_acquire) == PlayerState::Stop ||
-        playerState_.load(std::memory_order_acquire) == PlayerState::Error) {
+    if (tearingDown_.load(std::memory_order_acquire)) {
         return;
     }
     if (audioRender_) {
@@ -609,28 +585,28 @@ void PlayPipeline::onFastTick() noexcept {
     if (auto* monitor = bufferMonitor_.get()) {
         monitor->onHeartbeat();
     }
-    pushAudioFrames();
+    pushAudioFrames(isPlaying);
     pushSeekFrames();
-    if (hasReachedPlaybackRangeEnd()) {
+    if (isPlaying && hasReachedPlaybackRangeEnd()) {
         checkPlaybackComplete();
     }
 }
 
 void PlayPipeline::checkPlaybackComplete() noexcept {
     postToOwnerThread([this] {
-        const auto state = playerState_.load(std::memory_order_acquire);
-        if (tearingDown_.load(std::memory_order_acquire) || state == PlayerState::Error ||
-            state == PlayerState::Stop || state == PlayerState::Completed) {
+        if (tearingDown_.load(std::memory_order_acquire) ||
+            completionPending_.load(std::memory_order_acquire)) {
             return;
         }
-        if (state != PlayerState::Playing && state != PlayerState::Pause) {
-            return;
-        }
+        const auto complete = [this] {
+            if (!completionPending_.exchange(true, std::memory_order_acq_rel)) {
+                fireEvent(PipelineEvent::RenderEnd);
+            }
+        };
 
         if (hasReachedPlaybackRangeEnd()) {
-            playerState_.store(PlayerState::Completed, std::memory_order_release);
             LogI("playback range complete, firing RenderEnd");
-            fireEvent(PipelineEvent::RenderEnd);
+            complete();
             return;
         }
 
@@ -647,9 +623,8 @@ void PlayPipeline::checkPlaybackComplete() noexcept {
             return;
         }
 
-        playerState_.store(PlayerState::Completed, std::memory_order_release);
         LogI("playback complete, firing RenderEnd");
-        fireEvent(PipelineEvent::RenderEnd);
+        complete();
     });
 }
 
@@ -862,9 +837,7 @@ void PlayPipeline::setDemuxerComponent(std::shared_ptr<DemuxerComponent> demuxer
 }
 
 bool PlayPipeline::isDecodedFrameSkippable(const DecoderData& data) noexcept {
-    if (tearingDown_.load(std::memory_order_acquire) ||
-        playerState_.load(std::memory_order_acquire) == PlayerState::Stop ||
-        playerState_.load(std::memory_order_acquire) == PlayerState::Error) {
+    if (tearingDown_.load(std::memory_order_acquire)) {
         return true;
     }
     if (!data.frame) {
@@ -1330,7 +1303,6 @@ bool PlayPipeline::joinWithTimeout(std::chrono::milliseconds timeout) noexcept {
 }
 
 void PlayPipeline::enterFaultedState() noexcept {
-    playerState_.store(PlayerState::Error, std::memory_order_release);
     LogE("PlayPipeline entered Error state");
     if (isOnOwnerThread()) {
         fireEvent(PipelineEvent::ReadError, PipelineError{.error = Error::InvalidOperation});
@@ -1344,8 +1316,8 @@ void PlayPipeline::enterFaultedState() noexcept {
     }
 }
 
-void PlayPipeline::pushAudioFrames() noexcept {
-    if (!audioRender_ || playerState_.load(std::memory_order_acquire) != PlayerState::Playing) {
+void PlayPipeline::pushAudioFrames(bool isPlaying) noexcept {
+    if (!audioRender_ || !isPlaying) {
         return;
     }
     bool hasPushed = false;

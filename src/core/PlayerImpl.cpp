@@ -172,7 +172,7 @@ void Player::Impl::init() noexcept {
                 return;
             }
             if (auto pipeline = pipeline_) {
-                pipeline->onFastTick();
+                pipeline->onFastTick(state() == PlayerState::Playing);
             }
         });
     playedTimeTaskId_ =
@@ -742,9 +742,6 @@ void Player::Impl::setState(PlayerState state) noexcept {
     LogI("setState: {} -> {}", static_cast<uint32_t>(previousState),
          static_cast<uint32_t>(state));
     applyStateAction(state);
-    if (pipeline_) {
-        pipeline_->setPlayerState(state);
-    }
     notifyPlayerState(state);
 }
 
@@ -1072,7 +1069,7 @@ double Player::Impl::demuxedDuration() const noexcept {
 }
 
 AVFrameRefPtr Player::Impl::requestRender() noexcept {
-    if (!pipeline_) {
+    if (!pipeline_ || state() != PlayerState::Playing) {
         return nullptr;
     }
     return pipeline_->requestVideoFrame();

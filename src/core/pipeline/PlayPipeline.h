@@ -98,7 +98,7 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
     void drainPendingTasks() noexcept;
 
     // High-frequency tick (playerThreadTickMs): backpressure regulation + audio frame pushing
-    void onFastTick() noexcept;
+    void onFastTick(bool isPlaying) noexcept;
 
     void setStreamControl(StreamControlFunc pauseStream, StreamControlFunc resumeStream) noexcept;
 
@@ -111,10 +111,6 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
     }
 
     void setPlaybackRange(double start, double duration, bool enabled) noexcept;
-
-    void setPlayerState(PlayerState state) noexcept {
-        playerState_.store(state, std::memory_order_release);
-    }
 
     void setPlaySession(std::weak_ptr<perf::PlaySession> session) noexcept {
         playSession_ = std::move(session);
@@ -130,10 +126,6 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     [[nodiscard]] const MediaInfo& mediaInfo() const noexcept {
         return mediaInfo_;
-    }
-
-    [[nodiscard]] bool isFaulted() const noexcept {
-        return playerState_.load(std::memory_order_acquire) == PlayerState::Error;
     }
 
     [[nodiscard]] bool isBuilt() const noexcept {
@@ -267,7 +259,7 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     [[nodiscard]] AVFrameRefPtr popVideoFrame() noexcept;
 
-    void pushAudioFrames() noexcept;
+    void pushAudioFrames(bool isPlaying) noexcept;
     void pushSeekFrames() noexcept;
 
     void recordVsyncInterval() noexcept;
@@ -340,8 +332,8 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     std::weak_ptr<perf::PlaySession> playSession_;
 
-    std::atomic<PlayerState> playerState_{PlayerState::NotInited};
     std::atomic<bool> tearingDown_{false};
+    std::atomic<bool> completionPending_{false};
     std::atomic<bool> componentStarted_{false};
 
     double playbackRangeStart_ = 0.0;
