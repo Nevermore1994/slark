@@ -21,27 +21,6 @@ inline int64_t streamProgressLogBytes() {
     return static_cast<int64_t>(getLogConfig().progressLogBytes);
 }
 
-Error mapLegacyErrorToUnified(Error error) noexcept {
-    switch (error) {
-        case Error::ConnectionTimeout:
-        case Error::ConnectionReset:
-        case Error::ConnectionRefused:
-        case Error::BrokenPipe:
-        case Error::SocketClosed:
-        case Error::SocketError:
-        case Error::InvalidSocket:
-        case Error::ConnectionFailed:
-        case Error::NetworkError:
-        case Error::DnsResolveFailed:
-        case Error::HttpSslError:
-        case Error::HttpSslHandshakeFailed:
-        case Error::Cancelled:
-            return error;
-        default:
-            return slark::Error::NetworkError;
-    }
-}
-
 Task<OpenConnectionResult> openRequestConnection(const RequestInfo& requestInfo,
                                           const Url& url,
                                           RequestPerf& perf,
@@ -86,7 +65,7 @@ Task<ErrorInfo> sendRequestPart(OwnedConnection& conn,
         co_return ErrorInfo{slark::Error::Cancelled};
     }
 
-    const auto error = mapLegacyErrorToUnified(result.error());
+    const auto error = normalizeTransportError(result.error());
     LogE("[HttpProcessor::sendRequestPart] {} failed: error={} legacyErr={} url={}", partName,
          static_cast<int>(error), static_cast<int>(result.error()), requestInfo.url);
     co_return ErrorInfo{error};
@@ -144,7 +123,7 @@ HttpResponseParser::Callbacks makeEventCallbacks(
 }
 
 ErrorInfo classifyStreamReadError(Error error, bool overallExpired, RequestPerf& perf) noexcept {
-    const auto unifiedError = mapLegacyErrorToUnified(error);
+    const auto unifiedError = normalizeTransportError(error);
     if (unifiedError == Error::ConnectionTimeout) {
         perf.transport.timeoutSource =
             overallExpired ? TimeoutSource::ReadOverall : TimeoutSource::ReadIdle;
@@ -513,10 +492,13 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(
 
 AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(RequestInfo requestInfo,
                                                             CancellationToken token) {
-    auto events = processEvents(std::move(requestInfo), std::move(token));
+    auto events = processEvents(std::move(requestInfo), token);
     while (true) {
         auto event = co_await events.next();
         if (!event.has_value()) {
+            co_yield StreamChunk::makeError(token.isCancelled()
+                                                ? ErrorInfo{slark::Error::Cancelled}
+                                                : ErrorInfo{slark::Error::ConnectionReset});
             co_return;
         }
 

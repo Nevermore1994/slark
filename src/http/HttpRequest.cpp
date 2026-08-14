@@ -7,6 +7,27 @@
 
 namespace slark::http {
 
+namespace {
+
+void settleOperationError(const std::shared_ptr<OperationState>& operation,
+                          const ErrorInfo& error) noexcept {
+    if (error.retCode == slark::Error::Cancelled || operation->token.isCancelled()) {
+        operation->cancel();
+    } else {
+        operation->markFailed();
+    }
+}
+
+void settleOperationException(const std::shared_ptr<OperationState>& operation) noexcept {
+    if (operation->token.isCancelled()) {
+        operation->cancel();
+    } else {
+        operation->markFailed();
+    }
+}
+
+}  // namespace
+
 bool OperationState::transition(OperationStatus expected, OperationStatus desired) noexcept {
     return status_.compare_exchange_strong(
         expected, desired, std::memory_order_acq_rel, std::memory_order_acquire);
@@ -86,19 +107,10 @@ Task<HttpResponse> HttpRequest::executeWithToken(RequestInfo requestInfo,
              requestInfo.url);
         HttpResponse response;
         response.error = result.error();
-        if (result.error().retCode == slark::Error::Cancelled ||
-            operation->token.isCancelled()) {
-            operation->cancel();
-        } else {
-            operation->markFailed();
-        }
+        settleOperationError(operation, result.error());
         co_return response;
     } catch (...) {
-        if (operation->token.isCancelled()) {
-            operation->cancel();
-        } else {
-            operation->markFailed();
-        }
+        settleOperationException(operation);
         throw;
     }
 }
@@ -163,21 +175,12 @@ AsyncGenerator<StreamChunk> HttpRequest::streamWithOperation(
                 co_return;
             }
             if (chunk->hasError()) {
-                if (chunk->error.retCode == slark::Error::Cancelled ||
-                    operation->token.isCancelled()) {
-                    operation->cancel();
-                } else {
-                    operation->markFailed();
-                }
+                settleOperationError(operation, chunk->error);
             }
             co_yield std::move(*chunk);
         }
     } catch (...) {
-        if (operation->token.isCancelled()) {
-            operation->cancel();
-        } else {
-            operation->markFailed();
-        }
+        settleOperationException(operation);
         throw;
     }
 }

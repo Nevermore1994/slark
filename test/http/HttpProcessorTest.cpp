@@ -44,6 +44,14 @@ HttpResponse executeSync(const RequestInfo& info) {
 
 }  // namespace
 
+TEST(HttpProcessorTest, NormalizeTransportErrorPreservesSpecificCodes) {
+    EXPECT_EQ(normalizeTransportError(Error::ConnectionTimeout), Error::ConnectionTimeout);
+    EXPECT_EQ(normalizeTransportError(Error::ConnectionRefused), Error::ConnectionRefused);
+    EXPECT_EQ(normalizeTransportError(Error::HttpSslError), Error::HttpSslError);
+    EXPECT_EQ(normalizeTransportError(Error::Cancelled), Error::Cancelled);
+    EXPECT_EQ(normalizeTransportError(Error::Failed), Error::NetworkError);
+}
+
 TEST(HttpProcessorTest, ProcessGetReturnsSuccess) {
     RequestInfo info;
     info.url = "http://httpbingo.org/get";

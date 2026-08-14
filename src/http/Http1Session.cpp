@@ -20,27 +20,6 @@ namespace {
 
 constexpr auto kIdleTimeout = std::chrono::seconds(30);
 
-Error mapLegacyErrorToUnified(Error error) noexcept {
-    switch (error) {
-        case Error::ConnectionTimeout:
-        case Error::ConnectionReset:
-        case Error::ConnectionRefused:
-        case Error::BrokenPipe:
-        case Error::SocketClosed:
-        case Error::SocketError:
-        case Error::InvalidSocket:
-        case Error::ConnectionFailed:
-        case Error::NetworkError:
-        case Error::DnsResolveFailed:
-        case Error::HttpSslError:
-        case Error::HttpSslHandshakeFailed:
-        case Error::Cancelled:
-            return error;
-        default:
-            return slark::Error::NetworkError;
-    }
-}
-
 Task<ErrorInfo> sendRequestPart(const std::shared_ptr<OwnedConnection>& connection,
                                 std::string_view data,
                                 const RequestInfo& requestInfo,
@@ -58,7 +37,7 @@ Task<ErrorInfo> sendRequestPart(const std::shared_ptr<OwnedConnection>& connecti
         co_return ErrorInfo{slark::Error::Cancelled};
     }
 
-    const auto error = mapLegacyErrorToUnified(result.error());
+    const auto error = normalizeTransportError(result.error());
     LogE("[Http1Session::sendRequestPart] {} failed: error={} legacyErr={} url={}", partName,
          static_cast<int>(error), static_cast<int>(result.error()), requestInfo.url);
     co_return ErrorInfo{error};
@@ -101,7 +80,7 @@ HttpResponseParser::Callbacks makeEventCallbacks(
 }
 
 ErrorInfo classifyReadError(Error error, bool overallExpired, RequestPerf& perf) noexcept {
-    const auto unifiedError = mapLegacyErrorToUnified(error);
+    const auto unifiedError = normalizeTransportError(error);
     if (unifiedError == Error::ConnectionTimeout) {
         perf.transport.timeoutSource =
             overallExpired ? TimeoutSource::ReadOverall : TimeoutSource::ReadIdle;

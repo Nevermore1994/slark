@@ -213,6 +213,27 @@ struct RequestInfo {
 
 using RequestInfoPtr = std::unique_ptr<RequestInfo>;
 
+inline slark::Error normalizeTransportError(slark::Error error) noexcept {
+    switch (error) {
+        case slark::Error::ConnectionTimeout:
+        case slark::Error::ConnectionReset:
+        case slark::Error::ConnectionRefused:
+        case slark::Error::BrokenPipe:
+        case slark::Error::SocketClosed:
+        case slark::Error::SocketError:
+        case slark::Error::InvalidSocket:
+        case slark::Error::ConnectionFailed:
+        case slark::Error::NetworkError:
+        case slark::Error::DnsResolveFailed:
+        case slark::Error::HttpSslError:
+        case slark::Error::HttpSslHandshakeFailed:
+        case slark::Error::Cancelled:
+            return error;
+        default:
+            return slark::Error::NetworkError;
+    }
+}
+
 struct ErrorInfo {
     slark::Error retCode = slark::Error::Success;
     int32_t originErrorCode = 0;
