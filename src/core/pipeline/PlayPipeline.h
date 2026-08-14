@@ -213,8 +213,6 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     void onPrebufferComplete() noexcept override;
 
-    void onDropOldest() noexcept override;
-
     void onBufferEvent(PipelineEvent event, std::optional<PipelineError> error) noexcept override;
 
     void postToOwnerThread(std::function<void()> task) noexcept;
@@ -273,20 +271,8 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     [[nodiscard]] AVFrameRefPtr popVideoFrame() noexcept;
 
-    void dropOldestFrames() noexcept;
-
     void pushAudioFrames() noexcept;
     void pushSeekFrames() noexcept;
-
-    struct QueueBounds {
-        double audioOldestPts = -1.0;
-        double videoOldestPts = -1.0;
-        double maxPts = 0.0;
-    };
-
-    [[nodiscard]] QueueBounds snapshotQueueBounds() noexcept;
-
-    int32_t dropFramesUpTo(double cutoffPts) noexcept;
 
     void recordVsyncInterval() noexcept;
 

@@ -570,10 +570,6 @@ void PlayPipeline::onPrebufferComplete() noexcept {
     firePipelineReady();
 }
 
-void PlayPipeline::onDropOldest() noexcept {
-    dropOldestFrames();
-}
-
 void PlayPipeline::onBufferEvent(PipelineEvent event, std::optional<PipelineError> error) noexcept {
     if (!isOnOwnerThread()) {
         postToOwnerThread([this, event, error = std::move(error)]() mutable {
@@ -1269,59 +1265,6 @@ bool PlayPipeline::joinWithTimeout(std::chrono::milliseconds timeout) noexcept {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     return false;
-}
-
-PlayPipeline::QueueBounds PlayPipeline::snapshotQueueBounds() noexcept {
-    QueueBounds b{};
-    videoFrames_.withLock([&](const auto& m) {
-        if (!m.empty()) {
-            b.videoOldestPts = m.begin()->second->ptsTime();
-            b.maxPts = std::max(b.maxPts, m.rbegin()->second->ptsTime());
-        }
-    });
-    audioFrames_.withLock([&](const auto& q) {
-        if (!q.empty()) {
-            b.audioOldestPts = q.front()->ptsTime();
-            b.maxPts = std::max(b.maxPts, q.back()->ptsTime());
-        }
-    });
-    return b;
-}
-
-int32_t PlayPipeline::dropFramesUpTo(double cutoffPts) noexcept {
-    int32_t dropped = 0;
-    videoFrames_.withLock([&](auto& m) {
-        while (!m.empty() && m.begin()->second->ptsTime() <= cutoffPts) {
-            m.erase(m.begin());
-            ++dropped;
-        }
-    });
-    return dropped;
-}
-
-void PlayPipeline::dropOldestFrames() noexcept {
-    const double target = config_.demuxHighWatermarkDuration;
-    const double currentSec = clockSync_->masterTime().second();
-    int32_t droppedTotal = 0;
-
-    while (true) {
-        const auto bounds = snapshotQueueBounds();
-        if (std::max(0.0, bounds.maxPts - currentSec) <= target) {
-            break;
-        }
-        const double cutoffPts = std::max(bounds.audioOldestPts, bounds.videoOldestPts);
-        if (cutoffPts < 0.0) {
-            break;
-        }
-        const int32_t dropped = dropFramesUpTo(cutoffPts);
-        droppedTotal += dropped;
-        if (dropped == 0) {
-            break;
-        }
-    }
-    if (droppedTotal > 0) {
-        LogW("hard-cap triggered: dropped {} frames to converge buffer", droppedTotal);
-    }
 }
 
 void PlayPipeline::enterFaultedState() noexcept {

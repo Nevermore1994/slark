@@ -25,7 +25,6 @@ class MockDelegate : public IBufferMonitorDelegate {
     MOCK_METHOD(void, pauseVideoDecoder, (), (noexcept, override));
     MOCK_METHOD(void, resumeVideoDecoder, (), (noexcept, override));
     MOCK_METHOD(void, onPrebufferComplete, (), (noexcept, override));
-    MOCK_METHOD(void, onDropOldest, (), (noexcept, override));
     MOCK_METHOD(void,
                 onBufferEvent,
                 (PipelineEvent, std::optional<PipelineError>),
@@ -254,20 +253,6 @@ TEST(BufferMonitorTest, DemuxEofSkipsDataFlowRegulation) {
     monitor.setDemuxEof();
     monitor.onHeartbeat();
 }
-
-TEST(BufferMonitorTest, DecoderEofSkipsDecoderFlowRegulation) {
-    MockDelegate delegate;
-    auto cfg = BackpressureConfig::forNetwork();
-
-    EXPECT_CALL(delegate, demuxedDuration()).WillRepeatedly(Return(5.0));
-    EXPECT_CALL(delegate, audioDecodedFrameCount()).Times(0);
-    EXPECT_CALL(delegate, videoDecodedFrameCount()).Times(0);
-
-    BufferMonitor monitor(cfg, delegate);
-    monitor.setDecoderEof();
-    monitor.onHeartbeat();
-}
-
 
 TEST(BufferMonitorTest, PrebufferRegulatesDataFlow) {
     MockDelegate delegate;

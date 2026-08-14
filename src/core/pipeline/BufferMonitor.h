@@ -28,7 +28,6 @@ struct IBufferMonitorDelegate {
     virtual void pauseVideoDecoder() noexcept = 0;
     virtual void resumeVideoDecoder() noexcept = 0;
     virtual void onPrebufferComplete() noexcept = 0;
-    virtual void onDropOldest() noexcept = 0;
     virtual void onBufferEvent(PipelineEvent event,
                                std::optional<PipelineError> error) noexcept = 0;
 };
@@ -38,8 +37,6 @@ class BufferMonitor {
     BufferMonitor(const BackpressureConfig& config, IBufferMonitorDelegate& delegate) noexcept;
 
     void onDemuxedDataEnqueued() noexcept;
-
-    void onDecodedDataEnqueued() noexcept;
 
     void onHeartbeat() noexcept;
 
@@ -63,10 +60,6 @@ class BufferMonitor {
         }
     }
 
-    void setDecoderEof() noexcept {
-        decoderEof_ = true;
-    }
-
     void onStarvation(bool isLocalSource) noexcept;
 
     void resetStarvationCount() noexcept {
@@ -82,6 +75,7 @@ class BufferMonitor {
     }
 
  private:
+    void checkDataFlow() noexcept;
     void regulateDataFlow(double duration, bool allowBufferingEvents) noexcept;
     void regulateDecoderFlow() noexcept;
     void checkPrebufferComplete(double duration) noexcept;
@@ -153,7 +147,6 @@ class BufferMonitor {
 
     bool audioDecoderPaused_ = false;
     bool videoDecoderPaused_ = false;
-    bool decoderEof_ = false;
 
     bool isPrebuffering_ = false;
     bool isRebuffering_ = false;
@@ -162,7 +155,6 @@ class BufferMonitor {
     int32_t starvationCount_ = 0;
 
     std::optional<TimePoint> lastCheckTime_;
-    std::optional<TimePoint> lastDecoderCheckTime_;
 };
 
 }  // namespace slark

@@ -21,43 +21,25 @@ void BufferMonitor::onDemuxedDataEnqueued() noexcept {
     }
     lastCheckTime_ = now;
 
-    const double duration = demuxedDuration();
-    if (isPrebuffering_) {
-        regulateDataFlow(duration, false);
-        checkPrebufferComplete(duration);
-    } else {
-        regulateDataFlow(duration, true);
-    }
-}
-
-void BufferMonitor::onDecodedDataEnqueued() noexcept {
-    if (decoderEof_) {
-        return;
-    }
-    constexpr auto kThrottle = std::chrono::milliseconds(50);
-    auto now = Clock::now();
-    if (lastDecoderCheckTime_.has_value() && (now - *lastDecoderCheckTime_) < kThrottle) {
-        return;
-    }
-    lastDecoderCheckTime_ = now;
-    regulateDecoderFlow();
+    checkDataFlow();
 }
 
 void BufferMonitor::onHeartbeat() noexcept {
     if (!demuxEof_) {
-        const double duration = demuxedDuration();
-        if (isPrebuffering_) {
-            regulateDataFlow(duration, false);
-            checkPrebufferComplete(duration);
-        } else {
-            regulateDataFlow(duration, true);
-        }
+        checkDataFlow();
     }
     // Keep checking the exit condition during rebuffering, independent of streamPaused_
     // (BufferingStart may not have paused the stream)
     checkRebufferComplete();
-    if (!decoderEof_) {
-        regulateDecoderFlow();
+    regulateDecoderFlow();
+}
+
+void BufferMonitor::checkDataFlow() noexcept {
+    const double duration = demuxedDuration();
+    const bool isStarting = isPrebuffering_;
+    regulateDataFlow(duration, !isStarting);
+    if (isStarting) {
+        checkPrebufferComplete(duration);
     }
 }
 
@@ -75,20 +57,14 @@ void BufferMonitor::reset() noexcept {
     demuxEof_ = false;
     audioDecoderPaused_ = false;
     videoDecoderPaused_ = false;
-    decoderEof_ = false;
     isPrebuffering_ = false;
     isRebuffering_ = false;
     readyFired_ = false;
     starvationCount_ = 0;
     lastCheckTime_.reset();
-    lastDecoderCheckTime_.reset();
 }
 
 void BufferMonitor::regulateDecoderFlow() noexcept {
-    if (decoderEof_) {
-        return;
-    }
-
     {
         int32_t frames = delegate_.audioDecodedFrameCount();
         if (frames >= config_.audioDecoderHighWatermarkFrames) {
