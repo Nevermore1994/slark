@@ -277,17 +277,6 @@ Task<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
             co_return static_cast<size_t>(result);
         }
 
-        if (result == 0) {
-            if (transport_->isCleanEof(result)) {
-                LogI("[AsyncSocket::asyncReceive] peer closed (EOF)");
-                co_return size_t{0};
-            }
-            const auto error = transport_->classifyError(result);
-            LogE("[AsyncSocket::asyncReceive] peer closed with transport error={}",
-                 static_cast<int>(error));
-            co_return std::unexpected(error);
-        }
-
         if (transport_->needsRetry(result)) {
             waitCount++;
             if (transport_->retryImmediately(result)) {
@@ -306,6 +295,17 @@ Task<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
                 co_return std::unexpected(Error::ConnectionTimeout);
             }
             continue;
+        }
+
+        if (result == 0) {
+            if (transport_->isCleanEof(result)) {
+                LogI("[AsyncSocket::asyncReceive] peer closed (EOF)");
+                co_return size_t{0};
+            }
+            const auto error = transport_->classifyError(result);
+            LogE("[AsyncSocket::asyncReceive] peer closed with transport error={}",
+                 static_cast<int>(error));
+            co_return std::unexpected(error);
         }
 
         const auto error = transport_->classifyError(result);
@@ -418,12 +418,13 @@ bool TLSTransport::needsRetry(ssize_t result) const noexcept {
     if (lastSslError_ == SSL_ERROR_WANT_READ || lastSslError_ == SSL_ERROR_WANT_WRITE) {
         return true;
     }
-    return result < 0 && lastSslError_ == SSL_ERROR_SYSCALL &&
-           (lastErrno_ == EAGAIN || lastErrno_ == EWOULDBLOCK || lastErrno_ == EINTR);
+    // Some Android TLS stacks report SSL_ERROR_SSL while the nonblocking syscall
+    // only means that more data is needed. The errno is authoritative here.
+    return result <= 0 && isTransientSocketError(lastErrno_);
 }
 
 bool TLSTransport::retryImmediately(ssize_t) const noexcept {
-    return lastSslError_ == SSL_ERROR_SYSCALL && lastErrno_ == EINTR;
+    return lastErrno_ == EINTR;
 }
 
 bool TLSTransport::isCleanEof(ssize_t result) const noexcept {

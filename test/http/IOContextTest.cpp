@@ -41,6 +41,12 @@ TEST(IOContextTest, TransportErrnoPreservesWriteMeaning) {
     EXPECT_EQ(mapTransportErrno(EIO), Error::SocketError);
 }
 
+TEST(IOContextTest, TransientSocketErrorsAreRetryable) {
+    EXPECT_TRUE(isTransientSocketError(EAGAIN));
+    EXPECT_TRUE(isTransientSocketError(EINTR));
+    EXPECT_FALSE(isTransientSocketError(EPIPE));
+}
+
 TEST(IOContextTest, RegisterAndUnregisterSocket) {
     int fds[2];
     ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);

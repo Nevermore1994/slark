@@ -24,6 +24,10 @@ constexpr std::chrono::milliseconds kDefaultConnectTimeout{std::chrono::seconds{
 constexpr std::chrono::milliseconds kDefaultReadTimeout{std::chrono::seconds{30}};
 constexpr std::chrono::milliseconds kDefaultWriteTimeout{std::chrono::seconds{30}};
 
+inline bool isTransientSocketError(int error) noexcept {
+    return error == EAGAIN || error == EWOULDBLOCK || error == EINTR;
+}
+
 inline Error mapTransportErrno(int error) noexcept {
     switch (error) {
         case EPIPE:
@@ -66,16 +70,18 @@ class PlainTransport final : public ITransport {
 
     ssize_t write(const void* data, size_t size) noexcept override {
         lastInterest_ = FdReadyAwaiter::Interest::Write;
+        errno = 0;
         return ::send(fd_, data, size, kNoSignal);
     }
 
     ssize_t read(void* buffer, size_t size) noexcept override {
         lastInterest_ = FdReadyAwaiter::Interest::Read;
+        errno = 0;
         return ::read(fd_, buffer, size);
     }
 
     bool needsRetry(ssize_t result) const noexcept override {
-        return result < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR);
+        return result <= 0 && isTransientSocketError(errno);
     }
 
     bool retryImmediately(ssize_t) const noexcept override {
