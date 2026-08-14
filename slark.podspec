@@ -1,4 +1,5 @@
 is_enable_https = true
+enable_https_flag = is_enable_https ? 1 : 0
 
 Pod::Spec.new do |s|
     s.name         = "slark"
@@ -39,8 +40,7 @@ Pod::Spec.new do |s|
                       'src/platform/iOS/*.h',
                       'src/platform/iOS/*.cpp',
                       'src/platform/iOS/*.mm',
-                      'src/platform/iOS/interface/*.h',
-                      'src/platform/iOS/interface/*.mm'
+                      'src/platform/iOS/interface/*.h'
 
     s.public_header_files = 'src/platform/iOS/interface/*.h'  
 

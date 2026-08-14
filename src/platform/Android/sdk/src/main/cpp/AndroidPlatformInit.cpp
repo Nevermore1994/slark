@@ -7,13 +7,9 @@
 #include <sys/stat.h>
 
 #include "AAudioRender.h"
-#include "AndroidEGLContext.h"
 #include "Base.h"
 #include "HttpsHelper.h"
 #include "Log.hpp"
-#include "MediaDefs.h"
-#include "PlatformRegistry.h"
-#include "VideoHardwareDecoder.h"
 
 DISABLE_WARNINGS
 #include <openssl/ssl.h>
@@ -84,42 +80,20 @@ void loadAndroidSystemCerts(SSL_CTX* ctx) {
     LogI("Loaded {} system CA certificates from {}", loadedCount, kSystemCaDir);
 }
 
-struct AndroidPlatformRegistrar {
-    AndroidPlatformRegistrar() noexcept {
-        auto& registry = PlatformRegistry::instance();
-
-        registry.registerAudioRenderFactory([](const std::shared_ptr<AudioInfo>& info) {
-            return std::make_shared<AAudioRender>(info);
-        });
-
-        registry.registerGLContextFactory([]() -> IEGLContextRefPtr {
-            return std::make_shared<AndroidEGLContext>();
-        });
-
-        registry.registerMediaInfo(std::string(MEDIA_MIMETYPE_AUDIO_AAC) + "HW",
-                                   DecoderType::AACHardwareDecoder);
-
-        registry.registerMediaInfo(std::string(MEDIA_MIMETYPE_VIDEO_AVC) + "HW",
-                                   DecoderType::VideoHardwareDecoder);
-        registry.registerMediaInfo(std::string(MEDIA_MIMETYPE_VIDEO_HEVC) + "HW",
-                                   DecoderType::VideoHardwareDecoder);
-        registry.registerDecoderInfo(DecoderType::VideoHardwareDecoder,
-                                     VideoHardwareDecoder::info());
-
-        // Configure HTTPS CA certs: loaded from the Android system certificate directory.
-        // SSLManager::shareContext() calls configContext on the first SSL connection.
+struct AndroidHttpsConfigurator {
+    AndroidHttpsConfigurator() noexcept {
         http::HttpsHelper::configContext = [](http::SSLContextPtr& ctx) {
             loadAndroidSystemCerts(ctx.get());
         };
     }
 };
 
-static AndroidPlatformRegistrar androidPlatformRegistrar;
+static AndroidHttpsConfigurator androidHttpsConfigurator;
 
 }  // namespace
 
 std::shared_ptr<IAudioRender> createAudioRender(const std::shared_ptr<AudioInfo>& audioInfo) {
-    return PlatformRegistry::instance().createAudioRender(audioInfo);
+    return std::make_shared<AAudioRender>(audioInfo);
 }
 
 }  // namespace slark

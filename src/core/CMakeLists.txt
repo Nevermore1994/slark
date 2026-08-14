@@ -1,27 +1,4 @@
-set(SLARK_PLATFORM_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../platform)
-
-set(CORE_FILE_LISTS
-    ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/*.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/*.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/audio/*.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/audio/*.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/audio/*.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/demuxer/*.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/demuxer/*.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/demuxer/*.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/codec/*.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/codec/*.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/codec/*.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/pipeline/*.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/pipeline/*.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/pipeline/*.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/perf/*.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/perf/*.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/perf/*.h
-)
-
-file(GLOB CORE_FILES CONFIGURE_DEPENDS ${CORE_FILE_LISTS})
+slark_collect_sources(CORE_FILES "${CMAKE_CURRENT_SOURCE_DIR}")
 
 add_library(slark_core OBJECT ${CORE_FILES})
 

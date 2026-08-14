@@ -1,11 +1,4 @@
-set(BASE_FILE_LISTS
-    ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/*.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/*.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/coroutine/*.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/coroutine/*.cpp
-)
-file(GLOB BASE_FILES CONFIGURE_DEPENDS ${BASE_FILE_LISTS})
+slark_collect_sources(BASE_FILES "${CMAKE_CURRENT_SOURCE_DIR}")
 
 add_library(slark_base OBJECT ${BASE_FILES})
 

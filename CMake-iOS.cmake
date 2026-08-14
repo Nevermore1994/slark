@@ -15,31 +15,26 @@ macro(add_ios_framework)
     message(STATUS "Building for iOS: slark.framework")
 
     # --- 收集各模块源文件 ---
-    file(GLOB_RECURSE BASE_SOURCES CONFIGURE_DEPENDS
-        "${BASE_DIR}/*.cpp" "${BASE_DIR}/*.hpp" "${BASE_DIR}/*.h"
-    )
+    slark_collect_sources(BASE_SOURCES "${BASE_DIR}")
 
     set(CORE_SOURCES "")
 
     if(NOT DISABLE_CORE)
-        file(GLOB_RECURSE CORE_SOURCES CONFIGURE_DEPENDS
-            "${CORE_DIR}/*.cpp" "${CORE_DIR}/*.hpp" "${CORE_DIR}/*.h"
-        )
+        slark_collect_sources(CORE_SOURCES "${CORE_DIR}")
     endif()
 
     set(HTTP_SOURCES "")
 
     if(NOT DISABLE_HTTP)
         message(STATUS "enable http")
-        file(GLOB HTTP_SOURCES CONFIGURE_DEPENDS
-            "${HTTP_DIR}/*.cpp" "${HTTP_DIR}/*.hpp"
-        )
+        slark_collect_sources(HTTP_SOURCES "${HTTP_DIR}")
 
         # HTTPS 支持
         option(ENABLE_HTTPS "Enable HTTPS support" ON)
 
         if(NOT ENABLE_HTTPS)
             list(FILTER HTTP_SOURCES EXCLUDE REGEX ".*SSL.*")
+            list(FILTER HTTP_SOURCES EXCLUDE REGEX ".*Https.*")
             message(STATUS "HTTPS support disabled")
         else()
             message(STATUS "HTTPS support enabled")
@@ -61,11 +56,7 @@ macro(add_ios_framework)
     )
 
     # --- iOS 平台层：slark_ios（排除 interface/ 文件）---
-    file(GLOB_RECURSE IOS_PLATFORM_SOURCES CONFIGURE_DEPENDS
-        "${IOS_DIR}/*.cpp" "${IOS_DIR}/*.hpp"
-        "${IOS_DIR}/*.h" "${IOS_DIR}/*.m"
-        "${IOS_DIR}/*.mm"
-    )
+    slark_collect_sources(IOS_PLATFORM_SOURCES "${IOS_DIR}")
     list(FILTER IOS_PLATFORM_SOURCES EXCLUDE REGEX ".*/interface/.*")
 
     foreach(_f ${IOS_INTERFACE_SOURCES})

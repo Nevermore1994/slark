@@ -7,6 +7,7 @@ cmake_minimum_required(VERSION 3.20)
 project(slark)
 
 set(SLARK_PROJECT_PATH ${CMAKE_CURRENT_SOURCE_DIR})
+include("${SLARK_PROJECT_PATH}/cmake/SlarkSources.cmake")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
