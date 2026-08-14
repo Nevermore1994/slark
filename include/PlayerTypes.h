@@ -40,6 +40,10 @@ struct ResourceItem {
     std::string path;
     double displayStart = 0;
     double displayDuration = 0;
+
+    [[nodiscard]] bool hasDisplayRange() const noexcept {
+        return displayStart > 0.0 || displayDuration > 0.0;
+    }
 };
 
 struct PlayerSetting {

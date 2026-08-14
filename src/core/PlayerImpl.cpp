@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <optional>
 #include <utility>
 
@@ -425,6 +426,58 @@ void Player::Impl::createVideoComponent(const PlayerSetting& setting) noexcept {
     LogI("video track setup, decoderType:{}", static_cast<uint32_t>(decodeType));
 }
 
+bool Player::Impl::configurePlaybackRange(double mediaDuration) noexcept {
+    double requestedStart = 0.0;
+    double requestedDuration = 0.0;
+    bool hasRequestedRange = false;
+    params_.withReadLock([&](auto& params) {
+        if (params) {
+            requestedStart = params->item.displayStart;
+            requestedDuration = params->item.displayDuration;
+            hasRequestedRange = params->item.hasDisplayRange();
+        }
+    });
+
+    if (!std::isfinite(mediaDuration) || mediaDuration < 0.0 ||
+        !std::isfinite(requestedStart) || !std::isfinite(requestedDuration) ||
+        requestedStart < 0.0 || requestedDuration < 0.0) {
+        return false;
+    }
+    if (!hasRequestedRange) {
+        playbackStart_ = 0.0;
+        playbackDuration_ = mediaDuration;
+        if (pipeline_) {
+            pipeline_->setPlaybackRange(0.0, mediaDuration, false);
+        }
+        return true;
+    }
+    if (requestedStart >= mediaDuration) {
+        return false;
+    }
+
+    const double end = requestedDuration > 0.0
+                           ? std::min(mediaDuration, requestedStart + requestedDuration)
+                           : mediaDuration;
+    if (end <= requestedStart) {
+        return false;
+    }
+    playbackStart_ = requestedStart;
+    playbackDuration_ = end - requestedStart;
+    if (pipeline_) {
+        pipeline_->setPlaybackRange(playbackStart_, playbackDuration_, true);
+    }
+    return true;
+}
+
+double Player::Impl::toMediaTime(double playbackTime) const noexcept {
+    const double clamped = std::clamp(playbackTime, 0.0, info_.duration);
+    return playbackStart_ + clamped;
+}
+
+double Player::Impl::toPlaybackTime(double mediaTime) const noexcept {
+    return std::clamp(mediaTime - playbackStart_, 0.0, info_.duration);
+}
+
 void Player::Impl::preparePlayerInfo() noexcept {
     if (!demuxerComponent_) {
         LogE("demuxer component is not created.");
@@ -438,13 +491,23 @@ void Player::Impl::preparePlayerInfo() noexcept {
     info_.isValid = true;
     info_.hasAudio = demuxerComponent_->hasAudio();
     info_.hasVideo = demuxerComponent_->hasVideo();
-    info_.duration = demuxerComponent_->totalDuration().second();
-    if (info_.duration <= 0.0) {
-        info_.duration = mediaSourceManager_.streamInfo().duration;
+    const double mediaDuration = [&] {
+        auto duration = demuxerComponent_->totalDuration().second();
+        return duration > 0.0 ? duration : mediaSourceManager_.streamInfo().duration;
+    }();
+    if (!configurePlaybackRange(mediaDuration)) {
+        info_.isValid = false;
+        setState(PlayerState::Error);
+        notifyPlayerEvent(PlayerEvent::OnError,
+                          std::to_string(static_cast<uint32_t>(Error::InvalidOperation)));
+        return;
     }
+    info_.duration = playbackDuration_;
     info_.isSeekable = mediaSourceManager_.streamInfo().isSeekable;
-    LogI("player info prepared, duration:{:.3f}s, hasAudio:{}, hasVideo:{}, isSeekable:{}",
-         info_.duration, info_.hasAudio, info_.hasVideo, info_.isSeekable);
+    LogI("player info prepared, mediaDuration:{:.3f}s, displayStart:{:.3f}s, duration:{:.3f}s, "
+         "hasAudio:{}, hasVideo:{}, isSeekable:{}",
+         mediaDuration, playbackStart_, info_.duration, info_.hasAudio, info_.hasVideo,
+         info_.isSeekable);
 
     setState(PlayerState::Prepared);
 
@@ -592,10 +655,11 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
         return;
     }
 
-    auto seekTime = seekRequest.seekTime;
-    auto playedTime = currentPlayedTime();
-    if (isEqual(playedTime, seekTime, kSeekThreshold)) {
-        LogI("discard seek:{} (too close to current pos {:.3f})", seekTime, playedTime);
+    const double playbackSeekTime = std::clamp(seekRequest.seekTime, 0.0, info_.duration);
+    const double seekTime = toMediaTime(playbackSeekTime);
+    const double playedTime = currentPlayedTime();
+    if (isEqual(playedTime, playbackSeekTime, kSeekThreshold)) {
+        LogI("discard seek:{} (too close to current pos {:.3f})", playbackSeekTime, playedTime);
         return;
     }
 
@@ -603,8 +667,8 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
     // switching state
     if (!seekRequest.isAccurate && seekRequest_.has_value() &&
         pipeline_->isSeekPending()) {
-        LogI("in-flight drag seek merge to {:.3f}s", seekTime);
-        seekRequest_->seekTime = seekTime;
+        LogI("in-flight drag seek merge to {:.3f}s", playbackSeekTime);
+        seekRequest_->seekTime = playbackSeekTime;
         pipeline_->seek(CTime(seekTime), false);
         return;
     }
@@ -627,8 +691,8 @@ void Player::Impl::doLoop() noexcept {
     if (!pipeline_) {
         return;
     }
-    LogI("do loop");
-    pipeline_->seek(CTime(0.0));
+    LogI("do loop from display start {:.3f}s", playbackStart_);
+    pipeline_->seek(CTime(playbackStart_));
     pipeline_->start();
 }
 
@@ -678,6 +742,9 @@ void Player::Impl::setState(PlayerState state) noexcept {
     LogI("setState: {} -> {}", static_cast<uint32_t>(previousState),
          static_cast<uint32_t>(state));
     applyStateAction(state);
+    if (pipeline_) {
+        pipeline_->setPlayerState(state);
+    }
     notifyPlayerState(state);
 }
 
@@ -747,8 +814,8 @@ void Player::Impl::handleEvent(std::deque<EventPtr>&& events) noexcept {
             (currentState == PlayerState::Error && *nextState != PlayerState::Stop)) {
             continue;
         }
-        if (currentState == PlayerState::Completed && *nextState == PlayerState::Playing) {
-            LogI("replay from completed, seek to 0");
+            if (currentState == PlayerState::Completed && *nextState == PlayerState::Playing) {
+            LogI("replay from completed, seek to display start {:.3f}s", playbackStart_);
             doSeek(PlayerSeekRequest{.isAccurate = false, .seekTime = 0.0});
         }
         if (hasPendingSeek && *nextState == PlayerState::Playing) {
@@ -792,7 +859,8 @@ void Player::Impl::processPendingSeek() noexcept {
 }
 
 void Player::Impl::resumeFromBuffering() noexcept {
-    if (state() != PlayerState::Buffering) {
+    const auto current = state();
+    if (current != PlayerState::Buffering && current != PlayerState::Ready) {
         return;
     }
     if (stats_.resumeAfterBuffering) {
@@ -812,6 +880,7 @@ void Player::Impl::handlePipelineEvent(PipelineEvent event,
             preparePlayerInfo();
             break;
         case PipelineEvent::PipelineReady:
+            setState(PlayerState::Ready);
             break;
         case PipelineEvent::FirstFrameRendered:
             notifyPlayerEvent(PlayerEvent::FirstFrameRendered);
@@ -924,8 +993,8 @@ void Player::Impl::notifyPlayerState(PlayerState state) noexcept {
 }
 
 void Player::Impl::notifyPlayedTime(bool isEndTime) noexcept {
-    double audioTime = pipeline_ ? pipeline_->audioTime().second() : 0.0;
-    double videoTime = pipeline_ ? pipeline_->videoTime().second() : 0.0;
+    const double audioTime = pipeline_ ? toPlaybackTime(pipeline_->audioTime().second()) : 0.0;
+    const double videoTime = pipeline_ ? toPlaybackTime(pipeline_->videoTime().second()) : 0.0;
     notifyCenter_.notifyPlayedTime(info_.duration, audioTime, videoTime, info_.hasAudio,
                                    info_.hasVideo, isEndTime);
 }
@@ -934,7 +1003,7 @@ void Player::Impl::notifyCacheTime() noexcept {
     if (!pipeline_) {
         return;
     }
-    notifyCenter_.notifyCacheTime(pipeline_->cacheEndTime());
+    notifyCenter_.notifyCacheTime(toPlaybackTime(pipeline_->cacheEndTime()));
 }
 
 PlayerParams Player::Impl::params() noexcept {
@@ -992,7 +1061,7 @@ double Player::Impl::currentPlayedTime() const noexcept {
     if (!pipeline_) {
         return 0.0;
     }
-    return pipeline_->currentTime().second();
+    return toPlaybackTime(pipeline_->currentTime().second());
 }
 
 double Player::Impl::demuxedDuration() const noexcept {

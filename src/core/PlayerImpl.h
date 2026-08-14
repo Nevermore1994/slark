@@ -143,6 +143,12 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
 
     [[nodiscard]] double demuxedDuration() const noexcept;
 
+    [[nodiscard]] bool configurePlaybackRange(double mediaDuration) noexcept;
+
+    [[nodiscard]] double toMediaTime(double playbackTime) const noexcept;
+
+    [[nodiscard]] double toPlaybackTime(double mediaTime) const noexcept;
+
  private:
     std::atomic_bool isStopped_ = false;
     std::atomic_bool isReleased_ = false;
@@ -152,6 +158,8 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
     std::atomic<double> pendingSeekTarget_{-1.0};
     std::atomic<bool> seekJustCompleted_{false};
     PlayerInfo info_;
+    double playbackStart_ = 0.0;
+    double playbackDuration_ = 0.0;
     std::string playerId_;
     Synchronized<std::unique_ptr<PlayerParams>, std::shared_mutex> params_;
     SenderPtr<EventPtr> sender_;

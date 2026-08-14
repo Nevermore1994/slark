@@ -141,7 +141,8 @@ PlayerState prepareAndWait(Player& player) {
     waitUntil(
         [&player] {
             auto s = player.state();
-            return s == PlayerState::Buffering || s == PlayerState::Playing ||
+            return s == PlayerState::Ready || s == PlayerState::Buffering ||
+                   s == PlayerState::Playing || s == PlayerState::Pause ||
                    s == PlayerState::Error || s == PlayerState::Stop;
         },
         10s);
@@ -197,6 +198,20 @@ class PlayerMediaIntegrationTest : public ::testing::Test {
 
 bool PlayerMediaIntegrationTest::s_playable_ = true;
 
+
+TEST_F(PlayerMediaIntegrationTest, WavTimeRangeUsesRelativeDuration) {
+    auto params = makeParams(mediaPath(kWavFile));
+    params->item.displayStart = 1.0;
+    params->item.displayDuration = 1.0;
+    auto player = std::make_unique<Player>(std::move(params));
+    auto state = prepareAndWait(*player);
+    if (state == PlayerState::Error) {
+        GTEST_SKIP() << "current environment cannot decode media, skipping";
+    }
+    EXPECT_NEAR(player->info().duration, 1.0, 0.1);
+    EXPECT_NEAR(player->currentPlayedTime(), 0.0, 0.1);
+    safeDestroy(*player);
+}
 
 TEST_F(PlayerMediaIntegrationTest, WavPrepareSucceeds) {
     auto player = std::make_unique<Player>(makeParams(mediaPath(kWavFile)));

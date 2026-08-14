@@ -27,6 +27,7 @@
 #include "PipelineConfig.h"
 #include "PipelineError.h"
 #include "PipelineEvent.h"
+#include "PlayerTypes.h"
 #include "SeekContext.h"
 #include "Synchronized.hpp"
 #include "Time.hpp"
@@ -47,16 +48,6 @@ struct MediaInfo {
     bool hasVideo = false;
     CTime totalDuration;
     StreamType streamType = StreamType::File;
-};
-
-enum class PipelineState : uint8_t {
-    Idle,
-    Built,
-    Playing,
-    Paused,
-    TearingDown,  // teardown initiated, waiting for components to exit
-    Ended,        // normal playback end (RenderEnd already fired)
-    Faulted,      // unrecoverable error, terminal state
 };
 
 struct ReadinessTracker {
@@ -119,6 +110,12 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
         mediaInfo_.streamType = type;
     }
 
+    void setPlaybackRange(double start, double duration, bool enabled) noexcept;
+
+    void setPlayerState(PlayerState state) noexcept {
+        playerState_.store(state, std::memory_order_release);
+    }
+
     void setPlaySession(std::weak_ptr<perf::PlaySession> session) noexcept {
         playSession_ = std::move(session);
     }
@@ -136,12 +133,11 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
     }
 
     [[nodiscard]] bool isFaulted() const noexcept {
-        return pipelineState_.load(std::memory_order_acquire) == PipelineState::Faulted;
+        return playerState_.load(std::memory_order_acquire) == PlayerState::Error;
     }
 
     [[nodiscard]] bool isBuilt() const noexcept {
-        const auto s = pipelineState_.load(std::memory_order_acquire);
-        return s != PipelineState::Idle;
+        return componentStarted_.load(std::memory_order_acquire);
     }
 
     [[nodiscard]] bool isOnOwnerThread() const noexcept;
@@ -294,6 +290,12 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     [[nodiscard]] bool areQueuesDrained() const noexcept;
 
+    [[nodiscard]] bool isBeforePlaybackRange(double pts) const noexcept;
+
+    [[nodiscard]] bool isAfterPlaybackRange(double pts) const noexcept;
+
+    [[nodiscard]] bool hasReachedPlaybackRangeEnd() const noexcept;
+
     void notifySeekIfDecoderCompleted() noexcept;
 
     [[nodiscard]] AVFrameRefPtr skipFramesBeforeTarget(AVFrameRefPtr frame, double target) noexcept;
@@ -338,9 +340,13 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     std::weak_ptr<perf::PlaySession> playSession_;
 
-    std::atomic<PipelineState> pipelineState_{PipelineState::Idle};
-
+    std::atomic<PlayerState> playerState_{PlayerState::NotInited};
+    std::atomic<bool> tearingDown_{false};
     std::atomic<bool> componentStarted_{false};
+
+    double playbackRangeStart_ = 0.0;
+    double playbackRangeEnd_ = 0.0;
+    bool playbackRangeEnabled_ = false;
 
     ReadinessTracker readiness_;
 

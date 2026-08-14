@@ -11,7 +11,7 @@ data class KtTimeRange(val start: KtTime, val duration: KtTime) {
         get() = start + duration
 
     fun get(): Pair<Double, Double> {
-        return Pair(start.toSeconds(), end.toSeconds())
+        return Pair(start.toSeconds(), duration.toSeconds())
     }
 
     fun contains(time: KtTime): Boolean {
