@@ -77,8 +77,6 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     void seek(CTime target, bool isAccurate = true) noexcept;
 
-    void applyLiveConfig() noexcept;
-
     [[nodiscard]] Time::TimePoint currentTime() noexcept;
 
     [[nodiscard]] Time::TimePoint audioTime() noexcept;
@@ -86,8 +84,6 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
     [[nodiscard]] Time::TimePoint videoTime() noexcept {
         return clockSync_->videoTime();
     }
-
-    [[nodiscard]] double cachedDuration() const noexcept;
 
     [[nodiscard]] bool canProduceSourceData() const noexcept;
 
@@ -231,8 +227,6 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     [[nodiscard]] bool joinWithTimeout(std::chrono::milliseconds timeout) noexcept;
 
-    void enterFaultedState() noexcept;
-
     void openDecoderInternal(std::shared_ptr<DecoderComponent> decoder,
                              DecoderType type,
                              const std::shared_ptr<DecoderConfig>& config) noexcept;
@@ -243,10 +237,7 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     [[nodiscard]] bool isDecodedFrameSkippable(const DecoderData& data) noexcept;
 
-    /// Seek first-frame push path: pushes the frame for rendering and updates first-frame/seek state
-    void handleSeekFirstFrame(const AVFrameRefPtr& frame, bool isSeekFirstFrame) noexcept;
-
-    [[nodiscard]] SeekStrategy resolveSeekStrategy(double targetSec) const noexcept;
+    void handleFirstVideoFrame(const AVFrameRefPtr& frame) noexcept;
 
     void onSeekFrameConsumed(TrackType track) noexcept;
 
@@ -255,7 +246,7 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
     void fastForwardInGOP(CTime target) noexcept;
 
     /// SeekToKeyframe: pause-flush-relocate-resume
-    void performKeyframeSeek(CTime target, SeekStrategy strategy) noexcept;
+    void performKeyframeSeek(CTime target) noexcept;
 
     [[nodiscard]] AVFrameRefPtr popVideoFrame() noexcept;
 
@@ -293,6 +284,8 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
     [[nodiscard]] AVFrameRefPtr skipFramesBeforeTarget(AVFrameRefPtr frame, double target) noexcept;
 
     void updateLiveReadyFlags(const DemuxerResult& result) noexcept;
+
+    [[nodiscard]] bool canFastForwardInCurrentVideoBuffer(double targetSec) const noexcept;
 
     void registerComponents() noexcept;
 

@@ -23,11 +23,10 @@ class SeekContext : public NonCopyMovable {
     SeekContext() = default;
     ~SeekContext() = default;
 
-    [[nodiscard]] bool beginSeek(CTime target, SeekStrategy strategy) noexcept {
+    [[nodiscard]] bool beginSeek(CTime target) noexcept {
         bool superseded = isSeekPending_.load(std::memory_order_acquire);
         seekEpoch_.fetch_add(1, std::memory_order_acq_rel);
         activeSeekTimeSec_.store(target.second(), std::memory_order_release);
-        strategy_.store(static_cast<uint8_t>(strategy), std::memory_order_release);
         gopKeyframePts_.store(kNoSeekTime, std::memory_order_release);
         gopEndPts_.store(kNoSeekTime, std::memory_order_release);
         maxSkipFrames_.store(0, std::memory_order_release);
@@ -48,10 +47,6 @@ class SeekContext : public NonCopyMovable {
         }
         activeSeekTimeSec_.store(sec, std::memory_order_release);
         return true;
-    }
-
-    [[nodiscard]] SeekStrategy strategy() const noexcept {
-        return static_cast<SeekStrategy>(strategy_.load(std::memory_order_acquire));
     }
 
     [[nodiscard]] double gopKeyframePts() const noexcept {
@@ -130,7 +125,6 @@ class SeekContext : public NonCopyMovable {
 
     std::atomic<uint64_t> seekEpoch_{0};
     std::atomic<double> activeSeekTimeSec_{kNoSeekTime};
-    std::atomic<uint8_t> strategy_{static_cast<uint8_t>(SeekStrategy::SeekToKeyframe)};
     std::atomic<double> gopKeyframePts_{kNoSeekTime};
     std::atomic<double> gopEndPts_{kNoSeekTime};
     std::atomic<bool> isSeekPending_{false};

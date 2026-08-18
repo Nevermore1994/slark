@@ -5,6 +5,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -49,6 +50,7 @@ struct MockVideoRender : public IVideoRender {
     }
 
     void pause() noexcept override {
+        pauseCount.fetch_add(1, std::memory_order_relaxed);
         running_.store(false, std::memory_order_relaxed);
         if (thread_.joinable()) {
             thread_.join();
@@ -71,6 +73,7 @@ struct MockVideoRender : public IVideoRender {
 
     std::atomic<bool> running_{false};
     std::atomic<int32_t> pushFrameCount_{0};
+    std::atomic<int32_t> pauseCount{0};
     std::thread thread_;
 };
 
@@ -100,6 +103,16 @@ struct RecordingObserver : public IPlayerObserver {
     [[nodiscard]] bool hasState(PlayerState state) const {
         std::lock_guard lock(mutex_);
         return std::find(states_.begin(), states_.end(), state) != states_.end();
+    }
+
+    [[nodiscard]] size_t eventCount(PlayerEvent event) const {
+        std::lock_guard lock(mutex_);
+        return static_cast<size_t>(std::count(events_.begin(), events_.end(), event));
+    }
+
+    [[nodiscard]] size_t stateCount(PlayerState state) const {
+        std::lock_guard lock(mutex_);
+        return static_cast<size_t>(std::count(states_.begin(), states_.end(), state));
     }
 
     mutable std::mutex mutex_;
@@ -213,6 +226,28 @@ TEST_F(PlayerMediaIntegrationTest, WavTimeRangeUsesRelativeDuration) {
     safeDestroy(*player);
 }
 
+TEST_F(PlayerMediaIntegrationTest, WavTimeRangeClampsToMediaEnd) {
+    auto params = makeParams(mediaPath(kWavFile));
+    params->item.displayStart = 2.9;
+    params->item.displayDuration = 10.0;
+    auto player = std::make_unique<Player>(std::move(params));
+    auto state = prepareAndWait(*player);
+    if (state == PlayerState::Error) {
+        GTEST_SKIP() << "current environment cannot decode media, skipping";
+    }
+    EXPECT_NEAR(player->info().duration, 0.3, 0.1);
+    safeDestroy(*player);
+}
+
+TEST_F(PlayerMediaIntegrationTest, InvalidWavTimeRangeReportsError) {
+    auto params = makeParams(mediaPath(kWavFile));
+    params->item.displayStart = 3.3;
+    params->item.displayDuration = 1.0;
+    auto player = std::make_unique<Player>(std::move(params));
+    EXPECT_EQ(prepareAndWait(*player), PlayerState::Error);
+    safeDestroy(*player);
+}
+
 TEST_F(PlayerMediaIntegrationTest, WavPrepareSucceeds) {
     auto player = std::make_unique<Player>(makeParams(mediaPath(kWavFile)));
     auto state = prepareAndWait(*player);
@@ -246,6 +281,9 @@ TEST_F(PlayerMediaIntegrationTest, MissingFileReportsError) {
     auto state = prepareAndWait(*player);
     EXPECT_EQ(state, PlayerState::Error);
     EXPECT_TRUE(observer->hasEvent(PlayerEvent::OnError));
+    std::this_thread::sleep_for(200ms);
+    EXPECT_EQ(observer->eventCount(PlayerEvent::OnError), 1u);
+    EXPECT_EQ(observer->stateCount(PlayerState::Error), 1u);
     safeDestroy(*player);
 }
 
@@ -268,6 +306,9 @@ TEST_F(PlayerMediaIntegrationTest, WavPlaysToCompletion) {
     EXPECT_TRUE(player->state() == PlayerState::Completed ||
                 observer->hasState(PlayerState::Completed));
     EXPECT_GE(player->currentPlayedTime(), 2.5);
+    std::this_thread::sleep_for(200ms);
+    EXPECT_EQ(observer->eventCount(PlayerEvent::PlayEnd), 1u);
+    EXPECT_EQ(observer->stateCount(PlayerState::Completed), 1u);
     safeDestroy(*player);
 }
 
@@ -300,7 +341,10 @@ TEST_F(PlayerMediaIntegrationTest, Mp4PlaysToCompletion) {
         << "mp4 playback should advance";
     EXPECT_TRUE(observer->hasEvent(PlayerEvent::FirstFrameRendered))
         << "mp4 video first frame should render";
-    EXPECT_NE(player->state(), PlayerState::Error);
+    EXPECT_TRUE(waitForPlayEnd(*player, *observer)) << "mp4 should reach PlayEnd";
+    EXPECT_EQ(observer->eventCount(PlayerEvent::PlayEnd), 1u);
+    EXPECT_EQ(observer->stateCount(PlayerState::Completed), 1u);
+    EXPECT_EQ(render->pauseCount.load(std::memory_order_relaxed), 1);
     safeDestroy(*player);
 }
 
@@ -328,6 +372,30 @@ TEST_F(PlayerMediaIntegrationTest, WavSeekDuringPlayback) {
     })) << "seek should complete";
     EXPECT_GE(player->currentPlayedTime(), 1.0);
     EXPECT_TRUE(waitForPlayEnd(*player, *observer)) << "playback should finish after seek";
+    safeDestroy(*player);
+}
+
+TEST_F(PlayerMediaIntegrationTest, AccurateSeekThenDragUsesLatestTarget) {
+    if (!PlayerMediaIntegrationTest::isPlayable()) {
+        GTEST_SKIP() << "current environment cannot drive playback clock, skipping";
+    }
+    auto player = std::make_unique<Player>(makeParams(mediaPath(kWavFile)));
+    auto observer = std::make_shared<RecordingObserver>();
+    player->addObserver(observer);
+    if (prepareAndWait(*player) == PlayerState::Error) {
+        GTEST_SKIP() << "current environment cannot decode media, skipping";
+    }
+
+    player->play();
+    ASSERT_TRUE(waitUntil([&player] { return player->state() == PlayerState::Playing; }));
+    player->seek(0.8, true);
+    player->seek(2.0, false);
+
+    ASSERT_TRUE(waitUntil([&observer] {
+        return observer->hasEvent(PlayerEvent::SeekDone);
+    })) << "accurate seek followed by drag seek should complete";
+    EXPECT_GE(player->currentPlayedTime(), 1.5);
+    EXPECT_NE(player->state(), PlayerState::Error);
     safeDestroy(*player);
 }
 
@@ -405,6 +473,9 @@ TEST_F(PlayerMediaIntegrationTest, RapidSeekDoesNotCrash) {
     EXPECT_TRUE(waitUntil([&observer] {
         return observer->hasEvent(PlayerEvent::SeekDone);
     })) << "rapid seeks should eventually complete";
+    EXPECT_TRUE(waitUntil([&player] {
+        return player->currentPlayedTime() >= 1.5;
+    })) << "rapid seeks should settle on the latest target";
     EXPECT_NE(player->state(), PlayerState::Error);
     safeDestroy(*player);
 }

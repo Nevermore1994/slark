@@ -87,7 +87,7 @@ void Player::Impl::forceCleanup() noexcept {
     }
     demuxerComponent_.reset();
     notifyCenter_.resetNotifyState();
-    stats_.reset();
+    resumeAfterBuffering_ = false;
     LogI("force cleanup end");
 }
 
@@ -96,8 +96,7 @@ void Player::Impl::seek(double time, bool isAccurate) noexcept {
         LogE("error!! not init");
         return;
     }
-    if (isStopped_.load(std::memory_order_acquire) ||
-        isReleased_.load(std::memory_order_acquire)) {
+    if (isStopped_.load(std::memory_order_acquire) || isReleased_.load(std::memory_order_acquire)) {
         return;
     }
     if (!info_.isSeekable) {
@@ -287,27 +286,27 @@ bool Player::Impl::createDemuxerComponent() noexcept {
     dataPacketSender_ = std::move(sender);
 
     demuxerComponent_ = std::make_shared<DemuxerComponent>(std::move(receiver), std::move(config));
-    demuxerComponent_->setHandleSeekFunc([weak = weak_from_this()](Range range,
-                                                                     uint64_t generation) {
-        auto self = weak.lock();
-        if (!self || self->isStopped_) {
-            return;
-        }
-        auto res = self->mediaSourceManager_.seek(range.start(), generation);
-        if (!res.has_value()) {
-            self->notifyPlayerEvent(PlayerEvent::OnError,
-                                    std::to_string(static_cast<uint32_t>(res.error())));
-            // Same as onError: post to the ownerThread to avoid destroying pipeline_
-            // concurrently on the demuxer thread
-            if (self->sender_) {
-                self->sender_->send(buildEvent(EventType::ReadError));
-                if (self->ownerThread_) {
-                    self->ownerThread_->start();
+    demuxerComponent_->setHandleSeekFunc(
+        [weak = weak_from_this()](Range range, uint64_t generation) {
+            auto self = weak.lock();
+            if (!self || self->isStopped_) {
+                return;
+            }
+            auto res = self->mediaSourceManager_.seek(range.start(), generation);
+            if (!res.has_value()) {
+                self->notifyPlayerEvent(PlayerEvent::OnError,
+                                        std::to_string(static_cast<uint32_t>(res.error())));
+                // Same as onError: post to the ownerThread to avoid destroying pipeline_
+                // concurrently on the demuxer thread
+                if (self->sender_) {
+                    self->sender_->post(buildEvent(EventType::ReadError));
+                    if (self->ownerThread_) {
+                        self->ownerThread_->start();
+                    }
                 }
             }
-        }
-        LogI("demuxer seek to pos:{}, ok:{}", range.toString(), res.has_value());
-    });
+            LogI("demuxer seek to pos:{}, ok:{}", range.toString(), res.has_value());
+        });
     demuxerComponent_->start();
     LogI("demuxer component created, uri:{}", filePath);
     return true;
@@ -438,9 +437,8 @@ bool Player::Impl::configurePlaybackRange(double mediaDuration) noexcept {
         }
     });
 
-    if (!std::isfinite(mediaDuration) || mediaDuration < 0.0 ||
-        !std::isfinite(requestedStart) || !std::isfinite(requestedDuration) ||
-        requestedStart < 0.0 || requestedDuration < 0.0) {
+    if (!std::isfinite(mediaDuration) || mediaDuration < 0.0 || !std::isfinite(requestedStart) ||
+        !std::isfinite(requestedDuration) || requestedStart < 0.0 || requestedDuration < 0.0) {
         return false;
     }
     if (!hasRequestedRange) {
@@ -532,7 +530,6 @@ void Player::Impl::preparePlayerInfo() noexcept {
     if (!pipeline_ || isStopped_ || isReleased_) {
         return;
     }
-    pipeline_->build();
     ownerThread_->start();
 }
 
@@ -638,7 +635,7 @@ void Player::Impl::doStop() noexcept {
     }
     demuxerComponent_.reset();
     notifyCenter_.resetNotifyState();
-    stats_.reset();
+    resumeAfterBuffering_ = false;
 
     // ownerThread_'s stop/join is handled by ~Impl() on an external thread, not here
     GLContextManager::shareInstance().removeMainContext(playerId_);
@@ -665,18 +662,17 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
 
     // Non-accurate seek in-flight merge: update the target in the pipeline without
     // switching state
-    if (!seekRequest.isAccurate && seekRequest_.has_value() &&
-        pipeline_->isSeekPending()) {
+    if (!seekRequest.isAccurate && seekRequest_.has_value() && pipeline_->isSeekPending()) {
         LogI("in-flight drag seek merge to {:.3f}s", playbackSeekTime);
         seekRequest_->seekTime = playbackSeekTime;
         pipeline_->seek(CTime(seekTime), false);
         return;
     }
 
-    auto nowState = state();
-    setState(PlayerState::Pause);
+    const auto nowState = state();
     if (nowState == PlayerState::Playing) {
-        stats_.resumeAfterBuffering = true;
+        resumeAfterBuffering_ = true;
+        setState(PlayerState::Pause);
     }
 
     seekRequest.startTime = Time::nowTimeStamp();
@@ -696,8 +692,7 @@ void Player::Impl::doLoop() noexcept {
     pipeline_->start();
 }
 
-bool Player::Impl::tryTransitionState(PlayerState nextState,
-                                       PlayerState& previousState) noexcept {
+bool Player::Impl::tryTransitionState(PlayerState nextState, PlayerState& previousState) noexcept {
     bool changed = false;
     state_.withWriteLock([nextState, &changed, &previousState](auto& currentState) {
         if (currentState == nextState) {
@@ -739,8 +734,7 @@ void Player::Impl::setState(PlayerState state) noexcept {
         return;
     }
 
-    LogI("setState: {} -> {}", static_cast<uint32_t>(previousState),
-         static_cast<uint32_t>(state));
+    LogI("setState: {} -> {}", static_cast<uint32_t>(previousState), static_cast<uint32_t>(state));
     applyStateAction(state);
     notifyPlayerState(state);
 }
@@ -796,8 +790,7 @@ void Player::Impl::handleEvent(std::deque<EventPtr>&& events) noexcept {
             }
             continue;
         }
-        if (EventType::UpdateSetting < event->type &&
-            event->type < EventType::UpdateSettingEnd) {
+        if (EventType::UpdateSetting < event->type && event->type < EventType::UpdateSettingEnd) {
             if (currentState != PlayerState::Stop && currentState != PlayerState::Error) {
                 handleSettingUpdate(*event);
             }
@@ -811,12 +804,12 @@ void Player::Impl::handleEvent(std::deque<EventPtr>&& events) noexcept {
             (currentState == PlayerState::Error && *nextState != PlayerState::Stop)) {
             continue;
         }
-            if (currentState == PlayerState::Completed && *nextState == PlayerState::Playing) {
+        if (currentState == PlayerState::Completed && *nextState == PlayerState::Playing) {
             LogI("replay from completed, seek to display start {:.3f}s", playbackStart_);
             doSeek(PlayerSeekRequest{.isAccurate = false, .seekTime = 0.0});
         }
         if (hasPendingSeek && *nextState == PlayerState::Playing) {
-            stats_.resumeAfterBuffering = true;
+            resumeAfterBuffering_ = true;
             continue;
         }
         changeState = *nextState;
@@ -860,8 +853,8 @@ void Player::Impl::resumeFromBuffering() noexcept {
     if (current != PlayerState::Buffering && current != PlayerState::Ready) {
         return;
     }
-    if (stats_.resumeAfterBuffering) {
-        stats_.resumeAfterBuffering = false;
+    if (resumeAfterBuffering_) {
+        resumeAfterBuffering_ = false;
         LogI("resume from buffering -> playing");
         setState(PlayerState::Playing);
     } else {
@@ -890,7 +883,7 @@ void Player::Impl::handlePipelineEvent(PipelineEvent event,
         case PipelineEvent::BufferingStart:
             if (state() == PlayerState::Playing) {
                 LogI("buffering start");
-                stats_.resumeAfterBuffering = true;
+                resumeAfterBuffering_ = true;
                 setState(PlayerState::Buffering);
             }
             break;
@@ -899,8 +892,6 @@ void Player::Impl::handlePipelineEvent(PipelineEvent event,
             break;
         case PipelineEvent::AudioDecoderFailed:
         case PipelineEvent::VideoDecoderFailed:
-            handleDecoderFailed(std::move(error));
-            break;
         case PipelineEvent::ReadError:
         case PipelineEvent::DecodeError:
             handlePipelineError(event, std::move(error));
@@ -926,13 +917,6 @@ void Player::Impl::handleSeekCompleted() noexcept {
         notifyPlayerEvent(PlayerEvent::SeekDone);
     }
     resumeFromBuffering();
-}
-
-void Player::Impl::handleDecoderFailed(std::optional<PipelineError> error) noexcept {
-    const auto err = error.has_value() ? error->error : Error::PipelineDecodeError;
-    LogE("decoder init failed, error:{}", static_cast<uint32_t>(err));
-    notifyPlayerEvent(PlayerEvent::OnError, std::to_string(static_cast<uint32_t>(err)));
-    setState(PlayerState::Error);
 }
 
 void Player::Impl::handlePipelineError(PipelineEvent event,
@@ -967,9 +951,6 @@ void Player::Impl::handleRenderEnd() noexcept {
         doLoop();
     } else {
         setState(PlayerState::Completed);
-        if (ownerThread_) {
-            ownerThread_->pause();
-        }
     }
 }
 
@@ -1059,13 +1040,6 @@ double Player::Impl::currentPlayedTime() const noexcept {
         return 0.0;
     }
     return toPlaybackTime(pipeline_->currentTime().second());
-}
-
-double Player::Impl::demuxedDuration() const noexcept {
-    if (!pipeline_) {
-        return 0.0;
-    }
-    return pipeline_->cachedDuration();
 }
 
 AVFrameRefPtr Player::Impl::requestRender() noexcept {

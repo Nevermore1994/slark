@@ -152,10 +152,10 @@ TEST(AVSyncIntegrationTest, ClockSyncEarlyToleranceReducesHold) {
 
 TEST(AVSyncIntegrationTest, SeekEpochInvalidatesOldFrames) {
     SeekContext ctx;
-    std::ignore = ctx.beginSeek(CTime(5.0), SeekStrategy::SeekToKeyframe);
+    std::ignore = ctx.beginSeek(CTime(5.0));
     uint64_t epoch = ctx.currentEpoch();
 
-    std::ignore = ctx.beginSeek(CTime(10.0), SeekStrategy::SeekToKeyframe);
+    std::ignore = ctx.beginSeek(CTime(10.0));
     EXPECT_TRUE(ctx.isEpochStale(epoch));
 }
 
@@ -166,7 +166,7 @@ TEST(AVSyncIntegrationTest, SeekCompleteResetsClockSyncVideoTime) {
     clockSync.setVideoTime(Time::TimePoint::fromSeconds(3.0));
     EXPECT_EQ(clockSync.videoTime(), Time::TimePoint::fromSeconds(3.0));
 
-    std::ignore = ctx.beginSeek(CTime(10.0), SeekStrategy::SeekToKeyframe);
+    std::ignore = ctx.beginSeek(CTime(10.0));
     clockSync.reset();
     EXPECT_EQ(clockSync.videoTime(), Time::TimePoint(0));
 

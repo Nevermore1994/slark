@@ -84,8 +84,6 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
 
     void handleSeekCompleted() noexcept;
 
-    void handleDecoderFailed(std::optional<PipelineError> error) noexcept;
-
     void handlePipelineError(PipelineEvent event, std::optional<PipelineError> error) noexcept;
 
     void handleRenderEnd() noexcept;
@@ -141,8 +139,6 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
 
     bool setupDataProvider() noexcept;
 
-    [[nodiscard]] double demuxedDuration() const noexcept;
-
     [[nodiscard]] bool configurePlaybackRange(double mediaDuration) noexcept;
 
     [[nodiscard]] double toMediaTime(double playbackTime) const noexcept;
@@ -178,15 +174,7 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
 
     AtomicWeakPtr<IVideoRender> videoRender_;
 
-    struct PlayerStats {
-        bool resumeAfterBuffering = false;
-
-        void reset() noexcept {
-            resumeAfterBuffering = false;
-        }
-    };
-
-    PlayerStats stats_;
+    bool resumeAfterBuffering_ = false;
 
     std::mutex releaseMutex_;
     std::condition_variable cond_;
