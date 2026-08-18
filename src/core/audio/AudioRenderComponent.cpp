@@ -64,6 +64,26 @@ void AudioRenderComponent::init() noexcept {
     LogI("init success");
 }
 
+void AudioRenderComponent::resetDataPlane(std::optional<uint64_t> offsetTimeUs,
+                                           bool resetDecoderCompleted,
+                                           bool reopen) noexcept {
+    if (!dataPlane_) {
+        return;
+    }
+    dataPlane_->closeAndWait();
+    dataPlane_->buffer.reset();
+    dataPlane_->renderedDataLength.store(0, std::memory_order_release);
+    if (offsetTimeUs) {
+        dataPlane_->offsetTimeUs.store(*offsetTimeUs, std::memory_order_release);
+    }
+    if (resetDecoderCompleted) {
+        dataPlane_->decoderCompleted.store(false, std::memory_order_release);
+    }
+    if (reopen) {
+        dataPlane_->open();
+    }
+}
+
 bool AudioRenderComponent::send(AVFrameRefPtr frame) noexcept {
     return process(frame);
 }
@@ -86,16 +106,7 @@ void AudioRenderComponent::reset() noexcept {
     if (impl) {
         impl->flush();
     }
-    if (dataPlane_) {
-        dataPlane_->closeAndWait();
-        dataPlane_->buffer.reset();
-        dataPlane_->renderedDataLength.store(0, std::memory_order_release);
-        dataPlane_->offsetTimeUs.store(0, std::memory_order_release);
-        dataPlane_->decoderCompleted.store(false, std::memory_order_release);
-        if (impl) {
-            dataPlane_->open();
-        }
-    }
+    resetDataPlane(0, true, impl != nullptr);
     if (impl) {
         impl->reset();
     }
@@ -174,15 +185,7 @@ void AudioRenderComponent::flush() noexcept {
     } else {
         LogE("audio render is nullptr.");
     }
-    if (dataPlane_) {
-        dataPlane_->closeAndWait();
-        dataPlane_->buffer.reset();
-        dataPlane_->renderedDataLength.store(0, std::memory_order_release);
-        dataPlane_->decoderCompleted.store(false, std::memory_order_release);
-        if (pimpl) {
-            dataPlane_->open();
-        }
-    }
+    resetDataPlane(std::nullopt, true, pimpl != nullptr);
 }
 
 void AudioRenderComponent::seek(double time) noexcept {
@@ -192,18 +195,10 @@ void AudioRenderComponent::seek(double time) noexcept {
     } else {
         LogE("audio render is nullptr.");
     }
-    if (dataPlane_) {
-        dataPlane_->closeAndWait();
-        dataPlane_->buffer.reset();
-        dataPlane_->renderedDataLength.store(0, std::memory_order_release);
-        dataPlane_->offsetTimeUs.store(Time::TimePoint::fromSeconds(time).point(),
-                                       std::memory_order_release);
-        if (pimpl) {
-            dataPlane_->open();
-        }
-    }
-    maxPlayedTimeUs_.store(Time::TimePoint::fromSeconds(time).point(), std::memory_order_release);
-    offsetTime_ = Time::TimePoint::fromSeconds(time);
+    const auto target = Time::TimePoint::fromSeconds(time);
+    resetDataPlane(target.point(), false, pimpl != nullptr);
+    maxPlayedTimeUs_.store(target.point(), std::memory_order_release);
+    offsetTime_ = target;
     clock_.setTime(offsetTime_);
 }
 

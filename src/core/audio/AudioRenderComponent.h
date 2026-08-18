@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 
 #include "AudioInfo.h"
 #include "Clock.h"
@@ -165,6 +166,9 @@ class AudioRenderComponent : public IPipelineComponent,
     };
 
     void init() noexcept;
+    void resetDataPlane(std::optional<uint64_t> offsetTimeUs,
+                        bool resetDecoderCompleted,
+                        bool reopen) noexcept;
 
  private:
     std::shared_ptr<AudioInfo> audioInfo_;
