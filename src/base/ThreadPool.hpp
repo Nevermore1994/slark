@@ -127,6 +127,7 @@ class ThreadPool : public NonCopyMovable {
         requires std::is_invocable_v<F, Args...>
     Expected<void> postJobWithPriority(JobPriority priority, F&& f, Args&&... args);
 
+    void enqueueJobLocked(Job job) noexcept;
     void workThread();
 
     std::vector<std::thread> workers_;
@@ -145,6 +146,11 @@ inline ThreadPool::ThreadPool(const ThreadPoolConfig& config) {
             workThread();
         });
     }
+}
+
+inline void ThreadPool::enqueueJobLocked(Job job) noexcept {
+    jobs_.push_back(std::move(job));
+    std::push_heap(jobs_.begin(), jobs_.end(), std::greater<>{});
 }
 
 inline void ThreadPool::workThread() {
@@ -203,7 +209,7 @@ auto ThreadPool::submitWithPriority(JobPriority priority, F&& f, Args&&... args)
             return f(std::move(capturedArgs)...);
         };
 
-        jobs_.push_back(Job{
+        enqueueJobLocked(Job{
             .priority = priority,
             .sequence = sequenceCounter_.fetch_add(1, std::memory_order_relaxed),
             .func =
@@ -225,7 +231,6 @@ auto ThreadPool::submitWithPriority(JobPriority priority, F&& f, Args&&... args)
                         std::make_exception_ptr(std::runtime_error("Job cancelled")));
                 },
         });
-        std::push_heap(jobs_.begin(), jobs_.end(), std::greater<>{});
     }
 
     notEmpty_.notify_one();
@@ -241,7 +246,7 @@ Expected<void> ThreadPool::postJobWithPriority(JobPriority priority, F&& f, Args
             return std::unexpected(Error::InvalidOperation);
         }
 
-        jobs_.push_back(Job{
+        enqueueJobLocked(Job{
             .priority = priority,
             .sequence = sequenceCounter_.fetch_add(1, std::memory_order_relaxed),
             .func =
@@ -250,7 +255,6 @@ Expected<void> ThreadPool::postJobWithPriority(JobPriority priority, F&& f, Args
                 },
             .cancel = {},
         });
-        std::push_heap(jobs_.begin(), jobs_.end(), std::greater<>{});
     }
 
     notEmpty_.notify_one();
