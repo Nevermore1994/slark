@@ -304,10 +304,6 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(
         if (parserState.hasHeaders) {
             co_yield HttpResponseEvent::makeHeaders(std::move(parserState.header));
             parserState.hasHeaders = false;
-            if (parser.isHttpError()) {
-                co_yield makeResponseTerminalEvent(parser, std::move(perf));
-                co_return;
-            }
         }
 
         if (parserState.pendingBody) {

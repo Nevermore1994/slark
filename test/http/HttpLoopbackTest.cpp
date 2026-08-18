@@ -370,6 +370,20 @@ TEST(HttpLoopbackTest, StreamingFinalChunkExposesChunkedTrailers) {
     EXPECT_EQ(finalChunk.trailers.at("x-checksum"), "stream123");
 }
 
+TEST(HttpLoopbackTest, HttpErrorPreservesBodyAndTrailers) {
+    const auto response = executeLoopback(
+        "HTTP/1.1 500 Internal Server Error\r\nTransfer-Encoding: chunked\r\n\r\n"
+        "5\r\nerror\r\n0\r\nX-Trace: error-123\r\n\r\n");
+
+    EXPECT_EQ(response.statusCode, HttpStatusCode::InternalServerError);
+    EXPECT_EQ(response.error.retCode, Error::HttpError);
+    ASSERT_NE(response.body, nullptr);
+    EXPECT_EQ(std::string(reinterpret_cast<const char*>(response.body->data()),
+                          response.body->length()),
+              "error");
+    EXPECT_EQ(response.trailers.at("x-trace"), "error-123");
+}
+
 TEST(HttpLoopbackTest, WriteTimeoutPreservesConnectionTimeout) {
     LoopbackBlackholeServer server;
     RequestInfo info;

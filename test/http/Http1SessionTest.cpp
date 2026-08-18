@@ -384,6 +384,46 @@ TEST(Http1SessionTest, ConnectionCloseResponseForcesReconnect) {
     EXPECT_EQ(server.requestCount(), 2);
 }
 
+TEST(Http1SessionTest, HttpErrorPreservesBodyAndTrailersBeforeReuse) {
+    const std::string errorResponse =
+        "HTTP/1.1 500 Internal Server Error\r\nTransfer-Encoding: chunked\r\n\r\n"
+        "5\r\nerror\r\n0\r\nX-Trace: keepalive-error\r\n\r\n";
+    KeepAliveServer server({errorResponse, fixedResponse("reused")});
+    auto session = std::make_shared<Http1Session>();
+    PairResult result;
+
+    ThreadPool pool(ThreadPoolConfig{2});
+    auto task = runVoidTask([&]() -> Task<void> {
+        auto first = co_await HttpProcessor::process(makeRequest(server.port(), session));
+        if (first) {
+            result.first = std::move(*first);
+        } else {
+            result.first.error = first.error();
+        }
+        auto second = co_await HttpProcessor::process(makeRequest(server.port(), session));
+        if (second) {
+            result.second = std::move(*second);
+        } else {
+            result.second.error = second.error();
+        }
+        result.done.store(true);
+    });
+    task.resume();
+    waitFor(result.done);
+
+    ASSERT_TRUE(result.done.load());
+    EXPECT_EQ(result.first.statusCode, HttpStatusCode::InternalServerError);
+    EXPECT_EQ(result.first.error.retCode, Error::HttpError);
+    ASSERT_NE(result.first.body, nullptr);
+    EXPECT_EQ(result.first.body->toString(), "error");
+    EXPECT_EQ(result.first.trailers.at("x-trace"), "keepalive-error");
+    EXPECT_EQ(result.second.error.retCode, Error::Success);
+    ASSERT_NE(result.second.body, nullptr);
+    EXPECT_EQ(result.second.body->toString(), "reused");
+    EXPECT_EQ(server.acceptCount(), 1);
+    EXPECT_EQ(server.requestCount(), 2);
+}
+
 TEST(HttpResponseParserTest, TakesUnreadDataForNextResponse) {
     HttpResponseParser parser({});
     const std::string first = "HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\none";
