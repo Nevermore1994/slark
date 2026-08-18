@@ -299,11 +299,15 @@ struct HttpResponseEvent {
         return event;
     }
 
-    static HttpResponseEvent makeError(ErrorInfo responseError, RequestPerf responsePerf = {}) {
+    static HttpResponseEvent makeError(
+        ErrorInfo responseError,
+        RequestPerf responsePerf = {},
+        std::unordered_map<std::string, std::string> responseTrailers = {}) {
         HttpResponseEvent event;
         event.type = HttpResponseEventType::Error;
         event.error = std::move(responseError);
         event.perf = std::move(responsePerf);
+        event.trailers = std::move(responseTrailers);
         return event;
     }
 };

@@ -9,6 +9,7 @@
 #include <chrono>
 #include <utility>
 
+#include "HttpExecutionSupport.h"
 #include "HttpResponseParser.h"
 #include "HttpUtil.hpp"
 #include "Log.hpp"
@@ -19,74 +20,6 @@ namespace slark::http {
 namespace {
 
 constexpr auto kIdleTimeout = std::chrono::seconds(30);
-
-Task<ErrorInfo> sendRequestPart(const std::shared_ptr<OwnedConnection>& connection,
-                                std::string_view data,
-                                const RequestInfo& requestInfo,
-                                CancellationToken& token,
-                                std::string_view partName) {
-    if (token.isCancelled()) {
-        co_return ErrorInfo{slark::Error::Cancelled};
-    }
-
-    auto result = co_await connection->asyncSend(data, requestInfo.writeTimeout, token);
-    if (result) {
-        co_return ErrorInfo{};
-    }
-    if (token.isCancelled()) {
-        co_return ErrorInfo{slark::Error::Cancelled};
-    }
-
-    const auto error = normalizeTransportError(result.error());
-    LogE("[Http1Session::sendRequestPart] {} failed: error={} legacyErr={} url={}", partName,
-         static_cast<int>(error), static_cast<int>(result.error()), requestInfo.url);
-    co_return ErrorInfo{error};
-}
-
-HttpResponseParser::Callbacks makeEventCallbacks(
-    ResponseHeader& header,
-    bool& hasHeaders,
-    std::unordered_map<std::string, std::string>& trailers,
-    DataPtr& pendingBody,
-    RequestPerf& perf,
-    bool& parseError,
-    Error& parseErrorCode) {
-    HttpResponseParser::Callbacks callbacks;
-    callbacks.onStatusLine = [&header](HttpStatusCode code, const std::string& reason) {
-        header.httpStatusCode = code;
-        header.reasonPhrase = reason;
-    };
-    callbacks.onHeaders = [&header, &hasHeaders](
-                              std::unordered_map<std::string, std::string>&& headers) {
-        header.headers = std::move(headers);
-        hasHeaders = true;
-    };
-    callbacks.onTrailers = [&trailers](std::unordered_map<std::string, std::string>&& values) {
-        trailers = std::move(values);
-    };
-    callbacks.onBodyData = [&pendingBody, &perf](const Byte* data, size_t size) {
-        if (!pendingBody) {
-            pendingBody = std::make_unique<Data>();
-        }
-        pendingBody->append(ConstByteSpan(data, size));
-        perf.parser.bodySize += static_cast<int64_t>(size);
-    };
-    callbacks.onError = [&parseError, &parseErrorCode, &perf](Error code) {
-        parseError = true;
-        parseErrorCode = code;
-        perf.parser.parseResult = code;
-    };
-    return callbacks;
-}
-
-ErrorInfo classifyReadError(Error error, bool overallExpired, RequestPerf& perf) noexcept {
-    const auto unifiedError = normalizeTransportError(error);
-    if (unifiedError == Error::ConnectionTimeout) {
-        perf.transport.timeoutSource =
-            overallExpired ? TimeoutSource::ReadOverall : TimeoutSource::ReadIdle;
-    }
-    return ErrorInfo{unifiedError};
-}
 
 }  // namespace
 
@@ -230,63 +163,14 @@ Task<ErrorInfo> Http1Session::sendRequest(const std::shared_ptr<OwnedConnection>
         co_return ErrorInfo{slark::Error::InvalidArgument};
     }
 
-    auto error = co_await sendRequestPart(connection, request, requestInfo, token, "headers");
+    auto error = co_await sendRequestPart(*connection, request, requestInfo, token, "headers");
     if (error.retCode != slark::Error::Success || requestInfo.bodyEmpty()) {
         co_return error;
     }
 
     const std::string_view body(reinterpret_cast<const char*>(requestInfo.body->data()),
                                 requestInfo.body->size());
-    co_return co_await sendRequestPart(connection, body, requestInfo, token, "body");
-}
-
-Task<Http1Session::StreamReadResult> Http1Session::readStreamChunk(
-    const std::shared_ptr<OwnedConnection>& connection,
-    std::array<Byte, 16384>& readBuffer,
-    const Time::Deadline& overallDeadline,
-    const RequestInfo& requestInfo,
-    RequestPerf& perf,
-    CancellationToken& token) {
-    StreamReadResult result;
-    if (token.isCancelled()) {
-        result.shouldExit = true;
-        result.error = ErrorInfo{slark::Error::Cancelled};
-        co_return result;
-    }
-    if (overallDeadline.isExpired()) {
-        perf.transport.timeoutSource = TimeoutSource::ReadOverall;
-        result.shouldExit = true;
-        result.error = ErrorInfo{slark::Error::ConnectionTimeout};
-        co_return result;
-    }
-
-    auto socket = connection->get();
-    if (!socket || !socket->isValid()) {
-        result.shouldExit = true;
-        result.error = ErrorInfo{slark::Error::ConnectionReset};
-        co_return result;
-    }
-
-    const auto readTimeout = std::min(requestInfo.readIdleTimeout, overallDeadline.remaining());
-    auto readResult = co_await socket->asyncReceive(readBuffer.data(), readBuffer.size(), readTimeout,
-                                                    token);
-    if (!readResult) {
-        if (token.isCancelled()) {
-            result.shouldExit = true;
-            result.error = ErrorInfo{slark::Error::Cancelled};
-            co_return result;
-        }
-        result.shouldExit = true;
-        result.error = classifyReadError(readResult.error(), overallDeadline.isExpired(), perf);
-        co_return result;
-    }
-    if (*readResult == 0) {
-        result.isEof = true;
-        co_return result;
-    }
-
-    result.bytesRead = *readResult;
-    co_return result;
+    co_return co_await sendRequestPart(*connection, body, requestInfo, token, "body");
 }
 
 AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo requestInfo,
@@ -343,14 +227,8 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo reques
     }
     co_yield HttpResponseEvent::makeConnected();
 
-    ResponseHeader header;
-    bool hasHeaders = false;
-    DataPtr pendingBody;
-    std::unordered_map<std::string, std::string> trailers;
-    bool parseErrorSeen = false;
-    Error parseErrorCode = slark::Error::Success;
-    HttpResponseParser parser(makeEventCallbacks(header, hasHeaders, trailers, pendingBody, perf,
-                                                 parseErrorSeen, parseErrorCode));
+    ParserEventState parserState;
+    HttpResponseParser parser(makeParserCallbacks(parserState, perf));
     parser.setPerf(&perf);
     parser.setRequestMethod(requestInfo.methodType);
     parser.setMaxResponseBodySize(requestInfo.maxResponseBodySize);
@@ -368,15 +246,16 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo reques
         if (!pending.empty()) {
             parser.feed(reinterpret_cast<const Byte*>(pending.data()), pending.size());
         } else {
-            auto read = co_await readStreamChunk(connection, readBuffer, overallDeadline, requestInfo,
-                                                 perf, effectiveToken);
-            if (read.shouldExit) {
+            auto read = co_await http::readStreamChunk(
+                connection, readBuffer, overallDeadline, requestInfo, perf, effectiveToken,
+                "Http1Session::readStreamChunk");
+            if (read.status == StreamReadStatus::Error) {
                 discardConnection(connection);
                 busyGuard.release();
                 co_yield HttpResponseEvent::makeError(std::move(read.error), std::move(perf));
                 co_return;
             }
-            if (read.isEof) {
+            if (read.status == StreamReadStatus::Eof) {
                 parser.onEof();
             } else {
                 ++recvLoops;
@@ -384,17 +263,18 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo reques
             }
         }
 
-        if (hasHeaders) {
-            co_yield HttpResponseEvent::makeHeaders(std::move(header));
-            hasHeaders = false;
+        if (parserState.hasHeaders) {
+            co_yield HttpResponseEvent::makeHeaders(std::move(parserState.header));
+            parserState.hasHeaders = false;
         }
-        if (pendingBody) {
-            co_yield HttpResponseEvent::makeData(std::move(pendingBody));
+        if (parserState.pendingBody) {
+            co_yield HttpResponseEvent::makeData(std::move(parserState.pendingBody));
         }
-        if (parseErrorSeen) {
+        if (parserState.parseError) {
             discardConnection(connection);
             busyGuard.release();
-            co_yield HttpResponseEvent::makeError(ErrorInfo{parseErrorCode}, std::move(perf));
+            co_yield HttpResponseEvent::makeError(ErrorInfo{parserState.parseErrorCode},
+                                                  std::move(perf));
             co_return;
         }
         if (parser.isCompleted()) {
@@ -405,11 +285,11 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo reques
         }
     }
 
-    if (parser.hasError() || parseErrorSeen || !parser.isCompleted()) {
+    if (parser.hasError() || parserState.parseError || !parser.isCompleted()) {
         discardConnection(connection);
-        const auto error = parseErrorCode == slark::Error::Success
+        const auto error = parserState.parseErrorCode == slark::Error::Success
                                ? ErrorInfo{slark::Error::ConnectionReset}
-                               : ErrorInfo{parseErrorCode};
+                               : ErrorInfo{parserState.parseErrorCode};
         busyGuard.release();
         co_yield HttpResponseEvent::makeError(error, std::move(perf));
         co_return;
@@ -440,15 +320,8 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo reques
         discardConnection(connection);
     }
 
-    if (parser.isHttpError()) {
-        busyGuard.release();
-        co_yield HttpResponseEvent::makeError(
-            ErrorInfo{slark::Error::HttpError, static_cast<int32_t>(parser.statusCode())},
-            std::move(perf));
-        co_return;
-    }
     busyGuard.release();
-    co_yield HttpResponseEvent::makeCompleted(std::move(perf), std::move(trailers));
+    co_yield makeResponseTerminalEvent(parser, std::move(perf), std::move(parserState.trailers));
 }
 
 void Http1Session::close() noexcept {

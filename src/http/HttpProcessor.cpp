@@ -7,6 +7,7 @@
 #include "ConnectionFactory.h"
 #include "CoroutineScheduler.hpp"
 #include "Http1Session.h"
+#include "HttpExecutionSupport.h"
 #include "HttpResponseParser.h"
 #include "HttpUtil.hpp"
 #include "Log.hpp"
@@ -48,29 +49,6 @@ Task<OpenConnectionResult> openRequestConnection(const RequestInfo& requestInfo,
     co_return std::move(conn);
 }
 
-Task<ErrorInfo> sendRequestPart(OwnedConnection& conn,
-                                std::string_view data,
-                                const RequestInfo& requestInfo,
-                                CancellationToken& token,
-                                std::string_view partName) {
-    if (token.isCancelled()) {
-        co_return ErrorInfo{slark::Error::Cancelled};
-    }
-
-    auto result = co_await conn.asyncSend(data, requestInfo.writeTimeout, token);
-    if (result) {
-        co_return ErrorInfo{};
-    }
-    if (token.isCancelled()) {
-        co_return ErrorInfo{slark::Error::Cancelled};
-    }
-
-    const auto error = normalizeTransportError(result.error());
-    LogE("[HttpProcessor::sendRequestPart] {} failed: error={} legacyErr={} url={}", partName,
-         static_cast<int>(error), static_cast<int>(result.error()), requestInfo.url);
-    co_return ErrorInfo{error};
-}
-
 Task<ErrorInfo> sendRequest(OwnedConnection& conn,
                             const RequestInfo& requestInfo,
                             const Url& url,
@@ -84,124 +62,6 @@ Task<ErrorInfo> sendRequest(OwnedConnection& conn,
     const std::string_view body(reinterpret_cast<const char*>(requestInfo.body->data()),
                                 requestInfo.body->size());
     co_return co_await sendRequestPart(conn, body, requestInfo, token, "body");
-}
-
-HttpResponseParser::Callbacks makeEventCallbacks(
-    ResponseHeader& header,
-    bool& hasHeaders,
-    std::unordered_map<std::string, std::string>& trailers,
-    DataPtr& pendingBody,
-    RequestPerf& perf,
-    bool& parseError,
-    Error& parseErrorCode) {
-    HttpResponseParser::Callbacks callbacks;
-    callbacks.onStatusLine = [&header](HttpStatusCode code, const std::string& reason) {
-        header.httpStatusCode = code;
-        header.reasonPhrase = reason;
-    };
-    callbacks.onHeaders = [&header, &hasHeaders](
-                              std::unordered_map<std::string, std::string>&& headers) {
-        header.headers = std::move(headers);
-        hasHeaders = true;
-    };
-    callbacks.onTrailers = [&trailers](std::unordered_map<std::string, std::string>&& values) {
-        trailers = std::move(values);
-    };
-    callbacks.onBodyData = [&pendingBody, &perf](const Byte* data, size_t size) {
-        if (!pendingBody) {
-            pendingBody = std::make_unique<Data>();
-        }
-        pendingBody->append(ConstByteSpan(data, size));
-        perf.parser.bodySize += static_cast<int64_t>(size);
-    };
-    callbacks.onError = [&parseError, &parseErrorCode, &perf](Error code) {
-        parseError = true;
-        parseErrorCode = code;
-        perf.parser.parseResult = code;
-    };
-    return callbacks;
-}
-
-ErrorInfo classifyStreamReadError(Error error, bool overallExpired, RequestPerf& perf) noexcept {
-    const auto unifiedError = normalizeTransportError(error);
-    if (unifiedError == Error::ConnectionTimeout) {
-        perf.transport.timeoutSource =
-            overallExpired ? TimeoutSource::ReadOverall : TimeoutSource::ReadIdle;
-    }
-    return ErrorInfo{unifiedError};
-}
-
-struct StreamReadResult {
-    bool shouldExit = false;
-    bool isEof = false;
-    size_t bytesRead = 0;
-    ErrorInfo error;
-};
-
-Task<StreamReadResult> readStreamChunk(std::unique_ptr<OwnedConnection>& conn,
-                                       std::array<Byte, 16384>& readBuffer,
-                                       const Time::Deadline& overallDeadline,
-                                       const RequestInfo& requestInfo,
-                                       RequestPerf& perf,
-                                       CancellationToken& token) {
-    StreamReadResult result;
-
-    if (token.isCancelled()) {
-        result.shouldExit = true;
-        result.error = ErrorInfo{slark::Error::Cancelled};
-        co_return result;
-    }
-
-    if (overallDeadline.isExpired()) {
-        perf.transport.timeoutSource = TimeoutSource::ReadOverall;
-        LogE("[HttpProcessor::readStreamChunk] overall deadline expired: bodySize={} url={}",
-             perf.parser.bodySize, requestInfo.url);
-        result.shouldExit = true;
-        result.error = ErrorInfo{slark::Error::ConnectionTimeout};
-        co_return result;
-    }
-
-    auto socket = conn->get();
-    if (!socket || !socket->isValid()) {
-        LogE("[HttpProcessor::readStreamChunk] socket invalid: bodySize={} url={}",
-             perf.parser.bodySize, requestInfo.url);
-        result.shouldExit = true;
-        result.error = ErrorInfo{slark::Error::ConnectionReset};
-        co_return result;
-    }
-
-    const auto readTimeout = std::min(requestInfo.readIdleTimeout, overallDeadline.remaining());
-    auto readResult =
-        co_await socket->asyncReceive(readBuffer.data(), readBuffer.size(), readTimeout, token);
-    if (!readResult.has_value()) {
-        if (token.isCancelled()) {
-            result.shouldExit = true;
-            result.error = ErrorInfo{slark::Error::Cancelled};
-            co_return result;
-        }
-        auto errorInfo =
-            classifyStreamReadError(readResult.error(), overallDeadline.isExpired(), perf);
-        if (errorInfo.retCode == slark::Error::ConnectionTimeout) {
-            LogE("[HttpProcessor::readStreamChunk] read timeout: timeoutSource={} bodySize={} "
-                 "url={}",
-                 static_cast<int>(perf.transport.timeoutSource), perf.parser.bodySize,
-                 requestInfo.url);
-        } else {
-            LogE("[HttpProcessor::readStreamChunk] read error: err={} bodySize={} url={}",
-                 static_cast<int>(errorInfo.retCode), perf.parser.bodySize, requestInfo.url);
-        }
-        result.shouldExit = true;
-        result.error = std::move(errorInfo);
-        co_return result;
-    }
-
-    if (*readResult == 0) {
-        result.isEof = true;
-        co_return result;
-    }
-
-    result.bytesRead = *readResult;
-    co_return result;
 }
 
 }  // namespace
@@ -265,6 +125,8 @@ Task<ResponseResult> HttpProcessor::aggregateEvents(RequestInfo requestInfo,
                 co_return std::move(response);
             case HttpResponseEventType::Error:
                 if (event->error.retCode == slark::Error::HttpError && hasHeaders) {
+                    response.body = body->empty() ? nullptr : std::move(body);
+                    response.trailers = std::move(event->trailers);
                     response.error = event->error;
                     response.perf = std::move(event->perf);
                     co_return std::move(response);
@@ -412,14 +274,8 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(
     }
     co_yield HttpResponseEvent::makeConnected();
 
-    ResponseHeader header;
-    bool hasHeaders = false;
-    DataPtr pendingBody;
-    std::unordered_map<std::string, std::string> trailers;
-    bool parseError = false;
-    Error parseErrorCode = slark::Error::Success;
-    HttpResponseParser parser(makeEventCallbacks(header, hasHeaders, trailers, pendingBody, perf,
-                                                 parseError, parseErrorCode));
+    ParserEventState parserState;
+    HttpResponseParser parser(makeParserCallbacks(parserState, perf));
     parser.setPerf(&perf);
     parser.setRequestMethod(requestInfo.methodType);
     parser.setMaxResponseBodySize(requestInfo.maxResponseBodySize);
@@ -431,13 +287,13 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(
     size_t recvLoops = 0;
 
     while (!parser.isCompleted() && !parser.hasError()) {
-        auto read = co_await readStreamChunk(conn, readBuffer, overallDeadline, requestInfo, perf,
-                                             token);
-        if (read.shouldExit) {
+        auto read = co_await http::readStreamChunk(conn, readBuffer, overallDeadline, requestInfo,
+                                                   perf, token, "HttpProcessor::readStreamChunk");
+        if (read.status == StreamReadStatus::Error) {
             co_yield HttpResponseEvent::makeError(std::move(read.error), std::move(perf));
             co_return;
         }
-        if (read.isEof) {
+        if (read.status == StreamReadStatus::Eof) {
             parser.onEof();
             break;
         }
@@ -445,20 +301,17 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(
         ++recvLoops;
         parser.feed(readBuffer.data(), read.bytesRead);
 
-        if (hasHeaders) {
-            const auto statusCode = header.httpStatusCode;
-            co_yield HttpResponseEvent::makeHeaders(std::move(header));
-            hasHeaders = false;
+        if (parserState.hasHeaders) {
+            co_yield HttpResponseEvent::makeHeaders(std::move(parserState.header));
+            parserState.hasHeaders = false;
             if (parser.isHttpError()) {
-                co_yield HttpResponseEvent::makeError(
-                    ErrorInfo{slark::Error::HttpError, static_cast<int32_t>(statusCode)},
-                    std::move(perf));
+                co_yield makeResponseTerminalEvent(parser, std::move(perf));
                 co_return;
             }
         }
 
-        if (pendingBody) {
-            co_yield HttpResponseEvent::makeData(std::move(pendingBody));
+        if (parserState.pendingBody) {
+            co_yield HttpResponseEvent::makeData(std::move(parserState.pendingBody));
         }
 
         if (perf.parser.bodySize - lastLoggedSize >= streamProgressLogBytes()) {
@@ -467,16 +320,17 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(
             lastLoggedSize = perf.parser.bodySize;
         }
 
-        if (parseError) {
-            co_yield HttpResponseEvent::makeError(ErrorInfo{parseErrorCode}, std::move(perf));
+        if (parserState.parseError) {
+            co_yield HttpResponseEvent::makeError(ErrorInfo{parserState.parseErrorCode},
+                                                  std::move(perf));
             co_return;
         }
     }
 
-    if (parser.hasError() || parseError || !parser.isCompleted()) {
-        const auto error = parseErrorCode == slark::Error::Success
+    if (parser.hasError() || parserState.parseError || !parser.isCompleted()) {
+        const auto error = parserState.parseErrorCode == slark::Error::Success
                                ? ErrorInfo{slark::Error::ConnectionReset}
-                               : ErrorInfo{parseErrorCode};
+                               : ErrorInfo{parserState.parseErrorCode};
         co_yield HttpResponseEvent::makeError(error, std::move(perf));
         co_return;
     }
@@ -484,7 +338,7 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(
     perf.totalRequestTimeMs =
         (Time::nowTimeStamp() - requestStart).toMilliSeconds().count();
     const bool shouldClose = parser.shouldCloseConnection();
-    co_yield HttpResponseEvent::makeCompleted(std::move(perf), std::move(trailers));
+    co_yield makeResponseTerminalEvent(parser, std::move(perf), std::move(parserState.trailers));
     if (shouldClose) {
         conn->close();
     }

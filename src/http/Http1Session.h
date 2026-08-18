@@ -38,13 +38,6 @@ class Http1Session final : public NonCopyable, public std::enable_shared_from_th
         [[nodiscard]] bool matches(const Url& url) const noexcept;
     };
 
-    struct StreamReadResult final {
-        bool shouldExit = false;
-        bool isEof = false;
-        size_t bytesRead = 0;
-        ErrorInfo error;
-    };
-
     using ConnectionResult = std::expected<std::shared_ptr<OwnedConnection>, ErrorInfo>;
 
     struct BusyGuard final {
@@ -64,14 +57,6 @@ class Http1Session final : public NonCopyable, public std::enable_shared_from_th
                                        const RequestInfo& requestInfo,
                                        const Url& url,
                                        CancellationToken& token);
-
-    static Task<StreamReadResult> readStreamChunk(
-        const std::shared_ptr<OwnedConnection>& connection,
-        std::array<Byte, 16384>& readBuffer,
-        const Time::Deadline& overallDeadline,
-        const RequestInfo& requestInfo,
-        RequestPerf& perf,
-        CancellationToken& token);
 
     [[nodiscard]] static std::optional<Url> parseUrl(const std::string& urlString,
                                                      ErrorInfo& error);
