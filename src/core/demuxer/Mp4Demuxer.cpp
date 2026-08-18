@@ -13,6 +13,24 @@
 
 namespace slark {
 
+namespace {
+
+AVFramePtr createSampleFrame(uint64_t& index,
+                             int64_t dts,
+                             int64_t pts,
+                             uint64_t offset,
+                             uint32_t timeScale) {
+    auto frame = std::make_unique<AVFrame>();
+    frame->index = index++;
+    frame->dts = dts;
+    frame->pts = pts;
+    frame->offset = offset;
+    frame->timeScale = timeScale;
+    return frame;
+}
+
+}  // namespace
+
 bool isContainerBox(std::string_view symbol) noexcept {
     using namespace std::string_view_literals;
     static const std::vector<std::string_view> kContainerBox = {
@@ -532,12 +550,7 @@ void TrackContext::parseFragmentedData(Buffer& buffer,
     if (!buffer.skipTo(static_cast<int64_t>(s.offset))) {
         return;
     }
-    auto frame = std::make_unique<AVFrame>();
-    frame->index = index++;
-    frame->dts = s.dts;
-    frame->pts = s.pts;
-    frame->offset = s.offset;
-    frame->timeScale = mdhd->timeScale;
+    auto frame = createSampleFrame(index, s.dts, s.pts, s.offset, mdhd->timeScale);
     if (type == TrackType::Audio) {
         frame->frameType = AVFrameType::Audio;
         auto info = std::dynamic_pointer_cast<AudioFrameInfo>(frameInfo);
@@ -569,12 +582,7 @@ void TrackContext::parseNormalData(Buffer& buffer,
     if (!buffer.skipTo(static_cast<int64_t>(start))) {
         return;
     }
-    auto frame = std::make_unique<AVFrame>();
-    frame->index = index++;
-    frame->dts = dts;
-    frame->pts = pts;
-    frame->offset = start;
-    frame->timeScale = mdhd->timeScale;
+    auto frame = createSampleFrame(index, dts, pts, start, mdhd->timeScale);
     if (type == TrackType::Audio) {
         frame->frameType = AVFrameType::Audio;
         auto info = std::dynamic_pointer_cast<AudioFrameInfo>(frameInfo);
