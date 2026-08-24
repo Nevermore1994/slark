@@ -174,7 +174,7 @@ AVFrameRefPtr DecoderComponent::waitForFrame(Thread& thread) noexcept {
 
 bool DecoderComponent::decodeFrame(AVFrameRefPtr& frame, Thread& thread) noexcept {
     int retryCount = 0;
-    while (!thread.isExit() && decoder_) {
+    while (!thread.shouldStop() && decoder_) {
         auto res = decoder_->decode(frame);
         if (res == Error::Success) {
             return true;
