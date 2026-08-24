@@ -171,6 +171,87 @@ TEST(DemuxerComponentTest, InitialSeekDiscardsQueuedPacketsAndEos) {
     component.stop();
 }
 
+TEST(DemuxerComponentTest, SeekAfterFlushPreservesFirstSeekPacket) {
+    auto firstData = loadData(kMp4Path, 0, 65536);
+    if (!firstData) {
+        GTEST_SKIP() << "Sample.mp4 not found, skipping";
+    }
+
+    auto [sender, receiver] = Channel<DataPacket>::create();
+    DemuxerConfig config;
+    config.filePath = kMp4Path;
+    DemuxerComponent component(std::move(receiver), std::move(config));
+    ResultState state;
+
+    component.setHandleResultFunc(
+        [&state](const std::shared_ptr<IDemuxer>& demuxer, DemuxerResult&& result) {
+            std::lock_guard lock(state.mutex);
+            state.resultCodes.emplace_back(result.resultCode);
+            state.resultHasFrames.emplace_back(!result.audioFrames.empty() ||
+                                               !result.videoFrames.empty());
+            if (result.resultCode == DemuxerResultCode::ParsedHeader) {
+                ++state.parsedHeaders;
+            }
+            if (result.resultCode == DemuxerResultCode::FileEnd) {
+                ++state.fileEnds;
+            }
+            state.videoFrames += result.videoFrames.size();
+            state.audioFrames += result.audioFrames.size();
+            state.demuxerValid = state.demuxerValid && demuxer != nullptr;
+            state.condition.notify_all();
+        });
+
+    auto* senderPtr = sender.get();
+    component.setHandleSeekFunc([senderPtr](Range range, uint64_t generation) {
+        DataPacket packet;
+        packet.sourceGeneration = generation;
+        packet.offset = range.start();
+        packet.data = loadData(kMp4Path, range.start(), 65536);
+        if (packet.data) {
+            senderPtr->post(std::move(packet));
+        }
+        DataPacket eos;
+        eos.isEndOfStream = true;
+        eos.sourceGeneration = generation;
+        senderPtr->post(std::move(eos));
+    });
+
+    component.start();
+    DataPacket firstPacket;
+    firstPacket.offset = 0;
+    firstPacket.data = std::move(firstData);
+    ASSERT_TRUE(sender->send(std::move(firstPacket)).has_value());
+
+    {
+        std::unique_lock lock(state.mutex);
+        ASSERT_TRUE(state.condition.wait_for(lock, std::chrono::seconds(10), [&state] {
+            return state.fileEnds == 1 && state.videoFrames > 0;
+        }));
+    }
+
+    const auto seekPos = component.getSeekToPos(1.0);
+    ASSERT_GT(seekPos, 0u);
+    size_t framesBeforeSeek = 0;
+    {
+        std::lock_guard lock(state.mutex);
+        framesBeforeSeek = state.videoFrames + state.audioFrames;
+    }
+
+    component.pause();
+    component.flush();
+    component.seekToPos(seekPos);
+    component.resume();
+
+    {
+        std::unique_lock lock(state.mutex);
+        ASSERT_TRUE(state.condition.wait_for(lock, std::chrono::seconds(10), [&state, framesBeforeSeek] {
+            return state.fileEnds >= 2 && state.videoFrames + state.audioFrames > framesBeforeSeek;
+        }));
+        EXPECT_TRUE(state.demuxerValid);
+    }
+    component.stop();
+}
+
 TEST(DemuxerComponentTest, PreferredTsDemuxerReceivesDataAndOrderedEos) {
     auto data = loadTsData();
     if (!data) {

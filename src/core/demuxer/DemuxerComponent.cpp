@@ -330,6 +330,7 @@ void DemuxerComponent::seekToPosOnWorker(uint64_t pos, uint64_t generation) noex
         pendingSeekVerifiedOffset_.store(pos, std::memory_order_release);
         pendingSeekVerification_.store(true, std::memory_order_release);
         invokeSeekFunc(Range(pos), generation);
+        flushed_.store(false, std::memory_order_release);
     }
 }
 
