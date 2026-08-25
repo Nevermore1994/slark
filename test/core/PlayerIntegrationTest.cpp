@@ -198,11 +198,15 @@ TEST(PlayerIntegrationTest, PreferredTsHeaderIsEmittedOnlyAfterTracksAreKnown) {
     PlayPipeline pipeline(BackpressureConfig::forLocal());
     pipeline.bindToCurrentThread();
     std::atomic<int32_t> headerCount{0};
-    pipeline.setEventCallback([&headerCount](PipelineEvent event, std::optional<PipelineError>) {
-        if (event == PipelineEvent::DemuxHeaderParsed) {
-            headerCount.fetch_add(1, std::memory_order_relaxed);
-        }
-    });
+    std::shared_ptr<AudioInfo> headerAudioInfo;
+    pipeline.setEventCallback(
+        [&headerCount, &headerAudioInfo, demuxer](PipelineEvent event,
+                                                  std::optional<PipelineError>) {
+            if (event == PipelineEvent::DemuxHeaderParsed) {
+                headerAudioInfo = demuxer->audioInfo();
+                headerCount.fetch_add(1, std::memory_order_relaxed);
+            }
+        });
     pipeline.setDemuxerComponent(demuxer);
     pipeline.build();
 
@@ -223,6 +227,9 @@ TEST(PlayerIntegrationTest, PreferredTsHeaderIsEmittedOnlyAfterTracksAreKnown) {
     }
 
     EXPECT_EQ(headerCount.load(std::memory_order_relaxed), 1);
+    ASSERT_NE(headerAudioInfo, nullptr);
+    EXPECT_GT(headerAudioInfo->sampleRate, 0);
+    EXPECT_GT(headerAudioInfo->channels, 0);
     EXPECT_TRUE(pipeline.mediaInfo().hasAudio);
     EXPECT_TRUE(pipeline.mediaInfo().hasVideo);
     EXPECT_TRUE(pipeline.teardown());

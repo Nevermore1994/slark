@@ -1059,7 +1059,9 @@ void PlayPipeline::connectComponents() noexcept {
                     !demuxer_->isCurrentSourceGeneration(resultHolder->sourceGeneration)) {
                     return;
                 }
-                handleDemuxHeader(demuxer);
+                if (resultHolder->resultCode == DemuxerResultCode::ParsedHeader) {
+                    handleDemuxHeader(demuxer);
+                }
                 dispatchFrames(std::move(*resultHolder), seekContext_->currentEpoch());
             });
         });
