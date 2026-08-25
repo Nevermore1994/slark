@@ -870,7 +870,11 @@ void Player::Impl::handlePipelineEvent(PipelineEvent event,
             preparePlayerInfo();
             break;
         case PipelineEvent::PipelineReady:
-            setState(PlayerState::Ready);
+            if (state() != PlayerState::Buffering) {
+                setState(PlayerState::Ready);
+            } else {
+                LogI("pipeline ready while buffering, wait for first frame");
+            }
             break;
         case PipelineEvent::FirstFrameRendered:
             notifyPlayerEvent(PlayerEvent::FirstFrameRendered);

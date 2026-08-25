@@ -288,6 +288,21 @@ TEST_F(PlayerMediaIntegrationTest, MissingFileReportsError) {
 }
 
 
+TEST_F(PlayerMediaIntegrationTest, PipelineReadyKeepsInitialBufferingUntilPlaybackStarts) {
+    auto player = std::make_unique<Player>(makeParams(mediaPath(kWavFile)));
+    auto observer = std::make_shared<RecordingObserver>();
+    player->addObserver(observer);
+    player->prepare();
+
+    ASSERT_TRUE(waitUntil([&observer] { return observer->hasState(PlayerState::Buffering); }))
+        << "player should enter buffering while waiting for playback to start";
+    std::this_thread::sleep_for(500ms);
+
+    EXPECT_FALSE(observer->hasState(PlayerState::Ready));
+    EXPECT_EQ(player->state(), PlayerState::Buffering);
+    safeDestroy(*player);
+}
+
 TEST_F(PlayerMediaIntegrationTest, WavPlaysToCompletion) {
     if (!PlayerMediaIntegrationTest::isPlayable()) {
         GTEST_SKIP() << "current environment cannot drive playback clock, skipping";
