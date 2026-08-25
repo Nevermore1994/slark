@@ -103,7 +103,7 @@ Task<HttpResponse> HttpRequest::executeWithToken(RequestInfo requestInfo,
         }
 
         LogE("[HttpRequest::asyncExecute] failed: retCode={} originCode={} url={}",
-             static_cast<int>(result.error().retCode), result.error().originErrorCode,
+             toString(result.error().retCode), result.error().originErrorCode,
              requestInfo.url);
         HttpResponse response;
         response.error = result.error();

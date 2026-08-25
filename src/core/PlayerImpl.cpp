@@ -926,13 +926,12 @@ void Player::Impl::handlePipelineError(PipelineEvent event,
     if (currentState == PlayerState::Stop || currentState == PlayerState::Error) {
         LogW("pipeline error ignored, event:{}, error:{}, current state:{}",
              static_cast<uint32_t>(event),
-             error.has_value() ? static_cast<uint32_t>(error->error) : 0,
+             error.has_value() ? toString(error->error) : "none",
              static_cast<uint32_t>(currentState));
         return;
     }
     const auto err = error.has_value() ? error->error : Error::PipelineDecodeError;
-    LogE("pipeline error, event:{}, error:{}", static_cast<uint32_t>(event),
-         static_cast<uint32_t>(err));
+    LogE("pipeline error, event:{}, error={}", static_cast<uint32_t>(event), toString(err));
     notifyPlayerEvent(PlayerEvent::OnError, std::to_string(static_cast<uint32_t>(err)));
     setState(PlayerState::Error);
 }

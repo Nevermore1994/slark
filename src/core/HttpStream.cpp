@@ -253,7 +253,7 @@ void HttpStream::onEvent(StreamEvent event) noexcept {
 void HttpStream::handleError(const http::ErrorInfo& error) noexcept {
     lastErrorOriginCode_.store(error.originErrorCode, std::memory_order_release);
     LogE("[HttpStream::handleError] retCode={} originCode={} pos={} url={}",
-         static_cast<int>(error.retCode), error.originErrorCode, position_.load(), params_.uri);
+         toString(error.retCode), error.originErrorCode, position_.load(), params_.uri);
     if (params_.onError) {
         params_.onError(error.retCode, error.originErrorCode);
     }

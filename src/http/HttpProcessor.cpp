@@ -37,7 +37,7 @@ Task<OpenConnectionResult> openRequestConnection(const RequestInfo& requestInfo,
         requestInfo.connectTimeout, requestInfo.tlsHandshakeTimeout, &perf, token);
     if (!result) {
         LogE("[HttpProcessor::openRequestConnection] failed: error={} url={}",
-             static_cast<int>(result.error().retCode), requestInfo.url);
+             toString(result.error().retCode), requestInfo.url);
         co_return std::unexpected(result.error());
     }
 

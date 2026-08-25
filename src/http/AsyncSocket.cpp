@@ -230,7 +230,7 @@ Task<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data,
 
         const auto error = transport_->classifyError(result);
         LogE("[AsyncSocket::asyncSend] write error: sent={}/{} error={} errno={}", totalSent,
-             data.size(), static_cast<int>(error), errno);
+             data.size(), toString(error), errno);
         co_return std::unexpected(error);
     }
 
@@ -304,13 +304,13 @@ Task<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
             }
             const auto error = transport_->classifyError(result);
             LogE("[AsyncSocket::asyncReceive] peer closed with transport error={}",
-                 static_cast<int>(error));
+                 toString(error));
             co_return std::unexpected(error);
         }
 
         const auto error = transport_->classifyError(result);
         LogE("[AsyncSocket::asyncReceive] read error: error={} errno={}",
-             static_cast<int>(error), errno);
+             toString(error), errno);
         co_return std::unexpected(error);
     }
 }

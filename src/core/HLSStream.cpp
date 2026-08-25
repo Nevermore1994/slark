@@ -736,7 +736,7 @@ void HLSStream::reportHttpError(const http::HttpResponse& response) {
         default:
             break;
     }
-    LogE("[HLSStream::reportHttpError] err={} originCode={}", static_cast<int>(err),
+    LogE("[HLSStream::reportHttpError] err={} originCode={}", toString(err),
          response.error.originErrorCode);
     params_.onError(err, response.error.originErrorCode);
     state_ = StreamState::Error;

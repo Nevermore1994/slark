@@ -196,7 +196,8 @@ Java_com_slark_sdk_MediaCodecDecoder_processCodecError(JNIEnv* env,
         LogE("processCodecError: not found decoder:{}", decoderId);
         return;
     }
-    LogE("codec error, decoderId:{} errorCode:{}", decoderId, errorCode);
+    LogE("codec error, decoderId:{} error={} originErrorCode={}", decoderId,
+         toString(Error::CodecError), errorCode);
     decoder->onError(Error::CodecError);
 }
 

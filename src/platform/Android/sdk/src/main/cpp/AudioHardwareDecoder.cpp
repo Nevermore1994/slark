@@ -26,7 +26,7 @@ Error AudioHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
         int64_t(frame->ptsTime() * 1000000),  // convert to microseconds
         flag, PacketType::Audio);
     if (res != Error::Success && res != Error::CodecAgain && res != Error::CodecNotProcessed) {
-        LogE("decode frame error:{}", static_cast<int>(res));
+        LogE("decode frame error:{}", toString(res));
     } else {
         LogIThrottle(2000, "send audio packet success, pts time:{:.3f}, isEOS:{}", frame->ptsTime(),
                      frame->info->isEndOfStream);

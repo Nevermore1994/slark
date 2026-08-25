@@ -79,7 +79,7 @@ Task<std::expected<std::unique_ptr<AsyncSocket>, ErrorInfo>> resolveAndConnect(
         } catch (const NetworkException& e) {
             lastError = ErrorInfo{e.error()};
             LogW("[openConnection] address candidate failed: {} error={}", host,
-                 static_cast<int>(e.error()));
+                 toString(e.error()));
             if (e.error() == slark::Error::ConnectionTimeout) {
                 if (perf) {
                     perf->transport.timeoutSource = TimeoutSource::Connect;
@@ -146,7 +146,7 @@ Task<Error> performTlsHandshake(AsyncSocket& socket,
     }
     if (tlsResult != slark::Error::Success) {
         LogW("[openConnection] TLS handshake failed: host={} error={}", host,
-             static_cast<int>(tlsResult));
+             toString(tlsResult));
         if (perf) {
             perf->connection.connectResult = tlsResult;
             if (tlsResult == slark::Error::ConnectionTimeout) {

@@ -269,7 +269,7 @@ void PlayPipeline::performKeyframeSeek(CTime target) noexcept {
         const auto sourceGeneration = demuxer_ ? demuxer_->beginSourceOperation() : 0;
         auto res = seekByTimeFunc_(targetSec, sourceGeneration);
         if (!res.has_value()) {
-            LogE("HLS seekByTime failed: {}", static_cast<uint32_t>(res.error()));
+            LogE("HLS seekByTime failed: {}", toString(res.error()));
             fireEvent(PipelineEvent::ReadError, PipelineError{.error = res.error()});
             return;
         }

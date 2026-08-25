@@ -78,7 +78,7 @@ inline Task<ErrorInfo> sendRequestPart(OwnedConnection& connection,
 
     const auto error = normalizeTransportError(result.error());
     LogE("[Http::sendRequestPart] {} failed: error={} legacyErr={} url={}", partName,
-         static_cast<int>(error), static_cast<int>(result.error()), requestInfo.url);
+         toString(error), toString(result.error()), requestInfo.url);
     co_return ErrorInfo{error};
 }
 
@@ -158,7 +158,7 @@ Task<StreamReadResult> readStreamChunk(const ConnectionHolder& connection,
                  requestInfo.url);
         } else {
             LogE("[{}] read error: err={} bodySize={} url={}", logTag,
-                 static_cast<int>(result.error.retCode), perf.parser.bodySize, requestInfo.url);
+                 toString(result.error.retCode), perf.parser.bodySize, requestInfo.url);
         }
         co_return result;
     }

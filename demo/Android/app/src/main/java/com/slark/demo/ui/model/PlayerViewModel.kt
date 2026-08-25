@@ -88,7 +88,7 @@ class PlayerViewModel(
         }
 
         override fun notifyEvent(playerId: String, event: SlarkPlayerEvent, value: String) {
-            SlarkLog.d("notifyEvent", "$event $value")
+            SlarkLog.d("notifyEvent", if (event == SlarkPlayerEvent.OnError) "$event" else "$event $value")
             when (event) {
                 SlarkPlayerEvent.UpdateCacheTime -> cacheTime = value.toDouble()
                 SlarkPlayerEvent.OnError -> {
@@ -100,11 +100,12 @@ class PlayerViewModel(
                     val slarkCode = parts.getOrNull(0)?.toIntOrNull()
                     val originCode = parts.getOrNull(1)?.toIntOrNull() ?: 0
                     val host = parts.getOrNull(2).orEmpty()
+                    val err = SlarkPlayerErrorCode.entries.firstOrNull { it.value == slarkCode }
+                    val errorName = err?.name ?: "Unknown error"
                     SlarkLog.e(
                         "PlayerViewModel",
-                        "Player error: slarkError=$slarkCode originErrorCode=$originCode host=$host"
+                        "Player error: slarkError=$errorName originErrorCode=$originCode host=$host"
                     )
-                    val err = SlarkPlayerErrorCode.entries.firstOrNull { it.value == slarkCode }
                     val shortMessage = when (err) {
                         SlarkPlayerErrorCode.MediaOpenFailed,
                         SlarkPlayerErrorCode.PipelineOpenFailed -> "Failed to open file"
