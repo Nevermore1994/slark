@@ -21,27 +21,6 @@ bool isNetworkLink(const std::string& path) noexcept {
     return view.starts_with("http://") || view.starts_with("https://");
 }
 
-bool isHlsLink(const std::string& url) noexcept {
-    std::string_view view(url);
-    if (!view.starts_with("http://") && !view.starts_with("https://")) {
-        return false;
-    }
-    // Strip query parameters, then check the extension
-    auto queryPos = view.find('?');
-    auto path = (queryPos != std::string_view::npos) ? view.substr(0, queryPos) : view;
-    auto endsWithIcase = [path](std::string_view suffix) {
-        if (path.size() < suffix.size()) {
-            return false;
-        }
-        auto sub = path.substr(path.size() - suffix.size());
-        return std::equal(sub.begin(), sub.end(), suffix.begin(), suffix.end(), [](char a, char b) {
-            return std::tolower(static_cast<unsigned char>(a)) ==
-                   std::tolower(static_cast<unsigned char>(b));
-        });
-    };
-    return endsWithIcase(".m3u8") || endsWithIcase(".m3u");
-}
-
 AudioProfile getAudioProfile(uint8_t profile) noexcept {
     if ((profile < 1 || profile >= 6) && profile != 29) {
         return AudioProfile::AAC_LC;
@@ -148,7 +127,7 @@ static double parseVuiFrameRate(DataView bitstream, int32_t& offset) {
     return 0.0;
 }
 
-double parseH264Vui(DataView bitstream, int32_t& offset) {
+double parseH264Vui(DataView bitstream, int32_t& offset, uint8_t& maxNumReorderFrames) {
     using namespace Util;
     double fps = 0.0;
     do {
@@ -208,6 +187,19 @@ double parseH264Vui(DataView bitstream, int32_t& offset) {
         auto picStructPresentFlag = Golomb::readBits(bitstream, offset, 1);
         if (picStructPresentFlag) {
             fps /= 2;
+        }
+
+        // bitstream_restriction: reorder depth, only present when this flag is set.
+        auto bitstreamRestrictionFlag = Golomb::readBits(bitstream, offset, 1);
+        if (bitstreamRestrictionFlag) {
+            offset += 1;  // motion_vectors_over_pic_boundaries_flag
+            Golomb::readUe(bitstream, offset);  // max_bytes_per_pic_denom
+            Golomb::readUe(bitstream, offset);  // max_bits_per_mb_denom
+            Golomb::readUe(bitstream, offset);  // log2_max_mv_length_horizontal
+            Golomb::readUe(bitstream, offset);  // log2_max_mv_length_vertical
+            auto maxNumReorder = Golomb::readUe(bitstream, offset);
+            maxNumReorderFrames = static_cast<uint8_t>(std::min(maxNumReorder, 16u));
+            LogI("maxNumReorderFrames:{}", maxNumReorderFrames);
         }
     } while (false);
     return fps;
@@ -312,7 +304,8 @@ void parseH264Sps(DataView bitstream, const std::shared_ptr<VideoInfo>& videoInf
             (2 - frameMbsOnlyFlag) * videoInfo->height - subHeight * (topOffset + bottomOffset);
     }
     LogI("width:{}, height:{}", width, height);
-    videoInfo->fps = static_cast<uint16_t>(parseH264Vui(bitstream, offset));
+    videoInfo->fps = static_cast<uint16_t>(
+        parseH264Vui(bitstream, offset, videoInfo->maxNumReorderFrames));
 }
 
 double parseH265Vui(DataView bitstream, int32_t& offset) noexcept {

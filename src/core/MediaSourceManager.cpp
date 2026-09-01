@@ -113,6 +113,28 @@ void MediaSourceManager::setProductionGate(std::function<bool()> gate) noexcept 
     }
 }
 
+void MediaSourceManager::closeFetchGate() noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (dynamic_cast<HLSStream*>(stream_.get())) {
+        return;
+    }
+    if (stream_) {
+        stream_->pause();
+    }
+}
+
+void MediaSourceManager::openFetchGate() noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (auto* hls = dynamic_cast<HLSStream*>(stream_.get())) {
+        hls->openFetchGate();
+        return;
+    }
+    // start() is a no-op unless the stream is paused, safe on every low watermark sample.
+    if (stream_) {
+        stream_->start();
+    }
+}
+
 void MediaSourceManager::close() noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     if (stream_) {
@@ -141,10 +163,10 @@ StreamResult<void> MediaSourceManager::seekByTime(double timeSec,
     return stream_->seekByTime(timeSec, sourceGeneration);
 }
 
-void MediaSourceManager::updateRange(Range range) noexcept {
+void MediaSourceManager::setReadRange(Range range) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     if (stream_) {
-        stream_->updateRange(range);
+        stream_->setReadRange(range);
     }
 }
 

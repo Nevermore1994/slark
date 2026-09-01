@@ -34,7 +34,7 @@ HttpStream::~HttpStream() {
 auto HttpStream::open(const OpenParams& params) -> StreamResult<StreamInfo> {
     params_ = params;
     readRange_ = params.range;
-    committedPosition_ = readRange_.isValid() ? readRange_.start() : 0;
+    deliveredPosition_ = readRange_.isValid() ? readRange_.start() : 0;
     operationCoversSource_ = false;
     sourceGeneration_ = 0;
 
@@ -81,8 +81,8 @@ void HttpStream::startLocked() noexcept {
     ++generation_;
     cancelCurrentOperation(kWaitSettleTimeout.count());
 
-    readRange_ = Range(committedPosition_);
-    position_ = committedPosition_;
+    readRange_ = Range(deliveredPosition_);
+    position_ = deliveredPosition_;
     contentLength_ = 0;
     operationCoversSource_ = false;
     state_ = StreamState::Reading;
@@ -161,7 +161,7 @@ void HttpStream::pause() noexcept {
 
     state_ = StreamState::Paused;
     isRunning_ = false;
-    LogI("[HttpStream::pause] committedPos={}", committedPosition_);
+    LogI("[HttpStream::pause] deliveredPos={}", deliveredPosition_);
 }
 
 auto HttpStream::seek(uint64_t position, uint64_t sourceGeneration) -> StreamResult<void> {
@@ -175,7 +175,7 @@ auto HttpStream::seek(uint64_t position, uint64_t sourceGeneration) -> StreamRes
     ++generation_;
     cancelCurrentOperation(kWaitSettleTimeout.count());
 
-    committedPosition_ = position;
+    deliveredPosition_ = position;
     sourceGeneration_ = sourceGeneration;
     isCompleted_ = false;
     state_ = StreamState::Ready;
@@ -184,7 +184,7 @@ auto HttpStream::seek(uint64_t position, uint64_t sourceGeneration) -> StreamRes
     return {};
 }
 
-void HttpStream::updateRange(Range range) noexcept {
+void HttpStream::setReadRange(Range range) noexcept {
     std::unique_lock<std::mutex> lock(mutex_);
     readRange_ = range;
 }
@@ -401,19 +401,19 @@ void HttpStream::handleData(http::StreamChunk&& chunk) noexcept {
         params_.onData(DataChunk{
             .data = DataView(buffer->view()),
             .owner = std::move(buffer),
-            .offset = committedPosition_,
+            .offset = deliveredPosition_,
             .segmentIndex = 0,
             .sourceGeneration = sourceGeneration_,
             .isLastChunk = chunk.isFinal,
         });
     }
 
-    committedPosition_ += chunkSize;
-    position_ = committedPosition_;
+    deliveredPosition_ += chunkSize;
+    position_ = deliveredPosition_;
 
-    if (committedPosition_ / logProgressBytes() !=
-        (committedPosition_ - chunkSize) / logProgressBytes()) {
-        LogI("[HttpStream::handleData] progress: pos={} chunk={} url={}", committedPosition_,
+    if (deliveredPosition_ / logProgressBytes() !=
+        (deliveredPosition_ - chunkSize) / logProgressBytes()) {
+        LogI("[HttpStream::handleData] progress: pos={} chunk={} url={}", deliveredPosition_,
              chunkSize, params_.uri);
     }
 }
@@ -422,7 +422,7 @@ void HttpStream::handleFinal() noexcept {
     isCompleted_ = operationCoversSource_;
     state_ = StreamState::Completed;
     isRunning_ = false;
-    LogI("[HttpStream::handleFinal] totalReceived={} coversSource={} url={}", committedPosition_,
+    LogI("[HttpStream::handleFinal] totalReceived={} coversSource={} url={}", deliveredPosition_,
          operationCoversSource_, params_.uri);
     if (operationCoversSource_ && params_.onComplete) {
         params_.onComplete(sourceGeneration_);

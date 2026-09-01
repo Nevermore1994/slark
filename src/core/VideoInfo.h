@@ -20,6 +20,7 @@ struct VideoInfo {
     uint8_t profile{};
     uint8_t level{};
     uint8_t numRefFrames{};
+    uint8_t maxNumReorderFrames{};  // SPS VUI bitstream_restriction
     std::string mediaInfo;
     DataRefPtr sps;
     DataRefPtr pps;

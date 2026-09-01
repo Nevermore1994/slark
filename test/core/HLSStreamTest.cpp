@@ -309,6 +309,9 @@ class MockHlsServer {
 
             const bool truncatedSegment =
                 path == "/seg0.ts" && failFirstSegment_.exchange(false, std::memory_order_acq_rel);
+            if (truncatedSegment) {
+                response.assign(64 * 1024, 'T');
+            }
             const bool closeConnection =
                 truncatedSegment || failMediaPlaylist || !keepAlive_ || statusCode >= 400;
             const std::string statusText = statusCode == 200   ? "OK"
@@ -326,7 +329,12 @@ class MockHlsServer {
             headers += std::string("Connection: ") +
                        (closeConnection ? "close" : "keep-alive") + "\r\n\r\n";
             sendAll(fd, headers.data(), headers.size());
-            if (!truncatedSegment) {
+            if (truncatedSegment) {
+                const auto partialSize = response.size() / 2;
+                sendAll(fd, response.data(), partialSize / 2);
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                sendAll(fd, response.data() + partialSize / 2, partialSize - partialSize / 2);
+            } else {
                 sendAll(fd, response.data(), response.size());
             }
             if (closeConnection) {
@@ -476,10 +484,67 @@ TEST_F(HLSStreamTest, ProductionGateStopsSchedulingNextSegment) {
     EXPECT_EQ(server_.requestCount("/seg0.ts"), 0);
 
     allowProduction.store(true, std::memory_order_release);
-    stream_->start();
+    stream_->openFetchGate();
     EXPECT_TRUE(waitUntil([&] { return completed.load(std::memory_order_acquire); }));
     EXPECT_EQ(server_.requestCount("/seg0.ts"), 1);
     EXPECT_EQ(server_.requestCount("/seg1.ts"), 1);
+}
+
+TEST_F(HLSStreamTest, ProductionGateResumeKeepsCommittedOffsetContinuous) {
+    std::atomic<bool> allowProduction{true};
+    std::atomic<bool> firstSegmentCommitted{false};
+    std::atomic<bool> completed{false};
+    std::mutex chunkMutex;
+    std::vector<DataChunk> chunks;
+
+    stream_->setProductionGate([&allowProduction] {
+        return allowProduction.load(std::memory_order_acquire);
+    });
+
+    auto params = makeParams();
+    params.uri = server_.masterUrl();
+    params.onData = [&allowProduction, &firstSegmentCommitted, &chunkMutex, &chunks](
+                        DataChunk chunk) {
+        const bool firstSegment = chunk.segmentIndex == 0;
+        {
+            std::lock_guard lock(chunkMutex);
+            chunks.emplace_back(std::move(chunk));
+        }
+        if (firstSegment) {
+            allowProduction.store(false, std::memory_order_release);
+            firstSegmentCommitted.store(true, std::memory_order_release);
+        }
+    };
+    params.onComplete = [&completed](uint64_t) {
+        completed.store(true, std::memory_order_release);
+    };
+
+    ASSERT_TRUE(stream_->open(params).has_value());
+    stream_->start();
+
+    ASSERT_TRUE(waitUntil([&] {
+        return firstSegmentCommitted.load(std::memory_order_acquire);
+    }));
+    EXPECT_EQ(server_.requestCount("/seg0.ts"), 1);
+    EXPECT_EQ(server_.requestCount("/seg1.ts"), 0);
+
+    allowProduction.store(true, std::memory_order_release);
+    stream_->openFetchGate();
+
+    ASSERT_TRUE(waitUntil([&] { return completed.load(std::memory_order_acquire); }));
+    ASSERT_TRUE(stream_->isCompleted());
+    EXPECT_EQ(server_.requestCount("/seg1.ts"), 1);
+
+    std::lock_guard lock(chunkMutex);
+    ASSERT_EQ(chunks.size(), 2u);
+    EXPECT_EQ(chunks[0].segmentIndex, 0u);
+    EXPECT_EQ(chunks[0].offset, 0u);
+    EXPECT_EQ(chunks[0].size(), 1024u);
+    EXPECT_TRUE(chunks[0].isLastChunk);
+    EXPECT_EQ(chunks[1].segmentIndex, 1u);
+    EXPECT_EQ(chunks[1].offset, 1024u);
+    EXPECT_EQ(chunks[1].size(), 1024u);
+    EXPECT_TRUE(chunks[1].isLastChunk);
 }
 
 TEST_F(HLSStreamTest, ByteRangeSegmentsUsePartialContentRequests) {
@@ -536,6 +601,12 @@ TEST_F(HLSStreamTest, SegmentReconnectsAfterTruncatedResponse) {
     auto params = makeParams();
     params.uri = server_.masterUrl();
     std::atomic<bool> completed{false};
+    std::mutex chunksMutex;
+    std::vector<DataChunk> chunks;
+    params.onData = [&chunksMutex, &chunks](DataChunk chunk) {
+        std::lock_guard lock(chunksMutex);
+        chunks.emplace_back(std::move(chunk));
+    };
     params.onComplete = [&completed](uint64_t) {
         completed = true;
     };
@@ -548,6 +619,16 @@ TEST_F(HLSStreamTest, SegmentReconnectsAfterTruncatedResponse) {
     EXPECT_GE(server_.requestCount("/seg0.ts"), 2);
     EXPECT_EQ(server_.requestCount("/seg1.ts"), 1);
     EXPECT_GE(server_.connectionCount(), 3);
+    std::lock_guard lock(chunksMutex);
+    ASSERT_EQ(chunks.size(), 2u);
+    EXPECT_EQ(chunks[0].segmentIndex, 0u);
+    EXPECT_EQ(chunks[0].offset, 0u);
+    EXPECT_EQ(chunks[0].size(), 1024u);
+    EXPECT_TRUE(chunks[0].isLastChunk);
+    EXPECT_EQ(chunks[1].segmentIndex, 1u);
+    EXPECT_EQ(chunks[1].offset, 1024u);
+    EXPECT_EQ(chunks[1].size(), 1024u);
+    EXPECT_TRUE(chunks[1].isLastChunk);
 }
 
 TEST_F(HLSStreamTest, LivePlaylistRefreshReusesControlSession) {

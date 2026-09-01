@@ -31,7 +31,7 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
     void pause() noexcept override;
     StreamResult<void> seek(uint64_t position, uint64_t sourceGeneration) override;
     StreamResult<void> seekByTime(double timeSec, uint64_t sourceGeneration) override;
-    void updateRange(Range range) noexcept override;
+    void setReadRange(Range range) noexcept override;
 
     [[nodiscard]] StreamState state() const noexcept override {
         return state_.load();
@@ -65,6 +65,8 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
     void setProductionGate(std::function<bool()> gate) noexcept {
         productionGate_ = std::move(gate);
     }
+
+    void openFetchGate() noexcept;
 
  private:
     struct StreamControl {
@@ -118,8 +120,8 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
                              uint64_t generation,
                              uint64_t operationId);
 
-    void onPlaylistEvent(PlaylistEvent event) noexcept;
-    void onSegmentEvent(SegmentEvent event) noexcept;
+    void handlePlaylistEvent(PlaylistEvent event) noexcept;
+    void handleSegmentEvent(SegmentEvent event) noexcept;
 
     void handlePlaylistResponse(http::HttpResponse&& response);
     void handleSegmentChunk(http::StreamChunk&& chunk, uint64_t sequence);
@@ -132,7 +134,7 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
     void cancelPlaylistOp(uint64_t timeoutMs);
     void cancelSegmentOp(uint64_t timeoutMs);
 
-    [[nodiscard]] bool onOwnerThread() const noexcept {
+    [[nodiscard]] bool isOnOwnerThread() const noexcept {
         return ownerThread_ && ownerThread_->getId() == std::this_thread::get_id();
     }
 
@@ -174,6 +176,7 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
     std::atomic<StreamState> state_{StreamState::Idle};
     std::atomic<uint64_t> position_{0};
     std::shared_ptr<Data> pendingSegmentData_;
+    bool waitingForCapacity_ = false;
     std::atomic<bool> isRunning_{false};
     std::atomic<bool> isCompleted_{false};
     std::atomic<bool> isPaused_{false};

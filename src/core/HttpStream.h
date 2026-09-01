@@ -36,7 +36,7 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
     void start() noexcept override;
     void pause() noexcept override;
     auto seek(uint64_t position, uint64_t sourceGeneration) -> StreamResult<void> override;
-    void updateRange(Range range) noexcept override;
+    void setReadRange(Range range) noexcept override;
 
     [[nodiscard]] StreamState state() const noexcept override {
         return state_.load();
@@ -113,7 +113,7 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
     void startLocked() noexcept;
 
     // State is only mutated on the owner thread
-    [[nodiscard]] bool onOwnerThread() const noexcept {
+    [[nodiscard]] bool isOnOwnerThread() const noexcept {
         return ownerThread_ && ownerThread_->getId() == std::this_thread::get_id();
     }
 
@@ -131,7 +131,7 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
     uint64_t sourceGeneration_ = 0;
     uint64_t nextOperationId_ = 1;
     bool closing_ = false;
-    uint64_t committedPosition_ = 0;  // position already delivered to onData
+    uint64_t deliveredPosition_ = 0;
     bool operationCoversSource_ = false;
 
     OpenParams params_;

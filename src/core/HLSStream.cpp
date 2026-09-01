@@ -120,6 +120,7 @@ void HLSStream::close() noexcept {
     isRunning_ = false;
     isCompleted_ = false;
     isPaused_ = false;
+    waitingForCapacity_ = false;
 }
 
 void HLSStream::start() noexcept {
@@ -225,7 +226,7 @@ StreamResult<void> HLSStream::seekByTime(double timeSec, uint64_t sourceGenerati
     return {};
 }
 
-void HLSStream::updateRange(Range) noexcept {}
+void HLSStream::setReadRange(Range) noexcept {}
 
 Task<void> HLSStream::fetchPlaylist(std::shared_ptr<http::HttpRequest> request,
                                     http::RequestInfo info,
@@ -243,7 +244,7 @@ Task<void> HLSStream::fetchPlaylist(std::shared_ptr<http::HttpRequest> request,
         if (!s) {
             return;
         }
-        s->onPlaylistEvent(std::move(event));
+        s->handlePlaylistEvent(std::move(event));
     });
 }
 
@@ -270,7 +271,7 @@ void HLSStream::requestPlaylist(const std::string& url) {
     playlistOp_->task.resume();
 }
 
-void HLSStream::onPlaylistEvent(PlaylistEvent event) noexcept {
+void HLSStream::handlePlaylistEvent(PlaylistEvent event) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     if (event.generation != generation_ || !playlistOp_ ||
         event.operationId != playlistOp_->operationId) {
@@ -397,9 +398,11 @@ void HLSStream::downloadSegments() {
         return;
     }
     if (productionGate_ && !productionGate_()) {
+        waitingForCapacity_ = true;
         LogIThrottle(1000, "[HLSStream::downloadSegments] waiting for buffer capacity");
         return;
     }
+    waitingForCapacity_ = false;
 
     const auto& segments = playlist_->segments();
     if (segments.empty()) {
@@ -431,6 +434,15 @@ void HLSStream::downloadSegments() {
     downloadSegment(*segIndex);
 }
 
+void HLSStream::openFetchGate() noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!waitingForCapacity_ || closing_ || isPaused_ || !isRunning_ || segmentOp_) {
+        return;
+    }
+    LogI("[HLSStream::openFetchGate] buffer capacity available");
+    downloadSegments();
+}
+
 void HLSStream::downloadSegment(uint32_t segIndex) {
     if (!playlist_ || segIndex >= playlist_->segments().size()) {
         return;
@@ -453,6 +465,8 @@ void HLSStream::downloadSegment(uint32_t segIndex) {
         requestInfo.headers["Range"] = segment.byteRange->toHeaderString();
     }
     requestInfo.connectionMode = http::HttpConnectionMode::KeepAlive;
+    requestInfo.readTimeout = std::chrono::minutes(5);
+    requestInfo.readIdleTimeout = std::chrono::seconds(30);
     requestInfo.session = mediaSession_;
 
     std::weak_ptr<HLSStream> weakThis = shared_from_this();
@@ -485,7 +499,7 @@ void HLSStream::downloadSegment(uint32_t segIndex) {
                 if (!s) {
                     return;
                 }
-                s->onSegmentEvent(std::move(event));
+                s->handleSegmentEvent(std::move(event));
             });
         }
     };
@@ -497,7 +511,7 @@ void HLSStream::downloadSegment(uint32_t segIndex) {
     segmentOp_->task.resume();
 }
 
-void HLSStream::onSegmentEvent(SegmentEvent event) noexcept {
+void HLSStream::handleSegmentEvent(SegmentEvent event) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     if (event.generation != generation_ || !segmentOp_ ||
         event.operationId != segmentOp_->operationId) {
@@ -507,8 +521,8 @@ void HLSStream::onSegmentEvent(SegmentEvent event) noexcept {
     auto& chunk = event.chunk;
     if (chunk.hasError()) {
         lastErrorOriginCode_.store(chunk.error.originErrorCode, std::memory_order_release);
-        LogE("[HLSStream::onSegmentEvent] segment {} error: retCode={} originCode={}",
-             event.sequence, static_cast<int>(chunk.error.retCode), chunk.error.originErrorCode);
+        LogE("[HLSStream::handleSegmentEvent] segment {} error={} originCode={}", event.sequence,
+             toString(chunk.error.retCode), chunk.error.originErrorCode);
         if (chunk.error.retCode == Error::Cancelled) {
             return;
         }
@@ -524,7 +538,7 @@ void HLSStream::onSegmentEvent(SegmentEvent event) noexcept {
                                             : std::nullopt;
         const auto hasRange = segmentIndex && playlist_->segments()[*segmentIndex].byteRange;
         if (hasRange && !hasValidRangeResponse(chunk, *playlist_->segments()[*segmentIndex].byteRange)) {
-            LogE("[HLSStream::onSegmentEvent] invalid partial response for sequence={}",
+            LogE("[HLSStream::handleSegmentEvent] invalid partial response for sequence={}",
                  event.sequence);
             cancelSegmentOp(kWaitSettleTimeout.count());
             reportSegmentError(event.sequence, Error::StreamInvalidData, 0);
@@ -545,40 +559,35 @@ void HLSStream::handleSegmentChunk(http::StreamChunk&& chunk, uint64_t sequence)
         return;
     }
 
-    const auto emitPending = [&](bool isLastChunk) {
-        if (!pendingSegmentData_) {
-            return;
-        }
-        auto buffer = std::move(pendingSegmentData_);
-        const auto chunkSize = buffer->length();
-        if (params_.onData) {
-            params_.onData(DataChunk{
-                .data = DataView(buffer->view()),
-                .owner = std::move(buffer),
-                .offset = position_,
-                .segmentIndex = sequence,
-                .sourceGeneration = sourceGeneration_,
-                .isLastChunk = isLastChunk,
-            });
-        }
-        position_ += chunkSize;
-        const auto pos = position_.load();
-        if (pos / logProgressBytes() != (pos - chunkSize) / logProgressBytes()) {
-            LogI("[HLSStream::handleSegmentChunk] progress: segIndex={} pos={} chunk={}",
-                 sequence, pos, chunkSize);
-        }
-    };
-
     if (chunk.hasData()) {
-        emitPending(false);
-        pendingSegmentData_ = std::shared_ptr<Data>(chunk.data.release());
-        if (chunk.isFinal) {
-            emitPending(true);
+        if (!pendingSegmentData_) {
+            pendingSegmentData_ = std::make_shared<Data>();
         }
+        pendingSegmentData_->append(std::move(chunk.data));
     }
 
     if (chunk.isFinal) {
-        emitPending(true);
+        if (pendingSegmentData_ && !pendingSegmentData_->empty()) {
+            auto buffer = std::move(pendingSegmentData_);
+            const auto chunkSize = buffer->length();
+            const auto offset = position_.load(std::memory_order_acquire);
+            if (params_.onData) {
+                params_.onData(DataChunk{
+                    .data = DataView(buffer->view()),
+                    .owner = std::move(buffer),
+                    .offset = offset,
+                    .segmentIndex = sequence,
+                    .sourceGeneration = sourceGeneration_,
+                    .isLastChunk = true,
+                });
+            }
+            position_.store(offset + chunkSize, std::memory_order_release);
+            const auto pos = offset + chunkSize;
+            if (pos / logProgressBytes() != offset / logProgressBytes()) {
+                LogI("[HLSStream::handleSegmentChunk] progress: segIndex={} pos={} chunk={}",
+                     sequence, pos, chunkSize);
+            }
+        }
         cancelSegmentOp(kWaitSettleTimeout.count());
         retryCount_ = 0;
         if (!hasNextSegmentSequence_ || sequence >= nextSegmentSequence_) {
@@ -746,7 +755,7 @@ void HLSStream::reportHttpError(const http::HttpResponse& response) {
 void HLSStream::reportSegmentError(uint64_t sequence, Error error, int32_t originCode) {
     lastErrorOriginCode_.store(originCode, std::memory_order_release);
     LogE("[HLSStream::reportSegmentError] sequence={} error={} originCode={}", sequence,
-         static_cast<int>(error), originCode);
+         toString(error), originCode);
     if (params_.onError) {
         params_.onError(error, originCode);
     }

@@ -11,8 +11,101 @@
 #include "AudioInfo.h"
 #include "DataView.hpp"
 #include "Range.h"
+#include "VideoInfo.h"
 
 using namespace slark;
+
+namespace {
+
+// Minimal MSB-first bit writer for building SPS RBSP test streams.
+class BitWriter {
+ public:
+    void bit(uint32_t v) { bits_.push_back(v ? '1' : '0'); }
+
+    void bits(uint32_t value, int count) {
+        for (int i = count - 1; i >= 0; --i) {
+            bit((value >> i) & 1u);
+        }
+    }
+
+    void ue(uint32_t codeNum) {
+        const uint32_t v = codeNum + 1;
+        int len = 0;
+        for (uint32_t t = v; t > 0; t >>= 1) {
+            ++len;
+        }
+        for (int i = 0; i < len - 1; ++i) {
+            bit(0);
+        }
+        bits(v, len);
+    }
+
+    [[nodiscard]] std::vector<uint8_t> bytes() const {
+        std::vector<uint8_t> out;
+        for (size_t i = 0; i < bits_.size(); i += 8) {
+            uint8_t b = 0;
+            for (size_t j = 0; j < 8 && i + j < bits_.size(); ++j) {
+                b = static_cast<uint8_t>((b << 1) | (bits_[i + j] == '1' ? 1 : 0));
+            }
+            out.push_back(b);
+        }
+        return out;
+    }
+
+ private:
+    std::string bits_;
+};
+
+// Builds an H.264 SPS NAL unit. baseline profile keeps the scaling-matrix block out.
+[[nodiscard]] std::vector<uint8_t> makeH264Spsnal(uint32_t numRefFrames,
+                                                  uint32_t maxNumReorderFrames,
+                                                  bool withBitstreamRestriction) {
+    BitWriter w;
+    w.bits(66, 8);  // profile_idc
+    w.bits(0, 8);   // constraint flags + reserved
+    w.bits(30, 8);  // level_idc
+    w.ue(0);        // seq_parameter_set_id
+    w.ue(0);        // log2_max_frame_num_minus4
+    w.ue(0);        // pic_order_cnt_type
+    w.ue(0);        // log2_max_pic_order_cnt_lsb_minus4
+    w.ue(numRefFrames);
+    w.bit(0);  // gaps_in_frame_num_value_allowed_flag
+    w.ue(0);   // pic_width_in_mbs_minus1
+    w.ue(0);   // pic_height_in_map_units_minus1
+    w.bit(1);  // frame_mbs_only_flag
+    w.bit(1);  // direct_8x8_inference_flag
+    w.bit(0);  // frame_cropping_flag
+    w.bit(1);  // vui_parameters_present_flag
+
+    // VUI: optional blocks disabled up to bitstream_restriction.
+    w.bit(0);  // aspect_ratio_info_present_flag
+    w.bit(0);  // overscan_info_present_flag
+    w.bit(0);  // video_signal_type_present_flag
+    w.bit(0);  // chroma_loc_info_present_flag
+    w.bit(0);  // timing_info_present_flag
+    w.bit(0);  // nal_hrd_parameters_present_flag
+    w.bit(0);  // vcl_hrd_parameters_present_flag
+    w.bit(0);  // pic_struct_present_flag
+
+    w.bit(withBitstreamRestriction ? 1u : 0u);  // bitstream_restriction_flag
+    if (withBitstreamRestriction) {
+        w.bit(1);  // motion_vectors_over_pic_boundaries_flag
+        w.ue(0);   // max_bytes_per_pic_denom
+        w.ue(0);   // max_bits_per_mb_denom
+        w.ue(0);   // log2_max_mv_length_horizontal
+        w.ue(0);   // log2_max_mv_length_vertical
+        w.ue(maxNumReorderFrames);
+        w.ue(0);  // max_dec_frame_buffering
+    }
+
+    auto rbsp = w.bytes();
+    std::vector<uint8_t> nalu;
+    nalu.push_back(0x67);  // NAL header: SPS
+    nalu.insert(nalu.end(), rbsp.begin(), rbsp.end());
+    return nalu;
+}
+
+}  // namespace
 
 
 TEST(MediaUtilTest, IsNetworkLinkHttp) {
@@ -32,27 +125,6 @@ TEST(MediaUtilTest, IsNetworkLinkEdgeCases) {
     EXPECT_FALSE(isNetworkLink("ftp://example.com/video.mp4"));
     EXPECT_FALSE(isNetworkLink("httpx://example.com/video.mp4"));
     EXPECT_TRUE(isNetworkLink("https://a.b"));
-}
-
-
-TEST(MediaUtilTest, IsHlsLinkValidM3U8) {
-    EXPECT_TRUE(isHlsLink("http://example.com/stream.m3u8"));
-    EXPECT_TRUE(isHlsLink("https://cdn.example.com/live/index.m3u8"));
-    EXPECT_TRUE(isHlsLink("https://example.com/video.M3U8"));
-    EXPECT_TRUE(isHlsLink("http://example.com/stream.m3u8?token=abc&ts=123"));
-}
-
-TEST(MediaUtilTest, IsHlsLinkNonM3U8) {
-    EXPECT_FALSE(isHlsLink("http://example.com/video.mp4"));
-    EXPECT_FALSE(isHlsLink("https://example.com/stream.ts"));
-    EXPECT_FALSE(isHlsLink("/local/path/stream.m3u8"));
-    EXPECT_FALSE(isHlsLink(""));
-}
-
-TEST(MediaUtilTest, IsHlsLinkEdgeCases) {
-    EXPECT_FALSE(isHlsLink("http://example.com/m3u8"));
-    EXPECT_FALSE(isHlsLink("http://example.com/stream.m3u8.bak"));
-    EXPECT_TRUE(isHlsLink("https://example.com/a.m3u8?x=1"));
 }
 
 
@@ -95,6 +167,41 @@ TEST(MediaUtilTest, GetAudioProfileInvalidReturnsAACLC) {
     EXPECT_EQ(getAudioProfile(255), AudioProfile::AAC_LC);
 }
 
+
+TEST(MediaUtilTest, ParsesMaxNumReorderFramesFromSpsVui) {
+    auto data = makeH264Spsnal(2, 3, true);
+    DataView view(reinterpret_cast<const Byte*>(data.data()), data.size());
+
+    auto info = std::make_shared<VideoInfo>();
+    parseH264Sps(view, info);
+
+    EXPECT_EQ(info->numRefFrames, 2);
+    EXPECT_EQ(info->maxNumReorderFrames, 3);
+}
+
+TEST(MediaUtilTest, MaxNumReorderFramesUnknownWithoutBitstreamRestriction) {
+    // Without bitstream_restriction_flag the reorder depth is simply not signalled.
+    auto data = makeH264Spsnal(2, 3, false);
+    DataView view(reinterpret_cast<const Byte*>(data.data()), data.size());
+
+    auto info = std::make_shared<VideoInfo>();
+    parseH264Sps(view, info);
+
+    EXPECT_EQ(info->numRefFrames, 2);
+    EXPECT_EQ(info->maxNumReorderFrames, 0);
+}
+
+TEST(MediaUtilTest, MaxNumReorderFramesIsClamped) {
+    // Absurd reorder depths must not blow up the decode backlog.
+    auto data = makeH264Spsnal(2, 200, true);
+    DataView view(reinterpret_cast<const Byte*>(data.data()), data.size());
+
+    auto info = std::make_shared<VideoInfo>();
+    parseH264Sps(view, info);
+
+    EXPECT_LE(info->maxNumReorderFrames, 16);
+    EXPECT_GT(info->maxNumReorderFrames, 0);
+}
 
 TEST(MediaUtilTest, FindNaluUnitAnnexB4ByteStartCode) {
     std::vector<uint8_t> data = {0x00, 0x00, 0x00, 0x01, 0x65, 0xAA, 0xBB,

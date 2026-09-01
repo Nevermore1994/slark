@@ -39,13 +39,17 @@ class MediaSourceManager : public NonCopyMovable {
 
     void start() noexcept;
     void pause() noexcept;
+
+    void closeFetchGate() noexcept;
+    void openFetchGate() noexcept;
+
     void setProductionGate(std::function<bool()> gate) noexcept;
     void close() noexcept;
 
     [[nodiscard]] StreamResult<void> seek(uint64_t position, uint64_t sourceGeneration) noexcept;
     [[nodiscard]] StreamResult<void> seekByTime(double timeSec,
                                                  uint64_t sourceGeneration) noexcept;
-    void updateRange(Range range) noexcept;
+    void setReadRange(Range range) noexcept;
 
     [[nodiscard]] StreamInfo streamInfo() const noexcept {
         std::lock_guard<std::mutex> lock(mutex_);

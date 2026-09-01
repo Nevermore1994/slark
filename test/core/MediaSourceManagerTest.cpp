@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <filesystem>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -16,7 +17,14 @@ using namespace slark;
 
 namespace {
 
-constexpr const char* kSamplePath = "../../test_sample/sample-3s.wav";
+std::string samplePath() {
+    for (const auto* path : {"../../test_sample/sample-3s.wav", "test_sample/sample-3s.wav"}) {
+        if (std::filesystem::exists(path)) {
+            return path;
+        }
+    }
+    return "../../test_sample/sample-3s.wav";
+}
 
 struct CallbackState {
     std::mutex mutex;
@@ -28,8 +36,9 @@ struct CallbackState {
 };
 
 bool openWithCallbacks(MediaSourceManager& manager, CallbackState& state) {
+    const auto path = samplePath();
     return manager.open(
-        kSamplePath,
+        path,
         [&state](DataPacket packet) {
             std::lock_guard lock(state.mutex);
             state.events.emplace_back(packet.isEndOfStream ? "eos" : "data");
@@ -68,7 +77,7 @@ TEST_F(MediaSourceManagerTest, ConvertsDataChunksAndPreservesEosOrdering) {
     const auto info = manager_.streamInfo();
     EXPECT_TRUE(manager_.isValid());
     EXPECT_EQ(info.type, StreamType::File);
-    EXPECT_EQ(info.uri, kSamplePath);
+    EXPECT_EQ(info.uri, samplePath());
     EXPECT_GT(info.totalSize, 0u);
     EXPECT_TRUE(info.isSeekable);
     EXPECT_FALSE(info.isLive);
@@ -114,7 +123,7 @@ TEST_F(MediaSourceManagerTest, ConvertsRangeEndMetadataToLastChunkPacket) {
     CallbackState state;
     ASSERT_TRUE(openWithCallbacks(manager_, state));
 
-    manager_.updateRange(Range(0, 1));
+    manager_.setReadRange(Range(0, 1));
     manager_.start();
 
     {

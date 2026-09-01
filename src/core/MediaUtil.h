@@ -18,8 +18,6 @@ struct VideoInfo;
 
 bool isNetworkLink(const std::string& path) noexcept;
 
-bool isHlsLink(const std::string& url) noexcept;
-
 bool findNaluUnit(DataView dataView, Range& range) noexcept;
 
 std::tuple<uint32_t, uint32_t> parseAvcSliceType(DataView naluView) noexcept;

@@ -29,6 +29,15 @@ TEST(StreamFactoryTest, RejectsNonPlaylistSuffixes) {
     EXPECT_FALSE(StreamFactory::isHLS(""));
 }
 
+// isHLS() deliberately ignores the scheme, so a local playlist is classified as HLS and
+// gets an HLSStream. Pinned here because MediaUtil used to carry a second, stricter
+// isHlsLink() that required an http(s) prefix and disagreed on this case.
+TEST(StreamFactoryTest, RecognizesPlaylistBySuffixRegardlessOfScheme) {
+    EXPECT_TRUE(StreamFactory::isHLS("/local/path/stream.m3u8"));
+    EXPECT_TRUE(StreamFactory::isHLS("file:///tmp/stream.m3u8"));
+    EXPECT_EQ(StreamFactory::detectStreamType("/local/path/stream.m3u8"), StreamType::HLS);
+}
+
 TEST(StreamFactoryTest, DetectsHttpAndLocalStreamsWithoutPlaylistSuffix) {
     EXPECT_EQ(StreamFactory::detectStreamType("https://example.com/video.mp4"), StreamType::Http);
     EXPECT_EQ(StreamFactory::detectStreamType("http://example.com/video.ts"), StreamType::Http);
