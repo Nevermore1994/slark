@@ -41,7 +41,7 @@ TEST(SeekContextTest, UpdateTargetAfterCompletionIsRejected) {
     EXPECT_FALSE(ctx.targetSeekTime().has_value());
 }
 
-TEST(SeekContextTest, BeginSeekResetsPreviousTrackAndGopState) {
+TEST(SeekContextTest, BeginSeekResetsTrackStateButPreservesGopRange) {
     SeekContext ctx;
     (void)ctx.beginSeek(CTime(5.0));
     ctx.updateGOPRange(3.0, 8.0);
@@ -54,9 +54,25 @@ TEST(SeekContextTest, BeginSeekResetsPreviousTrackAndGopState) {
 
     EXPECT_FALSE(ctx.isVideoSeeked());
     EXPECT_FALSE(ctx.isAudioSeeked());
+    EXPECT_EQ(ctx.maxSkipFrames(), 0);
+
+    // The GOP range describes where the decoder is positioned, so it must survive a new
+    // seek request; otherwise every seek is forced down the keyframe/flush path.
+    EXPECT_EQ(ctx.gopKeyframePts(), 3.0);
+    EXPECT_EQ(ctx.gopEndPts(), 8.0);
+}
+
+// A seek that relocates the demuxer/decoder must invalidate the GOP range, otherwise a
+// later seek could fast-forward against a range the decoder is no longer positioned in.
+TEST(SeekContextTest, GopRangeIsExplicitlyInvalidatedByRelocation) {
+    SeekContext ctx;
+    (void)ctx.beginSeek(CTime(5.0));
+    ctx.updateGOPRange(3.0, 8.0);
+
+    ctx.updateGOPRange(-1.0, -1.0);
+
     EXPECT_EQ(ctx.gopKeyframePts(), -1.0);
     EXPECT_EQ(ctx.gopEndPts(), -1.0);
-    EXPECT_EQ(ctx.maxSkipFrames(), 0);
 }
 
 TEST(SeekContextTest, EpochIncrementsOnBeginSeek) {
