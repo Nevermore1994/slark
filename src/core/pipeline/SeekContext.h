@@ -27,8 +27,8 @@ class SeekContext : public NonCopyMovable {
         bool superseded = isSeekPending_.load(std::memory_order_acquire);
         seekEpoch_.fetch_add(1, std::memory_order_acq_rel);
         activeSeekTimeSec_.store(target.second(), std::memory_order_release);
-        gopKeyframePts_.store(kNoSeekTime, std::memory_order_release);
-        gopEndPts_.store(kNoSeekTime, std::memory_order_release);
+        // GOP range is preserved: it describes where the decoder is positioned,
+        // independent of a new seek request. Only relocating it invalidates the range.
         maxSkipFrames_.store(0, std::memory_order_release);
         isSeekPending_.store(true, std::memory_order_release);
         isVideoSeeked_.store(false, std::memory_order_release);

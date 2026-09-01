@@ -29,7 +29,8 @@ set(CORE_TEST_SOURCES
     ${CORE_SRC_DIR}/MediaPlaylist.cpp
     ${CORE_SRC_DIR}/NotifyCenter.cpp
     ${CORE_SRC_DIR}/Event.cpp
-    ${CORE_SRC_DIR}/pipeline/BufferMonitor.cpp
+    ${CORE_SRC_DIR}/pipeline/SourceFlowController.cpp
+    ${CORE_SRC_DIR}/pipeline/BufferingTracker.cpp
     ${CORE_SRC_DIR}/perf/PlaySession.cpp
     ${DEMUXER_SRC_DIR}/M3U8Parser.cpp
     ${DEMUXER_SRC_DIR}/DemuxerManager.cpp

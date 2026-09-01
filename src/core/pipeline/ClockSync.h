@@ -44,10 +44,6 @@ class ClockSync : public NonCopyMovable {
         videoTime_.store(t.point(), std::memory_order_release);
     }
 
-    void setVideoTimeOnly(Time::TimePoint t) noexcept {
-        videoTime_.store(t.point(), std::memory_order_release);
-    }
-
     [[nodiscard]] Time::TimePoint audioTime() const noexcept {
         return Time::TimePoint(audioTime_.load(std::memory_order_acquire));
     }

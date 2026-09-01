@@ -11,12 +11,13 @@
 #include <map>
 
 #include "AudioRenderComponent.h"
-#include "BufferMonitor.h"
+#include "BufferingTracker.h"
 #include "DecoderComponent.h"
 #include "DemuxerComponent.h"
 #include "Error.h"
 #include "IDemuxer.h"
 #include "Log.hpp"
+#include "SourceFlowController.h"
 #include "Thread.h"
 #include "perf/Perf.h"
 
@@ -24,13 +25,15 @@ namespace slark {
 
 namespace {
 constexpr auto kTeardownTimeout = std::chrono::milliseconds(2000);
+constexpr double kSeekTargetToleranceSec = 0.001;
 }  // namespace
 
-PlayPipeline::PlayPipeline(BackpressureConfig config) noexcept : config_(std::move(config)) {
-    assert(config_.isValid() && "BackpressureConfig is invalid");
+PlayPipeline::PlayPipeline(PipelineFlowConfig config) noexcept : config_(std::move(config)) {
+    assert(config_.isValid() && "PipelineFlowConfig is invalid");
     clockSync_ = std::make_unique<ClockSync>();
     seekContext_ = std::make_unique<SeekContext>();
-    bufferMonitor_ = std::make_unique<BufferMonitor>(config_, *this);
+    sourceFlow_ = std::make_unique<SourceFlowController>(config_.source, *this);
+    bufferingTracker_ = std::make_unique<BufferingTracker>(config_.buffering, *this);
     connectComponents();
     LogI("PlayPipeline created");
 }
@@ -42,7 +45,7 @@ PlayPipeline::~PlayPipeline() {
     }
 }
 
-void PlayPipeline::build() noexcept {
+void PlayPipeline::startDemuxing() noexcept {
     assert(isOnOwnerThread());
     if (componentStarted_.exchange(true)) {
         return;
@@ -51,9 +54,9 @@ void PlayPipeline::build() noexcept {
         demuxer_->start();
     }
     if (!videoRender_.load()) {
-        LogW("PlayPipeline::build: videoRender is null");
+        LogW("PlayPipeline::startDemuxing: videoRender is null");
     }
-    LogI("PlayPipeline build complete");
+    LogI("PlayPipeline demuxing started");
 }
 
 void PlayPipeline::start() noexcept {
@@ -107,8 +110,11 @@ void PlayPipeline::flush() noexcept {
     lastEnqueuedVideoPts_.store(0.0, std::memory_order_release);
     eosInjected_.store(false, std::memory_order_release);
 
-    if (bufferMonitor_) {
-        bufferMonitor_->reset();
+    if (sourceFlow_) {
+        sourceFlow_->reset();
+    }
+    if (bufferingTracker_) {
+        bufferingTracker_->reset();
     }
     if (demuxer_) {
         demuxer_->flush();
@@ -135,7 +141,8 @@ bool PlayPipeline::teardown() noexcept {
         return false;
     }
     LogI("PlayPipeline teardown");
-    bufferMonitor_.reset();
+    sourceFlow_.reset();
+    bufferingTracker_.reset();
     stopComponents();
     const bool joined = joinWithTimeout(kTeardownTimeout);
     if (!joined) {
@@ -147,15 +154,14 @@ bool PlayPipeline::teardown() noexcept {
     return true;
 }
 
-bool PlayPipeline::canFastForwardInCurrentVideoBuffer(double targetSec) const noexcept {
-    bool canFastForward = false;
-    videoFrames_.withLock([targetSec, &canFastForward](const auto& frames) {
-        if (!frames.empty()) {
-            canFastForward = frames.begin()->second->ptsTime() <= targetSec &&
-                             frames.rbegin()->second->ptsTime() >= targetSec;
-        }
-    });
-    return canFastForward;
+bool PlayPipeline::canFastForward(double targetSec) const noexcept {
+    // Decide from the decoder's GOP position, not videoFrames_: it is empty by design.
+    const double gopKeyframePts = seekContext_->gopKeyframePts();
+    const double gopEndPts = seekContext_->gopEndPts();
+    if (gopKeyframePts < 0.0 || gopEndPts < 0.0) {
+        return false;
+    }
+    return targetSec >= gopKeyframePts && targetSec <= gopEndPts;
 }
 
 void PlayPipeline::seek(CTime target, bool isAccurate) noexcept {
@@ -190,17 +196,14 @@ void PlayPipeline::seek(CTime target, bool isAccurate) noexcept {
     }
 
     const SeekStrategy strategy =
-        canFastForwardInCurrentVideoBuffer(targetSec) ? SeekStrategy::FastForwardInGOP
-                                                      : SeekStrategy::SeekToKeyframe;
+        canFastForward(targetSec) ? SeekStrategy::FastForwardInGOP
+                                  : SeekStrategy::SeekToKeyframe;
     std::ignore = seekContext_->beginSeek(target);
     {
-        double fps = clockSync_->videoFps();
-        int32_t maxSkip =
-            (fps > 0.0)
-                ? std::max(1, static_cast<int32_t>(
-                                  fps * static_cast<double>(config_.seekFastForwardMs) / 1000.0))
-                : 1;
-        seekContext_->setMaxSkipFrames(maxSkip);
+        const double fps = clockSync_->videoFps();
+        const double skipWindowSec = static_cast<double>(config_.catchUp.seekFastForwardMs) / 1000.0;
+        const int32_t maxSkip = (fps > 0.0) ? static_cast<int32_t>(fps * skipWindowSec) : 1;
+        seekContext_->setMaxSkipFrames(std::max(1, maxSkip));
     }
     SLARK_TRACE_MILESTONE(playSession_.lock().get(), "seek_start");
 
@@ -235,7 +238,7 @@ void PlayPipeline::fastForwardInGOP(CTime target) noexcept {
     LogI("seek fast-forward in GOP to {:.3f}s, epoch={}", targetSec, seekContext_->currentEpoch());
 
     if (audioBufferLanded && mediaInfo_.hasAudio && !seekContext_->isAudioSeeked()) {
-        onSeekFrameConsumed(TrackType::Audio);
+        handleSeekFrameConsumed(TrackType::Audio);
     }
 }
 
@@ -254,7 +257,9 @@ void PlayPipeline::performKeyframeSeek(CTime target) noexcept {
     if (videoDecoder_) {
         videoDecoder_->pause();
     }
-    bufferMonitor_->pauseStreamForOperation();
+    if (sourceFlow_) {
+        sourceFlow_->pauseForOperation();
+    }
     flush();
     if (audioRender_) {
         audioRender_->seek(targetSec);
@@ -273,6 +278,8 @@ void PlayPipeline::performKeyframeSeek(CTime target) noexcept {
             fireEvent(PipelineEvent::ReadError, PipelineError{.error = res.error()});
             return;
         }
+        demuxer_->resume();
+        LogI("performKeyframeSeek HLS demuxer resumed");
     } else if (demuxer_) {
         auto pos = demuxer_->getSeekToPos(targetSec);
         LogI("performKeyframeSeek demuxer relocate seekPos={:.3f}", targetSec);
@@ -287,7 +294,9 @@ void PlayPipeline::performKeyframeSeek(CTime target) noexcept {
     if (videoDecoder_) {
         videoDecoder_->resume();
     }
-    bufferMonitor_->resumeStreamForOperation();
+    if (sourceFlow_) {
+        sourceFlow_->resumeForOperation();
+    }
     LogI("seek to keyframe for {:.3f}s, epoch={}", targetSec, seekContext_->currentEpoch());
 }
 
@@ -299,8 +308,8 @@ Time::TimePoint PlayPipeline::audioTime() noexcept {
     return clockSync_->audioTime();
 }
 
-bool PlayPipeline::canProduceSourceData() const noexcept {
-    return demuxedDuration() < config_.demuxHighWatermarkDuration;
+bool PlayPipeline::canFetchMore() const noexcept {
+    return demuxedDuration() < config_.source.highWatermarkSec;
 }
 
 double PlayPipeline::maxBufferedPts() const noexcept {
@@ -344,7 +353,7 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
     recordVsyncInterval();
 
     if (hasReachedPlaybackRangeEnd()) {
-        checkPlaybackComplete();
+        tryFirePlaybackComplete();
         return nullptr;
     }
 
@@ -359,7 +368,7 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
     const double cacheEnd = cacheEndTime();
     if (shouldHoldVideoFrame(diff, playbackRate)) {
         if (isDecodeCompleted()) {
-            checkPlaybackComplete();
+            tryFirePlaybackComplete();
         }
         // Throttled log on the hot path: avoids per-frame flooding while keeping A/V-sync clues
         LogIThrottle(1000,
@@ -375,7 +384,10 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
         LogI("requestVideoFrame SKIP: video queue empty (starvation), masterTime={:.3f} "
              "videoTime={:.3f} cacheEndTime={:.3f}",
              masterTime, videoTime, cacheEnd);
-        bufferMonitor_->onStarvation(!config_.isLiveSource && config_.startBufferDuration == 0.0);
+        if (bufferingTracker_) {
+            bufferingTracker_->reportStarvation(!config_.buffering.isLiveSource &&
+                                           config_.buffering.startBufferSec == 0.0);
+        }
         return nullptr;
     }
 
@@ -386,11 +398,13 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
         }
     }
     if (isAfterPlaybackRange(frame->ptsTime())) {
-        checkPlaybackComplete();
+        tryFirePlaybackComplete();
         return nullptr;
     }
 
-    bufferMonitor_->resetStarvationCount();
+    if (bufferingTracker_) {
+        bufferingTracker_->resetStarvationCount();
+    }
     markFirstFrameRenderedIfNeeded();
     LogIThrottle(2000,
                  "requestVideoFrame POP pts={:.3f} dts={:.3f} isDiscard={}, masterTime={:.3f}, "
@@ -399,7 +413,7 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
     clockSync_->setVideoTime(Time::TimePoint::fromSeconds(frame->ptsTime()));
 
     if (seekContext_->isSeekPending() && !frame->isDiscard) {
-        onSeekFrameConsumed(TrackType::Video);
+        handleSeekFrameConsumed(TrackType::Video);
         LogI("video seek completed");
     }
 
@@ -449,7 +463,7 @@ void PlayPipeline::chaseVideoFrames(AVFrameRefPtr& frame,
     int32_t dropCount = 0;
 
     while (ClockSync::evaluateAVSync(diff, playbackRate) == AVSyncAction::Drop &&
-           dropCount < config_.maxDropPerVsync) {
+           dropCount < config_.catchUp.maxDropPerVsync) {
         auto nextFrame = popVideoFrame();
         if (!nextFrame) {
             break;
@@ -466,7 +480,7 @@ void PlayPipeline::chaseVideoFrames(AVFrameRefPtr& frame,
 
     if (dropCount > 0) {
         clockSync_->recordDrop(dropCount);
-        if (dropCount >= config_.maxDropPerVsync) {
+        if (dropCount >= config_.catchUp.maxDropPerVsync) {
             LogW("drop limit reached: dropped {} frames in one vsync", dropCount);
         }
     }
@@ -477,15 +491,48 @@ double PlayPipeline::demuxedDuration() const noexcept {
     return std::max(0.0, maxBufferedPts() - currentSec);
 }
 
-void PlayPipeline::pauseStream() noexcept {
-    if (pauseStreamFunc_) {
-        pauseStreamFunc_();
+void PlayPipeline::updateBufferControl() noexcept {
+    using Ms = std::chrono::milliseconds;
+    const auto throttle = config_.buffering.isLiveSource ? Ms(50) : Ms(100);
+    const auto now = std::chrono::steady_clock::now();
+    if (lastBufferSampleTime_.has_value() && (now - *lastBufferSampleTime_) < throttle) {
+        return;
+    }
+    lastBufferSampleTime_ = now;
+    runBufferControl();
+}
+
+void PlayPipeline::runBufferControl() noexcept {
+    const double bufferedSec = demuxedDuration();
+    if (sourceFlow_) {
+        sourceFlow_->update(bufferedSec);
+    }
+    if (bufferingTracker_) {
+        bufferingTracker_->update(bufferedSec, true);
+    }
+}
+
+void PlayPipeline::interruptStream() noexcept {
+    if (interruptStreamFunc_) {
+        interruptStreamFunc_();
     }
 }
 
 void PlayPipeline::resumeStream() noexcept {
     if (resumeStreamFunc_) {
         resumeStreamFunc_();
+    }
+}
+
+void PlayPipeline::closeFetchGate() noexcept {
+    if (closeFetchGateFunc_) {
+        closeFetchGateFunc_();
+    }
+}
+
+void PlayPipeline::openFetchGate() noexcept {
+    if (openFetchGateFunc_) {
+        openFetchGateFunc_();
     }
 }
 
@@ -499,30 +546,6 @@ int32_t PlayPipeline::videoDecodedFrameCount() const noexcept {
     return videoFrames_.withLock([](const auto& m) {
         return static_cast<int32_t>(m.size());
     });
-}
-
-void PlayPipeline::pauseAudioDecoder() noexcept {
-    if (audioDecoder_) {
-        audioDecoder_->pause();
-    }
-}
-
-void PlayPipeline::resumeAudioDecoder() noexcept {
-    if (audioDecoder_) {
-        audioDecoder_->resume();
-    }
-}
-
-void PlayPipeline::pauseVideoDecoder() noexcept {
-    if (videoDecoder_) {
-        videoDecoder_->pause();
-    }
-}
-
-void PlayPipeline::resumeVideoDecoder() noexcept {
-    if (videoDecoder_) {
-        videoDecoder_->resume();
-    }
 }
 
 void PlayPipeline::firePipelineReady() noexcept {
@@ -549,7 +572,7 @@ void PlayPipeline::onBufferEvent(PipelineEvent event, std::optional<PipelineErro
     fireEvent(event, std::move(error));
 }
 
-void PlayPipeline::onFastTick(bool isPlaying) noexcept {
+void PlayPipeline::runFastTick(bool isPlaying) noexcept {
     assert(isOnOwnerThread());
     if (tearingDown_.load(std::memory_order_acquire)) {
         return;
@@ -557,17 +580,15 @@ void PlayPipeline::onFastTick(bool isPlaying) noexcept {
     if (audioRender_) {
         audioRender_->updateAudioTime();
     }
-    if (auto* monitor = bufferMonitor_.get()) {
-        monitor->onHeartbeat();
-    }
+    runBufferControl();
     pushAudioFrames(isPlaying);
     pushSeekFrames();
     if (isPlaying && hasReachedPlaybackRangeEnd()) {
-        checkPlaybackComplete();
+        tryFirePlaybackComplete();
     }
 }
 
-void PlayPipeline::checkPlaybackComplete() noexcept {
+void PlayPipeline::tryFirePlaybackComplete() noexcept {
     postToOwnerThread([this] {
         if (tearingDown_.load(std::memory_order_acquire) ||
             completionPending_.load(std::memory_order_acquire)) {
@@ -591,7 +612,7 @@ void PlayPipeline::checkPlaybackComplete() noexcept {
             return;
         }
         if (!isAudioReadyForPlaybackEnd() || !isVideoReadyForPlaybackEnd() ||
-            !areQueuesDrained()) {
+            hasPendingFrames()) {
             return;
         }
         if (audioRender_ && mediaInfo_.hasAudio && audioRender_->readable() > 0) {
@@ -640,19 +661,19 @@ bool PlayPipeline::isVideoReadyForPlaybackEnd() const noexcept {
     return false;
 }
 
-bool PlayPipeline::areQueuesDrained() const noexcept {
-    bool allEmpty = true;
-    audioFrames_.withLock([&allEmpty](auto& q) {
+bool PlayPipeline::hasPendingFrames() const noexcept {
+    bool pending = false;
+    audioFrames_.withLock([&pending](auto& q) {
         if (!q.empty()) {
-            allEmpty = false;
+            pending = true;
         }
     });
-    videoFrames_.withLock([&allEmpty](auto& m) {
+    videoFrames_.withLock([&pending](auto& m) {
         if (!m.empty()) {
-            allEmpty = false;
+            pending = true;
         }
     });
-    return allEmpty;
+    return pending;
 }
 
 void PlayPipeline::handleSeekFrameStarvation() noexcept {
@@ -661,7 +682,7 @@ void PlayPipeline::handleSeekFrameStarvation() noexcept {
     }
     auto dec = videoDecoder_ ? videoDecoder_->decoder() : nullptr;
     if (dec && dec->isCompleted()) {
-        onSeekFrameConsumed(TrackType::Video);
+        handleSeekFrameConsumed(TrackType::Video);
     }
 }
 
@@ -672,7 +693,7 @@ AVFrameRefPtr PlayPipeline::skipDiscardFramesDuringSeek(AVFrameRefPtr frame) noe
             // All frames were discard and the queue is empty; if the decoder hit EOF, mark seeked
             auto dec = videoDecoder_ ? videoDecoder_->decoder() : nullptr;
             if (dec && dec->isCompleted() && !seekContext_->isVideoSeeked()) {
-                onSeekFrameConsumed(TrackType::Video);
+                handleSeekFrameConsumed(TrackType::Video);
             }
             return nullptr;
         }
@@ -696,17 +717,17 @@ void PlayPipeline::markFirstFrameRenderedIfNeeded() noexcept {
     }
 }
 
-void PlayPipeline::notifySeekIfDecoderCompleted() noexcept {
+void PlayPipeline::markSeekedTracksIfDecodersCompleted() noexcept {
     if (!seekContext_->isVideoSeeked()) {
         auto dec = videoDecoder_ ? videoDecoder_->decoder() : nullptr;
         if (dec && dec->isCompleted()) {
-            onSeekFrameConsumed(TrackType::Video);
+            handleSeekFrameConsumed(TrackType::Video);
         }
     }
     if (!seekContext_->isAudioSeeked()) {
         auto dec = audioDecoder_ ? audioDecoder_->decoder() : nullptr;
         if (dec && dec->isCompleted()) {
-            onSeekFrameConsumed(TrackType::Audio);
+            handleSeekFrameConsumed(TrackType::Audio);
         }
     }
 }
@@ -751,7 +772,7 @@ AVFrameRefPtr PlayPipeline::popVideoFrame() noexcept {
     });
 
     if (!frame) {
-        checkPlaybackComplete();
+        tryFirePlaybackComplete();
     }
     return frame;
 }
@@ -775,9 +796,9 @@ void PlayPipeline::setVolume(float volume) noexcept {
     }
 }
 
-void PlayPipeline::setStreamControl(StreamControlFunc pauseStream,
+void PlayPipeline::setStreamControl(StreamControlFunc interruptStream,
                                     StreamControlFunc resumeStream) noexcept {
-    pauseStreamFunc_ = std::move(pauseStream);
+    interruptStreamFunc_ = std::move(interruptStream);
     resumeStreamFunc_ = std::move(resumeStream);
 }
 
@@ -811,7 +832,7 @@ void PlayPipeline::setDemuxerComponent(std::shared_ptr<DemuxerComponent> demuxer
     connectComponents();
 }
 
-bool PlayPipeline::isDecodedFrameSkippable(const DecoderData& data) noexcept {
+bool PlayPipeline::shouldDiscardFrame(const DecoderData& data) noexcept {
     if (tearingDown_.load(std::memory_order_acquire)) {
         return true;
     }
@@ -834,7 +855,7 @@ bool PlayPipeline::isDecodedFrameSkippable(const DecoderData& data) noexcept {
 }
 
 void PlayPipeline::onAudioDecoded(DecoderData data) noexcept {
-    if (isDecodedFrameSkippable(data)) {
+    if (shouldDiscardFrame(data)) {
         return;
     }
     LogIThrottle(2000, "onAudioDecoded pts:{:.6f}, isSeekPending:{}", data.frame->ptsTime(),
@@ -843,7 +864,7 @@ void PlayPipeline::onAudioDecoded(DecoderData data) noexcept {
         q.emplace_back(std::move(data.frame));
     });
     if (seekContext_->isSeekPending() && !seekContext_->isAudioSeeked()) {
-        onSeekFrameConsumed(TrackType::Audio);
+        handleSeekFrameConsumed(TrackType::Audio);
         LogI("audio seek completed");
     }
 }
@@ -862,7 +883,7 @@ void PlayPipeline::setupAudioTrack(DecoderType type,
         clockSync_->setAudioTime(t, clockSync_->currentAudioEpoch());
     });
     audioRender_->setRenderEndCallback([this] {
-        checkPlaybackComplete();
+        tryFirePlaybackComplete();
     });
 
     audioDecoder_ = std::make_shared<DecoderComponent>(
@@ -877,7 +898,7 @@ void PlayPipeline::setupAudioTrack(DecoderType type,
                     postToOwnerThread([this] {
                         ++readiness_.readyDecoders;
                         SLARK_TRACE_MILESTONE(playSession_.lock().get(), "audio_decoder_ready");
-                        checkAndFirePipelineReady();
+                        tryFirePipelineReady();
                     });
                 },
             .onError =
@@ -887,6 +908,11 @@ void PlayPipeline::setupAudioTrack(DecoderType type,
                     });
                 },
             .isAudio = true,
+            .pendingFrameCount =
+                [this] {
+                    return audioDecodedFrameCount();
+                },
+            .backpressure = config_.audioDecoder,
         });
 
     openDecoderInternal(audioDecoder_, type, config);
@@ -903,7 +929,7 @@ void PlayPipeline::handleFirstVideoFrame(const AVFrameRefPtr& frame) noexcept {
 }
 
 void PlayPipeline::onVideoDecoded(DecoderData data) noexcept {
-    if (isDecodedFrameSkippable(data)) {
+    if (shouldDiscardFrame(data)) {
         return;
     }
     LogIThrottle(2000, "onVideoDecoded pts:{:.6f}, isDiscard:{}, isSeekPending:{}",
@@ -931,8 +957,16 @@ void PlayPipeline::setupVideoTrack(DecoderType type,
 
     if (config && config->numRefFrames > 0) {
         const int32_t refFrames = static_cast<int32_t>(config->numRefFrames);
-        config_.videoDecoderLowWatermarkFrames = refFrames;
-        config_.videoDecoderHighWatermarkFrames = std::max(refFrames * 2, refFrames + 4);
+        config_.videoDecoder.lowWatermarkFrames = refFrames;
+        config_.videoDecoder.highWatermarkFrames = std::max(refFrames * 2, refFrames + 4);
+    }
+    // SPS reorder depth is a floor under the configured watermarks (B-frame reordering).
+    if (config && config->maxNumReorderFrames > 0) {
+        const int32_t reorder = static_cast<int32_t>(config->maxNumReorderFrames);
+        config_.videoDecoder.lowWatermarkFrames =
+            std::max(config_.videoDecoder.lowWatermarkFrames, reorder);
+        config_.videoDecoder.highWatermarkFrames =
+            std::max(config_.videoDecoder.highWatermarkFrames, std::max(reorder * 2, reorder + 4));
     }
 
     videoDecoder_ = std::make_shared<DecoderComponent>(
@@ -947,7 +981,7 @@ void PlayPipeline::setupVideoTrack(DecoderType type,
                     postToOwnerThread([this] {
                         ++readiness_.readyDecoders;
                         SLARK_TRACE_MILESTONE(playSession_.lock().get(), "video_decoder_ready");
-                        checkAndFirePipelineReady();
+                        tryFirePipelineReady();
                     });
                 },
             .onError =
@@ -957,6 +991,11 @@ void PlayPipeline::setupVideoTrack(DecoderType type,
                     });
                 },
             .isAudio = false,
+            .pendingFrameCount =
+                [this] {
+                    return videoDecodedFrameCount();
+                },
+            .backpressure = config_.videoDecoder,
         });
 
     openDecoderInternal(videoDecoder_, type, config);
@@ -999,17 +1038,17 @@ void PlayPipeline::fireEvent(PipelineEvent event, std::optional<PipelineError> e
     }
 }
 
-void PlayPipeline::checkAndFirePipelineReady() noexcept {
+void PlayPipeline::tryFirePipelineReady() noexcept {
     assert(isOnOwnerThread());
     if (readiness_.expectedDecoders == 0 ||
         readiness_.readyDecoders < readiness_.expectedDecoders) {
         return;
     }
-    if (config_.isLiveSource && !checkLiveReadyCondition()) {
+    if (config_.buffering.isLiveSource && !checkLiveReadyCondition()) {
         return;
     }
-    if (bufferMonitor_) {
-        bufferMonitor_->startPrebuffering();
+    if (bufferingTracker_) {
+        bufferingTracker_->startPrebuffering();
     } else {
         firePipelineReady();
     }
@@ -1090,7 +1129,7 @@ void PlayPipeline::handleDemuxHeader(const std::shared_ptr<IDemuxer>& demuxer) n
 }
 
 void PlayPipeline::updateLiveReadyFlags(const DemuxerResult& result) noexcept {
-    if (!config_.isLiveSource) {
+    if (!config_.buffering.isLiveSource) {
         return;
     }
     if (!result.audioFrames.empty()) {
@@ -1140,7 +1179,7 @@ bool PlayPipeline::dispatchVideoFrames(AVFramePtrArray& frames, uint64_t epoch) 
         frame->seekEpoch = epoch;
         const double framePts = frame->ptsTime();
         if (frame->info && frame->info->isKeyFrame()) {
-            seekContext_->updateGOPRange(framePts, seekContext_->gopEndPts());
+            seekContext_->updateGOPRange(framePts, framePts);
         }
         if (framePts > seekContext_->gopEndPts()) {
             seekContext_->updateGOPRange(seekContext_->gopKeyframePts(), framePts);
@@ -1193,18 +1232,21 @@ void PlayPipeline::dispatchFrames(DemuxerResult&& result, uint64_t epoch) noexce
         injectEosFrames(epoch);
         hasAudio = hasAudio || audioDecoder_ != nullptr;
         hasVideo = hasVideo || videoDecoder_ != nullptr;
-        if (bufferMonitor_) {
-            bufferMonitor_->setDemuxEof();
+        if (sourceFlow_) {
+            sourceFlow_->setSourceEof();
+        }
+        if (bufferingTracker_) {
+            bufferingTracker_->setSourceEof();
         }
         LogI("demuxer file end");
     }
 
     if (hasAudio || hasVideo) {
-        notifyDataEnqueued();
+        onDataEnqueued();
     }
 }
 
-void PlayPipeline::notifyDataEnqueued() noexcept {
+void PlayPipeline::onDataEnqueued() noexcept {
     bool expected = false;
     if (dataEnqueuedPending_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
         postToOwnerThread([this] {
@@ -1212,9 +1254,7 @@ void PlayPipeline::notifyDataEnqueued() noexcept {
             if (tearingDown_.load(std::memory_order_acquire)) {
                 return;
             }
-            if (bufferMonitor_) {
-                bufferMonitor_->onDemuxedDataEnqueued();
-            }
+            updateBufferControl();
         });
     }
 }
@@ -1309,7 +1349,7 @@ void PlayPipeline::pushAudioFrames(bool isPlaying) noexcept {
             }
         });
         if (audioRender_->readable() == 0) {
-            checkPlaybackComplete();
+            tryFirePlaybackComplete();
         }
     }
 }
@@ -1319,7 +1359,7 @@ void PlayPipeline::pushSeekFrames() noexcept {
         return;
     }
 
-    notifySeekIfDecoderCompleted();
+    markSeekedTracksIfDecodersCompleted();
 
     auto target = seekContext_->targetSeekTime();
     if (!target.has_value()) {
@@ -1340,16 +1380,22 @@ void PlayPipeline::pushSeekFrames() noexcept {
         return;
     }
 
+    // Behind the target: rendering it would complete the seek early and show stale
+    // frames at display rate, perceived as accelerated playback.
+    if (frame->ptsTime() < *target - kSeekTargetToleranceSec) {
+        return;
+    }
+
     render->pushFrame(frame);
     clockSync_->setVideoTime(Time::TimePoint::fromSeconds(frame->ptsTime()));
     markFirstFrameRenderedIfNeeded();
     if (seekContext_->tryMarkVideoSeeked()) {
-        onSeekFrameConsumed(TrackType::Video);
+        handleSeekFrameConsumed(TrackType::Video);
         LogI("video seek completed via pushSeekFrames");
     }
 }
 
-void PlayPipeline::onSeekFrameConsumed(TrackType track) noexcept {
+void PlayPipeline::handleSeekFrameConsumed(TrackType track) noexcept {
     if (track == TrackType::Video) {
         seekContext_->markVideoSeeked();
     } else {

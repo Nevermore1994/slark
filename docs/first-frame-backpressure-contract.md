@@ -22,25 +22,38 @@ forwardDuration = 78.56s
 
 背压使用 `forwardDuration` 与水位比较，不能裁剪 `cacheEndTime` 后再通知外部。
 
-## BufferMonitor 职责
+## 缓存职责拆分
 
-`BufferMonitor` 是唯一的播放缓存水位状态机：
+播放缓存水位由两个对象分担，输出完全不同因此不再耦合在一个对象里：
 
-- `demuxHighWatermarkDuration`：达到后暂停数据源；
-- `demuxLowWatermarkDuration`：降到后恢复数据源；
-- `startBufferDuration`：达到后触发 `PipelineReady`；
-- prebuffer 阶段也执行数据流高低水位控制；
+**`SourceFlowController`**（消费 `SourceBackpressureConfig`）— 控制生产者：
+
+- `source.highWatermarkSec`：达到后暂停数据源；
+- `source.lowWatermarkSec`：降到后恢复数据源，并通知容量可用；
+- 高低水位之间是滞回区，保持当前状态；
+- `pauseForOperation/resumeForOperation` 用于 seek 等操作级暂停，与水位滞回相互独立；
+- `reset()` 必须清 `operationPaused_`，否则下一次 `interruptStream()` 被短路。
+
+**`BufferingTracker`**（消费 `BufferingConfig`）— 上报就绪/卡顿：
+
+- `buffering.startBufferSec`：达到后触发 `PipelineReady`；
+- `buffering.starvationThreshold`：饥饿计数达到后触发 `BufferingStart`；
+- `buffering.rebufferTargetSec() = startBufferSec × rebufferScale`：进出卡顿的阈值；
 - prebuffer 阶段不触发 `BufferingStart/BufferingEnd`；
 - `readyFired_` 只表示启动缓存完成，不是背压开关。
 
-同一次检查使用一个 `demuxedDuration` 快照：
+两者由 `PlayPipeline` 用**同一个 `demuxedDuration()` 快照**驱动，避免两次采样结果不一致而自相矛盾：
 
 ```text
-onDemuxedDataEnqueued / onHeartbeat
+onDataEnqueued()               <- demux 数据入队事件（防抖 + post 到 owner 线程）
+updateBufferControl()          <- 100ms 节流（live 50ms）
+runBufferControl()             <- onFastTick，不节流
     -> duration = demuxedDuration()
-    -> regulateDataFlow(duration, allowBufferingEvents)
-    -> 如果处于 prebuffer，再检查 startBufferDuration
+    -> sourceFlow_->update(duration)
+    -> bufferingTracker_->update(duration, allowBufferingEvents)
 ```
+
+聚合层约束：`buffering.rebufferTargetSec() < source.highWatermarkSec`，否则生产先于重缓冲目标停止，卡顿永不退出。
 
 ## HLS 生产边界
 
@@ -58,25 +71,27 @@ downloadSegments()
 `productionGate` 使用 pipeline 当前前向缓存：
 
 ```text
-forwardDuration < demuxHighWatermarkDuration
+forwardDuration < source.highWatermarkSec
     -> 允许下载下一 segment
 
-forwardDuration >= demuxHighWatermarkDuration
+forwardDuration >= source.highWatermarkSec
     -> 不启动下一 segment
 ```
 
-闸门只负责防止继续生产，不新增独立的缓存状态机。现有 `BufferMonitor` 仍负责在高低水位变化时调用 source `pause/resume`：
+闸门只负责防止继续生产，不新增独立的缓存状态机。`SourceFlowController` 仍负责在高低水位变化时调用 source `pause/resume`：
 
 ```text
-BufferMonitor pauseStream()
+SourceFlowController interruptStream()
     -> HLSStream::pause()
     -> 当前 segment 收尾后不再启动下一 segment
 
-BufferMonitor resumeStream()
+SourceFlowController resumeStream()
     -> HLSStream::start()
     -> HLSStream::downloadSegments()
     -> productionGate 允许后继续下载
 ```
+
+**已知问题**：`HLSStream::pause()` 是破坏性的（`controlSession_->close()` + 取消全部定时器），而 `productionGate` 只是"不发起下一片"（连接在途、定时器保留）。两者都由同一个 `demuxedDuration` 驱动，但代价差一个数量级。水位背压应当只走 `pause()` 这条路径中不破坏连接的部分，或统一收敛到生产闸门；目前 HTTP / 本地文件没有轻量闸门，只能依赖 `pause()`。
 
 允许一个已经在途的 segment 完成，因此缓存可能略高于高水位，但不应再无界增长到几十秒。`HLSStream` 保留一个待提交 chunk，是因为 HTTP 流的最终事件可能不携带数据，必须等 `isFinal` 才能正确标记上一块 `isLastChunk`；这不是额外的背压状态。
 
@@ -88,18 +103,38 @@ BufferMonitor resumeStream()
 - VSync 拉帧；
 - 视频渲染。
 
-播放状态路径不得无条件启动数据源，绕过 `BufferMonitor` 的暂停状态。数据源恢复只来自：
+播放状态路径不得无条件启动数据源，绕过 `SourceFlowController` 的挂起状态。数据源恢复只来自：
 
-- `BufferMonitor` 低水位恢复；
-- seek 完成后的显式恢复；
+- `SourceFlowController` 低水位 `openFetchGate()`；
+- seek 完成后的显式 `resumeStream()`；
 - source 初始化。
 
 seek 可以使用已有 source pause/resume，但不能永久关闭背压，也不能引入没有恢复路径的全局绕过开关。
 
+## 水位挂起与操作暂停的区分
+
+两条路径语义不同，不可混用：
+
+| 路径 | 触发 | 手段 | 语义 |
+|---|---|---|---|
+| 水位（背压） | 高/低水位 | `closeFetchGate()` / `openFetchGate()` | 允许在途生产完成，只停止发起新的生产单元 |
+| 操作 | seek / 切轨 / 停止 | `interruptStream()` / `resumeStream()` | 立即中断，丢弃在途数据 |
+
+关键约束：
+
+- 水位路径**不得**调用 `interruptStream()`/`resumeStream()`。对 HLS 而言 `pause()` 是破坏性的（`controlSession_->close()` + 取消包括 playlist refresh 在内的全部定时器），且恢复时 `++generation_` 会让 pause 前已下载未 demux 的数据被 demuxer 全部丢弃，形成"下载—丢弃—重下"循环。
+- 低水位采样**不得**释放操作级暂停，否则 seek 过程中源会被水位误恢复。
+- `closeFetchGate()` 是幂等的边沿触发；`openFetchGate()` 可以重复发。
+- HLS 在片边界自行拦截，无需外部 `closeFetchGate()`；其它源没有生产单元边界，只能直接暂停。
+
+`MediaSourceManager` 负责这个分派：`closeFetchGate()` 对 HLS 空操作、对其它源调 `pause()`；`openFetchGate()` 对 HLS 调其闸门唤醒、对其它源调 `start()`（`start()` 在非 Paused/Ready 状态是 no-op，重复调用安全）。
+
+已知限制：`HttpStream` 是一次性大 Range 请求（无生产单元边界），水位超限按上表走 `pause()`，恢复时靠 `deliveredPosition_` 续传不重复下载，代价是一次连接重建。要支持"允许在途完成"需先把请求分片化。
+
 ## 生命周期
 
 ```text
-创建 pipeline / BufferMonitor
+创建 pipeline / SourceFlowController / BufferingTracker
         |
         v
 绑定 HLS productionGate
@@ -110,7 +145,7 @@ source start
         v
 prebuffer
   - 执行高低水位背压
-  - 达到 startBufferDuration 后触发 PipelineReady
+  - 达到 buffering.startBufferSec 后触发 PipelineReady
         |
         v
 首帧提交 / 首帧渲染
@@ -119,21 +154,24 @@ prebuffer
         |
         v
 steady flow
-  - BufferMonitor 继续按 high/low watermark 控制 source
+  - SourceFlowController 继续按 high/low watermark 控制 source
+  - BufferingTracker 按 rebufferTargetSec 上报 BufferingStart/End
 ```
 
 ## 回归测试契约
 
 至少保证：
 
-1. prebuffer 阶段超过高水位会调用 `pauseStream()`；
+1. 超过高水位会调用 `closeFetchGate()`，且**不会**调用 `interruptStream()`；
 2. prebuffer 阶段不会触发 `BufferingStart/BufferingEnd`；
-3. 低水位会恢复已暂停的数据源；
+3. 低水位会调用 `openFetchGate()`，且**不会**调用 `resumeStream()`；
 4. HLS production gate 关闭时不会发起下一 segment 请求；
 5. production gate 恢复后能够继续下载并最终完成；
 6. `notifyCacheTime` 保持绝对缓存终点语义；
 7. seek 不会永久关闭后续背压；
-8. 已在途 segment 允许收尾，但不会启动新的无界 segment 链。
+8. 已在途 segment 允许收尾，但不会启动新的无界 segment 链；
+9. 操作级暂停不会被低水位采样释放；
+10. `reset()` 清除操作暂停与生产挂起两个标志。
 
 相关实现和测试：
 
@@ -141,9 +179,15 @@ steady flow
 - `src/core/HLSStream.cpp`
 - `src/core/MediaSourceManager.h`
 - `src/core/MediaSourceManager.cpp`
-- `src/core/pipeline/BufferMonitor.h`
-- `src/core/pipeline/BufferMonitor.cpp`
+- `src/core/PlayerImpl.cpp`
+- `src/core/pipeline/SourceFlowController.h`
+- `src/core/pipeline/SourceFlowController.cpp`
+- `src/core/pipeline/BufferingTracker.h`
+- `src/core/pipeline/BufferingTracker.cpp`
+- `src/core/pipeline/PipelineConfig.h`
 - `src/core/pipeline/PlayPipeline.h`
 - `src/core/pipeline/PlayPipeline.cpp`
 - `test/core/HLSStreamTest.cpp`
-- `test/core/BufferMonitorTest.cpp`
+- `test/core/SourceFlowControllerTest.cpp`
+- `test/core/BufferingTrackerTest.cpp`
+- `test/core/CorePipelineComponentTest.cpp`

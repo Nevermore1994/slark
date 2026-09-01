@@ -14,7 +14,7 @@
 
 #include "AVFrame.hpp"
 #include "AudioInfo.h"
-#include "BufferMonitor.h"
+#include "BufferingTracker.h"
 #include "ClockSync.h"
 #include "Data.h"
 #include "DecoderComponent.h"
@@ -29,6 +29,7 @@
 #include "PipelineEvent.h"
 #include "PlayerTypes.h"
 #include "SeekContext.h"
+#include "SourceFlowController.h"
 #include "Synchronized.hpp"
 #include "Time.hpp"
 #include "perf/PlaySession.h"
@@ -59,13 +60,15 @@ struct ReadinessTracker {
     std::atomic<bool> firstFrameRendered{false};
 };
 
-class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
+class PlayPipeline : public NonCopyMovable,
+                     public ISourceFlowDelegate,
+                     public IBufferingTrackerDelegate {
  public:
-    explicit PlayPipeline(BackpressureConfig config) noexcept;
+    explicit PlayPipeline(PipelineFlowConfig config) noexcept;
 
     ~PlayPipeline();
 
-    void build() noexcept;
+    void startDemuxing() noexcept;
 
     void start() noexcept;
 
@@ -85,7 +88,7 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
         return clockSync_->videoTime();
     }
 
-    [[nodiscard]] bool canProduceSourceData() const noexcept;
+    [[nodiscard]] bool canFetchMore() const noexcept;
 
     [[nodiscard]] double cacheEndTime() const noexcept;
 
@@ -94,9 +97,18 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
     void drainPendingTasks() noexcept;
 
     // High-frequency tick (playerThreadTickMs): backpressure regulation + audio frame pushing
-    void onFastTick(bool isPlaying) noexcept;
+    void runFastTick(bool isPlaying) noexcept;
 
-    void setStreamControl(StreamControlFunc pauseStream, StreamControlFunc resumeStream) noexcept;
+    void setStreamControl(StreamControlFunc interruptStream,
+                          StreamControlFunc resumeStream) noexcept;
+
+    void setCloseFetchGateCallback(StreamControlFunc callback) noexcept {
+        closeFetchGateFunc_ = std::move(callback);
+    }
+
+    void setOpenFetchGateCallback(StreamControlFunc callback) noexcept {
+        openFetchGateFunc_ = std::move(callback);
+    }
 
     void setSeekByTimeFunc(std::function<StreamResult<void>(double, uint64_t)> func) noexcept {
         seekByTimeFunc_ = std::move(func);
@@ -124,7 +136,7 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
         return mediaInfo_;
     }
 
-    [[nodiscard]] bool isBuilt() const noexcept {
+    [[nodiscard]] bool isStarted() const noexcept {
         return componentStarted_.load(std::memory_order_acquire);
     }
 
@@ -160,7 +172,7 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     void setVolume(float volume) noexcept;
 
-    void checkPlaybackComplete() noexcept;
+    void tryFirePlaybackComplete() noexcept;
 
     [[nodiscard]] uint64_t nextSeekEpoch() const noexcept {
         return seekContext_->currentEpoch() + 1;
@@ -175,25 +187,19 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
     }
 
  private:
-    [[nodiscard]] double demuxedDuration() const noexcept override;
+    [[nodiscard]] double demuxedDuration() const noexcept;
 
     [[nodiscard]] double maxBufferedPts() const noexcept;
 
-    void pauseStream() noexcept override;
+    void interruptStream() noexcept override;
 
     void resumeStream() noexcept override;
+    void closeFetchGate() noexcept override;
+    void openFetchGate() noexcept override;
 
-    [[nodiscard]] int32_t audioDecodedFrameCount() const noexcept override;
+    [[nodiscard]] int32_t audioDecodedFrameCount() const noexcept;
 
-    [[nodiscard]] int32_t videoDecodedFrameCount() const noexcept override;
-
-    void pauseAudioDecoder() noexcept override;
-
-    void resumeAudioDecoder() noexcept override;
-
-    void pauseVideoDecoder() noexcept override;
-
-    void resumeVideoDecoder() noexcept override;
+    [[nodiscard]] int32_t videoDecodedFrameCount() const noexcept;
 
     void onPrebufferComplete() noexcept override;
 
@@ -205,7 +211,7 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     void firePipelineReady() noexcept;
 
-    void checkAndFirePipelineReady() noexcept;
+    void tryFirePipelineReady() noexcept;
 
     [[nodiscard]] bool checkLiveReadyCondition() const noexcept;
 
@@ -221,7 +227,11 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     void injectEosFrames(uint64_t epoch) noexcept;
 
-    void notifyDataEnqueued() noexcept;
+    void onDataEnqueued() noexcept;
+
+    void updateBufferControl() noexcept;
+
+    void runBufferControl() noexcept;
 
     void stopComponents() noexcept;
 
@@ -235,11 +245,11 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     void onVideoDecoded(DecoderData data) noexcept;
 
-    [[nodiscard]] bool isDecodedFrameSkippable(const DecoderData& data) noexcept;
+    [[nodiscard]] bool shouldDiscardFrame(const DecoderData& data) noexcept;
 
     void handleFirstVideoFrame(const AVFrameRefPtr& frame) noexcept;
 
-    void onSeekFrameConsumed(TrackType track) noexcept;
+    void handleSeekFrameConsumed(TrackType track) noexcept;
 
     /// FastForwardInGOP: no demuxer relocation or decoder flush; fast-forward consuming
     /// [current, target) audio/video
@@ -271,7 +281,7 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     [[nodiscard]] bool isVideoReadyForPlaybackEnd() const noexcept;
 
-    [[nodiscard]] bool areQueuesDrained() const noexcept;
+    [[nodiscard]] bool hasPendingFrames() const noexcept;
 
     [[nodiscard]] bool isBeforePlaybackRange(double pts) const noexcept;
 
@@ -279,18 +289,18 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     [[nodiscard]] bool hasReachedPlaybackRangeEnd() const noexcept;
 
-    void notifySeekIfDecoderCompleted() noexcept;
+    void markSeekedTracksIfDecodersCompleted() noexcept;
 
     [[nodiscard]] AVFrameRefPtr skipFramesBeforeTarget(AVFrameRefPtr frame, double target) noexcept;
 
     void updateLiveReadyFlags(const DemuxerResult& result) noexcept;
 
-    [[nodiscard]] bool canFastForwardInCurrentVideoBuffer(double targetSec) const noexcept;
+    [[nodiscard]] bool canFastForward(double targetSec) const noexcept;
 
     void registerComponents() noexcept;
 
  private:
-    BackpressureConfig config_;
+    PipelineFlowConfig config_;
     std::thread::id ownerThreadId_;
     PipelineEventCallback onEvent_;
     MediaInfo mediaInfo_;
@@ -316,10 +326,14 @@ class PlayPipeline : public NonCopyMovable, public IBufferMonitorDelegate {
 
     std::unique_ptr<ClockSync> clockSync_;
     std::unique_ptr<SeekContext> seekContext_;
-    std::unique_ptr<BufferMonitor> bufferMonitor_;
+    std::unique_ptr<SourceFlowController> sourceFlow_;
+    std::unique_ptr<BufferingTracker> bufferingTracker_;
+    std::optional<std::chrono::steady_clock::time_point> lastBufferSampleTime_;
 
-    StreamControlFunc pauseStreamFunc_;
+    StreamControlFunc interruptStreamFunc_;
     StreamControlFunc resumeStreamFunc_;
+    StreamControlFunc closeFetchGateFunc_;
+    StreamControlFunc openFetchGateFunc_;
     std::function<void()> wakeupCallback_;
     std::function<StreamResult<void>(double, uint64_t)> seekByTimeFunc_;
 

@@ -16,84 +16,189 @@
 using namespace slark;
 
 
-TEST(BackpressureConfigTest, ForLocalDefaultsAreValid) {
-    auto cfg = BackpressureConfig::forLocal();
+namespace {
+constexpr MediaSourceType kLocal = MediaSourceType::Local;
+constexpr MediaSourceType kNetwork = MediaSourceType::Network;
+constexpr MediaSourceType kLive = MediaSourceType::Live;
+}  // namespace
+
+TEST(PipelineFlowConfigTest, ForLocalDefaultsAreValid) {
+    auto cfg = PipelineFlowConfig::forSource(kLocal);
     EXPECT_TRUE(cfg.isValid());
-    EXPECT_FALSE(cfg.isLiveSource);
-    EXPECT_EQ(cfg.demuxHighWatermarkDuration, 30.0);
-    EXPECT_EQ(cfg.demuxLowWatermarkDuration, 2.0);
-    EXPECT_EQ(cfg.startBufferDuration, 0.0);
+    EXPECT_DOUBLE_EQ(cfg.source.highWatermarkSec, 30.0);
+    EXPECT_DOUBLE_EQ(cfg.source.lowWatermarkSec, 2.0);
+    EXPECT_DOUBLE_EQ(cfg.buffering.startBufferSec, 0.0);
+    EXPECT_FALSE(cfg.buffering.isLiveSource);
 }
 
-TEST(BackpressureConfigTest, ForNetworkDefaultsAreValid) {
-    auto cfg = BackpressureConfig::forNetwork();
+TEST(PipelineFlowConfigTest, ForNetworkDefaultsAreValid) {
+    auto cfg = PipelineFlowConfig::forSource(kNetwork);
     EXPECT_TRUE(cfg.isValid());
-    EXPECT_FALSE(cfg.isLiveSource);
-    EXPECT_EQ(cfg.demuxHighWatermarkDuration, 10.0);
-    EXPECT_EQ(cfg.demuxLowWatermarkDuration, 3.0);
-    EXPECT_EQ(cfg.startBufferDuration, 2.0);
-    EXPECT_EQ(cfg.rebufferScale, 1.5);
+    EXPECT_DOUBLE_EQ(cfg.source.highWatermarkSec, 10.0);
+    EXPECT_DOUBLE_EQ(cfg.source.lowWatermarkSec, 3.0);
+    EXPECT_DOUBLE_EQ(cfg.buffering.startBufferSec, 2.0);
+    EXPECT_DOUBLE_EQ(cfg.buffering.rebufferScale, 1.5);
+    EXPECT_EQ(cfg.buffering.starvationThreshold, 5);
+    EXPECT_EQ(cfg.audioDecoder.lowWatermarkFrames, 4);
+    EXPECT_EQ(cfg.audioDecoder.highWatermarkFrames, 16);
+    EXPECT_EQ(cfg.videoDecoder.lowWatermarkFrames, 2);
+    EXPECT_EQ(cfg.videoDecoder.highWatermarkFrames, 8);
+    EXPECT_EQ(cfg.catchUp.maxDropPerVsync, 8);
+    EXPECT_EQ(cfg.catchUp.seekFastForwardMs, 300);
 }
 
-TEST(BackpressureConfigTest, ForLiveDefaultsAreValid) {
-    auto cfg = BackpressureConfig::forLive();
+TEST(PipelineFlowConfigTest, ForLiveDefaultsAreValid) {
+    auto cfg = PipelineFlowConfig::forSource(kLive);
     EXPECT_TRUE(cfg.isValid());
-    EXPECT_TRUE(cfg.isLiveSource);
-    EXPECT_EQ(cfg.demuxHighWatermarkDuration, 5.0);
-    EXPECT_EQ(cfg.demuxLowWatermarkDuration, 1.0);
-    EXPECT_EQ(cfg.startBufferDuration, 1.0);
-    EXPECT_EQ(cfg.rebufferScale, 1.5);
-    EXPECT_EQ(cfg.maxDropPerVsync, 4);
+    EXPECT_TRUE(cfg.buffering.isLiveSource);
+    EXPECT_DOUBLE_EQ(cfg.source.highWatermarkSec, 5.0);
+    EXPECT_DOUBLE_EQ(cfg.source.lowWatermarkSec, 1.0);
+    EXPECT_DOUBLE_EQ(cfg.buffering.startBufferSec, 1.0);
+    EXPECT_EQ(cfg.audioDecoder.lowWatermarkFrames, 2);
+    EXPECT_EQ(cfg.audioDecoder.highWatermarkFrames, 8);
+    EXPECT_EQ(cfg.videoDecoder.lowWatermarkFrames, 1);
+    EXPECT_EQ(cfg.videoDecoder.highWatermarkFrames, 4);
+    EXPECT_EQ(cfg.catchUp.maxDropPerVsync, 4);
 }
 
-TEST(BackpressureConfigTest, InvalidWhenLowWatermarkExceedsHigh) {
-    auto cfg = BackpressureConfig::forLocal();
-    cfg.demuxLowWatermarkDuration = cfg.demuxHighWatermarkDuration + 1.0;
+TEST(PipelineFlowConfigTest, LiveTrimsEverySliceComparedToNetwork) {
+    auto live = PipelineFlowConfig::forSource(kLive);
+    auto net = PipelineFlowConfig::forSource(kNetwork);
+    EXPECT_LT(live.source.highWatermarkSec, net.source.highWatermarkSec);
+    EXPECT_LT(live.videoDecoder.highWatermarkFrames, net.videoDecoder.highWatermarkFrames);
+    EXPECT_LT(live.catchUp.maxDropPerVsync, net.catchUp.maxDropPerVsync);
+}
+
+TEST(PipelineFlowConfigTest, EverySourceTypeValidatesWholeConfig) {
+    for (auto type : {kLocal, kNetwork, kLive}) {
+        auto cfg = PipelineFlowConfig::forSource(type);
+        EXPECT_TRUE(cfg.isValid());
+        EXPECT_TRUE(cfg.source.isValid());
+        EXPECT_TRUE(cfg.audioDecoder.isValid());
+        EXPECT_TRUE(cfg.videoDecoder.isValid());
+        EXPECT_TRUE(cfg.buffering.isValid());
+        EXPECT_TRUE(cfg.catchUp.isValid());
+    }
+}
+
+// A broken slice must invalidate the aggregate, otherwise a bad watermark reaches a
+// module that never validates it.
+TEST(PipelineFlowConfigTest, InvalidSliceMakesWholeConfigInvalid) {
+    {
+        auto cfg = PipelineFlowConfig::forSource(kNetwork);
+        cfg.source.lowWatermarkSec = cfg.source.highWatermarkSec + 1.0;
+        EXPECT_FALSE(cfg.source.isValid());
+        EXPECT_FALSE(cfg.isValid());
+    }
+    {
+        auto cfg = PipelineFlowConfig::forSource(kNetwork);
+        cfg.audioDecoder.highWatermarkFrames = 0;
+        EXPECT_FALSE(cfg.audioDecoder.isValid());
+        EXPECT_FALSE(cfg.isValid());
+    }
+    {
+        auto cfg = PipelineFlowConfig::forSource(kNetwork);
+        cfg.videoDecoder.highWatermarkFrames = cfg.videoDecoder.lowWatermarkFrames;
+        EXPECT_FALSE(cfg.videoDecoder.isValid());
+        EXPECT_FALSE(cfg.isValid());
+    }
+    {
+        auto cfg = PipelineFlowConfig::forSource(kNetwork);
+        cfg.buffering.starvationThreshold = 0;
+        EXPECT_FALSE(cfg.buffering.isValid());
+        EXPECT_FALSE(cfg.isValid());
+    }
+    {
+        auto cfg = PipelineFlowConfig::forSource(kNetwork);
+        cfg.catchUp.maxDropPerVsync = 0;
+        EXPECT_FALSE(cfg.catchUp.isValid());
+        EXPECT_FALSE(cfg.isValid());
+    }
+}
+
+// Cross-slice constraint: production stops at the high watermark, so a rebuffer target
+// at or above it can never be reached and rebuffering would never exit.
+TEST(PipelineFlowConfigTest, RebufferTargetMustStayBelowSourceHighWatermark) {
+    auto cfg = PipelineFlowConfig::forSource(kNetwork);
+    ASSERT_DOUBLE_EQ(cfg.buffering.rebufferTargetSec(), 3.0);
+    ASSERT_LT(cfg.buffering.rebufferTargetSec(), cfg.source.highWatermarkSec);
+
+    cfg.buffering.startBufferSec = cfg.source.highWatermarkSec / cfg.buffering.rebufferScale;
+    EXPECT_FALSE(cfg.isValid());
+
+    cfg.buffering.startBufferSec = 6.0;
+    EXPECT_DOUBLE_EQ(cfg.buffering.rebufferTargetSec(), 9.0);
+    EXPECT_TRUE(cfg.isValid());
+
+    cfg.buffering.rebufferScale = 2.0;
+    EXPECT_DOUBLE_EQ(cfg.buffering.rebufferTargetSec(), 12.0);
     EXPECT_FALSE(cfg.isValid());
 }
 
-TEST(BackpressureConfigTest, InvalidWhenStartBufferExceedsHighWatermark) {
-    auto cfg = BackpressureConfig::forLocal();
-    cfg.startBufferDuration = cfg.demuxHighWatermarkDuration + 1.0;
+TEST(PipelineFlowConfigTest, SourceWatermarkBoundaries) {
+    auto cfg = PipelineFlowConfig::forSource(kNetwork);
+    cfg.source.lowWatermarkSec = 0.0;
+    EXPECT_TRUE(cfg.source.isValid());
+
+    cfg.source.lowWatermarkSec = cfg.source.highWatermarkSec;
+    EXPECT_FALSE(cfg.source.isValid());
+
+    cfg.source.lowWatermarkSec = -1.0;
+    EXPECT_FALSE(cfg.source.isValid());
+}
+
+TEST(PipelineFlowConfigTest, DecoderWatermarkBoundaries) {
+    DecoderBackpressureConfig cfg;
+    cfg.lowWatermarkFrames = 0;
+    EXPECT_TRUE(cfg.isValid());
+
+    cfg.lowWatermarkFrames = cfg.highWatermarkFrames;
+    EXPECT_FALSE(cfg.isValid());
+
+    cfg.lowWatermarkFrames = -1;
     EXPECT_FALSE(cfg.isValid());
 }
 
-TEST(BackpressureConfigTest, InvalidWhenStartBufferEqualsHighWatermark) {
-    auto cfg = BackpressureConfig::forLocal();
-    cfg.startBufferDuration = cfg.demuxHighWatermarkDuration;
+TEST(PipelineFlowConfigTest, BufferingConfigBoundaries) {
+    BufferingConfig cfg;
+    cfg.startBufferSec = 0.0;
+    EXPECT_TRUE(cfg.isValid());
+
+    cfg.rebufferScale = 1.0;
+    EXPECT_TRUE(cfg.isValid());
+
+    cfg.rebufferScale = 0.99;
+    EXPECT_FALSE(cfg.isValid());
+
+    cfg.rebufferScale = 1.5;
+    cfg.starvationThreshold = 1;
+    EXPECT_TRUE(cfg.isValid());
+
+    cfg.starvationThreshold = 0;
+    EXPECT_FALSE(cfg.isValid());
+
+    cfg.starvationThreshold = -1;
     EXPECT_FALSE(cfg.isValid());
 }
 
-TEST(BackpressureConfigTest, ValidBoundaryLowEqualsZero) {
-    auto cfg = BackpressureConfig::forLocal();
-    cfg.demuxLowWatermarkDuration = 0.0;
-    cfg.demuxHighWatermarkDuration = 1.0;
-    cfg.startBufferDuration = 0.5;
+TEST(PipelineFlowConfigTest, CatchUpConfigBoundaries) {
+    CatchUpConfig cfg;
+    cfg.maxDropPerVsync = 1;
+    cfg.seekFastForwardMs = 1;
     EXPECT_TRUE(cfg.isValid());
-}
 
-TEST(BackpressureConfigTest, ValidBoundaryLowJustBelowHigh) {
-    auto cfg = BackpressureConfig{};
-    cfg.demuxLowWatermarkDuration = 0.99;
-    cfg.demuxHighWatermarkDuration = 1.0;
-    cfg.startBufferDuration = 0.5;
-    EXPECT_TRUE(cfg.isValid());
-}
+    cfg.maxDropPerVsync = 0;
+    EXPECT_FALSE(cfg.isValid());
 
-TEST(BackpressureConfigTest, ValidBoundaryHighAboveHighWatermark) {
-    auto cfg = BackpressureConfig{};
-    cfg.demuxLowWatermarkDuration = 0.5;
-    cfg.demuxHighWatermarkDuration = 2.0;
-    cfg.startBufferDuration = 1.0;
-    EXPECT_TRUE(cfg.isValid());
-}
+    cfg.maxDropPerVsync = -1;
+    EXPECT_FALSE(cfg.isValid());
 
-TEST(BackpressureConfigTest, ValidBoundaryStartBufferJustBelowHigh) {
-    auto cfg = BackpressureConfig{};
-    cfg.demuxLowWatermarkDuration = 0.5;
-    cfg.demuxHighWatermarkDuration = 2.0;
-    cfg.startBufferDuration = 1.99;
-    EXPECT_TRUE(cfg.isValid());
+    cfg.maxDropPerVsync = 1;
+    cfg.seekFastForwardMs = 0;
+    EXPECT_FALSE(cfg.isValid());
+
+    cfg.seekFastForwardMs = -1;
+    EXPECT_FALSE(cfg.isValid());
 }
 
 
