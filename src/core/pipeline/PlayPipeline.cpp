@@ -170,9 +170,9 @@ void PlayPipeline::seek(CTime target, bool isAccurate) noexcept {
         return;
     }
 
-    const double targetSec = playbackRangeEnabled_
-                                 ? std::clamp(target.second(), playbackRangeStart_, playbackRangeEnd_)
-                                 : target.second();
+    const double targetSec =
+        playbackRangeEnabled_ ? std::clamp(target.second(), playbackRangeStart_, playbackRangeEnd_)
+                              : target.second();
 
     if (!isAccurate && seekContext_->isSeekPending()) {
         if (seekContext_->updateTarget(targetSec)) {
@@ -196,12 +196,12 @@ void PlayPipeline::seek(CTime target, bool isAccurate) noexcept {
     }
 
     const SeekStrategy strategy =
-        canFastForward(targetSec) ? SeekStrategy::FastForwardInGOP
-                                  : SeekStrategy::SeekToKeyframe;
+        canFastForward(targetSec) ? SeekStrategy::FastForwardInGOP : SeekStrategy::SeekToKeyframe;
     std::ignore = seekContext_->beginSeek(target);
     {
         const double fps = clockSync_->videoFps();
-        const double skipWindowSec = static_cast<double>(config_.catchUp.seekFastForwardMs) / 1000.0;
+        const double skipWindowSec =
+            static_cast<double>(config_.catchUp.seekFastForwardMs) / 1000.0;
         const int32_t maxSkip = (fps > 0.0) ? static_cast<int32_t>(fps * skipWindowSec) : 1;
         seekContext_->setMaxSkipFrames(std::max(1, maxSkip));
     }
@@ -267,8 +267,7 @@ void PlayPipeline::performKeyframeSeek(CTime target) noexcept {
     clockSync_->seekTo(Time::TimePoint::fromSeconds(targetSec));
     if (mediaInfo_.streamType == StreamType::HLS) {
         if (!seekByTimeFunc_) {
-            fireEvent(PipelineEvent::ReadError,
-                      PipelineError{.error = Error::InvalidOperation});
+            fireEvent(PipelineEvent::ReadError, PipelineError{.error = Error::InvalidOperation});
             return;
         }
         const auto sourceGeneration = demuxer_ ? demuxer_->beginSourceOperation() : 0;
@@ -278,8 +277,6 @@ void PlayPipeline::performKeyframeSeek(CTime target) noexcept {
             fireEvent(PipelineEvent::ReadError, PipelineError{.error = res.error()});
             return;
         }
-        demuxer_->resume();
-        LogI("performKeyframeSeek HLS demuxer resumed");
     } else if (demuxer_) {
         auto pos = demuxer_->getSeekToPos(targetSec);
         LogI("performKeyframeSeek demuxer relocate seekPos={:.3f}", targetSec);
@@ -386,7 +383,7 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
              masterTime, videoTime, cacheEnd);
         if (bufferingTracker_) {
             bufferingTracker_->reportStarvation(!config_.buffering.isLiveSource &&
-                                           config_.buffering.startBufferSec == 0.0);
+                                                config_.buffering.startBufferSec == 0.0);
         }
         return nullptr;
     }
@@ -611,8 +608,7 @@ void PlayPipeline::tryFirePlaybackComplete() noexcept {
         if (mediaInfo_.hasVideo && !readiness_.firstFrameRendered.load(std::memory_order_acquire)) {
             return;
         }
-        if (!isAudioReadyForPlaybackEnd() || !isVideoReadyForPlaybackEnd() ||
-            hasPendingFrames()) {
+        if (!isAudioReadyForPlaybackEnd() || !isVideoReadyForPlaybackEnd() || hasPendingFrames()) {
             return;
         }
         if (audioRender_ && mediaInfo_.hasAudio && audioRender_->readable() > 0) {
@@ -1087,23 +1083,22 @@ void PlayPipeline::connectComponents() noexcept {
     if (!demuxer_) {
         return;
     }
-    demuxer_->setHandleResultFunc(
-        [this](const std::shared_ptr<IDemuxer>& demuxer, DemuxerResult&& result) {
-            if (!demuxer) {
+    demuxer_->setHandleResultFunc([this](const std::shared_ptr<IDemuxer>& demuxer,
+                                         DemuxerResult&& result) {
+        if (!demuxer) {
+            return;
+        }
+        auto resultHolder = std::make_shared<DemuxerResult>(std::move(result));
+        postToOwnerThread([this, demuxer, resultHolder] {
+            if (!demuxer_ || !demuxer_->isCurrentSourceGeneration(resultHolder->sourceGeneration)) {
                 return;
             }
-            auto resultHolder = std::make_shared<DemuxerResult>(std::move(result));
-            postToOwnerThread([this, demuxer, resultHolder] {
-                if (!demuxer_ ||
-                    !demuxer_->isCurrentSourceGeneration(resultHolder->sourceGeneration)) {
-                    return;
-                }
-                if (resultHolder->resultCode == DemuxerResultCode::ParsedHeader) {
-                    handleDemuxHeader(demuxer);
-                }
-                dispatchFrames(std::move(*resultHolder), seekContext_->currentEpoch());
-            });
+            if (resultHolder->resultCode == DemuxerResultCode::ParsedHeader) {
+                handleDemuxHeader(demuxer);
+            }
+            dispatchFrames(std::move(*resultHolder), seekContext_->currentEpoch());
         });
+    });
 }
 
 void PlayPipeline::handleDemuxHeader(const std::shared_ptr<IDemuxer>& demuxer) noexcept {
