@@ -47,7 +47,7 @@ StreamResult<StreamInfo> FileStream::open(const OpenParams& params) {
 
 void FileStream::close() noexcept {
     shouldStop_ = true;
-    notifyThread();
+    wakeReadLoop();
 
     if (thread_ && thread_->joinable()) {
         thread_->join();
@@ -79,7 +79,7 @@ void FileStream::start() noexcept {
     state_ = StreamState::Reading;
 
     if (wasPaused && thread_ && thread_->joinable()) {
-        notifyThread();
+        wakeReadLoop();
         return;
     }
 
@@ -95,7 +95,7 @@ void FileStream::pause() noexcept {
 
     shouldPause_ = true;
     eofReached_.store(false, std::memory_order_release);
-    notifyThread();
+    wakeReadLoop();
     state_ = StreamState::Paused;
     isRunning_ = false;
 }
@@ -120,7 +120,7 @@ auto FileStream::seek(uint64_t position, uint64_t sourceGeneration) -> StreamRes
         seekError_ = Error::Success;
     }
     pendingSeekFlag_.store(true, std::memory_order_release);
-    notifyThread();
+    wakeReadLoop();
 
     {
         std::unique_lock lock(mutex_);
@@ -137,7 +137,7 @@ auto FileStream::seek(uint64_t position, uint64_t sourceGeneration) -> StreamRes
     return {};
 }
 
-void FileStream::updateRange(Range range) noexcept {
+void FileStream::setReadRange(Range range) noexcept {
     readRange_ = range;
 }
 
@@ -299,7 +299,7 @@ void FileStream::readLoop() noexcept {
     }
 }
 
-void FileStream::notifyThread() noexcept {
+void FileStream::wakeReadLoop() noexcept {
     cv_.notify_all();
 }
 

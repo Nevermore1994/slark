@@ -75,7 +75,7 @@ class Thread : public NonCopyMovable, public std::enable_shared_from_this<Thread
         return isRunning_;
     }
 
-    [[nodiscard]] inline bool isExit() const noexcept {
+    [[nodiscard]] inline bool isStopRequested() const noexcept {
         return stopRequested_.load(std::memory_order_acquire);
     }
 
@@ -105,7 +105,7 @@ class Thread : public NonCopyMovable, public std::enable_shared_from_this<Thread
  private:
     explicit Thread(std::string name);
 
-    void process() noexcept;
+    void runLoop() noexcept;
 
     void setup() noexcept;
 

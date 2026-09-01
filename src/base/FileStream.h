@@ -24,7 +24,7 @@ class FileStream : public IStream {
     void start() noexcept override;
     void pause() noexcept override;
     StreamResult<void> seek(uint64_t position, uint64_t sourceGeneration) override;
-    void updateRange(Range range) noexcept override;
+    void setReadRange(Range range) noexcept override;
 
     [[nodiscard]] StreamState state() const noexcept override {
         return state_.load();
@@ -48,7 +48,7 @@ class FileStream : public IStream {
 
  private:
     void readLoop() noexcept;
-    void notifyThread() noexcept;
+    void wakeReadLoop() noexcept;
     bool deliverData(std::shared_ptr<Data> buffer, bool eof) noexcept;
 
     void processPendingSeek() noexcept;

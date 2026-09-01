@@ -53,7 +53,7 @@ std::shared_ptr<Thread> Thread::create(std::string name) {
     auto thread = std::shared_ptr<Thread>(new Thread(std::move(name)));
     thread->worker_ = std::thread([weak = thread->weak_from_this()]() {
         if (auto self = weak.lock()) {
-            self->process();
+            self->runLoop();
         }
     });
     return thread;
@@ -69,7 +69,7 @@ std::shared_ptr<Thread> Thread::createWithLoop(std::string name,
     }
     thread->worker_ = std::thread([weak = thread->weak_from_this()]() {
         if (auto self = weak.lock()) {
-            self->process();
+            self->runLoop();
         }
     });
     return thread;
@@ -205,7 +205,7 @@ void Thread::waitIdle(std::chrono::milliseconds waitTime,
     }
 }
 
-void Thread::process() noexcept {
+void Thread::runLoop() noexcept {
     tlsCurrentThread = this;
     setup();
     setActive(true);

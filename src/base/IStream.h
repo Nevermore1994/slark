@@ -101,7 +101,7 @@ class IStream {
         return std::unexpected(Error::InvalidOperation);
     }
 
-    virtual void updateRange(Range range) noexcept = 0;
+    virtual void setReadRange(Range range) noexcept = 0;
 
     [[nodiscard]] virtual StreamState state() const noexcept = 0;
     [[nodiscard]] virtual StreamInfo info() const noexcept = 0;

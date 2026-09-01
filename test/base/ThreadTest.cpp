@@ -22,22 +22,22 @@ TEST(Thread, state) {
     });
     thread->start();
     ASSERT_EQ(thread->isRunning(), true);
-    ASSERT_EQ(thread->isExit(), false);
+    ASSERT_EQ(thread->isStopRequested(), false);
     thread->pause();
     ASSERT_EQ(thread->isRunning(), false);
-    ASSERT_EQ(thread->isExit(), false);
+    ASSERT_EQ(thread->isStopRequested(), false);
     thread->start();
     ASSERT_EQ(thread->isRunning(), true);
-    ASSERT_EQ(thread->isExit(), false);
+    ASSERT_EQ(thread->isStopRequested(), false);
     thread->pause();
     ASSERT_EQ(thread->isRunning(), false);
-    ASSERT_EQ(thread->isExit(), false);
+    ASSERT_EQ(thread->isStopRequested(), false);
     thread->pause();
     ASSERT_EQ(thread->isRunning(), false);
-    ASSERT_EQ(thread->isExit(), false);
+    ASSERT_EQ(thread->isStopRequested(), false);
     thread->stop();
     ASSERT_EQ(thread->isRunning(), false);
-    ASSERT_EQ(thread->isExit(), true);
+    ASSERT_EQ(thread->isStopRequested(), true);
 }
 
 TEST(Thread, postTask) {
@@ -286,11 +286,11 @@ TEST(Thread, startAfterStopIsNoop) {
     auto thread = Thread::create(Util::genRandomName("thread"));
     thread->start();
     thread->stop();
-    ASSERT_TRUE(thread->isExit());
+    ASSERT_TRUE(thread->isStopRequested());
 
     thread->start();
     ASSERT_FALSE(thread->isRunning());
-    ASSERT_TRUE(thread->isExit());
+    ASSERT_TRUE(thread->isStopRequested());
 }
 
 TEST(Thread, setThreadName) {
@@ -325,12 +325,12 @@ TEST(Thread, createWithLoopShouldStopPauseResume) {
 
     loopEntered.wait();
     ASSERT_EQ(state.load(), 1);
-    ASSERT_FALSE(thread->isExit());
+    ASSERT_FALSE(thread->isStopRequested());
 
     thread->pause();
     std::this_thread::sleep_for(20ms);
     ASSERT_FALSE(thread->isRunning());
-    ASSERT_FALSE(thread->isExit());
+    ASSERT_FALSE(thread->isStopRequested());
 
     thread->start();
     std::this_thread::sleep_for(20ms);
@@ -338,7 +338,7 @@ TEST(Thread, createWithLoopShouldStopPauseResume) {
 
     thread->stop();
     std::this_thread::sleep_for(30ms);
-    ASSERT_TRUE(thread->isExit());
+    ASSERT_TRUE(thread->isStopRequested());
     ASSERT_EQ(state.load(), 4);
 }
 
@@ -369,7 +369,7 @@ TEST(Thread, createWithLoopDrainPendingWork) {
 
     thread->stop();
     std::this_thread::sleep_for(30ms);
-    ASSERT_TRUE(thread->isExit());
+    ASSERT_TRUE(thread->isStopRequested());
 }
 
 TEST(Thread, createWithLoopDrainPendingWorkNoop) {
@@ -386,7 +386,7 @@ TEST(Thread, createWithLoopDrainPendingWorkNoop) {
 
     std::this_thread::sleep_for(30ms);
     ASSERT_TRUE(loopExited.load());
-    ASSERT_TRUE(thread->isExit());
+    ASSERT_TRUE(thread->isStopRequested());
 }
 
 TEST(Thread, createWithLoopPostTaskAfterStop) {
@@ -399,7 +399,7 @@ TEST(Thread, createWithLoopPostTaskAfterStop) {
 
     thread->stop();
     std::this_thread::sleep_for(30ms);
-    ASSERT_TRUE(thread->isExit());
+    ASSERT_TRUE(thread->isStopRequested());
 
     auto result = thread->postTask([]() {
     });
@@ -441,5 +441,5 @@ TEST(Thread, createModeStillWorks) {
 
     thread->stop();
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
-    ASSERT_TRUE(thread->isExit());
+    ASSERT_TRUE(thread->isStopRequested());
 }
