@@ -26,14 +26,14 @@ namespace slark {
 namespace {
 static constexpr double kSeekThreshold = 0.05;
 
-BackpressureConfig buildBackpressureConfig(StreamType type, bool isLive) {
+PipelineFlowConfig buildFlowConfig(StreamType type, bool isLive) {
     if (isLive) {
-        return BackpressureConfig::forLive();
+        return PipelineFlowConfig::forSource(MediaSourceType::Live);
     }
     if (type == StreamType::Http || type == StreamType::HLS) {
-        return BackpressureConfig::forNetwork();
+        return PipelineFlowConfig::forSource(MediaSourceType::Network);
     }
-    return BackpressureConfig::forLocal();
+    return PipelineFlowConfig::forSource(MediaSourceType::Local);
 }
 }  // namespace
 
@@ -88,6 +88,8 @@ void Player::Impl::forceCleanup() noexcept {
     demuxerComponent_.reset();
     notifyCenter_.resetNotifyState();
     resumeAfterBuffering_ = false;
+    wasPlayingBeforeDrag_ = false;
+    accurateSeekRequested_.store(false, std::memory_order_release);
     LogI("force cleanup end");
 }
 
@@ -105,6 +107,7 @@ void Player::Impl::seek(double time, bool isAccurate) noexcept {
         return;
     }
     if (isAccurate) {
+        accurateSeekRequested_.store(true, std::memory_order_release);
         auto ptr = buildEvent(EventType::Seek);
         ptr->data = PlayerSeekRequest{.isAccurate = true, .seekTime = time};
         sender_->post(std::move(ptr));
@@ -166,12 +169,12 @@ void Player::Impl::init() noexcept {
 
     fastTickTaskId_ = ownerThread_->postRepeatTask(
         std::chrono::milliseconds(setting.playerThreadTickMs), [this]() {
-            process();
+            tick();
             if (isStopped_) {
                 return;
             }
             if (auto pipeline = pipeline_) {
-                pipeline->onFastTick(state() == PlayerState::Playing);
+                pipeline->runFastTick(state() == PlayerState::Playing);
             }
         });
     playedTimeTaskId_ =
@@ -314,7 +317,7 @@ bool Player::Impl::createDemuxerComponent() noexcept {
 
 void Player::Impl::buildPipeline() noexcept {
     pipeline_ = std::make_shared<PlayPipeline>(
-        buildBackpressureConfig(mediaSourceManager_.streamType(), mediaSourceManager_.isLive()));
+        buildFlowConfig(mediaSourceManager_.streamType(), mediaSourceManager_.isLive()));
     pipeline_->setEventCallback(
         [weak = weak_from_this()](PipelineEvent event, std::optional<PipelineError> error) {
             auto self = weak.lock();
@@ -345,9 +348,21 @@ void Player::Impl::buildPipeline() noexcept {
             }
             self->mediaSourceManager_.start();
         });
+    pipeline_->setOpenFetchGateCallback([weak = weak_from_this()] {
+        auto self = weak.lock();
+        if (self) {
+            self->mediaSourceManager_.openFetchGate();
+        }
+    });
+    pipeline_->setCloseFetchGateCallback([weak = weak_from_this()] {
+        auto self = weak.lock();
+        if (self) {
+            self->mediaSourceManager_.closeFetchGate();
+        }
+    });
     mediaSourceManager_.setProductionGate([weak = weak_from_this()] {
         const auto self = weak.lock();
-        return !self || !self->pipeline_ || self->pipeline_->canProduceSourceData();
+        return !self || !self->pipeline_ || self->pipeline_->canFetchMore();
     });
     // Inject the HLS time-seek callback; PlayPipeline uses this path when HLS is detected
     pipeline_->setSeekByTimeFunc(
@@ -533,9 +548,8 @@ void Player::Impl::preparePlayerInfo() noexcept {
     ownerThread_->start();
 }
 
-void Player::Impl::process() noexcept {
-    // Keep a strong local reference for the whole process cycle so a pipeline_ reset
-    // cannot cause a UAF in between
+void Player::Impl::tick() noexcept {
+    // Strong local ref prevents a pipeline_ reset from causing UAF mid-cycle.
     auto pipeline = pipeline_;
     if (!pipeline) {
         if (receiver_) {
@@ -547,8 +561,8 @@ void Player::Impl::process() noexcept {
     std::call_once(bindOwnerThreadFlag_, [&pipeline] {
         pipeline->bindToCurrentThread();
     });
-    if (!pipeline->isBuilt()) {
-        pipeline->build();
+    if (!pipeline->isStarted()) {
+        pipeline->startDemuxing();
     }
     handleEvent(receiver_->tryReceiveAll());
     if (isStopped_) {
@@ -636,6 +650,8 @@ void Player::Impl::doStop() noexcept {
     demuxerComponent_.reset();
     notifyCenter_.resetNotifyState();
     resumeAfterBuffering_ = false;
+    wasPlayingBeforeDrag_ = false;
+    accurateSeekRequested_.store(false, std::memory_order_release);
 
     // ownerThread_'s stop/join is handled by ~Impl() on an external thread, not here
     GLContextManager::shareInstance().removeMainContext(playerId_);
@@ -654,6 +670,9 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
 
     const double playbackSeekTime = std::clamp(seekRequest.seekTime, 0.0, info_.duration);
     const double seekTime = toMediaTime(playbackSeekTime);
+    if (seekRequest.isAccurate) {
+        accurateSeekRequested_.store(false, std::memory_order_release);
+    }
     const double playedTime = currentPlayedTime();
     if (isEqual(playedTime, playbackSeekTime, kSeekThreshold)) {
         LogI("discard seek:{} (too close to current pos {:.3f})", playbackSeekTime, playedTime);
@@ -670,8 +689,15 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
     }
 
     const auto nowState = state();
-    if (nowState == PlayerState::Playing) {
-        resumeAfterBuffering_ = true;
+    if (seekRequest.isAccurate) {
+        // The state is already Pause at release, so resume intent comes from the drag entry.
+        resumeAfterBuffering_ = wasPlayingBeforeDrag_;
+        wasPlayingBeforeDrag_ = false;
+        if (nowState == PlayerState::Playing) {
+            setState(PlayerState::Pause);
+        }
+    } else if (!wasPlayingBeforeDrag_ && nowState == PlayerState::Playing) {
+        wasPlayingBeforeDrag_ = true;
         setState(PlayerState::Pause);
     }
 
@@ -870,11 +896,7 @@ void Player::Impl::handlePipelineEvent(PipelineEvent event,
             preparePlayerInfo();
             break;
         case PipelineEvent::PipelineReady:
-            if (state() != PlayerState::Buffering) {
-                setState(PlayerState::Ready);
-            } else {
-                LogI("pipeline ready while buffering, wait for first frame");
-            }
+            LogI("pipeline ready");
             break;
         case PipelineEvent::FirstFrameRendered:
             notifyPlayerEvent(PlayerEvent::FirstFrameRendered);
@@ -889,6 +911,7 @@ void Player::Impl::handlePipelineEvent(PipelineEvent event,
                 LogI("buffering start");
                 resumeAfterBuffering_ = true;
                 setState(PlayerState::Buffering);
+                doPause();
             }
             break;
         case PipelineEvent::SeekCompleted:
@@ -919,6 +942,13 @@ void Player::Impl::handleSeekCompleted() noexcept {
             seekJustCompleted_.store(true, std::memory_order_release);
         }
         notifyPlayerEvent(PlayerEvent::SeekDone);
+        if (!isAccurate && accurateSeekRequested_.load(std::memory_order_acquire)) {
+            LogI("preview seek completed while accurate seek is pending");
+            return;
+        }
+        if (isAccurate) {
+            accurateSeekRequested_.store(false, std::memory_order_release);
+        }
     }
     resumeFromBuffering();
 }

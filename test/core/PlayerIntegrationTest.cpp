@@ -195,7 +195,7 @@ TEST(PlayerIntegrationTest, PreferredTsHeaderIsEmittedOnlyAfterTracksAreKnown) {
     config.preferredType = DemuxerType::TS;
     auto demuxer = std::make_shared<DemuxerComponent>(std::move(receiver), std::move(config));
 
-    PlayPipeline pipeline(BackpressureConfig::forLocal());
+    PlayPipeline pipeline(PipelineFlowConfig::forSource(MediaSourceType::Local));
     pipeline.bindToCurrentThread();
     std::atomic<int32_t> headerCount{0};
     std::shared_ptr<AudioInfo> headerAudioInfo;
@@ -208,7 +208,7 @@ TEST(PlayerIntegrationTest, PreferredTsHeaderIsEmittedOnlyAfterTracksAreKnown) {
             }
         });
     pipeline.setDemuxerComponent(demuxer);
-    pipeline.build();
+    pipeline.startDemuxing();
 
     DataPacket packet;
     packet.data = std::move(data);

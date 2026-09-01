@@ -90,7 +90,7 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
 
     void preparePlayerInfo() noexcept;
 
-    void process() noexcept;
+    void tick() noexcept;
 
     void handleEvent(std::deque<EventPtr>&& events) noexcept;
 
@@ -153,6 +153,7 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
 
     std::atomic<double> pendingSeekTarget_{-1.0};
     std::atomic<bool> seekJustCompleted_{false};
+    std::atomic<bool> accurateSeekRequested_{false};
     PlayerInfo info_;
     double playbackStart_ = 0.0;
     double playbackDuration_ = 0.0;
@@ -175,6 +176,7 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
     AtomicWeakPtr<IVideoRender> videoRender_;
 
     bool resumeAfterBuffering_ = false;
+    bool wasPlayingBeforeDrag_ = false;
 
     std::mutex releaseMutex_;
     std::condition_variable cond_;

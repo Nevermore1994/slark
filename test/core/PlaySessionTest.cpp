@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "PerfTypes.h"
-#include "pipeline/PipelineConfig.h"
 
 using namespace slark::perf;
 
@@ -252,27 +251,3 @@ TEST(ResourceStatsTest, RecordUpdatesAvgAndPeak) {
 }
 
 
-TEST(BackpressureConfigTest, ForLocalIsValid) {
-    EXPECT_TRUE(slark::BackpressureConfig::forLocal().isValid());
-}
-
-TEST(BackpressureConfigTest, ForNetworkIsValid) {
-    EXPECT_TRUE(slark::BackpressureConfig::forNetwork().isValid());
-}
-
-TEST(BackpressureConfigTest, ForLiveIsValid) {
-    EXPECT_TRUE(slark::BackpressureConfig::forLive().isValid());
-}
-
-TEST(BackpressureConfigTest, InvalidConfigDetected) {
-    auto cfg = slark::BackpressureConfig::forNetwork();
-    cfg.demuxLowWatermarkDuration = cfg.demuxHighWatermarkDuration + 1.0;
-    EXPECT_FALSE(cfg.isValid());
-}
-
-TEST(BackpressureConfigTest, LiveConfigHasLowerWatermarks) {
-    auto live = slark::BackpressureConfig::forLive();
-    auto net = slark::BackpressureConfig::forNetwork();
-    EXPECT_LT(live.demuxHighWatermarkDuration, net.demuxHighWatermarkDuration);
-    EXPECT_LT(live.maxDropPerVsync, net.maxDropPerVsync);
-}
