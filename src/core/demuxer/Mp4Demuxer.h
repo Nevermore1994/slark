@@ -195,7 +195,7 @@ class Mp4Demuxer : public IDemuxer {
     void initVideoTrack(const std::shared_ptr<TrackContext>& track) noexcept;
     void initVideoFps(const std::shared_ptr<TrackContext>& track) noexcept;
 
-    bool isCompleted() const noexcept;
+    bool computeAllTracksCompleted() const noexcept;
 
     std::shared_ptr<AudioFrameInfo> makeAudioFrameInfo() const noexcept;
 

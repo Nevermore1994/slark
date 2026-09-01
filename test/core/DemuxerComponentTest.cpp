@@ -70,6 +70,8 @@ struct ResultState {
     size_t audioFrames = 0;
     size_t parsedHeaders = 0;
     size_t fileEnds = 0;
+    uint64_t headerSampleRate = 0;
+    uint16_t headerChannels = 0;
     bool demuxerValid = true;
     std::vector<DemuxerResultCode> resultCodes;
     std::vector<bool> resultHasFrames;
@@ -273,6 +275,10 @@ TEST(DemuxerComponentTest, PreferredTsDemuxerReceivesDataAndOrderedEos) {
                                                !result.videoFrames.empty());
             if (result.resultCode == DemuxerResultCode::ParsedHeader) {
                 ++state.parsedHeaders;
+                if (const auto info = demuxer->audioInfo()) {
+                    state.headerSampleRate = info->sampleRate;
+                    state.headerChannels = info->channels;
+                }
             }
             if (result.resultCode == DemuxerResultCode::FileEnd) {
                 ++state.fileEnds;
@@ -284,6 +290,11 @@ TEST(DemuxerComponentTest, PreferredTsDemuxerReceivesDataAndOrderedEos) {
         });
 
     component.start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    {
+        std::lock_guard lock(state.mutex);
+        EXPECT_EQ(state.parsedHeaders, 0u);
+    }
 
     DataPacket packet;
     packet.data = std::move(data);
@@ -291,6 +302,13 @@ TEST(DemuxerComponentTest, PreferredTsDemuxerReceivesDataAndOrderedEos) {
     packet.segmentIndex = 4;
     ASSERT_TRUE(sender->send(std::move(packet)).has_value());
 
+    DataPacket duplicatePacket;
+    duplicatePacket.data = Data::fromString("duplicate");
+    duplicatePacket.offset = 0;
+    duplicatePacket.segmentIndex = 4;
+    ASSERT_TRUE(sender->send(std::move(duplicatePacket)).has_value());
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     DataPacket eos;
     eos.isEndOfStream = true;
     ASSERT_TRUE(sender->send(std::move(eos)).has_value());
@@ -301,6 +319,8 @@ TEST(DemuxerComponentTest, PreferredTsDemuxerReceivesDataAndOrderedEos) {
             return state.fileEnds == 1;
         }));
         ASSERT_GE(state.parsedHeaders, 1u);
+        EXPECT_GT(state.headerSampleRate, 0u);
+        EXPECT_GT(state.headerChannels, 0u);
         EXPECT_GT(state.videoFrames, 0u);
         EXPECT_GT(state.audioFrames, 0u);
         EXPECT_TRUE(state.demuxerValid);
@@ -313,5 +333,77 @@ TEST(DemuxerComponentTest, PreferredTsDemuxerReceivesDataAndOrderedEos) {
     EXPECT_EQ(component.type(), DemuxerType::TS);
     EXPECT_TRUE(component.isOpen());
     EXPECT_TRUE(component.isCompleted());
+    component.stop();
+}
+
+TEST(DemuxerComponentTest, SeekDataWaitsForResumeAfterOperationPause) {
+    auto initialData = loadTsData();
+    if (!initialData) {
+        GTEST_SKIP() << "segment-0.ts not found, skipping";
+    }
+
+    auto [sender, receiver] = Channel<DataPacket>::create();
+    DemuxerConfig config;
+    config.filePath = kTsPath;
+    config.preferredType = DemuxerType::TS;
+    DemuxerComponent component(std::move(receiver), std::move(config));
+    ResultState state;
+
+    component.setHandleResultFunc(
+        [&state](const std::shared_ptr<IDemuxer>& demuxer, DemuxerResult&& result) {
+            std::lock_guard lock(state.mutex);
+            state.resultCodes.emplace_back(result.resultCode);
+            state.videoFrames += result.videoFrames.size();
+            state.audioFrames += result.audioFrames.size();
+            state.demuxerValid = state.demuxerValid && demuxer != nullptr;
+            state.condition.notify_all();
+        });
+
+    component.start();
+    DataPacket initialPacket;
+    initialPacket.data = std::move(initialData);
+    initialPacket.offset = 0;
+    initialPacket.segmentIndex = 0;
+    ASSERT_TRUE(sender->send(std::move(initialPacket)).has_value());
+
+    {
+        std::unique_lock lock(state.mutex);
+        ASSERT_TRUE(state.condition.wait_for(lock, std::chrono::seconds(10), [&state] {
+            return state.videoFrames > 0 && state.audioFrames > 0;
+        }));
+    }
+
+    size_t framesBeforeSeek = 0;
+    {
+        std::lock_guard lock(state.mutex);
+        framesBeforeSeek = state.videoFrames + state.audioFrames;
+    }
+
+    component.pause();
+    component.flush();
+    const auto generation = component.beginSourceOperation();
+    auto seekData = loadTsData();
+    ASSERT_NE(seekData, nullptr);
+    DataPacket seekPacket;
+    seekPacket.data = std::move(seekData);
+    seekPacket.offset = 0;
+    seekPacket.segmentIndex = 1;
+    seekPacket.sourceGeneration = generation;
+    ASSERT_TRUE(sender->send(std::move(seekPacket)).has_value());
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    {
+        std::lock_guard lock(state.mutex);
+        EXPECT_EQ(state.videoFrames + state.audioFrames, framesBeforeSeek);
+    }
+
+    component.resume();
+    {
+        std::unique_lock lock(state.mutex);
+        ASSERT_TRUE(state.condition.wait_for(lock, std::chrono::seconds(10), [&state, framesBeforeSeek] {
+            return state.videoFrames + state.audioFrames > framesBeforeSeek;
+        }));
+        EXPECT_TRUE(state.demuxerValid);
+    }
     component.stop();
 }

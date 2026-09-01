@@ -49,7 +49,7 @@ class DemuxerComponent : public IPipelineComponent, public slark::NonCopyMovable
     void flush() noexcept override;
 
     [[nodiscard]] bool isRunning() const noexcept override {
-        return worker_ && !worker_->isExit();
+        return worker_ && !worker_->isStopRequested();
     }
 
     void seekToPos(uint64_t pos) noexcept;

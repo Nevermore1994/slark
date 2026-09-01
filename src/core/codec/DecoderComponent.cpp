@@ -96,9 +96,7 @@ void DecoderComponent::start() noexcept {
 }
 
 void DecoderComponent::pause() noexcept {
-    if (decodeWorker_) {
-        decodeWorker_->pause();
-    }
+    operationPaused_.store(true, std::memory_order_release);
     if (receiver_) {
         receiver_->wakeup();
     }
@@ -106,8 +104,21 @@ void DecoderComponent::pause() noexcept {
 
 void DecoderComponent::resume() noexcept {
     flushed_.store(false, std::memory_order_release);
-    if (decodeWorker_) {
-        decodeWorker_->start();
+    // pause() never suspends the worker, so there is no thread to restart here.
+    operationPaused_.store(false, std::memory_order_release);
+}
+
+void DecoderComponent::evaluateFeedingPauseState() noexcept {
+    if (!config_.pendingFrameCount) {
+        return;
+    }
+    const auto pending = config_.pendingFrameCount();
+    const bool paused = backpressurePaused_.load(std::memory_order_acquire);
+    const auto& bp = config_.backpressure;
+    const bool next =
+        shouldPauseFeeding(pending, bp.lowWatermarkFrames, bp.highWatermarkFrames, paused);
+    if (next != paused) {
+        backpressurePaused_.store(next, std::memory_order_release);
     }
 }
 
@@ -127,15 +138,15 @@ void DecoderComponent::stop() noexcept {
 }
 
 bool DecoderComponent::isRunning() const noexcept {
-    return decodeWorker_ && !decodeWorker_->isExit();
+    return decodeWorker_ && !decodeWorker_->isStopRequested();
 }
 
-void DecoderComponent::processPendingOutputs(Thread& thread) noexcept {
+void DecoderComponent::drainRenderedOutputs(Thread& thread) noexcept {
     if (!decoder_) {
         return;
     }
     int32_t count = 0;
-    while (decoder_->hasPendingOutput() && !thread.isExit()) {
+    while (decoder_->hasPendingOutput() && !thread.isStopRequested()) {
         count++;
         auto res = decoder_->renderOutput();
         if (res == Error::Success) {
@@ -144,11 +155,29 @@ void DecoderComponent::processPendingOutputs(Thread& thread) noexcept {
             decoder_->clearPendingOutput();
             break;
         } else {
-            LogW("processPendingOutputs: renderOutput failed {} after {} frames", toString(res),
+            LogW("drainRenderedOutputs: renderOutput failed {} after {} frames", toString(res),
                  count);
             decoder_->clearPendingOutput();
             break;
         }
+    }
+}
+
+bool DecoderComponent::isFeedingPaused() const noexcept {
+    return operationPaused_.load(std::memory_order_acquire) ||
+           backpressurePaused_.load(std::memory_order_acquire);
+}
+
+void DecoderComponent::waitForPauseResume(Thread& thread) noexcept {
+    while (isFeedingPaused() && !thread.isStopRequested()) {
+        drainRenderedOutputs(thread);
+        evaluateFeedingPauseState();
+        if (!isFeedingPaused()) {
+            break;
+        }
+        // Poll instead of receiving: taking a packet would drop it, a blocking receive
+        // would stall output draining.
+        std::this_thread::sleep_for(kPausedPollInterval);
     }
 }
 
@@ -157,7 +186,7 @@ AVFrameRefPtr DecoderComponent::waitForFrame(Thread& thread) noexcept {
     if (!exp.has_value()) {
         if (exp.error() == ChannelEventType::Awakened) {
             LogD("waitForFrame: Awakened, process pending outputs");
-            processPendingOutputs(thread);
+            drainRenderedOutputs(thread);
         }
         flushed_.store(false, std::memory_order_release);
         return nullptr;
@@ -192,9 +221,9 @@ bool DecoderComponent::decodeFrame(AVFrameRefPtr& frame, Thread& thread) noexcep
             auto backoff = std::chrono::milliseconds(1) * (1 << std::min(retryCount, 4));
             backoff = std::min(backoff, kMaxDecodeBackoff);
             std::this_thread::sleep_for(backoff);
-            processPendingOutputs(thread);
+            drainRenderedOutputs(thread);
         } else {
-            if (thread.isExit() && res == Error::CodecNotStarted) {
+            if (thread.isStopRequested() && res == Error::CodecNotStarted) {
                 break;
             }
             LogE("decode error: {}", toString(res));
@@ -211,7 +240,14 @@ void DecoderComponent::runLoop(Thread& thread) noexcept {
     while (!thread.shouldStop()) {
         thread.drainPendingWork();
 
-        processPendingOutputs(thread);
+        drainRenderedOutputs(thread);
+
+        evaluateFeedingPauseState();
+
+        if (isFeedingPaused()) {
+            waitForPauseResume(thread);
+            continue;
+        }
 
         auto frame = waitForFrame(thread);
         if (!frame) {
@@ -231,7 +267,7 @@ void DecoderComponent::runLoop(Thread& thread) noexcept {
             LogI("push eos frame, res:{}", toString(res));
             // Drain any leftover output right after EOS (e.g. empty outputs the codec
             // produces for CSD config frames)
-            processPendingOutputs(thread);
+            drainRenderedOutputs(thread);
             continue;
         }
 
@@ -245,7 +281,7 @@ void DecoderComponent::runLoop(Thread& thread) noexcept {
             return;
         }
 
-        processPendingOutputs(thread);
+        drainRenderedOutputs(thread);
     }
 }
 

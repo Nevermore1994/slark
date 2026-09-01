@@ -346,9 +346,21 @@ std::shared_ptr<AVFrame> VideoHardwareDecoder::buildOutputFrame(FrameBuffer* glF
     if (!texture) {
         return nullptr;
     }
-    auto frame = std::make_shared<AVFrame>(AVFrameType::Video);
+    // Deleter returns the detached texture to the pool even on backpressure/seek drops.
+    auto frame = std::shared_ptr<AVFrame>(new AVFrame(AVFrameType::Video), [](AVFrame* f) {
+        auto vi = f->videoInfo();
+        if (vi && vi->format == FrameFormat::MediaCodecSurface && f->opaque) {
+            auto texture = TexturePtr(static_cast<Texture*>(f->opaque));
+            f->opaque = nullptr;
+            if (auto manager = texture->manager().lock()) {
+                manager->restore(std::move(texture));
+            }
+        }
+        delete f;
+    });
     frame->pts = pts;
     frame->timeScale = 1000000;
+    frame->seekEpoch = currentSeekEpoch_;
     frame->opaque = texture.release();
     auto videoFrameInfo = std::make_shared<VideoFrameInfo>();
     videoFrameInfo->width = width;

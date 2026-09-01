@@ -562,6 +562,14 @@ DemuxerResult HLSDemuxer::parseData(DataPacket& packet) noexcept {
         seekTsIndex_ = kInvalidTSIndex;  // reset
     }
 
+    const auto expectedOffset = buffer_->empty() ? buffer_->pos() : buffer_->end();
+    if (packet.offset != expectedOffset) {
+        LogE("discard non-contiguous TS data: ts index={}, packet offset={}, expected={}", tsIndex,
+             packet.offset, expectedOffset);
+        result.resultCode = DemuxerResultCode::InvalidData;
+        return result;
+    }
+
     if (!buffer_->append(packet.offset, std::move(packet.data))) {
         LogE("discard data, ts index:{}, data offset:{}, parse offset:{}", tsIndex, packet.offset,
              buffer_->offset());
@@ -724,6 +732,13 @@ DemuxerResult TSDemuxerAdapter::parseData(DataPacket& packet) noexcept {
     DemuxerResult result;
     if (packet.empty() || !isOpened_ || !buffer_ || !tsDemuxer_) {
         result.resultCode = DemuxerResultCode::Failed;
+        return result;
+    }
+    const auto expectedOffset = buffer_->totalLength() > 0 ? buffer_->end() : buffer_->pos();
+    if (expectedOffset != 0 && packet.offset != expectedOffset) {
+        LogE("discard non-contiguous TS data: packet offset={}, expected={}", packet.offset,
+             expectedOffset);
+        result.resultCode = DemuxerResultCode::InvalidData;
         return result;
     }
     if (!buffer_->append(packet.offset, std::move(packet.data))) {

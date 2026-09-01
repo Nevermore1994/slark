@@ -1287,7 +1287,7 @@ DemuxerResult Mp4Demuxer::parseData(DataPacket& packet) noexcept {
         buffer_->shrink();
     }
 
-    isCompleted_ = isCompleted();
+    isCompleted_ = computeAllTracksCompleted();
     if (isCompleted_) {
         result.resultCode = DemuxerResultCode::FileEnd;
         LogI("demux completed, sending FileEnd");
@@ -1328,7 +1328,7 @@ bool Mp4Demuxer::advanceStaleTracks() noexcept {
     return advanced;
 }
 
-bool Mp4Demuxer::isCompleted() const noexcept {
+bool Mp4Demuxer::computeAllTracksCompleted() const noexcept {
     bool isCompleted = true;
     for (const auto& track : std::views::values(tracks_)) {
         if (!track->isCompleted) {

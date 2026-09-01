@@ -201,14 +201,7 @@ bool DemuxerComponent::open() noexcept {
     }
     if (config_.preferredType != DemuxerType::Unknown) {
         auto emptyBuffer = std::make_unique<Buffer>();
-        if (!demuxer->open(emptyBuffer)) {
-            return false;
-        }
-        DemuxerResult result;
-        result.resultCode = DemuxerResultCode::ParsedHeader;
-        result.sourceGeneration = sourceGeneration_.load(std::memory_order_acquire);
-        invokeHandleResultFunc(std::move(result));
-        return true;
+        return demuxer->open(emptyBuffer);
     }
     if (!demuxer->open(probeBuffer_)) {
         if (auto seekTo = demuxer->pendingSeekPos(); seekTo.has_value()) {

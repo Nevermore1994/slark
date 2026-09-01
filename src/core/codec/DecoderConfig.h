@@ -44,7 +44,8 @@ struct VideoDecoderConfig : public DecoderConfig {
     uint16_t fps{};
     uint32_t width{};
     uint32_t height{};
-    uint8_t numRefFrames{};  // from SPS num_ref_frames
+    uint8_t numRefFrames{};            // from SPS num_ref_frames
+    uint8_t maxNumReorderFrames{};     // from SPS VUI bitstream_restriction
     DataRefPtr sps;
     DataRefPtr pps;
     DataRefPtr vps;
@@ -67,6 +68,7 @@ struct VideoDecoderConfig : public DecoderConfig {
         profile = videoInfo->profile;
         level = videoInfo->level;
         numRefFrames = videoInfo->numRefFrames;
+        maxNumReorderFrames = videoInfo->maxNumReorderFrames;
         return true;
     }
 };
