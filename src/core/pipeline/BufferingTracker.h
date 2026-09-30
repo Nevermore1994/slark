@@ -24,7 +24,7 @@ class BufferingTracker {
  public:
     BufferingTracker(const BufferingConfig& config, IBufferingTrackerDelegate& delegate) noexcept;
 
-    void update(double bufferedSec, bool allowBufferingEvents) noexcept;
+    void update(double bufferedSec) noexcept;
 
     void startPrebuffering() noexcept;
 

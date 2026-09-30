@@ -12,7 +12,11 @@ namespace slark {
 
 DecoderComponent::DecoderComponent(ReceiverPtr<AVFrameRefPtr> receiver,
                                    DecoderComponentConfig config)
-    : config_(std::move(config)), receiver_(std::move(receiver)) {}
+    : config_(std::move(config)),
+      receiver_(std::move(receiver)),
+      gate_(WatermarkConfig<int32_t>{config_.backpressure.lowWatermarkFrames,
+                                     config_.backpressure.highWatermarkFrames},
+            {}) {}
 
 DecoderComponent::~DecoderComponent() {
     stop();
@@ -96,7 +100,7 @@ void DecoderComponent::start() noexcept {
 }
 
 void DecoderComponent::pause() noexcept {
-    operationPaused_.store(true, std::memory_order_release);
+    gate_.forceClose();
     if (receiver_) {
         receiver_->wakeup();
     }
@@ -105,21 +109,14 @@ void DecoderComponent::pause() noexcept {
 void DecoderComponent::resume() noexcept {
     flushed_.store(false, std::memory_order_release);
     // pause() never suspends the worker, so there is no thread to restart here.
-    operationPaused_.store(false, std::memory_order_release);
+    gate_.forceOpen();
 }
 
 void DecoderComponent::evaluateFeedingPauseState() noexcept {
     if (!config_.pendingFrameCount) {
         return;
     }
-    const auto pending = config_.pendingFrameCount();
-    const bool paused = backpressurePaused_.load(std::memory_order_acquire);
-    const auto& bp = config_.backpressure;
-    const bool next =
-        shouldPauseFeeding(pending, bp.lowWatermarkFrames, bp.highWatermarkFrames, paused);
-    if (next != paused) {
-        backpressurePaused_.store(next, std::memory_order_release);
-    }
+    gate_.update(config_.pendingFrameCount());
 }
 
 void DecoderComponent::stop() noexcept {
@@ -164,8 +161,7 @@ void DecoderComponent::drainRenderedOutputs(Thread& thread) noexcept {
 }
 
 bool DecoderComponent::isFeedingPaused() const noexcept {
-    return operationPaused_.load(std::memory_order_acquire) ||
-           backpressurePaused_.load(std::memory_order_acquire);
+    return gate_.isPaused();
 }
 
 void DecoderComponent::waitForPauseResume(Thread& thread) noexcept {

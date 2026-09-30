@@ -46,27 +46,15 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
         return position_.load();
     }
 
-    [[nodiscard]] bool isRunning() const noexcept override {
-        return isRunning_.load();
-    }
-
     [[nodiscard]] bool isCompleted() const noexcept override {
         return isCompleted_.load();
     }
 
-    [[nodiscard]] std::shared_ptr<MediaPlaylist> playlist() const noexcept {
-        return playlist_;
-    }
-
-    void setMetadataCallback(MetadataCallback callback) noexcept {
-        metadataCallback_ = std::move(callback);
-    }
-
-    void setProductionGate(std::function<bool()> gate) noexcept {
+    void setProductionGate(std::function<bool()> gate) noexcept override {
         productionGate_ = std::move(gate);
     }
 
-    void openFetchGate() noexcept;
+    void openFetchGate() noexcept override;
 
  private:
     struct StreamControl {
@@ -182,7 +170,6 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
     std::atomic<bool> isPaused_{false};
     std::atomic<int32_t> lastErrorOriginCode_{0};
 
-    MetadataCallback metadataCallback_;
     std::function<bool()> productionGate_;
 };
 

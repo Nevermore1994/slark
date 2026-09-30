@@ -82,6 +82,11 @@ class DemuxerComponent : public IPipelineComponent, public slark::NonCopyMovable
             false);
     }
 
+    // Packets queued for the demuxer but not consumed yet (the Q1 backlog).
+    [[nodiscard]] uint32_t pendingCount() const noexcept {
+        return receiver_ ? receiver_->size() : 0;
+    }
+
     [[nodiscard]] bool isCompleted() const noexcept {
         return withDemuxer(
             [](auto& d) {
@@ -192,7 +197,10 @@ class DemuxerComponent : public IPipelineComponent, public slark::NonCopyMovable
     AtomicSharedPtr<HandleSeekFunc> handleSeekFunc_;
     std::unique_ptr<Buffer> probeBuffer_;
     AtomicSharedPtr<IDemuxer> demuxer_;
+    static constexpr auto kPausedPollInterval = std::chrono::milliseconds(2);
+
     std::atomic_bool flushed_ = false;
+    std::atomic_bool paused_ = false;
     std::atomic_bool isClosed_ = false;
     std::atomic_bool pendingSeekVerification_{false};
     std::atomic<uint64_t> pendingSeekVerifiedOffset_{0};

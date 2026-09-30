@@ -5,6 +5,7 @@
 #pragma once
 
 #include "PipelineConfig.h"
+#include "WatermarkGate.h"
 
 namespace slark {
 
@@ -18,6 +19,8 @@ struct ISourceFlowDelegate {
     virtual void resumeStream() noexcept = 0;
 };
 
+// Regulates the source from the demuxed buffer level. All hysteresis lives in the gate;
+// this class only maps gate actions onto the delegate and tracks source EOF.
 class SourceFlowController {
  public:
     SourceFlowController(const SourceBackpressureConfig& config,
@@ -35,19 +38,16 @@ class SourceFlowController {
 
     void reset() noexcept;
 
-    [[nodiscard]] bool isOperationPaused() const noexcept {
-        return operationPaused_;
-    }
+    [[nodiscard]] bool isOperationPaused() const noexcept;
 
-    [[nodiscard]] bool isProductionSuspended() const noexcept {
-        return productionSuspended_;
-    }
+    [[nodiscard]] bool isProductionSuspended() const noexcept;
+
+    // What the source gate answers: no production while suspended by a watermark or held by
+    // an operation pause.
+    [[nodiscard]] bool isFetchAllowed() const noexcept;
 
  private:
-    SourceBackpressureConfig config_;
-    ISourceFlowDelegate& delegate_;
-    bool productionSuspended_ = false;
-    bool operationPaused_ = false;
+    WatermarkGate<double> gate_;
     bool sourceEof_ = false;
 };
 

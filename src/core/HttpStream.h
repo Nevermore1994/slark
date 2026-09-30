@@ -38,6 +38,11 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
     auto seek(uint64_t position, uint64_t sourceGeneration) -> StreamResult<void> override;
     void setReadRange(Range range) noexcept override;
 
+    // A single Range request has no production unit boundary, so the gate cannot be pulled:
+    // closing it tears the operation down and opening it resumes from deliveredPosition_.
+    void closeFetchGate() noexcept override;
+    void openFetchGate() noexcept override;
+
     [[nodiscard]] StreamState state() const noexcept override {
         return state_.load();
     }
@@ -48,16 +53,8 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
         return position_.load();
     }
 
-    [[nodiscard]] bool isRunning() const noexcept override {
-        return isRunning_.load();
-    }
-
     [[nodiscard]] bool isCompleted() const noexcept override {
         return isCompleted_.load();
-    }
-
-    [[nodiscard]] int32_t lastErrorOriginCode() const noexcept {
-        return lastErrorOriginCode_.load(std::memory_order_acquire);
     }
 
     [[nodiscard]] std::string host() const noexcept {
@@ -144,10 +141,8 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
 
     std::atomic<StreamState> state_{StreamState::Idle};
     std::atomic<uint64_t> position_{0};
-    std::atomic<bool> isRunning_{false};
     std::atomic<bool> isCompleted_{false};
     std::atomic<bool> isPaused_{false};
-    std::atomic<int32_t> lastErrorOriginCode_{0};
 };
 
 }  // namespace slark

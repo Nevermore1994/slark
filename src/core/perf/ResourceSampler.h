@@ -18,6 +18,9 @@ namespace slark::perf {
 
 class PlaySession;
 
+/// Process footprint in KB; stays 0 when the platform cannot report it.
+void readProcessMemoryKB(int64_t& rssKB, int64_t& vmSizeKB) noexcept;
+
 /**
  * @brief Background resource sampler, periodically samples CPU/memory and pushes
  *        snapshots to active PlaySessions

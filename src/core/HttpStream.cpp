@@ -59,7 +59,6 @@ void HttpStream::close() noexcept {
     ++generation_;
     cancelCurrentOperation(kCloseWaitTimeout.count());
     state_ = StreamState::Idle;
-    isRunning_ = false;
     isCompleted_ = false;
     isPaused_ = false;
 }
@@ -87,7 +86,6 @@ void HttpStream::startLocked() noexcept {
     operationCoversSource_ = false;
     state_ = StreamState::Reading;
     isPaused_ = false;
-    isRunning_ = true;
 
     auto request = std::make_shared<http::HttpRequest>();
     auto control = std::make_shared<StreamControl>();
@@ -160,7 +158,6 @@ void HttpStream::pause() noexcept {
     cancelCurrentOperation(kWaitSettleTimeout.count());
 
     state_ = StreamState::Paused;
-    isRunning_ = false;
     LogI("[HttpStream::pause] deliveredPos={}", deliveredPosition_);
 }
 
@@ -187,6 +184,14 @@ auto HttpStream::seek(uint64_t position, uint64_t sourceGeneration) -> StreamRes
 void HttpStream::setReadRange(Range range) noexcept {
     std::unique_lock<std::mutex> lock(mutex_);
     readRange_ = range;
+}
+
+void HttpStream::closeFetchGate() noexcept {
+    pause();
+}
+
+void HttpStream::openFetchGate() noexcept {
+    start();
 }
 
 void HttpStream::cancelCurrentOperation(uint64_t timeoutMs) noexcept {
@@ -220,7 +225,6 @@ void HttpStream::onEvent(StreamEvent event) noexcept {
     auto& chunk = event.chunk;
 
     if (chunk.hasError()) {
-        lastErrorOriginCode_.store(chunk.error.originErrorCode, std::memory_order_release);
         LogE("[HttpStream::onEvent] error chunk: retCode={} originCode={} pos={} url={}",
              static_cast<int>(chunk.error.retCode), chunk.error.originErrorCode, position_.load(),
              params_.uri);
@@ -251,13 +255,11 @@ void HttpStream::onEvent(StreamEvent event) noexcept {
 }
 
 void HttpStream::handleError(const http::ErrorInfo& error) noexcept {
-    lastErrorOriginCode_.store(error.originErrorCode, std::memory_order_release);
     LogE("[HttpStream::handleError] retCode={} originCode={} pos={} url={}",
          toString(error.retCode), error.originErrorCode, position_.load(), params_.uri);
     if (params_.onError) {
         params_.onError(error.retCode, error.originErrorCode);
     }
-    isRunning_ = false;
     state_ = StreamState::Error;
 }
 
@@ -316,11 +318,9 @@ bool HttpStream::failRangeValidation(slark::Error error,
                                      int32_t originCode,
                                      std::string detail) noexcept {
     LogW("[HttpStream::validateRangeResponse] {}", detail);
-    lastErrorOriginCode_.store(originCode, std::memory_order_release);
     if (params_.onError) {
         params_.onError(error, originCode);
     }
-    isRunning_ = false;
     state_ = StreamState::Error;
     return false;
 }
@@ -421,7 +421,6 @@ void HttpStream::handleData(http::StreamChunk&& chunk) noexcept {
 void HttpStream::handleFinal() noexcept {
     isCompleted_ = operationCoversSource_;
     state_ = StreamState::Completed;
-    isRunning_ = false;
     LogI("[HttpStream::handleFinal] totalReceived={} coversSource={} url={}", deliveredPosition_,
          operationCoversSource_, params_.uri);
     if (operationCoversSource_ && params_.onComplete) {

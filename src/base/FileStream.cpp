@@ -59,7 +59,6 @@ void FileStream::close() noexcept {
     }
 
     state_ = StreamState::Idle;
-    isRunning_ = false;
     isCompleted_ = false;
 }
 
@@ -75,7 +74,6 @@ void FileStream::start() noexcept {
     const bool wasPaused = (state_ == StreamState::Paused);
     shouldStop_ = false;
     shouldPause_ = false;
-    isRunning_ = true;
     state_ = StreamState::Reading;
 
     if (wasPaused && thread_ && thread_->joinable()) {
@@ -97,7 +95,6 @@ void FileStream::pause() noexcept {
     eofReached_.store(false, std::memory_order_release);
     wakeReadLoop();
     state_ = StreamState::Paused;
-    isRunning_ = false;
 }
 
 auto FileStream::seek(uint64_t position, uint64_t sourceGeneration) -> StreamResult<void> {
@@ -141,6 +138,14 @@ void FileStream::setReadRange(Range range) noexcept {
     readRange_ = range;
 }
 
+void FileStream::setProductionGate(std::function<bool()> gate) noexcept {
+    productionGate_ = std::move(gate);
+}
+
+void FileStream::openFetchGate() noexcept {
+    wakeReadLoop();
+}
+
 bool FileStream::deliverData(std::shared_ptr<Data> buffer, bool eof) noexcept {
     if (!buffer || buffer->empty()) {
         return false;
@@ -148,7 +153,6 @@ bool FileStream::deliverData(std::shared_ptr<Data> buffer, bool eof) noexcept {
     if (eof) {
         isCompleted_ = true;
         state_ = StreamState::Completed;
-        isRunning_ = false;
         if (params_.onComplete) {
             params_.onComplete(sourceGeneration_.load(std::memory_order_acquire));
         }
@@ -183,7 +187,6 @@ bool FileStream::deliverData(std::shared_ptr<Data> buffer, bool eof) noexcept {
     if (isLast) {
         isCompleted_ = true;
         state_ = StreamState::Completed;
-        isRunning_ = false;
         if (params_.onComplete) {
             params_.onComplete(sourceGeneration_.load(std::memory_order_acquire));
         }
@@ -249,6 +252,20 @@ bool FileStream::waitIfEof() noexcept {
     return true;
 }
 
+bool FileStream::waitIfGateClosed() noexcept {
+    if (!productionGate_ || productionGate_()) {
+        return false;
+    }
+    std::unique_lock lock(mutex_);
+    cv_.wait(lock, [this] {
+        return shouldStop_.load(std::memory_order_acquire) ||
+               shouldPause_.load(std::memory_order_acquire) ||
+               pendingSeekFlag_.load(std::memory_order_acquire) || !productionGate_ ||
+               productionGate_();
+    });
+    return true;
+}
+
 bool FileStream::readAndDeliver() noexcept {
     auto chunkSize = std::max<uint32_t>(params_.readChunkSize, 1);
     auto buffer = std::make_shared<Data>(chunkSize);
@@ -284,6 +301,9 @@ void FileStream::readLoop() noexcept {
         processPendingSeek();
 
         if (waitIfPaused()) {
+            continue;
+        }
+        if (waitIfGateClosed()) {
             continue;
         }
         if (waitIfEof()) {

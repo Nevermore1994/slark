@@ -69,8 +69,6 @@ struct StreamInfo {
 
 using DataCallback = std::function<void(DataChunk)>;
 
-using MetadataCallback = std::function<void(std::shared_ptr<void>)>;
-
 using ErrorCallback = std::function<void(Error /*err*/, int32_t /*originErrorCode*/)>;
 
 using CompletionCallback = std::function<void(uint64_t sourceGeneration)>;
@@ -81,7 +79,6 @@ struct OpenParams {
     uint32_t readChunkSize = 64 * 1024;
 
     DataCallback onData;
-    MetadataCallback onMetadata;
     ErrorCallback onError;
     CompletionCallback onComplete;
 };
@@ -103,10 +100,17 @@ class IStream {
 
     virtual void setReadRange(Range range) noexcept = 0;
 
+    // Backpressure gate. A source that owns a production unit boundary (a file chunk, an HLS
+    // segment) pulls the gate there so it stops at its own boundary instead of waiting for an
+    // asynchronous pause. The default is a no-op: sources without such a boundary are driven
+    // directly by closeFetchGate()/openFetchGate().
+    virtual void setProductionGate(std::function<bool()> /*gate*/) noexcept {}
+    virtual void closeFetchGate() noexcept {}
+    virtual void openFetchGate() noexcept {}
+
     [[nodiscard]] virtual StreamState state() const noexcept = 0;
     [[nodiscard]] virtual StreamInfo info() const noexcept = 0;
     [[nodiscard]] virtual uint64_t position() const noexcept = 0;
-    [[nodiscard]] virtual bool isRunning() const noexcept = 0;
     [[nodiscard]] virtual bool isCompleted() const noexcept = 0;
 };
 

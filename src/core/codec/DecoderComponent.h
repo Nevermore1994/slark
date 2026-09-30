@@ -16,22 +16,9 @@
 #include "PipelineConfig.h"
 #include "Thread.h"
 #include "ThreadManager.h"
+#include "pipeline/WatermarkGate.h"
 
 namespace slark {
-
-// Hysteresis: a paused decoder resumes below the low watermark, not on the next sample.
-[[nodiscard]] inline bool shouldPauseFeeding(int32_t pendingFrames,
-                                             int32_t lowWatermark,
-                                             int32_t highWatermark,
-                                             bool currentlyPaused) noexcept {
-    if (highWatermark <= lowWatermark) {
-        return currentlyPaused;
-    }
-    if (currentlyPaused) {
-        return pendingFrames > lowWatermark;
-    }
-    return pendingFrames >= highWatermark;
-}
 
 struct DecoderComponentConfig {
     DecoderReceiveFunc onData;
@@ -69,6 +56,11 @@ class DecoderComponent : public IPipelineComponent,
         return decoder_;
     }
 
+    // Packets queued for the decoder but not consumed yet (the Q2 backlog).
+    [[nodiscard]] uint32_t pendingCount() const noexcept {
+        return receiver_ ? receiver_->size() : 0;
+    }
+
  private:
     void runLoop(Thread& thread) noexcept;
 
@@ -91,13 +83,14 @@ class DecoderComponent : public IPipelineComponent,
 
  private:
     std::atomic<bool> flushed_{false};
-    std::atomic<bool> backpressurePaused_{false};
-    std::atomic<bool> operationPaused_{false};
 
     DecoderComponentConfig config_;
     std::shared_ptr<IDecoder> decoder_;
     std::shared_ptr<Thread> decodeWorker_;
     ReceiverPtr<AVFrameRefPtr> receiver_;
+
+    // Sampled by the decode worker, forced by the owner thread on seek / stop.
+    WatermarkGate<int32_t> gate_;
 };
 
 }  // namespace slark

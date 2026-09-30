@@ -189,7 +189,7 @@ class PlayPipeline : public NonCopyMovable,
  private:
     [[nodiscard]] double demuxedDuration() const noexcept;
 
-    [[nodiscard]] double maxBufferedPts() const noexcept;
+    [[nodiscard]] double demuxedFrontierSec() const noexcept;
 
     void interruptStream() noexcept override;
 
@@ -227,11 +227,9 @@ class PlayPipeline : public NonCopyMovable,
 
     void injectEosFrames(uint64_t epoch) noexcept;
 
-    void onDataEnqueued() noexcept;
-
-    void updateBufferControl() noexcept;
-
     void runBufferControl() noexcept;
+
+    void logBufferDiagnostics(double bufferedSec) noexcept;
 
     void stopComponents() noexcept;
 
@@ -328,7 +326,6 @@ class PlayPipeline : public NonCopyMovable,
     std::unique_ptr<SeekContext> seekContext_;
     std::unique_ptr<SourceFlowController> sourceFlow_;
     std::unique_ptr<BufferingTracker> bufferingTracker_;
-    std::optional<std::chrono::steady_clock::time_point> lastBufferSampleTime_;
 
     StreamControlFunc interruptStreamFunc_;
     StreamControlFunc resumeStreamFunc_;
@@ -349,12 +346,10 @@ class PlayPipeline : public NonCopyMovable,
 
     ReadinessTracker readiness_;
 
-    // dataEnqueued debounce flag: consumed only on the ownerThread, written by decoder threads
-    std::atomic<bool> dataEnqueuedPending_{false};
-
     std::vector<std::shared_ptr<IPipelineComponent>> components_;
 
     std::chrono::steady_clock::time_point lastVsyncTime_{};
+    std::chrono::steady_clock::time_point lastDiagnosticsTime_{};
 };
 
 }  // namespace slark

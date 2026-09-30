@@ -66,10 +66,6 @@ StreamResult<StreamInfo> HLSStream::open(const OpenParams& params) {
     params_ = params;
     sourceGeneration_ = 0;
 
-    if (params.onMetadata) {
-        metadataCallback_ = params.onMetadata;
-    }
-
     auto lastSlash = params.uri.rfind('/');
     if (lastSlash != std::string::npos) {
         baseUrl_ = params.uri.substr(0, lastSlash + 1);
@@ -350,10 +346,6 @@ void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
              "sequence={} targetDuration={} totalDuration={}",
              playlist_->segments().size(), isLive, playlist_->mediaSequence(),
              playlist_->targetDuration(), playlist_->totalDuration());
-
-        if (metadataCallback_) {
-            metadataCallback_(std::static_pointer_cast<void>(playlist_));
-        }
 
         if (mediaPlaylistUrl_.empty()) {
             mediaPlaylistUrl_ = params_.uri;

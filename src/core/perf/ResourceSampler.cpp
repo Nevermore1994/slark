@@ -172,7 +172,7 @@ double ResourceSampler::calcCpuUsage() {
     return usage;
 }
 
-void ResourceSampler::readMemoryInfo(int64_t& rssKB, int64_t& vmSizeKB) {
+void readProcessMemoryKB(int64_t& rssKB, int64_t& vmSizeKB) noexcept {
     rssKB = 0;
     vmSizeKB = 0;
     std::ifstream status("/proc/self/status");
@@ -192,6 +192,10 @@ void ResourceSampler::readMemoryInfo(int64_t& rssKB, int64_t& vmSizeKB) {
             break;
         }
     }
+}
+
+void ResourceSampler::readMemoryInfo(int64_t& rssKB, int64_t& vmSizeKB) {
+    readProcessMemoryKB(rssKB, vmSizeKB);
 }
 
 #elif defined(__APPLE__) || defined(__MACH__)
@@ -222,7 +226,7 @@ double ResourceSampler::calcCpuUsage() {
     return usage;
 }
 
-void ResourceSampler::readMemoryInfo(int64_t& rssKB, int64_t& vmSizeKB) {
+void readProcessMemoryKB(int64_t& rssKB, int64_t& vmSizeKB) noexcept {
     rssKB = 0;
     vmSizeKB = 0;
     mach_task_basic_info_data_t taskInfo;
@@ -236,15 +240,23 @@ void ResourceSampler::readMemoryInfo(int64_t& rssKB, int64_t& vmSizeKB) {
     vmSizeKB = static_cast<int64_t>(taskInfo.virtual_size) / 1024;
 }
 
+void ResourceSampler::readMemoryInfo(int64_t& rssKB, int64_t& vmSizeKB) {
+    readProcessMemoryKB(rssKB, vmSizeKB);
+}
+
 #else
 
 double ResourceSampler::calcCpuUsage() {
     return 0.0;
 }
 
-void ResourceSampler::readMemoryInfo(int64_t& rssKB, int64_t& vmSizeKB) {
+void readProcessMemoryKB(int64_t& rssKB, int64_t& vmSizeKB) noexcept {
     rssKB = 0;
     vmSizeKB = 0;
+}
+
+void ResourceSampler::readMemoryInfo(int64_t& rssKB, int64_t& vmSizeKB) {
+    readProcessMemoryKB(rssKB, vmSizeKB);
 }
 
 #endif

@@ -38,7 +38,8 @@ forwardDuration = 78.56s
 
 - `buffering.startBufferSec`：达到后触发 `PipelineReady`；
 - `buffering.starvationThreshold`：饥饿计数达到后触发 `BufferingStart`；
-- `buffering.rebufferTargetSec() = startBufferSec × rebufferScale`：进出卡顿的阈值；
+- `buffering.rebufferTargetSec() = startBufferSec × rebufferScale`：进入卡顿的阈值（严格小于才进入）；
+- `buffering.rebufferExitSec() = rebufferTargetSec() × rebufferScale`：退出卡顿的阈值（达到即退出）；两者之间是有死区的滞回，避免队列在阈值附近抖动时反复上报 `BufferingStart/BufferingEnd`；
 - prebuffer 阶段不触发 `BufferingStart/BufferingEnd`；
 - `readyFired_` 只表示启动缓存完成，不是背压开关。
 
@@ -53,7 +54,7 @@ runBufferControl()             <- onFastTick，不节流
     -> bufferingTracker_->update(duration, allowBufferingEvents)
 ```
 
-聚合层约束：`buffering.rebufferTargetSec() < source.highWatermarkSec`，否则生产先于重缓冲目标停止，卡顿永不退出。
+聚合层约束：`buffering.rebufferExitSec() < source.highWatermarkSec`。生产在高水位停止，因此退出所需的缓存水平必须低于高水位，否则卡顿永不退出。
 
 ## HLS 生产边界
 
@@ -125,11 +126,31 @@ seek 可以使用已有 source pause/resume，但不能永久关闭背压，也�
 - 水位路径**不得**调用 `interruptStream()`/`resumeStream()`。对 HLS 而言 `pause()` 是破坏性的（`controlSession_->close()` + 取消包括 playlist refresh 在内的全部定时器），且恢复时 `++generation_` 会让 pause 前已下载未 demux 的数据被 demuxer 全部丢弃，形成"下载—丢弃—重下"循环。
 - 低水位采样**不得**释放操作级暂停，否则 seek 过程中源会被水位误恢复。
 - `closeFetchGate()` 是幂等的边沿触发；`openFetchGate()` 可以重复发。
-- HLS 在片边界自行拦截，无需外部 `closeFetchGate()`；其它源没有生产单元边界，只能直接暂停。
 
-`MediaSourceManager` 负责这个分派：`closeFetchGate()` 对 HLS 空操作、对其它源调 `pause()`；`openFetchGate()` 对 HLS 调其闸门唤醒、对其它源调 `start()`（`start()` 在非 Paused/Ready 状态是 no-op，重复调用安全）。
+## 生产闸门（统一接口）
 
-已知限制：`HttpStream` 是一次性大 Range 请求（无生产单元边界），水位超限按上表走 `pause()`，恢复时靠 `deliveredPosition_` 续传不重复下载，代价是一次连接重建。要支持"允许在途完成"需先把请求分片化。
+所有源通过 `IStream` 的同一套闸门接口被调节，不再按类型分派：
+
+```text
+setProductionGate(gate)   生产者自己的生产单元边界上同步查询
+openFetchGate()           水位恢复时唤醒因闸门关闭而挂起的生产者
+closeFetchGate()          无生产单元边界的源由此直接停止（边沿触发）
+```
+
+| 源 | 生产单元边界 | 闸门方式 |
+|---|---|---|
+| `FileStream` | 每个 read chunk（64KB） | **pull**：`readLoop()` 在每个 chunk 前查询，关闭时 park |
+| `HLSStream` | 每个 segment | **pull**：`downloadSegments()` 查询 |
+| `HttpStream` | 无（一次性大 Range 请求） | **push**：`closeFetchGate()` → `pause()`，`openFetchGate()` → `start()` |
+
+闸门查询统一走 `SourceFlowController::isFetchAllowed()`（即 `PlayPipeline::canFetchMore()`）：
+它的值就是唯一的滞回状态，**不是**对 `highWatermarkSec` 的第二次比较 —— 死区对所有源类型都生效。
+
+水位关闭对 pull 型源是空操作：它们会在下一个生产单元边界自行停下，天然满足"允许在途生产完成"。
+
+已知限制：`HttpStream` 无法在请求中途停止，水位超限仍是 `pause()` + 靠 `deliveredPosition_` 续传，代价是一次连接重建。要支持"允许在途完成"需先把请求分片化。
+
+`MediaSourceManager` 只做转发，不再有 `dynamic_cast<HLSStream*>` 分支。
 
 ## 生命周期
 
@@ -171,7 +192,16 @@ steady flow
 7. seek 不会永久关闭后续背压；
 8. 已在途 segment 允许收尾，但不会启动新的无界 segment 链；
 9. 操作级暂停不会被低水位采样释放；
-10. `reset()` 清除操作暂停与生产挂起两个标志。
+10. `reset()` 只丢弃水位挂起状态，不触碰 delegate；操作暂停必须由 `resumeForOperation()` 配对释放（否则下一次 `pauseForOperation()` 被短路，源永不恢复）。
+
+## 统一滞回原语
+
+所有背压点共用 `src/core/pipeline/WatermarkGate.h`：
+
+- `shouldCloseGate(current, low, high, closed)` —— 全局唯一的滞回判定定义；
+- `WatermarkGate<Level>` —— 水位路径 `update()` 与操作路径 `forceClose()/forceOpen()` 两条独立入口。
+
+实例化点：Q1 源闸门 `WatermarkGate<double>`；Q3 解码器喂料 `WatermarkGate<int32_t>`。
 
 相关实现和测试：
 

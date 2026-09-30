@@ -68,11 +68,6 @@ class MediaSourceManager : public NonCopyMovable {
         return streamInfo().type;
     }
 
-    [[nodiscard]] bool isNetwork() const noexcept {
-        auto t = streamInfo().type;
-        return t == StreamType::Http || t == StreamType::HLS;
-    }
-
     [[nodiscard]] bool isLive() const noexcept {
         return streamInfo().isLive;
     }

@@ -52,8 +52,6 @@ struct PlayerSetting {
     bool enableAudioSoftDecode = false;
     bool enableVideoSoftDecode = false;
     float volume = 100.0f;
-    double maxCacheTime = 30.0;
-    double minCacheTime = 5.0;
     perf::PerfConfig perfConfig;
     int32_t playerThreadTickMs = 10;
     int32_t playedTimeTickMs = 200;

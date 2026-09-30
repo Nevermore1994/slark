@@ -17,15 +17,18 @@
 #include "Error.h"
 #include "IDemuxer.h"
 #include "Log.hpp"
+#include "ScopeGuard.h"
 #include "SourceFlowController.h"
 #include "Thread.h"
 #include "perf/Perf.h"
+#include "perf/ResourceSampler.h"
 
 namespace slark {
 
 namespace {
 constexpr auto kTeardownTimeout = std::chrono::milliseconds(2000);
 constexpr double kSeekTargetToleranceSec = 0.001;
+constexpr auto kDiagnosticsInterval = std::chrono::milliseconds(500);
 }  // namespace
 
 PlayPipeline::PlayPipeline(PipelineFlowConfig config) noexcept : config_(std::move(config)) {
@@ -260,6 +263,23 @@ void PlayPipeline::performKeyframeSeek(CTime target) noexcept {
     if (sourceFlow_) {
         sourceFlow_->pauseForOperation();
     }
+    // Every exit below must release the components paused above: a missed resume leaves the
+    // demuxer stopped and the source gate forced, so playback never recovers.
+    ScopeGuard releasePausedComponents([this] {
+        if (demuxer_) {
+            demuxer_->resume();
+        }
+        if (audioDecoder_) {
+            audioDecoder_->resume();
+        }
+        if (videoDecoder_) {
+            videoDecoder_->resume();
+        }
+        if (sourceFlow_) {
+            sourceFlow_->resumeForOperation();
+        }
+    });
+
     flush();
     if (audioRender_) {
         audioRender_->seek(targetSec);
@@ -281,19 +301,8 @@ void PlayPipeline::performKeyframeSeek(CTime target) noexcept {
         auto pos = demuxer_->getSeekToPos(targetSec);
         LogI("performKeyframeSeek demuxer relocate seekPos={:.3f}", targetSec);
         demuxer_->seekToPos(pos);
-        demuxer_->resume();
-        LogI("performKeyframeSeek demuxer resumed");
     }
     seekContext_->updateGOPRange(-1.0, -1.0);
-    if (audioDecoder_) {
-        audioDecoder_->resume();
-    }
-    if (videoDecoder_) {
-        videoDecoder_->resume();
-    }
-    if (sourceFlow_) {
-        sourceFlow_->resumeForOperation();
-    }
     LogI("seek to keyframe for {:.3f}s, epoch={}", targetSec, seekContext_->currentEpoch());
 }
 
@@ -306,28 +315,22 @@ Time::TimePoint PlayPipeline::audioTime() noexcept {
 }
 
 bool PlayPipeline::canFetchMore() const noexcept {
-    return demuxedDuration() < config_.source.highWatermarkSec;
+    // The gate is the hysteresis state, not a second comparison against highWatermarkSec:
+    // one source of truth, so the dead zone is honoured by every source type.
+    return sourceFlow_ ? sourceFlow_->isFetchAllowed() : true;
 }
 
-double PlayPipeline::maxBufferedPts() const noexcept {
-    double maxPts = 0.0;
-    videoFrames_.withLock([&maxPts](const auto& m) {
-        if (!m.empty()) {
-            maxPts = std::max(maxPts, m.rbegin()->second->ptsTime());
-        }
-    });
-    audioFrames_.withLock([&maxPts](const auto& q) {
-        if (!q.empty()) {
-            maxPts = std::max(maxPts, q.back()->ptsTime());
-        }
-    });
-    maxPts = std::max(maxPts, lastEnqueuedAudioPts_.load(std::memory_order_acquire));
-    maxPts = std::max(maxPts, lastEnqueuedVideoPts_.load(std::memory_order_acquire));
-    return maxPts;
+// How far the demuxer has produced. This is the level backpressure regulates, because it is
+// where unconsumed compressed packets actually accumulate.
+double PlayPipeline::demuxedFrontierSec() const noexcept {
+    return std::max(lastEnqueuedAudioPts_.load(std::memory_order_acquire),
+                    lastEnqueuedVideoPts_.load(std::memory_order_acquire));
 }
 
 double PlayPipeline::cacheEndTime() const noexcept {
-    return std::max(0.0, maxBufferedPts());
+    // The decoded queues can never lead the demuxer, so their frontier adds nothing here and
+    // scanning them on every sample would be wasted work.
+    return std::max(0.0, demuxedFrontierSec());
 }
 
 bool PlayPipeline::isDecodeCompleted() const noexcept {
@@ -485,28 +488,42 @@ void PlayPipeline::chaseVideoFrames(AVFrameRefPtr& frame,
 
 double PlayPipeline::demuxedDuration() const noexcept {
     const double currentSec = clockSync_->masterTime().second();
-    return std::max(0.0, maxBufferedPts() - currentSec);
+    return std::max(0.0, demuxedFrontierSec() - currentSec);
 }
 
-void PlayPipeline::updateBufferControl() noexcept {
-    using Ms = std::chrono::milliseconds;
-    const auto throttle = config_.buffering.isLiveSource ? Ms(50) : Ms(100);
-    const auto now = std::chrono::steady_clock::now();
-    if (lastBufferSampleTime_.has_value() && (now - *lastBufferSampleTime_) < throttle) {
-        return;
-    }
-    lastBufferSampleTime_ = now;
-    runBufferControl();
-}
-
+// Sole sampling entry: previously onDataEnqueued() throttled at 100ms while runFastTick()
+// sampled unthrottled, and both shared one throttle timestamp, so the effective rate was
+// whichever path happened to run first.
 void PlayPipeline::runBufferControl() noexcept {
     const double bufferedSec = demuxedDuration();
     if (sourceFlow_) {
         sourceFlow_->update(bufferedSec);
     }
     if (bufferingTracker_) {
-        bufferingTracker_->update(bufferedSec, true);
+        bufferingTracker_->update(bufferedSec);
     }
+    logBufferDiagnostics(bufferedSec);
+}
+
+void PlayPipeline::logBufferDiagnostics(double bufferedSec) noexcept {
+    const auto now = std::chrono::steady_clock::now();
+    if (now - lastDiagnosticsTime_ < kDiagnosticsInterval) {
+        return;
+    }
+    lastDiagnosticsTime_ = now;
+
+    int64_t rssKB = 0;
+    int64_t vmSizeKB = 0;
+    perf::readProcessMemoryKB(rssKB, vmSizeKB);
+
+    LogI("buffer: buffered={:.3f}s demuxQ={} videoQ={} audioQ={} decodedV={} decodedA={} "
+         "rssKB={} vmKB={} gate={}",
+         bufferedSec,
+         demuxer_ ? demuxer_->pendingCount() : 0u,
+         videoDecoder_ ? videoDecoder_->pendingCount() : 0u,
+         audioDecoder_ ? audioDecoder_->pendingCount() : 0u,
+         videoDecodedFrameCount(), audioDecodedFrameCount(), rssKB, vmSizeKB,
+         sourceFlow_ && sourceFlow_->isFetchAllowed() ? "open" : "closed");
 }
 
 void PlayPipeline::interruptStream() noexcept {
@@ -1236,22 +1253,6 @@ void PlayPipeline::dispatchFrames(DemuxerResult&& result, uint64_t epoch) noexce
         LogI("demuxer file end");
     }
 
-    if (hasAudio || hasVideo) {
-        onDataEnqueued();
-    }
-}
-
-void PlayPipeline::onDataEnqueued() noexcept {
-    bool expected = false;
-    if (dataEnqueuedPending_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
-        postToOwnerThread([this] {
-            dataEnqueuedPending_.store(false, std::memory_order_release);
-            if (tearingDown_.load(std::memory_order_acquire)) {
-                return;
-            }
-            updateBufferControl();
-        });
-    }
 }
 
 void PlayPipeline::openDecoderInternal(std::shared_ptr<DecoderComponent> decoder,

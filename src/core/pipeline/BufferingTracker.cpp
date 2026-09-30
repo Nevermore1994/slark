@@ -12,13 +12,12 @@ BufferingTracker::BufferingTracker(const BufferingConfig& config,
                                    IBufferingTrackerDelegate& delegate) noexcept
     : config_(config), delegate_(delegate) {}
 
-void BufferingTracker::update(double bufferedSec, bool allowBufferingEvents) noexcept {
+void BufferingTracker::update(double bufferedSec) noexcept {
     const bool isStarting = isPrebuffering_;
 
     if (!sourceEof_ && !isStarting) {
         // Guard against re-triggering on the sample that just cleared isRebuffering_.
-        if (allowBufferingEvents && bufferedSec <= config_.rebufferTargetSec() && !isRebuffering_ &&
-            readyFired_) {
+        if (bufferedSec < config_.rebufferTargetSec() && !isRebuffering_ && readyFired_) {
             isRebuffering_ = true;
             LogI("start rebuffering:{}", bufferedSec);
             fireEvent(PipelineEvent::BufferingStart);
@@ -79,10 +78,10 @@ void BufferingTracker::checkRebufferComplete(double duration) noexcept {
     if (!isRebuffering_) {
         return;
     }
-    if (duration >= config_.rebufferTargetSec()) {
+    if (duration >= config_.rebufferExitSec()) {
         isRebuffering_ = false;
         LogI("checkRebufferComplete -> BufferingEnd, duration={:.3f} threshold={:.3f}", duration,
-             config_.rebufferTargetSec());
+             config_.rebufferExitSec());
         fireEvent(PipelineEvent::BufferingEnd);
     }
 }

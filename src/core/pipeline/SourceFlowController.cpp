@@ -8,47 +8,44 @@ namespace slark {
 
 SourceFlowController::SourceFlowController(const SourceBackpressureConfig& config,
                                            ISourceFlowDelegate& delegate) noexcept
-    : config_(config), delegate_(delegate) {}
+    : gate_(WatermarkConfig<double>{config.lowWatermarkSec, config.highWatermarkSec},
+            WatermarkGate<double>::Actions{
+                .closeGate = [d = &delegate] { d->closeFetchGate(); },
+                .openGate = [d = &delegate] { d->openFetchGate(); },
+                .interrupt = [d = &delegate] { d->interruptStream(); },
+                .resume = [d = &delegate] { d->resumeStream(); },
+            }) {}
 
 void SourceFlowController::update(double bufferedSec) noexcept {
-    if (sourceEof_ || operationPaused_) {
+    if (sourceEof_) {
         return;
     }
-    if (bufferedSec >= config_.highWatermarkSec) {
-        if (!productionSuspended_) {
-            productionSuspended_ = true;
-            delegate_.closeFetchGate();
-        }
-    } else if (bufferedSec <= config_.lowWatermarkSec) {
-        if (productionSuspended_) {
-            productionSuspended_ = false;
-        }
-        delegate_.openFetchGate();
-    }
+    gate_.update(bufferedSec);
 }
 
 void SourceFlowController::pauseForOperation() noexcept {
-    if (!operationPaused_) {
-        operationPaused_ = true;
-        productionSuspended_ = false;
-        delegate_.interruptStream();
-    }
+    gate_.forceClose();
 }
 
 void SourceFlowController::resumeForOperation() noexcept {
-    if (operationPaused_) {
-        operationPaused_ = false;
-        delegate_.resumeStream();
-        delegate_.openFetchGate();
-    }
+    gate_.forceOpen();
 }
 
 void SourceFlowController::reset() noexcept {
-    // operationPaused_ tracks a real delegate call; leaving it set would short-circuit
-    // the next pauseForOperation().
-    productionSuspended_ = false;
-    operationPaused_ = false;
+    gate_.reset();
     sourceEof_ = false;
+}
+
+bool SourceFlowController::isOperationPaused() const noexcept {
+    return gate_.isForced();
+}
+
+bool SourceFlowController::isProductionSuspended() const noexcept {
+    return gate_.isClosed();
+}
+
+bool SourceFlowController::isFetchAllowed() const noexcept {
+    return !gate_.isPaused();
 }
 
 }  // namespace slark

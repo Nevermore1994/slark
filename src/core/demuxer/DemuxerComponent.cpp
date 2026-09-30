@@ -4,6 +4,8 @@
 
 #include "DemuxerComponent.h"
 
+#include <thread>
+
 #include "Log.hpp"
 #include "Mp4Demuxer.h"
 
@@ -79,6 +81,7 @@ void DemuxerComponent::flush() noexcept {
 }
 
 void DemuxerComponent::pause() noexcept {
+    paused_.store(true, std::memory_order_release);
     if (worker_) {
         worker_->pause();
     }
@@ -88,8 +91,12 @@ void DemuxerComponent::pause() noexcept {
 }
 
 void DemuxerComponent::resume() noexcept {
+    paused_.store(false, std::memory_order_release);
     if (worker_) {
         worker_->start();
+    }
+    if (receiver_) {
+        receiver_->wakeup();
     }
 }
 
@@ -97,9 +104,17 @@ void DemuxerComponent::runLoop(Thread& thread) noexcept {
     while (!thread.shouldStop()) {
         thread.drainPendingWork();
 
-        if (flushed_.exchange(false, std::memory_order_acq_rel)) {
-            (void)receiver_->tryReceiveAll();
+        // A paused demuxer must not consume: packets queued for the resumed operation have to
+        // survive until then.
+        if (paused_.load(std::memory_order_acquire)) {
+            std::this_thread::sleep_for(kPausedPollInterval);
+            continue;
         }
+
+        // Consume the flush marker so packets queued after flush() are not discarded below.
+        // Draining the channel here would drop data that already belongs to the new operation;
+        // stale packets are filtered by source generation instead.
+        (void)flushed_.exchange(false, std::memory_order_acq_rel);
 
         auto exp = receiver_->receive();
 

@@ -42,6 +42,12 @@ struct BufferingConfig {
         return startBufferSec * rebufferScale;
     }
 
+    // Rebuffering exits above where it entered, otherwise a queue oscillating around the
+    // target flaps BufferingStart/BufferingEnd on every sample.
+    [[nodiscard]] double rebufferExitSec() const noexcept {
+        return rebufferTargetSec() * rebufferScale;
+    }
+
     [[nodiscard]] bool isValid() const noexcept {
         return startBufferSec >= 0.0 && rebufferScale >= 1.0 && starvationThreshold > 0;
     }
@@ -63,11 +69,12 @@ struct PipelineFlowConfig {
     BufferingConfig buffering;
     CatchUpConfig catchUp;
 
-    // Rebuffer target must stay below the high watermark, otherwise rebuffering never exits.
+    // Production stops at the high watermark, so the level a rebuffer needs to exit must stay
+    // below it, otherwise rebuffering never exits.
     [[nodiscard]] bool isValid() const noexcept {
         return source.isValid() && audioDecoder.isValid() && videoDecoder.isValid() &&
                buffering.isValid() && catchUp.isValid() &&
-               buffering.rebufferTargetSec() < source.highWatermarkSec;
+               buffering.rebufferExitSec() < source.highWatermarkSec;
     }
 
     [[nodiscard]] static PipelineFlowConfig forSource(MediaSourceType type) noexcept {
