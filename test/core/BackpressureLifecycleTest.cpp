@@ -8,6 +8,7 @@
 #include <cstdint>
 
 #include "codec/DecoderComponent.h"
+#include "pipeline/WatermarkGate.h"
 
 using namespace slark;
 
@@ -23,7 +24,7 @@ class BackpressureLifecycleTest : public ::testing::Test {
     // Simulates one runLoop iteration: codec output was already drained into the queue,
     // then backpressure is evaluated. Returns whether feeding is paused afterwards.
     bool iterate(int32_t queueSize, bool& backpressurePaused) const noexcept {
-        const bool next = shouldPauseFeeding(queueSize, kLow, kHigh, backpressurePaused);
+        const bool next = shouldCloseGate(queueSize, kLow, kHigh, backpressurePaused);
         if (next != backpressurePaused) {
             backpressurePaused = next;
         }
@@ -101,9 +102,9 @@ TEST_F(BackpressureLifecycleTest, HighFrequencyTogglingNeverStalls) {
     }
     EXPECT_GT(totalTransitions, 0);
     // After a low sample the decoder must be running.
-    EXPECT_FALSE(shouldPauseFeeding(kLow - 1, kLow, kHigh, false));
+    EXPECT_FALSE(shouldCloseGate(kLow - 1, kLow, kHigh, false));
     // After a high sample it must be paused.
-    EXPECT_TRUE(shouldPauseFeeding(kHigh + 1, kLow, kHigh, false));
+    EXPECT_TRUE(shouldCloseGate(kHigh + 1, kLow, kHigh, false));
 }
 
 // Weak network: long production silence (server stalls) followed by a burst.
@@ -138,30 +139,30 @@ TEST_F(BackpressureLifecycleTest, WeakNetworkSilenceThenBurstRecovers) {
 // Extreme watermarks: the smallest possible hysteresis band and the widest one.
 TEST_F(BackpressureLifecycleTest, ExtremeWatermarks) {
     // Minimal band low=0, high=1: no dead zone at all.
-    EXPECT_FALSE(shouldPauseFeeding(0, 0, 1, false));
-    EXPECT_TRUE(shouldPauseFeeding(1, 0, 1, false));
-    EXPECT_FALSE(shouldPauseFeeding(0, 0, 1, true));
-    EXPECT_TRUE(shouldPauseFeeding(1, 0, 1, true));
+    EXPECT_FALSE(shouldCloseGate(0, 0, 1, false));
+    EXPECT_TRUE(shouldCloseGate(1, 0, 1, false));
+    EXPECT_FALSE(shouldCloseGate(0, 0, 1, true));
+    EXPECT_TRUE(shouldCloseGate(1, 0, 1, true));
 
     // Very wide band: recovery requires a long drain, but must still terminate.
     constexpr int32_t kVeryLow = 10;
     constexpr int32_t kVeryHigh = 1000000;
-    bool paused = shouldPauseFeeding(kVeryHigh, kVeryLow, kVeryHigh, false);
+    bool paused = shouldCloseGate(kVeryHigh, kVeryLow, kVeryHigh, false);
     ASSERT_TRUE(paused);
     // Still paused just above low, resumes exactly at low.
-    EXPECT_TRUE(shouldPauseFeeding(kVeryLow + 1, kVeryLow, kVeryHigh, paused));
-    EXPECT_FALSE(shouldPauseFeeding(kVeryLow, kVeryLow, kVeryHigh, paused));
+    EXPECT_TRUE(shouldCloseGate(kVeryLow + 1, kVeryLow, kVeryHigh, paused));
+    EXPECT_FALSE(shouldCloseGate(kVeryLow, kVeryLow, kVeryHigh, paused));
 }
 
 // Queue size near INT32_MAX must not overflow or misbehave.
 TEST_F(BackpressureLifecycleTest, NearIntegerOverflowPending) {
     const int32_t huge = INT32_MAX - 1;
     // Paused at a huge backlog: stays paused (no overflow wrap to a resume).
-    EXPECT_TRUE(shouldPauseFeeding(huge, kLow, kHigh, true));
+    EXPECT_TRUE(shouldCloseGate(huge, kLow, kHigh, true));
     // Not paused at a huge backlog: pauses immediately.
-    EXPECT_TRUE(shouldPauseFeeding(huge, kLow, kHigh, false));
+    EXPECT_TRUE(shouldCloseGate(huge, kLow, kHigh, false));
     // INT32_MAX itself is representable and treated consistently.
-    EXPECT_TRUE(shouldPauseFeeding(INT32_MAX, kLow, kHigh, false));
+    EXPECT_TRUE(shouldCloseGate(INT32_MAX, kLow, kHigh, false));
 }
 
 // Long-run stability: thousands of full pause/resume cycles must not drift the state.
@@ -171,7 +172,7 @@ TEST_F(BackpressureLifecycleTest, ManyCyclesStayConsistent) {
         // Drain to empty.
         int32_t queue = 0;
         bool paused = false;
-        EXPECT_FALSE(shouldPauseFeeding(queue, kLow, kHigh, paused));
+        EXPECT_FALSE(shouldCloseGate(queue, kLow, kHigh, paused));
 
         // Grow past high -> pause.
         while (!paused) {

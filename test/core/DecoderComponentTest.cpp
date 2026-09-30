@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include "codec/DecoderComponent.h"
+#include "pipeline/WatermarkGate.h"
 
 using namespace slark;
 
@@ -17,69 +18,69 @@ class DecodeBackpressureTest : public ::testing::Test {
 };
 
 TEST_F(DecodeBackpressureTest, PausesWhenPendingReachesHighWatermark) {
-    EXPECT_FALSE(shouldPauseFeeding(7, kLow, kHigh, false));
-    EXPECT_TRUE(shouldPauseFeeding(8, kLow, kHigh, false));
-    EXPECT_TRUE(shouldPauseFeeding(9, kLow, kHigh, false));
+    EXPECT_FALSE(shouldCloseGate(7, kLow, kHigh, false));
+    EXPECT_TRUE(shouldCloseGate(8, kLow, kHigh, false));
+    EXPECT_TRUE(shouldCloseGate(9, kLow, kHigh, false));
 }
 
 TEST_F(DecodeBackpressureTest, ResumesOnlyWhenPendingDropsToLowWatermark) {
     // Resuming happens at <= low, not at < high: this is the hysteresis.
-    EXPECT_TRUE(shouldPauseFeeding(3, kLow, kHigh, true));
-    EXPECT_FALSE(shouldPauseFeeding(2, kLow, kHigh, true));
-    EXPECT_FALSE(shouldPauseFeeding(1, kLow, kHigh, true));
+    EXPECT_TRUE(shouldCloseGate(3, kLow, kHigh, true));
+    EXPECT_FALSE(shouldCloseGate(2, kLow, kHigh, true));
+    EXPECT_FALSE(shouldCloseGate(1, kLow, kHigh, true));
 }
 
 TEST_F(DecodeBackpressureTest, DeadZoneBetweenWatermarksKeepsCurrentState) {
     // The classic bug: a single if/else-if leaves (low, high) unhandled and a paused
     // decoder stays paused forever. The state must be sticky in both directions.
     for (int32_t pending = kLow + 1; pending < kHigh; ++pending) {
-        EXPECT_TRUE(shouldPauseFeeding(pending, kLow, kHigh, true))
+        EXPECT_TRUE(shouldCloseGate(pending, kLow, kHigh, true))
             << "must stay paused at pending=" << pending;
-        EXPECT_FALSE(shouldPauseFeeding(pending, kLow, kHigh, false))
+        EXPECT_FALSE(shouldCloseGate(pending, kLow, kHigh, false))
             << "must stay running at pending=" << pending;
     }
 }
 
 TEST_F(DecodeBackpressureTest, DoesNotOscillateAtBoundary) {
     // Feeding -> pause -> consumption -> resume must not flip-flop around the edges.
-    bool paused = shouldPauseFeeding(kHigh, kLow, kHigh, false);
+    bool paused = shouldCloseGate(kHigh, kLow, kHigh, false);
     ASSERT_TRUE(paused);
     // Still at high after producing one more frame: stays paused.
-    EXPECT_TRUE(shouldPauseFeeding(kHigh, kLow, kHigh, paused));
+    EXPECT_TRUE(shouldCloseGate(kHigh, kLow, kHigh, paused));
     // Consumed down into the dead zone: still paused (no premature resume).
-    EXPECT_TRUE(shouldPauseFeeding(kLow + 1, kLow, kHigh, paused));
+    EXPECT_TRUE(shouldCloseGate(kLow + 1, kLow, kHigh, paused));
     // Reached the low watermark: resumes.
-    paused = shouldPauseFeeding(kLow, kLow, kHigh, paused);
+    paused = shouldCloseGate(kLow, kLow, kHigh, paused);
     EXPECT_FALSE(paused);
     // A frame arrives but we are still at/below low: stays running.
-    EXPECT_FALSE(shouldPauseFeeding(kLow, kLow, kHigh, paused));
+    EXPECT_FALSE(shouldCloseGate(kLow, kLow, kHigh, paused));
 }
 
 TEST_F(DecodeBackpressureTest, InvalidWatermarksKeepCurrentState) {
     // Misconfigured high <= low must not cause rapid toggling.
-    EXPECT_TRUE(shouldPauseFeeding(0, 8, 2, true));
-    EXPECT_FALSE(shouldPauseFeeding(0, 8, 2, false));
-    EXPECT_TRUE(shouldPauseFeeding(100, 8, 2, true));
-    EXPECT_FALSE(shouldPauseFeeding(100, 8, 2, false));
+    EXPECT_TRUE(shouldCloseGate(0, 8, 2, true));
+    EXPECT_FALSE(shouldCloseGate(0, 8, 2, false));
+    EXPECT_TRUE(shouldCloseGate(100, 8, 2, true));
+    EXPECT_FALSE(shouldCloseGate(100, 8, 2, false));
 
     // Equal watermarks are equally invalid.
-    EXPECT_TRUE(shouldPauseFeeding(5, 5, 5, true));
-    EXPECT_FALSE(shouldPauseFeeding(5, 5, 5, false));
+    EXPECT_TRUE(shouldCloseGate(5, 5, 5, true));
+    EXPECT_FALSE(shouldCloseGate(5, 5, 5, false));
 }
 
 TEST_F(DecodeBackpressureTest, NegativePendingIsTreatedAsEmpty) {
     // A negative count is nonsense but must not crash or keep the decoder paused.
-    EXPECT_FALSE(shouldPauseFeeding(-1, kLow, kHigh, false));
-    EXPECT_FALSE(shouldPauseFeeding(-1, kLow, kHigh, true));
+    EXPECT_FALSE(shouldCloseGate(-1, kLow, kHigh, false));
+    EXPECT_FALSE(shouldCloseGate(-1, kLow, kHigh, true));
 }
 
 TEST_F(DecodeBackpressureTest, AdjacentWatermarksLeaveNoDeadZone) {
     // low=3, high=4: there is no room for a dead zone, so the state is driven purely
     // by which side of each watermark the queue sits on.
-    EXPECT_TRUE(shouldPauseFeeding(4, 3, 4, false));
-    EXPECT_TRUE(shouldPauseFeeding(4, 3, 4, true));
-    EXPECT_FALSE(shouldPauseFeeding(3, 3, 4, true));
-    EXPECT_FALSE(shouldPauseFeeding(3, 3, 4, false));
+    EXPECT_TRUE(shouldCloseGate(4, 3, 4, false));
+    EXPECT_TRUE(shouldCloseGate(4, 3, 4, true));
+    EXPECT_FALSE(shouldCloseGate(3, 3, 4, true));
+    EXPECT_FALSE(shouldCloseGate(3, 3, 4, false));
 }
 
 TEST(DecoderComponentConfigTest, DefaultsAreSane) {

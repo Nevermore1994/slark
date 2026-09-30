@@ -124,15 +124,24 @@ TEST(PipelineFlowConfigTest, RebufferTargetMustStayBelowSourceHighWatermark) {
     ASSERT_LT(cfg.buffering.rebufferTargetSec(), cfg.source.highWatermarkSec);
 
     cfg.buffering.startBufferSec = cfg.source.highWatermarkSec / cfg.buffering.rebufferScale;
+    EXPECT_DOUBLE_EQ(cfg.buffering.rebufferExitSec(), 15.0);
     EXPECT_FALSE(cfg.isValid());
 
-    cfg.buffering.startBufferSec = 6.0;
-    EXPECT_DOUBLE_EQ(cfg.buffering.rebufferTargetSec(), 9.0);
+    cfg.buffering.startBufferSec = 2.0;
+    EXPECT_DOUBLE_EQ(cfg.buffering.rebufferTargetSec(), 3.0);
+    EXPECT_DOUBLE_EQ(cfg.buffering.rebufferExitSec(), 4.5);
     EXPECT_TRUE(cfg.isValid());
 
     cfg.buffering.rebufferScale = 2.0;
-    EXPECT_DOUBLE_EQ(cfg.buffering.rebufferTargetSec(), 12.0);
-    EXPECT_FALSE(cfg.isValid());
+    EXPECT_DOUBLE_EQ(cfg.buffering.rebufferTargetSec(), 4.0);
+    EXPECT_DOUBLE_EQ(cfg.buffering.rebufferExitSec(), 8.0);
+    EXPECT_TRUE(cfg.isValid());
+
+    cfg.buffering.rebufferScale = 1.5;
+    cfg.buffering.startBufferSec = 5.0;
+    EXPECT_DOUBLE_EQ(cfg.buffering.rebufferTargetSec(), 7.5);
+    EXPECT_DOUBLE_EQ(cfg.buffering.rebufferExitSec(), 11.25);
+    EXPECT_FALSE(cfg.isValid()) << "exit level above the high watermark never recovers";
 }
 
 TEST(PipelineFlowConfigTest, SourceWatermarkBoundaries) {

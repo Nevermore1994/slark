@@ -157,9 +157,9 @@ TEST(SourceFlowControllerTest, OperationalResumeNotifiesCapacity) {
     EXPECT_FALSE(flow.isProductionSuspended());
 }
 
-// Regression: reset() used to leave the pause flag set, which short-circuited the next
-// pause and let a seek run against a stream that was never paused.
-TEST(SourceFlowControllerTest, ResetClearsOperationalPause) {
+// A seek flush resets source state while the operation pause remains paired with the
+// delegate until the seek has installed its new position.
+TEST(SourceFlowControllerTest, ResetDuringOperationPreservesPauseUntilResume) {
     NiceMock<MockSourceFlowDelegate> delegate;
     SourceFlowController flow(networkSource(), delegate);
 
@@ -168,12 +168,13 @@ TEST(SourceFlowControllerTest, ResetClearsOperationalPause) {
     ASSERT_TRUE(flow.isOperationPaused());
 
     flow.reset();
-    EXPECT_FALSE(flow.isOperationPaused());
+    EXPECT_TRUE(flow.isOperationPaused());
     EXPECT_FALSE(flow.isProductionSuspended());
 
-    EXPECT_CALL(delegate, interruptStream()).Times(1);
-    flow.pauseForOperation();
-    EXPECT_TRUE(flow.isOperationPaused());
+    EXPECT_CALL(delegate, resumeStream()).Times(1);
+    EXPECT_CALL(delegate, openFetchGate()).Times(1);
+    flow.resumeForOperation();
+    EXPECT_FALSE(flow.isOperationPaused());
 }
 
 TEST(SourceFlowControllerTest, SourceEofStopsRegulation) {

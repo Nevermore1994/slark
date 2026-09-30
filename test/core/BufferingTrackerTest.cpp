@@ -53,10 +53,10 @@ TEST(BufferingTrackerTest, StartPrebufferingWaitsUntilDurationReached) {
     tracker.startPrebuffering();
     ASSERT_TRUE(tracker.isPrebuffering());
 
-    tracker.update(1.0, true);
+    tracker.update(1.0);
     EXPECT_TRUE(tracker.isPrebuffering());
 
-    tracker.update(3.0, true);
+    tracker.update(3.0);
     EXPECT_FALSE(tracker.isPrebuffering());
 }
 
@@ -69,7 +69,7 @@ TEST(BufferingTrackerTest, PrebufferSuppressesBufferingEvents) {
 
     BufferingTracker tracker(cfg, delegate);
     tracker.startPrebuffering();
-    tracker.update(0.0, true);
+    tracker.update(0.0);
     EXPECT_TRUE(tracker.isPrebuffering());
     EXPECT_FALSE(tracker.isRebuffering());
 }
@@ -84,14 +84,37 @@ TEST(BufferingTrackerTest, RebufferingStartsBelowTargetAfterReady) {
 
     BufferingTracker tracker(cfg, delegate);
     tracker.startPrebuffering();
-    tracker.update(5.0, true);
+    tracker.update(5.0);
     ASSERT_FALSE(tracker.isPrebuffering());
 
-    tracker.update(1.0, true);
+    tracker.update(1.0);
     EXPECT_TRUE(tracker.isRebuffering());
 }
 
 TEST(BufferingTrackerTest, RebufferingEndsWhenDurationRecovers) {
+    NiceMock<MockBufferingTrackerDelegate> delegate;
+    const auto cfg = networkBuffering();
+    ASSERT_DOUBLE_EQ(cfg.rebufferTargetSec(), 3.0);
+    ASSERT_DOUBLE_EQ(cfg.rebufferExitSec(), 4.5);
+
+    BufferingTracker tracker(cfg, delegate);
+
+    EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);
+    EXPECT_CALL(delegate, onBufferEvent(PipelineEvent::BufferingStart, Eq(std::nullopt))).Times(1);
+    EXPECT_CALL(delegate, onBufferEvent(PipelineEvent::BufferingEnd, Eq(std::nullopt))).Times(1);
+
+    tracker.startPrebuffering();
+    tracker.update(5.0);
+    tracker.update(1.0);
+    ASSERT_TRUE(tracker.isRebuffering());
+
+    tracker.update(4.5);
+    EXPECT_FALSE(tracker.isRebuffering());
+}
+
+// Regression: entering and exiting on the same threshold made the state flap whenever the
+// queue sat exactly on the target. The exit threshold is now strictly above the entry one.
+TEST(BufferingTrackerTest, RebufferingHasADeadZoneAboveTheTarget) {
     NiceMock<MockBufferingTrackerDelegate> delegate;
     BufferingTracker tracker(networkBuffering(), delegate);
 
@@ -100,11 +123,50 @@ TEST(BufferingTrackerTest, RebufferingEndsWhenDurationRecovers) {
     EXPECT_CALL(delegate, onBufferEvent(PipelineEvent::BufferingEnd, Eq(std::nullopt))).Times(1);
 
     tracker.startPrebuffering();
-    tracker.update(5.0, true);
-    tracker.update(1.0, true);
+    tracker.update(5.0);
+    tracker.update(1.0);
     ASSERT_TRUE(tracker.isRebuffering());
 
-    tracker.update(3.0, true);
+    for (double duration : {3.0, 3.5, 4.49}) {
+        tracker.update(duration);
+        EXPECT_TRUE(tracker.isRebuffering()) << "duration=" << duration;
+    }
+
+    tracker.update(4.5);
+    EXPECT_FALSE(tracker.isRebuffering());
+}
+
+// A local source has startBufferSec = 0, so rebufferTargetSec() collapses to 0. Entering
+// requires strictly less than the target, which is unreachable for a clamped duration:
+// the old `<=` fired BufferingStart and BufferingEnd within the same sample.
+TEST(BufferingTrackerTest, LocalSourceNeverFlapsOnZeroTarget) {
+    NiceMock<MockBufferingTrackerDelegate> delegate;
+    const auto cfg = PipelineFlowConfig::forSource(kLocal).buffering;
+    ASSERT_DOUBLE_EQ(cfg.rebufferTargetSec(), 0.0);
+
+    EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);
+    EXPECT_CALL(delegate, onBufferEvent(_, _)).Times(0);
+
+    BufferingTracker tracker(cfg, delegate);
+    tracker.startPrebuffering();
+
+    for (double duration : {0.0, 0.0, 0.0}) {
+        tracker.update(duration);
+        EXPECT_FALSE(tracker.isRebuffering());
+    }
+}
+
+// The exact entry boundary: strictly below the target enters, exactly on it does not.
+TEST(BufferingTrackerTest, RebufferingEntryBoundaryIsExclusive) {
+    NiceMock<MockBufferingTrackerDelegate> delegate;
+    BufferingTracker tracker(networkBuffering(), delegate);
+
+    EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);
+    EXPECT_CALL(delegate, onBufferEvent(_, _)).Times(0);
+
+    tracker.startPrebuffering();
+    tracker.update(5.0);
+    tracker.update(3.0);
     EXPECT_FALSE(tracker.isRebuffering());
 }
 
@@ -116,10 +178,10 @@ TEST(BufferingTrackerTest, RebufferingIsNotRetriggeredWhileActive) {
     EXPECT_CALL(delegate, onBufferEvent(PipelineEvent::BufferingStart, _)).Times(1);
 
     tracker.startPrebuffering();
-    tracker.update(5.0, true);
-    tracker.update(1.0, true);
-    tracker.update(1.0, true);
-    tracker.update(0.5, true);
+    tracker.update(5.0);
+    tracker.update(1.0);
+    tracker.update(1.0);
+    tracker.update(0.5);
     EXPECT_TRUE(tracker.isRebuffering());
 }
 
@@ -132,8 +194,8 @@ TEST(BufferingTrackerTest, SourceEofEndsRebuffering) {
     EXPECT_CALL(delegate, onBufferEvent(PipelineEvent::BufferingEnd, _)).Times(1);
 
     tracker.startPrebuffering();
-    tracker.update(5.0, true);
-    tracker.update(1.0, true);
+    tracker.update(5.0);
+    tracker.update(1.0);
     ASSERT_TRUE(tracker.isRebuffering());
 
     tracker.setSourceEof();
@@ -148,9 +210,9 @@ TEST(BufferingTrackerTest, SourceEofPreventsFurtherRebufferingStart) {
     EXPECT_CALL(delegate, onBufferEvent(_, _)).Times(0);
 
     tracker.startPrebuffering();
-    tracker.update(5.0, true);
+    tracker.update(5.0);
     tracker.setSourceEof();
-    tracker.update(0.0, true);
+    tracker.update(0.0);
     EXPECT_FALSE(tracker.isRebuffering());
 }
 
@@ -163,7 +225,7 @@ TEST(BufferingTrackerTest, StarvationTriggersRebufferingAfterThreshold) {
 
     BufferingTracker tracker(cfg, delegate);
     tracker.startPrebuffering();
-    tracker.update(5.0, true);
+    tracker.update(5.0);
 
     for (int32_t i = 0; i < cfg.starvationThreshold; ++i) {
         tracker.reportStarvation(false);
@@ -180,7 +242,7 @@ TEST(BufferingTrackerTest, StarvationBelowThresholdDoesNotRebuffer) {
 
     BufferingTracker tracker(cfg, delegate);
     tracker.startPrebuffering();
-    tracker.update(5.0, true);
+    tracker.update(5.0);
 
     for (int32_t i = 0; i < cfg.starvationThreshold - 1; ++i) {
         tracker.reportStarvation(false);
@@ -198,7 +260,7 @@ TEST(BufferingTrackerTest, StarvationHonorsConfiguredThreshold) {
 
     BufferingTracker tracker(cfg, delegate);
     tracker.startPrebuffering();
-    tracker.update(5.0, true);
+    tracker.update(5.0);
 
     tracker.reportStarvation(false);
     EXPECT_TRUE(tracker.isRebuffering());
@@ -212,7 +274,7 @@ TEST(BufferingTrackerTest, StarvationIgnoredForLocalSource) {
     EXPECT_CALL(delegate, onBufferEvent(_, _)).Times(0);
 
     tracker.startPrebuffering();
-    tracker.update(5.0, true);
+    tracker.update(5.0);
 
     for (int32_t i = 0; i < 10; ++i) {
         tracker.reportStarvation(true);
@@ -229,7 +291,7 @@ TEST(BufferingTrackerTest, ResetStarvationCountDefersRebuffering) {
 
     BufferingTracker tracker(cfg, delegate);
     tracker.startPrebuffering();
-    tracker.update(5.0, true);
+    tracker.update(5.0);
 
     tracker.reportStarvation(false);
     tracker.reportStarvation(false);
@@ -247,8 +309,8 @@ TEST(BufferingTrackerTest, ResetClearsAllState) {
     EXPECT_CALL(delegate, onBufferEvent(PipelineEvent::BufferingStart, _)).Times(1);
 
     tracker.startPrebuffering();
-    tracker.update(5.0, true);
-    tracker.update(1.0, true);
+    tracker.update(5.0);
+    tracker.update(1.0);
     ASSERT_TRUE(tracker.isRebuffering());
 
     tracker.reset();

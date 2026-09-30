@@ -58,7 +58,7 @@ TEST(FileStreamFuzzTest, ConcurrentSeekAndPause) {
         std::mt19937 rng(123);
         while (running.load()) {
             uint64_t pos = static_cast<uint64_t>(rng() % 8192);
-            auto seekResult = stream.seek(pos);
+            auto seekResult = stream.seek(pos, 0);
             if (!seekResult.has_value()) {
                 errorCount++;
             }
