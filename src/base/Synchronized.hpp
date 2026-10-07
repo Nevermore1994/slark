@@ -59,7 +59,6 @@ class Synchronized : public NonCopyMovable {
  public:
     ~Synchronized() = default;
 
-    // C++23 deducing this: unified withLock for const and non-const
     template <typename Self, typename F>
     auto withLock(this Self&& self, F&& func)
         requires IsMutex<Mutex>
@@ -75,7 +74,6 @@ class Synchronized : public NonCopyMovable {
         }
     }
 
-    // C++23 deducing this: unified withWriteLock for const and non-const
     template <typename Self, typename F>
     auto withWriteLock(this Self&& self, F&& func)
         requires IsSharedMutex<Mutex>

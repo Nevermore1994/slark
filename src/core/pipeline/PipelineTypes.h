@@ -8,9 +8,22 @@
 #include <optional>
 
 #include "Error.h"
-#include "PipelineEvent.h"
 
 namespace slark {
+
+enum class PipelineEvent : uint8_t {
+    DemuxHeaderParsed,
+    PipelineReady,
+    FirstFrameRendered,
+    AudioDecoderFailed,
+    VideoDecoderFailed,
+    BufferingStart,
+    BufferingEnd,
+    ReadError,
+    SeekCompleted,
+    DecodeError,
+    RenderEnd
+};
 
 struct PipelineError {
     Error error = Error::Success;

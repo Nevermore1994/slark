@@ -129,7 +129,6 @@ std::unique_ptr<PlayerParams> makeParams(const std::string& path, bool isLoop = 
     params->item.displayStart = 0.0;
     params->item.displayDuration = 0.0;
     params->setting.isLoop = isLoop;
-    params->setting.isMute = false;
     params->setting.volume = 100.0f;
     return params;
 }

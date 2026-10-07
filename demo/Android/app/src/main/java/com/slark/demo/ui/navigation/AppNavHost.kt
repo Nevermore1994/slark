@@ -28,9 +28,14 @@ fun NavBackStackEntry.rememberParentEntry(navController: NavController, parentRo
 
 @Composable
 fun AppNavHost(navController: NavHostController, innerPadding: PaddingValues) {
+    // TEMP DEBUG: land on the local flow when launched with --es video_path. Remove after
+    // the measurement run.
+    val debugPath = (androidx.compose.ui.platform.LocalContext.current as? android.app.Activity)
+        ?.intent?.getStringExtra("video_path")
+
     NavHost(
         navController = navController,
-        startDestination = "network_flow"
+        startDestination = if (debugPath.isNullOrEmpty()) "network_flow" else "local_flow"
     ) {
         navigation(
             startDestination = Screen.SelectUrlScreen.route,
@@ -61,6 +66,14 @@ fun AppNavHost(navController: NavHostController, innerPadding: PaddingValues) {
         ) {
             composable(Screen.VideoPickerScreen.route) { entry ->
                 val flowViewModel: SharedViewModel = viewModel(entry.rememberParentEntry(navController, "local_flow"))
+                // TEMP DEBUG: skip the picker when launched with --es video_path. Remove after
+                // the measurement run.
+                androidx.compose.runtime.LaunchedEffect(debugPath) {
+                    if (!debugPath.isNullOrEmpty() && flowViewModel.firstUri == null) {
+                        flowViewModel.setUris(listOf(android.net.Uri.parse(debugPath)))
+                        navController.navigate(Screen.LocalPlayerScreen.route)
+                    }
+                }
                 VideoPickerWithPermission(
                     innerPadding = innerPadding,
                     onResult = { selectedUris ->
