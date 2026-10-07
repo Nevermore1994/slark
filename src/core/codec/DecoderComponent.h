@@ -13,7 +13,7 @@
 #include "Error.h"
 #include "IDecoder.h"
 #include "IPipelineComponent.h"
-#include "PipelineConfig.h"
+#include "FlowConfig.h"
 #include "Thread.h"
 #include "ThreadManager.h"
 #include "pipeline/WatermarkGate.h"

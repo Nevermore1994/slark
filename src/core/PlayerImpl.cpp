@@ -20,21 +20,18 @@
 #include "Random.hpp"
 #include "StringUtil.h"
 #include "VideoInfo.h"
+#include "pipeline/FlowConfigDefaults.h"
 
 namespace slark {
 
 namespace {
 static constexpr double kSeekThreshold = 0.05;
 
-PipelineFlowConfig buildFlowConfig(StreamType type, bool isLive) {
-    if (isLive) {
-        return PipelineFlowConfig::forSource(MediaSourceType::Live);
-    }
-    if (type == StreamType::Http || type == StreamType::HLS) {
-        return PipelineFlowConfig::forSource(MediaSourceType::Network);
-    }
-    return PipelineFlowConfig::forSource(MediaSourceType::Local);
-}
+// Owner-thread cadences are an implementation detail: how often the pipeline samples
+// backpressure, reports progress and reports cache level is not the caller's business.
+static constexpr auto kPlayerThreadTick = std::chrono::milliseconds(10);
+static constexpr auto kPlayedTimeTick = std::chrono::milliseconds(200);
+static constexpr auto kCacheTick = std::chrono::milliseconds(500);
 }  // namespace
 
 Player::Impl::Impl(std::unique_ptr<PlayerParams> params)
@@ -158,8 +155,6 @@ void Player::Impl::init() noexcept {
         setState(PlayerState::Error);
         return;
     }
-    buildPipeline();
-
     PlayerSetting setting;
     params_.withReadLock([&setting](auto& p) {
         if (p) {
@@ -167,8 +162,9 @@ void Player::Impl::init() noexcept {
         }
     });
 
-    fastTickTaskId_ = ownerThread_->postRepeatTask(
-        std::chrono::milliseconds(setting.playerThreadTickMs), [this]() {
+    buildPipeline(setting);
+
+    fastTickTaskId_ = ownerThread_->postRepeatTask(kPlayerThreadTick, [this]() {
             tick();
             if (isStopped_) {
                 return;
@@ -177,8 +173,7 @@ void Player::Impl::init() noexcept {
                 pipeline->runFastTick(state() == PlayerState::Playing);
             }
         });
-    playedTimeTaskId_ =
-        ownerThread_->postRepeatTask(std::chrono::milliseconds(setting.playedTimeTickMs), [this]() {
+    playedTimeTaskId_ = ownerThread_->postRepeatTask(kPlayedTimeTick, [this]() {
             if (isStopped_) {
                 return;
             }
@@ -187,8 +182,7 @@ void Player::Impl::init() noexcept {
                 notifyPlayedTime();
             }
         });
-    cacheTickTaskId_ =
-        ownerThread_->postRepeatTask(std::chrono::milliseconds(setting.cacheTickMs), [this]() {
+    cacheTickTaskId_ = ownerThread_->postRepeatTask(kCacheTick, [this]() {
             if (isStopped_) {
                 return;
             }
@@ -315,9 +309,14 @@ bool Player::Impl::createDemuxerComponent() noexcept {
     return true;
 }
 
-void Player::Impl::buildPipeline() noexcept {
+void Player::Impl::buildPipeline(const PlayerSetting& setting) noexcept {
+    const auto type =
+        pipeline::sourceTypeOf(mediaSourceManager_.streamType(), mediaSourceManager_.isLive());
+    if (setting.flowConfig && !setting.flowConfig->isValid()) {
+        LogW("flowConfig is invalid, falling back to the default for this source type");
+    }
     pipeline_ = std::make_shared<PlayPipeline>(
-        buildFlowConfig(mediaSourceManager_.streamType(), mediaSourceManager_.isLive()));
+        pipeline::FlowConfigDefaults::resolve(setting.flowConfig, type), type);
     pipeline_->setEventCallback(
         [weak = weak_from_this()](PipelineEvent event, std::optional<PipelineError> error) {
             auto self = weak.lock();
@@ -792,11 +791,6 @@ void Player::Impl::handleSettingUpdate(Event& t) noexcept {
                 pipeline_->setVolume(volume / 100.0f);
             }
         }
-        params_.withWriteLock([isMute](auto& p) {
-            if (p) {
-                p->setting.isMute = isMute;
-            }
-        });
     }
 }
 

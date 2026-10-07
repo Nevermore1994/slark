@@ -6,6 +6,7 @@
 
 package com.slark.sdk
 
+import com.slark.api.SlarkFlowConfig
 import com.slark.api.SlarkPlayerEvent
 import com.slark.api.SlarkPlayerState
 import java.util.concurrent.ConcurrentHashMap
@@ -69,6 +70,10 @@ class SlarkPlayerManager {
         }
 
         external fun createPlayer(path: String, start: Double, duration: Double): String
+
+        external fun createPlayerWithFlowConfig(
+            path: String, start: Double, duration: Double, flowConfig: SlarkFlowConfig
+        ): String
 
         external fun doAction(playerId: String, action: Int)
 

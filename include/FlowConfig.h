@@ -8,12 +8,6 @@
 
 namespace slark {
 
-enum class MediaSourceType : uint8_t {
-    Local,
-    Network,
-    Live,
-};
-
 struct SourceBackpressureConfig {
     double lowWatermarkSec = 3.0;
     double highWatermarkSec = 10.0;
@@ -36,7 +30,6 @@ struct BufferingConfig {
     double startBufferSec = 2.0;
     double rebufferScale = 1.5;
     int32_t starvationThreshold = 5;
-    bool isLiveSource = false;
 
     [[nodiscard]] double rebufferTargetSec() const noexcept {
         return startBufferSec * rebufferScale;
@@ -62,7 +55,7 @@ struct CatchUpConfig {
     }
 };
 
-struct PipelineFlowConfig {
+struct FlowConfig {
     SourceBackpressureConfig source;
     DecoderBackpressureConfig audioDecoder{.lowWatermarkFrames = 4, .highWatermarkFrames = 16};
     DecoderBackpressureConfig videoDecoder;
@@ -75,29 +68,6 @@ struct PipelineFlowConfig {
         return source.isValid() && audioDecoder.isValid() && videoDecoder.isValid() &&
                buffering.isValid() && catchUp.isValid() &&
                buffering.rebufferExitSec() < source.highWatermarkSec;
-    }
-
-    [[nodiscard]] static PipelineFlowConfig forSource(MediaSourceType type) noexcept {
-        PipelineFlowConfig cfg;
-        switch (type) {
-            case MediaSourceType::Local:
-                cfg.source.lowWatermarkSec = 2.0;
-                cfg.source.highWatermarkSec = 30.0;
-                cfg.buffering.startBufferSec = 0.0;
-                break;
-            case MediaSourceType::Network:
-                break;
-            case MediaSourceType::Live:
-                cfg.source.lowWatermarkSec = 1.0;
-                cfg.source.highWatermarkSec = 5.0;
-                cfg.buffering.startBufferSec = 1.0;
-                cfg.buffering.isLiveSource = true;
-                cfg.audioDecoder = {.lowWatermarkFrames = 2, .highWatermarkFrames = 8};
-                cfg.videoDecoder = {.lowWatermarkFrames = 1, .highWatermarkFrames = 4};
-                cfg.catchUp.maxDropPerVsync = 4;
-                break;
-        }
-        return cfg;
     }
 };
 

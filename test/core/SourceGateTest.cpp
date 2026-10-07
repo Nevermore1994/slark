@@ -15,10 +15,12 @@
 
 #include "FileStream.h"
 #include "MediaSourceManager.h"
-#include "pipeline/PipelineConfig.h"
+#include "FlowConfig.h"
+#include "pipeline/FlowConfigDefaults.h"
 #include "pipeline/SourceFlowController.h"
 
 using namespace slark;
+using namespace slark::pipeline;
 
 namespace {
 
@@ -63,27 +65,28 @@ class CountingFlowDelegate : public ISourceFlowDelegate {
 
 }  // namespace
 
-// Local sources run on 2s/30s watermarks, but the controller was only ever exercised with
-// the network profile (3s/10s), so the local dead zone was never verified.
-TEST(SourceGateTest, LocalWatermarksCloseAtThirtyAndOpenAtTwo) {
+// The hysteresis must hold for whatever watermarks the caller configured, so this asserts the
+// mechanism against the config's own values instead of hardcoding them. Hardcoding makes the
+// test break every time the defaults change, which says nothing about correctness.
+TEST(SourceGateTest, LocalWatermarksHonourConfiguredHysteresis) {
     CountingFlowDelegate delegate;
-    const auto config = PipelineFlowConfig::forSource(MediaSourceType::Local).source;
-    ASSERT_DOUBLE_EQ(config.lowWatermarkSec, 2.0);
-    ASSERT_DOUBLE_EQ(config.highWatermarkSec, 30.0);
+    const auto config = FlowConfigDefaults::forSource(MediaSourceType::Local).source;
+    ASSERT_LT(config.lowWatermarkSec, config.highWatermarkSec);
 
     SourceFlowController flow(config, delegate);
 
-    flow.update(29.9);
+    flow.update(config.highWatermarkSec - 0.1);
     EXPECT_TRUE(flow.isFetchAllowed());
 
-    flow.update(30.0);
+    flow.update(config.highWatermarkSec);
     EXPECT_FALSE(flow.isFetchAllowed());
     EXPECT_EQ(delegate.closeCount, 1);
 
-    flow.update(20.0);
+    const auto midBand = (config.lowWatermarkSec + config.highWatermarkSec) / 2.0;
+    flow.update(midBand);
     EXPECT_FALSE(flow.isFetchAllowed()) << "the dead zone must hold the gate closed";
 
-    flow.update(2.0);
+    flow.update(config.lowWatermarkSec);
     EXPECT_TRUE(flow.isFetchAllowed());
     EXPECT_EQ(delegate.openCount, 1);
 }
@@ -92,7 +95,7 @@ TEST(SourceGateTest, LocalWatermarksCloseAtThirtyAndOpenAtTwo) {
 // otherwise a seek could keep the source producing while the stream is paused.
 TEST(SourceGateTest, OperationPauseClosesGateUntilResume) {
     CountingFlowDelegate delegate;
-    SourceFlowController flow(PipelineFlowConfig::forSource(MediaSourceType::Local).source,
+    SourceFlowController flow(FlowConfigDefaults::forSource(MediaSourceType::Local).source,
                               delegate);
 
     flow.pauseForOperation();

@@ -8,6 +8,7 @@
 
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CMTime.h>
+#import "SlarkFlowConfig.h"
 typedef NS_ENUM(NSUInteger, SlarkPlayerState) {
     SlarkPlayerStateNotInited,
     SlarkPlayerStateInitializing,
@@ -101,6 +102,8 @@ typedef NS_ENUM(NSUInteger, SlarkPlayerRotation) {
 /**
  * Observer protocol for player notifications
  */
+NS_ASSUME_NONNULL_BEGIN
+
 @protocol ISlarkPlayerObserver <NSObject>
 - (void)notifyTime:(NSString*)playerId time:(double)time;
 - (void)notifyState:(NSString*)playerId state:(SlarkPlayerState)state;
@@ -117,11 +120,18 @@ typedef NS_ENUM(NSUInteger, SlarkPlayerRotation) {
 @property(nonatomic, assign, readonly) CMTime totalDuration;
 @property(nonatomic, assign, readonly) CMTime currentTime;
 @property(nonatomic, assign, readonly) BOOL isSeekable;
-@property(nonatomic, weak) id<ISlarkPlayerObserver> delegate;
+@property(nonatomic, weak, nullable) id<ISlarkPlayerObserver> delegate;
 
-- (instancetype)init:(NSString*)path;
+- (instancetype _Nonnull)init:(NSString* _Nonnull)path;
 
-- (instancetype)initWithTimeRange:(NSString*)path range:(CMTimeRange)range;
+- (instancetype _Nonnull)init:(NSString* _Nonnull)path
+                   flowConfig:(SlarkFlowConfig* _Nullable)flowConfig;
+
+- (instancetype _Nonnull)initWithTimeRange:(NSString* _Nonnull)path range:(CMTimeRange)range;
+
+- (instancetype _Nonnull)initWithTimeRange:(NSString* _Nonnull)path
+                                   range:(CMTimeRange)range
+                              flowConfig:(SlarkFlowConfig* _Nullable)flowConfig;
 
 - (void)prepare;
 
@@ -136,3 +146,5 @@ typedef NS_ENUM(NSUInteger, SlarkPlayerRotation) {
 - (void)seek:(double)seekToTime isAccurate:(BOOL)isAccurate;
 
 @end
+
+NS_ASSUME_NONNULL_END

@@ -6,11 +6,13 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 
 #include "IEGLContext.h"
 #include "PerfTypes.h"
+#include "FlowConfig.h"
 
 namespace slark {
 
@@ -48,14 +50,12 @@ struct ResourceItem {
 
 struct PlayerSetting {
     bool isLoop = false;
-    bool isMute = false;
     bool enableAudioSoftDecode = false;
     bool enableVideoSoftDecode = false;
     float volume = 100.0f;
     perf::PerfConfig perfConfig;
-    int32_t playerThreadTickMs = 10;
-    int32_t playedTimeTickMs = 200;
-    int32_t cacheTickMs = 500;
+
+    std::optional<FlowConfig> flowConfig;
 };
 
 struct PlayerParams {

@@ -78,7 +78,7 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
     [[nodiscard]] AVFrameRefPtr requestRender() noexcept;
 
  private:
-    void buildPipeline() noexcept;
+    void buildPipeline(const PlayerSetting& setting) noexcept;
 
     void handlePipelineEvent(PipelineEvent event, std::optional<PipelineError> error) noexcept;
 

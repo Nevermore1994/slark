@@ -31,12 +31,13 @@ constexpr double kSeekTargetToleranceSec = 0.001;
 constexpr auto kDiagnosticsInterval = std::chrono::milliseconds(500);
 }  // namespace
 
-PlayPipeline::PlayPipeline(PipelineFlowConfig config) noexcept : config_(std::move(config)) {
-    assert(config_.isValid() && "PipelineFlowConfig is invalid");
+PlayPipeline::PlayPipeline(FlowConfig config, pipeline::MediaSourceType sourceType) noexcept
+    : config_(std::move(config)), kIsLiveSource(sourceType == pipeline::MediaSourceType::Live) {
+    assert(config_.isValid() && "FlowConfig is invalid");
     clockSync_ = std::make_unique<ClockSync>();
     seekContext_ = std::make_unique<SeekContext>();
     sourceFlow_ = std::make_unique<SourceFlowController>(config_.source, *this);
-    bufferingTracker_ = std::make_unique<BufferingTracker>(config_.buffering, *this);
+    bufferingTracker_ = std::make_unique<BufferingTracker>(config_.buffering, *this, kIsLiveSource);
     connectComponents();
     LogI("PlayPipeline created");
 }
@@ -385,8 +386,7 @@ AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
              "videoTime={:.3f} cacheEndTime={:.3f}",
              masterTime, videoTime, cacheEnd);
         if (bufferingTracker_) {
-            bufferingTracker_->reportStarvation(!config_.buffering.isLiveSource &&
-                                                config_.buffering.startBufferSec == 0.0);
+            bufferingTracker_->signalStarvation();
         }
         return nullptr;
     }
@@ -1057,7 +1057,7 @@ void PlayPipeline::tryFirePipelineReady() noexcept {
         readiness_.readyDecoders < readiness_.expectedDecoders) {
         return;
     }
-    if (config_.buffering.isLiveSource && !checkLiveReadyCondition()) {
+    if (kIsLiveSource && !checkLiveReadyCondition()) {
         return;
     }
     if (bufferingTracker_) {
@@ -1141,7 +1141,7 @@ void PlayPipeline::handleDemuxHeader(const std::shared_ptr<IDemuxer>& demuxer) n
 }
 
 void PlayPipeline::updateLiveReadyFlags(const DemuxerResult& result) noexcept {
-    if (!config_.buffering.isLiveSource) {
+    if (!kIsLiveSource) {
         return;
     }
     if (!result.audioFrames.empty()) {

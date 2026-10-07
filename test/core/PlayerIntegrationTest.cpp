@@ -16,8 +16,10 @@
 #include "Player.h"
 #include "VideoInfo.h"
 #include "pipeline/PlayPipeline.h"
+#include "pipeline/FlowConfigDefaults.h"
 
 using namespace slark;
+using namespace slark::pipeline;
 using ::testing::_;
 using ::testing::AtLeast;
 
@@ -60,7 +62,6 @@ static std::unique_ptr<PlayerParams> makeParams(const std::string& path = "/dev/
     params->item.displayStart = 0.0;
     params->item.displayDuration = 0.0;
     params->setting.isLoop = false;
-    params->setting.isMute = false;
     params->setting.volume = 100.0f;
     return params;
 }
@@ -195,7 +196,8 @@ TEST(PlayerIntegrationTest, PreferredTsHeaderIsEmittedOnlyAfterTracksAreKnown) {
     config.preferredType = DemuxerType::TS;
     auto demuxer = std::make_shared<DemuxerComponent>(std::move(receiver), std::move(config));
 
-    PlayPipeline pipeline(PipelineFlowConfig::forSource(MediaSourceType::Local));
+    PlayPipeline pipeline(FlowConfigDefaults::forSource(MediaSourceType::Local),
+                          MediaSourceType::Local);
     pipeline.bindToCurrentThread();
     std::atomic<int32_t> headerCount{0};
     std::shared_ptr<AudioInfo> headerAudioInfo;

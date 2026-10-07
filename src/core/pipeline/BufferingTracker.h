@@ -4,11 +4,11 @@
 
 #pragma once
 
+#include <atomic>
 #include <optional>
 
-#include "PipelineConfig.h"
-#include "PipelineError.h"
-#include "PipelineEvent.h"
+#include "FlowConfig.h"
+#include "PipelineTypes.h"
 
 namespace slark {
 
@@ -20,9 +20,13 @@ struct IBufferingTrackerDelegate {
                                std::optional<PipelineError> error) noexcept = 0;
 };
 
+// Buffering state belongs to the pipeline owner thread. The render thread only announces
+// starvation through signalStarvation() and resetStarvationCount(); every threshold decision
+// and event stays on the owner thread.
 class BufferingTracker {
  public:
-    BufferingTracker(const BufferingConfig& config, IBufferingTrackerDelegate& delegate) noexcept;
+    BufferingTracker(const BufferingConfig& config, IBufferingTrackerDelegate& delegate,
+                     bool isLiveSource = false) noexcept;
 
     void update(double bufferedSec) noexcept;
 
@@ -36,10 +40,14 @@ class BufferingTracker {
         }
     }
 
-    void reportStarvation(bool isLocalSource) noexcept;
+    // Render thread entry: one announcement per frame it found nothing to draw. Counted, not
+    // flagged, so a tick that starved several times still accounts for each of them.
+    void signalStarvation() noexcept {
+        starvationSignals_.fetch_add(1, std::memory_order_relaxed);
+    }
 
     void resetStarvationCount() noexcept {
-        starvationCount_ = 0;
+        starvationCount_.store(0, std::memory_order_relaxed);
     }
 
     void reset() noexcept;
@@ -55,17 +63,20 @@ class BufferingTracker {
  private:
     void checkPrebufferComplete(double duration) noexcept;
     void checkRebufferComplete(double duration) noexcept;
+    void consumeStarvationSignals() noexcept;
     void fireEvent(PipelineEvent event, std::optional<PipelineError> error = std::nullopt) noexcept;
 
  private:
     BufferingConfig config_;
     IBufferingTrackerDelegate& delegate_;
+    const bool kIsLiveSource;
 
     bool sourceEof_ = false;
     bool isPrebuffering_ = false;
     bool isRebuffering_ = false;
     bool readyFired_ = false;
-    int32_t starvationCount_ = 0;
+    std::atomic<int32_t> starvationCount_{0};
+    std::atomic<int32_t> starvationSignals_{0};
 };
 
 }  // namespace slark

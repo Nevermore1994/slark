@@ -72,6 +72,26 @@ struct PlayerObserver final : public slark::IPlayerObserver {
     std::function<void(NSString*, SlarkPlayerEvent, NSString*)> notifyEventFunc;
 };
 
+static slark::FlowConfig toFlowConfig(SlarkFlowConfig* config) {
+    if (!config.source || !config.audioDecoder || !config.videoDecoder || !config.buffering ||
+        !config.catchUp) {
+        [NSException raise:NSInvalidArgumentException format:@"FlowConfig groups must not be nil"];
+    }
+    slark::FlowConfig result;
+    result.source.lowWatermarkSec = config.source.lowWatermarkSec;
+    result.source.highWatermarkSec = config.source.highWatermarkSec;
+    result.audioDecoder.lowWatermarkFrames = config.audioDecoder.lowWatermarkFrames;
+    result.audioDecoder.highWatermarkFrames = config.audioDecoder.highWatermarkFrames;
+    result.videoDecoder.lowWatermarkFrames = config.videoDecoder.lowWatermarkFrames;
+    result.videoDecoder.highWatermarkFrames = config.videoDecoder.highWatermarkFrames;
+    result.buffering.startBufferSec = config.buffering.startBufferSec;
+    result.buffering.rebufferScale = config.buffering.rebufferScale;
+    result.buffering.starvationThreshold = config.buffering.starvationThreshold;
+    result.catchUp.maxDropPerVsync = config.catchUp.maxDropPerVsync;
+    result.catchUp.seekFastForwardMs = config.catchUp.seekFastForwardMs;
+    return result;
+}
+
 @interface SlarkPlayer () {
     std::unique_ptr<slark::Player> _player;
     std::shared_ptr<PlayerObserver> _observer;
@@ -83,13 +103,26 @@ struct PlayerObserver final : public slark::IPlayerObserver {
 @implementation SlarkPlayer
 
 - (instancetype)init:(NSString*)path {
-    return [self initWithTimeRange:path range:kCMTimeRangeInvalid];
+    return [self init:path flowConfig:nil];
+}
+
+- (instancetype)init:(NSString*)path flowConfig:(SlarkFlowConfig*)flowConfig {
+    return [self initWithTimeRange:path range:kCMTimeRangeInvalid flowConfig:flowConfig];
 }
 
 - (instancetype)initWithTimeRange:(NSString*)path range:(CMTimeRange)range {
+    return [self initWithTimeRange:path range:range flowConfig:nil];
+}
+
+- (instancetype)initWithTimeRange:(NSString*)path
+                          range:(CMTimeRange)range
+                     flowConfig:(SlarkFlowConfig*)flowConfig {
     if (self = [super init]) {
         auto params = std::make_unique<slark::PlayerParams>();
         params->item.path = [path UTF8String];
+        if (flowConfig) {
+            params->setting.flowConfig = toFlowConfig(flowConfig);
+        }
         auto context = slark::createGLContext();
         context->init(nullptr);
         if (CMTIMERANGE_IS_VALID(range)) {

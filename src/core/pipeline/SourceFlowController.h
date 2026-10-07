@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "PipelineConfig.h"
+#include "FlowConfig.h"
 #include "WatermarkGate.h"
 
 namespace slark {
@@ -42,8 +42,6 @@ class SourceFlowController {
 
     [[nodiscard]] bool isProductionSuspended() const noexcept;
 
-    // What the source gate answers: no production while suspended by a watermark or held by
-    // an operation pause.
     [[nodiscard]] bool isFetchAllowed() const noexcept;
 
  private:

@@ -48,10 +48,12 @@ macro(add_ios_framework)
         ${IOS_DIR}/interface/SlarkPlayer.h
         ${IOS_DIR}/interface/SlarkViewController.h
         ${IOS_DIR}/interface/SlarkGraphicsConfig.h
+        ${IOS_DIR}/interface/SlarkFlowConfig.h
         ${IOS_DIR}/interface/iOSUtil.h
         ${IOS_DIR}/SlarkPlayer.mm
         ${IOS_DIR}/SlarkViewController.mm
         ${IOS_DIR}/SlarkGraphicsConfig.mm
+        ${IOS_DIR}/SlarkFlowConfig.mm
         ${IOS_DIR}/iOSUtil.mm
     )
 

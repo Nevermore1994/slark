@@ -23,10 +23,10 @@
 #include "IPipelineComponent.h"
 #include "IStream.h"
 #include "MediaDefs.h"
+#include "MediaSourceType.h"
 #include "NonCopyable.h"
-#include "PipelineConfig.h"
-#include "PipelineError.h"
-#include "PipelineEvent.h"
+#include "FlowConfig.h"
+#include "PipelineTypes.h"
 #include "PlayerTypes.h"
 #include "SeekContext.h"
 #include "SourceFlowController.h"
@@ -64,7 +64,7 @@ class PlayPipeline : public NonCopyMovable,
                      public ISourceFlowDelegate,
                      public IBufferingTrackerDelegate {
  public:
-    explicit PlayPipeline(PipelineFlowConfig config) noexcept;
+    PlayPipeline(FlowConfig config, pipeline::MediaSourceType sourceType) noexcept;
 
     ~PlayPipeline();
 
@@ -298,7 +298,8 @@ class PlayPipeline : public NonCopyMovable,
     void registerComponents() noexcept;
 
  private:
-    PipelineFlowConfig config_;
+    FlowConfig config_;
+    const bool kIsLiveSource;
     std::thread::id ownerThreadId_;
     PipelineEventCallback onEvent_;
     MediaInfo mediaInfo_;

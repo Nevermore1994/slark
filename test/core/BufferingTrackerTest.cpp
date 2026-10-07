@@ -9,7 +9,10 @@
 
 #include <optional>
 
+#include "pipeline/FlowConfigDefaults.h"
+
 using namespace slark;
+using namespace slark::pipeline;
 using ::testing::_;
 using ::testing::Eq;
 using ::testing::NiceMock;
@@ -28,8 +31,12 @@ constexpr MediaSourceType kNetwork = MediaSourceType::Network;
 constexpr MediaSourceType kLocal = MediaSourceType::Local;
 
 BufferingConfig networkBuffering() noexcept {
-    return PipelineFlowConfig::forSource(kNetwork).buffering;
+    return FlowConfigDefaults::forSource(kNetwork).buffering;
 }
+
+// Between the rebuffer target and its exit level: sampling here neither starts nor clears
+// rebuffering by itself, so starvation is the only thing that can move the state.
+constexpr double kAboveRebufferTarget = 3.5;
 }  // namespace
 
 TEST(BufferingTrackerTest, StartPrebufferingFiresImmediatelyWhenStartBufferIsZero) {
@@ -141,7 +148,7 @@ TEST(BufferingTrackerTest, RebufferingHasADeadZoneAboveTheTarget) {
 // the old `<=` fired BufferingStart and BufferingEnd within the same sample.
 TEST(BufferingTrackerTest, LocalSourceNeverFlapsOnZeroTarget) {
     NiceMock<MockBufferingTrackerDelegate> delegate;
-    const auto cfg = PipelineFlowConfig::forSource(kLocal).buffering;
+    const auto cfg = FlowConfigDefaults::forSource(kLocal).buffering;
     ASSERT_DOUBLE_EQ(cfg.rebufferTargetSec(), 0.0);
 
     EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);
@@ -228,8 +235,9 @@ TEST(BufferingTrackerTest, StarvationTriggersRebufferingAfterThreshold) {
     tracker.update(5.0);
 
     for (int32_t i = 0; i < cfg.starvationThreshold; ++i) {
-        tracker.reportStarvation(false);
+        tracker.signalStarvation();
     }
+    tracker.update(kAboveRebufferTarget);
     EXPECT_TRUE(tracker.isRebuffering());
 }
 
@@ -245,8 +253,9 @@ TEST(BufferingTrackerTest, StarvationBelowThresholdDoesNotRebuffer) {
     tracker.update(5.0);
 
     for (int32_t i = 0; i < cfg.starvationThreshold - 1; ++i) {
-        tracker.reportStarvation(false);
+        tracker.signalStarvation();
     }
+    tracker.update(kAboveRebufferTarget);
     EXPECT_FALSE(tracker.isRebuffering());
 }
 
@@ -262,13 +271,14 @@ TEST(BufferingTrackerTest, StarvationHonorsConfiguredThreshold) {
     tracker.startPrebuffering();
     tracker.update(5.0);
 
-    tracker.reportStarvation(false);
+    tracker.signalStarvation();
+    tracker.update(kAboveRebufferTarget);
     EXPECT_TRUE(tracker.isRebuffering());
 }
 
 TEST(BufferingTrackerTest, StarvationIgnoredForLocalSource) {
     NiceMock<MockBufferingTrackerDelegate> delegate;
-    BufferingTracker tracker(networkBuffering(), delegate);
+    BufferingTracker tracker(FlowConfigDefaults::forSource(kLocal).buffering, delegate);
 
     EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);
     EXPECT_CALL(delegate, onBufferEvent(_, _)).Times(0);
@@ -277,9 +287,47 @@ TEST(BufferingTrackerTest, StarvationIgnoredForLocalSource) {
     tracker.update(5.0);
 
     for (int32_t i = 0; i < 10; ++i) {
-        tracker.reportStarvation(true);
+        tracker.signalStarvation();
     }
+    tracker.update(5.0);
     EXPECT_FALSE(tracker.isRebuffering());
+}
+
+TEST(BufferingTrackerTest, LiveSourceWithZeroStartBufferCountsStarvation) {
+    NiceMock<MockBufferingTrackerDelegate> delegate;
+    auto cfg = FlowConfigDefaults::forSource(MediaSourceType::Live).buffering;
+    cfg.startBufferSec = 0.0;
+    cfg.starvationThreshold = 1;
+
+    EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);
+    EXPECT_CALL(delegate, onBufferEvent(PipelineEvent::BufferingStart, _)).Times(1);
+
+    BufferingTracker tracker(cfg, delegate, true);
+    tracker.startPrebuffering();
+    tracker.signalStarvation();
+    tracker.update(1.0);
+    EXPECT_TRUE(tracker.isRebuffering());
+}
+
+// The render thread announces starvation, it must not decide anything: a signal alone leaves
+// the state untouched until the owner thread samples.
+TEST(BufferingTrackerTest, StarvationSignalWaitsForTheNextSample) {
+    NiceMock<MockBufferingTrackerDelegate> delegate;
+    auto cfg = networkBuffering();
+    cfg.starvationThreshold = 1;
+
+    EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);
+    EXPECT_CALL(delegate, onBufferEvent(PipelineEvent::BufferingStart, _)).Times(1);
+
+    BufferingTracker tracker(cfg, delegate);
+    tracker.startPrebuffering();
+    tracker.update(5.0);
+
+    tracker.signalStarvation();
+    EXPECT_FALSE(tracker.isRebuffering());
+
+    tracker.update(kAboveRebufferTarget);
+    EXPECT_TRUE(tracker.isRebuffering());
 }
 
 TEST(BufferingTrackerTest, ResetStarvationCountDefersRebuffering) {
@@ -293,11 +341,13 @@ TEST(BufferingTrackerTest, ResetStarvationCountDefersRebuffering) {
     tracker.startPrebuffering();
     tracker.update(5.0);
 
-    tracker.reportStarvation(false);
-    tracker.reportStarvation(false);
+    tracker.signalStarvation();
+    tracker.signalStarvation();
+    tracker.update(kAboveRebufferTarget);
     tracker.resetStarvationCount();
-    tracker.reportStarvation(false);
-    tracker.reportStarvation(false);
+    tracker.signalStarvation();
+    tracker.signalStarvation();
+    tracker.update(kAboveRebufferTarget);
     EXPECT_FALSE(tracker.isRebuffering());
 }
 
@@ -322,7 +372,7 @@ TEST(BufferingTrackerTest, ResetClearsAllState) {
 // rather than on the first sample.
 TEST(BufferingTrackerTest, LocalSourceIsReadyImmediately) {
     NiceMock<MockBufferingTrackerDelegate> delegate;
-    auto cfg = PipelineFlowConfig::forSource(kLocal).buffering;
+    auto cfg = FlowConfigDefaults::forSource(kLocal).buffering;
     ASSERT_DOUBLE_EQ(cfg.startBufferSec, 0.0);
 
     EXPECT_CALL(delegate, onPrebufferComplete()).Times(1);

@@ -7,7 +7,10 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "pipeline/FlowConfigDefaults.h"
+
 using namespace slark;
+using namespace slark::pipeline;
 using ::testing::NiceMock;
 
 class MockSourceFlowDelegate : public ISourceFlowDelegate {
@@ -22,7 +25,7 @@ namespace {
 constexpr MediaSourceType kNetwork = MediaSourceType::Network;
 
 SourceBackpressureConfig networkSource() noexcept {
-    return PipelineFlowConfig::forSource(kNetwork).source;
+    return FlowConfigDefaults::forSource(kNetwork).source;
 }
 }  // namespace
 

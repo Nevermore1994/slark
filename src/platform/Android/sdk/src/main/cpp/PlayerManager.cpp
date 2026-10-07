@@ -1,12 +1,16 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
+#include <optional>
+#include <string>
+#include <string_view>
+
 #include "GLContextManager.h"
 #include "JNICache.h"
 #include "JNICall.h"
 #include "JNIEnvGuard.h"
+#include "JNIFieldReader.h"
 #include "JNIMarshal.h"
-#include "JNISignature.h"
 #include "Log.hpp"
 #include "Manager.hpp"
 #include "Player.h"
@@ -24,13 +28,122 @@ using PlayerObserverManager = Manager<PlayerObserver>;
 using namespace slark;
 using namespace slark::JNI;
 
-extern "C" JNIEXPORT jstring JNICALL
-Java_com_slark_sdk_SlarkPlayerManager_00024Companion_createPlayer(JNIEnv* env,
-                                                                  jobject /*thiz*/,
-                                                                  jstring path,
-                                                                  jdouble start,
-                                                                  jdouble duration) {
+namespace {
+
+constexpr std::string_view kSourceSignature = "Lcom/slark/api/SlarkFlowConfig$Source;";
+constexpr std::string_view kDecoderSignature = "Lcom/slark/api/SlarkFlowConfig$Decoder;";
+constexpr std::string_view kBufferingSignature = "Lcom/slark/api/SlarkFlowConfig$Buffering;";
+constexpr std::string_view kCatchUpSignature = "Lcom/slark/api/SlarkFlowConfig$CatchUp;";
+
+void raiseIllegalArgument(JNIEnv* env, std::string_view message) {
+    if (!env || env->ExceptionCheck()) {
+        return;
+    }
+    ClassReference errorClass(env, env->FindClass("java/lang/IllegalArgumentException"));
+    if (errorClass) {
+        env->ThrowNew(errorClass.get(), std::string(message).c_str());
+    }
+}
+
+template <typename Group, typename... Fields>
+[[nodiscard]] JNI::GroupReadResult readFlowGroup(JNIEnv* env,
+                                                 jobject object,
+                                                 jclass cls,
+                                                 std::string_view name,
+                                                 std::string_view signature,
+                                                 Group& group,
+                                                 Fields... fields) {
+    const auto value = JNI::readObjectField(env, object, cls, name, signature);
+    if (!value) {
+        return {name, false};
+    }
+    return {name, JNI::readFields(env, value.get(), group, fields...)};
+}
+
+[[nodiscard]] JNI::GroupReadResult readSource(JNIEnv* env,
+                                              jobject object,
+                                              jclass cls,
+                                              SourceBackpressureConfig& group) {
+    return readFlowGroup(env, object, cls, "source", kSourceSignature, group,
+                         field("lowWatermarkSec", &SourceBackpressureConfig::lowWatermarkSec),
+                         field("highWatermarkSec", &SourceBackpressureConfig::highWatermarkSec));
+}
+
+[[nodiscard]] JNI::GroupReadResult readDecoder(JNIEnv* env,
+                                               jobject object,
+                                               jclass cls,
+                                               std::string_view name,
+                                               DecoderBackpressureConfig& group) {
+    return readFlowGroup(
+        env, object, cls, name, kDecoderSignature, group,
+        field("lowWatermarkFrames", &DecoderBackpressureConfig::lowWatermarkFrames),
+        field("highWatermarkFrames", &DecoderBackpressureConfig::highWatermarkFrames));
+}
+
+[[nodiscard]] JNI::GroupReadResult readBuffering(JNIEnv* env,
+                                                 jobject object,
+                                                 jclass cls,
+                                                 BufferingConfig& group) {
+    return readFlowGroup(env, object, cls, "buffering", kBufferingSignature, group,
+                         field("startBufferSec", &BufferingConfig::startBufferSec),
+                         field("rebufferScale", &BufferingConfig::rebufferScale),
+                         field("starvationThreshold", &BufferingConfig::starvationThreshold));
+}
+
+[[nodiscard]] JNI::GroupReadResult readCatchUp(JNIEnv* env,
+                                               jobject object,
+                                               jclass cls,
+                                               CatchUpConfig& group) {
+    return readFlowGroup(env, object, cls, "catchUp", kCatchUpSignature, group,
+                         field("maxDropPerVsync", &CatchUpConfig::maxDropPerVsync),
+                         field("seekFastForwardMs", &CatchUpConfig::seekFastForwardMs));
+}
+
+[[nodiscard]] bool readFlowConfig(JNIEnv* env, jobject object, FlowConfig& config) {
+    if (!env) {
+        return false;
+    }
+    if (!object) {
+        raiseIllegalArgument(env, "flowConfig must not be null");
+        return false;
+    }
+    if (env->ExceptionCheck()) {
+        return false;
+    }
+    ClassReference cls(env, env->GetObjectClass(object));
+    if (!cls) {
+        return false;
+    }
+    const auto result = JNI::readGroups(
+        [&] {
+            return readSource(env, object, cls.get(), config.source);
+        },
+        [&] {
+            return readDecoder(env, object, cls.get(), "audioDecoder", config.audioDecoder);
+        },
+        [&] {
+            return readDecoder(env, object, cls.get(), "videoDecoder", config.videoDecoder);
+        },
+        [&] {
+            return readBuffering(env, object, cls.get(), config.buffering);
+        },
+        [&] {
+            return readCatchUp(env, object, cls.get(), config.catchUp);
+        });
+    if (!result.ok) {
+        raiseIllegalArgument(env, std::string(result.name).append(" must not be null"));
+        return false;
+    }
+    return true;
+}
+
+jstring createPlayer(JNIEnv* env,
+                     jstring path,
+                     jdouble start,
+                     jdouble duration,
+                     std::optional<FlowConfig> flowConfig) {
     auto playerParams = std::make_unique<PlayerParams>();
+    playerParams->setting.flowConfig = std::move(flowConfig);
     playerParams->item.path = JNI::FromJVM::str(env, path);
     playerParams->item.displayStart = start;
     playerParams->item.displayDuration = duration;
@@ -50,6 +163,31 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_createPlayer(JNIEnv* env,
     player->setRenderImpl(render);
     VideoRenderManager::shareInstance().add(playerId, render);
     return JNI::ToJVM::str(env, playerId).detach();
+}
+
+}  // namespace
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_slark_sdk_SlarkPlayerManager_00024Companion_createPlayer(JNIEnv* env,
+                                                                  jobject /*thiz*/,
+                                                                  jstring path,
+                                                                  jdouble start,
+                                                                  jdouble duration) {
+    return createPlayer(env, path, start, duration, std::nullopt);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_slark_sdk_SlarkPlayerManager_00024Companion_createPlayerWithFlowConfig(JNIEnv* env,
+                                                                                jobject /*thiz*/,
+                                                                                jstring path,
+                                                                                jdouble start,
+                                                                                jdouble duration,
+                                                                                jobject config) {
+    FlowConfig flowConfig;
+    if (!readFlowConfig(env, config, flowConfig)) {
+        return nullptr;
+    }
+    return createPlayer(env, path, start, duration, flowConfig);
 }
 
 extern "C" JNIEXPORT void JNICALL

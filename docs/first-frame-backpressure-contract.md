@@ -214,7 +214,8 @@ steady flow
 - `src/core/pipeline/SourceFlowController.cpp`
 - `src/core/pipeline/BufferingTracker.h`
 - `src/core/pipeline/BufferingTracker.cpp`
-- `src/core/pipeline/PipelineConfig.h`
+- `include/FlowConfig.h`
+- `src/core/pipeline/FlowConfigDefaults.h`
 - `src/core/pipeline/PlayPipeline.h`
 - `src/core/pipeline/PlayPipeline.cpp`
 - `test/core/HLSStreamTest.cpp`

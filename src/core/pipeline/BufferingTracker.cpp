@@ -9,8 +9,9 @@
 namespace slark {
 
 BufferingTracker::BufferingTracker(const BufferingConfig& config,
-                                   IBufferingTrackerDelegate& delegate) noexcept
-    : config_(config), delegate_(delegate) {}
+                                   IBufferingTrackerDelegate& delegate,
+                                   bool isLiveSource) noexcept
+    : config_(config), delegate_(delegate), kIsLiveSource(isLiveSource) {}
 
 void BufferingTracker::update(double bufferedSec) noexcept {
     const bool isStarting = isPrebuffering_;
@@ -29,6 +30,10 @@ void BufferingTracker::update(double bufferedSec) noexcept {
     }
 
     checkRebufferComplete(bufferedSec);
+
+    // Consumed after the rebuffer check: a starvation start raised here survives at least one
+    // tick instead of being cleared by the exit check above in the same sample.
+    consumeStarvationSignals();
 }
 
 void BufferingTracker::startPrebuffering() noexcept {
@@ -41,14 +46,19 @@ void BufferingTracker::startPrebuffering() noexcept {
     }
 }
 
-void BufferingTracker::reportStarvation(bool isLocalSource) noexcept {
-    if (isLocalSource) {
+void BufferingTracker::consumeStarvationSignals() noexcept {
+    const int32_t signals = starvationSignals_.exchange(0, std::memory_order_acq_rel);
+    if (signals == 0) {
         return;
     }
-    ++starvationCount_;
-    if (starvationCount_ >= config_.starvationThreshold && !isRebuffering_ && readyFired_) {
+    if (!kIsLiveSource && config_.startBufferSec == 0.0) {
+        return;
+    }
+    const int32_t count = starvationCount_.load(std::memory_order_relaxed) + signals;
+    starvationCount_.store(count, std::memory_order_relaxed);
+    if (count >= config_.starvationThreshold && !isRebuffering_ && readyFired_) {
         isRebuffering_ = true;
-        LogI("starvation -> BufferingStart, count={}", starvationCount_);
+        LogI("starvation -> BufferingStart, count={}", count);
         fireEvent(PipelineEvent::BufferingStart);
     }
 }
@@ -58,7 +68,8 @@ void BufferingTracker::reset() noexcept {
     isPrebuffering_ = false;
     isRebuffering_ = false;
     readyFired_ = false;
-    starvationCount_ = 0;
+    starvationCount_.store(0, std::memory_order_relaxed);
+    starvationSignals_.store(0, std::memory_order_relaxed);
 }
 
 void BufferingTracker::checkPrebufferComplete(double duration) noexcept {

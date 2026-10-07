@@ -5,7 +5,10 @@
 #pragma once
 
 #include <atomic>
-#include <functional>
+#include <concepts>
+#include <utility>
+
+#include "MoveOnlyFunction.hpp"
 
 namespace slark {
 
@@ -15,12 +18,12 @@ struct WatermarkConfig {
     Level high{};
 };
 
-// The single hysteresis decision shared by every backpressure point in the pipeline.
-// A gate closes at high and only reopens at low, so the band between them is a dead zone
-// that keeps the current state. Misconfigured watermarks (high <= low) degrade to "keep
-// the current state" instead of toggling on every sample.
+// Misconfigured watermarks (high <= low) keep the current state instead of toggling on every
+// sample.
 template <typename Level>
-[[nodiscard]] bool shouldCloseGate(Level current, Level low, Level high, bool closed) noexcept {
+    requires std::totally_ordered<Level>
+[[nodiscard]] constexpr bool shouldCloseGate(Level current, Level low, Level high,
+                                             bool closed) noexcept {
     if (high <= low) {
         return closed;
     }
@@ -30,21 +33,16 @@ template <typename Level>
     return current >= high;
 }
 
-// Hysteresis gate driven by two independent paths:
-//   - watermark: update() closes at high (edge triggered) and opens at low. Opening is a
-//     level signal, so capacity may be re-announced on every sample below the low watermark.
-//   - operation: forceClose()/forceOpen() for seek / track switch / stop. A watermark sample
-//     never releases an operation pause, so update() is a no-op while forced.
-//
-// reset() drops the watermark state only and never touches the delegate: releasing an
-// operation pause is always an explicit forceOpen().
-//
-// The two flags are atomic because the paths can run on different threads (the decoder
-// worker samples while the owner thread pauses) and each flag is written by only one of them.
+// Two independent paths drive the gate:
+//   - watermark: update() closes at high (edge triggered) and opens at low (level signal).
+//   - operation: forceClose()/forceOpen(). A watermark sample never releases an operation pause.
+// reset() clears the watermark state only, so releasing an operation pause stays explicit.
+// Each flag is written by one path and read by the other, hence the atomics.
 template <typename Level>
+    requires std::totally_ordered<Level>
 class WatermarkGate {
  public:
-    using Action = std::function<void()>;
+    using Action = MoveOnlyFunction<void()>;
 
     struct Actions {
         Action closeGate;
@@ -107,7 +105,7 @@ class WatermarkGate {
     }
 
  private:
-    static void notify(const Action& action) noexcept {
+    static void notify(Action& action) noexcept {
         if (action) {
             action();
         }

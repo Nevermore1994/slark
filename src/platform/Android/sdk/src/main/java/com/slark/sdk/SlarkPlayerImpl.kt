@@ -303,7 +303,9 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
                 throw IllegalArgumentException("dataSource is empty")
             }
             val (start, duration) = config.timeRange.get()
-            val playerId = SlarkPlayerManager.createPlayer(config.dataSource, start, duration)
+            val playerId = config.flowConfig?.let {
+                SlarkPlayerManager.createPlayerWithFlowConfig(config.dataSource, start, duration, it)
+            } ?: SlarkPlayerManager.createPlayer(config.dataSource, start, duration)
             val player = SlarkPlayerImpl(config, playerId)
             SlarkPlayerManager.addPlayer(playerId, player)
             return player
