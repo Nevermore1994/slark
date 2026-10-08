@@ -52,6 +52,11 @@ class CancellationToken {
     // Register a cancel callback, returns a registration handle (invalid when already cancelled)
     [[nodiscard]] CancellationTokenRegistration registerCallback(Callback callback) const;
 
+    // Registers the callback, or runs it immediately when the token is already cancelled.
+    // This closes the check/register window in one place: a cancel that lands between
+    // "checked isCancelled()" and "registered the callback" would otherwise be lost.
+    [[nodiscard]] CancellationTokenRegistration registerCallbackOrRun(Callback callback) const;
+
     // Unregister a specific callback
     bool unregisterCallback(TokenId tokenId) const noexcept {
         if (tokenId == 0) {
@@ -127,6 +132,24 @@ inline CancellationTokenRegistration CancellationToken::registerCallback(Callbac
     return CancellationTokenRegistration(state_, tokenId);
 }
 
+inline CancellationTokenRegistration CancellationToken::registerCallbackOrRun(
+    Callback callback) const {
+    Callback toRunNow;
+    {
+        std::lock_guard<std::mutex> lock(state_->mutex);
+        if (!state_->cancelled.load(std::memory_order_acquire)) {
+            auto tokenId = ++state_->nextTokenId;
+            state_->callbackMap[tokenId] = std::move(callback);
+            return CancellationTokenRegistration(state_, tokenId);
+        }
+        toRunNow = std::move(callback);
+    }
+    if (toRunNow) {
+        toRunNow();
+    }
+    return CancellationTokenRegistration();
+}
+
 inline CancellationTokenRegistration::CancellationTokenRegistration(
     CancellationTokenRegistration&& other) noexcept
     : weakState_(std::move(other.weakState_)), tokenId_(other.tokenId_) {
@@ -171,7 +194,7 @@ inline CancellationToken CancellationToken::link(const CancellationToken& a,
     }
     auto weakLinked = std::weak_ptr<State>(linked.state_);
     auto regA = std::make_shared<CancellationTokenRegistration>(
-        a.registerCallback([weakLinked]() {
+        a.registerCallbackOrRun([weakLinked]() {
             if (auto linkedState = weakLinked.lock()) {
                 CancellationToken t;
                 t.state_ = std::move(linkedState);
@@ -179,7 +202,7 @@ inline CancellationToken CancellationToken::link(const CancellationToken& a,
             }
         }));
     auto regB = std::make_shared<CancellationTokenRegistration>(
-        b.registerCallback([weakLinked]() {
+        b.registerCallbackOrRun([weakLinked]() {
             if (auto linkedState = weakLinked.lock()) {
                 CancellationToken t;
                 t.state_ = std::move(linkedState);

@@ -470,6 +470,16 @@ class AsyncGeneratorPromise {
         return frameControl_;
     }
 
+    // Execution domain this generator's producer must run on. Null keeps the historical
+    // behaviour (resume on the notifying thread).
+    [[nodiscard]] const std::shared_ptr<IExecutor>& executor() const noexcept {
+        return executor_;
+    }
+
+    void setExecutor(std::shared_ptr<IExecutor> executor) noexcept {
+        executor_ = std::move(executor);
+    }
+
  private:
     std::optional<T> value_;
     ExecutionLease continuationLease_;
@@ -477,6 +487,7 @@ class AsyncGeneratorPromise {
     std::shared_ptr<CoroutineFrameControl> frameControl_ =
         std::make_shared<CoroutineFrameControl>();
     std::shared_ptr<state_type> state_;
+    std::shared_ptr<IExecutor> executor_;
 };
 
 template <typename T>
@@ -542,6 +553,13 @@ class AsyncGeneratorNextAwaiter {
         auto& promise = handle.promise();
         if (promise.hasValue() || promise.isCompleted()) {
             return consumer;
+        }
+
+        // Local/explicit domain wins; the consumer's domain is only a fallback.
+        if constexpr (requires { consumer.promise().executor(); }) {
+            if (promise.executor() == nullptr) {
+                promise.setExecutor(consumer.promise().executor());
+            }
         }
 
         uint64_t generation = 0;
@@ -654,6 +672,16 @@ class [[nodiscard]] AsyncGenerator : public NonCopyable {
     void close() noexcept {
         if (state_) {
             state_->close();
+        }
+    }
+
+    // Binds the producer to an execution domain before it is first driven.
+    void setExecutor(std::shared_ptr<IExecutor> executor) noexcept {
+        if (state_ == nullptr || executor == nullptr) {
+            return;
+        }
+        if (auto producer = state_->producer()) {
+            handle_type::from_address(producer.address()).promise().setExecutor(executor);
         }
     }
 

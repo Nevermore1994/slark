@@ -105,11 +105,13 @@ void EventLoop::unregisterFd(int32_t fd) noexcept {
         std::lock_guard l(fdMutex_);
         auto it = fdSlots_.find(fd);
         if (it != fdSlots_.end()) {
+            // A waiter still armed here will never receive an event: the fd is going away.
+            // Wake it with a terminal notification instead of a silent disarm.
             if (it->second.hasRead && it->second.readReg.gate) {
-                it->second.readReg.gate->disarm();
+                it->second.readReg.gate->signalTerminal();
             }
             if (it->second.hasWrite && it->second.writeReg.gate) {
-                it->second.writeReg.gate->disarm();
+                it->second.writeReg.gate->signalTerminal();
             }
             for (auto t = tokenMap_.begin(); t != tokenMap_.end();) {
                 if (t->second.first == fd) {
@@ -223,7 +225,7 @@ EventLoop::RegistrationToken EventLoop::registerContinuation(
     if (hasTarget) {
         LogW("EventLoop: overwriting pending waiter on fd={}", fd);
         if (target.gate) {
-            target.gate->disarm();
+            target.gate->signalTerminal();
         }
         for (auto token = tokenMap_.begin(); token != tokenMap_.end();) {
             if (token->second.first == fd && token->second.second == interest) {
@@ -236,6 +238,19 @@ EventLoop::RegistrationToken EventLoop::registerContinuation(
     target.gate = gate;
     hasTarget = true;
     return createToken(fd, interest, std::move(gate));
+}
+
+EventLoop::RegistrationToken EventLoop::registerContinuationWithInterest(
+    int32_t fd,
+    FdInterest interest,
+    std::shared_ptr<ResumeGate> gate) noexcept {
+    auto token = registerContinuation(fd, interest, gate);
+    if (interest == FdInterest::Read) {
+        setReadable(fd, true);
+    } else {
+        setWritable(fd, true);
+    }
+    return token;
 }
 
 std::pair<EventLoop::FdRegistration, bool> EventLoop::takeRegistration(

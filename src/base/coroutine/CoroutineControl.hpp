@@ -11,6 +11,8 @@
 #include <utility>
 #include <vector>
 
+#include "Executor.h"
+
 namespace slark {
 
 class CoroutineFrameControl;
@@ -111,6 +113,23 @@ class CoroutineFrameControl final {
         return destroyed_ || !handle || handle.done();
     }
 
+    // Releases single-execution ownership. Called when the frame is about to park on an
+    // external wait or reaches its final suspend. Idempotent.
+    void endExecution() noexcept {
+        std::lock_guard lock(mutex_);
+        running_ = false;
+    }
+
+    // Number of resumes refused because the frame was already executing. Non-zero means a
+    // caller tried to drive the same frame from more than one execution context.
+    [[nodiscard]] uint32_t executionConflicts() const noexcept {
+        std::lock_guard lock(mutex_);
+        return executionConflicts_;
+    }
+
+    // Resumes the frame. Holds single-execution ownership for the whole execution: a
+    // concurrent resume is a scheduling conflict, counted and refused rather than running
+    // the same frame on two threads.
     bool resume(std::coroutine_handle<> handle) noexcept {
         std::coroutine_handle<> deferredHandle;
         bool outermost = false;
@@ -119,12 +138,18 @@ class CoroutineFrameControl final {
             if (destroyed_ || !handle || handle.done()) {
                 return false;
             }
+            if (running_) {
+                ++executionConflicts_;
+                return false;
+            }
+            running_ = true;
             ++activeResumes_;
             outermost = detail::coroutineResumeDepth == 0;
             ++detail::coroutineResumeDepth;
             handle.resume();
             --detail::coroutineResumeDepth;
             --activeResumes_;
+            running_ = false;
             if (activeCount() == 0) {
                 deferredHandle = std::exchange(deferredHandle_, nullptr);
             }
@@ -173,8 +198,10 @@ class CoroutineFrameControl final {
 
     mutable std::recursive_mutex mutex_;
     bool destroyed_{false};
+    bool running_{false};
     uint32_t activeResumes_{0};
     uint32_t activeLeases_{0};
+    uint32_t executionConflicts_{0};
     std::coroutine_handle<> deferredHandle_;
 
     friend class ExecutionLease;
@@ -329,9 +356,7 @@ class ResumeGate final {
             frameControl = frameControl_;
         }
 
-        if (frameControl) {
-            frameControl->resume(handle);
-        }
+        dispatchResumeLocked(std::move(frameControl), handle);
     }
 
     void disarm() noexcept {
@@ -341,17 +366,79 @@ class ResumeGate final {
         }
     }
 
+    // Terminal notification: a wait that can no longer be satisfied by its event source
+    // (fd unregistered, waiter replaced, loop stopped) must still wake the suspended
+    // coroutine. Silent disarm would leave it parked forever; the awaiter reports
+    // "not ready" via consumeNotReady() instead.
+    void signalTerminal() noexcept {
+        std::shared_ptr<CoroutineFrameControl> frameControl;
+        std::coroutine_handle<> handle;
+        {
+            std::unique_lock lock(mutex_);
+            notReady_ = true;
+            if (state_ == State::Pending) {
+                state_ = State::Signaled;
+                return;
+            }
+            if (state_ != State::Armed) {
+                return;
+            }
+            state_ = State::Resuming;
+            frameControl = frameControl_;
+            handle = handle_;
+        }
+
+        dispatchResumeLocked(std::move(frameControl), handle);
+    }
+
+    [[nodiscard]] bool consumeNotReady() noexcept {
+        std::lock_guard lock(mutex_);
+        return std::exchange(notReady_, false);
+    }
+
+    // Execution domain this frame must be resumed on. Owned, because a gate can outlive
+    // the code that created it (it is held by fd/timer/cancel callbacks).
+    void setExecutor(std::shared_ptr<IExecutor> executor) noexcept {
+        executor_ = std::move(executor);
+    }
+
  private:
+    // Dispatches the already-claimed resume to the frame's execution domain. Follows the
+    // existing precedent in CoScope/when_all: executor->execute({ control->resume(handle) }).
+    // Must be called without holding mutex_: the resumed coroutine may re-enter this gate.
+    void dispatchResumeLocked(std::shared_ptr<CoroutineFrameControl> frameControl,
+                              std::coroutine_handle<> handle) noexcept {
+        const auto executor = executor_;
+        if (executor != nullptr && !executor->isInline()) {
+            (void)executor->tryExecute(
+                [frameControl = std::move(frameControl), handle, executor]() noexcept {
+                    frameControl->resume(handle);
+                });
+            return;
+        }
+        if (frameControl) {
+            frameControl->resume(handle);
+        }
+    }
+
     mutable std::mutex mutex_;
     std::coroutine_handle<> handle_;
     std::shared_ptr<CoroutineFrameControl> frameControl_;
+    std::shared_ptr<IExecutor> executor_;
     State state_{State::Pending};
+    bool notReady_{false};
 };
 
 template <typename Promise>
     requires requires(Promise& promise) { promise.frameControl(); }
 std::shared_ptr<ResumeGate> makeResumeGate(std::coroutine_handle<Promise> handle) noexcept {
-    return std::make_shared<ResumeGate>(handle, handle.promise().frameControl());
+    auto gate = std::make_shared<ResumeGate>(handle, handle.promise().frameControl());
+    if constexpr (requires {
+                      { handle.promise().executor() } -> std::convertible_to<std::shared_ptr<IExecutor>>;
+                  }) {
+        gate->setExecutor(handle.promise().executor());
+    }
+    return gate;
 }
 
 template <typename Promise>
@@ -370,6 +457,10 @@ void releaseIncomingTransferLease(Promise& promise) noexcept {
 
 template <typename Promise>
 void releaseTransferLeases(Promise& promise) noexcept {
+    // The frame is about to park (or finish), so it no longer owns execution.
+    if constexpr (requires { promise.frameControl(); }) {
+        promise.frameControl()->endExecution();
+    }
     releaseIncomingTransferLease(promise);
     if constexpr (requires { promise.releaseContinuationLease(); }) {
         promise.releaseContinuationLease();

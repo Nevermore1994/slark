@@ -247,23 +247,29 @@ TEST(HttpCancelTest, CancelAfterHeaderChunkStopsStream) {
         HttpRequest request;
         auto gen = request.streamingExecute(info);
 
-        size_t receivedBytes = 0;
         int32_t chunkCount = 0;
+        int32_t chunksWithDataAfterCancel = 0;
+        bool cancelled = false;
         while (true) {
             auto chunk = co_await gen.next();
             if (!chunk.has_value()) {
                 break;
             }
-            if (chunk->hasData()) {
-                receivedBytes += chunk->data->length();
+            if (chunk->hasData() && cancelled) {
+                ++chunksWithDataAfterCancel;
             }
             chunkCount++;
             if (chunkCount == 1) {
                 request.cancel();
+                cancelled = true;
             }
         }
 
-        EXPECT_LT(receivedBytes, 10240u);
+        // Cancelling must stop the stream: no data may be delivered afterwards. This says
+        // nothing about how much was received, so it does not depend on how the remote
+        // server chunks its response.
+        EXPECT_EQ(chunksWithDataAfterCancel, 0);
+        EXPECT_GT(chunkCount, 0);
     }();
 
     resumeUntilDone(task);

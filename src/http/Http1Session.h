@@ -14,6 +14,7 @@
 
 #include "AsyncGenerator.hpp"
 #include "ConnectionFactory.h"
+#include "Executor.h"
 #include "Type.h"
 #include "Url.h"
 
@@ -28,6 +29,17 @@ class Http1Session final : public NonCopyable, public std::enable_shared_from_th
                                                      CancellationToken token = {});
 
     void close() noexcept;
+
+    // Execution domain of this session's requests. Every resume of a request coroutine is
+    // dispatched here, so requests never run on a DNS worker or the IO event thread.
+    // The session owns a serial domain by default (local domain wins over the caller's).
+    [[nodiscard]] const std::shared_ptr<IExecutor>& executor() const noexcept {
+        return executor_;
+    }
+
+    void setExecutor(std::shared_ptr<IExecutor> executor) noexcept {
+        executor_ = std::move(executor);
+    }
 
  private:
     struct Origin final {
@@ -62,6 +74,7 @@ class Http1Session final : public NonCopyable, public std::enable_shared_from_th
                                                      ErrorInfo& error);
 
     mutable std::mutex mutex_;
+    std::shared_ptr<IExecutor> executor_ = std::make_shared<SerialExecutor>();
     std::shared_ptr<OwnedConnection> connection_;
     std::optional<Origin> origin_;
     std::string pendingReadData_;

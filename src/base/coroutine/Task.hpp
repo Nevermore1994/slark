@@ -22,7 +22,9 @@ class Task;
 
 struct TaskPromiseBase {
     ContinuationLink continuation_;
-    IExecutor* executor_ = nullptr;
+    // Owned, not borrowed: a resume may be dispatched long after the code that bound it,
+    // from whichever thread notified the gate.
+    std::shared_ptr<IExecutor> executor_;
     std::shared_ptr<CoroutineFrameControl> frameControl_ =
         std::make_shared<CoroutineFrameControl>();
 
@@ -94,6 +96,16 @@ struct TaskPromiseBase {
 
     [[nodiscard]] std::shared_ptr<CoroutineFrameControl> frameControl() const noexcept {
         return frameControl_;
+    }
+
+    // Execution domain this coroutine must be resumed on. Null means "resume on the
+    // notifying thread", which is the historical behaviour.
+    [[nodiscard]] const std::shared_ptr<IExecutor>& executor() const noexcept {
+        return executor_;
+    }
+
+    void setExecutor(std::shared_ptr<IExecutor> executor) noexcept {
+        executor_ = std::move(executor);
     }
 };
 
@@ -207,8 +219,11 @@ class TaskAwaiter {
             childLease_.reset();
             return awaiting;
         }
-        if constexpr (requires { awaiting.promise().executor_; }) {
-            childPromise.executor_ = awaiting.promise().executor_;
+        // Local/explicit domain wins; the parent's domain is only a fallback.
+        if constexpr (requires { awaiting.promise().executor(); }) {
+            if (childPromise.executor_ == nullptr) {
+                childPromise.executor_ = awaiting.promise().executor();
+            }
         }
         return handle_;
     }
@@ -274,6 +289,14 @@ class [[nodiscard]] Task : public NonCopyable {
     void resume() noexcept {
         if (handle_) {
             handle_.promise().frameControl()->resume(handle_);
+        }
+    }
+
+    // Binds the root task to an execution domain; propagated to child tasks that have no
+    // domain of their own.
+    void setExecutor(std::shared_ptr<IExecutor> executor) noexcept {
+        if (handle_) {
+            handle_.promise().setExecutor(std::move(executor));
         }
     }
 

@@ -134,8 +134,8 @@ class AsyncConnect : public slark::AsyncIOOperationBase<AsyncConnect, void> {
                 setCleanup([fd = fd_, gate = ioGate()]() {
                     IOContext::instance().unregisterContinuation(fd, FdInterest::Write, gate);
                 });
-                IOContext::instance().registerContinuation(fd_, FdInterest::Write, ioGate());
-                IOContext::instance().setWritable(fd_, true);
+                IOContext::instance().registerContinuationWithInterest(fd_, FdInterest::Write,
+                                                                      ioGate());
                 return;
             }
             fail(mapConnectErrno(errno));
@@ -171,8 +171,8 @@ class AsyncRead : public slark::AsyncIOOperationBase<AsyncRead, size_t> {
                 setCleanup([fd = fd_, gate = ioGate()]() {
                     IOContext::instance().unregisterContinuation(fd, FdInterest::Read, gate);
                 });
-                IOContext::instance().registerContinuation(fd_, FdInterest::Read, ioGate());
-                IOContext::instance().setReadable(fd_, true);
+                IOContext::instance().registerContinuationWithInterest(fd_, FdInterest::Read,
+                                                                      ioGate());
                 return;
             }
             fail(Error::NetworkError);
@@ -214,8 +214,8 @@ class AsyncWrite : public slark::AsyncIOOperationBase<AsyncWrite, size_t> {
                 setCleanup([fd = fd_, gate = ioGate()]() {
                     IOContext::instance().unregisterContinuation(fd, FdInterest::Write, gate);
                 });
-                IOContext::instance().registerContinuation(fd_, FdInterest::Write, ioGate());
-                IOContext::instance().setWritable(fd_, true);
+                IOContext::instance().registerContinuationWithInterest(fd_, FdInterest::Write,
+                                                                      ioGate());
                 return;
             }
             fail(Error::BrokenPipe);
@@ -274,23 +274,25 @@ class FdReadyAwaiter {
         }
 
         auto fdInterest = (interest_ == Interest::Read) ? FdInterest::Read : FdInterest::Write;
-        token_ = IOContext::instance().registerContinuation(fd_, fdInterest, gate_);
-
-        if (interest_ == Interest::Read) {
-            IOContext::instance().setReadable(fd_, true);
-        } else {
-            IOContext::instance().setWritable(fd_, true);
-        }
+        token_ = IOContext::instance().registerContinuationWithInterest(fd_, fdInterest, gate_);
         return gate_->arm();
     }
 
-    void await_resume() noexcept {}
+    void await_resume() noexcept {
+        // A terminal notification means the wait was abandoned, not satisfied.
+        notReady_ = gate_ && gate_->consumeNotReady();
+    }
+
+    [[nodiscard]] bool isNotReady() const noexcept {
+        return notReady_;
+    }
 
  private:
     int32_t fd_;
     Interest interest_;
     std::shared_ptr<ResumeGate> gate_;
     EventLoop::RegistrationToken token_;
+    bool notReady_{false};
 };
 
 template <typename Awaiter>
@@ -322,7 +324,7 @@ class CancellableAwaiter {
         gate_ = makeResumeGate(handle);
         awaiter_.setResumeGate(gate_);
         auto weakGate = std::weak_ptr<ResumeGate>(gate_);
-        cancelReg_ = token_.registerCallback([weakGate]() {
+        cancelReg_ = token_.registerCallbackOrRun([weakGate]() {
             if (auto gate = weakGate.lock()) {
                 gate->signal();
             }
@@ -331,6 +333,9 @@ class CancellableAwaiter {
     }
 
     bool await_resume() {
+        if (awaiter_.isNotReady()) {
+            return false;
+        }
         return !token_.isCancelled();
     }
 

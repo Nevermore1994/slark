@@ -83,10 +83,10 @@ HttpProcessor::ParsedRequest HttpProcessor::parseUrl(const std::string& urlStr) 
 }
 
 Task<ResponseResult> HttpProcessor::process(RequestInfo requestInfo, CancellationToken token) {
-    return aggregateEvents(std::move(requestInfo), std::move(token));
+    return collectResponse(std::move(requestInfo), std::move(token));
 }
 
-Task<ResponseResult> HttpProcessor::aggregateEvents(RequestInfo requestInfo,
+Task<ResponseResult> HttpProcessor::collectResponse(RequestInfo requestInfo,
                                                      CancellationToken token) {
     auto events = processEvents(std::move(requestInfo), token);
     HttpResponse response;
@@ -241,7 +241,11 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(
                 ErrorInfo{slark::Error::InvalidOperation}, std::move(perf));
             co_return;
         }
+        // Read the domain before requestInfo is moved into the request.
+        const auto requestExecutor = requestInfo.session->executor();
         auto sessionEvents = requestInfo.session->executeEvents(std::move(requestInfo), token);
+        // Bind the producer to the session's execution domain before it is first driven.
+        sessionEvents.setExecutor(requestExecutor);
         while (true) {
             auto event = co_await sessionEvents.next();
             if (!event.has_value()) {
@@ -360,6 +364,13 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(RequestInfo requestI
                                                  std::move(event->header.headers));
                 break;
             case HttpResponseEventType::Data:
+                // The consumer may have cancelled between the header and this body chunk
+                // (both come from the same read). Once cancelled, no further data is
+                // delivered; the stream ends with Cancelled instead.
+                if (token.isCancelled()) {
+                    co_yield StreamChunk::makeError(ErrorInfo{slark::Error::Cancelled});
+                    co_return;
+                }
                 co_yield StreamChunk::makeData(std::move(event->data));
                 break;
             case HttpResponseEventType::Completed:

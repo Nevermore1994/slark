@@ -122,7 +122,7 @@ class WhenAllAwaiter {
         auto gate = makeResumeGate(h);
         state_->setContinuationGate(gate);
 
-        IExecutor* exec = defaultExecutor_ ? defaultExecutor_ : h.promise().executor_;
+        IExecutor* exec = defaultExecutor_ ? defaultExecutor_ : h.promise().executor_.get();
         startTasks(exec, std::index_sequence_for<Ts...>{});
 
         return gate->arm();
@@ -247,7 +247,7 @@ class WhenAnyAwaiter {
         markExternalAwait(h.promise());
         auto gate = makeResumeGate(h);
         state_->setContinuationGate(gate);
-        IExecutor* exec = defaultExecutor_ ? defaultExecutor_ : h.promise().executor_;
+        IExecutor* exec = defaultExecutor_ ? defaultExecutor_ : h.promise().executor_.get();
         startTasks(exec, std::index_sequence_for<Ts...>{});
         return gate->arm();
     }

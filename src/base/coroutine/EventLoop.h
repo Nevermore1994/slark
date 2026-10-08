@@ -83,6 +83,13 @@ class EventLoop : public NonCopyable {
                                            FdInterest interest,
                                            std::shared_ptr<ResumeGate> gate) noexcept;
 
+    // Registers the waiter and installs kernel interest as the awaiter's setup step, so
+    // nothing can run between them. A concurrent unregister/replace no longer leaves the
+    // waiter parked: it is woken with a terminal notification instead of a silent disarm.
+    RegistrationToken registerContinuationWithInterest(int32_t fd,
+                                                       FdInterest interest,
+                                                       std::shared_ptr<ResumeGate> gate) noexcept;
+
     void unregisterContinuation(int32_t fd,
                                 FdInterest interest,
                                 std::shared_ptr<ResumeGate> expectedGate = {}) noexcept;
