@@ -46,75 +46,77 @@ void raiseIllegalArgument(JNIEnv* env, std::string_view message) {
 }
 
 template <typename Group, typename... Fields>
-[[nodiscard]] JNI::GroupReadResult readFlowGroup(JNIEnv* env,
-                                                 jobject object,
-                                                 jclass cls,
-                                                 std::string_view name,
-                                                 std::string_view signature,
-                                                 Group& group,
-                                                 Fields... fields) {
+[[nodiscard]] JNI::GroupRead readFlowGroup(JNIEnv* env,
+                                           jobject object,
+                                           jclass cls,
+                                           std::string_view name,
+                                           std::string_view signature,
+                                           Group& group,
+                                           Fields... fields) {
     const auto value = JNI::readObjectField(env, object, cls, name, signature);
     if (!value) {
-        return {name, false};
+        return std::unexpected(name);
     }
-    return {name, JNI::readFields(env, value.get(), group, fields...)};
+    if (!JNI::readFields(env, value.get(), group, fields...)) {
+        return std::unexpected(name);
+    }
+    return JNI::GroupRead{};
 }
 
-[[nodiscard]] JNI::GroupReadResult readSource(JNIEnv* env,
-                                              jobject object,
-                                              jclass cls,
-                                              SourceBackpressureConfig& group) {
+[[nodiscard]] JNI::GroupRead readSource(JNIEnv* env,
+                                        jobject object,
+                                        jclass cls,
+                                        SourceBackpressureConfig& group) {
     return readFlowGroup(env, object, cls, "source", kSourceSignature, group,
                          field("lowWatermarkSec", &SourceBackpressureConfig::lowWatermarkSec),
                          field("highWatermarkSec", &SourceBackpressureConfig::highWatermarkSec));
 }
 
-[[nodiscard]] JNI::GroupReadResult readDecoder(JNIEnv* env,
-                                               jobject object,
-                                               jclass cls,
-                                               std::string_view name,
-                                               DecoderBackpressureConfig& group) {
+[[nodiscard]] JNI::GroupRead readDecoder(JNIEnv* env,
+                                         jobject object,
+                                         jclass cls,
+                                         std::string_view name,
+                                         DecoderBackpressureConfig& group) {
     return readFlowGroup(
         env, object, cls, name, kDecoderSignature, group,
         field("lowWatermarkFrames", &DecoderBackpressureConfig::lowWatermarkFrames),
         field("highWatermarkFrames", &DecoderBackpressureConfig::highWatermarkFrames));
 }
 
-[[nodiscard]] JNI::GroupReadResult readBuffering(JNIEnv* env,
-                                                 jobject object,
-                                                 jclass cls,
-                                                 BufferingConfig& group) {
+[[nodiscard]] JNI::GroupRead readBuffering(JNIEnv* env,
+                                           jobject object,
+                                           jclass cls,
+                                           BufferingConfig& group) {
     return readFlowGroup(env, object, cls, "buffering", kBufferingSignature, group,
                          field("startBufferSec", &BufferingConfig::startBufferSec),
                          field("rebufferScale", &BufferingConfig::rebufferScale),
                          field("starvationThreshold", &BufferingConfig::starvationThreshold));
 }
 
-[[nodiscard]] JNI::GroupReadResult readCatchUp(JNIEnv* env,
-                                               jobject object,
-                                               jclass cls,
-                                               CatchUpConfig& group) {
+[[nodiscard]] JNI::GroupRead readCatchUp(JNIEnv* env,
+                                         jobject object,
+                                         jclass cls,
+                                         CatchUpConfig& group) {
     return readFlowGroup(env, object, cls, "catchUp", kCatchUpSignature, group,
                          field("maxDropPerVsync", &CatchUpConfig::maxDropPerVsync),
                          field("seekFastForwardMs", &CatchUpConfig::seekFastForwardMs));
 }
 
-[[nodiscard]] bool readFlowConfig(JNIEnv* env, jobject object, FlowConfig& config) {
+[[nodiscard]] JNI::GroupRead readFlowConfig(JNIEnv* env, jobject object, FlowConfig& config) {
     if (!env) {
-        return false;
+        return std::unexpected("flowConfig");
     }
     if (!object) {
-        raiseIllegalArgument(env, "flowConfig must not be null");
-        return false;
+        return std::unexpected("flowConfig");
     }
     if (env->ExceptionCheck()) {
-        return false;
+        return std::unexpected("flowConfig");
     }
     ClassReference cls(env, env->GetObjectClass(object));
     if (!cls) {
-        return false;
+        return std::unexpected("flowConfig");
     }
-    const auto result = JNI::readGroups(
+    return JNI::readGroups(
         [&] {
             return readSource(env, object, cls.get(), config.source);
         },
@@ -130,11 +132,6 @@ template <typename Group, typename... Fields>
         [&] {
             return readCatchUp(env, object, cls.get(), config.catchUp);
         });
-    if (!result.ok) {
-        raiseIllegalArgument(env, std::string(result.name).append(" must not be null"));
-        return false;
-    }
-    return true;
 }
 
 jstring createPlayer(JNIEnv* env,
@@ -184,7 +181,8 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_createPlayerWithFlowConfig(
                                                                                 jdouble duration,
                                                                                 jobject config) {
     FlowConfig flowConfig;
-    if (!readFlowConfig(env, config, flowConfig)) {
+    if (const auto result = readFlowConfig(env, config, flowConfig); !result.has_value()) {
+        raiseIllegalArgument(env, std::string(result.error()).append(" must not be null"));
         return nullptr;
     }
     return createPlayer(env, path, start, duration, flowConfig);

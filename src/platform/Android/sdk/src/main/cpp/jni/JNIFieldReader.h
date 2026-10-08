@@ -6,6 +6,8 @@
 
 #include <concepts>
 #include <cstdint>
+#include <expected>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -78,21 +80,22 @@ template <typename Group, typename... Fields>
     return {env, id ? env->GetObjectField(object, id) : nullptr};
 }
 
-struct GroupReadResult {
-    std::string_view name;
-    bool ok;
-};
+// Error value naming the group that was missing or unreadable.
+using GroupReadError = std::string_view;
+using GroupRead = std::expected<void, GroupReadError>;
 
-// Reads each group in order and stops at the first failure. The name of the failing group is
-// returned so the caller can report which part of the object was missing or unreadable.
+// Reads each group in order and stops at the first failure.
 template <typename... Readers>
-[[nodiscard]] GroupReadResult readGroups(Readers... readers) {
-    GroupReadResult result;
-    static_cast<void>((... && [&result](const Readers& reader) {
-        result = reader();
-        return result.ok;
+[[nodiscard]] GroupRead readGroups(Readers... readers) {
+    std::optional<GroupReadError> failure;
+    static_cast<void>((... && [&failure](const Readers& reader) {
+        const auto result = reader();
+        if (!result.has_value()) {
+            failure = result.error();
+        }
+        return result.has_value();
     }(readers)));
-    return result;
+    return failure ? GroupRead{std::unexpected(*failure)} : GroupRead{};
 }
 
 }  // namespace slark::JNI
