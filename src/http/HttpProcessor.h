@@ -13,7 +13,6 @@
 
 namespace slark::http {
 
-// HTTP request processor: handles single requests, redirects and performance stats.
 // Note: the token parameter in process() controls cancellation per request and is not
 // stored as an object member.
 class HttpProcessor : public NonCopyable {
@@ -36,7 +35,7 @@ class HttpProcessor : public NonCopyable {
         ErrorInfo error;
     };
 
-    static Task<ResponseResult> aggregateEvents(RequestInfo requestInfo, CancellationToken token);
+    static Task<ResponseResult> collectResponse(RequestInfo requestInfo, CancellationToken token);
 
     static AsyncGenerator<HttpResponseEvent> executeEventsSingle(RequestInfo requestInfo,
                                                                  CancellationToken token);

@@ -50,18 +50,14 @@ SSLContextPtr& SSLManager::shareContext() {
         }
         contextPtr.reset(context);
 
-        // Enable certificate chain verification
         SSL_CTX_set_verify(context, SSL_VERIFY_PEER, nullptr);
 
-        // Advertise HTTP/1.1 (extension point reserved for future HTTP/2)
         static constexpr uint8_t kAlpnProtos[] = "\x08http/1.1";
         SSL_CTX_set_alpn_protos(context, kAlpnProtos, sizeof(kAlpnProtos) - 1);
 
         if (HttpsHelper::configContext) {
-            // The platform layer loads the CA bundle (e.g. Android/iOS system certs)
             HttpsHelper::configContext(contextPtr);
         } else {
-            // Fallback: load the system default CAs
             SSL_CTX_set_default_verify_paths(context);
         }
     });
@@ -78,9 +74,7 @@ SSLPtr SSLManager::create(Socket socket, const std::string& hostname) noexcept {
 
     SSL_set_fd(ssl, socket);
     if (!hostname.empty()) {
-        // SNI: tell the server the expected domain
         SSL_set_tlsext_host_name(ssl, hostname.c_str());
-        // Hostname verification: check the CN/SAN in the certificate after the handshake
         SSL_set1_host(ssl, hostname.c_str());
     }
 

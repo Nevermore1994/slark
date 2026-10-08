@@ -160,11 +160,7 @@ void HttpResponseParser::resetForNextResponse() noexcept {
     statusCode_ = HttpStatusCode::Unknown;
     isHttp10_ = false;
     shouldClose_ = false;
-    connectionCloseSeen_ = false;
-    connectionKeepAliveSeen_ = false;
-    contentLength_ = -1;
-    contentLengthSeen_ = false;
-    transferEncodingSeen_ = false;
+    contentLength_.reset();
     transferEncodingValue_.clear();
     bodyReceived_ = 0;
     currentChunkSize_ = 0;
@@ -290,26 +286,26 @@ void HttpResponseParser::determineBodyMode() {
     if (shouldSkipBody()) {
         LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength={} "
              "shouldSkipBody=true -> Completed",
-             headers_.size(), contentLength_);
+             headers_.size(), contentLength_.value_or(kUnknownContentLength));
         state_ = State::Completed;
         return;
     }
 
-    if (contentLength_ >= 0 &&
-        static_cast<uint64_t>(contentLength_) > maxResponseBodySize_) {
+    if (contentLength_.has_value() &&
+        static_cast<uint64_t>(*contentLength_) > maxResponseBodySize_) {
         LogE("[HttpResponseParser::processHeaders] response body exceeds limit: length={} limit={}",
-             contentLength_, maxResponseBodySize_);
+             *contentLength_, maxResponseBodySize_);
         fail(slark::Error::HttpResponseBodyTooLarge);
         return;
     }
 
-    if (transferEncodingSeen_ && contentLengthSeen_) {
+    if (!transferEncodingValue_.empty() && contentLength_.has_value()) {
         LogE("[HttpResponseParser::processHeaders] both Transfer-Encoding and Content-Length present");
         fail(slark::Error::HttpResponseInvalid);
         return;
     }
 
-    if (transferEncodingSeen_) {
+    if (!transferEncodingValue_.empty()) {
         if (!isSingleChunkedTransferEncoding(transferEncodingValue_)) {
             LogE("[HttpResponseParser::processHeaders] unsupported Transfer-Encoding: {}",
                  transferEncodingValue_);
@@ -323,20 +319,20 @@ void HttpResponseParser::determineBodyMode() {
         return;
     }
 
-    if (contentLength_ == 0) {
+    if (contentLength_.has_value() && *contentLength_ == 0) {
         LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength=0 -> "
              "Completed",
              headers_.size());
         state_ = State::Completed;
     } else {
         state_ = State::BodyFixed;
-        if (contentLength_ < 0) {
+        if (!contentLength_.has_value()) {
             bodyUsesEof_ = true;
             shouldClose_ = true;
         }
         LogI("[HttpResponseParser::processHeaders] headers done: count={} contentLength={} "
              "shouldClose={} -> BodyFixed",
-             headers_.size(), contentLength_, shouldClose_);
+             headers_.size(), contentLength_.value_or(kUnknownContentLength), shouldClose_);
     }
 }
 
@@ -355,6 +351,9 @@ void HttpResponseParser::processHeaders() {
     }
 
     auto headerBlock = data.substr(0, pos);
+
+    bool closeSeen = false;
+    bool keepAliveSeen = false;
 
     size_t lineStart = 0;
     while (lineStart < headerBlock.size()) {
@@ -396,24 +395,21 @@ void HttpResponseParser::processHeaders() {
                 fail(slark::Error::HttpResponseInvalid);
                 return;
             }
-            if (contentLengthSeen_ && contentLength_ != parsedLength) {
+            if (contentLength_.has_value() && *contentLength_ != parsedLength) {
                 LogE("[HttpResponseParser::processHeaders] conflicting Content-Length values: {} and {}",
-                     contentLength_, parsedLength);
+                     *contentLength_, parsedLength);
                 fail(slark::Error::HttpResponseInvalid);
                 return;
             }
             contentLength_ = parsedLength;
-            contentLengthSeen_ = true;
         } else if (name == "transfer-encoding") {
-            if (transferEncodingSeen_) {
+            if (!transferEncodingValue_.empty()) {
                 transferEncodingValue_.append(",");
             }
             transferEncodingValue_.append(value);
-            transferEncodingSeen_ = true;
         } else if (name == "connection") {
-            connectionCloseSeen_ = connectionCloseSeen_ || hasHeaderToken(value, "close");
-            connectionKeepAliveSeen_ =
-                connectionKeepAliveSeen_ || hasHeaderToken(value, "keep-alive");
+            closeSeen = closeSeen || hasHeaderToken(value, "close");
+            keepAliveSeen = keepAliveSeen || hasHeaderToken(value, "keep-alive");
         }
         headers_[std::move(name)] = std::string(value);
 
@@ -421,17 +417,13 @@ void HttpResponseParser::processHeaders() {
     }
 
     consume(pos + headerEndSize);
-    shouldClose_ = connectionCloseSeen_ || (isHttp10_ && !connectionKeepAliveSeen_);
+    shouldClose_ = closeSeen || (isHttp10_ && !keepAliveSeen);
 
     if (isInformationalResponse()) {
         headers_.clear();
         trailers_.clear();
-        contentLength_ = -1;
-        contentLengthSeen_ = false;
-        transferEncodingSeen_ = false;
+        contentLength_.reset();
         transferEncodingValue_.clear();
-        connectionCloseSeen_ = false;
-        connectionKeepAliveSeen_ = false;
         shouldClose_ = isHttp10_;
         bodyReceived_ = 0;
         currentChunkSize_ = 0;
@@ -462,8 +454,10 @@ void HttpResponseParser::processBodyFixed() {
 
     auto available = static_cast<int64_t>(data.size());
 
-    if (contentLength_ > 0) {
-        auto remaining = contentLength_ - bodyReceived_;
+    // Entering BodyFixed with a value implies a positive length: length 0 already
+    // completed in determineBodyMode().
+    if (contentLength_.has_value()) {
+        auto remaining = *contentLength_ - bodyReceived_;
         auto toConsume = std::min(available, remaining);
         if (toConsume > 0 &&
             static_cast<uint64_t>(bodyReceived_) + static_cast<uint64_t>(toConsume) >
@@ -483,17 +477,16 @@ void HttpResponseParser::processBodyFixed() {
         bodyReceived_ += toConsume;
         consume(static_cast<size_t>(toConsume));
 
-        if (bodyReceived_ >= contentLength_) {
+        if (bodyReceived_ >= *contentLength_) {
             LogI("[HttpResponseParser::processBodyFixed] complete: bodyReceived={}/{}",
-                 bodyReceived_, contentLength_);
+                 bodyReceived_, *contentLength_);
             complete();
         } else if (bodyReceived_ - lastLoggedBodyReceived_ >= parserLogChunkBytes()) {
             LogI("[HttpResponseParser::processBodyFixed] progress: bodyReceived={}/{}",
-                 bodyReceived_, contentLength_);
+                 bodyReceived_, *contentLength_);
             lastLoggedBodyReceived_ = bodyReceived_;
         }
     } else {
-        // Content-Length unknown, consume all available data
         if (static_cast<uint64_t>(bodyReceived_) + static_cast<uint64_t>(available) >
             maxResponseBodySize_) {
             LogE("[HttpResponseParser::processBodyFixed] response body exceeds limit: received={} "
@@ -562,7 +555,6 @@ void HttpResponseParser::processChunkSize() {
     if (chunkSize == 0) {
         LogI("[HttpResponseParser::processChunkSize] last chunk, entering trailer, totalChunks={}",
              perf_ ? perf_->parser.chunkCount : 0);
-        // Last chunk, move to trailer processing
         state_ = State::ChunkTrailer;
     } else {
         if (static_cast<uint64_t>(bodyReceived_) > maxResponseBodySize_ ||
@@ -577,7 +569,6 @@ void HttpResponseParser::processChunkSize() {
         currentChunkSize_ = chunkSize;
         chunkBytesRead_ = 0;
         state_ = State::ChunkData;
-        // Count chunks
         if (perf_) {
             perf_->parser.chunkCount++;
         }
@@ -613,7 +604,7 @@ void HttpResponseParser::processChunkTrailer() {
     auto data = readableData();
 
     // Fail immediately when the cumulative length exceeds the limit to prevent OOM.
-    // Note: trailerBytesRead_ accumulates only on consume (C-14); data.size() is the
+    // Note: trailerBytesRead_ accumulates only on consume; data.size() is the
     // unconsumed length. Their sum approximates the current trailer region without
     // double counting across feed boundaries.
     if (trailerBytesRead_ + data.size() > kMaxTrailerSize) {
@@ -623,7 +614,6 @@ void HttpResponseParser::processChunkTrailer() {
         return;
     }
 
-    // Trailer ends with a blank line CRLF
     auto pos = data.find(kCRLF);
     if (pos == std::string_view::npos) {
         return;  // insufficient data, wait for next feed; not counted (readableData starts at
@@ -631,7 +621,6 @@ void HttpResponseParser::processChunkTrailer() {
     }
 
     if (pos == 0) {
-        // Blank line, trailer ends
         consume(kCRLF.size());
         LogI("[HttpResponseParser::processChunkTrailer] complete after trailer, totalChunks={}",
              perf_ ? perf_->parser.chunkCount : 0);

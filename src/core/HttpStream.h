@@ -18,16 +18,10 @@
 
 namespace slark {
 
-// Server Range capability, inferred from actual response behavior rather than header claims:
-//   Unknown      no response received yet, capability unknown
-//   Supported    received 206 + matching Content-Range (behavioral proof)
-//   Unsupported  received 200 full body (server ignores Range)
 enum class RangeCapability : uint8_t { Unknown, Supported, Unsupported };
 
 class HttpStream : public IStream, public std::enable_shared_from_this<HttpStream> {
  public:
-    // ownerThread: the single owning thread of Stream state (injected by MediaSourceManager
-    // through StreamFactory)
     explicit HttpStream(std::shared_ptr<Thread> ownerThread);
     ~HttpStream() override;
 
@@ -62,19 +56,17 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
     }
 
  private:
-    // Control block decoupled from the Stream: network callbacks hold only a weak_ptr,
-    // alive=false after close
+    // Decoupled from the Stream: network callbacks hold only a weak_ptr, alive=false after close
     struct StreamControl {
         std::atomic<bool> alive{true};
     };
 
-    // Complete state of one network operation (one HTTP request)
     struct StreamOperation {
         uint64_t generation = 0;
         uint64_t operationId = 0;
         std::shared_ptr<http::HttpRequest> request;
-        Task<void> task;                        // network coroutine (keeps the frame alive)
-        std::shared_ptr<StreamControl> control; // for weak callbacks
+        Task<void> task;  // network coroutine (keeps the frame alive)
+        std::shared_ptr<StreamControl> control;
     };
 
     // Immutable event posted by the network coroutine to the owner thread
@@ -91,22 +83,16 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
     void handleData(http::StreamChunk&& chunk) noexcept;
     void handleFinal() noexcept;
 
-    // C-10: Range response validation (owner thread, when the header arrives).
-    // Converges the server's Range capability into a single source of truth:
-    // 206+Content-Range → Supported, 200 full body → Unsupported (continue sequential
-    // transfer), anything else → error.
     bool validateRangeResponse(const http::StreamChunk& chunk) noexcept;
 
-    // Unified Range validation failure path: record the error, report onError, enter Error state
     bool failRangeValidation(slark::Error error, int32_t originCode, std::string detail) noexcept;
 
-    // Synchronously update RangeCapability and info_.isSeekable (owner thread)
     void updateRangeCapability(RangeCapability capability) noexcept;
 
-    // 4.1.3.1: after cancel, wait for the task to reach its final suspend; keep the frame on timeout
+    // Cancels and waits for the task to settle; on timeout the frame is left alive on purpose
     void cancelCurrentOperation(uint64_t timeoutMs) noexcept;
 
-    // Assumes mutex_ is held: start a new operation (reused internally by seek)
+    // Requires mutex_ to be held (reused by seek)
     void startLocked() noexcept;
 
     // State is only mutated on the owner thread
@@ -133,7 +119,7 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
 
     OpenParams params_;
     Range readRange_;
-    uint64_t contentLength_ = 0;
+    uint64_t responseContentLength_ = 0;
     RangeCapability rangeCapability_{RangeCapability::Unknown};
 
     StreamInfo info_;

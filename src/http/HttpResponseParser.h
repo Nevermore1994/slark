@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -43,7 +44,6 @@ class HttpResponseParser {
 
     explicit HttpResponseParser(Callbacks callbacks) : callbacks_(std::move(callbacks)) {}
 
-    // Set the request method, used to determine that HEAD responses have no body
     void setRequestMethod(HttpMethodType method) noexcept {
         requestMethod_ = method;
     }
@@ -58,27 +58,22 @@ class HttpResponseParser {
 
     void feed(const Byte* data, size_t size);
 
-    // Finalization when EOF arrives.
-    // For responses without Content-Length that are not chunked, EOF marks the end of message.
     void onEof() {
         if (state_ == State::Completed || state_ == State::Error) {
             return;
         }
 
         LogI("[HttpResponseParser::onEof] state={} bodyReceived={} contentLength={}",
-             stateName(state_), bodyReceived_, contentLength_);
+             stateName(state_), bodyReceived_, contentLength_.value_or(kUnknownContentLength));
 
-        // Only a body with unknown length uses EOF as its end marker
-        if (state_ == State::BodyFixed && contentLength_ < 0) {
+        if (state_ == State::BodyFixed && !contentLength_.has_value()) {
             endedByEof_ = true;
             complete();
         } else if (state_ == State::StatusLine || state_ == State::Headers) {
-            // Connection dropped before headers were fully received
             LogE("[HttpResponseParser::onEof] EOF before headers complete: state={}",
                  stateName(state_));
             fail(slark::Error::ConnectionReset);
         }
-        // Other states (e.g. chunked dropped mid-stream) are treated as errors
         else if (state_ != State::Completed) {
             LogE("[HttpResponseParser::onEof] unexpected EOF: state={} bodyReceived={}",
                  stateName(state_), bodyReceived_);
@@ -98,8 +93,6 @@ class HttpResponseParser {
         return state_ == State::Error;
     }
 
-    // 4xx/5xx error responses: the caller should stop reading the body immediately
-    // to avoid wasted bandwidth and latency
     [[nodiscard]] bool isHttpError() const noexcept {
         auto code = static_cast<uint16_t>(statusCode_);
         return code >= 400 && code < 600;
@@ -171,7 +164,6 @@ class HttpResponseParser {
         return code >= 100 && code < 200 && statusCode_ != HttpStatusCode::SwitchingProtocols;
     }
 
-    // Unified failure exit to avoid duplicated state changes and callbacks
     void fail(Error code) noexcept {
         state_ = State::Error;
         if (callbacks_.onError) {
@@ -179,7 +171,6 @@ class HttpResponseParser {
         }
     }
 
-    // Unified completion exit
     void complete() noexcept {
         state_ = State::Completed;
         if (callbacks_.onCompleted) {
@@ -187,20 +178,16 @@ class HttpResponseParser {
         }
     }
 
-    // RFC 7230: determine whether the response should skip its body
     [[nodiscard]] bool shouldSkipBody() const noexcept {
-        // 1xx informational responses have no body
         auto code = static_cast<uint16_t>(statusCode_);
         if (code >= 100 && code < 200) {
             return true;
         }
-        // 204 No Content and 304 Not Modified have no body
         if (statusCode_ == HttpStatusCode::NoContent ||
             statusCode_ == HttpStatusCode::ResetContent ||
             statusCode_ == HttpStatusCode::NotModified) {
             return true;
         }
-        // HEAD request responses have no body
         if (requestMethod_ == HttpMethodType::Head) {
             return true;
         }
@@ -211,6 +198,8 @@ class HttpResponseParser {
     static constexpr std::string_view kHeaderEnd = "\r\n\r\n";
     static constexpr size_t kCompactionThreshold = 8192;  // fragmentation threshold
     static constexpr size_t kMaxTrailerSize = 16384;      // max cumulative trailer length
+    // Logging-only sentinel for contentLength_ when the body length is unknown.
+    static constexpr int64_t kUnknownContentLength = -1;
 
     State state_ = State::StatusLine;
     Callbacks callbacks_;
@@ -221,13 +210,9 @@ class HttpResponseParser {
     HttpStatusCode statusCode_ = HttpStatusCode::Unknown;
     bool isHttp10_ = false;
     bool shouldClose_ = false;
-    bool connectionCloseSeen_ = false;
-    bool connectionKeepAliveSeen_ = false;
     HttpMethodType requestMethod_ = HttpMethodType::Unknown;
 
-    int64_t contentLength_ = -1;
-    bool contentLengthSeen_ = false;
-    bool transferEncodingSeen_ = false;
+    std::optional<int64_t> contentLength_;
     std::string transferEncodingValue_;
     int64_t bodyReceived_ = 0;
     uint64_t maxResponseBodySize_ = kDefaultMaxResponseBodySize;
@@ -240,7 +225,6 @@ class HttpResponseParser {
 
     RequestPerf* perf_ = nullptr;
 
-    // Protocol-level log throttling: last logged cumulative bodyReceived_
     int64_t lastLoggedBodyReceived_ = 0;
 
  private:
@@ -250,7 +234,6 @@ class HttpResponseParser {
 
     void consume(size_t size) noexcept {
         readPos_ += size;
-        // Compact when fragmentation exceeds the threshold
         if (readPos_ > kCompactionThreshold) {
             compact();
         }

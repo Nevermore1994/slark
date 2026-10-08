@@ -50,13 +50,11 @@ enum class HttpConnectionMode : uint8_t {
 enum class HttpStatusCode : uint16_t {
     Unknown,
 
-    // 1xx - Informational
     Continue = 100,
     SwitchingProtocols = 101,
     Processing = 102,
     EarlyHints = 103,
 
-    // 2xx - Successful
     OK = 200,
     Created = 201,
     Accepted = 202,
@@ -68,7 +66,6 @@ enum class HttpStatusCode : uint16_t {
     AlreadyReported = 208,
     IMUsed = 226,
 
-    // 3xx - Redirection
     MultipleChoices = 300,
     MovedPermanently = 301,
     Found = 302,
@@ -78,7 +75,6 @@ enum class HttpStatusCode : uint16_t {
     TemporaryRedirect = 307,
     PermanentRedirect = 308,
 
-    // 4xx - Client Error
     BadRequest = 400,
     Unauthorized = 401,
     PaymentRequired = 402,
@@ -111,7 +107,6 @@ enum class HttpStatusCode : uint16_t {
     RequestHeaderFieldsTooLarge = 431,
     UnavailableForLegalReasons = 451,
 
-    // 5xx - Server Error
     InternalServerError = 500,
     NotImplemented = 501,
     BadGateway = 502,
@@ -125,7 +120,6 @@ enum class HttpStatusCode : uint16_t {
     NetworkAuthenticationRequired = 511,
 };
 
-// Timeout source type
 enum class TimeoutSource : uint8_t {
     None,
     Connect,
@@ -135,14 +129,12 @@ enum class TimeoutSource : uint8_t {
     ReadOverall,
 };
 
-// Connection establishment performance stats
 struct ConnectionPerf {
     int64_t connectTimeMs = 0;
     int64_t tlsHandshakeTimeMs = 0;
     Error connectResult = Error::Success;
 };
 
-// Transport layer performance stats
 struct TransportPerf {
     int32_t sendRetryCount = 0;
     int32_t receiveWaitCount = 0;
@@ -151,7 +143,6 @@ struct TransportPerf {
     int64_t totalReceiveTimeMs = 0;
 };
 
-// Parser layer performance stats
 struct ParserPerf {
     int64_t headerParseTimeUs = 0;
     int32_t chunkCount = 0;
@@ -159,7 +150,6 @@ struct ParserPerf {
     int64_t bodySize = 0;
 };
 
-// Request-level performance stats
 struct RequestPerf {
     ConnectionPerf connection;
     TransportPerf transport;
@@ -352,7 +342,6 @@ struct HttpResponse {
     }
 };
 
-// Streaming response chunk: used for Generator-based streaming returns
 struct StreamChunk {
     DataPtr data;                                          // chunk data
     bool isFinal = false;                                  // whether this is the final chunk (end of response)

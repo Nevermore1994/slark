@@ -82,7 +82,7 @@ void HttpStream::startLocked() noexcept {
 
     readRange_ = Range(deliveredPosition_);
     position_ = deliveredPosition_;
-    contentLength_ = 0;
+    responseContentLength_ = 0;
     operationCoversSource_ = false;
     state_ = StreamState::Reading;
     isPaused_ = false;
@@ -270,8 +270,6 @@ void HttpStream::updateRangeCapability(RangeCapability capability) noexcept {
 }
 
 void HttpStream::handleHeader(const http::StreamChunk& chunk) noexcept {
-    // Range capability is converged in validateRangeResponse (based on protocol behavior);
-    // here we only parse metadata and no longer rely on the Accept-Ranges header.
     if (!validateRangeResponse(chunk)) {
         return;
     }
@@ -280,9 +278,9 @@ void HttpStream::handleHeader(const http::StreamChunk& chunk) noexcept {
     if (lengthIt != chunk.headers.end()) {
         auto lenResult = StringUtil::fromChars<uint64_t>(lengthIt->second);
         if (lenResult) {
-            contentLength_ = *lenResult;
+            responseContentLength_ = *lenResult;
             std::lock_guard<std::mutex> lock(infoMutex_);
-            info_.totalSize = contentLength_;
+            info_.totalSize = responseContentLength_;
         }
     }
 
@@ -306,12 +304,12 @@ void HttpStream::handleHeader(const http::StreamChunk& chunk) noexcept {
         totalSize = info_.totalSize;
     }
     operationCoversSource_ = readRange_.start() == 0 && totalSize > 0 &&
-                             contentLength_ == totalSize;
+                             responseContentLength_ == totalSize;
 
-    LogI("[HttpStream::handleHeader] status={} rangeCapability={} contentLength={} totalSize={} "
-         "coversSource={} url={}",
-         static_cast<int>(chunk.statusCode), static_cast<int>(rangeCapability_), contentLength_,
-         totalSize, operationCoversSource_, params_.uri);
+    LogI("[HttpStream::handleHeader] status={} rangeCapability={} responseContentLength={} "
+         "totalSize={} coversSource={} url={}",
+         static_cast<int>(chunk.statusCode), static_cast<int>(rangeCapability_),
+         responseContentLength_, totalSize, operationCoversSource_, params_.uri);
 }
 
 bool HttpStream::failRangeValidation(slark::Error error,
@@ -328,18 +326,12 @@ bool HttpStream::failRangeValidation(slark::Error error,
 bool HttpStream::validateRangeResponse(const http::StreamChunk& chunk) noexcept {
     const auto kStatus = chunk.statusCode;
 
-    // Request explicitly rejected (416): target is out of the resource range
     if (kStatus == http::HttpStatusCode::RangeNotSatisfiable) {
         return failRangeValidation(
             Error::OutOfRange, 416,
             std::format("416, requested range not satisfiable: {}", readRange_.toString()));
     }
 
-    // Server ignores Range and returns a 200 full body:
-    // - Request starting from 0 (or without Range): data is still sequential from 0,
-    //   playback can degrade gracefully
-    // - Request at a non-zero position: full body starts at 0, misaligned with expectations,
-    //   treated as an error
     if (kStatus != http::HttpStatusCode::PartialContent) {
         const bool startFromZero = !readRange_.isValid() || readRange_.start() == 0;
         if (!startFromZero) {
@@ -355,8 +347,6 @@ bool HttpStream::validateRangeResponse(const http::StreamChunk& chunk) noexcept 
         return true;
     }
 
-    // 206: the server actually accepted the Range request; capability is based on behavior
-    // (some servers omit the Accept-Ranges header in 206 responses)
     updateRangeCapability(RangeCapability::Supported);
 
     if (!readRange_.isValid()) {

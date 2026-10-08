@@ -49,7 +49,6 @@ inline Error mapTransportErrno(int error) noexcept {
     }
 }
 
-// Transport strategy interface for read/write abstraction
 class ITransport {
  public:
     virtual ~ITransport() = default;
@@ -63,7 +62,6 @@ class ITransport {
     virtual void shutdown() noexcept = 0;
 };
 
-// Plain TCP transport
 class PlainTransport final : public ITransport {
  public:
     explicit PlainTransport(Socket fd) noexcept : fd_(fd) {}
@@ -108,7 +106,6 @@ class PlainTransport final : public ITransport {
 };
 
 #if ENABLE_HTTPS
-// TLS transport wrapping OpenSSL
 class TLSTransport final : public ITransport {
  public:
     TLSTransport(Socket fd, const std::string& hostname);
@@ -151,7 +148,6 @@ class IAsyncSocket {
         const std::string_view& data,
         std::chrono::milliseconds timeout = kDefaultWriteTimeout) = 0;
 
-    // Cancellation-enabled async send, for large body uploads or scenarios needing fast cancel response
     virtual Task<AsyncSocketResult> asyncSend(const std::string_view& data,
                                               std::chrono::milliseconds timeout,
                                               CancellationToken token) = 0;
@@ -161,7 +157,6 @@ class IAsyncSocket {
         size_t size,
         std::chrono::milliseconds timeout = kDefaultReadTimeout) = 0;
 
-    // Cancellation-enabled async receive, for scenarios needing fast cancel response
     virtual Task<AsyncSocketResult> asyncReceive(void* buffer,
                                                  size_t size,
                                                  std::chrono::milliseconds timeout,
@@ -175,7 +170,6 @@ class IAsyncSocket {
     virtual void setTransport(std::unique_ptr<ITransport> transport) noexcept = 0;
 };
 
-// Unified async socket using ITransport strategy
 class AsyncSocket final : public IAsyncSocket, public NonCopyable {
  public:
     explicit AsyncSocket(IPVersion ipVersion, std::unique_ptr<ITransport> transport = nullptr);

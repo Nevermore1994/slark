@@ -66,7 +66,7 @@ Task<AddressInfoPtr> DnsResolver::resolveAsyncImpl(std::shared_ptr<State> state,
          static_cast<int>(ipVersion));
 
     auto awaiter = std::make_shared<CompletionAwaiter<AddressInfoPtr>>();
-    // Cancellation propagation (C-06): a token cancel while DNS is suspended ends
+    // Cancellation propagation: a token cancel while DNS is suspended ends
     // early without waiting for the thread pool
     auto cancelReg = token.registerCallback([awaiter]() {
         awaiter->complete(makeAddressInfo(nullptr));

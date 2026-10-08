@@ -137,8 +137,6 @@ void closeSocket(Socket& socket) noexcept {
 
 }  // anonymous namespace
 
-// AsyncSocket
-
 AsyncSocket::AsyncSocket(IPVersion ipVersion, std::unique_ptr<ITransport> transport)
     : ipVersion_(ipVersion), socket_(kInvalidSocket), transport_(std::move(transport)) {}
 
@@ -322,8 +320,6 @@ void AsyncSocket::close() noexcept {
     }
     closeSocket(socket_);
 }
-
-// TLSTransport
 
 #if ENABLE_HTTPS
 

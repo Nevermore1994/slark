@@ -66,10 +66,8 @@ class RedirectPolicy {
             }
         }
 
-        // RFC 7231: method handling by redirect status code
         switch (redirectCode) {
             case HttpStatusCode::SeeOther:
-                // 303: method must be changed to GET
                 redirectRequest.methodType = HttpMethodType::Get;
                 redirectRequest.body = nullptr;  // 303 must not carry a body
                 break;
@@ -80,7 +78,6 @@ class RedirectPolicy {
                 break;
             case HttpStatusCode::TemporaryRedirect:  // 307
             case HttpStatusCode::PermanentRedirect:  // 308
-                // Original method and body must be preserved
                 break;
             default:
                 break;
@@ -214,7 +211,6 @@ class RedirectPolicy {
         return std::string(basePath.substr(0, lastSlash + 1)) + std::string(path);
     }
 
-    // Resolve a redirect URL according to RFC 3986 section 5.2.
     [[nodiscard]] static std::optional<std::string> resolveRedirectUrl(std::string_view originalUrl,
                                                                        std::string_view location) {
         auto locationValue = trimOws(location);
