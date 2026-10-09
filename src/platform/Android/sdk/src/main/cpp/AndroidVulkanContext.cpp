@@ -932,7 +932,8 @@ void AndroidVulkanContext::doBlitOES(int32_t textureId,
 }
 
 bool AndroidVulkanContext::rebuildHWBResources(int32_t width, int32_t height) noexcept {
-    destroyHardwareBufferResources();
+    // Also releases eglImage_/fbo_/fboTexture_, which the create* calls below would overwrite.
+    cleanupEGLResources();
     if (!allocateHardwareBuffer(width, height) || !createEGLImageFromHWB() ||
         !createFBOForEGLImage() || !createHWBVkImage() || !bindHWBMemory()) {
         return false;

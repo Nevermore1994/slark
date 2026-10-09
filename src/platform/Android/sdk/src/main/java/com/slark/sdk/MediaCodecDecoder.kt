@@ -185,10 +185,12 @@ class MediaCodecDecoder(
                     decoder!!.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                 } else {
                     if (byteBuffer == null || byteBuffer.isEmpty()) {
+                        inputBufferQueue.offer(inputIndex)
                         return SlarkPlayerErrorCode.CodecInputError.value
                     }
                     if (inputBuffer.capacity() < byteBuffer.size) {
                         SlarkLog.e(LOG_TAG, "input buffer too small: ${inputBuffer.capacity()} < ${byteBuffer.size}")
+                        inputBufferQueue.offer(inputIndex)
                         return SlarkPlayerErrorCode.CodecInputTooLarge.value
                     }
                     inputBuffer.put(byteBuffer)
@@ -212,6 +214,7 @@ class MediaCodecDecoder(
                 }
             } catch (e: Exception) {
                 SlarkLog.e(LOG_TAG, "queueInputBuffer exception: ${e.message}")
+                inputBufferQueue.offer(inputIndex)
                 return SlarkPlayerErrorCode.CodecNotProcessed.value
             }
         }

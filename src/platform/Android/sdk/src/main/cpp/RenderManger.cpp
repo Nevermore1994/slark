@@ -4,6 +4,8 @@
 
 #include <android/native_window_jni.h>
 
+#include <memory>
+
 #include "AndroidEGLContext.h"
 #include "AndroidVulkanContext.h"
 #include "GLContextManager.h"
@@ -65,7 +67,8 @@ static void RenderManager_rebuildSurface(JNIEnv* env,
 static jboolean RenderManager_createEGLContext(JNIEnv* env,
                                                const std::string& playerId,
                                                jobject surface) {
-    auto* window = ANativeWindow_fromSurface(env, surface);
+    std::unique_ptr<ANativeWindow, decltype(&ANativeWindow_release)> window(
+        ANativeWindow_fromSurface(env, surface), &ANativeWindow_release);
     if (window == nullptr) {
         LogE("failed to get ANativeWindow from surface");
         return false;
@@ -80,16 +83,17 @@ static jboolean RenderManager_createEGLContext(JNIEnv* env,
         LogE("failed to create EGL context");
         return false;
     }
-    auto eglSurface = eglContext->createWindowSurface(window);
+    auto eglSurface = eglContext->createWindowSurface(window.get());
     if (eglSurface == nullptr) {
         LogE("failed to create EGL surface");
         return false;
     }
     eglContext->attachContext(eglSurface);
-    ANativeWindow_release(window);
     auto error = eglGetError();
     if (error != EGL_SUCCESS) {
         LogE("failed to attach EGL context to surface, error: {}", error);
+        eglContext->detachContext();
+        eglContext->releaseSurface(eglSurface);
         return false;
     }
     auto info = std::make_shared<SharedEGLContextInfo>();
