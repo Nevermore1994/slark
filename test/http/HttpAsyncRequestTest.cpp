@@ -3,12 +3,25 @@
 //
 #include <gtest/gtest.h>
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include <array>
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
+
+#include "Socket.hpp"
 
 #include "AsyncGenerator.hpp"
 #include "CancellationToken.h"
@@ -30,6 +43,135 @@ void resumeAndWait(Task<void>& coro) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 }
+
+class StreamingCancellationServer final {
+ public:
+    StreamingCancellationServer() {
+        listenFd_ = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (listenFd_ < 0) {
+            throw std::runtime_error("failed to create cancellation test socket");
+        }
+        int reuse = 1;
+        ::setsockopt(listenFd_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        address.sin_port = 0;
+        if (::bind(listenFd_, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) < 0 ||
+            ::listen(listenFd_, 1) < 0) {
+            ::close(listenFd_);
+            throw std::runtime_error("failed to bind cancellation test socket");
+        }
+        socklen_t length = sizeof(address);
+        if (::getsockname(listenFd_, reinterpret_cast<sockaddr*>(&address), &length) < 0) {
+            ::close(listenFd_);
+            throw std::runtime_error("failed to read cancellation test port");
+        }
+        port_ = ntohs(address.sin_port);
+        worker_ = std::thread([this] { serve(); });
+    }
+
+    ~StreamingCancellationServer() {
+        stopped_.store(true, std::memory_order_release);
+        if (listenFd_ >= 0) {
+            ::shutdown(listenFd_, SHUT_RDWR);
+            ::close(listenFd_);
+        }
+        if (worker_.joinable()) {
+            worker_.join();
+        }
+    }
+
+    StreamingCancellationServer(const StreamingCancellationServer&) = delete;
+    StreamingCancellationServer& operator=(const StreamingCancellationServer&) = delete;
+
+    [[nodiscard]] std::string url() const {
+        return "http://127.0.0.1:" + std::to_string(port_) + "/stream";
+    }
+
+    [[nodiscard]] bool clientDisconnected() const noexcept {
+        return clientDisconnected_.load(std::memory_order_acquire);
+    }
+
+ private:
+    static bool sendAll(int fd, std::string_view data) noexcept {
+        size_t sent = 0;
+        while (sent < data.size()) {
+            const auto count = ::send(fd, data.data() + sent, data.size() - sent, kNoSignal);
+            if (count <= 0) {
+                return false;
+            }
+            sent += static_cast<size_t>(count);
+        }
+        return true;
+    }
+
+    bool waitForClientClose(int fd) noexcept {
+        pollfd event{fd, POLLIN, 0};
+        const auto ready = ::poll(&event, 1, 3000);
+        if (ready <= 0) {
+            return false;
+        }
+        char byte = 0;
+        const auto count = ::recv(fd, &byte, 1, MSG_DONTWAIT);
+        return count == 0;
+    }
+
+    void serve() noexcept {
+        const int client = ::accept(listenFd_, nullptr, nullptr);
+        if (client < 0) {
+            return;
+        }
+#if defined(__APPLE__)
+        int noSigpipe = 1;
+        ::setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, sizeof(noSigpipe));
+#endif
+        std::string request;
+        std::array<char, 1024> buffer{};
+        while (!stopped_.load(std::memory_order_acquire) &&
+               request.find("\r\n\r\n") == std::string::npos) {
+            const auto count = ::recv(client, buffer.data(), buffer.size(), 0);
+            if (count <= 0) {
+                ::close(client);
+                return;
+            }
+            request.append(buffer.data(), static_cast<size_t>(count));
+        }
+
+        constexpr size_t kFirstChunkSize = 1024;
+        constexpr size_t kTotalBodySize = 10 * 1024;
+        const std::string responseHeaders =
+            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
+        const std::string firstChunk = "400\r\n" + std::string(kFirstChunkSize, 'a') + "\r\n";
+        if (sendAll(client, responseHeaders) && sendAll(client, firstChunk)) {
+            // Keep later chunks unavailable until cancellation closes the connection.
+            if (waitForClientClose(client)) {
+                clientDisconnected_.store(true, std::memory_order_release);
+            } else {
+                constexpr size_t kFollowupChunkSize = 1024;
+                const std::string followupChunk =
+                    "400\r\n" + std::string(kFollowupChunkSize, 'b') + "\r\n";
+                size_t remaining = kTotalBodySize - kFirstChunkSize;
+                while (remaining > 0 && !stopped_.load(std::memory_order_acquire)) {
+                    if (!sendAll(client, followupChunk)) {
+                        break;
+                    }
+                    remaining -= kFollowupChunkSize;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                }
+                sendAll(client, "0\r\n\r\n");
+            }
+        }
+        ::shutdown(client, SHUT_RDWR);
+        ::close(client);
+    }
+
+    int listenFd_ = -1;
+    uint16_t port_ = 0;
+    std::atomic<bool> stopped_{false};
+    std::atomic<bool> clientDisconnected_{false};
+    std::thread worker_;
+};
 
 }  // namespace
 
@@ -232,38 +374,52 @@ TEST(HttpAsyncRequestTest, StreamingExecute) {
 }
 
 TEST(HttpAsyncRequestTest, StreamingExecuteWithCancellation) {
-    auto coro = []() -> Task<void> {
+    StreamingCancellationServer server;
+    size_t receivedBytes = 0;
+    bool receivedHeaders = false;
+    Error terminalError = Error::Success;
+
+    auto coro = runVoidTask([&]() -> Task<void> {
         RequestInfo info;
-        info.url = "http://httpbingo.org/stream-bytes/10240";
+        info.url = server.url();
         info.methodType = HttpMethodType::Get;
-        info.readTimeout = std::chrono::milliseconds(10000);
+        info.networkAddressPolicy = NetworkAddressPolicy::AllowAny;
+        info.ipVersion = IPVersion::V4;
+        info.readTimeout = std::chrono::seconds(5);
+        info.readIdleTimeout = std::chrono::seconds(5);
 
         HttpRequest request;
         auto gen = request.streamingExecute(info);
-
-        size_t receivedBytes = 0;
-        int32_t chunkCount = 0;
-
         while (true) {
             auto chunk = co_await gen.next();
             if (!chunk.has_value()) {
                 break;
             }
+            if (chunk->statusCode == HttpStatusCode::OK) {
+                receivedHeaders = true;
+            }
             if (chunk->hasData()) {
                 receivedBytes += chunk->data->length();
-            }
-            chunkCount++;
-
-            if (chunkCount >= 2) {
                 request.cancel();
+                continue;
+            }
+            if (chunk->hasError()) {
+                terminalError = chunk->error.retCode;
+                break;
             }
         }
-
-        EXPECT_LT(receivedBytes, 10240u);
-    }();
+    });
 
     resumeAndWait(coro);
-    EXPECT_TRUE(coro.isDone());
+    ASSERT_TRUE(coro.isDone());
+    EXPECT_TRUE(receivedHeaders);
+    EXPECT_EQ(receivedBytes, 1024u);
+    EXPECT_EQ(terminalError, Error::Cancelled);
+
+    for (int i = 0; i < 100 && !server.clientDisconnected(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(server.clientDisconnected());
 }
 
 TEST(HttpAsyncRequestTest, ConcurrentRequests) {
