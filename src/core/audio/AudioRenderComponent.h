@@ -10,6 +10,7 @@
 #include <mutex>
 #include <optional>
 
+#include "AccessGate.hpp"
 #include "AudioInfo.h"
 #include "Clock.h"
 #include "IPipelineComponent.h"
@@ -98,68 +99,16 @@ class AudioRenderComponent : public IPipelineComponent,
     static constexpr uint32_t kAudioBufferSize = 262144;
 
     struct AudioDataPlane {
-        static constexpr uint32_t kClosed = 1U << 31;
-        static constexpr uint32_t kCountMask = ~kClosed;
-
-        class AccessScope {
-         public:
-            explicit AccessScope(AudioDataPlane* plane) noexcept : plane_(plane) {
-                entered_ = plane_ != nullptr && plane_->tryEnter();
-            }
-
-            ~AccessScope() {
-                if (entered_) {
-                    plane_->leave();
-                }
-            }
-
-            explicit operator bool() const noexcept {
-                return entered_;
-            }
-
-         private:
-            AudioDataPlane* plane_ = nullptr;
-            bool entered_ = false;
-        };
-
-        bool tryEnter() noexcept {
-            auto state = accessState.load(std::memory_order_relaxed);
-            while ((state & kClosed) == 0) {
-                if ((state & kCountMask) == kCountMask) {
-                    return false;
-                }
-                if (accessState.compare_exchange_weak(state, state + 1,
-                                                       std::memory_order_acquire,
-                                                       std::memory_order_relaxed)) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        void leave() noexcept {
-            const auto previous = accessState.fetch_sub(1, std::memory_order_release);
-            if ((previous & kCountMask) == 1) {
-                waitCondition.notify_all();
-            }
-        }
-
         void closeAndWait() noexcept {
-            accessState.fetch_or(kClosed, std::memory_order_acq_rel);
-            std::unique_lock lock(waitMutex);
-            waitCondition.wait(lock, [this] {
-                return (accessState.load(std::memory_order_acquire) & kCountMask) == 0;
-            });
+            gate.closeAndWait();
         }
 
         void open() noexcept {
-            accessState.fetch_and(kCountMask, std::memory_order_release);
+            gate.open();
         }
 
         SPSCRingBuffer<uint8_t, kAudioBufferSize> buffer;
-        std::atomic<uint32_t> accessState{0};
-        std::mutex waitMutex;
-        std::condition_variable waitCondition;
+        AccessGate gate;
         std::atomic<uint64_t> renderedDataLength{0};
         std::atomic<uint64_t> offsetTimeUs{0};
         std::atomic<bool> decoderCompleted{false};

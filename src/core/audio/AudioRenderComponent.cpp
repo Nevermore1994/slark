@@ -42,7 +42,7 @@ void AudioRenderComponent::init() noexcept {
     pimpl->setProvider([dataPlane = std::move(dataPlane)](uint8_t* data,
                                                           uint32_t size,
                                                           AudioDataFlag& /*flag*/) -> uint32_t {
-        AudioDataPlane::AccessScope access(dataPlane.get());
+        AccessGate::Scope access(&dataPlane->gate);
         if (!access) {
             return 0;
         }
@@ -96,7 +96,7 @@ bool AudioRenderComponent::process(AVFrameRefPtr frame) noexcept {
     if (!dataPlane_) {
         return false;
     }
-    AudioDataPlane::AccessScope access(dataPlane_.get());
+    AccessGate::Scope access(&dataPlane_->gate);
     return access && dataPlane_->buffer.writeExact(
                          frame->data->data(), static_cast<uint32_t>(frame->data->length()));
 }

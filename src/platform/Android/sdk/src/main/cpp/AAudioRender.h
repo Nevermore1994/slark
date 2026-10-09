@@ -10,6 +10,7 @@
 #include <memory>
 #include <mutex>
 
+#include "AccessGate.hpp"
 #include "AudioInfo.h"
 
 namespace slark {
@@ -30,20 +31,6 @@ class AAudioRender : public IAudioRender {
     [[nodiscard]] Time::TimeDelta getHardwareLatency() noexcept override;
 
  private:
-    class CallbackScope {
-     public:
-        explicit CallbackScope(AAudioRender* render) noexcept;
-        ~CallbackScope();
-
-        explicit operator bool() const noexcept {
-            return entered_;
-        }
-
-     private:
-        AAudioRender* render_ = nullptr;
-        bool entered_ = false;
-    };
-
     static aaudio_data_callback_result_t dataCallback(AAudioStream* stream,
                                                       void* userData,
                                                       void* audioData,
@@ -51,25 +38,16 @@ class AAudioRender : public IAudioRender {
 
     static void errorCallback(AAudioStream* stream, void* userData, aaudio_result_t error) noexcept;
 
-    bool tryEnterCallback() noexcept;
-    void leaveCallback() noexcept;
-    void closeCallbackGateAndWait() noexcept;
-    void openCallbackGate() noexcept;
     void recoverIfNeeded() noexcept;
 
     void initStream() noexcept;
     void releaseStream() noexcept;
 
  private:
-    static constexpr uint32_t kCallbackGateClosed = 1U << 31;
-    static constexpr uint32_t kCallbackCountMask = ~kCallbackGateClosed;
-
     AAudioStream* stream_ = nullptr;
     AAudioStreamBuilder* builder_ = nullptr;
     std::mutex streamMutex_;
-    std::atomic<uint32_t> callbackState_{kCallbackGateClosed};
-    std::mutex callbackWaitMutex_;
-    std::condition_variable callbackWaitCondition_;
+    AccessGate callbackGate_{false};
     std::atomic<bool> closing_{false};
     std::atomic<bool> recoveryRequested_{false};
     std::atomic<aaudio_result_t> recoveryError_{AAUDIO_OK};
