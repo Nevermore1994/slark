@@ -73,12 +73,16 @@ class Http1Session final : public NonCopyable, public std::enable_shared_from_th
     [[nodiscard]] static std::optional<Url> parseUrl(const std::string& urlString,
                                                      ErrorInfo& error);
 
+    static constexpr std::chrono::seconds kDefaultIdleTimeout{30};
+
     mutable std::mutex mutex_;
     std::shared_ptr<IExecutor> executor_ = std::make_shared<SerialExecutor>();
     std::shared_ptr<OwnedConnection> connection_;
     std::optional<Origin> origin_;
     std::string pendingReadData_;
     std::chrono::steady_clock::time_point lastActivity_{};
+    // Idle limit of the cached connection; the server's Keep-Alive hint can only lower it
+    std::chrono::seconds idleTimeout_ = kDefaultIdleTimeout;
     uint64_t generation_ = 0;
     CancellationToken closeToken_;
     std::atomic<bool> busy_{false};

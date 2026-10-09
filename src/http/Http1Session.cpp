@@ -19,7 +19,17 @@ namespace slark::http {
 
 namespace {
 
-constexpr auto kIdleTimeout = std::chrono::seconds(30);
+// Leaves a margin so the request is not sent just as the server drops the connection
+constexpr auto kKeepAliveSafetyMargin = std::chrono::seconds(1);
+
+std::chrono::seconds idleTimeoutFor(std::optional<std::chrono::seconds> serverHint,
+                                    std::chrono::seconds defaultTimeout) noexcept {
+    if (!serverHint) {
+        return defaultTimeout;
+    }
+    return std::clamp(*serverHint - kKeepAliveSafetyMargin, std::chrono::seconds(0),
+                      defaultTimeout);
+}
 
 }  // namespace
 
@@ -67,9 +77,13 @@ Task<Http1Session::ConnectionResult> Http1Session::acquireConnection(const Reque
         generation = generation_;
         const auto now = std::chrono::steady_clock::now();
         const bool idleExpired = connection_ && lastActivity_.time_since_epoch().count() != 0 &&
-                                 now - lastActivity_ >= kIdleTimeout;
+                                 now - lastActivity_ >= idleTimeout_;
         const bool originChanged = connection_ && (!origin_ || !origin_->matches(url));
-        if (idleExpired || originChanged || (connection_ && !connection_->isValid())) {
+        // Unread leftovers are a response that already arrived, so the connection stays in use
+        const bool peerGone = connection_ && connection_->isValid() && pendingReadData_.empty() &&
+                              !isIdleConnectionUsable(connection_->get()->getFd());
+        if (idleExpired || originChanged || peerGone ||
+            (connection_ && !connection_->isValid())) {
             staleConnection = std::move(connection_);
             origin_.reset();
             pendingReadData_.clear();
@@ -109,6 +123,7 @@ Task<Http1Session::ConnectionResult> Http1Session::acquireConnection(const Reque
         } else if (!connection_) {
             connection_ = newConnection;
             origin_ = Origin{url.scheme, url.host, url.portNumber()};
+            idleTimeout_ = kDefaultIdleTimeout;
             lastActivity_ = std::chrono::steady_clock::now();
             connection_->setPerf(&perf);
         } else {
@@ -142,6 +157,7 @@ void Http1Session::discardConnection(const std::shared_ptr<OwnedConnection>& con
             origin_.reset();
             pendingReadData_.clear();
             lastActivity_ = {};
+            idleTimeout_ = kDefaultIdleTimeout;
         } else {
             toClose = connection;
         }
@@ -312,9 +328,11 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo reques
     bool storedForReuse = false;
     if (canReuse) {
         auto unread = parser.takeUnreadData();
+        const auto idleTimeout = idleTimeoutFor(parser.keepAliveTimeout(), kDefaultIdleTimeout);
         std::lock_guard<std::mutex> lock(mutex_);
         if (connection_ == connection && connection_->isValid()) {
             pendingReadData_ = std::move(unread);
+            idleTimeout_ = idleTimeout;
             lastActivity_ = std::chrono::steady_clock::now();
             storedForReuse = true;
         }

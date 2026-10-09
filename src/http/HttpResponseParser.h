@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -138,6 +139,9 @@ class HttpResponseParser {
     [[nodiscard]] const std::unordered_map<std::string, std::string>& headers() const noexcept {
         return headers_;
     }
+
+    // Idle lifetime the server advertised via "Keep-Alive: timeout=N"
+    [[nodiscard]] std::optional<std::chrono::seconds> keepAliveTimeout() const noexcept;
 
     [[nodiscard]] const std::unordered_map<std::string, std::string>& trailers() const noexcept {
         return trailers_;

@@ -111,6 +111,32 @@ bool HttpResponseParser::checkHeaderOverflow(size_t appendSize) noexcept {
     return false;
 }
 
+std::optional<std::chrono::seconds> HttpResponseParser::keepAliveTimeout() const noexcept {
+    const auto it = headers_.find("keep-alive");
+    if (it == headers_.end()) {
+        return std::nullopt;
+    }
+    std::string_view params(it->second);
+    while (!params.empty()) {
+        const auto comma = params.find(',');
+        const auto param = trimOws(params.substr(0, comma));
+        const auto equals = param.find('=');
+        if (equals != std::string_view::npos &&
+            StringUtil::iequals(trimOws(param.substr(0, equals)), "timeout")) {
+            int64_t seconds = 0;
+            if (!parseNonNegativeInt64(trimOws(param.substr(equals + 1)), 10, seconds)) {
+                return std::nullopt;
+            }
+            return std::chrono::seconds(seconds);
+        }
+        if (comma == std::string_view::npos) {
+            break;
+        }
+        params.remove_prefix(comma + 1);
+    }
+    return std::nullopt;
+}
+
 void HttpResponseParser::processCurrentState() {
     switch (state_) {
         case State::StatusLine:    processStatusLine(); break;

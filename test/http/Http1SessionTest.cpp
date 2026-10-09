@@ -11,6 +11,7 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -20,6 +21,7 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -630,4 +632,261 @@ TEST(Http1SessionTest, ConcurrentRequestIsRejectedWithoutSharingConnection) {
     EXPECT_TRUE(firstConnected);
     EXPECT_EQ(secondError, Error::InvalidOperation);
     EXPECT_EQ(server.acceptCount(), 1);
+}
+
+namespace {
+
+// Serves every request with a tiny keep-alive response and keeps accepting new connections,
+// so a test can observe whether the client reused or replaced its connection.
+class ScriptedServer final {
+public:
+    struct Options {
+        bool closeAfterResponse = false;
+        std::string extraHeaders;
+    };
+
+    explicit ScriptedServer(Options options) : options_(std::move(options)) {
+        listenFd_ = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (listenFd_ < 0) {
+            throw std::runtime_error("failed to create scripted server socket");
+        }
+        int reuseAddress = 1;
+        ::setsockopt(listenFd_, SOL_SOCKET, SO_REUSEADDR, &reuseAddress, sizeof(reuseAddress));
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        address.sin_port = htons(0);
+        socklen_t length = sizeof(address);
+        if (::bind(listenFd_, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) < 0 ||
+            ::listen(listenFd_, 4) < 0 ||
+            ::getsockname(listenFd_, reinterpret_cast<sockaddr*>(&address), &length) < 0) {
+            ::close(listenFd_);
+            throw std::runtime_error("failed to set up scripted server socket");
+        }
+        port_ = ntohs(address.sin_port);
+        worker_ = std::thread([this] { serve(); });
+    }
+
+    ~ScriptedServer() {
+        stopped_ = true;
+        if (worker_.joinable()) {
+            worker_.join();
+        }
+        ::close(listenFd_);
+    }
+
+    ScriptedServer(const ScriptedServer&) = delete;
+    ScriptedServer& operator=(const ScriptedServer&) = delete;
+
+    [[nodiscard]] uint16_t port() const noexcept {
+        return port_;
+    }
+
+    [[nodiscard]] int acceptCount() const noexcept {
+        return acceptCount_.load();
+    }
+
+    [[nodiscard]] int requestCount() const noexcept {
+        return requestCount_.load();
+    }
+
+private:
+    bool waitReadable(int fd) const {
+        while (!stopped_) {
+            pollfd entry{fd, POLLIN, 0};
+            const int ready = ::poll(&entry, 1, 50);
+            if (ready > 0) {
+                return true;
+            }
+            if (ready < 0 && errno != EINTR) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    bool receiveRequest(int fd) const {
+        std::string request;
+        std::array<char, 4096> buffer{};
+        while (request.find("\r\n\r\n") == std::string::npos) {
+            if (!waitReadable(fd)) {
+                return false;
+            }
+            const auto received = ::recv(fd, buffer.data(), buffer.size(), 0);
+            if (received <= 0) {
+                return false;
+            }
+            request.append(buffer.data(), static_cast<size_t>(received));
+        }
+        return true;
+    }
+
+    void serve() {
+        while (waitReadable(listenFd_)) {
+            const int clientFd = ::accept(listenFd_, nullptr, nullptr);
+            if (clientFd < 0) {
+                continue;
+            }
+            acceptCount_.fetch_add(1);
+            const std::string response = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n"
+                                         "Connection: keep-alive\r\n" +
+                                         options_.extraHeaders + "\r\nok";
+            while (receiveRequest(clientFd)) {
+                requestCount_.fetch_add(1);
+                if (::send(clientFd, response.data(), response.size(), 0) < 0 ||
+                    options_.closeAfterResponse) {
+                    break;
+                }
+            }
+            ::close(clientFd);
+        }
+    }
+
+    Options options_;
+    int listenFd_ = -1;
+    uint16_t port_ = 0;
+    std::atomic<bool> stopped_{false};
+    std::atomic<int> acceptCount_{0};
+    std::atomic<int> requestCount_{0};
+    std::thread worker_;
+};
+
+struct FetchState final {
+    HttpResponse response;
+    std::atomic<bool> done{false};
+};
+
+// Runs one request to completion; nullptr when it did not finish in time
+std::shared_ptr<FetchState> fetch(uint16_t port, const std::shared_ptr<Http1Session>& session) {
+    auto state = std::make_shared<FetchState>();
+    auto task = runVoidTask([state, port, session]() -> Task<void> {
+        auto result = co_await HttpProcessor::process(makeRequest(port, session));
+        if (result) {
+            state->response = std::move(*result);
+        } else {
+            state->response.error = result.error();
+        }
+        state->done.store(true);
+    });
+    task.resume();
+    waitFor(state->done);
+    return state->done.load() ? state : nullptr;
+}
+
+}  // namespace
+
+TEST(Http1SessionTest, ReconnectsWhenServerClosedTheIdleConnection) {
+    ThreadPool pool(ThreadPoolConfig{2});
+    ScriptedServer server({.closeAfterResponse = true});
+    auto session = std::make_shared<Http1Session>();
+
+    auto first = fetch(server.port(), session);
+    ASSERT_NE(first, nullptr);
+    EXPECT_EQ(first->response.error.retCode, Error::Success);
+
+    // Let the server's FIN reach the cached connection
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    auto second = fetch(server.port(), session);
+    ASSERT_NE(second, nullptr);
+    EXPECT_EQ(second->response.error.retCode, Error::Success);
+    ASSERT_NE(second->response.body, nullptr);
+    EXPECT_EQ(second->response.body->toString(), "ok");
+    EXPECT_EQ(server.acceptCount(), 2);
+    EXPECT_EQ(server.requestCount(), 2);
+}
+
+TEST(Http1SessionTest, KeepAliveTimeoutHintRetiresTheConnectionEarly) {
+    ThreadPool pool(ThreadPoolConfig{2});
+    ScriptedServer server({.extraHeaders = "Keep-Alive: timeout=2\r\n"});
+    auto session = std::make_shared<Http1Session>();
+
+    auto first = fetch(server.port(), session);
+    ASSERT_NE(first, nullptr);
+    EXPECT_EQ(first->response.error.retCode, Error::Success);
+
+    // timeout=2 minus the safety margin leaves 1s of idle life
+    std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+
+    auto second = fetch(server.port(), session);
+    ASSERT_NE(second, nullptr);
+    EXPECT_EQ(second->response.error.retCode, Error::Success);
+    EXPECT_EQ(server.acceptCount(), 2);
+}
+
+TEST(Http1SessionTest, ConnectionWithinKeepAliveTimeoutIsReused) {
+    ThreadPool pool(ThreadPoolConfig{2});
+    ScriptedServer server({.extraHeaders = "Keep-Alive: timeout=30\r\n"});
+    auto session = std::make_shared<Http1Session>();
+
+    auto first = fetch(server.port(), session);
+    ASSERT_NE(first, nullptr);
+    auto second = fetch(server.port(), session);
+    ASSERT_NE(second, nullptr);
+    EXPECT_EQ(first->response.error.retCode, Error::Success);
+    EXPECT_EQ(second->response.error.retCode, Error::Success);
+    EXPECT_EQ(server.acceptCount(), 1);
+    EXPECT_EQ(server.requestCount(), 2);
+}
+
+TEST(IdleConnectionTest, QuietConnectionIsUsable) {
+    int fds[2];
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+    EXPECT_TRUE(isIdleConnectionUsable(fds[0]));
+    ::close(fds[0]);
+    ::close(fds[1]);
+}
+
+TEST(IdleConnectionTest, PeerCloseMakesConnectionUnusable) {
+    int fds[2];
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+    ::close(fds[1]);
+    EXPECT_FALSE(isIdleConnectionUsable(fds[0]));
+    ::close(fds[0]);
+}
+
+TEST(IdleConnectionTest, UnsolicitedBytesMakeConnectionUnusable) {
+    int fds[2];
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+    ASSERT_EQ(::send(fds[1], "x", 1, 0), 1);
+    EXPECT_FALSE(isIdleConnectionUsable(fds[0]));
+    // Probing must not consume the byte
+    char byte = 0;
+    EXPECT_EQ(::recv(fds[0], &byte, 1, MSG_DONTWAIT), 1);
+    ::close(fds[0]);
+    ::close(fds[1]);
+}
+
+TEST(IdleConnectionTest, InvalidSocketIsUnusable) {
+    EXPECT_FALSE(isIdleConnectionUsable(kInvalidSocket));
+}
+
+namespace {
+
+std::optional<std::chrono::seconds> keepAliveTimeoutOf(std::string_view keepAliveValue) {
+    HttpResponseParser parser({});
+    std::string response = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n";
+    if (!keepAliveValue.empty()) {
+        response += "Keep-Alive: " + std::string(keepAliveValue) + "\r\n";
+    }
+    response += "\r\n";
+    parser.feed(reinterpret_cast<const Byte*>(response.data()), response.size());
+    EXPECT_TRUE(parser.isCompleted());
+    return parser.keepAliveTimeout();
+}
+
+}  // namespace
+
+TEST(HttpResponseParserTest, ParsesKeepAliveTimeout) {
+    EXPECT_EQ(keepAliveTimeoutOf("timeout=5, max=100"), std::chrono::seconds(5));
+    EXPECT_EQ(keepAliveTimeoutOf("max=100, TIMEOUT=7"), std::chrono::seconds(7));
+    EXPECT_EQ(keepAliveTimeoutOf("timeout=0"), std::chrono::seconds(0));
+}
+
+TEST(HttpResponseParserTest, IgnoresMissingOrMalformedKeepAliveTimeout) {
+    EXPECT_EQ(keepAliveTimeoutOf(""), std::nullopt);
+    EXPECT_EQ(keepAliveTimeoutOf("max=100"), std::nullopt);
+    EXPECT_EQ(keepAliveTimeoutOf("timeout=abc"), std::nullopt);
+    EXPECT_EQ(keepAliveTimeoutOf("timeout=-3"), std::nullopt);
+    EXPECT_EQ(keepAliveTimeoutOf("timeout"), std::nullopt);
 }

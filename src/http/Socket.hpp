@@ -31,6 +31,20 @@ constexpr int kNoSignal = 0;
 
 constexpr int32_t kDefaultReadSize = 16 * 1024;
 
+// An idle keep-alive connection must have nothing to read: EOF means the peer closed it, and
+// pending bytes (an error, a TLS alert or a late session ticket) mean it cannot be trusted.
+inline bool isIdleConnectionUsable(Socket fd) noexcept {
+    if (fd == kInvalidSocket) {
+        return false;
+    }
+    char probe = 0;
+    ssize_t received = 0;
+    do {
+        received = ::recv(fd, &probe, 1, MSG_PEEK | MSG_DONTWAIT);
+    } while (received < 0 && errno == EINTR);
+    return received < 0 && (errno == EAGAIN || errno == EWOULDBLOCK);
+}
+
 struct ConnectAddress final {
     int family = AF_UNSPEC;
     sockaddr_storage storage{};
