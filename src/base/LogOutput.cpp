@@ -36,7 +36,7 @@ void outputLog(LogType level, const std::string& log) {
     if (level == LogType::Record) {
         return;
     }
-#if SLAKR_IOS
+#if SLARK_IOS
     printLog(level, log);
 #elif SLARK_ANDROID
     printLog(level, log);

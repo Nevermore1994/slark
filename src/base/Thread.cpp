@@ -330,9 +330,9 @@ void Thread::setup() noexcept {
         name = name_;
     }
 #ifndef __APPLE__
-    auto handle = worker_.native_handle();
+    // worker_ may still be mid-assignment in create(); setup() always runs on the worker itself.
     auto truncated = name.substr(0, 15);
-    pthread_setname_np(handle, truncated.c_str());
+    pthread_setname_np(pthread_self(), truncated.c_str());
 #else
     pthread_setname_np(name.c_str());
 #endif

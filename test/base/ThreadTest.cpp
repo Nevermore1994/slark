@@ -4,11 +4,14 @@
 #include "Thread.h"
 
 #include <gtest/gtest.h>
+#include <pthread.h>
 
 #include <algorithm>
 #include <atomic>
 #include <format>
+#include <future>
 #include <latch>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -442,4 +445,22 @@ TEST(Thread, createModeStillWorks) {
     thread->stop();
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
     ASSERT_TRUE(thread->isStopRequested());
+}
+TEST(Thread, workerThreadNameApplied) {
+    constexpr int kThreads = 32;
+    for (int i = 0; i < kThreads; ++i) {
+        auto thread = Thread::create("slk_name_test");
+        thread->start();
+        std::promise<std::string> promise;
+        auto future = promise.get_future();
+        auto result = thread->postTask([&promise]() {
+            char buffer[64] = {};
+            pthread_getname_np(pthread_self(), buffer, sizeof(buffer));
+            promise.set_value(buffer);
+        });
+        ASSERT_TRUE(result.has_value());
+        ASSERT_EQ(future.wait_for(std::chrono::seconds(2)), std::future_status::ready);
+        EXPECT_EQ(future.get(), "slk_name_test");
+        thread->stop();
+    }
 }
