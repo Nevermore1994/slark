@@ -111,8 +111,8 @@ NS_ASSUME_NONNULL_BEGIN
 @end
 
 @interface SlarkPlayer : NSObject
-@property(nonatomic, assign) BOOL isLoop;
-@property(nonatomic, assign) BOOL isMute;
+@property(nonatomic, assign, setter=setLoop:) BOOL isLoop;
+@property(nonatomic, assign, setter=setMute:) BOOL isMute;
 @property(nonatomic, assign) CGFloat volume;
 @property(nonatomic, assign) SlarkPlayerRotation rotation;
 @property(nonatomic, assign, readonly) SlarkPlayerState currentState;

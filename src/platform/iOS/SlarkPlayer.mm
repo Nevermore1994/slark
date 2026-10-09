@@ -200,6 +200,7 @@ static slark::FlowConfig toFlowConfig(SlarkFlowConfig* config) {
 }
 
 - (void)setLoop:(BOOL)isLoop {
+    _isLoop = isLoop;
     if (_player) {
         _player->setLoop(static_cast<bool>(isLoop));
     }
@@ -213,6 +214,7 @@ static slark::FlowConfig toFlowConfig(SlarkFlowConfig* config) {
 }
 
 - (void)setMute:(BOOL)isMute {
+    _isMute = isMute;
     if (_player) {
         _player->setMute(static_cast<bool>(isMute));
     }
@@ -239,7 +241,7 @@ static slark::FlowConfig toFlowConfig(SlarkFlowConfig* config) {
     return NO;
 }
 
-- (SlarkPlayerState)state {
+- (SlarkPlayerState)currentState {
     if (_player) {
         return convertState(_player->state());
     }

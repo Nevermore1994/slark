@@ -189,24 +189,61 @@ static const GLfloat kColorConversion709FullRange[] = {
     [self stop];
 
     if (_renderQueue) {
-        // Use async + a strong self-reference to avoid the main-thread sync(renderQueue) <->
-        // renderQueue sync(main) deadlock; GL resources and preRenderBuffer must be cleaned
-        // up on the renderQueue
-        dispatch_queue_t q = _renderQueue;
-        __strong RenderGLView* strongSelf = self;
-        dispatch_async(q, ^{
-          [strongSelf cleanupOpenGL];
-          if (strongSelf->_vertexCoordinateBuffer) {
-              glDeleteBuffers(1, &strongSelf->_vertexCoordinateBuffer);
-              strongSelf->_vertexCoordinateBuffer = 0;
+        // Async avoids the main-thread sync(renderQueue) <-> renderQueue sync(main) deadlock.
+        // The block must not reference self: it runs after dealloc, so only moved-out resources
+        // are captured and released on the renderQueue.
+        auto context = _context;
+        std::shared_ptr<GLProgram> program(std::move(_program));
+        CVOpenGLESTextureRef lumaTexture = _lumaTexture;
+        CVOpenGLESTextureRef chromaTexture = _chromaTexture;
+        CVOpenGLESTextureRef renderTexture = _renderTexture;
+        CVOpenGLESTextureCacheRef textureCache = _videoTextureCache;
+        CVPixelBufferRef preRenderBuffer = _preRenderBuffer;
+        GLuint frameBuffer = _frameBuffer;
+        GLuint renderBuffer = _renderBuffer;
+        GLuint vertexBuffer = _vertexCoordinateBuffer;
+        GLuint textureBuffer = _textureCoordinateBuffer;
+        _lumaTexture = NULL;
+        _chromaTexture = NULL;
+        _renderTexture = NULL;
+        _videoTextureCache = NULL;
+        _preRenderBuffer = NULL;
+
+        dispatch_async(_renderQueue, ^{
+          if (context) {
+              context->attachContext();
+              if (lumaTexture) {
+                  CFRelease(lumaTexture);
+              }
+              if (chromaTexture) {
+                  CFRelease(chromaTexture);
+              }
+              if (renderTexture) {
+                  CFRelease(renderTexture);
+              }
+              if (textureCache) {
+                  CVOpenGLESTextureCacheFlush(textureCache, 0);
+              }
+              if (frameBuffer) {
+                  glDeleteFramebuffers(1, &frameBuffer);
+              }
+              if (renderBuffer) {
+                  glDeleteRenderbuffers(1, &renderBuffer);
+              }
+              if (vertexBuffer) {
+                  glDeleteBuffers(1, &vertexBuffer);
+              }
+              if (textureBuffer) {
+                  glDeleteBuffers(1, &textureBuffer);
+              }
+              program.reset();
+              context->detachContext();
           }
-          if (strongSelf->_textureCoordinateBuffer) {
-              glDeleteBuffers(1, &strongSelf->_textureCoordinateBuffer);
-              strongSelf->_textureCoordinateBuffer = 0;
+          if (textureCache) {
+              CFRelease(textureCache);
           }
-          if (strongSelf->_preRenderBuffer) {
-              CVPixelBufferRelease(strongSelf->_preRenderBuffer);
-              strongSelf->_preRenderBuffer = NULL;
+          if (preRenderBuffer) {
+              CVPixelBufferRelease(preRenderBuffer);
           }
         });
     }
@@ -535,31 +572,6 @@ static const GLfloat kColorConversion709FullRange[] = {
     }
 
     [self createFramebuffer];
-
-    _context->detachContext();
-}
-
-- (void)cleanupOpenGL {
-    if (!_context) {
-        return;
-    }
-
-    _context->attachContext();
-
-    [self cleanupTextures];
-
-    if (_frameBuffer) {
-        glDeleteFramebuffers(1, &_frameBuffer);
-        _frameBuffer = 0;
-    }
-    if (_renderBuffer) {
-        glDeleteRenderbuffers(1, &_renderBuffer);
-        _renderBuffer = 0;
-    }
-    if (_videoTextureCache) {
-        CFRelease(_videoTextureCache);
-        _videoTextureCache = NULL;
-    }
 
     _context->detachContext();
 }

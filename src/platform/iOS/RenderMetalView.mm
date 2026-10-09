@@ -234,17 +234,20 @@ struct MetalVideoRender : public IVideoRender {
     _isDestructing.store(true);
     [self stop];
     if (_renderQueue) {
-        // Use async + a strong self-reference to avoid the main-thread sync(renderQueue) <->
-        // renderQueue sync(main) deadlock
-        dispatch_queue_t q = _renderQueue;
-        __block RenderMetalView* strongSelf = self;
-        dispatch_async(q, ^{
-          [strongSelf cleanupMetal];
-          if (strongSelf->_preRenderBuffer) {
-              CVPixelBufferRelease(strongSelf->_preRenderBuffer);
-              strongSelf->_preRenderBuffer = NULL;
+        // Async avoids the main-thread sync(renderQueue) <-> renderQueue sync(main) deadlock.
+        // The block must not reference self: it runs after dealloc, so only the raw CF
+        // resources are moved out and released on the renderQueue.
+        CVMetalTextureCacheRef textureCache = _textureCache;
+        CVPixelBufferRef preRenderBuffer = _preRenderBuffer;
+        _textureCache = nil;
+        _preRenderBuffer = NULL;
+        dispatch_async(_renderQueue, ^{
+          if (textureCache) {
+              CFRelease(textureCache);
           }
-          strongSelf = nil;
+          if (preRenderBuffer) {
+              CVPixelBufferRelease(preRenderBuffer);
+          }
         });
     }
 }
@@ -435,19 +438,6 @@ struct MetalVideoRender : public IVideoRender {
         return NO;
     }
     return YES;
-}
-
-- (void)cleanupMetal {
-    if (_textureCache) {
-        CFRelease(_textureCache);
-        _textureCache = nil;
-    }
-    _yuvPipeline = nil;
-    _rgbaPipeline = nil;
-    _vertexBuffer = nil;
-    _texCoordBuffer = nil;
-    _commandQueue = nil;
-    _device = nil;
 }
 
 #pragma mark - Public Interface
