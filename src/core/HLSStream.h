@@ -113,6 +113,7 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
 
     void handlePlaylistResponse(http::HttpResponse&& response);
     void handleSegmentChunk(http::StreamChunk&& chunk, uint64_t sequence);
+    void commitSegmentData(uint64_t sequence, bool isLastChunk);
     void reportHttpError(const http::HttpResponse& response);
     void reportPlaylistError(Error error, int32_t originCode);
     void reportSegmentError(uint64_t sequence, Error error, int32_t originCode);
@@ -163,7 +164,9 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
 
     std::atomic<StreamState> state_{StreamState::Idle};
     std::atomic<uint64_t> position_{0};
-    std::shared_ptr<Data> pendingSegmentData_;
+    std::shared_ptr<Data> pendingSegmentData_;  // withheld so the last chunk can be flagged
+    uint64_t committedBytes_ = 0;               // a retry replays from byte 0 and skips these
+    uint64_t receivedBytes_ = 0;
     bool waitingForCapacity_ = false;
     std::atomic<bool> isRunning_{false};
     std::atomic<bool> isCompleted_{false};

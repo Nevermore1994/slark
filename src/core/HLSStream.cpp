@@ -201,6 +201,7 @@ StreamResult<void> HLSStream::seekByTime(double timeSec, uint64_t sourceGenerati
     nextSegmentSequence_ = playlist_->segments()[*segOpt].sequence;
     hasNextSegmentSequence_ = true;
     position_ = 0;
+    committedBytes_ = 0;
 
     ++generation_;
     cancelSegmentOp(kWaitSettleTimeout.count());
@@ -441,6 +442,7 @@ void HLSStream::downloadSegment(uint32_t segIndex) {
     }
 
     const auto& segment = playlist_->segments()[segIndex];
+    receivedBytes_ = 0;
     LogI("[HLSStream::downloadSegment] start: segIndex={} sequence={} url={} range={}", segIndex,
          segment.sequence, resolveUrl(segment.uri),
          segment.byteRange ? segment.byteRange->toHeaderString() : std::string{});
@@ -552,34 +554,23 @@ void HLSStream::handleSegmentChunk(http::StreamChunk&& chunk, uint64_t sequence)
     }
 
     if (chunk.hasData()) {
-        if (!pendingSegmentData_) {
-            pendingSegmentData_ = std::make_shared<Data>();
+        const auto size = chunk.data->length();
+        const auto replayed = committedBytes_ > receivedBytes_
+                                  ? std::min<uint64_t>(size, committedBytes_ - receivedBytes_)
+                                  : uint64_t{0};
+        receivedBytes_ += size;
+        if (replayed < size) {
+            std::shared_ptr<Data> fresh =
+                replayed == 0 ? std::shared_ptr<Data>(chunk.data.release())
+                              : std::make_shared<Data>(chunk.data->view(replayed));
+            commitSegmentData(sequence, false);
+            pendingSegmentData_ = std::move(fresh);
         }
-        pendingSegmentData_->append(std::move(chunk.data));
     }
 
     if (chunk.isFinal) {
-        if (pendingSegmentData_ && !pendingSegmentData_->empty()) {
-            auto buffer = std::move(pendingSegmentData_);
-            const auto chunkSize = buffer->length();
-            const auto offset = position_.load(std::memory_order_acquire);
-            if (params_.onData) {
-                params_.onData(DataChunk{
-                    .data = DataView(buffer->view()),
-                    .owner = std::move(buffer),
-                    .offset = offset,
-                    .segmentIndex = sequence,
-                    .sourceGeneration = sourceGeneration_,
-                    .isLastChunk = true,
-                });
-            }
-            position_.store(offset + chunkSize, std::memory_order_release);
-            const auto pos = offset + chunkSize;
-            if (pos / logProgressBytes() != offset / logProgressBytes()) {
-                LogI("[HLSStream::handleSegmentChunk] progress: segIndex={} pos={} chunk={}",
-                     sequence, pos, chunkSize);
-            }
-        }
+        commitSegmentData(sequence, true);
+        committedBytes_ = 0;
         cancelSegmentOp(kWaitSettleTimeout.count());
         retryCount_ = 0;
         if (!hasNextSegmentSequence_ || sequence >= nextSegmentSequence_) {
@@ -595,6 +586,33 @@ void HLSStream::handleSegmentChunk(http::StreamChunk&& chunk, uint64_t sequence)
         LogI("[HLSStream::handleSegmentChunk] segment {} done, next={}", sequence,
              nextSegmentSequence_);
         downloadSegments();
+    }
+}
+
+void HLSStream::commitSegmentData(uint64_t sequence, bool isLastChunk) {
+    if (!pendingSegmentData_ || pendingSegmentData_->empty()) {
+        pendingSegmentData_.reset();
+        return;
+    }
+    auto buffer = std::move(pendingSegmentData_);
+    const auto chunkSize = buffer->length();
+    const auto offset = position_.load(std::memory_order_acquire);
+    if (params_.onData) {
+        params_.onData(DataChunk{
+            .data = DataView(buffer->view()),
+            .owner = std::move(buffer),
+            .offset = offset,
+            .segmentIndex = sequence,
+            .sourceGeneration = sourceGeneration_,
+            .isLastChunk = isLastChunk,
+        });
+    }
+    position_.store(offset + chunkSize, std::memory_order_release);
+    committedBytes_ += chunkSize;
+    const auto pos = offset + chunkSize;
+    if (pos / logProgressBytes() != offset / logProgressBytes()) {
+        LogI("[HLSStream::commitSegmentData] progress: segIndex={} pos={} chunk={}", sequence,
+             pos, chunkSize);
     }
 }
 

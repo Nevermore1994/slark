@@ -98,6 +98,12 @@ struct TSParseInfo {
         audioInfo.reset();
         videoInfo.reset();
     }
+
+    // Keeps the timestamp base: a segment fetched after a seek continues the same global
+    // timeline, so its first frame must not become the new zero point.
+    void resetParseState() noexcept {
+        isNotifiedHeader = false;
+    }
 };
 
 struct TSPtsFixInfo {
@@ -129,6 +135,9 @@ class TSDemuxer {
         : audioInfo_(audioInfo), videoInfo_(videoInfo) {}
 
     void resetData() noexcept;
+
+    // Seek/flush variant of resetData that preserves the global timestamp base.
+    void resetParseState() noexcept;
 
     bool parseData(Buffer& buffer, uint64_t tsIndex, DemuxerResult& result) noexcept;
 

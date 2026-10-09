@@ -227,7 +227,7 @@ bool TSDemuxer::parseTSPes(DataView data, uint8_t payloadIndicator, TSPESFrame& 
             return false;
         }
         uint8_t ptsFlag = (data[7] & 0xc0) >> 6;
-        LogI("pes flag info:{}", (data[7] & 0x3f));
+        LogD("pes flag info:{}", (data[7] & 0x3f));
         auto headerDataLength = static_cast<uint8_t>(data[8]);
         parsePesPtsDts(data, ptsFlag, headerDataLength, pes.pts, pes.dts, dataOffset);
     } else if (streamId != 0xbe) {
@@ -353,13 +353,19 @@ bool TSDemuxer::packH264VideoPacket(uint64_t tsIndex, AVFramePtrArray& frames) n
         LogI("video, ts index:{} pts:{}", tsIndex, frame->pts);
 
         if (parseInfo_.calculatedFps == 0) {
+            constexpr uint32_t kDefaultFrameDurationMs = 33;
+            constexpr double kMinFrameDurationMs = 1.0;
+            constexpr double kMaxFrameDurationMs = 200.0;
+            frame->duration = kDefaultFrameDurationMs;
             if (frame->index != 0) {
-                frame->duration = static_cast<uint32_t>(
-                    (frame->ptsTime() / static_cast<double>(frame->index)) * 1000);
-                parseInfo_.calculatedFps =
-                    static_cast<uint32_t>(round(1000.0 / static_cast<double>(frame->duration)));
-            } else {
-                frame->duration = 33;  // default 33ms
+                const double estimatedMs =
+                    (frame->ptsTime() / static_cast<double>(frame->index)) * 1000.0;
+                // Index-based estimation is only valid when the timeline starts at zero.
+                if (estimatedMs >= kMinFrameDurationMs && estimatedMs <= kMaxFrameDurationMs) {
+                    frame->duration = static_cast<uint32_t>(estimatedMs);
+                    parseInfo_.calculatedFps =
+                        static_cast<uint32_t>(round(1000.0 / estimatedMs));
+                }
             }
         } else {
             frame->duration = 1000 / parseInfo_.calculatedFps;
@@ -428,6 +434,15 @@ void TSDemuxer::resetData() noexcept {
     // would use stale data
     parseInfo_.reset();
     LogI("[seek info] reset data");
+}
+
+void TSDemuxer::resetParseState() noexcept {
+    audioFixInfo_.reset();
+    videoFixInfo_.reset();
+    videoESFrame_.reset();
+    audioESFrame_.reset();
+    parseInfo_.resetParseState();
+    LogI("[seek info] reset parse state, timestamp base kept");
 }
 
 void TSDemuxer::applyTimestamp(AVFrame& frame, TSParseInfo::Info& info, bool isAudio) noexcept {
@@ -509,7 +524,8 @@ bool TSDemuxer::packAudioPacket(uint64_t tsIndex, AVFramePtrArray& frames) noexc
 
 bool TSDemuxer::parseData(Buffer& buffer, uint64_t tsIndex, DemuxerResult& result) noexcept {
     if (!buffer.require(kPacketSize)) {
-        return false;
+        // Chunk ended mid TS packet: keep the remainder for the next chunk
+        return !buffer.empty();
     }
     uint64_t pos = std::string_view::npos;
     auto isNotifiedHeader = parseInfo_.isNotifiedHeader;
@@ -581,7 +597,7 @@ DemuxerResult HLSDemuxer::parseData(DataPacket& packet) noexcept {
         LogE("parse ts data error! offset:{}, ts index:{}", packet.offset, tsIndex);
         result.resultCode = DemuxerResultCode::Failed;
     }
-    if (tsIndex == getTSInfos().size() - 1 && buffer_->empty()) {
+    if (packet.isLastChunk && tsIndex == getTSInfos().size() - 1 && buffer_->empty()) {
         isCompleted_ = true;
         result.resultCode = DemuxerResultCode::FileEnd;
     }
@@ -652,7 +668,7 @@ void HLSDemuxer::seekPos(uint64_t index) noexcept {
         IDemuxer::seekPos(pos);
     }
     if (tsDemuxer_) {
-        tsDemuxer_->resetData();
+        tsDemuxer_->resetParseState();
         buffer_->reset();
     }
     seekTsIndex_ = tsIndex;
@@ -717,14 +733,14 @@ void TSDemuxerAdapter::close() noexcept {
 void TSDemuxerAdapter::flush() noexcept {
     IDemuxer::flush();
     if (tsDemuxer_) {
-        tsDemuxer_->resetData();
+        tsDemuxer_->resetParseState();
     }
 }
 
 void TSDemuxerAdapter::seekPos(uint64_t pos) noexcept {
     IDemuxer::seekPos(pos);
     if (tsDemuxer_) {
-        tsDemuxer_->resetData();
+        tsDemuxer_->resetParseState();
     }
 }
 

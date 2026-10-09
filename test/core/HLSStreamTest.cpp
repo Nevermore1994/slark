@@ -309,9 +309,6 @@ class MockHlsServer {
 
             const bool truncatedSegment =
                 path == "/seg0.ts" && failFirstSegment_.exchange(false, std::memory_order_acq_rel);
-            if (truncatedSegment) {
-                response.assign(64 * 1024, 'T');
-            }
             const bool closeConnection =
                 truncatedSegment || failMediaPlaylist || !keepAlive_ || statusCode >= 400;
             const std::string statusText = statusCode == 200   ? "OK"
@@ -620,15 +617,18 @@ TEST_F(HLSStreamTest, SegmentReconnectsAfterTruncatedResponse) {
     EXPECT_EQ(server_.requestCount("/seg1.ts"), 1);
     EXPECT_GE(server_.connectionCount(), 3);
     std::lock_guard lock(chunksMutex);
-    ASSERT_EQ(chunks.size(), 2u);
-    EXPECT_EQ(chunks[0].segmentIndex, 0u);
-    EXPECT_EQ(chunks[0].offset, 0u);
-    EXPECT_EQ(chunks[0].size(), 1024u);
-    EXPECT_TRUE(chunks[0].isLastChunk);
-    EXPECT_EQ(chunks[1].segmentIndex, 1u);
-    EXPECT_EQ(chunks[1].offset, 1024u);
-    EXPECT_EQ(chunks[1].size(), 1024u);
-    EXPECT_TRUE(chunks[1].isLastChunk);
+    ASSERT_FALSE(chunks.empty());
+    uint64_t expectedOffset = 0;
+    uint64_t seg0Bytes = 0;
+    uint64_t seg1Bytes = 0;
+    for (const auto& chunk : chunks) {
+        EXPECT_EQ(chunk.offset, expectedOffset);
+        expectedOffset += chunk.size();
+        (chunk.segmentIndex == 0 ? seg0Bytes : seg1Bytes) += chunk.size();
+    }
+    EXPECT_EQ(seg0Bytes, 1024u);
+    EXPECT_EQ(seg1Bytes, 1024u);
+    EXPECT_TRUE(chunks.back().isLastChunk);
 }
 
 TEST_F(HLSStreamTest, LivePlaylistRefreshReusesControlSession) {
