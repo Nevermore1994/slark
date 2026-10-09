@@ -22,6 +22,7 @@ enum NativeDecodeFlag {
     KeyFrame = 1,
     CodecConfig = 2,
     EndOfStream = 4,
+    Discard = 8,
 };
 
 struct VideoFrameResult {

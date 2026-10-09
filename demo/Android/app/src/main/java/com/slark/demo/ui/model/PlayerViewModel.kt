@@ -129,7 +129,14 @@ class PlayerViewModel(
                         SlarkPlayerErrorCode.PipelineFormatNotSupported,
                         SlarkPlayerErrorCode.CodecUnsupportedFormat -> "Format not supported"
                         SlarkPlayerErrorCode.PipelineDemuxError -> "Demuxing error"
-                        SlarkPlayerErrorCode.PipelineDecodeError -> "Decoding error"
+                        SlarkPlayerErrorCode.PipelineDecodeError,
+                        SlarkPlayerErrorCode.CodecError,
+                        SlarkPlayerErrorCode.CodecInputError,
+                        SlarkPlayerErrorCode.CodecInputTooLarge,
+                        SlarkPlayerErrorCode.CodecNotStarted,
+                        SlarkPlayerErrorCode.CodecNotFound,
+                        SlarkPlayerErrorCode.CodecConfigInvalid -> "Decoding error"
+                        SlarkPlayerErrorCode.CodecResourceExhausted -> "Decoder stalled"
                         SlarkPlayerErrorCode.PipelineRenderError -> "Rendering error"
                         else -> "Unknown error"
                     }

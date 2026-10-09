@@ -26,25 +26,28 @@ Error VideoHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
 }
 
 Error VideoHardwareDecoder::sendPacket(AVFrameRefPtr& frame) noexcept {
-    NativeDecodeFlag flag = NativeDecodeFlag::None;
+    int flags = NativeDecodeFlag::None;
     auto frameInfo = std::dynamic_pointer_cast<VideoFrameInfo>(frame->info);
     if (frameInfo->isIDRFrame) {
-        flag = NativeDecodeFlag::KeyFrame;
+        flags = NativeDecodeFlag::KeyFrame;
     } else if (frameInfo->isEndOfStream) {
-        flag = NativeDecodeFlag::EndOfStream;
+        flags = NativeDecodeFlag::EndOfStream;
     }
+    if (frame->isDiscard && mode_ == DecodeMode::Texture && !frameInfo->isEndOfStream) {
+        flags |= NativeDecodeFlag::Discard;
+    }
+    const auto flag = static_cast<NativeDecodeFlag>(flags);
     auto inputPts = int64_t(frame->ptsTime() * 1000000);
     auto res = NativeHardwareDecoder::sendPacket(decoderId_, frame->data, inputPts, flag,
                                                  PacketType::Video);
     if (res != Error::Success && res != Error::CodecAgain && res != Error::CodecNotProcessed) {
         LogE("send video packet failed, {}", toString(res));
     } else {
-        LogIThrottle(2000,
-                     "send video packet success, index:{}, pts:{:.3f}, dts:{:.3f}, "
-                     "isDiscard:{}, isEOS:{}",
-                     frame->index, frame->ptsTime(), frame->dtsTime(), frame->isDiscard,
-                     frameInfo->isEndOfStream);
-        if (frame->isDiscard) {
+        LogI("send video packet success, index:{}, pts:{:.3f}, dts:{:.3f}, "
+             "isDiscard:{}, isEOS:{}, isIDR:{}, frameType:{}",
+             frame->index, frame->ptsTime(), frame->dtsTime(), frame->isDiscard,
+             frameInfo->isEndOfStream, frameInfo->isIDRFrame, frameInfo->frameTypeName());
+        if (frame->isDiscard && mode_ == DecodeMode::ByteBuffer) {
             discardPackets_.insert(inputPts);
         }
     }
@@ -247,22 +250,7 @@ Error VideoHardwareDecoder::processOutputFrame(FrameBufferRefPtr& frameBuffer,
                                                int64_t pts,
                                                uint32_t curWidth,
                                                uint32_t curHeight) noexcept {
-    auto* glFb = frameBuffer.get();
-    if (discardPackets_.contains(pts)) {
-        discardPackets_.erase(pts);
-        auto discardFrame = buildOutputFrame(glFb, pts, curWidth, curHeight);
-        if (discardFrame) {
-            discardFrame->isDiscard = true;
-            invokeReceiveFunc(
-                DecoderData{std::move(discardFrame), Error::Success, currentSeekEpoch_});
-        } else {
-            restoreTexture(glFb ? glFb->detachTexture() : nullptr);
-        }
-        retryPendingEOS();
-        return Error::Success;
-    }
-
-    auto outputFrame = buildOutputFrame(glFb, pts, curWidth, curHeight);
+    auto outputFrame = buildOutputFrame(frameBuffer.get(), pts, curWidth, curHeight);
     if (!outputFrame) {
         LogE("renderOutput: buildOutputFrame failed, pts:{:.6f}",
              static_cast<double>(pts) / 1000000.0);
@@ -324,15 +312,6 @@ bool VideoHardwareDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept 
 
     isOpen_ = true;
     return true;
-}
-
-void VideoHardwareDecoder::restoreTexture(TexturePtr texture) noexcept {
-    if (!texture) {
-        return;
-    }
-    if (auto manager = texture->manager().lock()) {
-        manager->restore(std::move(texture));
-    }
 }
 
 std::shared_ptr<AVFrame> VideoHardwareDecoder::buildOutputFrame(FrameBuffer* glFb,

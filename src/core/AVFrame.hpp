@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <memory>
 #include <ranges>
+#include <string_view>
 
 #include "Data.h"
 #include "DataView.hpp"
@@ -75,6 +76,26 @@ enum class VideoFrameType {
     PPS [[maybe_unused]],
 };
 
+[[nodiscard]] constexpr std::string_view toString(VideoFrameType type) noexcept {
+    switch (type) {
+        case VideoFrameType::IFrame:
+            return "I";
+        case VideoFrameType::PFrame:
+            return "P";
+        case VideoFrameType::BFrame:
+            return "B";
+        case VideoFrameType::SEI:
+            return "SEI";
+        case VideoFrameType::SPS:
+            return "SPS";
+        case VideoFrameType::PPS:
+            return "PPS";
+        case VideoFrameType::Unknown:
+            break;
+    }
+    return "Unknown";
+}
+
 struct VideoFrameInfo : public FrameInfo {
     VideoFrameInfo() {
         type = AVFrameType::Video;
@@ -82,6 +103,10 @@ struct VideoFrameInfo : public FrameInfo {
 
     [[nodiscard]] bool isKeyFrame() const noexcept override {
         return isIDRFrame || frameType == VideoFrameType::IFrame;
+    }
+
+    [[nodiscard]] std::string_view frameTypeName() const noexcept {
+        return toString(frameType);
     }
 
     [[nodiscard]] bool hasContent() const noexcept {

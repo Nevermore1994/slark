@@ -61,8 +61,6 @@ class VideoHardwareDecoder : public NativeDecoder,
 
     void initResource() noexcept;
 
-    void restoreTexture(TexturePtr texture) noexcept;
-
     std::shared_ptr<AVFrame> buildOutputFrame(FrameBuffer* fb,
                                               int64_t pts,
                                               uint32_t width,

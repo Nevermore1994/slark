@@ -36,6 +36,7 @@ class MediaCodecDecoder(
 
     private val inputBufferQueue = LinkedBlockingQueue<Int>()
     private val outputBufferQueue = LinkedBlockingQueue<Pair<Int, MediaCodec.BufferInfo>>()
+    private val discardPts = ConcurrentHashMap.newKeySet<Long>()
     private val codecLock = Any()
     @Volatile
     private var codecGeneration = 0L
@@ -196,7 +197,18 @@ class MediaCodecDecoder(
                     } else {
                         0
                     }
-                    decoder!!.queueInputBuffer(inputIndex, 0, byteBuffer.size, presentationTimeUs, queueFlag)
+                    val isDiscard = flag.hasFlag(FLAG_DISCARD)
+                    if (isDiscard) {
+                        discardPts.add(presentationTimeUs)
+                    }
+                    try {
+                        decoder!!.queueInputBuffer(inputIndex, 0, byteBuffer.size, presentationTimeUs, queueFlag)
+                    } catch (e: Exception) {
+                        if (isDiscard) {
+                            discardPts.remove(presentationTimeUs)
+                        }
+                        throw e
+                    }
                 }
             } catch (e: Exception) {
                 SlarkLog.e(LOG_TAG, "queueInputBuffer exception: ${e.message}")
@@ -215,6 +227,7 @@ class MediaCodecDecoder(
             }
             isRunning.set(false)
             codecGeneration++
+            discardPts.clear()
             drainNonBlocking(inputBufferQueue)
             drainNonBlocking(outputBufferQueue)
             decoderToRelease = decoder
@@ -263,6 +276,7 @@ class MediaCodecDecoder(
 
     private fun flushLocked() {
         synchronized(codecLock) {
+            discardPts.clear()
             if (isReleased.get() || !isRunning.get()) {
                 drainNonBlocking(inputBufferQueue)
                 drainNonBlocking(outputBufferQueue)
@@ -303,8 +317,7 @@ class MediaCodecDecoder(
             SlarkLog.e(LOG_TAG, "EGL context is not valid")
             return packFrameResult(false, isCompleted.get(), 0L)
         }
-        val startNs = System.nanoTime()
-        val output = outputBufferQueue.poll(waitTime, TimeUnit.MILLISECONDS)
+        val output = pollOutput(waitTime)
             ?: return packFrameResult(false, isCompleted.get(), 0L)
         val (outputIndex, info) = output
         // Sentinel injected by onError, indicating the decoder failed
@@ -330,17 +343,33 @@ class MediaCodecDecoder(
             }
             surfaceRef = ref
         }
-        // Wait for the SurfaceTexture callback with the remaining time, keeping the total
-        // wait within waitTime
-        val elapsedMs = (System.nanoTime() - startNs) / 1_000_000L
-        val remainMs = (waitTime - elapsedMs).coerceAtLeast(1L)
-        val (frameReady, _) = surfaceRef!!.awaitFrame(remainMs)
+        // A short timeout reports "no frame" and the caller stops draining, stranding queued outputs
+        val (frameReady, _) = surfaceRef!!.awaitFrame(FRAME_TIMEOUT_MS)
         if (frameReady) {
             surfaceRef!!.drawFrame(format, Size(width, height))
             return packFrameResult(true, isCompleted.get(), info.presentationTimeUs)
         }
         return packFrameResult(false, isCompleted.get(), 0L)
     }
+
+    private fun pollOutput(waitTime: Long): Pair<Int, MediaCodec.BufferInfo>? {
+        while (true) {
+            val output = outputBufferQueue.poll(waitTime, TimeUnit.MILLISECONDS) ?: return null
+            val (index, info) = output
+            val isEos = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
+            if (index < 0 || isEos || !discardPts.remove(info.presentationTimeUs)) {
+                return output
+            }
+            synchronized(codecLock) {
+                try {
+                    decoder?.releaseOutputBuffer(index, false)
+                } catch (e: Exception) {
+                    SlarkLog.e(LOG_TAG, "releaseOutputBuffer(discard) error: ${e.message}")
+                }
+            }
+        }
+    }
+
     private fun packFrameResult(isAvailable: Boolean, completed: Boolean, pts: Long): Long {
         val availBit = if (isAvailable) 1L shl 63 else 0L
         val completeBit = if (completed) 1L shl 62 else 0L
@@ -353,6 +382,8 @@ class MediaCodecDecoder(
 
     companion object {
         const val LOG_TAG = "MediaCodec"
+        private const val FRAME_TIMEOUT_MS = 100L
+        private const val FLAG_DISCARD = 8
         private val decoders = ConcurrentHashMap<String, MediaCodecDecoder>()
 
         @JvmStatic
