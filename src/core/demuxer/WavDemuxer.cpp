@@ -174,15 +174,15 @@ bool WAVDemuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
                 continue;
             }
 
-            int64_t durationUs = 0;
+            // MSGSM has no PCM sample width, so frames cannot be sized or timed as raw audio
             if (fmt.format == WaveFormat::MSGSM) {
-                durationUs = static_cast<int64_t>(1000000 * (curChunkSize / 65 * 320) / 8000);
-            } else {
-                size_t bytesPerSample = fmt.bitsPerSample >> 3;
-                auto bitSample = fmt.channels * bytesPerSample;
-                durationUs =
-                    static_cast<int64_t>(1000000LL * (curChunkSize / bitSample) / fmt.sampleRate);
+                LogE("MSGSM wav is not supported");
+                return false;
             }
+            const size_t bytesPerSample = fmt.bitsPerSample >> 3;
+            const auto bitSample = fmt.channels * bytesPerSample;
+            const auto durationUs =
+                static_cast<int64_t>(1000000LL * (curChunkSize / bitSample) / fmt.sampleRate);
 
             totalDuration_ = CTime(static_cast<double>(durationUs) / 1000000.0);
             audioInfo_ = std::make_unique<AudioInfo>();
@@ -257,6 +257,10 @@ DemuxerResult WAVDemuxer::parseData(DataPacket& packet) noexcept {
     const uint64_t frameLength =
         audioInfo_->bitsPerSample * audioInfo_->channels * kSamplesPerFrame / 8;
     const double scale = static_cast<double>(audioInfo_->bitrate()) / 8;
+    if (frameLength == 0 || scale <= 0.0) {
+        LogE("wav frame size is invalid: frameLength={}, scale={}", frameLength, scale);
+        return {DemuxerResultCode::Failed, AVFramePtrArray(), AVFramePtrArray()};
+    }
 
     auto frameInfo = std::make_shared<AudioFrameInfo>();
     frameInfo->bitsPerSample = audioInfo_->bitsPerSample;

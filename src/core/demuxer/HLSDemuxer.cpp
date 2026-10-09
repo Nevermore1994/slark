@@ -89,6 +89,12 @@ bool TSDemuxer::parsePacket(DataView data, uint64_t tsIndex, DemuxerResult& resu
 }
 
 bool TSDemuxer::parseTSPAT(DataView data) noexcept {
+    // table header (8 bytes) up to and including last_section_number
+    constexpr size_t kPatHeaderSize = 8;
+    if (data.length() < kPatHeaderSize) {
+        LogE("pat too short: {}", data.length());
+        return false;
+    }
     if (data[0] != 0) {
         LogE("pat table id != 0, {}", data[0]);
         return false;
@@ -111,7 +117,7 @@ bool TSDemuxer::parseTSPAT(DataView data) noexcept {
             return false;
         }
         auto infoLength = static_cast<int32_t>(pat_.sectionLength) - kPatFixedOverhead;
-        while (infoLength >= 4) {
+        while (infoLength >= 4 && data.length() >= 4) {
             auto pnum = static_cast<uint16_t>((static_cast<uint8_t>(data[0]) << 8) |
                                               static_cast<uint8_t>(data[1]));
             auto pid = static_cast<uint16_t>(((static_cast<uint8_t>(data[2]) & 0x1f) << 8) |
@@ -127,6 +133,12 @@ bool TSDemuxer::parseTSPAT(DataView data) noexcept {
 }
 
 bool TSDemuxer::parseTSPMT(DataView view) noexcept {
+    // table header (12 bytes) up to and including program_info_length
+    constexpr size_t kPmtHeaderSize = 12;
+    if (view.length() < kPmtHeaderSize) {
+        LogE("pmt too short: {}", view.length());
+        return false;
+    }
     uint8_t syntaxIndicator = (view[1] & 0x80) >> 7;
     if (syntaxIndicator != 1) {
         LogE("syntax indicator != 1, {}", syntaxIndicator);
@@ -143,7 +155,7 @@ bool TSDemuxer::parseTSPMT(DataView view) noexcept {
     }
     auto infoLength = static_cast<int32_t>(pmt_.sectionLength) - kPmtFixedOverhead -
                       static_cast<int32_t>(pmt_.progamInfoLength);
-    while (infoLength >= 5) {
+    while (infoLength >= 5 && view.length() >= 5) {
         uint8_t streamType = view[0];
         auto pid = static_cast<uint16_t>(((view[1] & 0x1f) << 8) | view[2]);
         auto esInfoLength = static_cast<uint16_t>(((view[3] & 0x0f) << 8) | view[4]);
