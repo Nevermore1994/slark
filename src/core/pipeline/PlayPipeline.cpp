@@ -28,7 +28,7 @@ namespace slark {
 namespace {
 constexpr auto kTeardownTimeout = std::chrono::milliseconds(2000);
 constexpr double kSeekTargetToleranceSec = 0.001;
-constexpr auto kDiagnosticsInterval = std::chrono::milliseconds(500);
+constexpr auto kDiagnosticsInterval = std::chrono::seconds(30);
 }  // namespace
 
 PlayPipeline::PlayPipeline(FlowConfig config, pipeline::MediaSourceType sourceType) noexcept
@@ -658,7 +658,7 @@ bool PlayPipeline::isAudioReadyForPlaybackEnd() const noexcept {
             }
         }
     }
-    LogI("audio decoder not completed");
+    LogIThrottle(2000, "audio decoder not completed");
     return false;
 }
 
@@ -873,6 +873,11 @@ void PlayPipeline::onAudioDecoded(DecoderData data) noexcept {
     }
     LogIThrottle(2000, "onAudioDecoded pts:{:.6f}, isSeekPending:{}", data.frame->ptsTime(),
                  seekContext_->isSeekPending());
+    // Mirror the video path: pre-target frames must neither render nor complete the seek.
+    if (seekContext_->isSeekPending() && data.frame->isDiscard) {
+        markSeekedTracksIfDecodersCompleted();
+        return;
+    }
     audioFrames_.withLock([&data](auto& q) {
         q.emplace_back(std::move(data.frame));
     });
@@ -1162,12 +1167,16 @@ bool PlayPipeline::dispatchAudioFrames(AVFramePtrArray& frames, uint64_t epoch) 
         return false;
     }
     bool enqueued = false;
+    const auto seekTarget = seekContext_->targetSeekTime();
     for (auto& frame : frames) {
         if (seekContext_->isEpochStale(epoch)) {
             break;
         }
         frame->seekEpoch = epoch;
         const double pts = frame->ptsTime();
+        if (seekTarget && pts < *seekTarget) {
+            frame->isDiscard = true;
+        }
         double prev = lastEnqueuedAudioPts_.load(std::memory_order_acquire);
         while (pts > prev &&
                !lastEnqueuedAudioPts_.compare_exchange_weak(prev, pts, std::memory_order_acq_rel)) {

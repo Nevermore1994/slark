@@ -32,6 +32,8 @@ static constexpr double kSeekThreshold = 0.05;
 static constexpr auto kPlayerThreadTick = std::chrono::milliseconds(10);
 static constexpr auto kPlayedTimeTick = std::chrono::milliseconds(200);
 static constexpr auto kCacheTick = std::chrono::milliseconds(500);
+
+static constexpr auto kSeekDebounce = std::chrono::milliseconds(100);
 }  // namespace
 
 Player::Impl::Impl(std::unique_ptr<PlayerParams> params)
@@ -104,6 +106,7 @@ void Player::Impl::seek(double time, bool isAccurate) noexcept {
         return;
     }
     if (isAccurate) {
+        pendingSeekTarget_.store(-1.0, std::memory_order_release);
         accurateSeekRequested_.store(true, std::memory_order_release);
         auto ptr = buildEvent(EventType::Seek);
         ptr->data = PlayerSeekRequest{.isAccurate = true, .seekTime = time};
@@ -112,7 +115,7 @@ void Player::Impl::seek(double time, bool isAccurate) noexcept {
         LogI("receive accurate seek:{}, isAccurate:{}", time, isAccurate);
         return;
     }
-    // Drag seek keeps only the latest target until the owner thread consumes it.
+    pendingSeekTime_.store(Time::nowTimeStamp().point(), std::memory_order_release);
     pendingSeekTarget_.store(time, std::memory_order_release);
     ownerThread_->start();
     LogI("receive seek:{}, isAccurate:{}", time, isAccurate);
@@ -165,29 +168,29 @@ void Player::Impl::init() noexcept {
     buildPipeline(setting);
 
     fastTickTaskId_ = ownerThread_->postRepeatTask(kPlayerThreadTick, [this]() {
-            tick();
-            if (isStopped_) {
-                return;
-            }
-            if (auto pipeline = pipeline_) {
-                pipeline->runFastTick(state() == PlayerState::Playing);
-            }
-        });
+        tick();
+        if (isStopped_) {
+            return;
+        }
+        if (auto pipeline = pipeline_) {
+            pipeline->runFastTick(state() == PlayerState::Playing);
+        }
+    });
     playedTimeTaskId_ = ownerThread_->postRepeatTask(kPlayedTimeTick, [this]() {
-            if (isStopped_) {
-                return;
-            }
-            const auto st = state();
-            if (st == PlayerState::Playing) {
-                notifyPlayedTime();
-            }
-        });
+        if (isStopped_) {
+            return;
+        }
+        const auto st = state();
+        if (st == PlayerState::Playing) {
+            notifyPlayedTime();
+        }
+    });
     cacheTickTaskId_ = ownerThread_->postRepeatTask(kCacheTick, [this]() {
-            if (isStopped_) {
-                return;
-            }
-            notifyCacheTime();
-        });
+        if (isStopped_) {
+            return;
+        }
+        notifyCacheTime();
+    });
 
     mediaSourceManager_.start();
     ownerThread_->start();
@@ -850,6 +853,11 @@ void Player::Impl::processPendingSeek() noexcept {
         return;
     }
 
+    const Time::TimePoint updatedAt{pendingSeekTime_.load(std::memory_order_acquire)};
+    if (Time::nowTimeStamp() - updatedAt < Time::TimeDelta::fromMilliSeconds(kSeekDebounce)) {
+        return;
+    }
+
     // Keep the pending seek while an accurate seek is in flight; consume it after completion
     if (seekRequest_ && seekRequest_->isAccurate) {
         return;
@@ -953,8 +961,7 @@ void Player::Impl::handlePipelineError(PipelineEvent event,
     auto currentState = state();
     if (currentState == PlayerState::Stop || currentState == PlayerState::Error) {
         LogW("pipeline error ignored, event:{}, error:{}, current state:{}",
-             static_cast<uint32_t>(event),
-             error.has_value() ? toString(error->error) : "none",
+             static_cast<uint32_t>(event), error.has_value() ? toString(error->error) : "none",
              static_cast<uint32_t>(currentState));
         return;
     }

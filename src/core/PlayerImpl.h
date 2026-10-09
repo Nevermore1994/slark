@@ -152,6 +152,7 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
     std::optional<PlayerSeekRequest> seekRequest_;
 
     std::atomic<double> pendingSeekTarget_{-1.0};
+    std::atomic<uint64_t> pendingSeekTime_{0};
     std::atomic<bool> seekJustCompleted_{false};
     std::atomic<bool> accurateSeekRequested_{false};
     PlayerInfo info_;
