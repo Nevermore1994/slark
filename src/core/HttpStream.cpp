@@ -7,6 +7,7 @@
 #include <chrono>
 #include <deque>
 #include <format>
+#include <limits>
 #include <thread>
 
 #include "CoroutineScheduler.hpp"
@@ -26,7 +27,23 @@ constexpr std::chrono::milliseconds kCloseWaitTimeout{5000};
 
 // Chunks the network coroutine may post ahead of the owner thread (~16KB each)
 constexpr size_t kMaxPendingChunks = 16;
+
+constexpr std::chrono::hours kStreamTotalTimeout{24};
+constexpr std::chrono::seconds kStreamIdleTimeout{30};
 }  // namespace
+
+http::RequestInfo HttpStream::makeRequestInfo(const std::string& uri, const Range& range) {
+    http::RequestInfo requestInfo;
+    requestInfo.url = uri;
+    requestInfo.methodType = http::HttpMethodType::Get;
+    requestInfo.readTimeout = kStreamTotalTimeout;
+    requestInfo.readIdleTimeout = kStreamIdleTimeout;
+    requestInfo.maxResponseBodySize = std::numeric_limits<uint64_t>::max();
+    if (range.isValid()) {
+        requestInfo.headers["Range"] = range.toHeaderString();
+    }
+    return requestInfo;
+}
 
 HttpStream::HttpStream(std::shared_ptr<Thread> ownerThread)
     : ownerThread_(std::move(ownerThread)) {}
@@ -96,12 +113,7 @@ void HttpStream::startLocked() noexcept {
     uint64_t gen = generation_;
     uint64_t opId = nextOperationId_++;
 
-    http::RequestInfo requestInfo;
-    requestInfo.url = params_.uri;
-    requestInfo.methodType = http::HttpMethodType::Get;
-    if (readRange_.isValid()) {
-        requestInfo.headers["Range"] = readRange_.toHeaderString();
-    }
+    auto requestInfo = makeRequestInfo(params_.uri, readRange_);
 
     LogI("[HttpStream::startLocked] url={} range={} gen={} method=GET", requestInfo.url,
          requestInfo.headers.count("Range") ? requestInfo.headers["Range"] : std::string{}, gen);
@@ -237,6 +249,10 @@ void HttpStream::onEvent(StreamEvent event) noexcept {
         event.operationId != operation_->operationId) {
         return;
     }
+    // Events already in flight when the response was rejected must not report again
+    if (state_ == StreamState::Error) {
+        return;
+    }
     auto& chunk = event.chunk;
 
     if (chunk.hasError()) {
@@ -247,10 +263,6 @@ void HttpStream::onEvent(StreamEvent event) noexcept {
             return;
         }
         handleError(chunk.error);
-        return;
-    }
-
-    if (state_ == StreamState::Error) {
         return;
     }
 
@@ -285,7 +297,7 @@ void HttpStream::updateRangeCapability(RangeCapability capability) noexcept {
 }
 
 void HttpStream::handleHeader(const http::StreamChunk& chunk) noexcept {
-    if (!validateRangeResponse(chunk)) {
+    if (!validateResponse(chunk)) {
         return;
     }
 
@@ -327,35 +339,46 @@ void HttpStream::handleHeader(const http::StreamChunk& chunk) noexcept {
          responseContentLength_, totalSize, operationCoversSource_, params_.uri);
 }
 
-bool HttpStream::failRangeValidation(slark::Error error,
-                                     int32_t originCode,
-                                     std::string detail) noexcept {
-    LogW("[HttpStream::validateRangeResponse] {}", detail);
+bool HttpStream::failResponse(slark::Error error,
+                              int32_t originCode,
+                              std::string detail) noexcept {
+    LogW("[HttpStream::validateResponse] {}", detail);
     if (params_.onError) {
         params_.onError(error, originCode);
     }
     state_ = StreamState::Error;
+    // Keep operation_ so close() still settles the task; only the transfer is stopped
+    if (operation_) {
+        operation_->request->cancel();
+        operation_->control->alive = false;
+    }
     return false;
 }
 
-bool HttpStream::validateRangeResponse(const http::StreamChunk& chunk) noexcept {
+bool HttpStream::validateResponse(const http::StreamChunk& chunk) noexcept {
     const auto kStatus = chunk.statusCode;
 
     if (kStatus == http::HttpStatusCode::RangeNotSatisfiable) {
-        return failRangeValidation(
+        return failResponse(
             Error::OutOfRange, 416,
             std::format("416, requested range not satisfiable: {}", readRange_.toString()));
+    }
+
+    const auto code = static_cast<int32_t>(kStatus);
+    if (code < 200 || code >= 300) {
+        return failResponse(Error::HttpError, code,
+                            std::format("unexpected status {}, url={}", code, params_.uri));
     }
 
     if (kStatus != http::HttpStatusCode::PartialContent) {
         const bool startFromZero = !readRange_.isValid() || readRange_.start() == 0;
         if (!startFromZero) {
-            return failRangeValidation(
+            return failResponse(
                 Error::StreamNotReady, static_cast<int32_t>(kStatus),
                 std::format("server ignored Range, status={} requested={}",
                             static_cast<int>(kStatus), readRange_.toString()));
         }
-        LogW("[HttpStream::validateRangeResponse] server ignored Range, fallback sequential, "
+        LogW("[HttpStream::validateResponse] server ignored Range, fallback sequential, "
              "status={}",
              static_cast<int>(kStatus));
         updateRangeCapability(RangeCapability::Unsupported);
@@ -370,27 +393,27 @@ bool HttpStream::validateRangeResponse(const http::StreamChunk& chunk) noexcept 
 
     auto rangeIt = chunk.headers.find("content-range");
     if (rangeIt == chunk.headers.end()) {
-        return failRangeValidation(Error::StreamInvalidData, 0, "206 without Content-Range");
+        return failResponse(Error::StreamInvalidData, 0, "206 without Content-Range");
     }
 
     const auto& rangeStr = rangeIt->second;
     auto startPos = rangeStr.find("bytes ");
     if (startPos == std::string::npos) {
-        return failRangeValidation(
+        return failResponse(
             Error::StreamInvalidData, 0,
             std::format("malformed Content-Range: {}", rangeStr));
     }
     startPos += 6;
     auto dashPos = rangeStr.find('-', startPos);
     if (dashPos == std::string::npos) {
-        return failRangeValidation(
+        return failResponse(
             Error::StreamInvalidData, 0,
             std::format("malformed Content-Range: {}", rangeStr));
     }
     auto startResult =
         StringUtil::fromChars<uint64_t>(rangeStr.substr(startPos, dashPos - startPos));
     if (!startResult || *startResult != readRange_.start()) {
-        return failRangeValidation(
+        return failResponse(
             Error::StreamInvalidData, 0,
             std::format("Content-Range start mismatch: got={} expect={}",
                         startResult ? *startResult : 0, readRange_.start()));

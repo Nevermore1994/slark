@@ -55,6 +55,10 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
         return StringUtil::extractHostFromUri(params_.uri);
     }
 
+    // The overall deadline is a wall clock that also runs during backpressure, and a media
+    // file has no meaningful size cap, so only the idle timeout bounds a stalled transfer.
+    static http::RequestInfo makeRequestInfo(const std::string& uri, const Range& range);
+
  private:
     // Decoupled from the Stream: network callbacks hold only a weak_ptr, alive=false after close
     struct StreamControl {
@@ -83,9 +87,10 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
     void handleData(http::StreamChunk&& chunk) noexcept;
     void handleFinal() noexcept;
 
-    bool validateRangeResponse(const http::StreamChunk& chunk) noexcept;
+    bool validateResponse(const http::StreamChunk& chunk) noexcept;
 
-    bool failRangeValidation(slark::Error error, int32_t originCode, std::string detail) noexcept;
+    // Reports the error, enters Error state and stops the download. Requires mutex_ held.
+    bool failResponse(slark::Error error, int32_t originCode, std::string detail) noexcept;
 
     void updateRangeCapability(RangeCapability capability) noexcept;
 

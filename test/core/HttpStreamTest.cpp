@@ -13,8 +13,10 @@
 
 #include <atomic>
 #include <chrono>
+#include <limits>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -197,6 +199,117 @@ class MockHttpServer {
     std::atomic<bool> stopped_{false};
     std::thread thread_;
     std::vector<std::thread> connThreads_;
+};
+
+// Announces announcedBodySize bytes, sends only sentBodySize of them, then holds the connection
+// open until the client disconnects, so a client that keeps downloading is observable.
+class StallingHttpServer {
+public:
+    ~StallingHttpServer() {
+        stop();
+    }
+
+    bool start(std::string statusLine, uint64_t announcedBodySize, size_t sentBodySize) {
+        statusLine_ = std::move(statusLine);
+        announcedBodySize_ = announcedBodySize;
+        sentBodySize_ = sentBodySize;
+        listenFd_ = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (listenFd_ < 0) {
+            return false;
+        }
+        int reuse = 1;
+        ::setsockopt(listenFd_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        addr.sin_port = 0;
+        if (::bind(listenFd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
+            return false;
+        }
+        socklen_t len = sizeof(addr);
+        if (::getsockname(listenFd_, reinterpret_cast<sockaddr*>(&addr), &len) < 0 ||
+            ::listen(listenFd_, 4) < 0) {
+            return false;
+        }
+        port_ = ntohs(addr.sin_port);
+        thread_ = std::thread([this]() { serve(); });
+        return true;
+    }
+
+    void stop() {
+        stopped_ = true;
+        if (listenFd_ >= 0) {
+            ::shutdown(listenFd_, SHUT_RDWR);
+            ::close(listenFd_);
+            listenFd_ = -1;
+        }
+        if (thread_.joinable()) {
+            thread_.join();
+        }
+    }
+
+    [[nodiscard]] std::string url() const {
+        return "http://127.0.0.1:" + std::to_string(port_) + "/file.bin";
+    }
+
+    [[nodiscard]] bool clientDisconnected() const {
+        return clientDisconnected_.load();
+    }
+
+private:
+    void serve() {
+        int fd = ::accept(listenFd_, nullptr, nullptr);
+        if (fd < 0) {
+            return;
+        }
+        int noSigpipe = 1;
+        ::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, sizeof(noSigpipe));
+        std::string request;
+        char buf[1024];
+        while (request.find("\r\n\r\n") == std::string::npos) {
+            auto n = ::recv(fd, buf, sizeof(buf), 0);
+            if (n <= 0) {
+                ::close(fd);
+                return;
+            }
+            request.append(buf, static_cast<size_t>(n));
+        }
+
+        std::string response = "HTTP/1.1 " + statusLine_ +
+                               "\r\nContent-Type: application/octet-stream\r\n"
+                               "Content-Length: " +
+                               std::to_string(announcedBodySize_) +
+                               "\r\nConnection: close\r\n\r\n" + std::string(sentBodySize_, 'x');
+        size_t sent = 0;
+        while (sent < response.size()) {
+            auto n = ::send(fd, response.data() + sent, response.size() - sent, 0);
+            if (n <= 0) {
+                break;
+            }
+            sent += static_cast<size_t>(n);
+        }
+
+        // recv() returns 0 once the client closes its end
+        timeval timeout{0, 100000};
+        ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+        while (!stopped_) {
+            auto n = ::recv(fd, buf, sizeof(buf), 0);
+            if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
+                clientDisconnected_ = true;
+                break;
+            }
+        }
+        ::close(fd);
+    }
+
+    std::string statusLine_;
+    uint64_t announcedBodySize_ = 0;
+    size_t sentBodySize_ = 0;
+    int listenFd_ = -1;
+    int port_ = 0;
+    std::atomic<bool> stopped_{false};
+    std::atomic<bool> clientDisconnected_{false};
+    std::thread thread_;
 };
 
 std::shared_ptr<Thread> makeOwnerThread() {
@@ -470,4 +583,118 @@ TEST_F(HttpStreamTest, H6_RangeValidationRejectsOutOfRange) {
     stream_->start();
     EXPECT_TRUE(waitUntil([&]() { return errored.load(); }));
     EXPECT_EQ(stream_->state(), StreamState::Error);
+}
+
+TEST_F(HttpStreamTest, R1_RequestInfoHasNoTotalDeadlineOrSizeCap) {
+    const auto info = HttpStream::makeRequestInfo("http://example.com/a.mp4", Range{});
+    EXPECT_EQ(info.methodType, http::HttpMethodType::Get);
+    EXPECT_GE(info.readTimeout, std::chrono::hours(1));
+    EXPECT_GT(info.readIdleTimeout, std::chrono::seconds(0));
+    EXPECT_LE(info.readIdleTimeout, std::chrono::seconds(60));
+    EXPECT_EQ(info.maxResponseBodySize, std::numeric_limits<uint64_t>::max());
+    EXPECT_EQ(info.headers.count("Range"), 0u);
+}
+
+TEST_F(HttpStreamTest, R2_RequestInfoCarriesRangeHeader) {
+    const auto info = HttpStream::makeRequestInfo("http://example.com/a.mp4", Range(1024));
+    ASSERT_EQ(info.headers.count("Range"), 1u);
+    EXPECT_EQ(info.headers.at("Range"), Range(1024).toHeaderString());
+}
+
+TEST_F(HttpStreamTest, R3_BodyLargerThanDefaultLimitIsAccepted) {
+    constexpr uint64_t kAnnounced = 80ULL * 1024 * 1024;
+    constexpr size_t kSent = 128 * 1024;
+    StallingHttpServer server;
+    ASSERT_TRUE(server.start("200 OK", kAnnounced, kSent));
+
+    auto params = makeParams();
+    params.uri = server.url();
+    std::atomic<bool> errored{false};
+    params.onError = [&errored](Error, int32_t) {
+        errored = true;
+    };
+
+    ASSERT_TRUE(stream_->open(params).has_value());
+    stream_->start();
+
+    EXPECT_TRUE(waitUntil([&]() { return stream_->position() >= kSent; }));
+    EXPECT_FALSE(errored.load());
+    EXPECT_EQ(stream_->state(), StreamState::Reading);
+}
+
+TEST_F(HttpStreamTest, R4_ErrorStatusIsReportedWithoutDeliveringBody) {
+    for (const char* status : {"404 Not Found", "500 Internal Server Error"}) {
+        StallingHttpServer server;
+        ASSERT_TRUE(server.start(status, 4096, 2048));
+
+        auto params = makeParams();
+        params.uri = server.url();
+        std::atomic<uint64_t> bytes{0};
+        std::atomic<int> errorCount{0};
+        std::atomic<int32_t> originCode{0};
+        std::atomic<Error> errorCode{Error::Success};
+        params.onData = [&bytes](DataChunk chunk) {
+            bytes.fetch_add(chunk.size());
+        };
+        params.onError = [&](Error error, int32_t origin) {
+            errorCode = error;
+            originCode = origin;
+            errorCount.fetch_add(1);
+        };
+
+        auto stream = std::make_shared<HttpStream>(ownerThread_);
+        ASSERT_TRUE(stream->open(params).has_value());
+        stream->start();
+
+        ASSERT_TRUE(waitUntil([&]() { return errorCount.load() > 0; })) << status;
+        EXPECT_EQ(errorCode.load(), Error::HttpError) << status;
+        EXPECT_EQ(originCode.load(), std::string_view(status).starts_with("404") ? 404 : 500);
+        EXPECT_EQ(bytes.load(), 0u) << status;
+        EXPECT_EQ(stream->state(), StreamState::Error) << status;
+
+        // Give any in-flight event time to arrive; the error must still be reported once
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        EXPECT_EQ(errorCount.load(), 1) << status;
+        stream->close();
+    }
+}
+
+TEST_F(HttpStreamTest, R5_ErrorStatusStopsTheDownload) {
+    StallingHttpServer server;
+    ASSERT_TRUE(server.start("503 Service Unavailable", 64ULL * 1024 * 1024, 4096));
+
+    auto params = makeParams();
+    params.uri = server.url();
+    std::atomic<bool> errored{false};
+    params.onError = [&errored](Error, int32_t) {
+        errored = true;
+    };
+
+    ASSERT_TRUE(stream_->open(params).has_value());
+    stream_->start();
+
+    ASSERT_TRUE(waitUntil([&]() { return errored.load(); }));
+    EXPECT_TRUE(waitUntil([&]() { return server.clientDisconnected(); }, 3000))
+        << "the connection must be dropped instead of draining the error page";
+}
+
+TEST_F(HttpStreamTest, R6_IgnoredRangeStopsTheDownload) {
+    StallingHttpServer server;
+    ASSERT_TRUE(server.start("200 OK", 64ULL * 1024 * 1024, 4096));
+
+    auto params = makeParams();
+    params.uri = server.url();
+    params.range = Range(1024);
+    std::atomic<bool> errored{false};
+    params.onError = [&errored](Error, int32_t) {
+        errored = true;
+    };
+
+    ASSERT_TRUE(stream_->open(params).has_value());
+    stream_->start();
+
+    ASSERT_TRUE(waitUntil([&]() { return errored.load(); }));
+    EXPECT_EQ(stream_->state(), StreamState::Error);
+    EXPECT_TRUE(waitUntil([&]() { return server.clientDisconnected(); }, 3000))
+        << "the whole file must not keep downloading after Range was ignored";
 }
