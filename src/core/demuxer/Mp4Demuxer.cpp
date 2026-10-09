@@ -57,6 +57,25 @@ static int32_t rotationFromMatrix(const int32_t matrix[9]) noexcept {
     return 0;
 }
 
+static bool isTrackCriticalBox(std::string_view symbol) noexcept {
+    using namespace std::string_view_literals;
+    for (auto critical : {"mvhd"sv, "mdhd"sv, "stsd"sv, "stts"sv, "stsc"sv, "stsz"sv, "stco"sv,
+                          "co64"sv}) {
+        if (symbol == critical) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static uint32_t keyFrameAtOrBefore(const std::vector<uint32_t>& keys, uint32_t sampleIndex) noexcept {
+    if (keys.empty()) {
+        return sampleIndex;
+    }
+    auto it = std::upper_bound(keys.begin(), keys.end(), sampleIndex);
+    return it != keys.begin() ? *std::prev(it) : keys.front();
+}
+
 void TrackContext::init() noexcept {
     if (elst) {
         elstMediaTimeOffset = elst->mediaTimeOffset();
@@ -80,9 +99,7 @@ uint64_t TrackContext::getSeekPos(double targetTime) const noexcept {
 
     uint32_t seekSampleIndex = sampleIndex;
     if (type == TrackType::Video && stss) {
-        const auto& keyIndexes = stss->keyIndexs;
-        auto it = std::upper_bound(keyIndexes.begin(), keyIndexes.end(), sampleIndex);
-        seekSampleIndex = it != keyIndexes.begin() ? *std::prev(it) : keyIndexes.front();
+        seekSampleIndex = keyFrameAtOrBefore(stss->keyIndexs, sampleIndex);
     }
 
     auto chunkResult = findChunkBySampleIndex(seekSampleIndex);
@@ -201,9 +218,7 @@ void TrackContext::seek(uint64_t pos) noexcept {
 
     uint32_t sampleIndex = sampleBeforeChunk + sampleInChunk + 1;  // 1-based
     if (stss) {
-        const auto& keyIndexs = stss->keyIndexs;
-        auto keyIt = std::upper_bound(keyIndexs.begin(), keyIndexs.end(), sampleIndex);
-        sampleIndex = keyIt != keyIndexs.begin() ? *std::prev(keyIt) : keyIndexs.front();
+        sampleIndex = keyFrameAtOrBefore(stss->keyIndexs, sampleIndex);
     }
 
     // Compute the target sample's dts by accumulating stts directly, avoiding frame-by-frame advance
@@ -421,20 +436,23 @@ AVFramePtrArray TrackContext::parseNaluFrames(AVFramePtr frame,
 
     const uint32_t headerSize = naluByteSize + 1;
     const auto rawView = data->view();
-    uint32_t pos = 0;
+    uint64_t pos = 0;
 
     while (pos + headerSize <= rawView.length()) {
         uint32_t naluSize = 0;
-        auto sizeView = rawView.substr(pos, 4);
-        sizeView.readNumberBE(naluSize, headerSize);
-        const uint32_t totalSize = naluSize + headerSize;
-        if (pos + totalSize > rawView.length()) {
-            break;  // prevent out-of-bounds access
+        if (!rawView.substr(pos, headerSize).readNumberBE(naluSize, headerSize)) {
+            break;
+        }
+        // 64-bit sum: a 0xFFFFFFFC length must not wrap around to a tiny NALU
+        const uint64_t totalSize = static_cast<uint64_t>(naluSize) + headerSize;
+        if (naluSize == 0 || pos + totalSize > rawView.length()) {
+            break;
         }
 
         uint8_t naluHeader = 0;
-        auto naluHeaderView = rawView.substr(pos + 4, 1);
-        naluHeaderView.readNumberLE(naluHeader, 1);
+        if (!rawView.substr(pos + headerSize, 1).readNumberLE(naluHeader, 1)) {
+            break;
+        }
 
         const auto [shouldProcess, frameType] = classifier(naluHeader);
         if (!shouldProcess) {
@@ -638,7 +656,9 @@ void Mp4Demuxer::handleBoxInMoov(const BoxRefPtr& box,
              stsdBox->isVideo);
         auto [codecId, mediaBoxName] = stsdBox->getCodecId();
         LogI("stsd: codecId={}, mediaBoxName={}", static_cast<int32_t>(codecId), mediaBoxName);
-        if (codecId != CodecId::Unknown) {
+        if (codecId != CodecId::Unknown && (!mdhdBox || mdhdBox->timeScale == 0)) {
+            LogE("stsd: track dropped, mdhd missing or timeScale is 0");
+        } else if (codecId != CodecId::Unknown) {
             auto track = std::make_shared<TrackContext>();
             track->stbl = parentBox.top();
             track->mdhd = mdhdBox;
@@ -685,7 +705,15 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
             res = false;
             break;
         }
-        box->decode(buffer);
+        const bool decoded = box->decode(buffer);
+        // A corrupt table must not reach track setup; the track validity check drops its owner
+        const bool dropBox = !decoded && isTrackCriticalBox(box->info.symbol);
+        if (dropBox) {
+            LogE("parseMoovBox: decode of '{}' failed, box dropped", box->info.symbol);
+            if (box->info.symbol == "mdhd") {
+                mdhdBox.reset();
+            }
+        }
 
         LogD("parseMoovBox: box={}, start={}, size={}, trackCnt={}", box->info.symbol,
              box->info.start, box->info.size, tracks_.size());
@@ -694,7 +722,9 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
             parseTkhd(box, buffer, currentTrackId);
         }
 
-        handleBoxInMoov(box, mdhdBox, parentBox);
+        if (!dropBox) {
+            handleBoxInMoov(box, mdhdBox, parentBox);
+        }
 
         if (box->info.symbol == "elst") {
             // elst comes before mdhd/stsd; stash it until the track is created
@@ -703,11 +733,13 @@ bool Mp4Demuxer::parseMoovBox(Buffer& buffer, const BoxRefPtr& moovBox) noexcept
             }
         }
 
-        if (box->info.symbol == "stsd") {
+        if (box->info.symbol == "stsd" && !dropBox) {
             attachStsdToTracks(currentTrackId, pendingElst);
         }
 
-        parentBox.top()->append(box);
+        if (!dropBox) {
+            parentBox.top()->append(box);
+        }
         if (!advancePastBox(box, parentBox, buffer, res)) {
             break;
         }
@@ -929,7 +961,9 @@ bool Mp4Demuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
              headerInfo_ ? headerInfo_->headerLength + headerInfo_->dataSize : 0);
     } else {
         LogI("open: moov parsed");
-        initData();
+        if (!initData()) {
+            return false;
+        }
         if (isFragmented_ && !headerInfo_ && buffer->end() > nextBoxPos_) {
             // Probe bytes past the last parsed box are dropped, so the stream must re-deliver them
             headerInfo_ = std::make_shared<DemuxerHeaderInfo>();
@@ -1174,27 +1208,43 @@ void Mp4Demuxer::initVideoTrack(const std::shared_ptr<TrackContext>& track) noex
          videoInfo_->fps, videoInfo_->timeScale);
 }
 
-void Mp4Demuxer::initData() noexcept {
-    auto mvhdBox = std::dynamic_pointer_cast<BoxMvhd>(rootBox_->getChild("moov")->getChild("mvhd"));
-    totalDuration_ =
-        CTime(static_cast<double>(mvhdBox->duration) / static_cast<double>(mvhdBox->timeScale));
+bool Mp4Demuxer::initData() noexcept {
+    auto moovBox = rootBox_->getChild("moov");
+    auto mvhdBox = moovBox ? std::dynamic_pointer_cast<BoxMvhd>(moovBox->getChild("mvhd")) : nullptr;
+    if (!mvhdBox) {
+        LogE("initData: mvhd box missing");
+        return false;
+    }
+    totalDuration_ = mvhdBox->timeScale == 0
+                         ? CTime(0.0)
+                         : CTime(static_cast<double>(mvhdBox->duration) /
+                                 static_cast<double>(mvhdBox->timeScale));
     // fMP4's mvhd.duration may be 0; backfilled later once sidx is parsed
-    for (auto& [codecId, track] : tracks_) {
+    for (auto it = tracks_.begin(); it != tracks_.end();) {
+        auto& track = it->second;
         initTrack(track);
-        if (!track->stsd) {
-            LogI("get stsd error");
+        const bool hasSampleTables = track->stts && track->stsc && track->stsz && track->stco;
+        if (!track->stsd || !track->mdhd || (!track->isFragmented && !hasSampleTables)) {
+            LogE("initData: track dropped, required boxes missing");
+            it = tracks_.erase(it);
             continue;
         }
+        ++it;
         if (track->type == TrackType::Audio) {
             initAudioTrack(track);
         } else if (track->type == TrackType::Video) {
             initVideoTrack(track);
         }
     }
+    if (tracks_.empty()) {
+        LogE("initData: no usable track");
+        return false;
+    }
     isOpened_ = true;
     buffer_ = std::make_unique<Buffer>(rootBox_->info.size);
     LogI("initData: duration:{:.3f}s, tracks:{}, fragmented:{}", totalDuration_.second(),
          static_cast<int32_t>(tracks_.size()), isFragmented_);
+    return true;
 }
 
 CTime Mp4Demuxer::computeTotalDuration() const noexcept {
@@ -1388,13 +1438,14 @@ bool Mp4Demuxer::parseFragments() noexcept {
         }
         auto box = Box::createBox(*buffer_);
         if (!box) {
+            // 16 bytes cover the largest box header, so failing with that much data is malformed
+            constexpr uint64_t kMaxBoxHeaderSize = 16;
+            if (buffer_->end() - nextBoxPos_ >= kMaxBoxHeaderSize) {
+                isFragEnd_ = true;
+            }
             break;
         }
         const auto& info = box->info;
-        if (info.size < info.headerSize) {
-            isFragEnd_ = true;
-            break;
-        }
         const bool needsBody = info.symbol == "moof" || info.symbol == "sidx";
         if (needsBody && buffer_->end() < info.end()) {
             break;

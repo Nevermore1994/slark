@@ -4,6 +4,7 @@
 
 #include "Mp4Box.h"
 
+#include <algorithm>
 #include <format>
 
 #include "Log.hpp"
@@ -36,7 +37,14 @@ std::expected<BoxInfo, bool> Box::tryParseBoxInfo(Buffer& buffer) noexcept {
             info.headerSize += 8;
         }
     } else if (info.size == 0) {
-        info.size = buffer.totalSize() - buffer.pos() + info.headerSize;
+        // Box extends to end of data; totalSize is 0 for streams of unknown length
+        const auto bound = buffer.totalSize() > info.start ? buffer.totalSize() : buffer.end();
+        info.size = bound - info.start;
+    }
+    if (info.size < info.headerSize) {
+        LogW("tryParseBoxInfo: invalid box size {} at pos:{}", info.size, info.start);
+        buffer.skipTo(static_cast<int64_t>(info.start));
+        return std::unexpected(false);
     }
     info.symbol = Util::toStringBE<uint32_t>(info.type);
     // Warn but do not reject: a non-printable-ASCII box type may be garbage, still try to skip.
@@ -82,6 +90,24 @@ namespace {
 template <typename T>
 Box* makeBox(BoxInfo&& info) {
     return new T(std::move(info));
+}
+
+// Bytes a table may still occupy: bounded by the box when its size is known.
+uint64_t remainingBytes(const BoxInfo& info, const Buffer& buffer) noexcept {
+    const auto available = buffer.length();
+    if (info.size == 0) {
+        return available;
+    }
+    const auto end = info.end();
+    const auto pos = buffer.pos();
+    return std::min<uint64_t>(available, end > pos ? end - pos : 0);
+}
+
+bool entryCountFits(const BoxInfo& info,
+                    const Buffer& buffer,
+                    uint64_t entryCount,
+                    uint64_t entrySize) noexcept {
+    return entrySize != 0 && entryCount <= remainingBytes(info, buffer) / entrySize;
 }
 
 }  // namespace
@@ -366,8 +392,8 @@ bool BoxStsc::decode(Buffer& buffer) noexcept {
     buffer.read4ByteBE(entryCount);
 
     constexpr uint32_t kMaxEntryCount = 10'000'000;
-    if (entryCount > kMaxEntryCount) {
-        LogE("BoxStsc: entryCount {} exceeds limit", entryCount);
+    if (entryCount > kMaxEntryCount || !entryCountFits(info, buffer, entryCount, 12)) {
+        LogE("BoxStsc: invalid entryCount {}", entryCount);
         return false;
     }
     entrys.reserve(entryCount);
@@ -405,6 +431,10 @@ bool BoxStsz::decode(Buffer& buffer) noexcept {
         sampleSizes.assign(entryCount, defaultSampleSize);
         return true;
     }
+    if (!entryCountFits(info, buffer, entryCount, 4)) {
+        LogE("BoxStsz: entryCount {} exceeds box payload", entryCount);
+        return false;
+    }
     sampleSizes.reserve(entryCount);
     for (uint32_t i = 0; i < entryCount; i++) {
         if (!buffer.require(4)) {
@@ -427,8 +457,8 @@ bool BoxStco::decode(Buffer& buffer) noexcept {
     buffer.read4ByteBE(entryCount);
 
     constexpr uint32_t kMaxEntryCount = 10'000'000;
-    if (entryCount > kMaxEntryCount) {
-        LogE("BoxStco: entryCount {} exceeds limit", entryCount);
+    if (entryCount > kMaxEntryCount || !entryCountFits(info, buffer, entryCount, 4)) {
+        LogE("BoxStco: invalid entryCount {}", entryCount);
         return false;
     }
     chunkOffsets.reserve(entryCount);
@@ -453,8 +483,8 @@ bool BoxCo64::decode(Buffer& buffer) noexcept {
     buffer.read4ByteBE(entryCount);
 
     constexpr uint32_t kMaxEntryCount = 10'000'000;
-    if (entryCount > kMaxEntryCount) {
-        LogE("BoxCo64: entryCount {} exceeds limit", entryCount);
+    if (entryCount > kMaxEntryCount || !entryCountFits(info, buffer, entryCount, 8)) {
+        LogE("BoxCo64: invalid entryCount {}", entryCount);
         return false;
     }
     chunkOffsets.reserve(entryCount);
@@ -782,6 +812,10 @@ bool BoxElst::decode(Buffer& buffer) noexcept {
     buffer.skip(3);
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
+    if (!entryCountFits(info, buffer, entryCount, version == 1 ? 20 : 12)) {
+        LogE("BoxElst: entryCount {} exceeds box payload", entryCount);
+        return false;
+    }
     entries.reserve(entryCount);
     for (uint32_t i = 0; i < entryCount; ++i) {
         ElstEntry e;
@@ -910,6 +944,17 @@ bool BoxTrun::decode(Buffer& buffer) noexcept {
     }
     if (flags & kFirstSampleFlagsPresent) {
         buffer.read4ByteBE(firstSampleFlags);
+    }
+    const uint64_t entrySize =
+        4ULL * (((flags & kSampleDurationPresent) ? 1 : 0) + ((flags & kSampleSizePresent) ? 1 : 0) +
+                ((flags & kSampleFlagsPresent) ? 1 : 0) +
+                ((flags & kSampleCompositionTimeOffsetPresent) ? 1 : 0));
+    constexpr uint32_t kMaxSamplesWithoutPayload = 1U << 20;
+    const bool countValid = entrySize == 0 ? sampleCount <= kMaxSamplesWithoutPayload
+                                           : entryCountFits(info, buffer, sampleCount, entrySize);
+    if (!countValid) {
+        LogE("BoxTrun: sampleCount {} exceeds box payload", sampleCount);
+        return false;
     }
     samples.reserve(sampleCount);
     for (uint32_t i = 0; i < sampleCount; ++i) {

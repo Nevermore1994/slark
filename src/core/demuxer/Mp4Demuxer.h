@@ -197,7 +197,7 @@ class Mp4Demuxer : public IDemuxer {
 
     [[nodiscard]] bool hasAllFragments() const noexcept;
 
-    void initData() noexcept;
+    bool initData() noexcept;
 
     void initAudioTrack(const std::shared_ptr<TrackContext>& track) noexcept;
 
