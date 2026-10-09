@@ -865,18 +865,27 @@ bool Mp4Demuxer::processOpenBox(const BoxRefPtr& box,
         if (!handleMdatBox(box, buffer, res, eof)) {
             return false;
         }
-    } else if (box->info.symbol == "sidx") {
-        handleSidxBox(box, buffer);
-        rootBox_->append(box);
-    } else if (box->info.symbol == "moof") {
-        parseMoofChildren(buffer, box);
-        parseMoofBox(buffer, box);
+    } else if (box->info.symbol == "sidx" || box->info.symbol == "moof") {
+        if (buffer.end() < box->info.end()) {
+            // Left for parseData, which resumes from nextBoxPos_ once the rest arrives
+            buffer.skipTo(static_cast<int64_t>(box->info.start));
+            nextBoxPos_ = box->info.start;
+            return false;
+        }
+        if (box->info.symbol == "sidx") {
+            handleSidxBox(box, buffer);
+        } else {
+            parseMoofChildren(buffer, box);
+            parseMoofBox(buffer, box);
+        }
         rootBox_->append(box);
     } else {
+        isFragEnd_ = isFragEnd_ || box->info.symbol == "mfra";
         rootBox_->append(box);
     }
 
     const auto endPos = box->info.size + box->info.start;
+    nextBoxPos_ = endPos;
     const auto skipOffset = endPos - buffer.pos();
     if (!buffer.skip(static_cast<int64_t>(skipOffset))) {
         if (box->info.symbol != "mdat") {
@@ -921,14 +930,22 @@ bool Mp4Demuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
     } else {
         LogI("open: moov parsed");
         initData();
+        if (isFragmented_ && !headerInfo_ && buffer->end() > nextBoxPos_) {
+            // Probe bytes past the last parsed box are dropped, so the stream must re-deliver them
+            headerInfo_ = std::make_shared<DemuxerHeaderInfo>();
+            headerInfo_->headerLength = nextBoxPos_;
+        }
     }
     return res;
 }
 
 bool Mp4Demuxer::handleMdatBox(const BoxRefPtr& box, Buffer& buffer, bool res, bool& eof) noexcept {
-    headerInfo_ = std::make_unique<DemuxerHeaderInfo>();
-    headerInfo_->headerLength = box->info.start;
-    headerInfo_->dataSize = box->info.size;
+    // A fragmented file has an mdat per fragment; the stream must resume from the first one
+    if (!isFragmented_ || !headerInfo_) {
+        headerInfo_ = std::make_unique<DemuxerHeaderInfo>();
+        headerInfo_->headerLength = box->info.start;
+        headerInfo_->dataSize = box->info.size;
+    }
     rootBox_->append(box);
     if (res) {
         return true;
@@ -955,15 +972,23 @@ void Mp4Demuxer::handleSidxBox(const BoxRefPtr& box, Buffer& buffer) noexcept {
     if (!sidxBox) {
         return;
     }
+    if (sidxCount_ > 0) {
+        // Later sidx boxes index sub-ranges; keep the first, which spans the whole file
+        ++sidxCount_;
+        sidxEnd_.reset();
+        return;
+    }
     sidxBox->decode(buffer);
     uint64_t segOffset = box->info.end() + sidxBox->firstOffset;
     uint64_t segTime = sidxBox->earliestPresentationTime;
     uint64_t totalSegDuration = 0;
+    bool hasNestedIndex = false;
     for (auto& [codecId, track] : tracks_) {
         track->sidxSegments.clear();
     }
     for (const auto& entry : sidxBox->entries) {
         if (entry.referenceType) {
+            hasNestedIndex = true;
             continue;
         }
         for (auto& [codecId, track] : tracks_) {
@@ -976,6 +1001,11 @@ void Mp4Demuxer::handleSidxBox(const BoxRefPtr& box, Buffer& buffer) noexcept {
         segOffset += entry.referencedSize;
         segTime += entry.subsegmentDuration;
         totalSegDuration += entry.subsegmentDuration;
+    }
+    // A flat first sidx spans the whole file, so it alone can tell where the media ends
+    ++sidxCount_;
+    if (!hasNestedIndex) {
+        sidxEnd_ = segOffset;
     }
     // fMP4's mvhd.duration may be 0; backfill from the sidx total duration
     if (totalDuration_.second() <= 0.0 && !tracks_.empty()) {
@@ -1212,6 +1242,11 @@ void Mp4Demuxer::close() noexcept {
     tracks_.clear();
     buffer_.reset();
     rootBox_.reset();
+    nextBoxPos_ = 0;
+    fragStart_ = 0;
+    sidxEnd_.reset();
+    sidxCount_ = 0;
+    isFragEnd_ = false;
     reset();
 }
 
@@ -1267,6 +1302,8 @@ DemuxerResult Mp4Demuxer::parseData(DataPacket& packet) noexcept {
     auto currentOffset = buffer_->pos();
     DemuxerResult result;
     while (!buffer_->empty()) {
+        // Boxes must be scanned before samples are consumed: shrink() drops the bytes in between
+        parseFragments();
         auto parseTrack = findEarliestTrack();
         if (!parseTrack) {
             // After skipping stale samples, re-locate a track within range
@@ -1314,7 +1351,11 @@ std::shared_ptr<TrackContext> Mp4Demuxer::findEarliestTrack() const noexcept {
 bool Mp4Demuxer::advanceStaleTracks() noexcept {
     bool advanced = false;
     for (const auto& track : std::views::values(tracks_)) {
-        if (track->isCompleted || track->isFragmented) {
+        if (track->isFragmented) {
+            advanced |= track->skipStaleSamples(buffer_->offset());
+            continue;
+        }
+        if (track->isCompleted) {
             continue;
         }
         auto start = track->stco->chunkOffsets[track->chunkLogicIndex] +
@@ -1328,7 +1369,55 @@ bool Mp4Demuxer::advanceStaleTracks() noexcept {
     return advanced;
 }
 
+bool Mp4Demuxer::hasAllFragments() const noexcept {
+    if (!isFragmented_ || isFragEnd_) {
+        return true;
+    }
+    return sidxEnd_.has_value() && nextBoxPos_ >= *sidxEnd_;
+}
+
+bool Mp4Demuxer::parseFragments() noexcept {
+    if (!isFragmented_ || isFragEnd_) {
+        return false;
+    }
+    const auto resumePos = buffer_->pos();
+    bool foundMoof = false;
+    while (nextBoxPos_ >= buffer_->offset() && nextBoxPos_ < buffer_->end()) {
+        if (!buffer_->skipTo(static_cast<int64_t>(nextBoxPos_))) {
+            break;
+        }
+        auto box = Box::createBox(*buffer_);
+        if (!box) {
+            break;
+        }
+        const auto& info = box->info;
+        if (info.size < info.headerSize) {
+            isFragEnd_ = true;
+            break;
+        }
+        const bool needsBody = info.symbol == "moof" || info.symbol == "sidx";
+        if (needsBody && buffer_->end() < info.end()) {
+            break;
+        }
+        if (info.symbol == "moof") {
+            parseMoofChildren(*buffer_, box);
+            parseMoofBox(*buffer_, box);
+            foundMoof = true;
+        } else if (info.symbol == "sidx") {
+            handleSidxBox(box, *buffer_);
+        } else if (info.symbol == "mfra") {
+            isFragEnd_ = true;
+        }
+        nextBoxPos_ = info.end();
+    }
+    buffer_->skipTo(static_cast<int64_t>(resumePos));
+    return foundMoof;
+}
+
 bool Mp4Demuxer::computeAllTracksCompleted() const noexcept {
+    if (!hasAllFragments()) {
+        return false;
+    }
     bool isCompleted = true;
     for (const auto& track : std::views::values(tracks_)) {
         if (!track->isCompleted) {
@@ -1382,7 +1471,7 @@ uint64_t Mp4Demuxer::seekPosFragmented(double time, uint64_t fallbackOffset) con
         } else if (!track->fragSamples.empty()) {
             const auto timeScale = static_cast<double>(track->mdhd->timeScale);
             const int64_t targetTicks = static_cast<int64_t>(time * timeScale);
-            uint64_t bestOffset = track->fragSamples.front().offset;
+            uint64_t bestOffset = nextBoxPos_;
             for (const auto& s : track->fragSamples) {
                 if (s.dts >= targetTicks) {
                     if (track->type == TrackType::Video && !s.isKeyFrame) {
@@ -1415,6 +1504,16 @@ uint64_t Mp4Demuxer::seekPosNormal(double time, uint64_t fallbackOffset) const n
 void Mp4Demuxer::seekPos(uint64_t pos) noexcept {
     LogI("seekPos: pos:{}", pos);
     IDemuxer::seekPos(pos);
+    if (isFragmented_ && (pos > nextBoxPos_ || pos < fragStart_)) {
+        // Outside the scanned range: the sample tables are contiguous only inside it, so
+        // restart scanning at pos (a moof boundary when it comes from sidx)
+        for (auto& track : std::views::values(tracks_)) {
+            track->fragSamples.clear();
+        }
+        nextBoxPos_ = pos;
+        fragStart_ = pos;
+        isFragEnd_ = false;
+    }
     for (auto& track : std::views::values(tracks_)) {
         if (track->isFragmented) {
             track->isCompleted = false;
@@ -1423,6 +1522,16 @@ void Mp4Demuxer::seekPos(uint64_t pos) noexcept {
             track->seek(pos);
         }
     }
+}
+
+bool TrackContext::skipStaleSamples(uint64_t bufferStart) noexcept {
+    bool skipped = false;
+    while (fragSampleIndex < fragSamples.size() &&
+           fragSamples[fragSampleIndex].offset < bufferStart) {
+        ++fragSampleIndex;
+        skipped = true;
+    }
+    return skipped;
 }
 
 void TrackContext::seekToFragment(uint64_t pos) noexcept {

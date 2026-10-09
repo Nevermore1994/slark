@@ -105,6 +105,9 @@ class TrackContext {
 
     void appendFragmentSamples(const BoxRefPtr& moofBox, uint64_t moofOffset) noexcept;
 
+    // Drops known samples that start before the buffered range; returns true if any was dropped
+    bool skipStaleSamples(uint64_t bufferStart) noexcept;
+
  private:
     using NaluClassifier = std::function<std::pair<bool, VideoFrameType>(uint8_t naluType)>;
 
@@ -188,6 +191,12 @@ class Mp4Demuxer : public IDemuxer {
 
     void parseMoofChildren(Buffer& buffer, const BoxRefPtr& moofBox) noexcept;
 
+    // Parses the top-level boxes after the last known one (moof/sidx/mfra) from the buffer;
+    // returns true if a moof was appended
+    bool parseFragments() noexcept;
+
+    [[nodiscard]] bool hasAllFragments() const noexcept;
+
     void initData() noexcept;
 
     void initAudioTrack(const std::shared_ptr<TrackContext>& track) noexcept;
@@ -241,6 +250,12 @@ class Mp4Demuxer : public IDemuxer {
     std::unordered_map<CodecId, std::shared_ptr<TrackContext>> tracks_;
     bool isFragmented_ = false;
     std::unordered_map<uint32_t, int32_t> trackRotations_;
+
+    uint64_t nextBoxPos_ = 0;
+    uint64_t fragStart_ = 0;
+    std::optional<uint64_t> sidxEnd_;
+    uint32_t sidxCount_ = 0;
+    bool isFragEnd_ = false;
 };
 
 }  // namespace slark

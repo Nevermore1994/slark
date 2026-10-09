@@ -671,3 +671,33 @@ TEST_F(Fmp4DemuxerFileTest, SeekToMidpointProducesKeyFrame) {
     auto result = feedAllData(*demuxer_, kFmp4Path, fileSize_, seekPos);
     EXPECT_GT(result.keyFrames, 0u) << "seek to midpoint should produce a key frame";
 }
+
+TEST_F(Fmp4DemuxerFileTest, FragmentsAfterTheProbeAreParsedAsTheyArrive) {
+    ASSERT_TRUE(demuxer_->open(probeBuffer_));
+    const auto expected = feedAllData(*demuxer_, kFmp4Path, fileSize_, 0);
+    ASSERT_TRUE(expected.reachedEOF);
+
+    // The probe only covers ftyp/moov/first moof, as a network source would deliver
+    constexpr uint64_t kProbeBytes = 4096;
+    std::ifstream ifs(kFmp4Path, std::ios::binary);
+    auto head = Data::create(kProbeBytes);
+    ifs.read(reinterpret_cast<char*>(head->data()), static_cast<std::streamsize>(kProbeBytes));
+    head->setSize(kProbeBytes);
+    auto probe = std::make_unique<Buffer>();
+    probe->append(0, std::move(head));
+
+    auto streamed = DemuxerManager::shareInstance().create(DemuxerType::MP4);
+    DemuxerConfig config;
+    config.filePath = kFmp4Path;
+    streamed->init(config);
+    ASSERT_TRUE(streamed->open(probe));
+
+    const auto info = streamed->headerInfo();
+    ASSERT_NE(info, nullptr);
+    streamed->seekPos(info->headerLength);
+
+    const auto actual = feedAllData(*streamed, kFmp4Path, fileSize_, info->headerLength);
+    EXPECT_EQ(actual.videoFrames, expected.videoFrames);
+    EXPECT_EQ(actual.audioFrames, expected.audioFrames);
+    EXPECT_TRUE(actual.reachedEOF);
+}

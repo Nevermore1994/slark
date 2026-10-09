@@ -5,6 +5,7 @@
 #include "HttpStream.h"
 
 #include <chrono>
+#include <deque>
 #include <format>
 #include <thread>
 
@@ -22,6 +23,9 @@ inline uint64_t logProgressBytes() {
 
 constexpr std::chrono::milliseconds kWaitSettleTimeout{500};
 constexpr std::chrono::milliseconds kCloseWaitTimeout{5000};
+
+// Chunks the network coroutine may post ahead of the owner thread (~16KB each)
+constexpr size_t kMaxPendingChunks = 16;
 }  // namespace
 
 HttpStream::HttpStream(std::shared_ptr<Thread> ownerThread)
@@ -111,6 +115,7 @@ void HttpStream::startLocked() noexcept {
                          std::shared_ptr<Thread> ownerThread, uint64_t generation,
                          uint64_t operationId) -> Task<void> {
         auto gen = req->streamingExecute(info);
+        std::deque<std::shared_ptr<CompletionAwaiter<void>>> inFlight;
         while (true) {
             auto chunk = co_await gen.next();
             if (!chunk.has_value()) {
@@ -138,7 +143,17 @@ void HttpStream::startLocked() noexcept {
                     })) {
                 co_return;
             }
-            co_await *delivered;
+
+            // A per-chunk round trip to the owner thread caps throughput; only block once
+            // the window is full
+            inFlight.push_back(std::move(delivered));
+            while (!inFlight.empty() && inFlight.front()->await_ready()) {
+                inFlight.pop_front();
+            }
+            while (inFlight.size() >= kMaxPendingChunks) {
+                co_await *inFlight.front();
+                inFlight.pop_front();
+            }
         }
     };
 
