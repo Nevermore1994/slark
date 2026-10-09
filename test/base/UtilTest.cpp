@@ -206,3 +206,46 @@ TEST(Golomb, ReadUeSeven) {
     EXPECT_EQ(val, 7u);
     EXPECT_EQ(offset, 7);
 }
+
+TEST(Golomb, ReadBitOutOfRangeReturnsZeroAndAdvances) {
+    uint8_t data[] = {0xFF};
+    DataView view(data, 1);
+    int32_t offset = 8;
+    EXPECT_FALSE(Util::Golomb::readBit(view, offset));
+    EXPECT_EQ(offset, 9);
+
+    int32_t negative = -1;
+    EXPECT_FALSE(Util::Golomb::readBit(view, negative));
+
+    int32_t emptyOffset = 0;
+    EXPECT_FALSE(Util::Golomb::readBit(DataView{}, emptyOffset));
+}
+
+TEST(Golomb, ReadUeAllZeroDataTerminates) {
+    uint8_t data[16] = {};
+    DataView view(data, sizeof(data));
+    int32_t offset = 0;
+    EXPECT_EQ(Util::Golomb::readUe(view, offset), 0u);
+    EXPECT_LE(offset, 40);
+}
+
+TEST(Golomb, ReadUeEmptyViewTerminates) {
+    int32_t offset = 0;
+    EXPECT_EQ(Util::Golomb::readUe(DataView{}, offset), 0u);
+    EXPECT_LE(offset, 40);
+}
+
+TEST(Golomb, ReadUeTruncatedPrefixDoesNotOverflow) {
+    // 31 leading zeros followed by data that runs out: must not shift past 32 bits.
+    uint8_t data[] = {0x00, 0x00, 0x00, 0x01};
+    DataView view(data, sizeof(data));
+    int32_t offset = 0;
+    EXPECT_NO_FATAL_FAILURE((void)Util::Golomb::readUe(view, offset));
+}
+
+TEST(Golomb, ReadBitsBeyondEndPadsWithZero) {
+    uint8_t data[] = {0xFF};
+    DataView view(data, 1);
+    int32_t offset = 0;
+    EXPECT_EQ(Util::Golomb::readBits(view, offset, 16), 0xFF00u);
+}

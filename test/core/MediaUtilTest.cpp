@@ -241,6 +241,14 @@ TEST(MediaUtilTest, FindNaluUnitEmptyDataReturnsFalse) {
     EXPECT_FALSE(findNaluUnit(view, range));
 }
 
+TEST(MediaUtilTest, FindNaluUnitStartCodeAtEndHasEmptyPayload) {
+    std::vector<uint8_t> data = {0x65, 0xAA, 0x00, 0x00, 0x01};
+    DataView view(reinterpret_cast<const Byte*>(data.data()), data.size());
+    Range range;
+    EXPECT_TRUE(findNaluUnit(view, range));
+    EXPECT_EQ(range.size, 0u);
+}
+
 
 TEST(MediaDefsTest, MimeTypeStringsAreCorrect) {
     EXPECT_EQ(MEDIA_MIMETYPE_VIDEO_AVC, "video/avc");

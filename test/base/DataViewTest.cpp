@@ -89,6 +89,14 @@ TEST(DataView, SubviewOutOfRange) {
     EXPECT_TRUE(sub.empty());
 }
 
+TEST(DataView, SubviewCountBeyondEndIsClamped) {
+    auto view = "hello"_view;
+    EXPECT_EQ(view.subview(3, 100).toStringView(), "lo");
+    EXPECT_EQ(view.substr(2, 4).toStringView(), "llo");
+    EXPECT_EQ(view.subview(0, 5).toStringView(), "hello");
+    EXPECT_TRUE(view.subview(5, 1).empty());
+}
+
 TEST(DataView, First) {
     auto view = "hello world"_view;
     auto first5 = view.first(5);

@@ -100,7 +100,10 @@ class DataView {
 
     [[nodiscard]] constexpr DataView subview(size_type pos = 0,
                                              size_type count = std::dynamic_extent) const noexcept {
-        return pos < span_.size() ? DataView(span_.subspan(pos, count)) : DataView{};
+        if (pos >= span_.size()) {
+            return DataView{};
+        }
+        return DataView(span_.subspan(pos, std::min(count, span_.size() - pos)));
     }
 
     [[nodiscard]] constexpr DataView first(size_type count) const noexcept {

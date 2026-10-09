@@ -65,8 +65,13 @@ bool findNaluUnit(DataView dataView, Range& range) noexcept {
     if (start == kInvalidPos) {
         return false;
     }
-    while (dataView[start++] == 0)
-        ;
+    while (start < dataView.length() && dataView[start] == 0) {
+        ++start;
+    }
+    if (start >= dataView.length()) {
+        return false;
+    }
+    ++start;
     auto remainView = dataView.substr(start);
     auto size = findNaluStartCode(remainView);
     if (size == kInvalidPos) {
