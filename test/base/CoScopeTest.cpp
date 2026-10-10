@@ -4,6 +4,8 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <future>
 #include <memory>
 
 #include "Awaitable.hpp"
@@ -266,4 +268,25 @@ TEST(TaskTest, TaskMovedAfterResume) {
     EXPECT_TRUE(t2.isValid());   // valid handle, coroutine already done
     EXPECT_TRUE(t2.isDone());
     EXPECT_EQ(t2.result(), 42);
+}
+
+TEST(SerialExecutorTest, LastOwnerMayBeReleasedByWorkerTask) {
+    auto executor = std::make_shared<SerialExecutor>();
+    auto releaseFirstTask = std::make_shared<std::promise<void>>();
+    auto continueFirstTask = releaseFirstTask->get_future().share();
+    auto secondTaskDone = std::make_shared<std::promise<void>>();
+    auto secondTaskFuture = secondTaskDone->get_future();
+
+    ASSERT_TRUE(executor->tryExecute(
+        [keepAlive = executor, continueFirstTask]() mutable {
+            continueFirstTask.wait();
+            keepAlive.reset();
+        }));
+    ASSERT_TRUE(executor->tryExecute([secondTaskDone] { secondTaskDone->set_value(); }));
+
+    executor.reset();
+    releaseFirstTask->set_value();
+
+    EXPECT_EQ(secondTaskFuture.wait_for(std::chrono::seconds(2)), std::future_status::ready)
+        << "the worker must finish draining its queue after its task releases the last executor owner";
 }

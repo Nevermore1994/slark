@@ -58,23 +58,26 @@ class SerialExecutor final : public IExecutor, public NonCopyable {
         return false;
     }
 
-    // Stop accepting new work. The destructor joins the worker, which drains what is
-    // already queued, so there is no separate drain step.
+    // Stop accepting new work; the worker drains queued tasks before it exits.
     void requestStop() noexcept;
 
  private:
-    void runLoop() noexcept;
+    struct State {
+        std::mutex mutex;
+        std::condition_variable cv;
+        std::deque<MoveOnlyFunction<void()>> queue;
+        bool stopRequested{false};
+    };
 
-    mutable std::mutex mutex_;
-    std::condition_variable cv_;
-    std::deque<MoveOnlyFunction<void()>> queue_;
-    bool stopRequested_{false};
+    static void runLoop(std::shared_ptr<State> state) noexcept;
+
+    std::shared_ptr<State> state_;
     std::thread worker_;
 };
 
-inline SerialExecutor::SerialExecutor() {
-    worker_ = std::thread([this] {
-        runLoop();
+inline SerialExecutor::SerialExecutor() : state_(std::make_shared<State>()) {
+    worker_ = std::thread([state = state_] {
+        runLoop(state);
     });
 }
 
@@ -97,41 +100,43 @@ inline bool SerialExecutor::tryExecute(MoveOnlyFunction<void()> task) noexcept {
     if (!task) {
         return false;
     }
+    const auto state = state_;
     {
-        std::lock_guard lock(mutex_);
-        if (stopRequested_) {
+        std::lock_guard lock(state->mutex);
+        if (state->stopRequested) {
             return false;
         }
-        queue_.push_back(std::move(task));
+        state->queue.push_back(std::move(task));
     }
-    cv_.notify_one();
+    state->cv.notify_one();
     return true;
 }
 
 inline void SerialExecutor::requestStop() noexcept {
+    const auto state = state_;
     {
-        std::lock_guard lock(mutex_);
-        stopRequested_ = true;
+        std::lock_guard lock(state->mutex);
+        state->stopRequested = true;
     }
-    cv_.notify_one();
+    state->cv.notify_one();
 }
 
-inline void SerialExecutor::runLoop() noexcept {
+inline void SerialExecutor::runLoop(std::shared_ptr<State> state) noexcept {
     while (true) {
         MoveOnlyFunction<void()> task;
         {
-            std::unique_lock lock(mutex_);
-            cv_.wait(lock, [this] {
-                return !queue_.empty() || stopRequested_;
+            std::unique_lock lock(state->mutex);
+            state->cv.wait(lock, [&state] {
+                return !state->queue.empty() || state->stopRequested;
             });
-            if (queue_.empty()) {
-                if (stopRequested_) {
+            if (state->queue.empty()) {
+                if (state->stopRequested) {
                     return;
                 }
                 continue;
             }
-            task = std::move(queue_.front());
-            queue_.pop_front();
+            task = std::move(state->queue.front());
+            state->queue.pop_front();
         }
         if (task) {
             task();
