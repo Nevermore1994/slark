@@ -101,21 +101,21 @@ void EventLoop::registerFd(int32_t fd) noexcept {
 }
 
 void EventLoop::unregisterFd(int32_t fd) noexcept {
+    std::shared_ptr<ResumeGate> readGate;
+    std::shared_ptr<ResumeGate> writeGate;
     {
         std::lock_guard l(fdMutex_);
         auto it = fdSlots_.find(fd);
         if (it != fdSlots_.end()) {
-            // A waiter still armed here will never receive an event: the fd is going away.
-            // Wake it with a terminal notification instead of a silent disarm.
-            if (it->second.hasRead && it->second.readReg.gate) {
-                it->second.readReg.gate->signalTerminal();
+            if (it->second.hasRead) {
+                readGate = it->second.readReg.gate;
             }
-            if (it->second.hasWrite && it->second.writeReg.gate) {
-                it->second.writeReg.gate->signalTerminal();
+            if (it->second.hasWrite) {
+                writeGate = it->second.writeReg.gate;
             }
             for (auto t = tokenMap_.begin(); t != tokenMap_.end();) {
                 if (t->second.first == fd) {
-                    tokenMap_.erase(t++);
+                    t = tokenMap_.erase(t);
                 } else {
                     ++t;
                 }
@@ -134,6 +134,13 @@ void EventLoop::unregisterFd(int32_t fd) noexcept {
     EV_SET(&cs[1], fd, EVFILT_WRITE, EV_DELETE, 0, 0, 0);
     kevent(kqueueFd_, cs, 2, 0, 0, 0);
 #endif
+    // A terminal resume may synchronously re-enter the EventLoop without an executor.
+    if (readGate) {
+        readGate->signalTerminal();
+    }
+    if (writeGate) {
+        writeGate->signalTerminal();
+    }
 }
 
 void EventLoop::setReadable(int32_t fd, bool en) noexcept {
@@ -218,26 +225,32 @@ EventLoop::RegistrationToken EventLoop::registerContinuation(
     int32_t fd,
     FdInterest interest,
     std::shared_ptr<ResumeGate> gate) noexcept {
-    std::lock_guard l(fdMutex_);
-    auto& slot = fdSlots_[fd];
-    auto& target = (interest == FdInterest::Read) ? slot.readReg : slot.writeReg;
-    auto& hasTarget = (interest == FdInterest::Read) ? slot.hasRead : slot.hasWrite;
-    if (hasTarget) {
-        LogW("EventLoop: overwriting pending waiter on fd={}", fd);
-        if (target.gate) {
-            target.gate->signalTerminal();
-        }
-        for (auto token = tokenMap_.begin(); token != tokenMap_.end();) {
-            if (token->second.first == fd && token->second.second == interest) {
-                token = tokenMap_.erase(token);
-            } else {
-                ++token;
+    std::shared_ptr<ResumeGate> replacedGate;
+    RegistrationToken token;
+    {
+        std::lock_guard l(fdMutex_);
+        auto& slot = fdSlots_[fd];
+        auto& target = (interest == FdInterest::Read) ? slot.readReg : slot.writeReg;
+        auto& hasTarget = (interest == FdInterest::Read) ? slot.hasRead : slot.hasWrite;
+        if (hasTarget) {
+            LogW("EventLoop: overwriting pending waiter on fd={}", fd);
+            replacedGate = target.gate;
+            for (auto existing = tokenMap_.begin(); existing != tokenMap_.end();) {
+                if (existing->second.first == fd && existing->second.second == interest) {
+                    existing = tokenMap_.erase(existing);
+                } else {
+                    ++existing;
+                }
             }
         }
+        target.gate = gate;
+        hasTarget = true;
+        token = createToken(fd, interest, std::move(gate));
     }
-    target.gate = gate;
-    hasTarget = true;
-    return createToken(fd, interest, std::move(gate));
+    if (replacedGate) {
+        replacedGate->signalTerminal();
+    }
+    return token;
 }
 
 EventLoop::RegistrationToken EventLoop::registerContinuationWithInterest(

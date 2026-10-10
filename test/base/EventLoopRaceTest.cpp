@@ -71,6 +71,21 @@ std::shared_ptr<ResumeGate> makeGate(Task<void>& task,
     return slark::makeResumeGate(task.getHandle());
 }
 
+struct ReentrantState {
+    EventLoop loop;
+    SocketPair sockets;
+    Task<void> task;
+    std::atomic<bool> resumed{false};
+};
+
+Task<void> reenterLoopAfterTerminal(ReentrantState* state,
+                                    int fd,
+                                    std::shared_ptr<CompletionAwaiter<void>> awaiter) {
+    co_await *awaiter;
+    state->loop.unregisterFd(fd);
+    state->resumed.store(true, std::memory_order_release);
+}
+
 bool waitDone(const Task<void>& task, int32_t timeoutMs = 2000) {
     auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
     while (!task.isDone() && std::chrono::steady_clock::now() < deadline) {
@@ -167,6 +182,66 @@ TEST(EventLoopRaceTest, FdCloseThenReuseDoesNotSignalOldWaiter) {
     ASSERT_EQ(::write(sp2.fds[1], "z", 1), 1);
     EXPECT_TRUE(waitDone(task2)) << "a new waiter must wake normally after the fd is reused";
     reg2.cancel();
+}
+
+TEST(EventLoopRaceTest, UnregisterFdSignalsTerminalOutsideLock) {
+    auto state = std::make_shared<ReentrantState>();
+    ASSERT_TRUE(state->sockets.open());
+    const int fd = state->sockets.fds[0];
+    state->loop.registerFd(fd);
+
+    auto awaiter = std::make_shared<CompletionAwaiter<void>>();
+    state->task = reenterLoopAfterTerminal(state.get(), fd, awaiter);
+    state->task.resume();
+    auto gate = slark::makeResumeGate(state->task.getHandle());
+    auto registration = state->loop.registerContinuation(fd, FdInterest::Read, gate);
+    gate->arm();
+
+    auto completed = std::make_shared<std::atomic<bool>>(false);
+    std::thread([state, fd, completed] {
+        state->loop.unregisterFd(fd);
+        completed->store(true, std::memory_order_release);
+    }).detach();
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!completed->load(std::memory_order_acquire) &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_TRUE(completed->load(std::memory_order_acquire))
+        << "terminal resume re-entered EventLoop while unregisterFd held fdMutex_";
+    EXPECT_TRUE(state->resumed.load(std::memory_order_acquire));
+    state->loop.unregisterFd(fd);
+}
+
+TEST(EventLoopRaceTest, ReplacingWaiterSignalsTerminalOutsideLock) {
+    auto state = std::make_shared<ReentrantState>();
+    ASSERT_TRUE(state->sockets.open());
+    const int fd = state->sockets.fds[0];
+    state->loop.registerFd(fd);
+
+    auto awaiter = std::make_shared<CompletionAwaiter<void>>();
+    state->task = reenterLoopAfterTerminal(state.get(), fd, awaiter);
+    state->task.resume();
+    auto gate = slark::makeResumeGate(state->task.getHandle());
+    auto registration = state->loop.registerContinuation(fd, FdInterest::Read, gate);
+    gate->arm();
+
+    auto completed = std::make_shared<std::atomic<bool>>(false);
+    std::thread([state, fd, completed] {
+        (void)state->loop.registerContinuation(fd, FdInterest::Read, {});
+        completed->store(true, std::memory_order_release);
+    }).detach();
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!completed->load(std::memory_order_acquire) &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_TRUE(completed->load(std::memory_order_acquire))
+        << "replacement resumed the old waiter while holding fdMutex_";
+    EXPECT_TRUE(state->resumed.load(std::memory_order_acquire));
+    state->loop.unregisterFd(fd);
 }
 
 TEST(EventLoopRaceTest, DispatchAndRegisterInterleaving) {
