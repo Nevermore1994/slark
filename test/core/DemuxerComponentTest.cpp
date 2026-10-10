@@ -5,12 +5,15 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <future>
 #include <fstream>
 #include <memory>
 #include <mutex>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #include "Data.h"
@@ -77,7 +80,121 @@ struct ResultState {
     std::vector<bool> resultHasFrames;
 };
 
+class BlockingDemuxer final : public IDemuxer {
+ public:
+    BlockingDemuxer(std::promise<void>& parseEntered, std::shared_future<void> continueParse)
+        : parseEntered_(parseEntered), continueParse_(std::move(continueParse)) {
+        type_ = DemuxerType::MP4;
+        isOpened_ = true;
+    }
+
+    bool open(std::unique_ptr<Buffer>&) noexcept override {
+        return true;
+    }
+
+    void close() noexcept override {}
+
+    DemuxerResult parseData(DataPacket&) noexcept override {
+        parseThread_ = std::this_thread::get_id();
+        parsing_.store(true, std::memory_order_release);
+        parseEntered_.set_value();
+        continueParse_.wait();
+        parsing_.store(false, std::memory_order_release);
+        return {};
+    }
+
+    uint64_t getSeekToPos(double) noexcept override {
+        return 0;
+    }
+
+    void flush() noexcept override {
+        flushThread_ = std::this_thread::get_id();
+        if (parsing_.load(std::memory_order_acquire)) {
+            concurrentFlushes_.fetch_add(1, std::memory_order_relaxed);
+        }
+        flushCount_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    [[nodiscard]] int flushCount() const noexcept {
+        return flushCount_.load(std::memory_order_relaxed);
+    }
+
+    [[nodiscard]] int concurrentFlushes() const noexcept {
+        return concurrentFlushes_.load(std::memory_order_relaxed);
+    }
+
+    [[nodiscard]] std::thread::id parseThread() const noexcept {
+        return parseThread_;
+    }
+
+    [[nodiscard]] std::thread::id flushThread() const noexcept {
+        return flushThread_;
+    }
+
+ private:
+    std::promise<void>& parseEntered_;
+    std::shared_future<void> continueParse_;
+    std::atomic<bool> parsing_{false};
+    std::thread::id parseThread_;
+    std::thread::id flushThread_;
+    std::atomic<int> flushCount_{0};
+    std::atomic<int> concurrentFlushes_{0};
+};
+
 }  // namespace
+
+TEST(DemuxerComponentTest, FlushWaitsForWorkerParseAndRunsWithoutConcurrentDemuxerAccess) {
+    auto [sender, receiver] = Channel<DataPacket>::create();
+    DemuxerConfig config;
+    auto component = std::make_shared<DemuxerComponent>(std::move(receiver), std::move(config));
+
+    std::promise<void> parseEntered;
+    auto parseEnteredFuture = parseEntered.get_future();
+    std::promise<void> continueParse;
+    auto demuxer = std::make_shared<BlockingDemuxer>(parseEntered, continueParse.get_future().share());
+    component->setDemuxer(demuxer);
+    component->start();
+
+    DataPacket packet;
+    packet.offset = 0;
+    packet.data = Data::create(1);
+    ASSERT_TRUE(sender->send(std::move(packet)).has_value());
+    if (parseEnteredFuture.wait_for(std::chrono::seconds(2)) != std::future_status::ready) {
+        continueParse.set_value();
+        component->stop();
+        FAIL() << "worker did not enter parseData";
+        return;
+    }
+
+    component->pause();
+    auto flushReturned = std::make_shared<std::atomic<bool>>(false);
+    std::thread flushThread([component, flushReturned] {
+        component->flush();
+        flushReturned->store(true, std::memory_order_release);
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    const bool returnedBeforeParseCompleted = flushReturned->load(std::memory_order_acquire);
+    continueParse.set_value();
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!flushReturned->load(std::memory_order_acquire) &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (flushReturned->load(std::memory_order_acquire)) {
+        flushThread.join();
+        EXPECT_FALSE(returnedBeforeParseCompleted);
+        EXPECT_EQ(demuxer->flushCount(), 1);
+        EXPECT_EQ(demuxer->concurrentFlushes(), 0);
+        EXPECT_EQ(demuxer->flushThread(), demuxer->parseThread());
+        component->resume();
+        component->stop();
+    } else {
+        flushThread.detach();
+        ADD_FAILURE() << "flush did not complete after the worker finished parseData";
+    }
+}
 
 TEST(DemuxerComponentTest, SourceOperationGenerationIsMonotonic) {
     auto [sender, receiver] = Channel<DataPacket>::create();

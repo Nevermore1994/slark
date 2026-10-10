@@ -4,6 +4,7 @@
 
 #include "DemuxerComponent.h"
 
+#include <future>
 #include <thread>
 
 #include "Log.hpp"
@@ -72,9 +73,42 @@ void DemuxerComponent::flush() noexcept {
     if (receiver_) {
         (void)receiver_->tryReceiveAll();
     }
-    if (auto demuxer = demuxer_.load()) {
-        demuxer->flush();
+
+    const auto flushDemuxer = [this] {
+        if (auto demuxer = demuxer_.load()) {
+            demuxer->flush();
+        }
+    };
+    auto worker = worker_;
+    if (!worker || worker->getId() == std::this_thread::get_id()) {
+        flushDemuxer();
+    } else {
+        auto completed = std::make_shared<std::promise<void>>();
+        auto completion = completed->get_future();
+        auto result = worker->postTask([flushDemuxer, completed] {
+            flushDemuxer();
+            completed->set_value();
+        });
+        if (result) {
+            if (receiver_) {
+                receiver_->wakeup();
+            }
+            const bool wasPaused = paused_.load(std::memory_order_acquire);
+            if (wasPaused) {
+                worker->start();
+            }
+            completion.wait();
+            if (wasPaused) {
+                worker->pause();
+            }
+        } else if (worker->isStopRequested()) {
+            worker->join();
+            flushDemuxer();
+        } else {
+            LogE("[DemuxerComponent::flush] failed to queue flush on worker");
+        }
     }
+
     if (receiver_) {
         receiver_->wakeup();
     }
