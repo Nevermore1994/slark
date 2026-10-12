@@ -205,21 +205,6 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
         SlarkLog.i(LOG_TAG, "switchGraphicsBackend: done")
     }
 
-    private fun resolveSurface(): Surface? {
-        return when (val view = renderView) {
-            is TextureView -> {
-                if (view.isAvailable && view.surfaceTexture != null) {
-                    Surface(view.surfaceTexture)
-                } else null
-            }
-            is SurfaceView -> {
-                val holder = view.holder.surface
-                if (holder != null && holder.isValid) holder else null
-            }
-            else -> currentSurface
-        }
-    }
-
     private fun onSurfaceAvailable(surface: Surface, width: Int, height: Int) {
         SlarkLog.i(LOG_TAG, "onSurfaceAvailable: " + width + "x" + height + ", switching=" + isSwitchingBackend)
         if (isSwitchingBackend) {

@@ -15,6 +15,5 @@ interface ITextureRenderer {
     val isValid: Boolean
 
     fun drawFrame(surfaceTexture: SurfaceTexture, format: MediaFormat, size: Size): Boolean
-    fun awaitFrame(waitTime: Long): Pair<Boolean, Long>
     fun release()
 }

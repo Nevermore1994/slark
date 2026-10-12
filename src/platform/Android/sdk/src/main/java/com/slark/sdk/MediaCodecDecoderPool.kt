@@ -71,16 +71,5 @@ object MediaCodecDecoderPool {
         }
     }
 
-    fun clear() {
-        decoderPools.forEach { (_, pool) ->
-            while (true) {
-                val decoder = pool.poll() ?: break
-                try { decoder.stop() } catch (_: Exception) {}
-                try { decoder.release() } catch (_: Exception) {}
-            }
-        }
-        decoderPools.clear()
-    }
-
     private const val LOG_TAG = "MediaCodecDecoderPool"
 }

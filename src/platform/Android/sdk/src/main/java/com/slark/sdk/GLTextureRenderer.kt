@@ -95,11 +95,6 @@ class GLTextureRenderer : ITextureRenderer {
         return checkGLStatus("drawFrame")
     }
 
-    override fun awaitFrame(waitTime: Long): Pair<Boolean, Long> {
-        // frame waiting handled by GLGraphicsSurface via SurfaceTexture
-        return true to 0L
-    }
-
     override fun release() {
         if (program != 0) { GLES20.glDeleteProgram(program); program = 0 }
         if (vbo[0] != 0) { GLES20.glDeleteBuffers(1, vbo, 0); vbo[0] = 0 }

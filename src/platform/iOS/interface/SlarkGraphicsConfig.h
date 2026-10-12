@@ -19,9 +19,6 @@ typedef NS_ENUM(NSUInteger, SlarkGraphicsBackend) {
 + (instancetype)defaultConfig;
 + (instancetype)configWithBackend:(SlarkGraphicsBackend)backend;
 
-/// Returns the effective backend, taking HDR override into account.
-- (SlarkGraphicsBackend)effectiveBackend;
-
 + (BOOL)isHDRDisplayAvailable;
 
 @end

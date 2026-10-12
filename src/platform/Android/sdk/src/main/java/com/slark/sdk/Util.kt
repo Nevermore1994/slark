@@ -6,7 +6,6 @@
 
 package com.slark.sdk
 
-import android.media.AudioFormat
 import android.media.MediaFormat
 import android.util.Size
 import java.nio.ByteBuffer
@@ -44,12 +43,6 @@ fun LocalDateTime.toMicrosecondString(): String {
 
 fun Int.hasFlag(flag: Int) = (this and flag) == flag
 
-fun MediaFormat.isAudioFormat(): Boolean {
-    return this.getString(MediaFormat.KEY_MIME)?.let { mime ->
-        isAudioMime(mime)
-    } == true
-}
-
 fun MediaFormat.isVideoFormat(): Boolean {
     return this.getString(MediaFormat.KEY_MIME)?.let { mime ->
         isVideoMime(mime)
@@ -60,24 +53,10 @@ fun isVideoMime(mime: String): Boolean {
     return mime.startsWith("video/") == true
 }
 
-fun isAudioMime(mime: String): Boolean {
-    return mime.startsWith("audio/") == true
-}
-
 fun MediaFormat.getIntegerOrNull(key: String): Int? {
     return try {
         getInteger(key)
     } catch (_: Exception) {
         null
-    }
-}
-
-fun getChannelConfig(channelCount: Int): Int {
-    return when (channelCount) {
-        1 -> AudioFormat.CHANNEL_OUT_MONO
-        2 -> AudioFormat.CHANNEL_OUT_STEREO
-        4 -> AudioFormat.CHANNEL_OUT_QUAD
-        6 -> AudioFormat.CHANNEL_OUT_5POINT1
-        else -> AudioFormat.CHANNEL_OUT_DEFAULT
     }
 }

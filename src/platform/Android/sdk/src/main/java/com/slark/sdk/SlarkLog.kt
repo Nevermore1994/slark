@@ -15,12 +15,10 @@ class SlarkLog {
         init {
             System.loadLibrary("slark")
         }
-        private const val LOG_PRINT = "[print]"
         private const val LOG_DEBUG = "[debug]"
         private const val LOG_INFO = "[info]"
         private const val LOG_WARNING = "[warning]"
         private const val LOG_ERROR = "[error]"
-        private const val LOG_RECORD = "[record]"
         private val job = SupervisorJob()
         private val logScope = CoroutineScope(job + Dispatchers.Default)
         private val logChannel = Channel<LogMessage>(Channel.BUFFERED)
@@ -71,25 +69,18 @@ class SlarkLog {
 
         private fun processLog(message: LogMessage) {
             val logStr = LocalDateTime.now().toMicrosecondString() + " ${message.level} [${message.tag}] ${formatMessage(message.format, *message.args)}"
-            if (message.level != LOG_PRINT) {
-                nativeLog(logStr)
-            }
-            if (message.level != LOG_RECORD) {
-                when (message.level) {
-                    LOG_ERROR   -> Log.e(TAG, logStr)
-                    LOG_WARNING -> Log.w(TAG, logStr)
-                    LOG_DEBUG   -> Log.d(TAG, logStr)
-                    else        -> Log.i(TAG, logStr)
-                }
+            nativeLog(logStr)
+            when (message.level) {
+                LOG_ERROR   -> Log.e(TAG, logStr)
+                LOG_WARNING -> Log.w(TAG, logStr)
+                LOG_DEBUG   -> Log.d(TAG, logStr)
+                else        -> Log.i(TAG, logStr)
             }
         }
         private fun submitLog(level: String, tag: String, format: String, vararg args: Any?) {
             logScope.launch {
                 logChannel.send(LogMessage(level, tag, format, args))
             }
-        }
-        fun p(tag: String, format: String, vararg args: Any?) {
-            submitLog(LOG_PRINT, tag, format, *args)
         }
         fun d(tag: String, format: String, vararg args: Any?) {
             submitLog(LOG_DEBUG, tag, format, *args)
@@ -102,25 +93,6 @@ class SlarkLog {
         }
         fun e(tag: String, format: String, vararg args: Any?) {
             submitLog(LOG_ERROR, tag, format, *args)
-        }
-        fun r(tag: String, format: String, vararg args: Any?) {
-            submitLog(LOG_RECORD, tag, format, *args)
-        }
-        fun cleanup() {
-            runBlocking {
-                logChannel.close()
-                job.cancelAndJoin()
-                logScope.cancel()
-            }
-        }
-        fun shutdown(timeout: Long = 5000L) {
-            runBlocking {
-                withTimeoutOrNull(timeout) {
-                    cleanup()
-                } ?: run {
-                    logScope.cancel()
-                }
-            }
         }
     }
 }

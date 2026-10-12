@@ -15,7 +15,6 @@
 #include <thread>
 #include <utility>
 
-#include "AliveFlag.hpp"
 #include "AsyncIOOperation.hpp"
 #include "CancellationToken.h"
 #include "EventLoop.h"

@@ -74,10 +74,6 @@
 
 - (void)setupNotifications {
     [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(deviceOrientationDidChange:)
-                                                 name:UIDeviceOrientationDidChangeNotification
-                                               object:nil];
-    [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(applicationWillResignActive)
                                                  name:UIApplicationWillResignActiveNotification
                                                object:nil];
@@ -93,14 +89,6 @@
                                              selector:@selector(audioSessionRouteChange:)
                                                  name:AVAudioSessionRouteChangeNotification
                                                object:nil];
-}
-
-- (void)viewDidLayoutSubviews {
-    [super viewDidLayoutSubviews];
-}
-
-- (void)deviceOrientationDidChange:(NSNotification*)notification {
-    // Screen rotation drives the framebuffer rebuild via layoutSubviews; nothing to do here
 }
 
 - (void)applicationWillResignActive {

@@ -26,33 +26,4 @@ CMSampleBufferRef createSampleBuffer(CMFormatDescriptionRef fmtDesc, void* buff,
     }
 }
 
-UIImage* imageFromPixelBuffer(CVPixelBufferRef pixelBuffer) {
-    if (pixelBuffer == NULL) {
-        return NULL;
-    }
-    CVPixelBufferLockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
-    void* baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer);
-
-    size_t width = CVPixelBufferGetWidth(pixelBuffer);
-    size_t height = CVPixelBufferGetHeight(pixelBuffer);
-    size_t bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer);
-    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-
-    CGBitmapInfo info =
-        static_cast<CGBitmapInfo>(kCGImageAlphaPremultipliedFirst) | kCGBitmapByteOrder32Little;
-    CGContextRef context =
-        CGBitmapContextCreate(baseAddress, width, height, 8, bytesPerRow, colorSpace, info);
-
-    CGImageRef cgImage = CGBitmapContextCreateImage(context);
-    UIImage* image = [UIImage imageWithCGImage:cgImage];
-
-    CGImageRelease(cgImage);
-    CGContextRelease(context);
-    CGColorSpaceRelease(colorSpace);
-
-    CVPixelBufferUnlockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
-
-    return image;
-}
-
 }  // namespace slark
