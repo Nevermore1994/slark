@@ -5,10 +5,13 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
+#include <cstddef>
 #include <deque>
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <thread>
 
@@ -298,6 +301,28 @@ class PlayPipeline : public NonCopyMovable,
     void registerComponents() noexcept;
 
  private:
+    class RenderRequestLease {
+     public:
+        explicit RenderRequestLease(PlayPipeline& pipeline) noexcept;
+        ~RenderRequestLease();
+
+        RenderRequestLease(const RenderRequestLease&) = delete;
+        RenderRequestLease& operator=(const RenderRequestLease&) = delete;
+
+        [[nodiscard]] explicit operator bool() const noexcept {
+            return pipeline_ != nullptr;
+        }
+
+     private:
+        PlayPipeline* pipeline_ = nullptr;
+    };
+
+    [[nodiscard]] bool beginRenderRequest() noexcept;
+    void endRenderRequest() noexcept;
+    void stopRenderRequestsAndWait() noexcept;
+
+    friend struct PlayPipelineTestAccess;
+
     FlowConfig config_;
     const bool kIsLiveSource;
     std::thread::id ownerThreadId_;
@@ -340,6 +365,11 @@ class PlayPipeline : public NonCopyMovable,
     std::atomic<bool> tearingDown_{false};
     std::atomic<bool> completionPending_{false};
     std::atomic<bool> componentStarted_{false};
+
+    std::mutex renderRequestMutex_;
+    std::condition_variable renderRequestCv_;
+    std::size_t activeRenderRequests_ = 0;
+    bool acceptingRenderRequests_ = true;
 
     double playbackRangeStart_ = 0.0;
     double playbackRangeEnd_ = 0.0;

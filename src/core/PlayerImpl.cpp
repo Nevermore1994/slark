@@ -78,9 +78,12 @@ void Player::Impl::forceCleanup() noexcept {
     }
     mediaSourceManager_.close();
     dataPacketSender_.reset();
-    if (pipeline_) {
-        if (pipeline_->teardown()) {
-            pipeline_.reset();
+    if (auto pipeline = pipelineSnapshot()) {
+        if (pipeline->teardown()) {
+            std::lock_guard lock(pipelineMutex_);
+            if (pipeline_ == pipeline) {
+                pipeline_.reset();
+            }
         } else {
             LogE("force cleanup: pipeline teardown incomplete, retaining pipeline");
         }

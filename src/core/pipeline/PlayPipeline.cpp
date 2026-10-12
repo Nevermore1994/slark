@@ -49,6 +49,43 @@ PlayPipeline::~PlayPipeline() {
     }
 }
 
+PlayPipeline::RenderRequestLease::RenderRequestLease(PlayPipeline& pipeline) noexcept
+    : pipeline_(pipeline.beginRenderRequest() ? &pipeline : nullptr) {}
+
+PlayPipeline::RenderRequestLease::~RenderRequestLease() {
+    if (pipeline_) {
+        pipeline_->endRenderRequest();
+    }
+}
+
+bool PlayPipeline::beginRenderRequest() noexcept {
+    std::lock_guard lock(renderRequestMutex_);
+    if (!acceptingRenderRequests_) {
+        return false;
+    }
+    ++activeRenderRequests_;
+    return true;
+}
+
+void PlayPipeline::endRenderRequest() noexcept {
+    bool notify = false;
+    {
+        std::lock_guard lock(renderRequestMutex_);
+        assert(activeRenderRequests_ > 0);
+        notify = --activeRenderRequests_ == 0;
+    }
+    if (notify) {
+        renderRequestCv_.notify_all();
+    }
+}
+
+void PlayPipeline::stopRenderRequestsAndWait() noexcept {
+    std::unique_lock lock(renderRequestMutex_);
+    acceptingRenderRequests_ = false;
+    renderRequestCv_.notify_all();
+    renderRequestCv_.wait(lock, [this] { return activeRenderRequests_ == 0; });
+}
+
 void PlayPipeline::startDemuxing() noexcept {
     assert(isOnOwnerThread());
     if (componentStarted_.exchange(true)) {
@@ -144,6 +181,7 @@ bool PlayPipeline::teardown() noexcept {
     if (tearingDown_.exchange(true, std::memory_order_acq_rel)) {
         return false;
     }
+    stopRenderRequestsAndWait();
     LogI("PlayPipeline teardown");
     sourceFlow_.reset();
     bufferingTracker_.reset();
@@ -351,6 +389,10 @@ bool PlayPipeline::isDecodeCompleted() const noexcept {
 }
 
 AVFrameRefPtr PlayPipeline::requestVideoFrame() noexcept {
+    RenderRequestLease renderRequest(*this);
+    if (!renderRequest) {
+        return nullptr;
+    }
     recordVsyncInterval();
 
     if (hasReachedPlaybackRangeEnd()) {

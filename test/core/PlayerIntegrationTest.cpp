@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <fstream>
+#include <future>
 #include <memory>
 #include <string>
 #include <thread>
@@ -23,6 +24,24 @@ using namespace slark::pipeline;
 using ::testing::_;
 using ::testing::AtLeast;
 
+namespace slark {
+struct PlayPipelineTestAccess {
+    static bool beginRenderRequest(PlayPipeline& pipeline) {
+        return pipeline.beginRenderRequest();
+    }
+
+    static void endRenderRequest(PlayPipeline& pipeline) {
+        pipeline.endRenderRequest();
+    }
+
+    static bool waitUntilClosed(PlayPipeline& pipeline, std::chrono::milliseconds timeout) {
+        std::unique_lock lock(pipeline.renderRequestMutex_);
+        return pipeline.renderRequestCv_.wait_for(lock, timeout, [&pipeline] {
+            return !pipeline.acceptingRenderRequests_;
+        });
+    }
+};
+}
 
 struct MockPlayerObserver : public IPlayerObserver {
     MOCK_METHOD(void,
@@ -373,6 +392,33 @@ TEST(PlayerIntegrationTest, PipelineBuildAndTeardown) {
     auto state = waitForPrepared(player);
     EXPECT_NE(state, PlayerState::NotInited);
     safeDestroy(player);
+}
+
+TEST(PlayerIntegrationTest, TeardownWaitsForInFlightRenderRequest) {
+    PlayPipeline pipeline(FlowConfigDefaults::forSource(MediaSourceType::Local),
+                          MediaSourceType::Local);
+    pipeline.bindToCurrentThread();
+    pipeline.startDemuxing();
+    ASSERT_TRUE(PlayPipelineTestAccess::beginRenderRequest(pipeline));
+
+    std::promise<void> teardownStarted;
+    std::promise<bool> teardownCompleted;
+    auto started = teardownStarted.get_future();
+    auto completed = teardownCompleted.get_future();
+    std::thread teardownThread([&] {
+        teardownStarted.set_value();
+        teardownCompleted.set_value(pipeline.teardown());
+    });
+
+    started.wait();
+    EXPECT_TRUE(PlayPipelineTestAccess::waitUntilClosed(pipeline, std::chrono::seconds(2)));
+    EXPECT_EQ(completed.wait_for(std::chrono::milliseconds(0)), std::future_status::timeout);
+    EXPECT_FALSE(PlayPipelineTestAccess::beginRenderRequest(pipeline));
+
+    PlayPipelineTestAccess::endRenderRequest(pipeline);
+    teardownThread.join();
+    EXPECT_TRUE(completed.get());
+    EXPECT_EQ(pipeline.requestVideoFrame(), nullptr);
 }
 
 TEST(PlayerIntegrationTest, RepeatedPlayStopCycles) {
