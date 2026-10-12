@@ -6,6 +6,7 @@ project(Core_test)
 
 set(CORE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/core)
 set(DEMUXER_SRC_DIR ${CORE_SRC_DIR}/demuxer)
+set(CODEC_SRC_DIR ${CORE_SRC_DIR}/codec)
 
 file(GLOB TEST_FILES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
@@ -43,6 +44,9 @@ set(CORE_TEST_SOURCES
     ${CORE_SRC_DIR}/HLSStream.cpp
     ${CORE_SRC_DIR}/StreamFactory.cpp
     ${CORE_SRC_DIR}/MediaSourceManager.cpp
+    ${CODEC_SRC_DIR}/DecoderComponent.cpp
+    ${CODEC_SRC_DIR}/DecoderManager.cpp
+    ${CODEC_SRC_DIR}/RawDecoder.cpp
 )
 
 add_executable(${PROJECT_NAME} ${TEST_FILES}
@@ -75,6 +79,7 @@ endif()
 
 gtest_discover_tests(${PROJECT_NAME}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    DISCOVERY_MODE PRE_TEST
     PROPERTIES
     TIMEOUT 300
     PARALLEL_LEVEL 0

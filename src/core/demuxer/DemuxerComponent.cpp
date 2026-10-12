@@ -4,8 +4,7 @@
 
 #include "DemuxerComponent.h"
 
-#include <future>
-#include <thread>
+#include <cstdlib>
 
 #include "Log.hpp"
 #include "Mp4Demuxer.h"
@@ -20,23 +19,34 @@ DemuxerComponent::DemuxerComponent(ReceiverPtr<DataPacket> receiver, DemuxerConf
     : receiver_(std::move(receiver)), config_(std::move(config)) {}
 
 DemuxerComponent::~DemuxerComponent() {
+    auto worker = worker_.load();
+    if (worker && worker->isCurrentThread()) {
+        LogP("DemuxerComponent destroyed on its worker thread");
+        std::abort();
+    }
     stop();
 }
 
 void DemuxerComponent::stop() noexcept {
-    LogI("[DemuxerComponent::stop] stopping");
-    if (receiver_) {
-        receiver_->wakeup();
+    std::shared_ptr<LoopThread> worker;
+    {
+        std::lock_guard lock(startMutex_);
+        stopped_.store(true, std::memory_order_release);
+        isClosed_.store(true, std::memory_order_release);
+        worker = worker_.load();
     }
-    if (worker_) {
-        worker_->stop();
-        worker_->join();  // synchronously wait for the worker to exit, avoiding UAF if
-                          // members are reset while the loop still runs
-        ThreadManager::shareInstance().remove(worker_);
-        worker_.reset();
+    if (worker && worker->isCurrentThread()) {
+        worker->stop();
+        return;
     }
-    reset();
-    isClosed_ = true;
+    if (worker) {
+        worker->stop();
+        worker->join();
+    }
+    std::call_once(finalizeOnce_, [this] { reset(); });
+    if (worker) {
+        ThreadManager::shareInstance().remove(worker);
+    }
 }
 
 void DemuxerComponent::reset() noexcept {
@@ -49,23 +59,36 @@ void DemuxerComponent::reset() noexcept {
     sourceGeneration_.store(0, std::memory_order_release);
     probeBuffer_.reset();
     demuxer_.reset();
+    header_.reset();
 }
 
 void DemuxerComponent::close() noexcept {
-    reset();
-    isClosed_ = true;
+    stop();
 }
 
 void DemuxerComponent::start() noexcept {
-    if (worker_) {
-        worker_->start();
+    std::lock_guard lock(startMutex_);
+    if (stopped_.load(std::memory_order_acquire)) {
+        LogW("DemuxerComponent::start ignored, component already stopped");
         return;
     }
-    LogI("[DemuxerComponent::start] starting DemuxerWorker");
-    worker_ = Thread::createWithLoop("DemuxerWorker", [this](Thread& thread) {
-        runLoop(thread);
-    });
-    ThreadManager::shareInstance().add(worker_);
+    if (worker_.load()) {
+        return;
+    }
+    auto receiver = receiver_.get();
+    auto worker = LoopThread::create(
+        "DemuxerWorker", [this](LoopThread& thread) { runLoop(thread); },
+        [receiver] {
+            if (receiver) {
+                receiver->wakeup();
+            }
+        });
+    if (!worker) {
+        LogE("create DemuxerWorker failed");
+        return;
+    }
+    worker_.reset(worker);
+    ThreadManager::shareInstance().add(worker);
 }
 
 void DemuxerComponent::flush() noexcept {
@@ -73,42 +96,11 @@ void DemuxerComponent::flush() noexcept {
     if (receiver_) {
         (void)receiver_->tryReceiveAll();
     }
-
-    const auto flushDemuxer = [this] {
+    runInDomain([this] {
         if (auto demuxer = demuxer_.load()) {
             demuxer->flush();
         }
-    };
-    auto worker = worker_;
-    if (!worker || worker->getId() == std::this_thread::get_id()) {
-        flushDemuxer();
-    } else {
-        auto completed = std::make_shared<std::promise<void>>();
-        auto completion = completed->get_future();
-        auto result = worker->postTask([flushDemuxer, completed] {
-            flushDemuxer();
-            completed->set_value();
-        });
-        if (result) {
-            if (receiver_) {
-                receiver_->wakeup();
-            }
-            const bool wasPaused = paused_.load(std::memory_order_acquire);
-            if (wasPaused) {
-                worker->start();
-            }
-            completion.wait();
-            if (wasPaused) {
-                worker->pause();
-            }
-        } else if (worker->isStopRequested()) {
-            worker->join();
-            flushDemuxer();
-        } else {
-            LogE("[DemuxerComponent::flush] failed to queue flush on worker");
-        }
-    }
-
+    });
     if (receiver_) {
         receiver_->wakeup();
     }
@@ -116,32 +108,31 @@ void DemuxerComponent::flush() noexcept {
 
 void DemuxerComponent::pause() noexcept {
     paused_.store(true, std::memory_order_release);
-    if (worker_) {
-        worker_->pause();
+    if (auto worker = worker_.load()) {
+        worker->notify();
     }
     if (receiver_) {
+        // Wake receive() so the loop observes paused_ instead of parsing a post-pause packet.
         receiver_->wakeup();
     }
 }
 
 void DemuxerComponent::resume() noexcept {
     paused_.store(false, std::memory_order_release);
-    if (worker_) {
-        worker_->start();
+    if (auto worker = worker_.load()) {
+        worker->notify();
     }
     if (receiver_) {
         receiver_->wakeup();
     }
 }
 
-void DemuxerComponent::runLoop(Thread& thread) noexcept {
-    while (!thread.shouldStop()) {
+void DemuxerComponent::runLoop(LoopThread& thread) noexcept {
+    while (!thread.isStopRequested()) {
         thread.drainPendingWork();
 
-        // A paused demuxer must not consume: packets queued for the resumed operation have to
-        // survive until then.
         if (paused_.load(std::memory_order_acquire)) {
-            std::this_thread::sleep_for(kPausedPollInterval);
+            thread.waitForWork([this] { return !paused_.load(std::memory_order_acquire); });
             continue;
         }
 
@@ -377,16 +368,13 @@ void DemuxerComponent::seekToPosOnWorker(uint64_t pos, uint64_t generation) noex
 }
 
 uint64_t DemuxerComponent::getSeekToPos(double time) noexcept {
-    auto demuxer = demuxer_.load();
-    if (!demuxer) {
-        LogE("demuxer is nullptr.");
-        return 0;
-    }
-    if (!demuxer->isOpened()) {
-        LogE("demuxer is not opened.");
-        return 0;
-    }
-    return demuxer->getSeekToPos(time);
+    uint64_t position = 0;
+    runInDomain([this, time, &position] {
+        if (auto demuxer = demuxer_.load(); demuxer && demuxer->isOpened()) {
+            position = demuxer->getSeekToPos(time);
+        }
+    });
+    return position;
 }
 
 void DemuxerComponent::seekToTime(double time) noexcept {
@@ -405,10 +393,37 @@ void DemuxerComponent::seekToTime(double time) noexcept {
     });
 }
 
-void DemuxerComponent::postToWorker(ThreadTask task) noexcept {
-    if (worker_) {
-        worker_->postTask(std::move(task));
+bool DemuxerComponent::postToWorker(ThreadTask task) noexcept {
+    auto worker = worker_.load();
+    if (!worker || stopped_.load(std::memory_order_acquire)) {
+        return false;
     }
+    return worker->postTask(std::move(task)).has_value();
+}
+
+bool DemuxerComponent::runInDomain(ThreadTask task) noexcept {
+    auto worker = worker_.load();
+    if (!worker || worker->isCurrentThread()) {
+        if (task) {
+            task();
+        }
+        return true;
+    }
+    return worker->postAndWait(std::move(task)).has_value();
+}
+
+void DemuxerComponent::publishHeader() noexcept {
+    auto header = std::make_shared<MediaHeader>();
+    if (auto demuxer = demuxer_.load()) {
+        if (auto video = demuxer->videoInfo()) {
+            header->video = *video;
+        }
+        if (auto audio = demuxer->audioInfo()) {
+            header->audio = *audio;
+        }
+        header->duration = demuxer->totalDuration();
+    }
+    header_.reset(std::move(header));
 }
 
 }  // namespace slark

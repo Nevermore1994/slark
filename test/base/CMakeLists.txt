@@ -7,7 +7,7 @@ PROJECT(Base_test)
 set(TEST_FILE_LISTS
         *.cpp
 )
-file(GLOB TEST_FILES ${TEST_FILE_LISTS})
+file(GLOB TEST_FILES CONFIGURE_DEPENDS ${TEST_FILE_LISTS})
 
 add_executable(${PROJECT_NAME} ${TEST_FILES})
 
@@ -18,6 +18,7 @@ target_link_libraries(${PROJECT_NAME}
 
 gtest_discover_tests(${PROJECT_NAME}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        DISCOVERY_MODE PRE_TEST
         PROPERTIES
         TIMEOUT 300
         PARALLEL_LEVEL 0

@@ -22,10 +22,8 @@ ThreadManager::~ThreadManager() {
     if (monitorThread_.joinable()) {
         monitorThread_.join();
     }
-    {
-        std::unique_lock<std::mutex> lock(mutex_);
-        threadInfos_.clear();
-    }
+    std::lock_guard lock(mutex_);
+    threadInfos_.clear();
 }
 
 void ThreadManager::monitorLoop() {
@@ -44,68 +42,66 @@ void ThreadManager::monitorLoop() {
 }
 
 void ThreadManager::add(const std::shared_ptr<Thread>& thread) noexcept {
+    if (!thread || thread->hasExited()) {
+        return;
+    }
     {
-        std::unique_lock<std::mutex> lock(mutex_);
-        threadInfos_.emplace(thread->getId(), thread);
+        std::lock_guard lock(mutex_);
+        threadInfos_.insert_or_assign(thread->serial(), thread);
     }
     cond_.notify_one();
 }
 
 void ThreadManager::remove(const std::shared_ptr<Thread>& thread) noexcept {
+    if (!thread) {
+        return;
+    }
     {
-        std::unique_lock<std::mutex> lock(mutex_);
-        threadInfos_.erase(thread->getId());
+        std::lock_guard lock(mutex_);
+        threadInfos_.erase(thread->serial());
     }
     cond_.notify_one();
 }
 
-void ThreadManager::remove(std::thread::id id) noexcept {
-    {
-        std::unique_lock<std::mutex> lock(mutex_);
-        threadInfos_.erase(id);
-    }
-    cond_.notify_one();
+size_t ThreadManager::size() const noexcept {
+    std::lock_guard lock(mutex_);
+    return threadInfos_.size();
 }
 
 void ThreadManager::setBlockCallback(BlockCallback callback) noexcept {
-    std::unique_lock<std::mutex> lock(mutex_);
+    std::lock_guard lock(mutex_);
     blockCallback_ = std::move(callback);
 }
 
-std::shared_ptr<Thread> ThreadManager::thisThread() noexcept {
-    std::unique_lock<std::mutex> lock(mutex_);
-    auto id = std::this_thread::get_id();
-    auto it = threadInfos_.find(id);
-    if (it == threadInfos_.end() || it->second.expired()) {
-        return nullptr;
-    }
-    return it->second.lock();
-}
-
 void ThreadManager::reportRunInfo() noexcept {
-    Time::TimePoint now = Time::nowTimeStamp();
+    const auto now = Time::nowTimeStamp();
+    std::vector<std::shared_ptr<Thread>> threads;
     std::vector<std::pair<std::string, Time::TimeDelta>> blockedThreads;
     BlockCallback callback;
     size_t liveSize = 0;
     {
-        std::unique_lock<std::mutex> lock(mutex_);
-        std::erase_if(threadInfos_, [now, &blockedThreads](auto& pair) {
-            auto thread = pair.second.lock();
-            if (!thread) {
-                return true;
+        std::lock_guard lock(mutex_);
+        for (auto it = threadInfos_.begin(); it != threadInfos_.end();) {
+            if (auto thread = it->second.lock()) {
+                threads.push_back(std::move(thread));
+                ++it;
+            } else {
+                it = threadInfos_.erase(it);
             }
-            // Only active threads are judged as blocked; active=false naturally skips while waiting
-            if (thread->isRunning() && thread->isActive()) {
-                auto interval = now - thread->getLastRunTimeStamp();
-                if (interval >= kMaxThreadBlockTimeInterval) {
-                    blockedThreads.emplace_back(thread->getName(), interval);
-                }
-            }
-            return false;
-        });
+        }
         callback = blockCallback_;
         liveSize = threadInfos_.size();
     }
+
+    for (const auto& thread : threads) {
+        if (thread->isRunning() && thread->isActive()) {
+            const auto interval = now - thread->getLastRunTimeStamp();
+            if (interval >= kMaxThreadBlockTimeInterval) {
+                blockedThreads.emplace_back(thread->getName(), interval);
+            }
+        }
+    }
+
     LogI("ThreadManager report now:{}, live size:{}", now.point(), liveSize);
     if (!callback) {
         return;
@@ -116,4 +112,4 @@ void ThreadManager::reportRunInfo() noexcept {
     }
 }
 
-}  // end namespace slark
+}  // namespace slark

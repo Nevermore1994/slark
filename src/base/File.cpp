@@ -13,12 +13,16 @@ namespace slark::File {
 
 static constexpr std::array<std::string_view, 4> kModeStr = {"rb", "wb", "ab", "wb+"};
 
-FileBase::FileBase(std::filesystem::path path, FileMode mode)
-    : path_(std::move(path)), mode_(mode) {}
+FileBase::FileBase(std::filesystem::path path, FileMode mode, bool logErrors)
+    : path_(std::move(path)), mode_(mode), logErrors_(logErrors) {}
 
 FileBase::~FileBase() = default;
 
 Expected<void> FileBase::open() noexcept {
+    return openImpl(logErrors_);
+}
+
+Expected<void> FileBase::openImpl(bool logFailure) noexcept {
     if (path_.empty()) {
         return std::unexpected(Error::InvalidArgument);
     }
@@ -27,7 +31,9 @@ Expected<void> FileBase::open() noexcept {
     }
     auto* fp = fopen(path_.c_str(), kModeStr[static_cast<size_t>(mode_)].data());
     if (!fp) {
-        LogE("open file:{}", std::strerror(errno));
+        if (logFailure) {
+            LogE("open file:{}", std::strerror(errno));
+        }
         return std::unexpected(Error::FileNotFound);
     }
     file_.reset(fp);
@@ -60,8 +66,8 @@ void FileBase::close() noexcept {
     file_.reset();
 }
 
-WriteFile::WriteFile(std::filesystem::path path, bool isAppend)
-    : FileBase(std::move(path), isAppend ? FileMode::AppendMode : FileMode::WriteMode) {}
+WriteFile::WriteFile(std::filesystem::path path, bool isAppend, bool logErrors)
+    : FileBase(std::move(path), isAppend ? FileMode::AppendMode : FileMode::WriteMode, logErrors) {}
 
 WriteFile::~WriteFile() {
     flush();
@@ -98,7 +104,9 @@ Expected<uint64_t> WriteFile::write(ConstByteSpan data) noexcept {
         flush();
     }
     if (writeSize == 0) {
-        LogE("write file: {}", std::strerror(errno));
+        if (logErrors_) {
+            LogE("write file: {}", std::strerror(errno));
+        }
         return std::unexpected(Error::IOError);
     }
     return static_cast<uint64_t>(writeSize);

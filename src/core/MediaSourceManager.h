@@ -12,7 +12,7 @@
 #include "IStream.h"
 #include "NonCopyable.h"
 #include "StreamFactory.hpp"
-#include "Thread.h"
+#include "TaskThread.h"
 
 namespace slark {
 
@@ -28,7 +28,7 @@ class MediaSourceManager : public NonCopyMovable {
     ~MediaSourceManager() = default;
 
     // Single owning thread: injected into network streams via the StreamFactory constructor
-    void setOwnerThread(std::shared_ptr<Thread> ownerThread) noexcept {
+    void setOwnerThread(std::shared_ptr<TaskThread> ownerThread) noexcept {
         ownerThread_ = std::move(ownerThread);
     }
 
@@ -78,7 +78,7 @@ class MediaSourceManager : public NonCopyMovable {
 
  private:
     mutable std::mutex mutex_;
-    std::shared_ptr<Thread> ownerThread_;
+    std::shared_ptr<TaskThread> ownerThread_;
     std::shared_ptr<IStream> stream_;
     StreamInfo streamInfo_;
 };

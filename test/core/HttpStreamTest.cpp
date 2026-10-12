@@ -21,7 +21,7 @@
 #include <vector>
 
 #include "HttpStream.h"
-#include "Thread.h"
+#include "TaskThread.h"
 
 using namespace slark;
 
@@ -312,9 +312,8 @@ private:
     std::thread thread_;
 };
 
-std::shared_ptr<Thread> makeOwnerThread() {
-    auto thread = Thread::create("HttpStreamTest");
-    thread->start();
+std::shared_ptr<TaskThread> makeOwnerThread() {
+    auto thread = TaskThread::create("HttpStreamTest");
     return thread;
 }
 
@@ -338,7 +337,7 @@ class HttpStreamTest : public ::testing::Test {
     }
 
     MockHttpServer server_;
-    std::shared_ptr<Thread> ownerThread_;
+    std::shared_ptr<TaskThread> ownerThread_;
     std::shared_ptr<HttpStream> stream_;
 };
 

@@ -2,11 +2,16 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #pragma once
+#include <mutex>
+#include <optional>
+
+#include "AudioInfo.h"
 #include "Channel.hpp"
 #include "DemuxerManager.h"
 #include "IPipelineComponent.h"
+#include "LoopThread.h"
 #include "NonCopyable.h"
-#include "Thread.h"
+#include "VideoInfo.h"
 #include "ThreadManager.h"
 #include "perf/PlaySession.h"
 
@@ -18,23 +23,16 @@ using HandleDemuxResultFunc =
 
 class DemuxerComponent : public IPipelineComponent, public slark::NonCopyMovable {
  private:
-    template <typename Func, typename Default>
-    auto withDemuxer(Func&& func, Default&& defaultVal) const noexcept {
-        if (auto demuxer = demuxer_.load()) {
-            return func(*demuxer);
-        }
-        LogE("demuxer is nullptr.");
-        return std::forward<Default>(defaultVal);
-    }
+    struct MediaHeader {
+        std::optional<VideoInfo> video;
+        std::optional<AudioInfo> audio;
+        CTime duration;
+    };
 
  public:
     explicit DemuxerComponent(ReceiverPtr<DataPacket> receiver, DemuxerConfig config);
 
     ~DemuxerComponent();
-
-    void reset() noexcept;
-
-    bool open() noexcept;
 
     void close() noexcept override;
 
@@ -49,7 +47,8 @@ class DemuxerComponent : public IPipelineComponent, public slark::NonCopyMovable
     void flush() noexcept override;
 
     [[nodiscard]] bool isRunning() const noexcept override {
-        return worker_ && !worker_->isStopRequested();
+        auto worker = worker_.load();
+        return worker && !worker->hasExited();
     }
 
     void seekToPos(uint64_t pos) noexcept;
@@ -74,77 +73,33 @@ class DemuxerComponent : public IPipelineComponent, public slark::NonCopyMovable
         handleSeekFunc_.reset(std::make_shared<HandleSeekFunc>(std::move(func)));
     }
 
-    [[nodiscard]] bool isOpen() const noexcept {
-        return withDemuxer(
-            [](auto& d) {
-                return d.isOpened();
-            },
-            false);
-    }
-
-    // Packets queued for the demuxer but not consumed yet (the Q1 backlog).
     [[nodiscard]] uint32_t pendingCount() const noexcept {
         return receiver_ ? receiver_->size() : 0;
     }
 
-    [[nodiscard]] bool isCompleted() const noexcept {
-        return withDemuxer(
-            [](auto& d) {
-                return d.isCompleted();
-            },
-            false);
-    }
-
     [[nodiscard]] bool hasVideo() const noexcept {
-        return withDemuxer(
-            [](auto& d) {
-                return d.hasVideo();
-            },
-            false);
+        auto header = header_.load();
+        return header && header->video.has_value();
     }
 
     [[nodiscard]] bool hasAudio() const noexcept {
-        return withDemuxer(
-            [](auto& d) {
-                return d.hasAudio();
-            },
-            false);
+        auto header = header_.load();
+        return header && header->audio.has_value();
     }
 
-    [[nodiscard]] std::shared_ptr<VideoInfo> videoInfo() noexcept {
-        return withDemuxer(
-            [](auto& d) {
-                return d.videoInfo();
-            },
-            std::shared_ptr<VideoInfo>{});
+    [[nodiscard]] std::shared_ptr<VideoInfo> videoInfo() const noexcept {
+        auto header = header_.load();
+        return header && header->video ? std::make_shared<VideoInfo>(*header->video) : nullptr;
     }
 
-    [[nodiscard]] std::shared_ptr<AudioInfo> audioInfo() noexcept {
-        return withDemuxer(
-            [](auto& d) {
-                return d.audioInfo();
-            },
-            std::shared_ptr<AudioInfo>{});
-    }
-
-    [[nodiscard]] std::shared_ptr<DemuxerHeaderInfo> headerInfo() noexcept {
-        return withDemuxer(
-            [](auto& d) {
-                return d.headerInfo();
-            },
-            std::shared_ptr<DemuxerHeaderInfo>{});
+    [[nodiscard]] std::shared_ptr<AudioInfo> audioInfo() const noexcept {
+        auto header = header_.load();
+        return header && header->audio ? std::make_shared<AudioInfo>(*header->audio) : nullptr;
     }
 
     [[nodiscard]] CTime totalDuration() const noexcept {
-        return withDemuxer(
-            [](auto& d) {
-                return d.totalDuration();
-            },
-            CTime{});
-    }
-
-    [[nodiscard]] std::shared_ptr<IDemuxer> demuxer() const noexcept {
-        return demuxer_.load();
+        auto header = header_.load();
+        return header ? header->duration : CTime{};
     }
 
     void setDemuxer(std::shared_ptr<IDemuxer> demuxer) noexcept {
@@ -155,23 +110,21 @@ class DemuxerComponent : public IPipelineComponent, public slark::NonCopyMovable
         }
     }
 
-    [[nodiscard]] DemuxerType type() const noexcept {
-        return withDemuxer(
-            [](auto& d) {
-                return d.type();
-            },
-            DemuxerType::Unknown);
-    }
-
  private:
-    void runLoop(Thread& thread) noexcept;
-
-
-    void postToWorker(ThreadTask task) noexcept;
-
+    void reset() noexcept;
+    bool open() noexcept;
+    void runLoop(LoopThread& thread) noexcept;
+    bool postToWorker(ThreadTask task) noexcept;
+    bool runInDomain(ThreadTask task) noexcept;
+    void publishHeader() noexcept;
     void seekToPosOnWorker(uint64_t pos, uint64_t generation) noexcept;
 
     void invokeHandleResultFunc(DemuxerResult&& result) noexcept {
+        if (result.resultCode == DemuxerResultCode::ParsedHeader ||
+            result.resultCode == DemuxerResultCode::VideoInfoChange ||
+            result.resultCode == DemuxerResultCode::ParsedFPS) {
+            publishHeader();
+        }
         auto func = handleResultFunc_.load();
         if (func) {
             std::invoke(*func, demuxer_.load(), std::move(result));
@@ -190,14 +143,17 @@ class DemuxerComponent : public IPipelineComponent, public slark::NonCopyMovable
     bool openDemuxer(DataPacket& packet) noexcept;
 
  private:
-    std::shared_ptr<Thread> worker_;
+    AtomicSharedPtr<LoopThread> worker_;
+    std::mutex startMutex_;
+    std::once_flag finalizeOnce_;
     ReceiverPtr<DataPacket> receiver_;
     DemuxerConfig config_;
     AtomicSharedPtr<HandleDemuxResultFunc> handleResultFunc_;
     AtomicSharedPtr<HandleSeekFunc> handleSeekFunc_;
     std::unique_ptr<Buffer> probeBuffer_;
     AtomicSharedPtr<IDemuxer> demuxer_;
-    static constexpr auto kPausedPollInterval = std::chrono::milliseconds(2);
+    AtomicSharedPtr<const MediaHeader> header_;
+    std::atomic_bool stopped_{false};
 
     std::atomic_bool flushed_ = false;
     std::atomic_bool paused_ = false;

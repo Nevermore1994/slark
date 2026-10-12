@@ -19,6 +19,7 @@
 #include "PlayerStateMachine.h"
 #include "Random.hpp"
 #include "StringUtil.h"
+#include "TaskThread.h"
 #include "VideoInfo.h"
 #include "pipeline/FlowConfigDefaults.h"
 
@@ -52,7 +53,7 @@ Player::Impl::~Impl() {
         // Invariant: ownerThread_'s lifetime strictly covers its worker function.
         // Must be destroyed on an external thread; the worker must not self-destroy
         // (see the assert below).
-        LogA(ownerThread_->getId() != std::this_thread::get_id(),
+        LogA(!ownerThread_->isCurrentThread(),
              "~Impl must not run on ownerThread_");
         ownerThread_->stop();
         ownerThread_->join();  // synchronously wait for the worker to exit, no concurrent reset/UAF
@@ -71,9 +72,9 @@ void Player::Impl::forceCleanup() noexcept {
     }
     cond_.notify_all();
     if (ownerThread_) {
-        ownerThread_->cancelRepeatTask(fastTickTaskId_);
-        ownerThread_->cancelRepeatTask(playedTimeTaskId_);
-        ownerThread_->cancelRepeatTask(cacheTickTaskId_);
+        ownerThread_->cancel(fastTickTaskId_);
+        ownerThread_->cancel(playedTimeTaskId_);
+        ownerThread_->cancel(cacheTickTaskId_);
     }
     mediaSourceManager_.close();
     dataPacketSender_.reset();
@@ -111,13 +112,13 @@ void Player::Impl::seek(double time, bool isAccurate) noexcept {
         auto ptr = buildEvent(EventType::Seek);
         ptr->data = PlayerSeekRequest{.isAccurate = true, .seekTime = time};
         sender_->post(std::move(ptr));
-        ownerThread_->start();
+
         LogI("receive accurate seek:{}, isAccurate:{}", time, isAccurate);
         return;
     }
     pendingSeekTime_.store(Time::nowTimeStamp().point(), std::memory_order_release);
     pendingSeekTarget_.store(time, std::memory_order_release);
-    ownerThread_->start();
+
     LogI("receive seek:{}, isAccurate:{}", time, isAccurate);
 }
 
@@ -127,7 +128,6 @@ void Player::Impl::updateState(PlayerState state) noexcept {
         return;
     }
     sender_->post(buildEvent(state));
-    ownerThread_->start();
 }
 
 void Player::Impl::addObserver(IPlayerObserverPtr observer) noexcept {
@@ -146,7 +146,12 @@ void Player::Impl::init() noexcept {
     receiver_ = std::move(rp);
 
     // ownerThread_ is created before setupDataProvider, which injects it via setOwnerThread
-    ownerThread_ = Thread::create("playerThread");
+    ownerThread_ = TaskThread::create("playerThread", TaskThread::LaunchMode::Deferred);
+    if (!ownerThread_) {
+        LogE("create player owner thread failed.");
+        setState(PlayerState::Error);
+        return;
+    }
 
     if (!setupDataProvider()) {
         LogE("setupIOHandler failed.");
@@ -193,7 +198,7 @@ void Player::Impl::init() noexcept {
     });
 
     mediaSourceManager_.start();
-    ownerThread_->start();
+    ownerThread_->launch();
     LogI("player Initializing start.");
 }
 
@@ -239,9 +244,6 @@ bool Player::Impl::setupDataProvider() noexcept {
         // to serialize execution and avoid a concurrent UAF
         if (self->sender_) {
             self->sender_->post(buildEvent(EventType::ReadError));
-            if (self->ownerThread_) {
-                self->ownerThread_->start();
-            }
         }
     };
 
@@ -300,9 +302,6 @@ bool Player::Impl::createDemuxerComponent() noexcept {
                 // concurrently on the demuxer thread
                 if (self->sender_) {
                     self->sender_->post(buildEvent(EventType::ReadError));
-                    if (self->ownerThread_) {
-                        self->ownerThread_->start();
-                    }
                 }
             }
             LogI("demuxer seek to pos:{}, ok:{}", range.toString(), res.has_value());
@@ -318,9 +317,9 @@ void Player::Impl::buildPipeline(const PlayerSetting& setting) noexcept {
     if (setting.flowConfig && !setting.flowConfig->isValid()) {
         LogW("flowConfig is invalid, falling back to the default for this source type");
     }
-    pipeline_ = std::make_shared<PlayPipeline>(
+    auto pipeline = std::make_shared<PlayPipeline>(
         pipeline::FlowConfigDefaults::resolve(setting.flowConfig, type), type);
-    pipeline_->setEventCallback(
+    pipeline->setEventCallback(
         [weak = weak_from_this()](PipelineEvent event, std::optional<PipelineError> error) {
             auto self = weak.lock();
             if (!self || self->isStopped_) {
@@ -328,14 +327,14 @@ void Player::Impl::buildPipeline(const PlayerSetting& setting) noexcept {
             }
             self->handlePipelineEvent(event, std::move(error));
         });
-    pipeline_->setWakeupCallback([weak = weak_from_this()] {
+    pipeline->setWakeupCallback([weak = weak_from_this()] {
         auto self = weak.lock();
         if (!self || !self->ownerThread_) {
             return;
         }
-        self->ownerThread_->start();
+        self->ownerThread_->notify();
     });
-    pipeline_->setStreamControl(
+    pipeline->setStreamControl(
         [weak = weak_from_this()] {
             auto self = weak.lock();
             if (!self) {
@@ -350,13 +349,13 @@ void Player::Impl::buildPipeline(const PlayerSetting& setting) noexcept {
             }
             self->mediaSourceManager_.start();
         });
-    pipeline_->setOpenFetchGateCallback([weak = weak_from_this()] {
+    pipeline->setOpenFetchGateCallback([weak = weak_from_this()] {
         auto self = weak.lock();
         if (self) {
             self->mediaSourceManager_.openFetchGate();
         }
     });
-    pipeline_->setCloseFetchGateCallback([weak = weak_from_this()] {
+    pipeline->setCloseFetchGateCallback([weak = weak_from_this()] {
         auto self = weak.lock();
         if (self) {
             self->mediaSourceManager_.closeFetchGate();
@@ -364,10 +363,13 @@ void Player::Impl::buildPipeline(const PlayerSetting& setting) noexcept {
     });
     mediaSourceManager_.setProductionGate([weak = weak_from_this()] {
         const auto self = weak.lock();
-        return !self || !self->pipeline_ || self->pipeline_->canFetchMore();
+        if (!self) {
+            return true;
+        }
+        const auto currentPipeline = self->pipelineSnapshot();
+        return !currentPipeline || currentPipeline->canFetchMore();
     });
-    // Inject the HLS time-seek callback; PlayPipeline uses this path when HLS is detected
-    pipeline_->setSeekByTimeFunc(
+    pipeline->setSeekByTimeFunc(
         [weak = weak_from_this()](double timeSec, uint64_t sourceGeneration) -> StreamResult<void> {
             auto self = weak.lock();
             if (!self) {
@@ -375,11 +377,14 @@ void Player::Impl::buildPipeline(const PlayerSetting& setting) noexcept {
             }
             return self->mediaSourceManager_.seekByTime(timeSec, sourceGeneration);
         });
-    // Pass the stream type so PlayPipeline::seek can distinguish HLS/HTTP/File paths
-    pipeline_->setStreamType(mediaSourceManager_.streamType());
-    pipeline_->setDemuxerComponent(demuxerComponent_);
+    pipeline->setStreamType(mediaSourceManager_.streamType());
+    pipeline->setDemuxerComponent(demuxerComponent_);
     if (auto render = videoRender_.load()) {
-        pipeline_->setVideoRender(render);
+        pipeline->setVideoRender(render);
+    }
+    {
+        std::lock_guard lock(pipelineMutex_);
+        pipeline_ = std::move(pipeline);
     }
 }
 
@@ -547,7 +552,6 @@ void Player::Impl::preparePlayerInfo() noexcept {
     if (!pipeline_ || isStopped_ || isReleased_) {
         return;
     }
-    ownerThread_->start();
 }
 
 void Player::Impl::tick() noexcept {
@@ -579,7 +583,6 @@ void Player::Impl::doPlay() noexcept {
     if (!info_.isValid || !pipeline_) {
         return;
     }
-    ownerThread_->start();
     pipeline_->start();
 }
 
@@ -592,7 +595,7 @@ void Player::Impl::doPause() noexcept {
 }
 
 void Player::Impl::stopAndWait() noexcept {
-    if (!ownerThread_ || ownerThread_->getId() == std::this_thread::get_id()) {
+    if (!ownerThread_ || ownerThread_->isCurrentThread()) {
         updateState(PlayerState::Stop);
         return;
     }
@@ -632,9 +635,9 @@ void Player::Impl::doStop() noexcept {
         isReleased_ = true;
     }
     if (ownerThread_) {
-        ownerThread_->cancelRepeatTask(fastTickTaskId_);
-        ownerThread_->cancelRepeatTask(playedTimeTaskId_);
-        ownerThread_->cancelRepeatTask(cacheTickTaskId_);
+        ownerThread_->cancel(fastTickTaskId_);
+        ownerThread_->cancel(playedTimeTaskId_);
+        ownerThread_->cancel(cacheTickTaskId_);
     }
     mediaSourceManager_.close();
     // Close the Channel first so the DemuxerComponent worker exits naturally on Closed
@@ -642,9 +645,12 @@ void Player::Impl::doStop() noexcept {
     pendingSeekTarget_.store(-1.0, std::memory_order_release);
     seekRequest_.reset();
 
-    if (pipeline_) {
-        if (pipeline_->teardown()) {
-            pipeline_.reset();
+    if (auto pipeline = pipelineSnapshot()) {
+        if (pipeline->teardown()) {
+            std::lock_guard lock(pipelineMutex_);
+            if (pipeline_ == pipeline) {
+                pipeline_.reset();
+            }
         } else {
             LogE("do stop: pipeline teardown incomplete, retaining pipeline");
         }
@@ -1034,9 +1040,6 @@ void Player::Impl::setLoop(bool isLoop) noexcept {
             p->setting.isLoop = isLoop;
         }
     });
-    if (ownerThread_) {
-        ownerThread_->start();
-    }
 }
 
 void Player::Impl::setVolume(float volume) noexcept {
@@ -1047,7 +1050,6 @@ void Player::Impl::setVolume(float volume) noexcept {
     auto ptr = buildEvent(EventType::UpdateSettingVolume);
     ptr->data = std::make_any<float>(volume);
     sender_->post(std::move(ptr));
-    ownerThread_->start();
 }
 
 void Player::Impl::setMute(bool isMute) noexcept {
@@ -1058,7 +1060,6 @@ void Player::Impl::setMute(bool isMute) noexcept {
     auto ptr = buildEvent(EventType::UpdateSettingMute);
     ptr->data = std::make_any<bool>(isMute);
     sender_->post(std::move(ptr));
-    ownerThread_->start();
 }
 
 PlayerState Player::Impl::state() const noexcept {
@@ -1069,18 +1070,25 @@ PlayerState Player::Impl::state() const noexcept {
     return state;
 }
 
+std::shared_ptr<PlayPipeline> Player::Impl::pipelineSnapshot() const noexcept {
+    std::lock_guard lock(pipelineMutex_);
+    return pipeline_;
+}
+
 double Player::Impl::currentPlayedTime() const noexcept {
-    if (!pipeline_) {
+    const auto pipeline = pipelineSnapshot();
+    if (!pipeline) {
         return 0.0;
     }
-    return toPlaybackTime(pipeline_->currentTime().second());
+    return toPlaybackTime(pipeline->currentTime().second());
 }
 
 AVFrameRefPtr Player::Impl::requestRender() noexcept {
-    if (!pipeline_ || state() != PlayerState::Playing) {
+    const auto pipeline = pipelineSnapshot();
+    if (!pipeline || state() != PlayerState::Playing) {
         return nullptr;
     }
-    return pipeline_->requestVideoFrame();
+    return pipeline->requestVideoFrame();
 }
 
 void Player::Impl::setRenderImpl(std::weak_ptr<IVideoRender> render) noexcept {
@@ -1098,8 +1106,8 @@ void Player::Impl::setRenderImpl(std::weak_ptr<IVideoRender> render) noexcept {
         }
         return self->requestRender();
     });
-    if (pipeline_) {
-        pipeline_->setVideoRender(ptr);
+    if (auto pipeline = pipelineSnapshot()) {
+        pipeline->setVideoRender(ptr);
     }
     if (demuxerComponent_ && demuxerComponent_->hasVideo()) {
         ptr->notifyVideoInfo(demuxerComponent_->videoInfo());

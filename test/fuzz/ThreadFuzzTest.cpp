@@ -6,27 +6,25 @@
 #include <thread>
 #include <vector>
 
-#include "Thread.h"
+#include "TaskThread.h"
 
 using namespace slark;
 
 TEST(ThreadFuzzTest, ConcurrentPostAndStop) {
-    auto thread = Thread::create("FuzzTest");
+    auto thread = TaskThread::create("FuzzTest");
     std::atomic<int> taskCount{0};
     std::atomic<bool> running{true};
-
-    thread->start();
 
     std::thread poster([&]() {
         std::mt19937 rng(42);
         while (running.load()) {
-            thread->postTask([&taskCount]() {
+            (void)thread->postTask([&taskCount]() {
                 taskCount++;
                 std::this_thread::yield();
             });
             std::this_thread::yield();
             if (rng() % 10 == 0) {
-                thread->postTask(std::chrono::milliseconds(1 + (rng() % 10)), [&taskCount]() {
+                (void)thread->postTask(std::chrono::milliseconds(1 + (rng() % 10)), [&taskCount]() {
                     taskCount++;
                 });
             }
@@ -47,9 +45,8 @@ TEST(ThreadFuzzTest, ConcurrentPostAndStop) {
 
 TEST(ThreadFuzzTest, StartStopMultipleTimes) {
     for (int i = 0; i < 30; ++i) {
-        auto thread = Thread::create("CycleTest" + std::to_string(i));
-        thread->start();
-        thread->postTask([]() {
+        auto thread = TaskThread::create("CycleTest" + std::to_string(i));
+        (void)thread->postTask([]() {
             std::this_thread::yield();
         });
         std::this_thread::sleep_for(std::chrono::microseconds(500));
@@ -60,21 +57,19 @@ TEST(ThreadFuzzTest, StartStopMultipleTimes) {
 }
 
 TEST(ThreadFuzzTest, PostAfterStopNoCrash) {
-    auto thread = Thread::create("PostAfterStop");
-    thread->start();
+    auto thread = TaskThread::create("PostAfterStop");
     thread->stop();
     thread->join();
     EXPECT_NO_THROW({
         auto result = thread->postTask([]() {
         });
-        (void)result;
+        EXPECT_FALSE(result.has_value());
     });
     SUCCEED();
 }
 
 TEST(ThreadFuzzTest, RepeatTaskCancellation) {
-    auto thread = Thread::create("RepeatTest");
-    thread->start();
+    auto thread = TaskThread::create("RepeatTest");
     std::atomic<int> count{0};
 
     std::vector<TimerId> ids;
@@ -88,7 +83,7 @@ TEST(ThreadFuzzTest, RepeatTaskCancellation) {
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
 
     for (size_t i = 0; i < ids.size() / 2; ++i) {
-        thread->cancelRepeatTask(ids[i]);
+        (void)thread->cancel(ids[i]);
     }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(20));

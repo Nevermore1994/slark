@@ -4,6 +4,8 @@
 
 #include "DecoderComponent.h"
 
+#include <cstdlib>
+
 #include "DecoderConfig.h"
 #include "Log.hpp"
 #include "Util.h"
@@ -19,14 +21,15 @@ DecoderComponent::DecoderComponent(ReceiverPtr<AVFrameRefPtr> receiver,
             {}) {}
 
 DecoderComponent::~DecoderComponent() {
+    if (auto worker = decodeWorker_.load(); worker && worker->isCurrentThread()) {
+        LogP("DecoderComponent destroyed on its decode worker thread");
+        std::abort();
+    }
     stop();
 }
 
 void DecoderComponent::open(DecoderType type,
                             const std::shared_ptr<DecoderConfig>& config) noexcept {
-    if (decoder_) {
-        close();
-    }
     const bool isVideo = IDecoder::isVideoDecoder(type);
     auto decoder = DecoderManager::shareInstance().create(type);
     if (!decoder) {
@@ -36,37 +39,54 @@ void DecoderComponent::open(DecoderType type,
         }
         return;
     }
+    open(std::move(decoder), config);
+}
+
+void DecoderComponent::open(std::shared_ptr<IDecoder> decoder,
+                            const std::shared_ptr<DecoderConfig>& config) noexcept {
+    if (!decoder || stopped_.load(std::memory_order_acquire)) {
+        return;
+    }
+    if (auto current = decoder_.load()) {
+        current->close();
+    }
     decoder->setReceiveFunc([weak = weak_from_this()](DecoderData data) {
-        if (auto s = weak.lock()) {
-            s->config_.onData(std::move(data));
+        if (auto self = weak.lock()) {
+            self->config_.onData(std::move(data));
         }
     });
-    decoder->setWakeupCallback([weak = weak_from_this()]() {
-        if (auto s = weak.lock()) {
-            if (s->receiver_) {
-                s->receiver_->wakeup();
-            }
+    auto receiver = receiver_.get();
+    decoder->setWakeupCallback([receiver]() {
+        if (receiver) {
+            receiver->wakeup();
         }
     });
     if (!decoder->open(config)) {
-        LogE("open {} decoder failed", isVideo ? "video" : "audio");
+        LogE("open {} decoder failed", config_.isAudio ? "audio" : "video");
         if (config_.onError) {
             config_.onError(Error::CodecConfigInvalid);
         }
         return;
     }
-    decoder_ = std::move(decoder);
-    LogI("open {} decoder success", isVideo ? "video" : "audio");
+    decoder_.reset(decoder);
+    LogI("open {} decoder success", config_.isAudio ? "audio" : "video");
     if (config_.onReady) {
         config_.onReady();
     }
 }
 
 void DecoderComponent::close() noexcept {
-    if (!decoder_) {
+    if (auto worker = decodeWorker_.load(); worker && !worker->isCurrentThread()) {
+        (void)worker->postAndWait([this] {
+            if (auto decoder = decoder_.load()) {
+                decoder->close();
+            }
+        });
         return;
     }
-    decoder_->close();
+    if (auto decoder = decoder_.load()) {
+        decoder->close();
+    }
 }
 
 void DecoderComponent::flush() noexcept {
@@ -74,8 +94,17 @@ void DecoderComponent::flush() noexcept {
     if (receiver_) {
         (void)receiver_->tryReceiveAll();
     }
-    if (decoder_) {
-        decoder_->flush();
+    auto worker = decodeWorker_.load();
+    if (!worker || worker->isCurrentThread()) {
+        if (auto decoder = decoder_.load()) {
+            decoder->flush();
+        }
+    } else {
+        (void)worker->postAndWait([this] {
+            if (auto decoder = decoder_.load()) {
+                decoder->flush();
+            }
+        });
     }
     if (receiver_) {
         receiver_->wakeup();
@@ -84,19 +113,29 @@ void DecoderComponent::flush() noexcept {
 }
 
 void DecoderComponent::start() noexcept {
-    if (decodeWorker_) {
-        decodeWorker_->start();
+    std::lock_guard lock(workerMutex_);
+    if (stopped_.load(std::memory_order_acquire) || decodeWorker_.load()) {
         return;
     }
-    if (!decoder_) {
+    if (!decoder_.load()) {
         return;
     }
     auto workerName = Util::genRandomName(config_.isAudio ? std::string("audioDecode_")
                                                           : std::string("videoDecode_"));
-    decodeWorker_ = Thread::createWithLoop(std::move(workerName), [this](Thread& thread) {
-        runLoop(thread);
-    });
-    ThreadManager::shareInstance().add(decodeWorker_);
+    auto receiver = receiver_.get();
+    auto worker = LoopThread::create(
+        std::move(workerName), [this](LoopThread& thread) { runLoop(thread); },
+        [receiver] {
+            if (receiver) {
+                receiver->wakeup();
+            }
+        });
+    if (!worker) {
+        LogE("create decoder worker failed");
+        return;
+    }
+    decodeWorker_.reset(worker);
+    ThreadManager::shareInstance().add(worker);
 }
 
 void DecoderComponent::pause() noexcept {
@@ -108,8 +147,10 @@ void DecoderComponent::pause() noexcept {
 
 void DecoderComponent::resume() noexcept {
     flushed_.store(false, std::memory_order_release);
-    // pause() never suspends the worker, so there is no thread to restart here.
     gate_.forceOpen();
+    if (auto worker = decodeWorker_.load()) {
+        worker->notify();
+    }
 }
 
 void DecoderComponent::evaluateFeedingPauseState() noexcept {
@@ -120,41 +161,57 @@ void DecoderComponent::evaluateFeedingPauseState() noexcept {
 }
 
 void DecoderComponent::stop() noexcept {
+    std::shared_ptr<LoopThread> worker;
+    {
+        std::lock_guard lock(workerMutex_);
+        stopped_.store(true, std::memory_order_release);
+        worker = decodeWorker_.load();
+    }
     if (receiver_) {
         receiver_->wakeup();
     }
-    if (decodeWorker_) {
-        decodeWorker_->stop();
-        decodeWorker_->join();  // synchronously wait for the worker to exit, avoiding UAF if
-                                // members are reset while the loop still runs
-        ThreadManager::shareInstance().remove(decodeWorker_);
-        decodeWorker_.reset();
+    if (worker && worker->isCurrentThread()) {
+        worker->stop();
+        return;
     }
-    close();
-    decoder_.reset();
+    if (worker) {
+        worker->stop();
+        worker->join();
+    }
+    std::call_once(finalizeOnce_, [this] {
+        if (auto decoder = decoder_.load()) {
+            decoder->close();
+        }
+        decoder_.reset();
+    });
+    if (worker) {
+        ThreadManager::shareInstance().remove(worker);
+    }
 }
 
 bool DecoderComponent::isRunning() const noexcept {
-    return decodeWorker_ && !decodeWorker_->isStopRequested();
+    auto worker = decodeWorker_.load();
+    return worker && !worker->hasExited();
 }
 
-void DecoderComponent::drainRenderedOutputs(Thread& thread) noexcept {
-    if (!decoder_) {
+void DecoderComponent::drainRenderedOutputs(LoopThread& thread) noexcept {
+    auto decoder = decoder_.load();
+    if (!decoder) {
         return;
     }
     int32_t count = 0;
-    while (decoder_->hasPendingOutput() && !thread.isStopRequested()) {
+    while (decoder->hasPendingOutput() && !thread.isStopRequested()) {
         count++;
-        auto res = decoder_->renderOutput();
+        auto res = decoder->renderOutput();
         if (res == Error::Success) {
             // skip logging successful frames to avoid log flooding
         } else if (res == Error::CodecAgain) {
-            decoder_->clearPendingOutput();
+            decoder->clearPendingOutput();
             break;
         } else {
             LogW("drainRenderedOutputs: renderOutput failed {} after {} frames", toString(res),
                  count);
-            decoder_->clearPendingOutput();
+            decoder->clearPendingOutput();
             break;
         }
     }
@@ -164,12 +221,16 @@ bool DecoderComponent::isFeedingPaused() const noexcept {
     return gate_.isPaused();
 }
 
-void DecoderComponent::waitForPauseResume(Thread& thread) noexcept {
+void DecoderComponent::waitForPauseResume(LoopThread& thread) noexcept {
     while (isFeedingPaused() && !thread.isStopRequested()) {
         drainRenderedOutputs(thread);
         evaluateFeedingPauseState();
         if (!isFeedingPaused()) {
             break;
+        }
+        if (thread.hasPendingWork()) {
+            // Serve the queued flush at the loop top; staying here deadlocks the owner's resume.
+            return;
         }
         // Poll instead of receiving: taking a packet would drop it, a blocking receive
         // would stall output draining.
@@ -177,7 +238,7 @@ void DecoderComponent::waitForPauseResume(Thread& thread) noexcept {
     }
 }
 
-AVFrameRefPtr DecoderComponent::waitForFrame(Thread& thread) noexcept {
+AVFrameRefPtr DecoderComponent::waitForFrame(LoopThread& thread) noexcept {
     auto exp = receiver_->receive();
     if (!exp.has_value()) {
         if (exp.error() == ChannelEventType::Awakened) {
@@ -197,14 +258,19 @@ AVFrameRefPtr DecoderComponent::waitForFrame(Thread& thread) noexcept {
     return std::move(*exp);
 }
 
-bool DecoderComponent::decodeFrame(AVFrameRefPtr& frame, Thread& thread) noexcept {
+bool DecoderComponent::decodeFrame(AVFrameRefPtr& frame, LoopThread& thread) noexcept {
+    auto decoder = decoder_.load();
     int retryCount = 0;
-    while (!thread.shouldStop() && decoder_) {
-        auto res = decoder_->decode(frame);
+    while (!thread.isStopRequested() && decoder) {
+        auto res = decoder->decode(frame);
         if (res == Error::Success) {
             return true;
         }
         if (res == Error::CodecNotProcessed || res == Error::CodecAgain) {
+            if (thread.hasPendingWork()) {
+                // Queue only carries flush: drop the frame so flush runs at the loop top.
+                return true;
+            }
             retryCount++;
             if (retryCount > kMaxDecodeRetry) {
                 LogE("decode retry exhausted after {} retries, pts:{}", kMaxDecodeRetry,
@@ -232,8 +298,8 @@ bool DecoderComponent::decodeFrame(AVFrameRefPtr& frame, Thread& thread) noexcep
     return true;  // stop requested, not an error
 }
 
-void DecoderComponent::runLoop(Thread& thread) noexcept {
-    while (!thread.shouldStop()) {
+void DecoderComponent::runLoop(LoopThread& thread) noexcept {
+    while (!thread.isStopRequested()) {
         thread.drainPendingWork();
 
         drainRenderedOutputs(thread);
@@ -250,16 +316,15 @@ void DecoderComponent::runLoop(Thread& thread) noexcept {
             continue;
         }
 
-        if (!decoder_) {
+        auto decoder = decoder_.load();
+        if (!decoder) {
             continue;
         }
 
         if (frame->isEOS) {
             // EOS frames also set the epoch so callbacks observe the correct epoch
-            if (decoder_) {
-                decoder_->setCurrentSeekEpoch(frame->seekEpoch);
-            }
-            auto res = decoder_->decode(frame);
+            decoder->setCurrentSeekEpoch(frame->seekEpoch);
+            auto res = decoder->decode(frame);
             LogI("push eos frame, res:{}", toString(res));
             // Drain any leftover output right after EOS (e.g. empty outputs the codec
             // produces for CSD config frames)
@@ -269,9 +334,7 @@ void DecoderComponent::runLoop(Thread& thread) noexcept {
 
         // Set the current epoch before decoding; the decoder injects it into DecoderData
         // in callbacks
-        if (decoder_) {
-            decoder_->setCurrentSeekEpoch(frame->seekEpoch);
-        }
+        decoder->setCurrentSeekEpoch(frame->seekEpoch);
 
         if (!decodeFrame(frame, thread)) {
             return;

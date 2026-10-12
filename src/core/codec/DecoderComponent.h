@@ -14,7 +14,7 @@
 #include "IDecoder.h"
 #include "IPipelineComponent.h"
 #include "FlowConfig.h"
-#include "Thread.h"
+#include "LoopThread.h"
 #include "ThreadManager.h"
 #include "pipeline/WatermarkGate.h"
 
@@ -37,6 +37,8 @@ class DecoderComponent : public IPipelineComponent,
     ~DecoderComponent() override;
 
     void open(DecoderType type, const std::shared_ptr<DecoderConfig>& config) noexcept;
+    void open(std::shared_ptr<IDecoder> decoder,
+              const std::shared_ptr<DecoderConfig>& config) noexcept;
 
     void close() noexcept override;
 
@@ -53,7 +55,7 @@ class DecoderComponent : public IPipelineComponent,
     [[nodiscard]] bool isRunning() const noexcept override;
 
     [[nodiscard]] std::shared_ptr<IDecoder> decoder() const noexcept {
-        return decoder_;
+        return decoder_.load();
     }
 
     // Packets queued for the decoder but not consumed yet (the Q2 backlog).
@@ -62,19 +64,19 @@ class DecoderComponent : public IPipelineComponent,
     }
 
  private:
-    void runLoop(Thread& thread) noexcept;
+    void runLoop(LoopThread& thread) noexcept;
 
-    void drainRenderedOutputs(Thread& thread) noexcept;
+    void drainRenderedOutputs(LoopThread& thread) noexcept;
 
-    [[nodiscard]] AVFrameRefPtr waitForFrame(Thread& thread) noexcept;
+    [[nodiscard]] AVFrameRefPtr waitForFrame(LoopThread& thread) noexcept;
 
-    void waitForPauseResume(Thread& thread) noexcept;
+    void waitForPauseResume(LoopThread& thread) noexcept;
 
     void evaluateFeedingPauseState() noexcept;
 
     [[nodiscard]] bool isFeedingPaused() const noexcept;
 
-    [[nodiscard]] bool decodeFrame(AVFrameRefPtr& frame, Thread& thread) noexcept;
+    [[nodiscard]] bool decodeFrame(AVFrameRefPtr& frame, LoopThread& thread) noexcept;
 
  private:
     static constexpr int kMaxDecodeRetry = 100;
@@ -85,8 +87,11 @@ class DecoderComponent : public IPipelineComponent,
     std::atomic<bool> flushed_{false};
 
     DecoderComponentConfig config_;
-    std::shared_ptr<IDecoder> decoder_;
-    std::shared_ptr<Thread> decodeWorker_;
+    AtomicSharedPtr<IDecoder> decoder_;
+    AtomicSharedPtr<LoopThread> decodeWorker_;
+    std::mutex workerMutex_;
+    std::once_flag finalizeOnce_;
+    std::atomic<bool> stopped_{false};
     ReceiverPtr<AVFrameRefPtr> receiver_;
 
     // Sampled by the decode worker, forced by the owner thread on seek / stop.

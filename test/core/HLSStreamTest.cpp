@@ -24,7 +24,7 @@
 #include <vector>
 
 #include "HLSStream.h"
-#include "Thread.h"
+#include "TaskThread.h"
 
 using namespace slark;
 
@@ -360,9 +360,8 @@ class MockHlsServer {
     std::vector<std::thread> connThreads_;
 };
 
-std::shared_ptr<Thread> makeOwnerThread() {
-    auto thread = Thread::create("HLSStreamTest");
-    thread->start();
+std::shared_ptr<TaskThread> makeOwnerThread() {
+    auto thread = TaskThread::create("HLSStreamTest");
     return thread;
 }
 
@@ -386,7 +385,7 @@ class HLSStreamTest : public ::testing::Test {
     }
 
     MockHlsServer server_;
-    std::shared_ptr<Thread> ownerThread_;
+    std::shared_ptr<TaskThread> ownerThread_;
     std::shared_ptr<HLSStream> stream_;
 };
 

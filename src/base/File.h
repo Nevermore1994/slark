@@ -23,7 +23,7 @@ enum class FileMode : uint8_t {
 
 class FileBase : public NonCopyMovable {
  public:
-    explicit FileBase(std::filesystem::path path, FileMode mode);
+    explicit FileBase(std::filesystem::path path, FileMode mode, bool logErrors = true);
 
     virtual ~FileBase();
 
@@ -45,17 +45,21 @@ class FileBase : public NonCopyMovable {
         return path_;
     }
 
+ private:
+    Expected<void> openImpl(bool logFailure) noexcept;
+
  protected:
     std::filesystem::path path_;
     std::unique_ptr<FILE, decltype(&fclose)> file_{nullptr, &fclose};
     FileMode mode_ = FileMode::ReadMode;
+    bool logErrors_ = true;
 };
 
 class WriteFile : public FileBase {
     static constexpr uint32_t kCheckCount = 512;
 
  public:
-    explicit WriteFile(std::filesystem::path path, bool isAppend = false);
+    explicit WriteFile(std::filesystem::path path, bool isAppend = false, bool logErrors = true);
 
     ~WriteFile() override;
 

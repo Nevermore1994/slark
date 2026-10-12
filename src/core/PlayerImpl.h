@@ -146,6 +146,8 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
     [[nodiscard]] double toPlaybackTime(double mediaTime) const noexcept;
 
  private:
+    [[nodiscard]] std::shared_ptr<PlayPipeline> pipelineSnapshot() const noexcept;
+
     std::atomic_bool isStopped_ = false;
     std::atomic_bool isReleased_ = false;
     Synchronized<PlayerState, std::shared_mutex> state_;
@@ -163,7 +165,7 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
     SenderPtr<EventPtr> sender_;
     ReceiverPtr<EventPtr> receiver_;
 
-    std::shared_ptr<Thread> ownerThread_ = nullptr;
+    std::shared_ptr<TaskThread> ownerThread_ = nullptr;
     TimerId fastTickTaskId_;
     TimerId playedTimeTaskId_;
     TimerId cacheTickTaskId_;
@@ -171,6 +173,7 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
     NotifyCenter notifyCenter_;
     MediaSourceManager mediaSourceManager_;
     std::shared_ptr<DemuxerComponent> demuxerComponent_ = nullptr;
+    mutable std::mutex pipelineMutex_;
     std::shared_ptr<PlayPipeline> pipeline_ = nullptr;
     SenderPtr<DataPacket> dataPacketSender_;
 

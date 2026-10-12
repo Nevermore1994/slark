@@ -45,7 +45,7 @@ http::RequestInfo HttpStream::makeRequestInfo(const std::string& uri, const Rang
     return requestInfo;
 }
 
-HttpStream::HttpStream(std::shared_ptr<Thread> ownerThread)
+HttpStream::HttpStream(std::shared_ptr<TaskThread> ownerThread)
     : ownerThread_(std::move(ownerThread)) {}
 
 HttpStream::~HttpStream() {
@@ -124,7 +124,7 @@ void HttpStream::startLocked() noexcept {
     auto streamTask = [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
                          std::weak_ptr<HttpStream> weakStream,
                          std::weak_ptr<StreamControl> weakControl,
-                         std::shared_ptr<Thread> ownerThread, uint64_t generation,
+                         std::shared_ptr<TaskThread> ownerThread, uint64_t generation,
                          uint64_t operationId) -> Task<void> {
         auto gen = req->streamingExecute(info);
         std::deque<std::shared_ptr<CompletionAwaiter<void>>> inFlight;

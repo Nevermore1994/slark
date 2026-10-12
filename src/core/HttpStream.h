@@ -14,7 +14,7 @@
 #include "IStream.h"
 #include "StringUtil.h"
 #include "Task.hpp"
-#include "Thread.h"
+#include "TaskThread.h"
 
 namespace slark {
 
@@ -22,7 +22,7 @@ enum class RangeCapability : uint8_t { Unknown, Supported, Unsupported };
 
 class HttpStream : public IStream, public std::enable_shared_from_this<HttpStream> {
  public:
-    explicit HttpStream(std::shared_ptr<Thread> ownerThread);
+    explicit HttpStream(std::shared_ptr<TaskThread> ownerThread);
     ~HttpStream() override;
 
     auto open(const OpenParams& params) -> StreamResult<StreamInfo> override;
@@ -102,11 +102,11 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
 
     // State is only mutated on the owner thread
     [[nodiscard]] bool isOnOwnerThread() const noexcept {
-        return ownerThread_ && ownerThread_->getId() == std::this_thread::get_id();
+        return ownerThread_ && ownerThread_->isCurrentThread();
     }
 
  private:
-    std::shared_ptr<Thread> ownerThread_;
+    std::shared_ptr<TaskThread> ownerThread_;
 
     // Protects operation state (start/pause/seek/close and onEvent may come from different
     // threads: start/pause/close on the owner thread, seek on the demuxer thread,

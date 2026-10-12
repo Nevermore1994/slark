@@ -14,7 +14,7 @@
 namespace slark {
 
 FactoryResult<std::shared_ptr<IStream>> StreamFactory::createStream(
-    const std::string& uri, std::shared_ptr<Thread> ownerThread) {
+    const std::string& uri, std::shared_ptr<TaskThread> ownerThread) {
     auto type = detectStreamType(uri);
 
     switch (type) {
@@ -37,13 +37,13 @@ FactoryResult<std::shared_ptr<IStream>> StreamFactory::createFileStream(
 }
 
 FactoryResult<std::shared_ptr<IStream>> StreamFactory::createHttpStream(
-    [[maybe_unused]] const std::string& uri, std::shared_ptr<Thread> ownerThread) {
+    [[maybe_unused]] const std::string& uri, std::shared_ptr<TaskThread> ownerThread) {
     auto stream = std::make_shared<HttpStream>(std::move(ownerThread));
     return stream;
 }
 
 FactoryResult<std::shared_ptr<IStream>> StreamFactory::createHLSStream(
-    [[maybe_unused]] const std::string& uri, std::shared_ptr<Thread> ownerThread) {
+    [[maybe_unused]] const std::string& uri, std::shared_ptr<TaskThread> ownerThread) {
     auto stream = std::make_shared<HLSStream>(std::move(ownerThread));
     return stream;
 }

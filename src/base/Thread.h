@@ -11,7 +11,6 @@
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <print>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -20,7 +19,7 @@
 #include "MPSCQueue.hpp"
 #include "MoveOnlyFunction.hpp"
 #include "NonCopyable.h"
-#include "Timer.h"
+#include "Time.hpp"
 
 namespace slark {
 
@@ -28,33 +27,44 @@ using ThreadTask = MoveOnlyFunction<void()>;
 
 class Thread : public NonCopyMovable, public std::enable_shared_from_this<Thread> {
  public:
-    [[nodiscard]] static std::shared_ptr<Thread> create(std::string name);
+    using WakeHook = std::function<void()>;
 
-    [[nodiscard]] static std::shared_ptr<Thread> createWithLoop(std::string name,
-                                                                std::function<void(Thread&)> loop);
+    virtual ~Thread() noexcept;
 
-    ~Thread() noexcept;
+    virtual bool isRunning() const noexcept;
+    bool isStopRequested() const noexcept;
+    bool hasExited() const noexcept;
+    bool isCurrentThread() const noexcept;
 
-    void start() noexcept;
-
-    void pause() noexcept;
-
-    void stop() noexcept;
-
-    // Synchronously wait for the worker thread to exit.
-    // Must call stop() or let the loop exit naturally before join, otherwise it blocks.
-    // Skipped when called on the worker thread itself to avoid a self-join deadlock.
+    virtual void stop() noexcept;
     void join() noexcept;
+    void notify() noexcept;
 
     Expected<void> postTask(ThreadTask task) noexcept;
-    TimerId postTask(std::chrono::milliseconds delay, ThreadTask task) noexcept;
-    TimerId postTask(Time::TimePoint timePoint, ThreadTask task) noexcept;
-    TimerId postRepeatTask(std::chrono::milliseconds interval, ThreadTask task) noexcept;
-    void cancelRepeatTask(TimerId id) noexcept;
+    Expected<void> postAndWait(ThreadTask task) noexcept;
 
-    [[nodiscard]] inline bool isActive() const noexcept {
+    bool isActive() const noexcept {
         return isActive_.load(std::memory_order_acquire);
     }
+
+    Time::TimePoint getLastRunTimeStamp() const noexcept {
+        return lastRunTimeStamp_.load();
+    }
+
+    std::thread::id getId() const noexcept {
+        return id_.load(std::memory_order_acquire);
+    }
+
+    uint64_t serial() const noexcept {
+        return serial_;
+    }
+
+    uint32_t getHashId() const noexcept {
+        return static_cast<uint32_t>(std::hash<std::thread::id>{}(getId()));
+    }
+
+    std::string getName() const noexcept;
+    void setThreadName(std::string_view name) noexcept;
 
     class ScopedInactive {
      public:
@@ -69,89 +79,49 @@ class Thread : public NonCopyMovable, public std::enable_shared_from_this<Thread
 
     static void setCurrentActive(bool active) noexcept;
 
- public:
-    [[nodiscard]] inline bool isRunning() const noexcept {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return isRunning_;
-    }
+ protected:
+    explicit Thread(std::string name, WakeHook wakeHook = {});
 
-    [[nodiscard]] inline bool isStopRequested() const noexcept {
-        return stopRequested_.load(std::memory_order_acquire);
-    }
-
-    [[nodiscard]] inline Time::TimePoint getLastRunTimeStamp() const noexcept {
-        return lastRunTimeStamp_.load();
-    }
-
-    [[nodiscard]] inline std::thread::id getId() const noexcept {
-        return worker_.get_id();
-    }
-
-    [[nodiscard]] inline uint32_t getHashId() const noexcept {
-        return static_cast<uint32_t>(std::hash<std::thread::id>{}(worker_.get_id()));
-    }
-
-    [[nodiscard]] inline std::string getName() const noexcept {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return name_;
-    }
-
-    void setThreadName(std::string_view nameView) noexcept;
-
-    [[nodiscard]] bool shouldStop() noexcept;
-
+    void startWorker(ThreadTask body);
     void drainPendingWork() noexcept;
+    bool hasPendingWork() const noexcept;
+    void notifyWorker() noexcept;
 
- private:
-    explicit Thread(std::string name);
-
-    void runLoop() noexcept;
-
-    void setup() noexcept;
-
-    void drainTaskQueue() noexcept;
-
-    void waitIdle(std::chrono::milliseconds waitTime,
-                  std::unique_lock<std::mutex>& lock) noexcept;
-
-    std::chrono::milliseconds runRepeatTasks() noexcept;
-
-    TimerTask wrapOneShotTask(ThreadTask task) noexcept;
-
-    TimerId registerTimer(TimerId id) noexcept;
-
-    [[nodiscard]] static Thread* current() noexcept;
-
-    void setActive(bool active) noexcept {
-        if (active) {
-            lastRunTimeStamp_.store(Time::nowTimeStamp().point());
-        }
-        isActive_.store(active, std::memory_order_release);
+    // Called on the worker thread only; the predicate is evaluated under mutex_.
+    template <class Pred>
+    void waitForWork(Pred&& predicate) {
+        std::unique_lock lock(mutex_);
+        ScopedInactive guard;
+        cond_.wait(lock, [&] {
+            return isStopRequested() || hasPendingWork() || predicate();
+        });
     }
 
-    friend class ScopedInactive;
+    void setActive(bool active) noexcept;
 
  private:
-    struct RepeatTask {
-        TimerId id;
-        std::chrono::milliseconds interval;
-        std::shared_ptr<ThreadTask> task;
-        Time::TimePoint lastRunTime;
-    };
+    static Thread* current() noexcept;
+    void runWorker(ThreadTask body) noexcept;
+    void setup() noexcept;
+    void invokeWakeHook() noexcept;
 
-    bool isRunning_ = false;
-    std::atomic<bool> isInit_ = false;
-    std::atomic<bool> stopRequested_ = false;
-    std::atomic<bool> isActive_{false};
-    std::string name_;
+ protected:
     mutable std::mutex mutex_;
-    std::condition_variable_any cond_;
-    std::atomic<uint64_t> lastRunTimeStamp_;
+    std::condition_variable cond_;
     MPSCQueue<ThreadTask> taskQueue_;
-    std::vector<TimerId> timerIds_;
-    std::vector<RepeatTask> repeatTasks_;
-    std::function<void(Thread&)> customWork_;
+    std::atomic<bool> stopRequested_{false};
+
+ private:
+    std::string name_;
+    WakeHook wakeHook_;
+    std::atomic<bool> exited_{false};
+    std::atomic<bool> isActive_{false};
+    std::atomic<bool> nameDirty_{true};
+    std::atomic<std::thread::id> id_{};
+    std::atomic<uint64_t> lastRunTimeStamp_{0};
+    const uint64_t serial_;
+    std::mutex joinMutex_;
     std::thread worker_;
 };
 
-}  // end namespace slark
+}  // namespace slark

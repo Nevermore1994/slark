@@ -15,14 +15,14 @@
 #include "M3U8Parser.h"
 #include "MediaPlaylist.h"
 #include "Task.hpp"
-#include "Thread.h"
+#include "TaskThread.h"
 #include "Timer.h"
 
 namespace slark {
 
 class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream> {
  public:
-    explicit HLSStream(std::shared_ptr<Thread> ownerThread);
+    explicit HLSStream(std::shared_ptr<TaskThread> ownerThread);
     ~HLSStream() override;
 
     StreamResult<StreamInfo> open(const OpenParams& params) override;
@@ -124,11 +124,11 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
     void cancelSegmentOp(uint64_t timeoutMs);
 
     [[nodiscard]] bool isOnOwnerThread() const noexcept {
-        return ownerThread_ && ownerThread_->getId() == std::this_thread::get_id();
+        return ownerThread_ && ownerThread_->isCurrentThread();
     }
 
  private:
-    std::shared_ptr<Thread> ownerThread_;
+    std::shared_ptr<TaskThread> ownerThread_;
     mutable std::mutex mutex_;
 
     std::optional<PlaylistOp> playlistOp_;

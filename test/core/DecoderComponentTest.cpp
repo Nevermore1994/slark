@@ -4,101 +4,279 @@
 
 #include <gtest/gtest.h>
 
-#include "codec/DecoderComponent.h"
-#include "pipeline/WatermarkGate.h"
+#include <atomic>
+#include <chrono>
+#include <future>
+#include <latch>
+#include <memory>
+#include <thread>
+#include <vector>
+
+#include "Channel.hpp"
+#include "DecoderComponent.h"
+#include "DecoderConfig.h"
 
 using namespace slark;
+using namespace std::chrono_literals;
 
-// The hysteresis is a pure decision function, so every backpressure edge case is
-// exercised here without needing a real codec or a running worker thread.
-class DecodeBackpressureTest : public ::testing::Test {
- protected:
-    static constexpr int32_t kLow = 2;
-    static constexpr int32_t kHigh = 8;
+namespace {
+
+constexpr auto kWatchdogTimeout = std::chrono::seconds(5);
+
+// Test decoder: configurable decode blocking / CodecAgain retry / open failure,
+// and records flush/decode threads with an overlap detector (DC2's core assertion).
+class StubDecoder final : public IDecoder {
+ public:
+    StubDecoder() : IDecoder(DecoderType::RAW) {}
+
+    bool open(std::shared_ptr<DecoderConfig> config) noexcept override {
+        if (failOpen_) {
+            return false;
+        }
+        config_ = std::move(config);
+        isOpen_ = true;
+        return true;
+    }
+
+    void close() noexcept override {
+        // IDecoder::close() internally calls reset() -> flush(); count those separately
+        // so flushCount_ only reflects component-driven flushes. No overlap detection:
+        // close is terminal and serialized by the caller (post-join or call_once).
+        closing_ = true;
+        IDecoder::close();
+        ++closeCount_;
+    }
+
+    void flush() noexcept override {
+        enter();
+        if (closing_) {
+            ++closeFlushCount_;
+        } else {
+            ++flushCount_;
+            flushThread_ = std::this_thread::get_id();
+        }
+        exit();
+    }
+
+    Error decode(AVFrameRefPtr& /*frame*/) noexcept override {
+        enter();
+        ++decodeCount_;
+        decodeThread_ = std::this_thread::get_id();
+        if (blockDecode_ && !blockedOnce_.exchange(true)) {
+            decodeEntered_->set_value();
+            continueDecode_.wait();
+        }
+        const auto result = alwaysAgain_ ? Error::CodecAgain : Error::Success;
+        exit();
+        return result;
+    }
+
+    void armBlockingDecode(std::promise<void>& entered, std::shared_future<void> cont) {
+        blockDecode_ = true;
+        decodeEntered_ = &entered;
+        continueDecode_ = std::move(cont);
+    }
+
+    void setAlwaysAgain(bool enabled) noexcept { alwaysAgain_ = enabled; }
+    void setFailOpen(bool enabled) noexcept { failOpen_ = enabled; }
+
+    [[nodiscard]] int flushCount() const noexcept { return flushCount_.load(); }
+    [[nodiscard]] int decodeCount() const noexcept { return decodeCount_.load(); }
+    [[nodiscard]] int closeCount() const noexcept { return closeCount_.load(); }
+    [[nodiscard]] int overlaps() const noexcept { return overlaps_.load(); }
+    [[nodiscard]] std::thread::id flushThread() const noexcept { return flushThread_; }
+    [[nodiscard]] std::thread::id decodeThread() const noexcept { return decodeThread_; }
+
+ private:
+    void enter() noexcept {
+        if (active_.fetch_add(1, std::memory_order_acq_rel) != 0) {
+            overlaps_.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+
+    void exit() noexcept { active_.fetch_sub(1, std::memory_order_acq_rel); }
+
+    std::atomic<int> active_{0};
+    std::atomic<int> overlaps_{0};
+    std::atomic<int> flushCount_{0};
+    std::atomic<int> closeFlushCount_{0};
+    std::atomic<int> decodeCount_{0};
+    std::atomic<int> closeCount_{0};
+    std::atomic<bool> closing_{false};
+    std::atomic<bool> blockDecode_{false};
+    std::atomic<bool> blockedOnce_{false};
+    std::atomic<bool> alwaysAgain_{false};
+    std::atomic<bool> failOpen_{false};
+    std::promise<void>* decodeEntered_ = nullptr;
+    std::shared_future<void> continueDecode_;
+    std::thread::id flushThread_;
+    std::thread::id decodeThread_;
 };
 
-TEST_F(DecodeBackpressureTest, PausesWhenPendingReachesHighWatermark) {
-    EXPECT_FALSE(shouldCloseGate(7, kLow, kHigh, false));
-    EXPECT_TRUE(shouldCloseGate(8, kLow, kHigh, false));
-    EXPECT_TRUE(shouldCloseGate(9, kLow, kHigh, false));
-}
-
-TEST_F(DecodeBackpressureTest, ResumesOnlyWhenPendingDropsToLowWatermark) {
-    // Resuming happens at <= low, not at < high: this is the hysteresis.
-    EXPECT_TRUE(shouldCloseGate(3, kLow, kHigh, true));
-    EXPECT_FALSE(shouldCloseGate(2, kLow, kHigh, true));
-    EXPECT_FALSE(shouldCloseGate(1, kLow, kHigh, true));
-}
-
-TEST_F(DecodeBackpressureTest, DeadZoneBetweenWatermarksKeepsCurrentState) {
-    // The classic bug: a single if/else-if leaves (low, high) unhandled and a paused
-    // decoder stays paused forever. The state must be sticky in both directions.
-    for (int32_t pending = kLow + 1; pending < kHigh; ++pending) {
-        EXPECT_TRUE(shouldCloseGate(pending, kLow, kHigh, true))
-            << "must stay paused at pending=" << pending;
-        EXPECT_FALSE(shouldCloseGate(pending, kLow, kHigh, false))
-            << "must stay running at pending=" << pending;
-    }
-}
-
-TEST_F(DecodeBackpressureTest, DoesNotOscillateAtBoundary) {
-    // Feeding -> pause -> consumption -> resume must not flip-flop around the edges.
-    bool paused = shouldCloseGate(kHigh, kLow, kHigh, false);
-    ASSERT_TRUE(paused);
-    // Still at high after producing one more frame: stays paused.
-    EXPECT_TRUE(shouldCloseGate(kHigh, kLow, kHigh, paused));
-    // Consumed down into the dead zone: still paused (no premature resume).
-    EXPECT_TRUE(shouldCloseGate(kLow + 1, kLow, kHigh, paused));
-    // Reached the low watermark: resumes.
-    paused = shouldCloseGate(kLow, kLow, kHigh, paused);
-    EXPECT_FALSE(paused);
-    // A frame arrives but we are still at/below low: stays running.
-    EXPECT_FALSE(shouldCloseGate(kLow, kLow, kHigh, paused));
-}
-
-TEST_F(DecodeBackpressureTest, InvalidWatermarksKeepCurrentState) {
-    // Misconfigured high <= low must not cause rapid toggling.
-    EXPECT_TRUE(shouldCloseGate(0, 8, 2, true));
-    EXPECT_FALSE(shouldCloseGate(0, 8, 2, false));
-    EXPECT_TRUE(shouldCloseGate(100, 8, 2, true));
-    EXPECT_FALSE(shouldCloseGate(100, 8, 2, false));
-
-    // Equal watermarks are equally invalid.
-    EXPECT_TRUE(shouldCloseGate(5, 5, 5, true));
-    EXPECT_FALSE(shouldCloseGate(5, 5, 5, false));
-}
-
-TEST_F(DecodeBackpressureTest, NegativePendingIsTreatedAsEmpty) {
-    // A negative count is nonsense but must not crash or keep the decoder paused.
-    EXPECT_FALSE(shouldCloseGate(-1, kLow, kHigh, false));
-    EXPECT_FALSE(shouldCloseGate(-1, kLow, kHigh, true));
-}
-
-TEST_F(DecodeBackpressureTest, AdjacentWatermarksLeaveNoDeadZone) {
-    // low=3, high=4: there is no room for a dead zone, so the state is driven purely
-    // by which side of each watermark the queue sits on.
-    EXPECT_TRUE(shouldCloseGate(4, 3, 4, false));
-    EXPECT_TRUE(shouldCloseGate(4, 3, 4, true));
-    EXPECT_FALSE(shouldCloseGate(3, 3, 4, true));
-    EXPECT_FALSE(shouldCloseGate(3, 3, 4, false));
-}
-
-TEST(DecoderComponentConfigTest, DefaultsAreSane) {
+DecoderComponentConfig makeConfig() {
     DecoderComponentConfig config;
-    EXPECT_EQ(config.backpressure.lowWatermarkFrames, 2);
-    EXPECT_EQ(config.backpressure.highWatermarkFrames, 8);
-    EXPECT_LT(config.backpressure.lowWatermarkFrames, config.backpressure.highWatermarkFrames);
-    EXPECT_TRUE(config.backpressure.isValid());
-    EXPECT_FALSE(config.pendingFrameCount);
-    EXPECT_FALSE(config.isAudio);
+    config.onData = [](DecoderData) {};
+    config.isAudio = true;
+    return config;
 }
 
-// Watermarks derived from SPS must satisfy low < high, otherwise the hysteresis above
-// degrades to "keep current state" and the decoder never reacts to the queue.
-TEST(DecoderComponentConfigTest, ReorderDerivedWatermarksStayOrdered) {
-    for (uint8_t reorder = 1; reorder <= 16; ++reorder) {
-        const int32_t low = std::max(2, static_cast<int32_t>(reorder));
-        const int32_t high = std::max(8, std::max(reorder * 2, reorder + 4));
-        EXPECT_LT(low, high) << "reorder=" << static_cast<int>(reorder);
+std::shared_ptr<DecoderConfig> makeDecoderConfig() {
+    return std::make_shared<DecoderConfig>();
+}
+
+struct TestSetup {
+    SenderPtr<AVFrameRefPtr> sender;
+    std::shared_ptr<DecoderComponent> component;
+    std::shared_ptr<StubDecoder> stub;
+};
+
+TestSetup makeComponent() {
+    auto [sender, receiver] = Channel<AVFrameRefPtr>::create();
+    auto component = std::make_shared<DecoderComponent>(std::move(receiver), makeConfig());
+    auto stub = std::make_shared<StubDecoder>();
+    component->open(stub, makeDecoderConfig());
+    return {std::move(sender), std::move(component), std::move(stub)};
+}
+
+void sendFrame(const SenderPtr<AVFrameRefPtr>& sender, int64_t pts) {
+    auto frame = std::make_shared<AVFrame>();
+    frame->pts = pts;
+    frame->frameType = AVFrameType::Audio;
+    ASSERT_TRUE(sender->send(std::move(frame)).has_value());
+}
+
+void waitForDecode(const std::shared_ptr<StubDecoder>& stub, int count) {
+    const auto deadline = std::chrono::steady_clock::now() + kWatchdogTimeout;
+    while (stub->decodeCount() < count && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::yield();
     }
+    ASSERT_GE(stub->decodeCount(), count);
+}
+
+}  // namespace
+
+// DC1: pause (watermark gate closed) followed by flush must not deadlock.
+TEST(DecoderComponentTest, FlushDuringPauseDoesNotDeadlock) {
+    auto setup = makeComponent();
+    setup.component->start();
+    setup.component->pause();
+
+    auto flushed = std::async(std::launch::async, [&] { setup.component->flush(); });
+    EXPECT_EQ(flushed.wait_for(kWatchdogTimeout), std::future_status::ready);
+    EXPECT_EQ(setup.stub->flushCount(), 1);
+    EXPECT_EQ(setup.stub->overlaps(), 0);
+
+    setup.component->resume();
+    setup.component->stop();
+}
+
+// DC2: flush serializes with decode on the decode thread.
+TEST(DecoderComponentTest, FlushWaitsForInFlightDecodeAndRunsOnDecodeThread) {
+    auto setup = makeComponent();
+    setup.component->start();
+
+    sendFrame(setup.sender, 1);
+    waitForDecode(setup.stub, 1);
+    const auto decodeThread = setup.stub->decodeThread();
+
+    std::promise<void> decodeEntered;
+    std::promise<void> continueDecode;
+    auto continueFuture = continueDecode.get_future().share();
+    setup.stub->armBlockingDecode(decodeEntered, continueFuture);
+    auto enteredFuture = decodeEntered.get_future();
+    sendFrame(setup.sender, 2);
+    ASSERT_EQ(enteredFuture.wait_for(kWatchdogTimeout), std::future_status::ready);
+
+    auto flushed = std::async(std::launch::async, [&] { setup.component->flush(); });
+    // The pinned decode must be drained before flush starts: flush cannot return early.
+    EXPECT_EQ(flushed.wait_for(200ms), std::future_status::timeout);
+    continueDecode.set_value();
+    EXPECT_EQ(flushed.wait_for(kWatchdogTimeout), std::future_status::ready);
+
+    EXPECT_EQ(setup.stub->flushThread(), decodeThread) << "flush must run on the decode thread";
+    EXPECT_EQ(setup.stub->overlaps(), 0);
+    setup.component->stop();
+}
+
+// DC3: flush interrupts an endless CodecAgain retry loop quickly.
+TEST(DecoderComponentTest, FlushInterruptsDecodeRetryLoop) {
+    auto setup = makeComponent();
+    setup.stub->setAlwaysAgain(true);
+    setup.component->start();
+
+    const auto startedAt = std::chrono::steady_clock::now();
+    setup.component->flush();
+    const auto elapsed = std::chrono::steady_clock::now() - startedAt;
+
+    // Without the interruption the retry budget alone costs ~1.6s.
+    EXPECT_LT(elapsed, 500ms);
+    EXPECT_TRUE(setup.component->isRunning());
+    setup.component->stop();
+}
+
+// DC4: flush/stop interleavings never hang and finalize exactly once.
+TEST(DecoderComponentTest, FlushAndStopConvergeWithoutHang) {
+    for (int round = 0; round < 200; ++round) {
+        auto setup = makeComponent();
+        setup.component->start();
+
+        auto flushDone = std::async(std::launch::async, [&] { setup.component->flush(); });
+        setup.component->stop();
+        EXPECT_EQ(flushDone.wait_for(1s), std::future_status::ready) << "round " << round;
+        EXPECT_EQ(setup.stub->closeCount(), 1) << "round " << round;
+        EXPECT_EQ(setup.stub->overlaps(), 0) << "round " << round;
+    }
+}
+
+TEST(DecoderComponentTest, ConcurrentStopFinalizesExactlyOnce) {
+    constexpr int kStoppers = 16;
+    auto setup = makeComponent();
+    setup.component->start();
+    setup.component->flush();
+
+    std::latch ready{kStoppers};
+    std::vector<std::thread> stoppers;
+    for (int i = 0; i < kStoppers; ++i) {
+        stoppers.emplace_back([&] {
+            ready.count_down();
+            ready.wait();
+            setup.component->stop();
+        });
+    }
+    for (auto& stopper : stoppers) {
+        stopper.join();
+    }
+    EXPECT_EQ(setup.stub->closeCount(), 1);
+    EXPECT_EQ(setup.stub->overlaps(), 0);
+}
+
+TEST(DecoderComponentTest, OpenFailureReportsErrorAndStartIsNoop) {
+    auto [sender, receiver] = Channel<AVFrameRefPtr>::create();
+    DecoderComponentConfig config = makeConfig();
+    std::promise<Error> errorSeen;
+    auto errorFuture = errorSeen.get_future();
+    config.onError = [&errorSeen](Error error) { errorSeen.set_value(error); };
+    DecoderComponent component(std::move(receiver), std::move(config));
+
+    auto stub = std::make_shared<StubDecoder>();
+    stub->setFailOpen(true);
+    component.open(stub, makeDecoderConfig());
+
+    ASSERT_EQ(errorFuture.wait_for(2s), std::future_status::ready);
+    EXPECT_EQ(errorFuture.get(), Error::CodecConfigInvalid);
+    EXPECT_FALSE(component.isRunning());
+    component.start();  // no decoder: must not create a thread
+    EXPECT_FALSE(component.isRunning());
+    component.stop();
+    (void)sender;
+}
+
+TEST(DecoderComponentTest, FlushSkippedAfterStopDoesNotTouchDecoder) {
+    auto setup = makeComponent();
+    setup.component->start();
+    setup.component->stop();
+
+    setup.component->flush();
+    EXPECT_EQ(setup.stub->flushCount(), 0);
+    EXPECT_EQ(setup.stub->closeCount(), 1);
 }

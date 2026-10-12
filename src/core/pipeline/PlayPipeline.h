@@ -217,7 +217,7 @@ class PlayPipeline : public NonCopyMovable,
 
     void connectComponents() noexcept;
 
-    void handleDemuxHeader(const std::shared_ptr<IDemuxer>& demuxer) noexcept;
+    void handleDemuxHeader() noexcept;
 
     void dispatchFrames(DemuxerResult&& result, uint64_t epoch) noexcept;
 

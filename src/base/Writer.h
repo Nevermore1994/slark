@@ -3,11 +3,18 @@
 //
 
 #pragma once
+
+#include <condition_variable>
+#include <deque>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <variant>
+
 #include "File.h"
 #include "IOBase.h"
-#include "MPSCQueue.hpp"
 #include "Synchronized.hpp"
-#include "Thread.h"
+#include "TaskThread.h"
 
 namespace slark {
 
@@ -36,15 +43,53 @@ class Writer : public NonCopyMovable {
     }
 
  private:
-    bool checkState() noexcept;
-    void process() noexcept;
-    void closeFile() noexcept;
+    struct Completion {
+        bool wait() noexcept;
+        void complete(bool result) noexcept;
 
-    std::atomic_bool isOpen_ = false;
-    std::atomic_bool isStop_ = false;
-    MPSCQueue<DataPtr> dataQueue_;
+        std::mutex mutex;
+        std::condition_variable cond;
+        bool done = false;
+        bool result = false;
+    };
+
+    struct DataItem {
+        DataPtr data;
+    };
+
+    struct OpenItem {
+        std::string path;
+        bool append;
+        std::shared_ptr<Completion> completion;
+    };
+
+    struct CloseItem {
+        std::shared_ptr<Completion> completion;
+    };
+
+    struct StopItem {
+        std::shared_ptr<Completion> completion;
+    };
+
+    using Item = std::variant<DataItem, OpenItem, CloseItem, StopItem>;
+
+    bool enqueue(Item item, bool stopping = false) noexcept;
+    void drain() noexcept;
+    void process(Item item) noexcept;
+    bool openFile(const std::string& path, bool append) noexcept;
+    void closeFile() noexcept;
+    void writeData(DataPtr data) noexcept;
+    void flushParked() noexcept;
+
+    std::atomic_bool isOpen_{false};
+    mutable std::mutex mutex_;
+    std::deque<Item> inbox_;
+    bool scheduled_ = false;
+    bool disposed_ = false;
+    bool fileOpen_ = false;
+    std::deque<DataPtr> parked_;
     Synchronized<std::unique_ptr<File::WriteFile>> file_;
-    std::shared_ptr<Thread> worker_;
+    std::shared_ptr<TaskThread> worker_;
 };
 
 }  // namespace slark

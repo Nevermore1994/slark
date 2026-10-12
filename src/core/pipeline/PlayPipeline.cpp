@@ -9,6 +9,7 @@
 #include <cassert>
 #include <chrono>
 #include <map>
+#include <thread>
 
 #include "AudioRenderComponent.h"
 #include "BufferingTracker.h"
@@ -19,7 +20,6 @@
 #include "Log.hpp"
 #include "ScopeGuard.h"
 #include "SourceFlowController.h"
-#include "Thread.h"
 #include "perf/Perf.h"
 #include "perf/ResourceSampler.h"
 
@@ -1105,37 +1105,34 @@ void PlayPipeline::connectComponents() noexcept {
     if (!demuxer_) {
         return;
     }
-    demuxer_->setHandleResultFunc([this](const std::shared_ptr<IDemuxer>& demuxer,
-                                         DemuxerResult&& result) {
-        if (!demuxer) {
-            return;
-        }
+    demuxer_->setHandleResultFunc([this](const std::shared_ptr<IDemuxer>&, DemuxerResult&& result) {
         auto resultHolder = std::make_shared<DemuxerResult>(std::move(result));
-        postToOwnerThread([this, demuxer, resultHolder] {
+        postToOwnerThread([this, resultHolder] {
             if (!demuxer_ || !demuxer_->isCurrentSourceGeneration(resultHolder->sourceGeneration)) {
                 return;
             }
             if (resultHolder->resultCode == DemuxerResultCode::ParsedHeader) {
-                handleDemuxHeader(demuxer);
+                handleDemuxHeader();
             }
             dispatchFrames(std::move(*resultHolder), seekContext_->currentEpoch());
         });
     });
 }
 
-void PlayPipeline::handleDemuxHeader(const std::shared_ptr<IDemuxer>& demuxer) noexcept {
+void PlayPipeline::handleDemuxHeader() noexcept {
     if (mediaInfo_.hasAudio || mediaInfo_.hasVideo) {
         return;
     }
-    const bool hasAudio = demuxer->hasAudio();
-    const bool hasVideo = demuxer->hasVideo();
+    // Read the component's published snapshot; never touch IDemuxer off the worker thread.
+    const bool hasAudio = demuxer_->hasAudio();
+    const bool hasVideo = demuxer_->hasVideo();
     if (!hasAudio && !hasVideo) {
         return;
     }
     mediaInfo_.hasAudio = hasAudio;
     mediaInfo_.hasVideo = hasVideo;
     clockSync_->setHasAudio(mediaInfo_.hasAudio);
-    auto duration = demuxer->totalDuration();
+    auto duration = demuxer_->totalDuration();
     if (duration.isValid()) {
         mediaInfo_.totalDuration = duration;
     }

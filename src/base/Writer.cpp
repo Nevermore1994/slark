@@ -4,62 +4,89 @@
 
 #include "Writer.h"
 
+#include <algorithm>
+#include <utility>
+#include <vector>
+
 #include "Log.hpp"
 #include "Util.h"
 
 namespace slark {
+namespace {
+constexpr size_t kMaxBatchSize = 1024;
+const std::string kWriterPrefixName = "Writer_";
+}  // namespace
 
-static const std::string kWriterPrefixName = "Writer_";
-
-Writer::Writer() : worker_(Thread::create(Util::genRandomName(kWriterPrefixName))) {
-    using namespace std::chrono_literals;
-    worker_->postRepeatTask(0ms, [this]() {
-        process();
-    });
-}
+Writer::Writer() : worker_(TaskThread::create(Util::genRandomName(kWriterPrefixName))) {}
 
 Writer::~Writer() {
     dispose();
 }
 
-void Writer::closeFile() noexcept {
-    file_.withLock([](auto& file) {
-        if (file) {
-            file->close();
-            file.reset();
-        }
+bool Writer::Completion::wait() noexcept {
+    std::unique_lock lock(mutex);
+    cond.wait(lock, [this] {
+        return done;
     });
+    return result;
+}
+
+void Writer::Completion::complete(bool value) noexcept {
+    {
+        std::lock_guard lock(mutex);
+        if (done) {
+            return;
+        }
+        result = value;
+        done = true;
+    }
+    cond.notify_all();
 }
 
 bool Writer::open(std::string_view path, bool isAppend) noexcept {
-    bool isSuccess = false;
-    file_.withLock([&](auto& file) {
-        file = std::make_unique<File::WriteFile>(std::string(path), isAppend);
-        auto result = file->open();
-        if (!result) {
-            LogE("open file failed. {}", path);
-        }
-        isSuccess = result.has_value();
-    });
-    if (isSuccess) {
-        isOpen_.store(true, std::memory_order_release);
-        worker_->start();
+    auto completion = std::make_shared<Completion>();
+    if (!enqueue(OpenItem{std::string(path), isAppend, completion})) {
+        return false;
     }
-    return isSuccess;
+    return completion->wait();
 }
 
 void Writer::close() noexcept {
-    isOpen_.store(false, std::memory_order_release);
-    worker_->start();
+    auto completion = std::make_shared<Completion>();
+    if (enqueue(CloseItem{completion})) {
+        (void)completion->wait();
+    }
 }
 
 void Writer::dispose() noexcept {
-    isStop_.store(true, std::memory_order_release);
-    worker_->stop();
+    if (!worker_) {
+        std::lock_guard lock(mutex_);
+        disposed_ = true;
+        return;
+    }
+
+    auto completion = std::make_shared<Completion>();
+    if (enqueue(StopItem{completion}, true)) {
+        (void)completion->wait();
+        worker_->stop();
+    }
+    worker_->join();
+}
+
+std::string Writer::path() noexcept {
+    return file_.withLock([](auto& file) -> std::string {
+        return file ? file->path().string() : std::string{};
+    });
 }
 
 IOState Writer::state() noexcept {
-    if (!isOpen_.load(std::memory_order_acquire) || isStop_.load(std::memory_order_acquire)) {
+    {
+        std::lock_guard lock(mutex_);
+        if (disposed_) {
+            return IOState::Closed;
+        }
+    }
+    if (!isOpen_.load(std::memory_order_acquire)) {
         return IOState::Closed;
     }
     return file_.withLock([](auto& file) -> IOState {
@@ -70,52 +97,19 @@ IOState Writer::state() noexcept {
     });
 }
 
-std::string Writer::path() noexcept {
-    return file_.withLock([](auto& file) -> std::string {
-        return file ? file->path().string() : std::string{};
-    });
-}
-
-bool Writer::checkState() noexcept {
-    if (!isOpen_.load(std::memory_order_acquire) || isStop_.load(std::memory_order_acquire)) {
-        closeFile();
-        if (!isOpen_.load(std::memory_order_acquire)) {
-            worker_->pause();
-            LogI("{} closed", worker_->getName());
-        } else {
-            worker_->stop();
-            LogI("{} stopped", worker_->getName());
-        }
+bool Writer::write(DataPtr data) noexcept {
+    if (!data) {
         return false;
     }
-    if (dataQueue_.empty()) {
-        worker_->pause();
-        return false;
-    }
-    return true;
+    return enqueue(DataItem{std::move(data)});
 }
 
-void Writer::process() noexcept {
-    static constexpr uint32_t kMaxWriteCount = 1024;
-    if (!checkState()) {
-        return;
-    }
-    file_.withLock([&](auto& file) {
-        if (!file || !file->isOpen()) {
-            return;
-        }
-        for (uint32_t i = 0; i < kMaxWriteCount; ++i) {
-            DataPtr data;
-            if (!dataQueue_.tryPop(data)) {
-                break;
-            }
-            file->write(*data);
-        }
-    });
+bool Writer::write(const Data& data) noexcept {
+    return write(data.copy());
 }
 
-uint32_t Writer::getHashId() noexcept {
-    return worker_->getHashId();
+bool Writer::write(std::string_view str) noexcept {
+    return write(std::make_unique<Data>(str));
 }
 
 uint32_t Writer::writeCount() noexcept {
@@ -130,22 +124,151 @@ uint64_t Writer::writeSize() noexcept {
     });
 }
 
-bool Writer::write(DataPtr data) noexcept {
-    if (isStop_.load(std::memory_order_acquire)) {
-        LogD("unable to write data, file has been stopped.");
+uint32_t Writer::getHashId() noexcept {
+    return worker_ ? worker_->getHashId() : 0;
+}
+
+bool Writer::enqueue(Item item, bool stopping) noexcept {
+    if (!worker_) {
         return false;
     }
-    dataQueue_.push(std::move(data));
-    worker_->start();
+    std::lock_guard lock(mutex_);
+    if (disposed_) {
+        return false;
+    }
+    if (stopping) {
+        disposed_ = true;
+    }
+    inbox_.push_back(std::move(item));
+    if (!scheduled_) {
+        scheduled_ = true;
+        auto result = worker_->postTask([this] {
+            drain();
+        });
+        if (!result) {
+            scheduled_ = false;
+            inbox_.pop_back();
+            if (stopping) {
+                disposed_ = false;
+            }
+            return false;
+        }
+    }
     return true;
 }
 
-bool Writer::write(const Data& data) noexcept {
-    return write(data.copy());
+void Writer::drain() noexcept {
+    std::vector<Item> batch;
+    batch.reserve(kMaxBatchSize);
+    {
+        std::lock_guard lock(mutex_);
+        if (inbox_.empty()) {
+            scheduled_ = false;
+            return;
+        }
+        const auto count = std::min(kMaxBatchSize, inbox_.size());
+        for (size_t i = 0; i < count; ++i) {
+            batch.push_back(std::move(inbox_.front()));
+            inbox_.pop_front();
+        }
+    }
+
+    for (auto& item : batch) {
+        process(std::move(item));
+    }
+
+    std::lock_guard lock(mutex_);
+    if (inbox_.empty()) {
+        scheduled_ = false;
+        return;
+    }
+    auto result = worker_->postTask([this] {
+        drain();
+    });
+    if (!result) {
+        scheduled_ = false;
+    }
 }
 
-bool Writer::write(std::string_view str) noexcept {
-    return write(std::make_unique<Data>(str));
+void Writer::process(Item item) noexcept {
+    std::visit(
+        [this](auto&& value) {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<T, DataItem>) {
+                writeData(std::move(value.data));
+            } else if constexpr (std::is_same_v<T, OpenItem>) {
+                if (fileOpen_) {
+                    closeFile();
+                }
+                fileOpen_ = openFile(value.path, value.append);
+                isOpen_.store(fileOpen_, std::memory_order_release);
+                if (fileOpen_) {
+                    flushParked();
+                }
+                value.completion->complete(fileOpen_);
+            } else if constexpr (std::is_same_v<T, CloseItem>) {
+                closeFile();
+                fileOpen_ = false;
+                isOpen_.store(false, std::memory_order_release);
+                value.completion->complete(true);
+            } else {
+                closeFile();
+                fileOpen_ = false;
+                isOpen_.store(false, std::memory_order_release);
+                const auto dropped = parked_.size();
+                parked_.clear();
+                value.completion->complete(true);
+                if (dropped > 0) {
+                    LogP("writer dropped {} items", dropped);
+                }
+            }
+        },
+        std::move(item));
+}
+
+bool Writer::openFile(const std::string& path, bool append) noexcept {
+    bool opened = false;
+    file_.withLock([&](auto& file) {
+        file = std::make_unique<File::WriteFile>(path, append, false);
+        const auto result = file->open();
+        opened = result.has_value();
+        if (!opened) {
+            LogP("open file failed. {}", path);
+        }
+    });
+    return opened;
+}
+
+void Writer::closeFile() noexcept {
+    file_.withLock([](auto& file) {
+        if (file) {
+            file->close();
+            file.reset();
+        }
+    });
+}
+
+void Writer::writeData(DataPtr data) noexcept {
+    if (!data) {
+        return;
+    }
+    if (!fileOpen_) {
+        parked_.push_back(std::move(data));
+        return;
+    }
+    file_.withLock([&](auto& file) {
+        if (file && file->isOpen() && !file->write(*data)) {
+            LogP("writer failed to write data to {}", file->path().string());
+        }
+    });
+}
+
+void Writer::flushParked() noexcept {
+    while (!parked_.empty()) {
+        auto data = std::move(parked_.front());
+        parked_.pop_front();
+        writeData(std::move(data));
+    }
 }
 
 }  // namespace slark

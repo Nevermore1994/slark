@@ -53,7 +53,7 @@ bool hasValidRangeResponse(const http::StreamChunk& chunk, const Range& range) {
 }
 }  // namespace
 
-HLSStream::HLSStream(std::shared_ptr<Thread> ownerThread)
+HLSStream::HLSStream(std::shared_ptr<TaskThread> ownerThread)
     : ownerThread_(std::move(ownerThread)),
       controlSession_(std::make_shared<http::Http1Session>()),
       mediaSession_(std::make_shared<http::Http1Session>()) {}
@@ -94,15 +94,15 @@ void HLSStream::close() noexcept {
     controlSession_->close();
     mediaSession_->close();
     if (refreshTimerId_.isValid()) {
-        ownerThread_->cancelRepeatTask(refreshTimerId_);
+        ownerThread_->cancel(refreshTimerId_);
         refreshTimerId_ = {};
     }
     if (retryTimerId_.isValid()) {
-        ownerThread_->cancelRepeatTask(retryTimerId_);
+        ownerThread_->cancel(retryTimerId_);
         retryTimerId_ = {};
     }
     if (playlistRetryTimerId_.isValid()) {
-        ownerThread_->cancelRepeatTask(playlistRetryTimerId_);
+        ownerThread_->cancel(playlistRetryTimerId_);
         playlistRetryTimerId_ = {};
     }
     playlistRetryCount_ = 0;
@@ -161,15 +161,15 @@ void HLSStream::pause() noexcept {
     cancelPlaylistOp(kWaitSettleTimeout.count());
     controlSession_->close();
     if (refreshTimerId_.isValid()) {
-        ownerThread_->cancelRepeatTask(refreshTimerId_);
+        ownerThread_->cancel(refreshTimerId_);
         refreshTimerId_ = {};
     }
     if (retryTimerId_.isValid()) {
-        ownerThread_->cancelRepeatTask(retryTimerId_);
+        ownerThread_->cancel(retryTimerId_);
         retryTimerId_ = {};
     }
     if (playlistRetryTimerId_.isValid()) {
-        ownerThread_->cancelRepeatTask(playlistRetryTimerId_);
+        ownerThread_->cancel(playlistRetryTimerId_);
         playlistRetryTimerId_ = {};
     }
 
@@ -209,11 +209,11 @@ StreamResult<void> HLSStream::seekByTime(double timeSec, uint64_t sourceGenerati
     controlSession_->close();
     mediaSession_->close();
     if (retryTimerId_.isValid()) {
-        ownerThread_->cancelRepeatTask(retryTimerId_);
+        ownerThread_->cancel(retryTimerId_);
         retryTimerId_ = {};
     }
     if (playlistRetryTimerId_.isValid()) {
-        ownerThread_->cancelRepeatTask(playlistRetryTimerId_);
+        ownerThread_->cancel(playlistRetryTimerId_);
         playlistRetryTimerId_ = {};
     }
 
@@ -355,7 +355,7 @@ void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
         if (isLive) {
             schedulePlaylistRefresh();
         } else if (refreshTimerId_.isValid()) {
-            ownerThread_->cancelRepeatTask(refreshTimerId_);
+            ownerThread_->cancel(refreshTimerId_);
             refreshTimerId_ = {};
         }
 
@@ -470,7 +470,7 @@ void HLSStream::downloadSegment(uint32_t segIndex) {
     auto downloadTask = [](std::shared_ptr<http::HttpRequest> req, http::RequestInfo info,
                            std::weak_ptr<HLSStream> weakStream,
                            std::weak_ptr<StreamControl> weakControl,
-                           std::shared_ptr<Thread> ownerThread, uint64_t sequence,
+                           std::shared_ptr<TaskThread> ownerThread, uint64_t sequence,
                            uint64_t generation, uint64_t operationId) -> Task<void> {
         auto gen = req->streamingExecute(info);
         while (true) {
@@ -640,7 +640,7 @@ void HLSStream::scheduleRetry(uint64_t sequence) {
     LogW("[HLSStream::scheduleRetry] segment {} retrying in {}ms (count={})", sequence,
          delay.count(), retryCount_);
     if (retryTimerId_.isValid()) {
-        ownerThread_->cancelRepeatTask(retryTimerId_);
+        ownerThread_->cancel(retryTimerId_);
     }
     retryTimerId_ = ownerThread_->postTask(delay, [weak = weak_from_this(), sequence]() {
         auto self = weak.lock();
@@ -678,7 +678,7 @@ void HLSStream::schedulePlaylistRefresh() {
         return;
     }
     if (refreshTimerId_.isValid()) {
-        ownerThread_->cancelRepeatTask(refreshTimerId_);
+        ownerThread_->cancel(refreshTimerId_);
     }
     const auto duration = std::max(0.1, playlist_->targetDuration());
     const auto delay = std::chrono::milliseconds(static_cast<int64_t>(duration * 1000.0));
@@ -698,7 +698,7 @@ void HLSStream::schedulePlaylistRetry(Error error, int32_t originCode) {
     playlistRetryError_ = error == Error::Success ? Error::NetworkError : error;
     playlistRetryOriginCode_ = originCode;
     if (refreshTimerId_.isValid()) {
-        ownerThread_->cancelRepeatTask(refreshTimerId_);
+        ownerThread_->cancel(refreshTimerId_);
         refreshTimerId_ = {};
     }
     if (playlistRetryCount_ >= 3) {
@@ -712,7 +712,7 @@ void HLSStream::schedulePlaylistRetry(Error error, int32_t originCode) {
     LogW("[HLSStream::schedulePlaylistRetry] retrying playlist in {}ms (count={})",
          delay.count(), playlistRetryCount_);
     if (playlistRetryTimerId_.isValid()) {
-        ownerThread_->cancelRepeatTask(playlistRetryTimerId_);
+        ownerThread_->cancel(playlistRetryTimerId_);
     }
     playlistRetryTimerId_ = ownerThread_->postTask(delay, [weak = weak_from_this()]() {
         auto self = weak.lock();
