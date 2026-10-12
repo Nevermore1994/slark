@@ -156,6 +156,10 @@ void PlayPipeline::flush() noexcept {
     }
     if (bufferingTracker_) {
         bufferingTracker_->reset();
+        if (readiness_.expectedDecoders > 0 &&
+            readiness_.readyDecoders >= readiness_.expectedDecoders) {
+            bufferingTracker_->startPrebuffering();
+        }
     }
     if (demuxer_) {
         demuxer_->flush();
@@ -196,11 +200,11 @@ bool PlayPipeline::teardown() noexcept {
     return true;
 }
 
-bool PlayPipeline::canFastForward(double targetSec) const noexcept {
+bool PlayPipeline::canFastForward(double targetSec, double currentSec) const noexcept {
     // Decide from the decoder's GOP position, not videoFrames_: it is empty by design.
     const double gopKeyframePts = seekContext_->gopKeyframePts();
     const double gopEndPts = seekContext_->gopEndPts();
-    if (gopKeyframePts < 0.0 || gopEndPts < 0.0) {
+    if (gopKeyframePts < 0.0 || gopEndPts < 0.0 || targetSec < currentSec) {
         return false;
     }
     return targetSec >= gopKeyframePts && targetSec <= gopEndPts;
@@ -237,8 +241,9 @@ void PlayPipeline::seek(CTime target, bool isAccurate) noexcept {
         return;
     }
 
-    const SeekStrategy strategy =
-        canFastForward(targetSec) ? SeekStrategy::FastForwardInGOP : SeekStrategy::SeekToKeyframe;
+    const SeekStrategy strategy = canFastForward(targetSec, currentSec)
+                                      ? SeekStrategy::FastForwardInGOP
+                                      : SeekStrategy::SeekToKeyframe;
     std::ignore = seekContext_->beginSeek(target);
     {
         const double fps = clockSync_->videoFps();
@@ -976,7 +981,6 @@ void PlayPipeline::setupAudioTrack(DecoderType type,
         });
 
     openDecoderInternal(audioDecoder_, type, config);
-    ++readiness_.expectedDecoders;
     registerComponents();
 }
 
@@ -1059,7 +1063,6 @@ void PlayPipeline::setupVideoTrack(DecoderType type,
         });
 
     openDecoderInternal(videoDecoder_, type, config);
-    ++readiness_.expectedDecoders;
     registerComponents();
 }
 
@@ -1173,6 +1176,7 @@ void PlayPipeline::handleDemuxHeader() noexcept {
     }
     mediaInfo_.hasAudio = hasAudio;
     mediaInfo_.hasVideo = hasVideo;
+    readiness_.expectedDecoders = static_cast<int32_t>(hasAudio) + static_cast<int32_t>(hasVideo);
     clockSync_->setHasAudio(mediaInfo_.hasAudio);
     auto duration = demuxer_->totalDuration();
     if (duration.isValid()) {

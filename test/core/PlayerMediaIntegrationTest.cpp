@@ -389,6 +389,25 @@ TEST_F(PlayerMediaIntegrationTest, WavSeekDuringPlayback) {
     safeDestroy(*player);
 }
 
+TEST_F(PlayerMediaIntegrationTest, NearSeekStillEmitsSeekDone) {
+    auto player = std::make_unique<Player>(makeParams(mediaPath(kWavFile)));
+    auto observer = std::make_shared<RecordingObserver>();
+    player->addObserver(observer);
+    if (prepareAndWait(*player) == PlayerState::Error) {
+        GTEST_SKIP() << "current environment cannot decode media, skipping";
+    }
+
+    player->seek(player->currentPlayedTime() + 0.01, false);
+
+    ASSERT_TRUE(waitUntil([&observer] {
+        return observer->eventCount(PlayerEvent::SeekDone) == 1;
+    })) << "a near-position seek must still complete and emit SeekDone";
+    std::this_thread::sleep_for(100ms);
+    EXPECT_EQ(observer->eventCount(PlayerEvent::SeekDone), 1u);
+    EXPECT_NE(player->state(), PlayerState::Buffering);
+    safeDestroy(*player);
+}
+
 TEST_F(PlayerMediaIntegrationTest, AccurateSeekThenDragUsesLatestTarget) {
     if (!PlayerMediaIntegrationTest::isPlayable()) {
         GTEST_SKIP() << "current environment cannot drive playback clock, skipping";

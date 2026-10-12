@@ -368,6 +368,27 @@ TEST(BufferingTrackerTest, ResetClearsAllState) {
     EXPECT_FALSE(tracker.isRebuffering());
 }
 
+TEST(BufferingTrackerTest, ResetCanStartANewPrebufferCycle) {
+    NiceMock<MockBufferingTrackerDelegate> delegate;
+    BufferingTracker tracker(networkBuffering(), delegate);
+
+    EXPECT_CALL(delegate, onPrebufferComplete()).Times(2);
+    EXPECT_CALL(delegate, onBufferEvent(PipelineEvent::BufferingStart, _)).Times(2);
+
+    tracker.startPrebuffering();
+    tracker.update(5.0);
+    tracker.update(1.0);
+    ASSERT_TRUE(tracker.isRebuffering());
+
+    tracker.reset();
+    tracker.startPrebuffering();
+    EXPECT_TRUE(tracker.isPrebuffering());
+    tracker.update(5.0);
+    EXPECT_FALSE(tracker.isPrebuffering());
+    tracker.update(1.0);
+    EXPECT_TRUE(tracker.isRebuffering());
+}
+
 // A local source has startBufferSec = 0, so readiness fires during startPrebuffering()
 // rather than on the first sample.
 TEST(BufferingTrackerTest, LocalSourceIsReadyImmediately) {

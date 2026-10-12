@@ -177,14 +177,6 @@ class PlayPipeline : public NonCopyMovable,
 
     void tryFirePlaybackComplete() noexcept;
 
-    [[nodiscard]] uint64_t nextSeekEpoch() const noexcept {
-        return seekContext_->currentEpoch() + 1;
-    }
-
-    [[nodiscard]] uint64_t currentSeekEpoch() const noexcept {
-        return seekContext_->currentEpoch();
-    }
-
     [[nodiscard]] bool isSeekPending() const noexcept {
         return seekContext_->isSeekPending();
     }
@@ -296,7 +288,7 @@ class PlayPipeline : public NonCopyMovable,
 
     void updateLiveReadyFlags(const DemuxerResult& result) noexcept;
 
-    [[nodiscard]] bool canFastForward(double targetSec) const noexcept;
+    [[nodiscard]] bool canFastForward(double targetSec, double currentSec) const noexcept;
 
     void registerComponents() noexcept;
 

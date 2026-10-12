@@ -40,6 +40,47 @@ struct PlayPipelineTestAccess {
             return !pipeline.acceptingRenderRequests_;
         });
     }
+
+    static int32_t expectedDecoders(const PlayPipeline& pipeline) {
+        return pipeline.readiness_.expectedDecoders;
+    }
+
+    static void setExpectedDecoders(PlayPipeline& pipeline, int32_t count) {
+        pipeline.readiness_.expectedDecoders = count;
+    }
+
+    static bool isPrebuffering(const PlayPipeline& pipeline) {
+        return pipeline.bufferingTracker_->isPrebuffering();
+    }
+
+    static void updateBuffering(PlayPipeline& pipeline, double bufferedSec) {
+        pipeline.bufferingTracker_->update(bufferedSec);
+    }
+
+    static void signalDecoderReady(PlayPipeline& pipeline) {
+        ++pipeline.readiness_.readyDecoders;
+        pipeline.tryFirePipelineReady();
+    }
+
+    static void setGopRange(PlayPipeline& pipeline, double keyframePts, double endPts) {
+        pipeline.seekContext_->updateGOPRange(keyframePts, endPts);
+    }
+
+    static bool canFastForward(const PlayPipeline& pipeline, double targetSec, double currentSec) {
+        return pipeline.canFastForward(targetSec, currentSec);
+    }
+
+    static void configureAudioOnly(PlayPipeline& pipeline) {
+        pipeline.mediaInfo_.hasAudio = true;
+    }
+
+    static void beginSeek(PlayPipeline& pipeline, CTime target) {
+        static_cast<void>(pipeline.seekContext_->beginSeek(target));
+    }
+
+    static void completeAudioSeek(PlayPipeline& pipeline) {
+        pipeline.handleSeekFrameConsumed(TrackType::Audio);
+    }
 };
 }
 
@@ -57,9 +98,10 @@ struct MockPlayerObserver : public IPlayerObserver {
 
 
 static constexpr const char* kTsPath = "../../test_sample/segment-0.ts";
+static constexpr const char* kWavPath = "../../test_sample/sample-3s.wav";
 
-static DataPtr loadTsData() {
-    std::ifstream input(kTsPath, std::ios::binary | std::ios::ate);
+static DataPtr loadFileData(const char* path) {
+    std::ifstream input(path, std::ios::binary | std::ios::ate);
     if (!input) {
         return nullptr;
     }
@@ -204,7 +246,7 @@ TEST(PlayerIntegrationTest, PrepareTransitionsOutOfNotInited) {
 }
 
 TEST(PlayerIntegrationTest, PreferredTsHeaderIsEmittedOnlyAfterTracksAreKnown) {
-    auto data = loadTsData();
+    auto data = loadFileData(kTsPath);
     if (!data) {
         GTEST_SKIP() << "segment-0.ts not found, skipping";
     }
@@ -219,13 +261,16 @@ TEST(PlayerIntegrationTest, PreferredTsHeaderIsEmittedOnlyAfterTracksAreKnown) {
                           MediaSourceType::Local);
     pipeline.bindToCurrentThread();
     std::atomic<int32_t> headerCount{0};
+    std::atomic<int32_t> pipelineReadyCount{0};
     std::shared_ptr<AudioInfo> headerAudioInfo;
     pipeline.setEventCallback(
-        [&headerCount, &headerAudioInfo, demuxer](PipelineEvent event,
-                                                  std::optional<PipelineError>) {
+        [&headerCount, &pipelineReadyCount, &headerAudioInfo, demuxer](
+            PipelineEvent event, std::optional<PipelineError>) {
             if (event == PipelineEvent::DemuxHeaderParsed) {
                 headerAudioInfo = demuxer->audioInfo();
                 headerCount.fetch_add(1, std::memory_order_relaxed);
+            } else if (event == PipelineEvent::PipelineReady) {
+                pipelineReadyCount.fetch_add(1, std::memory_order_relaxed);
             }
         });
     pipeline.setDemuxerComponent(demuxer);
@@ -253,7 +298,133 @@ TEST(PlayerIntegrationTest, PreferredTsHeaderIsEmittedOnlyAfterTracksAreKnown) {
     EXPECT_GT(headerAudioInfo->channels, 0);
     EXPECT_TRUE(pipeline.mediaInfo().hasAudio);
     EXPECT_TRUE(pipeline.mediaInfo().hasVideo);
+    EXPECT_EQ(PlayPipelineTestAccess::expectedDecoders(pipeline), 2);
+    PlayPipelineTestAccess::signalDecoderReady(pipeline);
+    EXPECT_EQ(pipelineReadyCount.load(std::memory_order_relaxed), 0);
+    PlayPipelineTestAccess::signalDecoderReady(pipeline);
+    EXPECT_EQ(pipelineReadyCount.load(std::memory_order_relaxed), 1);
+    PlayPipelineTestAccess::signalDecoderReady(pipeline);
+    EXPECT_EQ(pipelineReadyCount.load(std::memory_order_relaxed), 1);
     EXPECT_TRUE(pipeline.teardown());
+}
+
+TEST(PlayerIntegrationTest, AudioOnlyHeaderSetsReadinessCountBeforeDecoderReady) {
+    auto data = loadFileData(kWavPath);
+    if (!data) {
+        GTEST_SKIP() << "sample-3s.wav not found, skipping";
+    }
+
+    auto [sender, receiver] = Channel<DataPacket>::create();
+    DemuxerConfig config;
+    config.filePath = kWavPath;
+    config.preferredType = DemuxerType::WAV;
+    auto demuxer = std::make_shared<DemuxerComponent>(std::move(receiver), std::move(config));
+
+    PlayPipeline pipeline(FlowConfigDefaults::forSource(MediaSourceType::Local),
+                          MediaSourceType::Local);
+    pipeline.bindToCurrentThread();
+    std::atomic<int32_t> headerCount{0};
+    std::atomic<int32_t> pipelineReadyCount{0};
+    pipeline.setEventCallback([&](PipelineEvent event, std::optional<PipelineError>) {
+        if (event == PipelineEvent::DemuxHeaderParsed) {
+            headerCount.fetch_add(1, std::memory_order_relaxed);
+        } else if (event == PipelineEvent::PipelineReady) {
+            pipelineReadyCount.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+    pipeline.setDemuxerComponent(demuxer);
+    pipeline.startDemuxing();
+
+    DataPacket packet;
+    packet.data = std::move(data);
+    packet.offset = 0;
+    ASSERT_TRUE(sender->send(std::move(packet)).has_value());
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (std::chrono::steady_clock::now() < deadline &&
+           headerCount.load(std::memory_order_relaxed) == 0) {
+        pipeline.drainPendingTasks();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    for (int32_t i = 0; i < 50; ++i) {
+        pipeline.drainPendingTasks();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    EXPECT_EQ(headerCount.load(std::memory_order_relaxed), 1);
+    EXPECT_TRUE(pipeline.mediaInfo().hasAudio);
+    EXPECT_FALSE(pipeline.mediaInfo().hasVideo);
+    EXPECT_EQ(PlayPipelineTestAccess::expectedDecoders(pipeline), 1);
+    PlayPipelineTestAccess::signalDecoderReady(pipeline);
+    EXPECT_EQ(pipelineReadyCount.load(std::memory_order_relaxed), 1);
+    PlayPipelineTestAccess::signalDecoderReady(pipeline);
+    EXPECT_EQ(pipelineReadyCount.load(std::memory_order_relaxed), 1);
+    EXPECT_TRUE(pipeline.teardown());
+}
+
+TEST(PlayerIntegrationTest, SeekFlushRestartsBufferingAfterDecoderReadiness) {
+    PlayPipeline pipeline(FlowConfigDefaults::forSource(MediaSourceType::Network),
+                          MediaSourceType::Network);
+    pipeline.bindToCurrentThread();
+    std::atomic<int32_t> pipelineReadyCount{0};
+    std::atomic<int32_t> bufferingStartCount{0};
+    pipeline.setEventCallback([&](PipelineEvent event, std::optional<PipelineError>) {
+        if (event == PipelineEvent::PipelineReady) {
+            pipelineReadyCount.fetch_add(1, std::memory_order_relaxed);
+        } else if (event == PipelineEvent::BufferingStart) {
+            bufferingStartCount.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+    PlayPipelineTestAccess::setExpectedDecoders(pipeline, 1);
+    PlayPipelineTestAccess::signalDecoderReady(pipeline);
+    ASSERT_TRUE(PlayPipelineTestAccess::isPrebuffering(pipeline));
+    PlayPipelineTestAccess::updateBuffering(pipeline, 5.0);
+    EXPECT_EQ(pipelineReadyCount.load(std::memory_order_relaxed), 1);
+
+    pipeline.flush();
+    EXPECT_TRUE(PlayPipelineTestAccess::isPrebuffering(pipeline));
+    PlayPipelineTestAccess::updateBuffering(pipeline, 5.0);
+    PlayPipelineTestAccess::updateBuffering(pipeline, 1.0);
+    EXPECT_EQ(pipelineReadyCount.load(std::memory_order_relaxed), 1);
+    EXPECT_EQ(bufferingStartCount.load(std::memory_order_relaxed), 1);
+    EXPECT_TRUE(pipeline.teardown());
+}
+
+TEST(PlayerIntegrationTest, StaleCompletionIsIgnoredAfterNewNearSeek) {
+    PlayPipeline pipeline(FlowConfigDefaults::forSource(MediaSourceType::Local),
+                          MediaSourceType::Local);
+    pipeline.bindToCurrentThread();
+    PlayPipelineTestAccess::configureAudioOnly(pipeline);
+    PlayPipelineTestAccess::beginSeek(pipeline, CTime(1.0));
+
+    std::atomic<int32_t> completedCount{0};
+    pipeline.setEventCallback([&completedCount](PipelineEvent event, std::optional<PipelineError>) {
+        if (event == PipelineEvent::SeekCompleted) {
+            completedCount.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+
+    std::thread oldCompletion([&pipeline] {
+        PlayPipelineTestAccess::completeAudioSeek(pipeline);
+    });
+    oldCompletion.join();
+
+    pipeline.seek(CTime(0.02), false);
+    EXPECT_EQ(completedCount.load(std::memory_order_relaxed), 1);
+    pipeline.drainPendingTasks();
+    EXPECT_EQ(completedCount.load(std::memory_order_relaxed), 1);
+    EXPECT_FALSE(pipeline.isSeekPending());
+    EXPECT_TRUE(pipeline.teardown());
+}
+
+TEST(PlayerIntegrationTest, FastForwardInGopRejectsBackwardSeek) {
+    PlayPipeline pipeline(FlowConfigDefaults::forSource(MediaSourceType::Local),
+                          MediaSourceType::Local);
+    PlayPipelineTestAccess::setGopRange(pipeline, 4.0, 8.0);
+
+    EXPECT_FALSE(PlayPipelineTestAccess::canFastForward(pipeline, 4.5, 5.0));
+    EXPECT_TRUE(PlayPipelineTestAccess::canFastForward(pipeline, 6.0, 5.0));
+    EXPECT_FALSE(PlayPipelineTestAccess::canFastForward(pipeline, 9.0, 5.0));
 }
 
 TEST(PlayerIntegrationTest, PrepareIsIdempotent) {

@@ -26,8 +26,6 @@
 namespace slark {
 
 namespace {
-static constexpr double kSeekThreshold = 0.05;
-
 // Owner-thread cadences are an implementation detail: how often the pipeline samples
 // backpressure, reports progress and reports cache level is not the caller's business.
 static constexpr auto kPlayerThreadTick = std::chrono::milliseconds(10);
@@ -684,12 +682,6 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
     if (seekRequest.isAccurate) {
         accurateSeekRequested_.store(false, std::memory_order_release);
     }
-    const double playedTime = currentPlayedTime();
-    if (isEqual(playedTime, playbackSeekTime, kSeekThreshold)) {
-        LogI("discard seek:{} (too close to current pos {:.3f})", playbackSeekTime, playedTime);
-        return;
-    }
-
     // Non-accurate seek in-flight merge: update the target in the pipeline without
     // switching state
     if (!seekRequest.isAccurate && seekRequest_.has_value() && pipeline_->isSeekPending()) {
@@ -713,7 +705,6 @@ void Player::Impl::doSeek(PlayerSeekRequest seekRequest) noexcept {
     }
 
     seekRequest.startTime = Time::nowTimeStamp();
-    seekRequest.seekEpoch = pipeline_->nextSeekEpoch();
     seekRequest_ = seekRequest;
     LogI("do seek to:{:.3f}s, accurate:{}", seekTime, seekRequest.isAccurate);
     setState(PlayerState::Buffering);
@@ -942,9 +933,6 @@ void Player::Impl::handlePipelineEvent(PipelineEvent event,
 
 void Player::Impl::handleSeekCompleted() noexcept {
     if (seekRequest_) {
-        if (seekRequest_->seekEpoch != pipeline_->currentSeekEpoch()) {
-            return;
-        }
         LogI("seek done, cost time:{}",
              (Time::nowTimeStamp() - seekRequest_->startTime).toMilliSeconds());
         const bool isAccurate = seekRequest_->isAccurate;
