@@ -41,6 +41,11 @@ Task<std::expected<std::unique_ptr<AsyncSocket>, ErrorInfo>> resolveAndConnect(
     bool attemptedConnection = false;
     ErrorInfo lastError{slark::Error::ConnectionFailed};
 
+    size_t candidateCount = 0;
+    for (const auto* candidate = addrInfo.get(); candidate; candidate = candidate->ai_next) {
+        ++candidateCount;
+    }
+
     for (const auto* candidate = addrInfo.get(); candidate; candidate = candidate->ai_next) {
         if (token.isCancelled()) {
             co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
@@ -58,21 +63,25 @@ Task<std::expected<std::unique_ptr<AsyncSocket>, ErrorInfo>> resolveAndConnect(
         auto candidateAddress = makeConnectAddress(candidate);
         if (!candidateAddress) {
             LogW("[openConnection] invalid address candidate for {}", host);
+            --candidateCount;
             continue;
         }
         if (addressPolicy == NetworkAddressPolicy::PublicOnly &&
             !isPublicConnectAddress(*candidateAddress)) {
             policyRejected = true;
             LogW("[openConnection] rejected non-public address for {}", host);
+            --candidateCount;
             continue;
         }
 
         attemptedConnection = true;
+        const auto attemptBudget = connectAttemptBudget(remaining, candidateCount);
+        --candidateCount;
         auto socket = std::make_unique<AsyncSocket>(ipVersion);
         socket->setPerf(perf);
         const auto connectStart = Time::nowTimeStamp();
         try {
-            co_await socket->asyncConnect(std::move(*candidateAddress), remaining, token);
+            co_await socket->asyncConnect(std::move(*candidateAddress), attemptBudget, token);
         } catch (const CancelledException&) {
             LogW("[openConnection] connect cancelled for {}", host);
             co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
@@ -80,21 +89,20 @@ Task<std::expected<std::unique_ptr<AsyncSocket>, ErrorInfo>> resolveAndConnect(
             lastError = ErrorInfo{e.error()};
             LogW("[openConnection] address candidate failed: {} error={}", host,
                  toString(e.error()));
-            if (e.error() == slark::Error::ConnectionTimeout) {
-                if (perf) {
-                    perf->transport.timeoutSource = TimeoutSource::Connect;
-                    perf->connection.connectResult = e.error();
-                }
-                co_return std::unexpected(lastError);
+            if (e.error() == slark::Error::ConnectionTimeout && perf) {
+                perf->transport.timeoutSource = TimeoutSource::Connect;
+                perf->connection.connectResult = e.error();
             }
+            // A timed-out candidate must not starve the remaining addresses
             continue;
         } catch (const TimeoutException&) {
             LogW("[openConnection] connect timeout for {}", host);
+            lastError = ErrorInfo{slark::Error::ConnectionTimeout};
             if (perf) {
                 perf->transport.timeoutSource = TimeoutSource::Connect;
                 perf->connection.connectResult = slark::Error::ConnectionTimeout;
             }
-            co_return std::unexpected(ErrorInfo{slark::Error::ConnectionTimeout});
+            continue;
         } catch (const std::exception& e) {
             lastError = ErrorInfo{slark::Error::ConnectionFailed};
             LogW("[openConnection] address candidate failed: {} {}", host, e.what());

@@ -58,7 +58,8 @@ class RedirectPolicy {
         Url newUrl(redirectRequest.url);
         if (!sameOrigin(origUrl, newUrl)) {
             for (auto it = redirectRequest.headers.begin(); it != redirectRequest.headers.end();) {
-                if (isSensitiveHeader(it->first)) {
+                // A user-set Host points at the wrong origin after the redirect
+                if (isSensitiveHeader(it->first) || StringUtil::iequals(it->first, "Host")) {
                     it = redirectRequest.headers.erase(it);
                 } else {
                     ++it;
@@ -70,6 +71,15 @@ class RedirectPolicy {
             case HttpStatusCode::SeeOther:
                 redirectRequest.methodType = HttpMethodType::Get;
                 redirectRequest.body = nullptr;  // 303 must not carry a body
+                // A user-set length no longer matches the cleared body
+                for (auto it = redirectRequest.headers.begin();
+                     it != redirectRequest.headers.end();) {
+                    if (StringUtil::iequals(it->first, "Content-Length")) {
+                        it = redirectRequest.headers.erase(it);
+                    } else {
+                        ++it;
+                    }
+                }
                 break;
             case HttpStatusCode::MovedPermanently:  // 301
             case HttpStatusCode::Found:             // 302

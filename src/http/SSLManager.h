@@ -22,7 +22,8 @@ namespace slark::http {
 class SSLManager {
  public:
     static SSLContextPtr& shareContext();
-    static SSLPtr create(Socket socket, const std::string& hostname) noexcept;
+    // Not noexcept: shareContext() may throw when the SSL context cannot be created.
+    static SSLPtr create(Socket socket, const std::string& hostname);
 
  private:
     SSLManager();

@@ -724,3 +724,25 @@ TEST(HttpResponseParserTest, ChunkedTrailerAcrossByteSlices) {
         EXPECT_EQ(helper.result.body, "hello") << "slice=" << slice;
     }
 }
+
+TEST(HttpResponseParserTest, OversizedChunkSizeLineFails) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n");
+    helper.feed(std::string(257, 'F'));
+    EXPECT_TRUE(helper.hasError());
+    EXPECT_EQ(helper.result.errorCode, Error::HttpChunkedError);
+    EXPECT_EQ(helper.result.bodyChunkCount, size_t{0});
+}
+
+TEST(HttpResponseParserTest, ChunkSizeLineAtLimitWaitsForMoreData) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n");
+    helper.feed(std::string(256, 'F'));
+    EXPECT_FALSE(helper.hasError());
+    EXPECT_FALSE(helper.isCompleted());
+
+    // Completing the line within the limit parses normally (the huge chunk
+    // value is then rejected by the body-size limit, not the line limit).
+    helper.feed("\r\n");
+    EXPECT_TRUE(helper.hasError());
+}

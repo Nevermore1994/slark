@@ -3,6 +3,7 @@
 //
 #pragma once
 
+#include <arpa/inet.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -110,6 +111,20 @@ inline bool isPublicConnectAddress(const ConnectAddress& address) noexcept {
            !IN6_IS_ADDR_MULTICAST(&address6) &&
            std::memcmp(address6.s6_addr, "\x20\x01\x0d\xb8", 4) != 0 &&
            (address6.s6_addr[0] & 0xfeu) != 0xfcu;
+}
+
+// True for IPv4/IPv6 literals. SNI forbids carrying an IP literal; TLS peer
+// matching for literal hosts must use the certificate's IP SAN instead.
+inline bool isIpLiteral(const std::string& host) noexcept {
+    if (host.empty()) {
+        return false;
+    }
+    in_addr v4{};
+    if (inet_pton(AF_INET, host.c_str(), &v4) == 1) {
+        return true;
+    }
+    in6_addr v6{};
+    return inet_pton(AF_INET6, host.c_str(), &v6) == 1;
 }
 
 using AddressInfoPtr = std::unique_ptr<addrinfo, decltype(&freeaddrinfo)>;

@@ -51,6 +51,8 @@ SSLContextPtr& SSLManager::shareContext() {
         contextPtr.reset(context);
 
         SSL_CTX_set_verify(context, SSL_VERIFY_PEER, nullptr);
+        // Mobile clients talk to public CDNs; nothing below TLS 1.2 is worth accepting
+        SSL_CTX_set_min_proto_version(context, TLS1_2_VERSION);
 
         static constexpr uint8_t kAlpnProtos[] = "\x08http/1.1";
         SSL_CTX_set_alpn_protos(context, kAlpnProtos, sizeof(kAlpnProtos) - 1);
@@ -65,7 +67,7 @@ SSLContextPtr& SSLManager::shareContext() {
     return contextPtr;
 }
 
-SSLPtr SSLManager::create(Socket socket, const std::string& hostname) noexcept {
+SSLPtr SSLManager::create(Socket socket, const std::string& hostname) {
     SSLPtr res(nullptr, SSL_free);
     auto* ssl = SSL_new(shareContext().get());
     if (!ssl) {
@@ -74,8 +76,13 @@ SSLPtr SSLManager::create(Socket socket, const std::string& hostname) noexcept {
 
     SSL_set_fd(ssl, socket);
     if (!hostname.empty()) {
-        SSL_set_tlsext_host_name(ssl, hostname.c_str());
-        SSL_set1_host(ssl, hostname.c_str());
+        if (isIpLiteral(hostname)) {
+            // SNI must not carry an IP literal; the certificate matches by SAN IP
+            X509_VERIFY_PARAM_set1_ip_asc(SSL_get0_param(ssl), hostname.c_str());
+        } else {
+            SSL_set_tlsext_host_name(ssl, hostname.c_str());
+            SSL_set1_host(ssl, hostname.c_str());
+        }
     }
 
     res.reset(ssl);

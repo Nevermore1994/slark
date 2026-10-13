@@ -301,3 +301,34 @@ TEST(RedirectPolicyTest, EmptyAndQueryOnlyReferencesFollowBaseQueryRules) {
     ASSERT_TRUE(fragment.has_value());
     EXPECT_EQ(fragment->url, "http://example.com/path/item?old=1#new");
 }
+
+TEST(RedirectPolicyTest, CrossOriginStripsUserSetHost) {
+    RequestInfo req;
+    req.url = "http://example.com/old";
+    req.headers["Host"] = "example.com";
+    auto result =
+        RedirectPolicy::buildRedirectRequest(req, HttpStatusCode::Found, "http://other.com/new");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->headers.count("Host"), 0u);
+}
+
+TEST(RedirectPolicyTest, SameOriginKeepsUserSetHost) {
+    RequestInfo req;
+    req.url = "http://example.com/old";
+    req.headers["Host"] = "example.com";
+    auto result =
+        RedirectPolicy::buildRedirectRequest(req, HttpStatusCode::Found, "http://example.com/new");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->headers["Host"], "example.com");
+}
+
+TEST(RedirectPolicyTest, SeeOtherDropsStaleContentLength) {
+    RequestInfo req;
+    req.url = "http://example.com/old";
+    req.methodType = HttpMethodType::Post;
+    req.headers["Content-Length"] = "42";
+    auto result = RedirectPolicy::buildRedirectRequest(req, HttpStatusCode::SeeOther, "/new");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->methodType, HttpMethodType::Get);
+    EXPECT_EQ(result->headers.count("Content-Length"), 0u);
+}

@@ -72,6 +72,27 @@ class OwnedConnection {
 
 using OpenConnectionResult = std::expected<std::unique_ptr<OwnedConnection>, ErrorInfo>;
 
+// Floor for a single connect attempt so one budget slice still has a chance
+// against a slow-but-alive path.
+inline constexpr std::chrono::milliseconds kMinConnectAttemptBudget{1000};
+
+// Splits the remaining connect budget across the pending candidates with a floor,
+// so one unreachable address cannot starve the rest (RFC 8305-lite).
+inline std::chrono::milliseconds connectAttemptBudget(std::chrono::milliseconds remaining,
+                                                      size_t candidatesLeft) noexcept {
+    if (candidatesLeft == 0) {
+        candidatesLeft = 1;
+    }
+    auto budget = remaining / candidatesLeft;
+    if (budget < kMinConnectAttemptBudget) {
+        budget = kMinConnectAttemptBudget;
+    }
+    if (budget > remaining) {
+        budget = remaining;
+    }
+    return budget;
+}
+
 // Establish a new connection (DNS + TCP + optional TLS). The returned connection is
 // owned by the caller and closes automatically when it is destroyed.
 Task<OpenConnectionResult> openConnection(

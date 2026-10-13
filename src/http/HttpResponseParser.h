@@ -202,6 +202,7 @@ class HttpResponseParser {
     static constexpr std::string_view kHeaderEnd = "\r\n\r\n";
     static constexpr size_t kCompactionThreshold = 8192;  // fragmentation threshold
     static constexpr size_t kMaxTrailerSize = 16384;      // max cumulative trailer length
+    static constexpr size_t kMaxChunkSizeLineLength = 256;  // chunk-size line incl. extensions
     // Logging-only sentinel for contentLength_ when the body length is unknown.
     static constexpr int64_t kUnknownContentLength = -1;
 

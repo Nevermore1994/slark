@@ -558,6 +558,14 @@ void HttpResponseParser::processChunkSize() {
 
     auto pos = data.find(kCRLF);
     if (pos == std::string_view::npos) {
+        // An unterminated chunk-size line grows the buffer without bound
+        // unless capped; a valid size line never exceeds a few dozen bytes.
+        if (data.size() > kMaxChunkSizeLineLength) {
+            LogE("[HttpResponseParser::processChunkSize] chunk-size line too long: {}",
+                 data.size());
+            fail(slark::Error::HttpChunkedError);
+            return;
+        }
         return;
     }
 
