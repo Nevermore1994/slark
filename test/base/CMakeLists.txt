@@ -26,7 +26,7 @@ gtest_discover_tests(${PROJECT_NAME}
 )
 
 add_custom_target(run_base_test_parallel
-        COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -j$(nproc) -L base
+        COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -j$$(nproc) -L base
         DEPENDS ${PROJECT_NAME}
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
         COMMENT "Running base tests in parallel"

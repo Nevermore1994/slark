@@ -193,7 +193,8 @@ static const GLfloat kColorConversion709FullRange[] = {
         // The block must not reference self: it runs after dealloc, so only moved-out resources
         // are captured and released on the renderQueue.
         auto context = _context;
-        std::shared_ptr<GLProgram> program(std::move(_program));
+        // __block: block captures are const copies, and shared_ptr::reset needs a mutable one
+        __block std::shared_ptr<GLProgram> program(std::move(_program));
         CVOpenGLESTextureRef lumaTexture = _lumaTexture;
         CVOpenGLESTextureRef chromaTexture = _chromaTexture;
         CVOpenGLESTextureRef renderTexture = _renderTexture;
