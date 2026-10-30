@@ -69,7 +69,9 @@ Pod::Spec.new do |s|
             $(PODS_TARGET_SRCROOT)
             $(PODS_TARGET_SRCROOT)/src/base
             $(PODS_TARGET_SRCROOT)/src/core
-            $(PODS_TARGET_SRCROOT)/src/core/audio
+            $(PODS_TARGET_SRCROOT)/src/core/media
+            $(PODS_TARGET_SRCROOT)/src/core/stream
+            $(PODS_TARGET_SRCROOT)/src/core/render
             $(PODS_TARGET_SRCROOT)/src/core/codec
             $(PODS_TARGET_SRCROOT)/src/core/demuxer
             $(PODS_TARGET_SRCROOT)/src/http/include

@@ -66,8 +66,11 @@
         case SlarkGraphicsBackendMetal:
             return [[RenderMetalView alloc] initWithFrame:frame hdrEnabled:hdrEnabled];
         case SlarkGraphicsBackendOpenGLES:
-        default:
-            return [[RenderGLView alloc] initWithFrame:frame];
+        default: {
+            RenderGLView* view = [[RenderGLView alloc] initWithFrame:frame];
+            [view attachShareContextForPlayerId:self.player.playerId];
+            return view;
+        }
     }
 #endif
 }

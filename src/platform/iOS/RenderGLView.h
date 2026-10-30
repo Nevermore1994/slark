@@ -21,4 +21,5 @@ struct IVideoRender;
 - (void)start;
 - (void)stop;
 - (void*)renderImpl;
+- (void)attachShareContextForPlayerId:(NSString*)playerId;
 @end

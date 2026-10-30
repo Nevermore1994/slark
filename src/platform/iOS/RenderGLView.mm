@@ -16,6 +16,7 @@
 #import <memory>
 
 #include "Clock.h"
+#include "GLContextManager.h"
 #include "GLProgram.h"
 #include "GLShader.h"
 #include "VideoInfo.h"
@@ -335,6 +336,15 @@ static const GLfloat kColorConversion709FullRange[] = {
 }
 
 #pragma mark - Public Interface
+
+- (void)attachShareContextForPlayerId:(NSString*)playerId {
+    auto context = slark::GLContextManager::shareInstance().createShareContextWithId(
+        playerId.UTF8String);
+    if (!context) {
+        return;
+    }
+    [self setContext:context];
+}
 
 - (void)setContext:(slark::IEGLContextRefPtr)context {
     _context = context;

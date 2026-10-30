@@ -73,22 +73,15 @@ struct PlayerObserver final : public slark::IPlayerObserver {
 };
 
 static slark::FlowConfig toFlowConfig(SlarkFlowConfig* config) {
-    if (!config.source || !config.audioDecoder || !config.videoDecoder || !config.buffering ||
-        !config.catchUp) {
+    if (!config.source || !config.buffering) {
         [NSException raise:NSInvalidArgumentException format:@"FlowConfig groups must not be nil"];
     }
     slark::FlowConfig result;
     result.source.lowWatermarkSec = config.source.lowWatermarkSec;
     result.source.highWatermarkSec = config.source.highWatermarkSec;
-    result.audioDecoder.lowWatermarkFrames = config.audioDecoder.lowWatermarkFrames;
-    result.audioDecoder.highWatermarkFrames = config.audioDecoder.highWatermarkFrames;
-    result.videoDecoder.lowWatermarkFrames = config.videoDecoder.lowWatermarkFrames;
-    result.videoDecoder.highWatermarkFrames = config.videoDecoder.highWatermarkFrames;
     result.buffering.startBufferSec = config.buffering.startBufferSec;
-    result.buffering.rebufferScale = config.buffering.rebufferScale;
-    result.buffering.starvationThreshold = config.buffering.starvationThreshold;
-    result.catchUp.maxDropPerVsync = config.catchUp.maxDropPerVsync;
-    result.catchUp.seekFastForwardMs = config.catchUp.seekFastForwardMs;
+    result.buffering.rebufferEnterSec = config.buffering.rebufferEnterSec;
+    result.buffering.rebufferExitSec = config.buffering.rebufferExitSec;
     return result;
 }
 

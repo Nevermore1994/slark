@@ -87,11 +87,15 @@ macro(add_ios_framework)
     if(NOT DISABLE_CORE)
         target_include_directories(slark PUBLIC
             "${CORE_DIR}"
-            "${CORE_DIR}/audio"
+            "${CORE_DIR}/media"
+            "${CORE_DIR}/stream"
+            "${CORE_DIR}/render"
             "${CORE_DIR}/codec"
             "${CORE_DIR}/demuxer"
-            "${CORE_DIR}/pipeline"
             "${CORE_DIR}/perf"
+            "${CORE_DIR}/engine"
+            "${CORE_DIR}/engine/pipeline"
+            "${CORE_DIR}/engine/source"
         )
     endif()
 

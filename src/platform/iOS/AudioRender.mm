@@ -10,6 +10,7 @@
 
 #include "AudioDescription.h"
 #include "Base.h"
+#include "AudioRenderSink.h"
 #include "Log.hpp"
 #include "MediaDefs.h"
 #include "TimerManager.h"
@@ -24,6 +25,22 @@ static constexpr AudioUnitElement kMixerOutputBus = 0;
 namespace slark {
 
 using namespace slark;
+
+namespace {
+
+// Hands the engine's AudioRenderSink the platform AudioUnit render at static-init time.
+struct IOSAudioRenderFactoryRegistration {
+    IOSAudioRenderFactoryRegistration() {
+        engine::setPlatformAudioRenderFactory(
+            [](const std::shared_ptr<AudioInfo>& info) -> std::shared_ptr<IAudioRender> {
+                return createAudioRender(info);
+            });
+    }
+};
+
+static IOSAudioRenderFactoryRegistration iosAudioRenderFactoryRegistration;
+
+}  // namespace
 
 std::shared_ptr<IAudioRender> createAudioRender(const std::shared_ptr<AudioInfo>& audioInfo) {
     LogA(audioInfo != nullptr, "[audio render] audio render info is nullptr");
