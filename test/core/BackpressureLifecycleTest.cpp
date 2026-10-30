@@ -7,8 +7,7 @@
 #include <algorithm>
 #include <cstdint>
 
-#include "codec/DecoderComponent.h"
-#include "pipeline/WatermarkGate.h"
+#include "WatermarkGate.h"
 
 using namespace slark;
 

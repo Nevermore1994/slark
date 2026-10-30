@@ -13,89 +13,14 @@
 #include <thread>
 
 #include "Data.h"
-#include "DemuxerComponent.h"
 #include "Player.h"
 #include "VideoInfo.h"
-#include "pipeline/PlayPipeline.h"
-#include "pipeline/FlowConfigDefaults.h"
 
 using namespace slark;
-using namespace slark::pipeline;
 using ::testing::_;
 using ::testing::AtLeast;
 
 namespace slark {
-struct PlayPipelineTestAccess {
-    static bool beginRenderRequest(PlayPipeline& pipeline) {
-        return pipeline.beginRenderRequest();
-    }
-
-    static void endRenderRequest(PlayPipeline& pipeline) {
-        pipeline.endRenderRequest();
-    }
-
-    static bool waitUntilClosed(PlayPipeline& pipeline, std::chrono::milliseconds timeout) {
-        std::unique_lock lock(pipeline.renderRequestMutex_);
-        return pipeline.renderRequestCv_.wait_for(lock, timeout, [&pipeline] {
-            return !pipeline.acceptingRenderRequests_;
-        });
-    }
-
-    static int32_t expectedDecoders(const PlayPipeline& pipeline) {
-        return pipeline.readiness_.expectedDecoders;
-    }
-
-    static void setExpectedDecoders(PlayPipeline& pipeline, int32_t count) {
-        pipeline.readiness_.expectedDecoders = count;
-    }
-
-    static bool isPrebuffering(const PlayPipeline& pipeline) {
-        return pipeline.bufferingTracker_->isPrebuffering();
-    }
-
-    static void updateBuffering(PlayPipeline& pipeline, double bufferedSec) {
-        pipeline.bufferingTracker_->update(bufferedSec);
-    }
-
-    static void signalDecoderReady(PlayPipeline& pipeline) {
-        ++pipeline.readiness_.readyDecoders;
-        pipeline.tryFirePipelineReady();
-    }
-
-    static void setGopRange(PlayPipeline& pipeline, double keyframePts, double endPts) {
-        pipeline.seekContext_->updateGOPRange(keyframePts, endPts);
-    }
-
-    static bool canFastForward(const PlayPipeline& pipeline, double targetSec, double currentSec) {
-        return pipeline.canFastForward(targetSec, currentSec);
-    }
-
-    static void configureAudioOnly(PlayPipeline& pipeline) {
-        pipeline.mediaInfo_.hasAudio = true;
-    }
-
-    static void beginSeek(PlayPipeline& pipeline, CTime target) {
-        static_cast<void>(pipeline.seekContext_->beginSeek(target));
-    }
-
-    static void completeAudioSeek(PlayPipeline& pipeline) {
-        pipeline.handleSeekFrameConsumed(TrackType::Audio);
-    }
-};
-}
-
-struct MockPlayerObserver : public IPlayerObserver {
-    MOCK_METHOD(void,
-                notifyPlayerState,
-                (std::string_view playerId, PlayerState state),
-                (override));
-    MOCK_METHOD(void,
-                notifyPlayerEvent,
-                (std::string_view playerId, PlayerEvent event, std::string value),
-                (override));
-    MOCK_METHOD(void, notifyPlayedTime, (std::string_view playerId, double time), (override));
-};
-
 
 static constexpr const char* kTsPath = "../../test_sample/segment-0.ts";
 static constexpr const char* kWavPath = "../../test_sample/sample-3s.wav";
@@ -116,6 +41,15 @@ static DataPtr loadFileData(const char* path) {
     data->setSize(size);
     return data;
 }
+
+class MockPlayerObserver : public IPlayerObserver {
+ public:
+    MOCK_METHOD(void, notifyPlayedTime, (std::string_view playerId, double time), (override));
+    MOCK_METHOD(void, notifyPlayerState, (std::string_view playerId, PlayerState state),
+                (override));
+    MOCK_METHOD(void, notifyPlayerEvent,
+                (std::string_view playerId, PlayerEvent event, std::string value), (override));
+};
 
 static std::unique_ptr<PlayerParams> makeParams(const std::string& path = "/dev/null") {
     auto params = std::make_unique<PlayerParams>();
@@ -138,13 +72,22 @@ static PlayerState waitForPrepared(Player& player, int32_t maxMs = 500) {
     return PlayerState::Error;
 }
 
+static bool waitUntil(const std::function<bool()>& condition, int32_t maxMs = 5000) {
+    for (int32_t i = 0; i < maxMs / 10; ++i) {
+        if (condition()) {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return condition();
+}
+
 static void safeDestroy(Player& player) {
     if (player.state() != PlayerState::NotInited && player.state() != PlayerState::Stop) {
         player.stop();
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 }
-
 
 TEST(PlayerIntegrationTest, InitialStateIsNotInited) {
     Player player(makeParams());
@@ -245,188 +188,6 @@ TEST(PlayerIntegrationTest, PrepareTransitionsOutOfNotInited) {
     safeDestroy(player);
 }
 
-TEST(PlayerIntegrationTest, PreferredTsHeaderIsEmittedOnlyAfterTracksAreKnown) {
-    auto data = loadFileData(kTsPath);
-    if (!data) {
-        GTEST_SKIP() << "segment-0.ts not found, skipping";
-    }
-
-    auto [sender, receiver] = Channel<DataPacket>::create();
-    DemuxerConfig config;
-    config.filePath = kTsPath;
-    config.preferredType = DemuxerType::TS;
-    auto demuxer = std::make_shared<DemuxerComponent>(std::move(receiver), std::move(config));
-
-    PlayPipeline pipeline(FlowConfigDefaults::forSource(MediaSourceType::Local),
-                          MediaSourceType::Local);
-    pipeline.bindToCurrentThread();
-    std::atomic<int32_t> headerCount{0};
-    std::atomic<int32_t> pipelineReadyCount{0};
-    std::shared_ptr<AudioInfo> headerAudioInfo;
-    pipeline.setEventCallback(
-        [&headerCount, &pipelineReadyCount, &headerAudioInfo, demuxer](
-            PipelineEvent event, std::optional<PipelineError>) {
-            if (event == PipelineEvent::DemuxHeaderParsed) {
-                headerAudioInfo = demuxer->audioInfo();
-                headerCount.fetch_add(1, std::memory_order_relaxed);
-            } else if (event == PipelineEvent::PipelineReady) {
-                pipelineReadyCount.fetch_add(1, std::memory_order_relaxed);
-            }
-        });
-    pipeline.setDemuxerComponent(demuxer);
-    pipeline.startDemuxing();
-
-    DataPacket packet;
-    packet.data = std::move(data);
-    packet.offset = 0;
-    ASSERT_TRUE(sender->send(std::move(packet)).has_value());
-
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-    while (std::chrono::steady_clock::now() < deadline &&
-           headerCount.load(std::memory_order_relaxed) == 0) {
-        pipeline.drainPendingTasks();
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    for (int32_t i = 0; i < 50; ++i) {
-        pipeline.drainPendingTasks();
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-
-    EXPECT_EQ(headerCount.load(std::memory_order_relaxed), 1);
-    ASSERT_NE(headerAudioInfo, nullptr);
-    EXPECT_GT(headerAudioInfo->sampleRate, 0);
-    EXPECT_GT(headerAudioInfo->channels, 0);
-    EXPECT_TRUE(pipeline.mediaInfo().hasAudio);
-    EXPECT_TRUE(pipeline.mediaInfo().hasVideo);
-    EXPECT_EQ(PlayPipelineTestAccess::expectedDecoders(pipeline), 2);
-    PlayPipelineTestAccess::signalDecoderReady(pipeline);
-    EXPECT_EQ(pipelineReadyCount.load(std::memory_order_relaxed), 0);
-    PlayPipelineTestAccess::signalDecoderReady(pipeline);
-    EXPECT_EQ(pipelineReadyCount.load(std::memory_order_relaxed), 1);
-    PlayPipelineTestAccess::signalDecoderReady(pipeline);
-    EXPECT_EQ(pipelineReadyCount.load(std::memory_order_relaxed), 1);
-    EXPECT_TRUE(pipeline.teardown());
-}
-
-TEST(PlayerIntegrationTest, AudioOnlyHeaderSetsReadinessCountBeforeDecoderReady) {
-    auto data = loadFileData(kWavPath);
-    if (!data) {
-        GTEST_SKIP() << "sample-3s.wav not found, skipping";
-    }
-
-    auto [sender, receiver] = Channel<DataPacket>::create();
-    DemuxerConfig config;
-    config.filePath = kWavPath;
-    config.preferredType = DemuxerType::WAV;
-    auto demuxer = std::make_shared<DemuxerComponent>(std::move(receiver), std::move(config));
-
-    PlayPipeline pipeline(FlowConfigDefaults::forSource(MediaSourceType::Local),
-                          MediaSourceType::Local);
-    pipeline.bindToCurrentThread();
-    std::atomic<int32_t> headerCount{0};
-    std::atomic<int32_t> pipelineReadyCount{0};
-    pipeline.setEventCallback([&](PipelineEvent event, std::optional<PipelineError>) {
-        if (event == PipelineEvent::DemuxHeaderParsed) {
-            headerCount.fetch_add(1, std::memory_order_relaxed);
-        } else if (event == PipelineEvent::PipelineReady) {
-            pipelineReadyCount.fetch_add(1, std::memory_order_relaxed);
-        }
-    });
-    pipeline.setDemuxerComponent(demuxer);
-    pipeline.startDemuxing();
-
-    DataPacket packet;
-    packet.data = std::move(data);
-    packet.offset = 0;
-    ASSERT_TRUE(sender->send(std::move(packet)).has_value());
-
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-    while (std::chrono::steady_clock::now() < deadline &&
-           headerCount.load(std::memory_order_relaxed) == 0) {
-        pipeline.drainPendingTasks();
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    for (int32_t i = 0; i < 50; ++i) {
-        pipeline.drainPendingTasks();
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-
-    EXPECT_EQ(headerCount.load(std::memory_order_relaxed), 1);
-    EXPECT_TRUE(pipeline.mediaInfo().hasAudio);
-    EXPECT_FALSE(pipeline.mediaInfo().hasVideo);
-    EXPECT_EQ(PlayPipelineTestAccess::expectedDecoders(pipeline), 1);
-    PlayPipelineTestAccess::signalDecoderReady(pipeline);
-    EXPECT_EQ(pipelineReadyCount.load(std::memory_order_relaxed), 1);
-    PlayPipelineTestAccess::signalDecoderReady(pipeline);
-    EXPECT_EQ(pipelineReadyCount.load(std::memory_order_relaxed), 1);
-    EXPECT_TRUE(pipeline.teardown());
-}
-
-TEST(PlayerIntegrationTest, SeekFlushRestartsBufferingAfterDecoderReadiness) {
-    PlayPipeline pipeline(FlowConfigDefaults::forSource(MediaSourceType::Network),
-                          MediaSourceType::Network);
-    pipeline.bindToCurrentThread();
-    std::atomic<int32_t> pipelineReadyCount{0};
-    std::atomic<int32_t> bufferingStartCount{0};
-    pipeline.setEventCallback([&](PipelineEvent event, std::optional<PipelineError>) {
-        if (event == PipelineEvent::PipelineReady) {
-            pipelineReadyCount.fetch_add(1, std::memory_order_relaxed);
-        } else if (event == PipelineEvent::BufferingStart) {
-            bufferingStartCount.fetch_add(1, std::memory_order_relaxed);
-        }
-    });
-    PlayPipelineTestAccess::setExpectedDecoders(pipeline, 1);
-    PlayPipelineTestAccess::signalDecoderReady(pipeline);
-    ASSERT_TRUE(PlayPipelineTestAccess::isPrebuffering(pipeline));
-    PlayPipelineTestAccess::updateBuffering(pipeline, 5.0);
-    EXPECT_EQ(pipelineReadyCount.load(std::memory_order_relaxed), 1);
-
-    pipeline.flush();
-    EXPECT_TRUE(PlayPipelineTestAccess::isPrebuffering(pipeline));
-    PlayPipelineTestAccess::updateBuffering(pipeline, 5.0);
-    PlayPipelineTestAccess::updateBuffering(pipeline, 1.0);
-    EXPECT_EQ(pipelineReadyCount.load(std::memory_order_relaxed), 1);
-    EXPECT_EQ(bufferingStartCount.load(std::memory_order_relaxed), 1);
-    EXPECT_TRUE(pipeline.teardown());
-}
-
-TEST(PlayerIntegrationTest, StaleCompletionIsIgnoredAfterNewNearSeek) {
-    PlayPipeline pipeline(FlowConfigDefaults::forSource(MediaSourceType::Local),
-                          MediaSourceType::Local);
-    pipeline.bindToCurrentThread();
-    PlayPipelineTestAccess::configureAudioOnly(pipeline);
-    PlayPipelineTestAccess::beginSeek(pipeline, CTime(1.0));
-
-    std::atomic<int32_t> completedCount{0};
-    pipeline.setEventCallback([&completedCount](PipelineEvent event, std::optional<PipelineError>) {
-        if (event == PipelineEvent::SeekCompleted) {
-            completedCount.fetch_add(1, std::memory_order_relaxed);
-        }
-    });
-
-    std::thread oldCompletion([&pipeline] {
-        PlayPipelineTestAccess::completeAudioSeek(pipeline);
-    });
-    oldCompletion.join();
-
-    pipeline.seek(CTime(0.02), false);
-    EXPECT_EQ(completedCount.load(std::memory_order_relaxed), 1);
-    pipeline.drainPendingTasks();
-    EXPECT_EQ(completedCount.load(std::memory_order_relaxed), 1);
-    EXPECT_FALSE(pipeline.isSeekPending());
-    EXPECT_TRUE(pipeline.teardown());
-}
-
-TEST(PlayerIntegrationTest, FastForwardInGopRejectsBackwardSeek) {
-    PlayPipeline pipeline(FlowConfigDefaults::forSource(MediaSourceType::Local),
-                          MediaSourceType::Local);
-    PlayPipelineTestAccess::setGopRange(pipeline, 4.0, 8.0);
-
-    EXPECT_FALSE(PlayPipelineTestAccess::canFastForward(pipeline, 4.5, 5.0));
-    EXPECT_TRUE(PlayPipelineTestAccess::canFastForward(pipeline, 6.0, 5.0));
-    EXPECT_FALSE(PlayPipelineTestAccess::canFastForward(pipeline, 9.0, 5.0));
-}
-
 TEST(PlayerIntegrationTest, PrepareIsIdempotent) {
     Player player(makeParams());
     player.prepare();
@@ -516,27 +277,82 @@ TEST(PlayerIntegrationTest, StopAfterPrepareTransitionsToStop) {
         GTEST_SKIP() << "PlayerImpl entered Error state (no media file), skipping stop test";
     }
     player.stop();
-    const auto s = player.state();
-    EXPECT_TRUE(s == PlayerState::Stop || s == PlayerState::Error);
+    EXPECT_TRUE(waitUntil([&] {
+        return player.state() == PlayerState::NotInited;
+    }));
 }
 
-TEST(PlayerIntegrationTest, StopAndWaitAfterPrepareCompletesBeforeReturn) {
+TEST(PlayerIntegrationTest, StopAfterPrepareEventuallyIdle) {
     Player player(makeParams());
     player.prepare();
     waitForPrepared(player);
-    EXPECT_NO_FATAL_FAILURE(player.stopAndWait());
-    EXPECT_TRUE(player.state() == PlayerState::Stop || player.state() == PlayerState::Error);
+    player.stop();
+    ASSERT_TRUE(waitUntil([&] {
+        return player.state() == PlayerState::NotInited;
+    }));
 }
 
-TEST(PlayerIntegrationTest, StopAndWaitAfterErrorIsIdempotent) {
+TEST(PlayerIntegrationTest, StopAfterFailedIsIdempotent) {
     Player player(makeParams(""));
     player.prepare();
-    ASSERT_EQ(player.state(), PlayerState::Error);
+    ASSERT_TRUE(waitUntil([&] {
+        return player.state() == PlayerState::Error;
+    }));
 
-    player.stopAndWait();
-    player.stopAndWait();
+    player.stop();
+    player.stop();
 
-    EXPECT_EQ(player.state(), PlayerState::Error);
+    ASSERT_TRUE(waitUntil([&] {
+        return player.state() == PlayerState::NotInited;
+    }));
+}
+
+// 语义已变更，见设计 §9.3：析构只投递 Release，在 seek 进行中释放不得崩溃。
+TEST(PlayerIntegrationTest, ReleaseWhileSeekingDoesNotCrash) {
+    auto player = std::make_unique<Player>(makeParams());
+    player->prepare();
+    waitForPrepared(*player);
+    player->play();
+    player->seek(1.0, true);
+    player->stop();
+    player.reset();
+    SUCCEED();
+}
+
+// 设计 §9.3：用户在 observer 回调里释放播放器不得死锁。
+TEST(PlayerIntegrationTest, ReleaseFromObserverCallbackDoesNotDeadlock) {
+    class ReleaseInCallback : public IPlayerObserver,
+                              public std::enable_shared_from_this<IPlayerObserver> {
+     public:
+        explicit ReleaseInCallback(std::unique_ptr<Player>& target) : target_(target) {}
+
+        void notifyPlayedTime(std::string_view, double) override {}
+
+        void notifyPlayerState(std::string_view, PlayerState) override {}
+
+        void notifyPlayerEvent(std::string_view, PlayerEvent event, std::string) override {
+            if (event == PlayerEvent::SeekDone && !released_ && target_) {
+                released_ = true;
+                target_.reset();
+            }
+        }
+
+     private:
+        std::unique_ptr<Player>& target_;
+        bool released_ = false;
+    };
+
+    std::unique_ptr<Player> player;
+    auto observer = std::make_shared<ReleaseInCallback>(player);
+    player = std::make_unique<Player>(makeParams());
+    player->addObserver(observer);
+    player->prepare();
+    waitForPrepared(*player);
+    player->play();
+    player->seek(1.0, true);
+    player->stop();
+    player.reset();
+    SUCCEED();
 }
 
 TEST(PlayerIntegrationTest, DestructorDuringInitializingDoesNotCrash) {
@@ -556,40 +372,12 @@ TEST(PlayerIntegrationTest, MultiplePrepareCyclesDoNotCrash) {
     }
 }
 
-
 TEST(PlayerIntegrationTest, PipelineBuildAndTeardown) {
     Player player(makeParams());
     player.prepare();
     auto state = waitForPrepared(player);
     EXPECT_NE(state, PlayerState::NotInited);
     safeDestroy(player);
-}
-
-TEST(PlayerIntegrationTest, TeardownWaitsForInFlightRenderRequest) {
-    PlayPipeline pipeline(FlowConfigDefaults::forSource(MediaSourceType::Local),
-                          MediaSourceType::Local);
-    pipeline.bindToCurrentThread();
-    pipeline.startDemuxing();
-    ASSERT_TRUE(PlayPipelineTestAccess::beginRenderRequest(pipeline));
-
-    std::promise<void> teardownStarted;
-    std::promise<bool> teardownCompleted;
-    auto started = teardownStarted.get_future();
-    auto completed = teardownCompleted.get_future();
-    std::thread teardownThread([&] {
-        teardownStarted.set_value();
-        teardownCompleted.set_value(pipeline.teardown());
-    });
-
-    started.wait();
-    EXPECT_TRUE(PlayPipelineTestAccess::waitUntilClosed(pipeline, std::chrono::seconds(2)));
-    EXPECT_EQ(completed.wait_for(std::chrono::milliseconds(0)), std::future_status::timeout);
-    EXPECT_FALSE(PlayPipelineTestAccess::beginRenderRequest(pipeline));
-
-    PlayPipelineTestAccess::endRenderRequest(pipeline);
-    teardownThread.join();
-    EXPECT_TRUE(completed.get());
-    EXPECT_EQ(pipeline.requestVideoFrame(), nullptr);
 }
 
 TEST(PlayerIntegrationTest, RepeatedPlayStopCycles) {
@@ -698,3 +486,5 @@ TEST(PlayerIntegrationTest, ToggleLoopDuringPlayback) {
     player.setLoop(true);
     safeDestroy(player);
 }
+
+}  // namespace slark

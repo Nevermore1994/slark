@@ -24,27 +24,19 @@ list(REMOVE_ITEM TEST_FILES
 
 # 直接包含需要的源文件，避免编译整个 slark_core
 set(CORE_TEST_SOURCES
-    ${CORE_SRC_DIR}/PlayerStateMachine.cpp
-    ${CORE_SRC_DIR}/MediaDefs.cpp
-    ${CORE_SRC_DIR}/MediaUtil.cpp
-    ${CORE_SRC_DIR}/MediaPlaylist.cpp
-    ${CORE_SRC_DIR}/NotifyCenter.cpp
-    ${CORE_SRC_DIR}/Event.cpp
-    ${CORE_SRC_DIR}/pipeline/SourceFlowController.cpp
-    ${CORE_SRC_DIR}/pipeline/BufferingTracker.cpp
+    ${CORE_SRC_DIR}/media/MediaDefs.cpp
+    ${CORE_SRC_DIR}/media/MediaUtil.cpp
+    ${CORE_SRC_DIR}/stream/MediaPlaylist.cpp
     ${CORE_SRC_DIR}/perf/PlaySession.cpp
     ${DEMUXER_SRC_DIR}/M3U8Parser.cpp
     ${DEMUXER_SRC_DIR}/DemuxerManager.cpp
-    ${DEMUXER_SRC_DIR}/DemuxerComponent.cpp
     ${DEMUXER_SRC_DIR}/Mp4Box.cpp
     ${DEMUXER_SRC_DIR}/Mp4Demuxer.cpp
     ${DEMUXER_SRC_DIR}/HLSDemuxer.cpp
     ${DEMUXER_SRC_DIR}/WavDemuxer.cpp
-    ${CORE_SRC_DIR}/HttpStream.cpp
-    ${CORE_SRC_DIR}/HLSStream.cpp
-    ${CORE_SRC_DIR}/StreamFactory.cpp
-    ${CORE_SRC_DIR}/MediaSourceManager.cpp
-    ${CODEC_SRC_DIR}/DecoderComponent.cpp
+    ${CORE_SRC_DIR}/stream/HttpStream.cpp
+    ${CORE_SRC_DIR}/stream/HLSStream.cpp
+    ${CORE_SRC_DIR}/stream/StreamFactory.cpp
     ${CODEC_SRC_DIR}/DecoderManager.cpp
     ${CODEC_SRC_DIR}/RawDecoder.cpp
 )
@@ -57,13 +49,16 @@ target_include_directories(${PROJECT_NAME}
     PRIVATE
     ${CORE_SRC_DIR}
     ${CORE_SRC_DIR}/demuxer
-    ${CORE_SRC_DIR}/pipeline
-    ${CORE_SRC_DIR}/audio
+    ${CORE_SRC_DIR}/../../src/base
     ${CORE_SRC_DIR}/codec
+    ${CORE_SRC_DIR}/media
+    ${CORE_SRC_DIR}/stream
+    ${CORE_SRC_DIR}/render
     ${CORE_SRC_DIR}/perf
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src/http
     ${CMAKE_CURRENT_SOURCE_DIR}/../../internal
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../common
 )
 
 target_link_libraries(${PROJECT_NAME}
@@ -105,9 +100,11 @@ if(NOT DISABLE_CORE)
         PRIVATE
         ${CORE_SRC_DIR}
         ${CORE_SRC_DIR}/demuxer
-        ${CORE_SRC_DIR}/pipeline
-        ${CORE_SRC_DIR}/audio
+        ${CORE_SRC_DIR}/../../src/base
         ${CORE_SRC_DIR}/codec
+        ${CORE_SRC_DIR}/media
+        ${CORE_SRC_DIR}/stream
+        ${CORE_SRC_DIR}/render
         ${CORE_SRC_DIR}/perf
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/http
         ${CMAKE_CURRENT_SOURCE_DIR}/../../internal
@@ -121,6 +118,11 @@ if(NOT DISABLE_CORE)
         gtest_main
         gmock
         pthread)
+
+    target_include_directories(${PROJECT_NAME} PRIVATE
+        ${CORE_SRC_DIR}/engine
+        ${CORE_SRC_DIR}/engine/source
+        ${CORE_SRC_DIR}/engine/pipeline)
 
     if(NOT DISABLE_HTTP)
         target_link_libraries(${PROJECT_NAME} slark_http)
@@ -146,9 +148,11 @@ if(NOT DISABLE_CORE)
         PRIVATE
         ${CORE_SRC_DIR}
         ${CORE_SRC_DIR}/demuxer
-        ${CORE_SRC_DIR}/pipeline
-        ${CORE_SRC_DIR}/audio
+        ${CORE_SRC_DIR}/../../src/base
         ${CORE_SRC_DIR}/codec
+        ${CORE_SRC_DIR}/media
+        ${CORE_SRC_DIR}/stream
+        ${CORE_SRC_DIR}/render
         ${CORE_SRC_DIR}/perf
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/http
         ${CMAKE_CURRENT_SOURCE_DIR}/../../internal
@@ -162,6 +166,11 @@ if(NOT DISABLE_CORE)
         gtest_main
         gmock
         pthread)
+
+    target_include_directories(${PROJECT_NAME} PRIVATE
+        ${CORE_SRC_DIR}/engine
+        ${CORE_SRC_DIR}/engine/source
+        ${CORE_SRC_DIR}/engine/pipeline)
 
     if(NOT DISABLE_HTTP)
         target_link_libraries(${PROJECT_NAME} slark_http)

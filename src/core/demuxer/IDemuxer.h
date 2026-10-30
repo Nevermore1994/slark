@@ -19,7 +19,6 @@ namespace slark {
 
 enum class DemuxerType {
     Unknown = 0,
-    FLV,
     MP4,
     HLS,
     TS,
@@ -28,7 +27,6 @@ enum class DemuxerType {
 
 struct DemuxerConfig {
     std::string filePath;
-    DemuxerType preferredType = DemuxerType::Unknown;
 };
 
 struct DemuxerInfo {

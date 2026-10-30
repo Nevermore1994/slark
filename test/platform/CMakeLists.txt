@@ -15,10 +15,14 @@ add_executable(${PROJECT_NAME} ${TEST_FILES})
 target_include_directories(${PROJECT_NAME}
     PRIVATE
     ${CORE_SRC_DIR}
+    ${CORE_SRC_DIR}/engine
+    ${CORE_SRC_DIR}/engine/pipeline
+    ${CORE_SRC_DIR}/engine/source
     ${CORE_SRC_DIR}/demuxer
-    ${CORE_SRC_DIR}/pipeline
-    ${CORE_SRC_DIR}/audio
     ${CORE_SRC_DIR}/codec
+    ${CORE_SRC_DIR}/media
+    ${CORE_SRC_DIR}/stream
+    ${CORE_SRC_DIR}/render
     ${CORE_SRC_DIR}/perf
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src/http
     ${CMAKE_CURRENT_SOURCE_DIR}/../../internal

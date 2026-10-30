@@ -34,23 +34,6 @@ static std::unique_ptr<Buffer> loadFileToBuffer(std::string_view path, uint64_t&
     return buffer;
 }
 
-TEST(DemuxerRegressionTest, DISABLED_FlvOpenContractReturnsSeekRange) {
-    constexpr const char* kSamplePath = "../../test_sample/sample-3s.flv";
-    uint64_t fileSize = 0;
-    auto probeBuffer = loadFileToBuffer(kSamplePath, fileSize);
-    ASSERT_NE(probeBuffer, nullptr);
-
-    auto demuxer = DemuxerManager::shareInstance().create(DemuxerType::FLV);
-    ASSERT_NE(demuxer, nullptr);
-
-    DemuxerConfig config;
-    config.filePath = kSamplePath;
-    demuxer->init(config);
-
-    ASSERT_TRUE(demuxer->open(probeBuffer));
-    EXPECT_TRUE(demuxer->isOpened());
-}
-
 TEST(DemuxerRegressionTest, WavOpenContractRequeueProbeData) {
     const char* sampleDir = std::getenv("TEST_SAMPLE_DIR");
     std::string samplePath;

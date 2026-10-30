@@ -19,9 +19,8 @@ class Player {
 
     void play() noexcept;
 
+    // Asynchronous and idempotent; completion is Snapshot.status == Idle via the observer.
     void stop() noexcept;
-
-    void stopAndWait() noexcept;
 
     void pause() noexcept;
 

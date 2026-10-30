@@ -1,0 +1,113 @@
+//
+// Copyright (c) 2026 Nevermore-. All rights reserved.
+//
+#pragma once
+
+#include <condition_variable>
+#include <deque>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <thread>
+
+#include "AVFrame.hpp"
+#include "Channel.hpp"
+#include "Error.h"
+#include "IDecoder.h"
+#include "Pipeline.h"
+#include "SeekEpoch.h"
+#include "SeekMode.h"
+#include "Time.hpp"
+
+namespace slark::engine {
+
+class VideoSink;
+class MediaClock;
+
+class VideoPipeline final : public Pipeline {
+ public:
+    using DecoderFactory = std::function<std::shared_ptr<slark::IDecoder>()>;
+    // True when the cache runs far ahead of the clock and pending input should skip to a keyframe.
+    using CatchUpProbe = std::function<bool()>;
+
+    struct Config {
+        int32_t maxQueueFrames = 8;
+        int32_t starvationThreshold = 5;
+        int32_t maxDropPerVsync = 8;
+    };
+
+    // The source owns the channel; Engine tears pipelines down before the source.
+    VideoPipeline(Receiver<AVFrameRefPtr>& input,
+              DecoderFactory decoderFactory,
+              std::shared_ptr<VideoSink> sink,
+              Config config,
+              SeekEpoch epoch,
+              Time::TimePoint target,
+              std::function<void()> wake);
+    ~VideoPipeline() override;
+
+    void flush(SeekEpoch epoch, Time::TimePoint target, SeekMode mode) override;
+    void retarget(SeekEpoch epoch, Time::TimePoint target, SeekMode mode) override;
+    void setClock(MediaClock& clock) override;
+    void setCatchUpProbe(CatchUpProbe probe);
+
+    [[nodiscard]] std::uint64_t catchUpCount() const;
+
+    [[nodiscard]] std::string debugState() const override;
+
+    [[nodiscard]] bool ready(SeekEpoch epoch, Time::TimePoint target) const override;
+    [[nodiscard]] bool ended() const override;
+    [[nodiscard]] std::optional<Error> failure() const override;
+
+    // Called from the vsync/render thread.
+    void onVsync(Time::TimePoint clockNow) override;
+
+    void setPlaying(bool playing) override;
+    [[nodiscard]] bool presentedFrame() const override;
+
+ private:
+    void run();
+    void handleInput(AVFrameRefPtr& frame);
+    bool decodeOne(AVFrameRefPtr& frame);
+    void handleDecoded(slark::DecoderData data);
+    void drainDecoderOutput();
+    void catchUpToKeyframeLocked();
+    void fail(slark::Error error);
+    void wake();
+    void advanceLocked(Time::TimePoint clockNow);
+    [[nodiscard]] bool readyLocked() const noexcept;
+    [[nodiscard]] bool endedLocked() const noexcept;
+    [[nodiscard]] int32_t queueCapacityLocked() const;
+
+    Receiver<AVFrameRefPtr>& input_;
+    std::function<void()> wake_;
+    DecoderFactory decoderFactory_;
+    std::shared_ptr<slark::IDecoder> decoder_;
+    std::shared_ptr<VideoSink> sink_;
+    CatchUpProbe catchUpProbe_;
+    std::uint64_t catchUpCount_ = 0;
+    MediaClock* clock_ = nullptr;
+    const Config config_;
+
+    std::thread thread_;
+    mutable std::mutex mutex_;
+    std::condition_variable cv_;
+    bool closed_ = false;
+
+    // Guarded by mutex_; mutated on the pipeline thread between commands, read on vsync.
+    SeekEpoch epoch_ = kInvalidSeekEpoch;
+    Time::TimePoint target_{};
+    SeekMode seekMode_ = SeekMode::Exact;
+    bool eosReceived_ = false;
+    bool decoderEnded_ = false;
+    bool prerolled_ = false;
+    bool presentedFrame_ = false;
+    bool starved_ = false;
+    int32_t starvedVsyncs_ = 0;
+    bool playing_ = false;
+    std::deque<AVFrameRefPtr> queue_;
+    std::optional<Error> failure_;
+};
+
+}  // namespace slark::engine

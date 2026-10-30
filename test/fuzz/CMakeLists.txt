@@ -14,14 +14,9 @@ set(HTTP_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/http)
 # =============================================================================
 # 复用 core test 的源文件依赖
 set(CORE_FUZZ_SOURCES
-    ${CORE_SRC_DIR}/PlayerStateMachine.cpp
-    ${CORE_SRC_DIR}/MediaDefs.cpp
-    ${CORE_SRC_DIR}/MediaUtil.cpp
-    ${CORE_SRC_DIR}/MediaPlaylist.cpp
-    ${CORE_SRC_DIR}/NotifyCenter.cpp
-    ${CORE_SRC_DIR}/Event.cpp
-    ${CORE_SRC_DIR}/pipeline/SourceFlowController.cpp
-    ${CORE_SRC_DIR}/pipeline/BufferingTracker.cpp
+    ${CORE_SRC_DIR}/media/MediaDefs.cpp
+    ${CORE_SRC_DIR}/media/MediaUtil.cpp
+    ${CORE_SRC_DIR}/stream/MediaPlaylist.cpp
     # ${CORE_SRC_DIR}/perf/PlaySession.cpp
     ${DEMUXER_SRC_DIR}/M3U8Parser.cpp
     ${DEMUXER_SRC_DIR}/DemuxerManager.cpp
@@ -43,9 +38,11 @@ add_executable(CoreFuzz_test
 target_include_directories(CoreFuzz_test PRIVATE
     ${CORE_SRC_DIR}
     ${CORE_SRC_DIR}/demuxer
-    ${CORE_SRC_DIR}/pipeline
-    ${CORE_SRC_DIR}/audio
+    ${CORE_SRC_DIR}/../../src/base
     ${CORE_SRC_DIR}/codec
+    ${CORE_SRC_DIR}/media
+    ${CORE_SRC_DIR}/stream
+    ${CORE_SRC_DIR}/render
     ${CORE_SRC_DIR}/perf
     ${HTTP_SRC_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../internal

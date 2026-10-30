@@ -2,17 +2,18 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 
-#include <gtest/gtest.h>
+#include "HttpStream.h"
 
 #include <arpa/inet.h>
-#include <cerrno>
-#include <csignal>
+#include <gtest/gtest.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 #include <atomic>
+#include <cerrno>
 #include <chrono>
+#include <csignal>
 #include <limits>
 #include <memory>
 #include <string>
@@ -20,297 +21,15 @@
 #include <thread>
 #include <vector>
 
-#include "HttpStream.h"
+#include "MockHttpServer.h"
 #include "TaskThread.h"
 
 using namespace slark;
+using slark::test::kMockBodySize;
+using slark::test::MockHttpServer;
+using slark::test::StallingHttpServer;
 
 namespace {
-
-constexpr uint32_t kMockBodySize = 65536;
-
-class MockHttpServer {
- public:
-    ~MockHttpServer() {
-        stop();
-    }
-
-    bool start(bool honorRange = true, int32_t chunkDelayMs = 0, bool emitAcceptRanges = true) {
-        honorRange_ = honorRange;
-        chunkDelayMs_ = chunkDelayMs;
-        emitAcceptRanges_ = emitAcceptRanges;
-        listenFd_ = ::socket(AF_INET, SOCK_STREAM, 0);
-        if (listenFd_ < 0) {
-            return false;
-        }
-        int noSigpipe = 1;
-        ::setsockopt(listenFd_, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, sizeof(noSigpipe));
-        int reuse = 1;
-        ::setsockopt(listenFd_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-        sockaddr_in addr{};
-        addr.sin_family = AF_INET;
-        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        addr.sin_port = 0;
-        if (::bind(listenFd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
-            return false;
-        }
-        socklen_t len = sizeof(addr);
-        if (::getsockname(listenFd_, reinterpret_cast<sockaddr*>(&addr), &len) < 0) {
-            return false;
-        }
-        port_ = ntohs(addr.sin_port);
-        if (::listen(listenFd_, 8) < 0) {
-            return false;
-        }
-        thread_ = std::thread([this]() { run(); });
-        return true;
-    }
-
-    [[nodiscard]] std::string url() const {
-        return "http://127.0.0.1:" + std::to_string(port_) + "/file.bin";
-    }
-
-    void stop() {
-        stopped_ = true;
-        if (listenFd_ >= 0) {
-            ::shutdown(listenFd_, SHUT_RDWR);
-            ::close(listenFd_);
-            listenFd_ = -1;
-        }
-        for (auto& t : connThreads_) {
-            if (t.joinable()) {
-                t.join();
-            }
-        }
-        connThreads_.clear();
-        if (thread_.joinable()) {
-            thread_.join();
-        }
-    }
-
- private:
-    static void sendAll(int fd, const char* data, size_t size) {
-        size_t sent = 0;
-        while (sent < size) {
-            auto n = ::send(fd, data + sent, size - sent, 0);
-            if (n <= 0) {
-                break;
-            }
-            sent += static_cast<size_t>(n);
-        }
-    }
-
-    void sendBodyChunked(int fd, const char* data, size_t size) {
-        constexpr size_t kChunk = 4096;
-        size_t sent = 0;
-        while (sent < size) {
-            auto n = std::min(kChunk, size - sent);
-            sendAll(fd, data + sent, n);
-            sent += n;
-            if (chunkDelayMs_ > 0 && sent < size) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(chunkDelayMs_));
-            }
-        }
-    }
-
-    void run() {
-        while (!stopped_) {
-            int fd = ::accept(listenFd_, nullptr, nullptr);
-            if (fd < 0) {
-                if (stopped_) {
-                    break;
-                }
-                continue;
-            }
-            connThreads_.emplace_back([this, fd]() { handleConnection(fd); });
-        }
-    }
-
-    void handleConnection(int fd) {
-        int noSigpipe = 1;
-        ::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, sizeof(noSigpipe));
-        std::string request;
-        char buf[1024];
-        while (true) {
-            auto n = ::recv(fd, buf, sizeof(buf), 0);
-            if (n <= 0) {
-                break;
-            }
-            request.append(buf, static_cast<size_t>(n));
-            if (request.find("\r\n\r\n") != std::string::npos) {
-                break;
-            }
-        }
-
-        uint64_t rangeStart = 0;
-        bool hasRange = false;
-        auto rangePos = request.find("Range: bytes=");
-        if (rangePos != std::string::npos) {
-            auto startPos = rangePos + std::string("Range: bytes=").size();
-            auto dashPos = request.find('-', startPos);
-            if (dashPos != std::string::npos) {
-                auto numStr = request.substr(startPos, dashPos - startPos);
-                rangeStart = static_cast<uint64_t>(std::stoull(numStr));
-                hasRange = true;
-            }
-        }
-
-        std::string body;
-        if (hasRange && honorRange_ && rangeStart < kMockBodySize) {
-            uint64_t end = kMockBodySize - 1;
-            uint64_t bodyLen = kMockBodySize - rangeStart;
-            std::string header = "HTTP/1.1 206 Partial Content\r\n"
-                                 "Content-Type: application/octet-stream\r\n";
-            if (emitAcceptRanges_) {
-                header += "Accept-Ranges: bytes\r\n";
-            }
-            header += "Content-Range: bytes " + std::to_string(rangeStart) + "-" +
-                      std::to_string(end) + "/" + std::to_string(kMockBodySize) + "\r\n"
-                      "Content-Length: " +
-                      std::to_string(bodyLen) + "\r\n"
-                      "Connection: close\r\n\r\n";
-            body.reserve(static_cast<size_t>(bodyLen));
-            for (uint64_t i = 0; i < bodyLen; ++i) {
-                body.push_back(static_cast<char>(i % 251));
-            }
-            sendAll(fd, header.data(), header.size());
-            sendBodyChunked(fd, body.data(), body.size());
-        } else {
-            body.reserve(kMockBodySize);
-            for (uint32_t i = 0; i < kMockBodySize; ++i) {
-                body.push_back(static_cast<char>(i % 251));
-            }
-            std::string response = "HTTP/1.1 200 OK\r\n"
-                                   "Content-Type: application/octet-stream\r\n"
-                                   "Content-Length: " +
-                                   std::to_string(body.size()) + "\r\n"
-                                   "Connection: close\r\n\r\n" +
-                                   body;
-            sendBodyChunked(fd, response.data(), response.size());
-        }
-        ::close(fd);
-    }
-
-    int listenFd_ = -1;
-    int port_ = 0;
-    bool honorRange_ = true;
-    bool emitAcceptRanges_ = true;
-    int32_t chunkDelayMs_ = 0;
-    std::atomic<bool> stopped_{false};
-    std::thread thread_;
-    std::vector<std::thread> connThreads_;
-};
-
-// Announces announcedBodySize bytes, sends only sentBodySize of them, then holds the connection
-// open until the client disconnects, so a client that keeps downloading is observable.
-class StallingHttpServer {
-public:
-    ~StallingHttpServer() {
-        stop();
-    }
-
-    bool start(std::string statusLine, uint64_t announcedBodySize, size_t sentBodySize) {
-        statusLine_ = std::move(statusLine);
-        announcedBodySize_ = announcedBodySize;
-        sentBodySize_ = sentBodySize;
-        listenFd_ = ::socket(AF_INET, SOCK_STREAM, 0);
-        if (listenFd_ < 0) {
-            return false;
-        }
-        int reuse = 1;
-        ::setsockopt(listenFd_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-        sockaddr_in addr{};
-        addr.sin_family = AF_INET;
-        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        addr.sin_port = 0;
-        if (::bind(listenFd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
-            return false;
-        }
-        socklen_t len = sizeof(addr);
-        if (::getsockname(listenFd_, reinterpret_cast<sockaddr*>(&addr), &len) < 0 ||
-            ::listen(listenFd_, 4) < 0) {
-            return false;
-        }
-        port_ = ntohs(addr.sin_port);
-        thread_ = std::thread([this]() { serve(); });
-        return true;
-    }
-
-    void stop() {
-        stopped_ = true;
-        if (listenFd_ >= 0) {
-            ::shutdown(listenFd_, SHUT_RDWR);
-            ::close(listenFd_);
-            listenFd_ = -1;
-        }
-        if (thread_.joinable()) {
-            thread_.join();
-        }
-    }
-
-    [[nodiscard]] std::string url() const {
-        return "http://127.0.0.1:" + std::to_string(port_) + "/file.bin";
-    }
-
-    [[nodiscard]] bool clientDisconnected() const {
-        return clientDisconnected_.load();
-    }
-
-private:
-    void serve() {
-        int fd = ::accept(listenFd_, nullptr, nullptr);
-        if (fd < 0) {
-            return;
-        }
-        int noSigpipe = 1;
-        ::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, sizeof(noSigpipe));
-        std::string request;
-        char buf[1024];
-        while (request.find("\r\n\r\n") == std::string::npos) {
-            auto n = ::recv(fd, buf, sizeof(buf), 0);
-            if (n <= 0) {
-                ::close(fd);
-                return;
-            }
-            request.append(buf, static_cast<size_t>(n));
-        }
-
-        std::string response = "HTTP/1.1 " + statusLine_ +
-                               "\r\nContent-Type: application/octet-stream\r\n"
-                               "Content-Length: " +
-                               std::to_string(announcedBodySize_) +
-                               "\r\nConnection: close\r\n\r\n" + std::string(sentBodySize_, 'x');
-        size_t sent = 0;
-        while (sent < response.size()) {
-            auto n = ::send(fd, response.data() + sent, response.size() - sent, 0);
-            if (n <= 0) {
-                break;
-            }
-            sent += static_cast<size_t>(n);
-        }
-
-        // recv() returns 0 once the client closes its end
-        timeval timeout{0, 100000};
-        ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-        while (!stopped_) {
-            auto n = ::recv(fd, buf, sizeof(buf), 0);
-            if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
-                clientDisconnected_ = true;
-                break;
-            }
-        }
-        ::close(fd);
-    }
-
-    std::string statusLine_;
-    uint64_t announcedBodySize_ = 0;
-    size_t sentBodySize_ = 0;
-    int listenFd_ = -1;
-    int port_ = 0;
-    std::atomic<bool> stopped_{false};
-    std::atomic<bool> clientDisconnected_{false};
-    std::thread thread_;
-};
 
 std::shared_ptr<TaskThread> makeOwnerThread() {
     auto thread = TaskThread::create("HttpStreamTest");
@@ -343,9 +62,12 @@ class HttpStreamTest : public ::testing::Test {
 
 OpenParams makeParams() {
     OpenParams params;
-    params.onData = [](DataChunk) {};
-    params.onComplete = [](uint64_t) {};
-    params.onError = [](Error, int32_t) {};
+    params.onData = [](DataChunk) {
+    };
+    params.onComplete = [](uint64_t) {
+    };
+    params.onError = [](Error, int32_t) {
+    };
     return params;
 }
 
@@ -360,7 +82,7 @@ bool waitUntil(const std::function<bool()>& cond, int32_t maxMs = 10000) {
     return cond();
 }
 
-}
+}  // namespace
 
 TEST_F(HttpStreamTest, H1_OpenStartReceivesDataAndCompletes) {
     auto params = makeParams();
@@ -378,7 +100,9 @@ TEST_F(HttpStreamTest, H1_OpenStartReceivesDataAndCompletes) {
     ASSERT_TRUE(result.has_value());
 
     stream_->start();
-    EXPECT_TRUE(waitUntil([&]() { return completed.load(); }));
+    EXPECT_TRUE(waitUntil([&]() {
+        return completed.load();
+    }));
     EXPECT_EQ(totalBytes.load(), kMockBodySize);
     EXPECT_EQ(stream_->state(), StreamState::Completed);
     EXPECT_TRUE(stream_->isCompleted());
@@ -396,7 +120,9 @@ TEST_F(HttpStreamTest, H2_RangeCompletionDoesNotSignalSourceEof) {
     ASSERT_TRUE(stream_->open(params).has_value());
     stream_->start();
 
-    EXPECT_TRUE(waitUntil([&]() { return stream_->position() >= kMockBodySize; }));
+    EXPECT_TRUE(waitUntil([&]() {
+        return stream_->state() == StreamState::Completed;
+    }));
     EXPECT_EQ(stream_->state(), StreamState::Completed);
     EXPECT_FALSE(stream_->isCompleted());
     EXPECT_FALSE(completed.load());
@@ -417,20 +143,23 @@ TEST_F(HttpStreamTest, H2_SeekAfterHeaderSetsNewRange) {
     ASSERT_TRUE(stream_->open(params).has_value());
     stream_->start();
 
-    EXPECT_TRUE(waitUntil([&]() { return stream_->info().isSeekable; }));
+    EXPECT_TRUE(waitUntil([&]() {
+        return stream_->info().isSeekable;
+    }));
 
     auto seekResult = stream_->seek(32768, 7);
     ASSERT_TRUE(seekResult.has_value());
     EXPECT_EQ(stream_->position(), 32768u);
-    EXPECT_TRUE(waitUntil([&]() { return stream_->position() >= kMockBodySize; }));
+    EXPECT_TRUE(waitUntil([&]() {
+        return stream_->state() == StreamState::Completed;
+    }));
     EXPECT_TRUE(sawSeekGeneration.load(std::memory_order_acquire));
     EXPECT_EQ(stream_->state(), StreamState::Completed);
 }
 
 TEST_F(HttpStreamTest, H2b_SeekWorksWhen206OmitsAcceptRangesHeader) {
     MockHttpServer omitHeaderServer;
-    ASSERT_TRUE(omitHeaderServer.start(true, /*chunkDelayMs=*/0,
-                                       false));
+    ASSERT_TRUE(omitHeaderServer.start(true, /*chunkDelayMs=*/0, false));
 
     auto params = makeParams();
     params.uri = omitHeaderServer.url();
@@ -443,11 +172,15 @@ TEST_F(HttpStreamTest, H2b_SeekWorksWhen206OmitsAcceptRangesHeader) {
     ASSERT_TRUE(stream->open(params).has_value());
     stream->start();
 
-    EXPECT_TRUE(waitUntil([&]() { return stream->info().isSeekable; }));
+    EXPECT_TRUE(waitUntil([&]() {
+        return stream->info().isSeekable;
+    }));
 
     auto seekResult = stream->seek(32768, 0);
     ASSERT_TRUE(seekResult.has_value());
-    EXPECT_TRUE(waitUntil([&]() { return stream->position() >= kMockBodySize; }));
+    EXPECT_TRUE(waitUntil([&]() {
+        return stream->state() == StreamState::Completed;
+    }));
     EXPECT_EQ(stream->state(), StreamState::Completed);
     stream->close();
     omitHeaderServer.stop();
@@ -472,7 +205,9 @@ TEST_F(HttpStreamTest, H2c_SequentialFallbackWhenServerIgnoresRange) {
     ASSERT_TRUE(stream->open(params).has_value());
     stream->start();
 
-    EXPECT_TRUE(waitUntil([&]() { return stream->position() >= kMockBodySize; }));
+    EXPECT_TRUE(waitUntil([&]() {
+        return stream->state() == StreamState::Completed;
+    }));
     EXPECT_EQ(stream->state(), StreamState::Completed);
     EXPECT_FALSE(errored.load());
     EXPECT_FALSE(stream->info().isSeekable);
@@ -495,7 +230,9 @@ TEST_F(HttpStreamTest, H2d_SeekRejectedWhenServerIgnoresRange) {
     ASSERT_TRUE(stream->open(params).has_value());
     stream->start();
 
-    EXPECT_TRUE(waitUntil([&]() { return stream->position() >= kMockBodySize; }));
+    EXPECT_TRUE(waitUntil([&]() {
+        return stream->position() >= kMockBodySize;
+    }));
     auto seekResult = stream->seek(1024, 0);
     EXPECT_FALSE(seekResult.has_value());
     EXPECT_EQ(seekResult.error(), Error::StreamNotReady);
@@ -518,7 +255,9 @@ TEST_F(HttpStreamTest, H3_PauseResumeResumesFromCommittedPosition) {
     ASSERT_TRUE(stream->open(params).has_value());
     stream->start();
 
-    EXPECT_TRUE(waitUntil([&]() { return totalBytes.load() > 0; }));
+    EXPECT_TRUE(waitUntil([&]() {
+        return totalBytes.load() > 0;
+    }));
     stream->pause();
     EXPECT_EQ(stream->state(), StreamState::Paused);
     auto pausedPos = stream->position();
@@ -526,7 +265,9 @@ TEST_F(HttpStreamTest, H3_PauseResumeResumesFromCommittedPosition) {
     EXPECT_LT(pausedPos, kMockBodySize);
 
     stream->start();
-    EXPECT_TRUE(waitUntil([&]() { return stream->position() >= kMockBodySize; }));
+    EXPECT_TRUE(waitUntil([&]() {
+        return stream->state() == StreamState::Completed;
+    }));
     EXPECT_EQ(stream->state(), StreamState::Completed);
     stream->close();
     slowServer.stop();
@@ -543,7 +284,9 @@ TEST_F(HttpStreamTest, H4_CloseDuringTransferIsSafe) {
     ASSERT_TRUE(stream_->open(params).has_value());
     stream_->start();
 
-    EXPECT_TRUE(waitUntil([&]() { return totalBytes.load() > 0; }));
+    EXPECT_TRUE(waitUntil([&]() {
+        return totalBytes.load() > 0;
+    }));
     stream_->close();
     EXPECT_EQ(stream_->state(), StreamState::Idle);
 }
@@ -563,7 +306,9 @@ TEST_F(HttpStreamTest, H5_RangeValidationRejectsServerIgnoringRange) {
     auto stream = std::make_shared<HttpStream>(ownerThread_);
     ASSERT_TRUE(stream->open(params).has_value());
     stream->start();
-    EXPECT_TRUE(waitUntil([&]() { return errored.load(); }));
+    EXPECT_TRUE(waitUntil([&]() {
+        return errored.load();
+    }));
     EXPECT_EQ(stream->state(), StreamState::Error);
     stream->close();
     noRangeServer.stop();
@@ -580,7 +325,9 @@ TEST_F(HttpStreamTest, H6_RangeValidationRejectsOutOfRange) {
 
     ASSERT_TRUE(stream_->open(params).has_value());
     stream_->start();
-    EXPECT_TRUE(waitUntil([&]() { return errored.load(); }));
+    EXPECT_TRUE(waitUntil([&]() {
+        return errored.load();
+    }));
     EXPECT_EQ(stream_->state(), StreamState::Error);
 }
 
@@ -616,7 +363,9 @@ TEST_F(HttpStreamTest, R3_BodyLargerThanDefaultLimitIsAccepted) {
     ASSERT_TRUE(stream_->open(params).has_value());
     stream_->start();
 
-    EXPECT_TRUE(waitUntil([&]() { return stream_->position() >= kSent; }));
+    EXPECT_TRUE(waitUntil([&]() {
+        return stream_->position() >= kSent;
+    }));
     EXPECT_FALSE(errored.load());
     EXPECT_EQ(stream_->state(), StreamState::Reading);
 }
@@ -645,7 +394,9 @@ TEST_F(HttpStreamTest, R4_ErrorStatusIsReportedWithoutDeliveringBody) {
         ASSERT_TRUE(stream->open(params).has_value());
         stream->start();
 
-        ASSERT_TRUE(waitUntil([&]() { return errorCount.load() > 0; })) << status;
+        ASSERT_TRUE(waitUntil([&]() {
+            return errorCount.load() > 0;
+        })) << status;
         EXPECT_EQ(errorCode.load(), Error::HttpError) << status;
         EXPECT_EQ(originCode.load(), std::string_view(status).starts_with("404") ? 404 : 500);
         EXPECT_EQ(bytes.load(), 0u) << status;
@@ -672,8 +423,14 @@ TEST_F(HttpStreamTest, R5_ErrorStatusStopsTheDownload) {
     ASSERT_TRUE(stream_->open(params).has_value());
     stream_->start();
 
-    ASSERT_TRUE(waitUntil([&]() { return errored.load(); }));
-    EXPECT_TRUE(waitUntil([&]() { return server.clientDisconnected(); }, 3000))
+    ASSERT_TRUE(waitUntil([&]() {
+        return errored.load();
+    }));
+    EXPECT_TRUE(waitUntil(
+        [&]() {
+            return server.clientDisconnected();
+        },
+        3000))
         << "the connection must be dropped instead of draining the error page";
 }
 
@@ -692,8 +449,14 @@ TEST_F(HttpStreamTest, R6_IgnoredRangeStopsTheDownload) {
     ASSERT_TRUE(stream_->open(params).has_value());
     stream_->start();
 
-    ASSERT_TRUE(waitUntil([&]() { return errored.load(); }));
+    ASSERT_TRUE(waitUntil([&]() {
+        return errored.load();
+    }));
     EXPECT_EQ(stream_->state(), StreamState::Error);
-    EXPECT_TRUE(waitUntil([&]() { return server.clientDisconnected(); }, 3000))
+    EXPECT_TRUE(waitUntil(
+        [&]() {
+            return server.clientDisconnected();
+        },
+        3000))
         << "the whole file must not keep downloading after Range was ignored";
 }

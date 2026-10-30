@@ -1,0 +1,62 @@
+//
+// Copyright (c) 2026 Nevermore-. All rights reserved.
+//
+
+#include "GLContextManager.h"
+
+#include <mutex>
+
+#include "Log.hpp"
+
+namespace slark {
+
+GLContextManager& GLContextManager::shareInstance() noexcept {
+    // Never destroyed: Player teardown runs on a detached thread that can outlive main().
+    static auto* manager = new GLContextManager();
+    return *manager;
+}
+
+void GLContextManager::addMainContext(const std::string& id, IEGLContextRefPtr context) {
+    contexts_.withWriteLock([&id, context = std::move(context)](auto& contexts) {
+        contexts[id] = context;
+    });
+}
+
+void GLContextManager::removeMainContext(const std::string& id) {
+    contexts_.withWriteLock([&id](auto& contexts) {
+        contexts.erase(id);
+    });
+}
+
+IEGLContextRefPtr GLContextManager::getMainContext(const std::string& id) noexcept {
+    IEGLContextRefPtr res;
+    contexts_.withReadLock([&id, &res](auto& contexts) {
+        if (contexts.count(id) == 0) {
+            return;
+        }
+        res = contexts.at(id);
+    });
+    return res;
+}
+
+IEGLContextRefPtr GLContextManager::createShareContextWithId(const std::string& id) noexcept {
+    auto ptr = getMainContext(id);
+    if (!ptr) {
+        LogE("createShareContextWithId: main context not found for {}", id);
+        return nullptr;
+    }
+    auto res = std::shared_ptr<IEGLContext>(createGLContext());
+    if (!res->init(ptr->nativeContext())) {
+        LogE("createShareContextWithId: failed to init shared context for {}", id);
+        return nullptr;
+    }
+    return res;
+}
+
+#if !SLARK_IOS && !SLARK_ANDROID
+IEGLContextRefPtr createGLContext() noexcept {
+    return nullptr;
+}
+#endif
+
+}  // namespace slark
