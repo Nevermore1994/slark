@@ -3,7 +3,7 @@
 > 状态：已实现
 > 更新：2026-08-11
 > 作者：Nevermore-
-> 关联代码：`src/base/coroutine/`、`src/http/IOContext.h`、`src/core/HttpStream*`、`src/core/HLSStream*`
+> 关联代码：`src/base/coroutine/`、`src/http/IOContext.h`、`src/core/stream/HttpStream*`、`src/core/stream/HLSStream*`
 
 ---
 
@@ -1410,3 +1410,33 @@ producer、consumer、`next()`、`co_yield`、completion、close，以及 genera
 6. 用 `void*`、裸 awaiter `this` 或 generator-specific callback 注入通用 frame control；
 7. continuation handoff 先 release 再重新 acquire，制造销毁空窗；
 8. 把 `OperationStatus::Closed` 当作底层 HTTP/IO 已完成。
+
+### 8.12 组合与让出：when_all、when_any、AsyncScope、yield
+
+启动位置：`when_all`、`when_any` 和 `AsyncScope::spawn` 先把子任务在调用方线程上启动，直到第一个挂起点。显式传入非 inline 的 `IExecutor`（`when_all(exec, ...)`、`when_any(exec, ...)`、`AsyncScope::setDefaultExecutor`）时，子任务改为投递到该 executor；`when_all` 和 `when_any` 未显式传入时使用被等待协程自己的 executor。
+
+`when_all(Task<Ts>...)`：
+
+- 所有子任务结束后才恢复，结果是各子任务返回值组成的 `std::tuple`；只要有一个子任务返回 `void`，`co_await` 的结果就是 `void`。
+- 子任务抛出异常时，等全部结束后重新抛出第一个异常，其余丢弃。
+- 无参数时不挂起。
+
+`when_any(Task<Ts>...)`，至少一个子任务：
+
+- 第一个结束的子任务获胜，结果是 `WhenAnyResult{winnerIndex, winnerValue}`，`winnerValue` 是 variant，`void` 子任务对应 `VoidResult`。
+- 获胜者抛出的异常会重新抛出；失败者的结果和异常都被丢弃。
+- 失败者不会被取消，继续运行，它们的 `Task` 被移交给共享状态保管。需要停止失败者时，调用方通过自己的 `CancellationToken` 通知。
+
+`AsyncScope`：
+
+- `spawn()` 不加锁，只能从一个线程调用。
+- 已结束的子任务不会从内部列表移除，长期存活的 scope 会持续增长。
+- `waitAll()` 和析构最多各等待 5 秒；`waitAll()` 超时后会取消 token。超时后未结束子任务的 frame 保持存活、不会被销毁，所以不要在 loader 或 engine 线程上析构带阻塞子任务的 scope。
+- 子任务的返回值和异常被丢弃。
+- 取消是协作式的：`cancelAll()` 只置位 `token()`，由子任务自己检查。
+
+`co_await slark::yield()`：
+
+- 总是先挂起，向 `CoroutineScheduler` 投递 0 ms 回调，之后在调度器线程上继续。回调先于挂起完成到达时（见 8.9），协程不挂起，在原线程继续。
+- 与 `TimerAwaiter`、`CompletionAwaiter` 不同，不调用 `registerExternalGate`：取消不会提前唤醒它，它自己会在下一个调度周期恢复。
+- 协程在挂起期间被销毁是安全的：`YieldAwaiter` 析构时 `disarm` gate，迟到的回调不会再恢复已销毁的 frame。
