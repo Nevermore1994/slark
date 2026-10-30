@@ -42,7 +42,7 @@ Error VideoHardwareDecoder::sendPacket(AVFrameRefPtr& frame) noexcept {
                                                  PacketType::Video);
     if (res != Error::Success && res != Error::CodecAgain && res != Error::CodecNotProcessed) {
         LogE("send video packet failed, {}", toString(res));
-    } else {
+    } else if (res == Error::Success) {
         LogI("send video packet success, index:{}, pts:{:.3f}, dts:{:.3f}, "
              "isDiscard:{}, isEOS:{}, isIDR:{}, frameType:{}",
              frame->index, frame->ptsTime(), frame->dtsTime(), frame->isDiscard,
@@ -50,6 +50,9 @@ Error VideoHardwareDecoder::sendPacket(AVFrameRefPtr& frame) noexcept {
         if (frame->isDiscard && mode_ == DecodeMode::ByteBuffer) {
             discardPackets_.insert(inputPts);
         }
+    } else {
+        // Input queue full; the pipeline retries, so log sparingly.
+        LogIThrottle(2000, "send video packet deferred ({})", toString(res));
     }
     // Cache EOS rejected by the codec (full input queue); retry after draining outputs
     if (frameInfo->isEndOfStream && res == Error::CodecNotProcessed) {

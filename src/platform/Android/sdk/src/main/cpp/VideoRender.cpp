@@ -47,6 +47,7 @@ void VideoRender::notifyVideoInfo(std::shared_ptr<VideoInfo> videoInfo) noexcept
 }
 
 void VideoRender::onVSync() noexcept {
+    LogIThrottle(1000, "render vsync tick");
     requestRenderFrame();
 }
 

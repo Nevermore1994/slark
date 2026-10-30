@@ -31,9 +31,7 @@ using namespace slark::JNI;
 namespace {
 
 constexpr std::string_view kSourceSignature = "Lcom/slark/api/SlarkFlowConfig$Source;";
-constexpr std::string_view kDecoderSignature = "Lcom/slark/api/SlarkFlowConfig$Decoder;";
 constexpr std::string_view kBufferingSignature = "Lcom/slark/api/SlarkFlowConfig$Buffering;";
-constexpr std::string_view kCatchUpSignature = "Lcom/slark/api/SlarkFlowConfig$CatchUp;";
 
 void raiseIllegalArgument(JNIEnv* env, std::string_view message) {
     if (!env || env->ExceptionCheck()) {
@@ -66,21 +64,10 @@ template <typename Group, typename... Fields>
 [[nodiscard]] JNI::GroupRead readSource(JNIEnv* env,
                                         jobject object,
                                         jclass cls,
-                                        SourceBackpressureConfig& group) {
+                                        SourceWatermarkConfig& group) {
     return readFlowGroup(env, object, cls, "source", kSourceSignature, group,
-                         field("lowWatermarkSec", &SourceBackpressureConfig::lowWatermarkSec),
-                         field("highWatermarkSec", &SourceBackpressureConfig::highWatermarkSec));
-}
-
-[[nodiscard]] JNI::GroupRead readDecoder(JNIEnv* env,
-                                         jobject object,
-                                         jclass cls,
-                                         std::string_view name,
-                                         DecoderBackpressureConfig& group) {
-    return readFlowGroup(
-        env, object, cls, name, kDecoderSignature, group,
-        field("lowWatermarkFrames", &DecoderBackpressureConfig::lowWatermarkFrames),
-        field("highWatermarkFrames", &DecoderBackpressureConfig::highWatermarkFrames));
+                         field("lowWatermarkSec", &SourceWatermarkConfig::lowWatermarkSec),
+                         field("highWatermarkSec", &SourceWatermarkConfig::highWatermarkSec));
 }
 
 [[nodiscard]] JNI::GroupRead readBuffering(JNIEnv* env,
@@ -89,17 +76,8 @@ template <typename Group, typename... Fields>
                                            BufferingConfig& group) {
     return readFlowGroup(env, object, cls, "buffering", kBufferingSignature, group,
                          field("startBufferSec", &BufferingConfig::startBufferSec),
-                         field("rebufferScale", &BufferingConfig::rebufferScale),
-                         field("starvationThreshold", &BufferingConfig::starvationThreshold));
-}
-
-[[nodiscard]] JNI::GroupRead readCatchUp(JNIEnv* env,
-                                         jobject object,
-                                         jclass cls,
-                                         CatchUpConfig& group) {
-    return readFlowGroup(env, object, cls, "catchUp", kCatchUpSignature, group,
-                         field("maxDropPerVsync", &CatchUpConfig::maxDropPerVsync),
-                         field("seekFastForwardMs", &CatchUpConfig::seekFastForwardMs));
+                         field("rebufferEnterSec", &BufferingConfig::rebufferEnterSec),
+                         field("rebufferExitSec", &BufferingConfig::rebufferExitSec));
 }
 
 [[nodiscard]] JNI::GroupRead readFlowConfig(JNIEnv* env, jobject object, FlowConfig& config) {
@@ -121,16 +99,7 @@ template <typename Group, typename... Fields>
             return readSource(env, object, cls.get(), config.source);
         },
         [&] {
-            return readDecoder(env, object, cls.get(), "audioDecoder", config.audioDecoder);
-        },
-        [&] {
-            return readDecoder(env, object, cls.get(), "videoDecoder", config.videoDecoder);
-        },
-        [&] {
             return readBuffering(env, object, cls.get(), config.buffering);
-        },
-        [&] {
-            return readCatchUp(env, object, cls.get(), config.catchUp);
         });
 }
 
@@ -207,7 +176,7 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_doAction(JNIEnv* env,
                 player->pause();
             } break;
             case Action::Release: {
-                player->stopAndWait();
+                player->stop();
                 PlayerObserverManager::shareInstance().remove(playerId);
                 VideoRenderManager::shareInstance().remove(playerId);
                 PlayerManager::shareInstance().remove(playerId);

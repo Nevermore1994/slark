@@ -21,10 +21,14 @@ target_include_directories(slark_jni PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/jni
     ${SLARK_PROJECT_PATH}/src/base
     ${SLARK_PROJECT_PATH}/src/core
+    ${SLARK_PROJECT_PATH}/src/core/media
+    ${SLARK_PROJECT_PATH}/src/core/stream
+    ${SLARK_PROJECT_PATH}/src/core/render
     ${SLARK_PROJECT_PATH}/src/core/demuxer
-    ${SLARK_PROJECT_PATH}/src/core/audio
     ${SLARK_PROJECT_PATH}/src/core/codec
-    ${SLARK_PROJECT_PATH}/src/core/pipeline
+    ${SLARK_PROJECT_PATH}/src/core/engine
+    ${SLARK_PROJECT_PATH}/src/core/engine/pipeline
+    ${SLARK_PROJECT_PATH}/src/core/engine/source
     ${SLARK_PROJECT_PATH}/src/core/perf
     ${SLARK_PROJECT_PATH}/src/http
     ${SLARK_PROJECT_PATH}/include

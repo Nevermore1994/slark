@@ -53,8 +53,8 @@ class PlayerMediaIntegrationTest {
     }
 
     private fun waitForPrepared(player: SlarkPlayer, timeoutMs: Long = 10000): Boolean {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (System.currentTimeMillis() < deadline) {
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+        while (System.nanoTime() < deadline) {
             val s = player.state()
             // Leaving the init states counts as prepared (Android may go straight to Buffering)
             if (s != SlarkPlayerState.NotInited && s != SlarkPlayerState.Initializing) return true
@@ -68,8 +68,8 @@ class PlayerMediaIntegrationTest {
         target: SlarkPlayerState,
         timeoutMs: Long
     ): Boolean {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (System.currentTimeMillis() < deadline) {
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+        while (System.nanoTime() < deadline) {
             if (player.state() == target) return true
             Thread.sleep(20)
         }

@@ -223,6 +223,12 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
         if (lastVideoRotation != 0) {
             renderThread?.setRotation(lastVideoRotation)
         }
+        // startRendering() was a no-op if the state became Buffering before the surface existed.
+        val current = state()
+        if (current == SlarkPlayerState.Buffering || current == SlarkPlayerState.Prepared ||
+            current == SlarkPlayerState.Ready || current == SlarkPlayerState.Playing) {
+            startRendering()
+        }
     }
 
     private fun shouldRebuildOnSizeChange(): Boolean {

@@ -76,6 +76,7 @@ void AudioHardwareDecoderBase<Derived>::receiveDecodedData(DataPtr data,
     audioFrameInfo->channels = audioConfig->channels;
     audioFrameInfo->bitsPerSample = audioConfig->bitsPerSample;
     frame->info = audioFrameInfo;
+    frame->seekEpoch = currentSeekEpoch_;
     invokeReceiveFunc(DecoderData{std::move(frame), Error::Success, currentSeekEpoch_});
     onDecodedDataReady();
 }

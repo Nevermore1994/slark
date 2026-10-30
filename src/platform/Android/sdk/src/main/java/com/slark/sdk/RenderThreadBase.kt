@@ -101,6 +101,10 @@ abstract class RenderThreadBase(
             return
         }
         startPending = false
+        if (vsyncActive) {
+            // Already running; posting again would duplicate the frame callback chain.
+            return
+        }
         vsyncActive = true
         handler.post {
             if (shutdownRequested) {

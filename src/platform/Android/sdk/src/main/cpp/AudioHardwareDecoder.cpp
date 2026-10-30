@@ -27,9 +27,12 @@ Error AudioHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
         flag, PacketType::Audio);
     if (res != Error::Success && res != Error::CodecAgain && res != Error::CodecNotProcessed) {
         LogE("decode frame error:{}", toString(res));
+    } else if (res == Error::Success) {
+        LogIThrottle(2000, "send audio packet success, pts time:{:.3f}, isEOS:{}",
+                     frame->ptsTime(), frame->info->isEndOfStream);
     } else {
-        LogIThrottle(2000, "send audio packet success, pts time:{:.3f}, isEOS:{}", frame->ptsTime(),
-                     frame->info->isEndOfStream);
+        // Input queue full; the pipeline retries this frame.
+        LogIThrottle(2000, "send audio packet deferred ({})", toString(res));
     }
     // EOS queued successfully: mark completed immediately without relying on a native callback
     if (frame->info->isEndOfStream && res == Error::Success) {

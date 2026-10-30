@@ -8,6 +8,7 @@
 
 #include "AAudioRender.h"
 #include "Base.h"
+#include "AudioRenderSink.h"
 #include "HttpsHelper.h"
 #include "Log.hpp"
 
@@ -89,6 +90,18 @@ struct AndroidHttpsConfigurator {
 };
 
 static AndroidHttpsConfigurator androidHttpsConfigurator;
+
+// Hands the engine's AudioRenderSink the platform AAudio render at static-init time.
+struct AndroidAudioRenderFactoryRegistration {
+    AndroidAudioRenderFactoryRegistration() {
+        engine::setPlatformAudioRenderFactory(
+            [](const std::shared_ptr<AudioInfo>& info) -> std::shared_ptr<IAudioRender> {
+                return createAudioRender(info);
+            });
+    }
+};
+
+static AndroidAudioRenderFactoryRegistration androidAudioRenderFactoryRegistration;
 
 }  // namespace
 
