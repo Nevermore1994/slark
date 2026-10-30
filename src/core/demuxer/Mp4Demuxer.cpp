@@ -462,8 +462,12 @@ AVFramePtrArray TrackContext::parseNaluFrames(AVFramePtr frame,
 
         auto info = std::make_shared<VideoFrameInfo>();
         frameInfo->copy(info);
-        info->frameType = frameType;
-        info->isIDRFrame = (frameType == VideoFrameType::IFrame);
+        // The sync-sample table is authoritative; NALU types alone can miss keyframes.
+        const bool syncSample =
+            stss && std::binary_search(stss->keyIndexs.begin(), stss->keyIndexs.end(),
+                                       static_cast<uint32_t>(frame->index));
+        info->frameType = syncSample ? VideoFrameType::IFrame : frameType;
+        info->isIDRFrame = syncSample || frameType == VideoFrameType::IFrame;
         if (info->isIDRFrame) {
             keyIndex = frame->index;
         }
@@ -1180,6 +1184,10 @@ void Mp4Demuxer::initVideoTrack(const std::shared_ptr<TrackContext>& track) noex
             videoInfo_->level = avccBox->levelIdc;
         } else {
             LogW("initVideoTrack: avcC box not found");
+        }
+        // Some muxers write a zero dimension in the sample entry; take the size from the SPS.
+        if ((videoInfo_->width == 0 || videoInfo_->height == 0) && videoInfo_->sps) {
+            parseH264Sps(videoInfo_->sps->view(), videoInfo_);
         }
     } else if (track->codecId == CodecId::HEVC) {
         videoInfo_->mediaInfo = MEDIA_MIMETYPE_VIDEO_HEVC;

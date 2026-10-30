@@ -24,6 +24,7 @@ using namespace slark;
 namespace {
 
 constexpr const char* kMp4Path = "../../test_sample/Sample.mp4";
+constexpr const char* kSintelPath = "../../test_sample/SintelTrailer.mp4";
 constexpr const char* kTsPath = "../../test_sample/segment-0.ts";
 constexpr const char* kWavPath = "../../test_sample/sample-3s.wav";
 
@@ -230,6 +231,114 @@ TEST_F(Mp4DemuxerFileTest, HasVideoAndAudioAfterOpen) {
     EXPECT_TRUE(demuxer_->hasAudio());
 }
 
+TEST_F(Mp4DemuxerFileTest, GarbageSampleEntryDimensionsRecoverFromSps) {
+    // sintel trailer.mp4 declares 1x0 in its avc1 sample entry; the real coded size lives
+    // in the SPS. The demuxer must not hand a zero dimension to the decoder.
+    auto buffer = loadFile(kSintelPath, fileSize_);
+    if (!buffer) {
+        GTEST_SKIP() << "SintelTrailer.mp4 not found, skipping";
+    }
+    auto demuxer = DemuxerManager::shareInstance().create(DemuxerType::MP4);
+    ASSERT_NE(demuxer, nullptr);
+    DemuxerConfig config;
+    config.filePath = kSintelPath;
+    demuxer->init(config);
+    ASSERT_TRUE(demuxer->open(buffer));
+    auto videoInfo = demuxer->videoInfo();
+    ASSERT_NE(videoInfo, nullptr);
+    EXPECT_EQ(videoInfo->width, 854u);
+    EXPECT_EQ(videoInfo->height, 480u);
+}
+
+TEST_F(Mp4DemuxerFileTest, SeekOnALongGopFileDeliversVideoPastTheTarget) {
+    // 60s / 10s-GOP clip: seeking to 47s lands on the keyframe at 40s, so the demuxer must
+    // keep producing video samples well past the target after a drag of seeks.
+    constexpr const char* kLong = "../../test_sample/long-gop.mp4";
+    uint64_t size = 0;
+    auto whole = loadFile(kLong, size);
+    if (!whole) {
+        GTEST_SKIP() << "long-gop.mp4 missing";
+    }
+    std::vector<uint8_t> bytes;
+    {
+        std::ifstream ifs(kLong, std::ios::binary);
+        bytes.assign(std::istreambuf_iterator<char>(ifs), std::istreambuf_iterator<char>());
+    }
+
+    auto demuxer = DemuxerManager::shareInstance().create(DemuxerType::MP4);
+    ASSERT_NE(demuxer, nullptr);
+    DemuxerConfig config;
+    demuxer->init(config);
+    ASSERT_TRUE(demuxer->open(whole));
+
+    const auto feed = [&](uint64_t offset, size_t length, size_t& audioFrames,
+                          double& lastVideoPts) {
+        const size_t len = std::min<size_t>(length, bytes.size() - offset);
+        auto data = Data::create(len);
+        std::memcpy(data->data(), bytes.data() + offset, len);
+        data->setSize(len);
+        auto buffer = std::make_unique<Buffer>();
+        buffer->append(offset, std::move(data));
+        DataPacket packet;
+        packet.offset = offset;
+        packet.data = buffer->detachData();
+        auto result = demuxer->parseData(packet);
+        audioFrames += result.audioFrames.size();
+        for (auto& frame : result.videoFrames) {
+            lastVideoPts = frame->ptsTime();
+        }
+    };
+
+    // A drag: several seeks in quick succession, each followed by a little data.
+    for (double drag = 55.0; drag > 45.0; drag -= 2.0) {
+        const auto dragPos = demuxer->getSeekToPos(drag);
+        demuxer->seekPos(dragPos);
+        size_t audio = 0;
+        double lastVideo = -1.0;
+        feed(dragPos, 256 * 1024, audio, lastVideo);
+    }
+
+    constexpr double kTarget = 47.0;
+    demuxer->seekPos(demuxer->getSeekToPos(kTarget));
+    size_t audioFrames = 0;
+    double lastVideoPts = -1.0;
+    uint64_t cursor = demuxer->getSeekToPos(kTarget);
+    for (int round = 0; round < 200 && lastVideoPts < kTarget; ++round) {
+        feed(cursor, 256 * 1024, audioFrames, lastVideoPts);
+        cursor += 256 * 1024;
+    }
+    EXPECT_GT(audioFrames, 0u);
+    EXPECT_GE(lastVideoPts, kTarget) << "video must keep flowing past the seek target";
+}
+
+TEST_F(Mp4DemuxerFileTest, SeekLandsOnASampleMarkedAsKeyFrame) {
+    // The source only forwards video after a keyframe; if the demuxer's seek lands on a sync
+    // sample that it does not mark as a keyframe, playback after seeking starves forever.
+    ASSERT_TRUE(demuxer_->open(probeBuffer_));
+    const auto pos = demuxer_->getSeekToPos(48.0);
+    ASSERT_GT(pos, 0u);
+    demuxer_->seekPos(pos);
+
+    std::ifstream ifs(kMp4Path, std::ios::binary);
+    ASSERT_TRUE(ifs.good());
+    ifs.seekg(static_cast<std::streamoff>(pos));
+    constexpr std::streamsize kChunk = 256 * 1024;
+    auto data = Data::create(kChunk);
+    ASSERT_NE(data, nullptr);
+    ifs.read(reinterpret_cast<char*>(data->data()), kChunk);
+    data->setSize(static_cast<size_t>(ifs.gcount()));
+    auto buffer = std::make_unique<Buffer>();
+    buffer->append(pos, std::move(data));
+
+    DataPacket packet;
+    packet.offset = pos;
+    packet.data = buffer->detachData();
+    const auto result = demuxer_->parseData(packet);
+    ASSERT_FALSE(result.videoFrames.empty());
+    EXPECT_TRUE(result.videoFrames.front()->info->isKeyFrame())
+        << "seek must land on a sample the source can start decoding from";
+}
+
 TEST_F(Mp4DemuxerFileTest, VideoInfoIsValid) {
     ASSERT_TRUE(demuxer_->open(probeBuffer_));
     auto videoInfo = demuxer_->videoInfo();
@@ -354,7 +463,6 @@ TEST_F(TsDemuxerFileTest, TsAdapterParsesSegmentAndEndsOnTerminalEvent) {
     ASSERT_NE(demuxer, nullptr);
 
     DemuxerConfig config;
-    config.preferredType = DemuxerType::TS;
     demuxer->init(std::move(config));
     auto emptyBuffer = std::make_unique<Buffer>();
     ASSERT_TRUE(demuxer->open(emptyBuffer));
