@@ -3,6 +3,7 @@
 *.debug.xcconfig
 *.release.xcconfig
 /CMakeFiles
+/cmake-build-*
 /cmake-build-debug
 /bin
 /cmake_install.cmake
