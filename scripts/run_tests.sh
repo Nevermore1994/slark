@@ -92,7 +92,7 @@ echo ""
 echo -e "${YELLOW}[2/3] Building tests...${NC}"
 TARGETS="Base_test Core_test http_test Platform_test CoreFuzz_test HttpFuzz_test StringUtilFuzz_test SeekContextFuzz_test TimerPoolFuzz_test FileStreamFuzz_test WriterFuzz_test ThreadFuzz_test"
 if [ -d "${PROJECT_DIR}/src/core" ]; then
-    TARGETS="${TARGETS} CoreIntegration_test PlayerMediaIntegration_test"
+    TARGETS="${TARGETS} CoreIntegration_test PlayerMediaIntegration_test Engine_test"
 fi
 # shellcheck disable=SC2086
 if ! cmake --build "${BUILD_DIR}" \
