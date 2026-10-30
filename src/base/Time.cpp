@@ -11,7 +11,6 @@
 namespace slark::Time {
 
 using std::chrono::microseconds;
-using std::chrono::milliseconds;
 using std::chrono::seconds;
 using std::chrono::system_clock;
 using std::chrono::time_point_cast;
@@ -21,8 +20,8 @@ TimePoint nowTimeStamp() noexcept {
     return static_cast<uint64_t>(tp.time_since_epoch().count());
 }
 
-milliseconds nowUTCTime() noexcept {
-    return time_point_cast<milliseconds>(system_clock::now()).time_since_epoch();
+int64_t systemNowUs() noexcept {
+    return time_point_cast<microseconds>(system_clock::now()).time_since_epoch().count();
 }
 
 seconds offsetFromUTC() noexcept {

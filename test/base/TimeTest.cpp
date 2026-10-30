@@ -210,9 +210,20 @@ TEST(Time, NowTimeStampMonotonic) {
     }
 }
 
-TEST(Time, NowUTCTime) {
-    auto utc = Time::nowUTCTime();
-    EXPECT_GT(utc.count(), 0);
+TEST(Time, SystemNowUs) {
+    const auto utcUs = Time::systemNowUs();
+    // Sanity band: 2020-01-01 .. 2100-01-01 as UTC microseconds
+    EXPECT_GT(utcUs, 1'577'836'800'000'000LL);
+    EXPECT_LT(utcUs, 4'102'444'800'000'000LL);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    EXPECT_GE(Time::systemNowUs(), utcUs);
+}
+
+TEST(Time, SteadyAndSystemAreIndependent) {
+    // Steady is monotonic and process-relative; system is absolute. They must not be mixed:
+    // a steady value is far smaller than a UTC epoch value.
+    EXPECT_LT(static_cast<int64_t>(Time::nowTimeStamp().point()), Time::systemNowUs());
 }
 
 TEST(Time, OffsetFromUTC) {

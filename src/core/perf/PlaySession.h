@@ -74,6 +74,7 @@ class PlaySession : public std::enable_shared_from_this<PlaySession> {
         return url_;
     }
 
+    // Monotonic clock microseconds, session-internal base; see Time::nowTimeStamp.
     [[nodiscard]] int64_t startUs() const noexcept {
         return startUs_;
     }

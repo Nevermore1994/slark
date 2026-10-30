@@ -105,7 +105,7 @@ void ResourceSampler::sampleLoop() {
 
 ResourceSnapshot ResourceSampler::sampleOnce() {
     ResourceSnapshot snap;
-    snap.timestampUs = static_cast<int64_t>(Time::nowTimeStamp().point());
+    snap.timestampUs = Time::systemNowUs();
     snap.cpuPercent = calcCpuUsage();
     readMemoryInfo(snap.rssKB, snap.vmSizeKB);
     return snap;

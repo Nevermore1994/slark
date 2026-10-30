@@ -170,8 +170,12 @@ class TimePoint {
     }
 };
 
+// Monotonic (steady_clock): elapsed time and pacing only; not comparable across processes.
 TimePoint nowTimeStamp() noexcept;
-std::chrono::milliseconds nowUTCTime() noexcept;
+
+// Wall clock (system_clock, UTC epoch) in microseconds; jumps with NTP and manual changes.
+int64_t systemNowUs() noexcept;
+
 std::chrono::seconds offsetFromUTC() noexcept;
 std::string localTimeStr() noexcept;
 std::string localShortTimeStr() noexcept;
