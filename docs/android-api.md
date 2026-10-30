@@ -570,6 +570,8 @@ class PlayerActivity : AppCompatActivity() {
 
 ### Error Handling
 
+The `OnError` value is `slarkError|originErrorCode|host`: the SDK error code, the underlying sub-code (HTTP status, errno or decoder code, `0` when none) and the URI host. Split it with `value.split("|", limit = 3)`.
+
 ```kotlin
 override fun notifyEvent(playerId: String, event: SlarkPlayerEvent, value: String) {
     when (event) {

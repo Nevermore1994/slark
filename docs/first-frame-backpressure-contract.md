@@ -26,7 +26,7 @@ forwardDuration = 78.56s
 
 播放缓存水位由两个对象分担，输出完全不同因此不再耦合在一个对象里：
 
-**`SourceFlowController`**（消费 `SourceBackpressureConfig`）— 控制生产者：
+**`SourceFlowController`**（消费 `SourceWatermarkConfig`）— 控制生产者：
 
 - `source.highWatermarkSec`：达到后暂停数据源；
 - `source.lowWatermarkSec`：降到后恢复数据源，并通知容量可用；
@@ -37,9 +37,8 @@ forwardDuration = 78.56s
 **`BufferingTracker`**（消费 `BufferingConfig`）— 上报就绪/卡顿：
 
 - `buffering.startBufferSec`：达到后触发 `PipelineReady`；
-- `buffering.starvationThreshold`：饥饿计数达到后触发 `BufferingStart`；
-- `buffering.rebufferTargetSec() = startBufferSec × rebufferScale`：进入卡顿的阈值（严格小于才进入）；
-- `buffering.rebufferExitSec() = rebufferTargetSec() × rebufferScale`：退出卡顿的阈值（达到即退出）；两者之间是有死区的滞回，避免队列在阈值附近抖动时反复上报 `BufferingStart/BufferingEnd`；
+- `buffering.rebufferEnterSec`（默认 3.0）：进入卡顿的阈值（严格小于才进入）；
+- `buffering.rebufferExitSec`（默认 4.5，须 ≥ `rebufferEnterSec`）：退出卡顿的阈值（达到即退出）；两者之间是有死区的滞回，避免队列在阈值附近抖动时反复上报 `BufferingStart/BufferingEnd`；
 - prebuffer 阶段不触发 `BufferingStart/BufferingEnd`；
 - `readyFired_` 只表示启动缓存完成，不是背压开关。
 
@@ -54,7 +53,7 @@ runBufferControl()             <- onFastTick，不节流
     -> bufferingTracker_->update(duration, allowBufferingEvents)
 ```
 
-聚合层约束：`buffering.rebufferExitSec() < source.highWatermarkSec`。生产在高水位停止，因此退出所需的缓存水平必须低于高水位，否则卡顿永不退出。
+聚合层约束：`buffering.rebufferExitSec < source.highWatermarkSec`。生产在高水位停止，因此退出所需的缓存水平必须低于高水位，否则卡顿永不退出。
 
 ## HLS 生产边界
 
@@ -176,7 +175,7 @@ prebuffer
         v
 steady flow
   - SourceFlowController 继续按 high/low watermark 控制 source
-  - BufferingTracker 按 rebufferTargetSec 上报 BufferingStart/End
+  - BufferingTracker 按 rebufferEnterSec 上报 BufferingStart/End
 ```
 
 ## 回归测试契约
@@ -196,7 +195,7 @@ steady flow
 
 ## 统一滞回原语
 
-所有背压点共用 `src/core/pipeline/WatermarkGate.h`：
+所有背压点共用 `src/base/WatermarkGate.h`：
 
 - `shouldCloseGate(current, low, high, closed)` —— 全局唯一的滞回判定定义；
 - `WatermarkGate<Level>` —— 水位路径 `update()` 与操作路径 `forceClose()/forceOpen()` 两条独立入口。
@@ -205,8 +204,8 @@ steady flow
 
 相关实现和测试：
 
-- `src/core/HLSStream.h`
-- `src/core/HLSStream.cpp`
+- `src/core/stream/HLSStream.h`
+- `src/core/stream/HLSStream.cpp`
 - `src/core/MediaSourceManager.h`
 - `src/core/MediaSourceManager.cpp`
 - `src/core/PlayerImpl.cpp`
@@ -215,10 +214,9 @@ steady flow
 - `src/core/pipeline/BufferingTracker.h`
 - `src/core/pipeline/BufferingTracker.cpp`
 - `include/FlowConfig.h`
-- `src/core/pipeline/FlowConfigDefaults.h`
 - `src/core/pipeline/PlayPipeline.h`
 - `src/core/pipeline/PlayPipeline.cpp`
 - `test/core/HLSStreamTest.cpp`
 - `test/core/SourceFlowControllerTest.cpp`
 - `test/core/BufferingTrackerTest.cpp`
-- `test/core/CorePipelineComponentTest.cpp`
+- `test/core/FlowConfigTest.cpp`

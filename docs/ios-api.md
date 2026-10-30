@@ -31,13 +31,13 @@ The main media player class that provides complete audio and video playback cont
 - **Type**: `id<ISlarkPlayerObserver>`
 
 ```objc
-@property(nonatomic, assign) BOOL isLoop;
+@property(nonatomic, assign, setter=setLoop:) BOOL isLoop;
 ```
 - **Description**: Loop playback mode
 - **Type**: `BOOL`
 
 ```objc
-@property(nonatomic, assign) BOOL isMute;
+@property(nonatomic, assign, setter=setMute:) BOOL isMute;
 ```
 - **Description**: Mute state
 - **Type**: `BOOL`
@@ -494,7 +494,7 @@ When errors occur during playback, they are notified through the following ways:
 
 1. Player state changes to `SlarkPlayerStateError`
 2. Triggers `SlarkPlayerEventOnError` event
-3. Error information is passed through the observer protocol's `notifyEvent` method
+3. Error information is passed through the observer protocol's `notifyEvent` method. The value is `slarkError|originErrorCode|host`: the SDK error code, the underlying sub-code (HTTP status, errno or decoder code, `0` when none) and the URI host. `[value integerValue]` still yields the SDK error code.
 
 ```objc
 - (void)notifyEvent:(NSString*)playerId event:(SlarkPlayerEvent)event value:(NSString*)value {
