@@ -96,6 +96,10 @@ class CoroutineFrameControl final {
  public:
     CoroutineFrameControl() = default;
 
+    // Tracked frames are done only after finish(); handle.done() turns true too early.
+    explicit CoroutineFrameControl(bool tracksFinalSuspend) noexcept
+        : tracksFinalSuspend_(tracksFinalSuspend) {}
+
     CoroutineFrameControl(const CoroutineFrameControl&) = delete;
     CoroutineFrameControl& operator=(const CoroutineFrameControl&) = delete;
 
@@ -110,7 +114,45 @@ class CoroutineFrameControl final {
 
     bool isDone(std::coroutine_handle<> handle) const noexcept {
         std::lock_guard lock(mutex_);
-        return destroyed_ || !handle || handle.done();
+        if (destroyed_ || !handle) {
+            return true;
+        }
+        // handle.done() races with a frame running on another thread; use finished_ instead.
+        return tracksFinalSuspend_ ? finished_ : handle.done();
+    }
+
+    // Called from final_suspend(), before the frame is suspended.
+    void markFinalizing() noexcept {
+        std::lock_guard lock(mutex_);
+        finalizing_ = true;
+    }
+
+    // The final awaiter's last access to the promise: afterwards the frame may be destroyed.
+    template <typename F>
+    void finish(F&& takeOwnership) noexcept {
+        std::coroutine_handle<> deferredHandle;
+        {
+            std::lock_guard lock(mutex_);
+            takeOwnership();
+            finished_ = true;
+            if (destroyed_ && activeCount() == 0) {
+                deferredHandle = std::exchange(deferredHandle_, nullptr);
+            }
+        }
+        detail::deferCoroutineDestroy(deferredHandle);
+    }
+
+    enum class Phase : uint8_t { Running, Finalizing, Finished };
+
+    // Links unless Finished, and reports the phase: only a Running frame may be resumed.
+    template <typename F>
+    [[nodiscard]] Phase linkUnlessFinished(F&& link) noexcept {
+        std::lock_guard lock(mutex_);
+        if (finished_) {
+            return Phase::Finished;
+        }
+        link();
+        return finalizing_ ? Phase::Finalizing : Phase::Running;
     }
 
     // Releases single-execution ownership. Called when the frame is about to park on an
@@ -150,7 +192,7 @@ class CoroutineFrameControl final {
             --detail::coroutineResumeDepth;
             --activeResumes_;
             running_ = false;
-            if (activeCount() == 0) {
+            if (activeCount() == 0 && !finalizingLocked()) {
                 deferredHandle = std::exchange(deferredHandle_, nullptr);
             }
         }
@@ -169,7 +211,7 @@ class CoroutineFrameControl final {
             return false;
         }
         destroyed_ = true;
-        if (activeCount() == 0) {
+        if (activeCount() == 0 && !finalizingLocked()) {
             return true;
         }
         deferredHandle_ = handle;
@@ -181,6 +223,10 @@ class CoroutineFrameControl final {
         return activeResumes_ + activeLeases_;
     }
 
+    [[nodiscard]] bool finalizingLocked() const noexcept {
+        return finalizing_ && !finished_;
+    }
+
     void releaseLease() noexcept {
         std::coroutine_handle<> deferredHandle;
         {
@@ -189,7 +235,7 @@ class CoroutineFrameControl final {
                 return;
             }
             --activeLeases_;
-            if (activeCount() == 0) {
+            if (activeCount() == 0 && !finalizingLocked()) {
                 deferredHandle = std::exchange(deferredHandle_, nullptr);
             }
         }
@@ -197,6 +243,9 @@ class CoroutineFrameControl final {
     }
 
     mutable std::recursive_mutex mutex_;
+    const bool tracksFinalSuspend_{false};
+    bool finalizing_{false};
+    bool finished_{false};
     bool destroyed_{false};
     bool running_{false};
     uint32_t activeResumes_{0};

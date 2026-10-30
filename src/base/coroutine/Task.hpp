@@ -26,7 +26,7 @@ struct TaskPromiseBase {
     // from whichever thread notified the gate.
     std::shared_ptr<IExecutor> executor_;
     std::shared_ptr<CoroutineFrameControl> frameControl_ =
-        std::make_shared<CoroutineFrameControl>();
+        std::make_shared<CoroutineFrameControl>(true);
 
  private:
     ExecutionLease continuationLease_;
@@ -41,13 +41,17 @@ struct TaskPromiseBase {
         template <typename Promise>
         std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> h) noexcept {
             auto& promise = h.promise();
+            const auto control = promise.frameControl_;
             releaseTransferLeases(promise);
-            auto continuation = std::move(promise.continuation_);
+            ContinuationLink continuation;
+            control->finish([&] {
+                continuation = std::move(promise.continuation_);
+            });
+
             if (!continuation.isValid()) {
                 continuation.reset();
                 return std::noop_coroutine();
             }
-
             *continuation.targetLeaseSlot = std::move(continuation.lease);
             auto target = continuation.handle;
             continuation.handle = nullptr;
@@ -59,19 +63,12 @@ struct TaskPromiseBase {
     };
 
     FinalAwaiter final_suspend() noexcept {
+        frameControl_->markFinalizing();
         return {};
     }
 
     std::suspend_always initial_suspend() noexcept {
         return {};
-    }
-
-    bool setContinuation(std::coroutine_handle<> cont,
-                         std::shared_ptr<CoroutineFrameControl> control,
-                         ExecutionLease* targetLeaseSlot) noexcept {
-        continuation_ =
-            ContinuationLink::create(cont, std::move(control), targetLeaseSlot);
-        return continuation_.isValid();
     }
 
     void releaseIncomingTransferLease() noexcept {
@@ -207,15 +204,15 @@ class TaskAwaiter {
         }
 
         auto& childPromise = handle_.promise();
-        childLease_ = childPromise.frameControl()->tryAcquire(handle_);
+        const auto childControl = childPromise.frameControl();
+        childLease_ = childControl->tryAcquire(handle_);
         if (!childLease_) {
             return awaiting;
         }
 
-        bool continuationInstalled = childPromise.setContinuation(
-            awaiting, awaiting.promise().frameControl(),
-            awaiting.promise().continuationLeaseSlot());
-        if (!continuationInstalled) {
+        auto link = ContinuationLink::create(awaiting, awaiting.promise().frameControl(),
+                                             awaiting.promise().continuationLeaseSlot());
+        if (!link.isValid()) {
             childLease_.reset();
             return awaiting;
         }
@@ -225,7 +222,17 @@ class TaskAwaiter {
                 childPromise.executor_ = awaiting.promise().executor();
             }
         }
-        return handle_;
+        const auto handle = handle_;
+        const auto phase = childControl->linkUnlessFinished([&] {
+            childPromise.continuation_ = std::move(link);
+        });
+        if (phase == CoroutineFrameControl::Phase::Finished) {
+            return awaiting;
+        }
+        if (phase == CoroutineFrameControl::Phase::Finalizing) {
+            return std::noop_coroutine();
+        }
+        return handle;
     }
 
     T await_resume() {

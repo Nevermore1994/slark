@@ -294,3 +294,78 @@ TEST(TaskTest, TopLevelTaskNoContinuation) {
     task.resume();
     EXPECT_TRUE(task.isDone());
 }
+
+// Destroying a task as soon as isDone() reads true must not race its final-suspend transfer.
+Task<void> awaitingParent(std::shared_ptr<CompletionAwaiter<void>> awaiter) {
+    co_await suspendedTask(awaiter);
+}
+
+TEST(TaskTest, DestroyingTheTaskRightAfterIsDoneIsRaceFree) {
+    for (int round = 0; round < 2000; ++round) {
+        auto awaiter = std::make_shared<CompletionAwaiter<void>>();
+        auto task = std::make_unique<Task<void>>(awaitingParent(awaiter));
+        task->resume();
+
+        std::thread completer([awaiter] {
+            awaiter->complete();
+        });
+        while (!task->isDone()) {
+            std::this_thread::yield();
+        }
+        task.reset();
+        completer.join();
+    }
+}
+
+TEST(CoroutineFrameControlTest, FinalizingFrameIsNotDoneUntilFinished) {
+    const std::coroutine_handle<> handle = std::noop_coroutine();
+    CoroutineFrameControl control(true);
+    EXPECT_FALSE(control.isDone(handle));
+
+    control.markFinalizing();
+    EXPECT_FALSE(control.isDone(handle));
+
+    bool took = false;
+    control.finish([&] {
+        took = true;
+    });
+    EXPECT_TRUE(took);
+    EXPECT_TRUE(control.isDone(handle));
+}
+
+TEST(CoroutineFrameControlTest, DestroyWaitsForTheFinalAwaiter) {
+    const std::coroutine_handle<> handle = std::noop_coroutine();
+
+    CoroutineFrameControl idle(true);
+    EXPECT_TRUE(idle.destroy(handle));
+
+    CoroutineFrameControl finalizing(true);
+    finalizing.markFinalizing();
+    EXPECT_FALSE(finalizing.destroy(handle));
+    finalizing.finish([] {
+    });
+    EXPECT_TRUE(finalizing.isDone(handle));
+    EXPECT_FALSE(finalizing.tryAcquire(handle));
+}
+
+TEST(CoroutineFrameControlTest, LinkReportsWhetherTheFinalAwaiterHasStarted) {
+    CoroutineFrameControl control(true);
+    int linked = 0;
+
+    EXPECT_EQ(control.linkUnlessFinished([&] {
+        ++linked;
+    }),
+              CoroutineFrameControl::Phase::Running);
+    control.markFinalizing();
+    EXPECT_EQ(control.linkUnlessFinished([&] {
+        ++linked;
+    }),
+              CoroutineFrameControl::Phase::Finalizing);
+    control.finish([] {
+    });
+    EXPECT_EQ(control.linkUnlessFinished([&] {
+        ++linked;
+    }),
+              CoroutineFrameControl::Phase::Finished);
+    EXPECT_EQ(linked, 2);
+}
