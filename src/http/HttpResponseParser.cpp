@@ -55,20 +55,10 @@ bool isHeaderValueValid(std::string_view value) noexcept {
     });
 }
 
-std::string_view trimOws(std::string_view value) noexcept {
-    while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
-        value.remove_prefix(1);
-    }
-    while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) {
-        value.remove_suffix(1);
-    }
-    return value;
-}
-
 bool hasHeaderToken(std::string_view value, std::string_view target) noexcept {
     while (true) {
         const auto comma = value.find(',');
-        const auto token = trimOws(value.substr(0, comma));
+        const auto token = StringUtil::trimOws(value.substr(0, comma));
         if (!token.empty() && StringUtil::iequals(token, target)) {
             return true;
         }
@@ -83,7 +73,7 @@ bool isSingleChunkedTransferEncoding(std::string_view value) noexcept {
     bool foundChunked = false;
     while (true) {
         const auto comma = value.find(',');
-        const auto token = trimOws(value.substr(0, comma));
+        const auto token = StringUtil::trimOws(value.substr(0, comma));
         if (token.empty() || !StringUtil::iequals(token, "chunked") || foundChunked) {
             return false;
         }
@@ -119,12 +109,12 @@ std::optional<std::chrono::seconds> HttpResponseParser::keepAliveTimeout() const
     std::string_view params(it->second);
     while (!params.empty()) {
         const auto comma = params.find(',');
-        const auto param = trimOws(params.substr(0, comma));
+        const auto param = StringUtil::trimOws(params.substr(0, comma));
         const auto equals = param.find('=');
         if (equals != std::string_view::npos &&
-            StringUtil::iequals(trimOws(param.substr(0, equals)), "timeout")) {
+            StringUtil::iequals(StringUtil::trimOws(param.substr(0, equals)), "timeout")) {
             int64_t seconds = 0;
-            if (!parseNonNegativeInt64(trimOws(param.substr(equals + 1)), 10, seconds)) {
+            if (!parseNonNegativeInt64(StringUtil::trimOws(param.substr(equals + 1)), 10, seconds)) {
                 return std::nullopt;
             }
             return std::chrono::seconds(seconds);
@@ -405,7 +395,7 @@ void HttpResponseParser::processHeaders() {
             return;
         }
 
-        auto value = trimOws(line.substr(colonPos + 1));
+        auto value = StringUtil::trimOws(line.substr(colonPos + 1));
         if (!isHeaderValueValid(value)) {
             LogE("[HttpResponseParser::processHeaders] invalid header value: {}",
                  StringUtil::toSafeLogString(value));
@@ -678,7 +668,7 @@ void HttpResponseParser::processChunkTrailer() {
             fail(slark::Error::HttpResponseInvalid);
             return;
         }
-        const auto value = trimOws(trailerLine.substr(colonPos + 1));
+        const auto value = StringUtil::trimOws(trailerLine.substr(colonPos + 1));
         if (!isHeaderValueValid(value)) {
             LogE("[HttpResponseParser::processChunkTrailer] invalid trailer value");
             fail(slark::Error::HttpResponseInvalid);

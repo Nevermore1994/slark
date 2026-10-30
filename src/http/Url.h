@@ -98,8 +98,4 @@ struct Url {
 [[nodiscard]] std::string serializeAuthority(const Url& url,
                                               bool includeUserInfo = true);
 
-inline void freeUrl(Url* url) noexcept {
-    delete url;
-}
-
 }  // namespace slark::http

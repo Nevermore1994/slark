@@ -201,8 +201,6 @@ struct RequestInfo {
     }
 };
 
-using RequestInfoPtr = std::unique_ptr<RequestInfo>;
-
 inline slark::Error normalizeTransportError(slark::Error error) noexcept {
     switch (error) {
         case slark::Error::ConnectionTimeout:

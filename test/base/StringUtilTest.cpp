@@ -152,3 +152,14 @@ TEST(String, FromCharsWithPosCount) {
     auto invalid = StringUtil::fromChars<int32_t>("abc", 10, 2);
     EXPECT_FALSE(invalid.has_value());
 }
+
+TEST(String, TrimOwsStripsOnlySpacesAndTabs) {
+    EXPECT_EQ(StringUtil::trimOws(" \t value \t "), "value");
+    EXPECT_EQ(StringUtil::trimOws("a b"), "a b");
+    EXPECT_EQ(StringUtil::trimOws("\r\nvalue\r\n"), "\r\nvalue\r\n");
+}
+
+TEST(String, TrimOwsOfBlankInputIsEmpty) {
+    EXPECT_TRUE(StringUtil::trimOws("").empty());
+    EXPECT_TRUE(StringUtil::trimOws(" \t ").empty());
+}

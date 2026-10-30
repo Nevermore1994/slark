@@ -33,6 +33,15 @@ struct StringUtil {
         return str.find(sub) != std::string_view::npos;
     }
 
+    [[nodiscard]] static constexpr std::string_view trimOws(std::string_view value) noexcept {
+        constexpr std::string_view kOws = " \t";
+        const auto first = value.find_first_not_of(kOws);
+        if (first == std::string_view::npos) {
+            return {};
+        }
+        return value.substr(first, value.find_last_not_of(kOws) - first + 1);
+    }
+
     [[nodiscard]] static std::string toLower(std::string str) noexcept {
         std::ranges::transform(str, str.begin(), [](unsigned char c) {
             return std::tolower(c);

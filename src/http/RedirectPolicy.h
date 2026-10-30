@@ -34,9 +34,9 @@ class RedirectPolicy {
             if (!StringUtil::iequals(k, "Location")) {
                 continue;
             }
-            auto location = trimOws(v);
-            if (!location.empty() && location.find_first_of("\r\n") == std::string::npos) {
-                return location;
+            const auto location = StringUtil::trimOws(v);
+            if (!location.empty() && location.find_first_of("\r\n") == std::string_view::npos) {
+                return std::string(location);
             }
         }
         return std::nullopt;
@@ -104,16 +104,6 @@ class RedirectPolicy {
     }
 
  private:
-    [[nodiscard]] static std::string trimOws(std::string_view value) {
-        while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
-            value.remove_prefix(1);
-        }
-        while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) {
-            value.remove_suffix(1);
-        }
-        return std::string(value);
-    }
-
     [[nodiscard]] static bool isSensitiveHeader(std::string_view name) noexcept {
         return StringUtil::iequals(name, "Authorization") ||
                StringUtil::iequals(name, "Cookie") ||
@@ -223,7 +213,7 @@ class RedirectPolicy {
 
     [[nodiscard]] static std::optional<std::string> resolveRedirectUrl(std::string_view originalUrl,
                                                                        std::string_view location) {
-        auto locationValue = trimOws(location);
+        auto locationValue = std::string(StringUtil::trimOws(location));
         if (locationValue.find_first_of("\r\n") != std::string::npos) {
             return std::nullopt;
         }

@@ -30,8 +30,6 @@ constexpr int kNoSignal = MSG_NOSIGNAL;
 constexpr int kNoSignal = 0;
 #endif
 
-constexpr int32_t kDefaultReadSize = 16 * 1024;
-
 // An idle keep-alive connection must have nothing to read: EOF means the peer closed it, and
 // pending bytes (an error, a TLS alert or a late session ticket) mean it cannot be trusted.
 inline bool isIdleConnectionUsable(Socket fd) noexcept {
