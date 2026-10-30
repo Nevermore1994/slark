@@ -62,10 +62,11 @@ class TimerManager final : public NonCopyMovable {
     std::condition_variable cond_;
     bool hasNewTimer_ = false;
     TimerPool timerPool_;
-    std::thread tickThread_;
     std::atomic<bool> stopRequested_{false};
     // Loop task storage: shared_ptr allows multiple executions
     std::unordered_map<uint64_t, std::shared_ptr<LoopTaskWrapper>> loopTasks_;
+    // Must stay last: the thread starts in the initializer list and reads the members above.
+    std::thread tickThread_;
 };
 
 }  // namespace slark
