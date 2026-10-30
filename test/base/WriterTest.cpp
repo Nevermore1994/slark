@@ -300,3 +300,21 @@ TEST(WriterTest, ParkedDataSurvivesFailedOpenAndIsDroppedOnDisposeWithoutFile) {
     writer2.dispose();
     EXPECT_FALSE(std::filesystem::exists(untouched));
 }
+
+TEST(WriterTest, ParkedDataBeforeOpenIsBoundedAndKeepsTheNewest) {
+    const auto path = makePath("parked-bounded");
+    Writer writer;
+    constexpr size_t kChunk = 1024 * 1024;
+    for (char c = 'a'; c <= 'h'; ++c) {
+        ASSERT_TRUE(writer.write(std::string(kChunk, c)));
+    }
+    ASSERT_TRUE(writer.open(path.string()));
+    writer.close();
+
+    const auto content = readFile(path);
+    EXPECT_EQ(content.size(), Writer::kMaxParkedBytes);
+    EXPECT_EQ(content.front(), 'e');
+    EXPECT_EQ(content.back(), 'h');
+    writer.dispose();
+    removeFile(path);
+}

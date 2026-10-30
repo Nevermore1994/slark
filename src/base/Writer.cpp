@@ -217,6 +217,7 @@ void Writer::process(Item item) noexcept {
                 isOpen_.store(false, std::memory_order_release);
                 const auto dropped = parked_.size();
                 parked_.clear();
+                parkedBytes_ = 0;
                 value.completion->complete(true);
                 if (dropped > 0) {
                     LogP("writer dropped {} items", dropped);
@@ -253,7 +254,7 @@ void Writer::writeData(DataPtr data) noexcept {
         return;
     }
     if (!fileOpen_) {
-        parked_.push_back(std::move(data));
+        park(std::move(data));
         return;
     }
     file_.withLock([&](auto& file) {
@@ -263,7 +264,17 @@ void Writer::writeData(DataPtr data) noexcept {
     });
 }
 
+void Writer::park(DataPtr data) noexcept {
+    parkedBytes_ += data->length();
+    parked_.push_back(std::move(data));
+    while (parkedBytes_ > kMaxParkedBytes && parked_.size() > 1) {
+        parkedBytes_ -= parked_.front()->length();
+        parked_.pop_front();
+    }
+}
+
 void Writer::flushParked() noexcept {
+    parkedBytes_ = 0;
     while (!parked_.empty()) {
         auto data = std::move(parked_.front());
         parked_.pop_front();

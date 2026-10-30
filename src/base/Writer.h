@@ -20,6 +20,8 @@ namespace slark {
 
 class Writer : public NonCopyMovable {
  public:
+    static constexpr size_t kMaxParkedBytes = 4 * 1024 * 1024;
+
     Writer();
     ~Writer();
 
@@ -80,6 +82,7 @@ class Writer : public NonCopyMovable {
     void closeFile() noexcept;
     void writeData(DataPtr data) noexcept;
     void flushParked() noexcept;
+    void park(DataPtr data) noexcept;
 
     std::atomic_bool isOpen_{false};
     mutable std::mutex mutex_;
@@ -88,6 +91,7 @@ class Writer : public NonCopyMovable {
     bool disposed_ = false;
     bool fileOpen_ = false;
     std::deque<DataPtr> parked_;
+    size_t parkedBytes_ = 0;
     Synchronized<std::unique_ptr<File::WriteFile>> file_;
     std::shared_ptr<TaskThread> worker_;
 };
