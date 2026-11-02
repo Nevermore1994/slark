@@ -45,9 +45,12 @@ AudioPipeline::AudioPipeline(Receiver<AVFrameRefPtr>& input,
     decoder_->setReceiveFunc([this](DecoderData data) {
         handleDecoded(std::move(data));
     });
-    thread_ = std::thread([this] {
+    thread_ = LoopThread::create("audioPipeline", [this](LoopThread&) {
         run();
     });
+    if (!thread_) {
+        fail(Error::OutOfMemory);
+    }
 }
 
 AudioPipeline::~AudioPipeline() {
@@ -56,8 +59,9 @@ AudioPipeline::~AudioPipeline() {
         closed_ = true;
     }
     cv_.notify_all();
-    if (thread_.joinable()) {
-        thread_.join();
+    if (thread_) {
+        thread_->stop();
+        thread_->join();
     }
 }
 
@@ -163,7 +167,7 @@ void AudioPipeline::run() {
         drainDecoderOutput();
         pump();
         std::unique_lock lock(mutex_);
-        cv_.wait_for(lock, kWakeupTick);
+        waitTick(lock);
     }
 }
 
@@ -219,7 +223,7 @@ bool AudioPipeline::decodeOne(AVFrameRefPtr& frame) {
                     return false;
                 }
                 if (pendingOutput_.size() >= kMaxPendingOutput) {
-                    cv_.wait_for(lock, kWakeupTick);
+                    waitTick(lock);
                 }
                 continue;
             }
@@ -241,7 +245,7 @@ bool AudioPipeline::decodeOne(AVFrameRefPtr& frame) {
             return false;
         }
         std::unique_lock lock(mutex_);
-        cv_.wait_for(lock, kWakeupTick);
+        waitTick(lock);
     }
 }
 
@@ -337,6 +341,11 @@ void AudioPipeline::fail(slark::Error error) {
 
 void AudioPipeline::wake() {
     cv_.notify_all();
+}
+
+void AudioPipeline::waitTick(std::unique_lock<std::mutex>& lock) {
+    Thread::ScopedInactive inactive;
+    cv_.wait_for(lock, kWakeupTick);
 }
 
 }  // namespace slark::engine

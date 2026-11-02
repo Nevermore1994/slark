@@ -9,12 +9,12 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <thread>
 
 #include "AVFrame.hpp"
 #include "Channel.hpp"
 #include "Error.h"
 #include "IDecoder.h"
+#include "LoopThread.h"
 #include "Pipeline.h"
 #include "SeekEpoch.h"
 #include "SeekMode.h"
@@ -75,6 +75,7 @@ class VideoPipeline final : public Pipeline {
     void catchUpToKeyframeLocked();
     void fail(slark::Error error);
     void wake();
+    void waitTick(std::unique_lock<std::mutex>& lock);
     void advanceLocked(Time::TimePoint clockNow);
     [[nodiscard]] bool readyLocked() const noexcept;
     [[nodiscard]] bool endedLocked() const noexcept;
@@ -90,7 +91,7 @@ class VideoPipeline final : public Pipeline {
     MediaClock* clock_ = nullptr;
     const Config config_;
 
-    std::thread thread_;
+    std::shared_ptr<LoopThread> thread_;
     mutable std::mutex mutex_;
     std::condition_variable cv_;
     bool closed_ = false;

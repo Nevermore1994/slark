@@ -10,6 +10,7 @@
 #include <thread>
 
 #include "SourceSupport.h"
+#include "ThreadManager.h"
 #include "VideoSink.h"
 
 using namespace std::chrono_literals;
@@ -188,6 +189,15 @@ struct PipelineHarness {
 };
 
 }  // namespace
+
+TEST(VideoPipelineTest, TheWorkerIsARegisteredThreadThatLeavesWithThePipeline) {
+    auto& threads = ThreadManager::shareInstance();
+    const auto before = threads.size();
+    auto harness = PipelineHarness::create();
+    EXPECT_EQ(threads.size(), before + 1);
+    harness.pipeline.reset();
+    EXPECT_EQ(threads.size(), before);
+}
 
 TEST(VideoPipelineTest, FirstFramePresentsEvenWhenAheadIsBelowStartBuffer) {
     auto harness = PipelineHarness::create(1, sec(0.0));

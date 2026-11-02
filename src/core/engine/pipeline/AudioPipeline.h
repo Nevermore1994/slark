@@ -9,12 +9,12 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <thread>
 
 #include "AVFrame.hpp"
 #include "Channel.hpp"
 #include "Error.h"
 #include "IDecoder.h"
+#include "LoopThread.h"
 #include "Pipeline.h"
 #include "SeekEpoch.h"
 #include "SeekMode.h"
@@ -61,6 +61,7 @@ class AudioPipeline final : public Pipeline {
     void pump();
     void fail(slark::Error error);
     void wake();
+    void waitTick(std::unique_lock<std::mutex>& lock);
 
     Receiver<AVFrameRefPtr>& input_;
     std::function<void()> wake_;
@@ -69,7 +70,7 @@ class AudioPipeline final : public Pipeline {
     std::unique_ptr<AudioSink> sink_;
     MediaClock* clock_ = nullptr;
 
-    std::thread thread_;
+    std::shared_ptr<LoopThread> thread_;
     mutable std::mutex mutex_;
     std::condition_variable cv_;
     bool closed_ = false;

@@ -14,6 +14,7 @@
 #include "MediaClock.h"
 #include "ManualScheduler.h"
 #include "SourceSupport.h"
+#include "ThreadManager.h"
 
 using namespace std::chrono_literals;
 using namespace slark;
@@ -410,6 +411,15 @@ TEST(AudioPipelineTest, EosDrainsTheDecoderAndEnds) {
     ASSERT_TRUE(waitUntil([&] {
         return harness.pipeline->ended();
     }));
+}
+
+TEST(AudioPipelineTest, TheWorkerIsARegisteredThreadThatLeavesWithThePipeline) {
+    auto& threads = ThreadManager::shareInstance();
+    const auto before = threads.size();
+    auto harness = PipelineHarness::create();
+    EXPECT_EQ(threads.size(), before + 1);
+    harness.pipeline.reset();
+    EXPECT_EQ(threads.size(), before);
 }
 
 TEST(AudioPipelineTest, CloseIsIdempotent) {
