@@ -89,10 +89,7 @@ aaudio_data_callback_result_t AAudioRender::dataCallback(AAudioStream* /*stream*
     auto dataPtr = static_cast<uint8_t*>(audioData);
 
     AudioDataFlag flag = AudioDataFlag::Normal;
-    uint32_t readSize = 0;
-    if (auto func = render->dataFunc_.load()) {
-        readSize = std::invoke(*func, dataPtr, size, flag);
-    }
+    const auto readSize = render->requestAudioData(dataPtr, size, flag);
     if (readSize < size) {
         std::fill_n(dataPtr + readSize, size - readSize, 0);
     }

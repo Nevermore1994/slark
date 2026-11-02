@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <condition_variable>
 #include <functional>
 #include <mutex>
@@ -20,30 +21,39 @@ class ThreadManager final : public NonCopyMovable {
     using BlockCallback =
         std::function<void(std::string_view threadName, Time::TimeDelta blockDuration)>;
 
-    static inline ThreadManager& shareInstance() {
-        static ThreadManager instance;
-        return instance;
-    }
+    struct Config {
+        std::chrono::milliseconds pollInterval{10'000};
+        Time::TimeDelta blockThreshold = kMaxThreadBlockTimeInterval;
+    };
+
+    /// Never destroyed: worker threads touch it while the process exits.
+    static ThreadManager& shareInstance();
 
     ThreadManager();
+    explicit ThreadManager(Config config);
     ~ThreadManager();
 
-    void add(const std::shared_ptr<Thread>& thread) noexcept;
-    void remove(const std::shared_ptr<Thread>& thread) noexcept;
+    /// Returns true when the thread was not registered yet.
+    bool add(const std::shared_ptr<Thread>& thread) noexcept;
+    /// Returns true when the thread was registered.
+    bool remove(const std::shared_ptr<Thread>& thread) noexcept;
     void setBlockCallback(BlockCallback callback) noexcept;
 
+    /// Registered threads that still exist.
     size_t size() const noexcept;
 
  private:
     void monitorLoop();
     void reportRunInfo() noexcept;
 
+    const Config config_;
     std::unordered_map<uint64_t, std::weak_ptr<Thread>> threadInfos_;
     mutable std::mutex mutex_;
     std::condition_variable cond_;
-    std::thread monitorThread_;
-    std::atomic<bool> stopRequested_{false};
+    bool stopRequested_ = false;
     BlockCallback blockCallback_;
+    // Must stay last: the thread starts in the initializer list and reads the members above.
+    std::thread monitorThread_;
 };
 
 }  // namespace slark

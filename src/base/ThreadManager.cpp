@@ -4,68 +4,87 @@
 
 #include "ThreadManager.h"
 
+#include <algorithm>
 #include <vector>
 
 #include "Log.hpp"
 
 namespace slark {
-using namespace std::chrono_literals;
 
-ThreadManager::ThreadManager()
-    : monitorThread_([this] {
+ThreadManager& ThreadManager::shareInstance() {
+    static ThreadManager* instance = new ThreadManager();
+    return *instance;
+}
+
+ThreadManager::ThreadManager() : ThreadManager(Config{}) {}
+
+ThreadManager::ThreadManager(Config config)
+    : config_(config), monitorThread_([this] {
           monitorLoop();
       }) {}
 
 ThreadManager::~ThreadManager() {
-    stopRequested_.store(true);
+    {
+        std::lock_guard lock(mutex_);
+        stopRequested_ = true;
+    }
     cond_.notify_all();
     if (monitorThread_.joinable()) {
         monitorThread_.join();
     }
-    std::lock_guard lock(mutex_);
-    threadInfos_.clear();
 }
 
 void ThreadManager::monitorLoop() {
-    while (!stopRequested_.load()) {
-        {
-            std::unique_lock lock(mutex_);
-            cond_.wait_for(lock, 10s, [this] {
-                return stopRequested_.load();
+    std::unique_lock lock(mutex_);
+    while (!stopRequested_) {
+        if (threadInfos_.empty()) {
+            cond_.wait(lock, [this] {
+                return stopRequested_ || !threadInfos_.empty();
             });
+            continue;
         }
-        if (stopRequested_.load()) {
+        cond_.wait_for(lock, config_.pollInterval, [this] {
+            return stopRequested_;
+        });
+        if (stopRequested_) {
             break;
         }
+        lock.unlock();
         reportRunInfo();
+        lock.lock();
     }
 }
 
-void ThreadManager::add(const std::shared_ptr<Thread>& thread) noexcept {
+bool ThreadManager::add(const std::shared_ptr<Thread>& thread) noexcept {
     if (!thread || thread->hasExited()) {
-        return;
+        return false;
     }
+    bool inserted = false;
     {
         std::lock_guard lock(mutex_);
-        threadInfos_.insert_or_assign(thread->serial(), thread);
+        inserted = threadInfos_.insert_or_assign(thread->serial(), thread).second;
     }
     cond_.notify_one();
+    return inserted;
 }
 
-void ThreadManager::remove(const std::shared_ptr<Thread>& thread) noexcept {
+bool ThreadManager::remove(const std::shared_ptr<Thread>& thread) noexcept {
     if (!thread) {
-        return;
+        return false;
     }
+    bool erased = false;
     {
         std::lock_guard lock(mutex_);
-        threadInfos_.erase(thread->serial());
+        erased = threadInfos_.erase(thread->serial()) > 0;
     }
-    cond_.notify_one();
+    return erased;
 }
 
 size_t ThreadManager::size() const noexcept {
     std::lock_guard lock(mutex_);
-    return threadInfos_.size();
+    return static_cast<size_t>(std::ranges::count_if(threadInfos_, [](const auto& entry) {
+        return !entry.second.expired();
+    }));
 }
 
 void ThreadManager::setBlockCallback(BlockCallback callback) noexcept {
@@ -75,40 +94,38 @@ void ThreadManager::setBlockCallback(BlockCallback callback) noexcept {
 
 void ThreadManager::reportRunInfo() noexcept {
     const auto now = Time::nowTimeStamp();
+    // Strong refs are released after unlocking: ~Thread joins a worker that unregisters under it.
     std::vector<std::shared_ptr<Thread>> threads;
-    std::vector<std::pair<std::string, Time::TimeDelta>> blockedThreads;
     BlockCallback callback;
-    size_t liveSize = 0;
     {
         std::lock_guard lock(mutex_);
         for (auto it = threadInfos_.begin(); it != threadInfos_.end();) {
+            if (it->second.expired()) {
+                it = threadInfos_.erase(it);
+                continue;
+            }
             if (auto thread = it->second.lock()) {
                 threads.push_back(std::move(thread));
-                ++it;
-            } else {
-                it = threadInfos_.erase(it);
             }
+            ++it;
         }
         callback = blockCallback_;
-        liveSize = threadInfos_.size();
     }
 
     for (const auto& thread : threads) {
-        if (thread->isRunning() && thread->isActive()) {
-            const auto interval = now - thread->getLastRunTimeStamp();
-            if (interval >= kMaxThreadBlockTimeInterval) {
-                blockedThreads.emplace_back(thread->getName(), interval);
-            }
+        if (!thread->isRunning() || !thread->isActive()) {
+            continue;
         }
-    }
-
-    LogI("ThreadManager report now:{}, live size:{}", now.point(), liveSize);
-    if (!callback) {
-        return;
-    }
-    for (auto& [name, duration] : blockedThreads) {
-        LogE("ThreadManager report [{}] is blocking.", name);
-        callback(name, duration);
+        const auto interval = now - thread->getLastRunTimeStamp();
+        if (interval < config_.blockThreshold) {
+            continue;
+        }
+        const auto name = thread->getName();
+        LogE("ThreadManager report [{}] is blocking for {}ms.", name,
+             interval.toMilliSeconds().count());
+        if (callback) {
+            callback(name, interval);
+        }
     }
 }
 

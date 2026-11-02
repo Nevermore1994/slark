@@ -24,8 +24,7 @@ struct LogConfig {
     // Max number of retained log files; oldest files are removed when exceeded
     uint32_t maxLogFileCount = 10;
 
-    // Minimum log level to write; logs below this level are not written to file.
-    // Defaults to Debug, i.e. every level is output.
+    // Minimum log level that is printed and written to file; LogP always prints.
     int minLogLevel = kMinLogLevelDefault;
 
     // Log output directory; empty uses the default path

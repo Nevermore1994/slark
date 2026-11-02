@@ -3,6 +3,7 @@
 //
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <cinttypes>
 #include <cstdio>
@@ -34,7 +35,18 @@ namespace Time {
 std::string localTimeStr() noexcept;
 }
 
-/// Output a log: writes to file if it meets the minimum level threshold, then prints per platform
+namespace internal {
+/// Mirror of LogConfig::minLogLevel for the logging hot path; written by setLogConfig.
+extern std::atomic<int> gMinLogLevel;
+}  // namespace internal
+
+/// Print is console-only and exempt from the threshold; every other level obeys it.
+[[nodiscard]] inline bool isLogEnabled(LogType type) noexcept {
+    return type == LogType::Print ||
+           static_cast<int>(type) >= internal::gMinLogLevel.load(std::memory_order_relaxed);
+}
+
+/// Output a log: writes to file and prints per platform when the level passes the threshold
 void outputLog(LogType level, const std::string& log);
 
 #ifdef __clang__
@@ -44,9 +56,12 @@ void outputLog(LogType level, const std::string& log);
 
 #define LOGGER(level, fmt, ...)                                                                  \
     do {                                                                                         \
-        outputLog(level, std::format("{}{}[{}][Line:{}][Function:{}]" fmt "\n",                  \
-                                     Time::localTimeStr(), kLogTags[static_cast<size_t>(level)], \
-                                     __FILE_NAME__, __LINE__, __FUNCTION__, ##__VA_ARGS__));     \
+        if (isLogEnabled(level)) {                                                               \
+            outputLog(level, std::format("{}{}[{}][Line:{}][Function:{}]" fmt "\n",              \
+                                         Time::localTimeStr(),                                   \
+                                         kLogTags[static_cast<size_t>(level)], __FILE_NAME__,    \
+                                         __LINE__, __FUNCTION__, ##__VA_ARGS__));                \
+        }                                                                                        \
     } while (0)
 
 // clang-format off
@@ -87,19 +102,21 @@ inline bool logThrottled(uint64_t& lastUs, uint32_t intervalMs) noexcept {
 
 // Throttled log: output at most once per intervalMs at the same call site,
 // keeping observation points on per-frame/per-callback success paths
-#define LogIThrottle(intervalMs, format, ...)                        \
-    do {                                                             \
-        static uint64_t kLastUs = 0;                                 \
-        if (!slark::internal::logThrottled(kLastUs, (intervalMs))) { \
-            LogI(format, ##__VA_ARGS__);                             \
-        }                                                            \
+#define LogIThrottle(intervalMs, format, ...)                            \
+    do {                                                                 \
+        static uint64_t kLastUs = 0;                                     \
+        if (slark::isLogEnabled(slark::LogType::Info) &&                 \
+            !slark::internal::logThrottled(kLastUs, (intervalMs))) {     \
+            LogI(format, ##__VA_ARGS__);                                 \
+        }                                                                \
     } while (0)
-#define LogDThrottle(intervalMs, format, ...)                        \
-    do {                                                             \
-        static uint64_t kLastUs = 0;                                 \
-        if (!slark::internal::logThrottled(kLastUs, (intervalMs))) { \
-            LogD(format, ##__VA_ARGS__);                             \
-        }                                                            \
+#define LogDThrottle(intervalMs, format, ...)                            \
+    do {                                                                 \
+        static uint64_t kLastUs = 0;                                     \
+        if (slark::isLogEnabled(slark::LogType::Debug) &&                \
+            !slark::internal::logThrottled(kLastUs, (intervalMs))) {     \
+            LogD(format, ##__VA_ARGS__);                                 \
+        }                                                                \
     } while (0)
 
 #ifdef __clang__

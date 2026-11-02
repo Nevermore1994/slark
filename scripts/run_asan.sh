@@ -51,8 +51,14 @@ fi
 compiler_matches_cache() {
     local variable="$1"
     local compiler="$2"
-    grep -Fq "${variable}:FILEPATH=${compiler}" "${BUILD_DIR}/CMakeCache.txt" ||
-        grep -Fq "${variable}:STRING=${compiler}" "${BUILD_DIR}/CMakeCache.txt"
+    local type
+    # CMake keeps a compiler passed with a bare -D as UNINITIALIZED.
+    for type in FILEPATH STRING UNINITIALIZED; do
+        if grep -Fqx "${variable}:${type}=${compiler}" "${BUILD_DIR}/CMakeCache.txt"; then
+            return 0
+        fi
+    done
+    return 1
 }
 
 if [[ -f "${BUILD_DIR}/CMakeCache.txt" ]] && {

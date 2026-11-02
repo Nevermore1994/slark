@@ -11,6 +11,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <future>
 #include <thread>
 #include <vector>
 
@@ -64,8 +65,8 @@ struct FakeRender : public IAudioRender {
         return latency;
     }
 
-    std::shared_ptr<RequestAudioDataFunc> grabProvider() {
-        return dataFunc_.load();
+    RequestAudioDataFunc grabProvider() {
+        return provider_;
     }
 
     uint32_t pull(uint32_t bytes) {
@@ -244,7 +245,7 @@ TEST(AudioRenderSinkTest, FlushIsSafeWhileTheAudioThreadAndTheProducerRun) {
 
 TEST(AudioRenderSinkTest, ACallbackThatOutlivesTheSinkIsHarmless) {
     auto render = std::make_shared<FakeRender>(audioInfo());
-    std::shared_ptr<RequestAudioDataFunc> provider;
+    RequestAudioDataFunc provider;
     {
         AudioRenderSink sink([&](const std::shared_ptr<AudioInfo>&) { return render; }, 0.1);
         ASSERT_TRUE(sink.open(audioInfo()));
@@ -256,6 +257,83 @@ TEST(AudioRenderSinkTest, ACallbackThatOutlivesTheSinkIsHarmless) {
     ASSERT_TRUE(provider);
     std::vector<uint8_t> buf(kFrameBytes, 0);
     AudioDataFlag flag = AudioDataFlag::Normal;
-    EXPECT_EQ((*provider)(buf.data(), kFrameBytes, flag), 0u);
+    EXPECT_EQ(provider(buf.data(), kFrameBytes, flag), 0u);
     EXPECT_EQ(flag, AudioDataFlag::Error);
+}
+
+TEST(AudioRenderProviderTest, WithoutAProviderTheRequestFailsCleanly) {
+    FakeRender render(audioInfo());
+    std::vector<uint8_t> buf(64, 0);
+    AudioDataFlag flag = AudioDataFlag::Normal;
+    EXPECT_EQ(render.requestAudioData(buf.data(), static_cast<uint32_t>(buf.size()), flag), 0u);
+    EXPECT_EQ(flag, AudioDataFlag::Error);
+}
+
+TEST(AudioRenderProviderTest, SetProviderWaitsForARunningCallback) {
+    FakeRender render(audioInfo());
+    std::promise<void> entered;
+    std::promise<void> release;
+    auto releaseSignal = release.get_future().share();
+    render.setProvider([&](uint8_t*, uint32_t, AudioDataFlag& flag) {
+        entered.set_value();
+        releaseSignal.wait();
+        flag = AudioDataFlag::Normal;
+        return 7u;
+    });
+
+    uint32_t result = 0;
+    std::thread audio([&] {
+        std::vector<uint8_t> buf(16, 0);
+        AudioDataFlag flag = AudioDataFlag::Error;
+        result = render.requestAudioData(buf.data(), static_cast<uint32_t>(buf.size()), flag);
+    });
+    entered.get_future().wait();
+
+    std::atomic<bool> replaced{false};
+    std::thread control([&] {
+        render.setProvider({});
+        replaced = true;
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    EXPECT_FALSE(replaced.load());
+
+    release.set_value();
+    audio.join();
+    control.join();
+    EXPECT_TRUE(replaced.load());
+    EXPECT_EQ(result, 7u);
+}
+
+TEST(AudioRenderProviderTest, ReplacingTheProviderWhileTheAudioThreadPullsIsSafe) {
+    FakeRender render(audioInfo());
+    std::atomic<bool> stop{false};
+    std::atomic<int> unexpected{0};
+    std::thread audio([&] {
+        std::vector<uint8_t> buf(16, 0);
+        const auto size = static_cast<uint32_t>(buf.size());
+        while (!stop) {
+            AudioDataFlag flag = AudioDataFlag::Normal;
+            const auto n = render.requestAudioData(buf.data(), size, flag);
+            const bool fromProvider = flag == AudioDataFlag::Normal && (n == 1 || n == 2);
+            const bool noProvider = flag == AudioDataFlag::Error && n == 0;
+            if (!fromProvider && !noProvider) {
+                ++unexpected;
+            }
+        }
+    });
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+    for (uint32_t i = 0; std::chrono::steady_clock::now() < deadline; ++i) {
+        if (i % 4 == 3) {
+            render.setProvider({});
+            continue;
+        }
+        const uint32_t value = i % 2 + 1;
+        render.setProvider([value](uint8_t*, uint32_t, AudioDataFlag& flag) {
+            flag = AudioDataFlag::Normal;
+            return value;
+        });
+    }
+    stop = true;
+    audio.join();
+    EXPECT_EQ(unexpected.load(), 0);
 }

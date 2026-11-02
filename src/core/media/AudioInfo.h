@@ -4,12 +4,13 @@
 
 #pragma once
 #include <functional>
+#include <mutex>
 #include <utility>
 
 #include "AVFrame.hpp"
+#include "AccessGate.hpp"
 #include "Log.hpp"
 #include "MediaDefs.h"
-#include "Synchronized.hpp"
 #include "Time.hpp"
 
 namespace slark {
@@ -94,14 +95,18 @@ class IAudioRender {
 
     [[nodiscard]] virtual Time::TimeDelta getHardwareLatency() noexcept = 0;
 
+    /// Waits for a running callback; must not be called from the provider itself.
     void setProvider(RequestAudioDataFunc&& func) noexcept {
-        dataFunc_.reset(std::make_shared<RequestAudioDataFunc>(std::move(func)));
+        std::lock_guard lock(providerMutex_);
+        providerGate_.closeAndWait();
+        provider_ = std::move(func);
+        providerGate_.open();
     }
 
     uint32_t requestAudioData(uint8_t* buf, uint32_t size, AudioDataFlag& flag) noexcept {
-        auto func = dataFunc_.load();
-        if (func && *func) {
-            return (*func)(buf, size, flag);
+        AccessGate::Scope access(&providerGate_);
+        if (access && provider_) {
+            return provider_(buf, size, flag);
         }
         flag = AudioDataFlag::Error;
         return 0;
@@ -128,7 +133,11 @@ class IAudioRender {
     std::atomic<float> volume_{1.0f};
     std::shared_ptr<AudioInfo> audioInfo_;
     std::atomic<RenderStatus> status_{RenderStatus::Unknown};
-    AtomicSharedPtr<RequestAudioDataFunc> dataFunc_;
+    RequestAudioDataFunc provider_;
+
+ private:
+    std::mutex providerMutex_;
+    AccessGate providerGate_;
 };
 
 #if (SLARK_IOS || SLARK_ANDROID)

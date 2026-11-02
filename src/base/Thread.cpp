@@ -9,6 +9,8 @@
 #include <utility>
 #include <vector>
 
+#include "ThreadManager.h"
+
 namespace slark {
 namespace {
 thread_local Thread* tlsCurrentWorker = nullptr;
@@ -183,6 +185,7 @@ void Thread::setCurrentActive(bool active) noexcept {
 }
 
 void Thread::startWorker(ThreadTask body) {
+    ThreadManager::shareInstance().add(shared_from_this());
     worker_ = std::thread([weak = weak_from_this(), body = std::move(body)]() mutable {
         if (auto self = weak.lock()) {
             self->runWorker(std::move(body));
@@ -253,6 +256,7 @@ void Thread::runWorker(ThreadTask body) noexcept {
         exited_.store(true, std::memory_order_release);
     }
     cond_.notify_all();
+    ThreadManager::shareInstance().remove(shared_from_this());
 }
 
 void Thread::setup() noexcept {

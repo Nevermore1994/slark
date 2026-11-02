@@ -29,7 +29,7 @@ typedef NS_ENUM(NSInteger, SlarkLogLevel) {
 // Max number of retained log files; oldest files are removed when exceeded
 @property(nonatomic, assign) uint32_t maxLogFileCount;
 
-// Minimum log level to write; logs below this level are not written to file
+// Minimum log level that is printed and written to file
 @property(nonatomic, assign) SlarkLogLevel minLogLevel;
 
 // Log output directory; empty uses the default path

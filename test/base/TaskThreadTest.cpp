@@ -261,8 +261,8 @@ TEST(TaskThreadTest, ExecutedAndCancelledOneShotsLeaveNoResidue) {
     std::vector<TimerId> toCancel;
     std::vector<TimerId> toDrop;
     for (int i = 0; i < kPerKind; ++i) {
-        // 10s delay keeps the cancel-able tasks safely pending while the loop cancels them.
-        toCancel.push_back(worker->postTask(10s, [] {}));
+        // A long delay keeps the cancel-able tasks pending even when a sanitizer slows the loop.
+        toCancel.push_back(worker->postTask(1h, [] {}));
         toDrop.push_back(worker->postTask(1h, [] {}));
         worker->postTask(0ms, [&] { ++executed; });
     }

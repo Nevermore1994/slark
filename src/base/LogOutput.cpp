@@ -30,7 +30,10 @@ LogOutput& LogOutput::shareInstance() {
 }
 
 void outputLog(LogType level, const std::string& log) {
-    if (level != LogType::Print && static_cast<int>(level) >= getLogConfig().minLogLevel) {
+    if (!isLogEnabled(level)) {
+        return;
+    }
+    if (level != LogType::Print) {
         LogOutput::shareInstance().write(log);
     }
     if (level == LogType::Record) {

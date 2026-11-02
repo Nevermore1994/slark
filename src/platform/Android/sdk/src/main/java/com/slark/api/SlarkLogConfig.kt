@@ -14,7 +14,7 @@ data class SlarkLogConfig(
     // Max number of retained log files; oldest files are removed when exceeded
     val maxLogFileCount: Int = 10,
 
-    // Minimum log level to write; logs below this level are not written to file
+    // Minimum log level that is printed and written to file
     val minLogLevel: SlarkLogLevel = SlarkLogLevel.DEBUG,
 
     // Log output directory; empty uses the default path

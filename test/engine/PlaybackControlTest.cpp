@@ -16,10 +16,12 @@
 #include "ComponentFactories.h"
 #include "PlaybackFactory.h"
 #include "Engine.h"
+#include "LogOutput.h"
 #include "Notifier.h"
 #include "PlayerContext.h"
 #include "Scheduler.h"
 #include "SourceSupport.h"
+#include "ThreadManager.h"
 #include "VideoSink.h"
 
 using namespace std::chrono_literals;
@@ -445,4 +447,24 @@ TEST(PlaybackControlTest, LoopDisabledEndsPlayback) {
     }
     ASSERT_TRUE(ended);
     h.engine->post(Stop{});
+}
+
+TEST(PlaybackControlTest, StoppingASessionLeavesNoSessionThreadAlive) {
+    auto& threads = ThreadManager::shareInstance();
+    // The log writer owns a process-wide thread that appears on the first log line.
+    (void)LogOutput::shareInstance();
+    auto h = Harness::create();
+    const auto idle = threads.size();
+    EXPECT_GE(idle, 2u);
+
+    h.prepare(kMp4Path);
+    ASSERT_TRUE(h.pumpUntil([&] {
+        return h.engine->snapshot().status == Status::Ready;
+    }));
+    EXPECT_GT(threads.size(), idle);
+
+    h.engine->post(Stop{});
+    EXPECT_TRUE(h.pumpUntil([&] {
+        return h.engine->snapshot().status == Status::Idle && threads.size() == idle;
+    })) << "idle=" << idle << " now=" << threads.size();
 }
