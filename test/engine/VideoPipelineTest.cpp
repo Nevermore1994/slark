@@ -199,6 +199,14 @@ TEST(VideoPipelineTest, TheWorkerIsARegisteredThreadThatLeavesWithThePipeline) {
     EXPECT_EQ(threads.size(), before);
 }
 
+TEST(VideoPipelineTest, AnIdlePipelineShutsDownPromptly) {
+    auto harness = PipelineHarness::create();
+    std::this_thread::sleep_for(50ms);
+    const auto start = std::chrono::steady_clock::now();
+    harness.pipeline.reset();
+    EXPECT_LT(std::chrono::steady_clock::now() - start, 500ms);
+}
+
 TEST(VideoPipelineTest, FirstFramePresentsEvenWhenAheadIsBelowStartBuffer) {
     auto harness = PipelineHarness::create(1, sec(0.0));
     harness.pipeline->flush(1, sec(0.0), SeekMode::Fast);
@@ -328,6 +336,35 @@ TEST(VideoPipelineTest, RenderHeldFramesCountTowardsTheQueueLimit) {
     std::this_thread::sleep_for(80ms);
     EXPECT_EQ(harness.decoder->decodeCalls.load(), settled);
     EXPECT_LE(settled - beforeSettle, 5);
+}
+
+TEST(VideoPipelineTest, AFullPresentationQueueResumesWhenVsyncOpensRoom) {
+    VideoPipeline::Config config;
+    config.maxQueueFrames = 2;
+    auto harness = PipelineHarness::create(1, sec(0.0), config);
+    for (int i = 0; i < 3; ++i) {
+        harness.sender->post(videoFrame(0.2 * i, 1, i == 0));
+    }
+    ASSERT_TRUE(waitUntil([&] {
+        harness.pipeline->onVsync(
+            sec(0.2 * static_cast<double>(harness.sink->presentedPts.size())));
+        return harness.sink->presentedPts.size() >= 2;
+    }));
+    // Stall the queue: the render side holds everything and the input keeps arriving.
+    for (int i = 0; i < 6; ++i) {
+        harness.sender->post(videoFrame(1.0 + i * 0.1));
+    }
+    std::this_thread::sleep_for(100ms);
+    const auto blocked = harness.decoder->decodeCalls.load();
+
+    // The clock reaching the queued frames presents one and opens a slot; the decoder must resume
+    // well before the 20ms retry tick, so the wakeup has to come from onVsync itself.
+    const auto opened = std::chrono::steady_clock::now();
+    ASSERT_TRUE(waitUntil([&] {
+        harness.pipeline->onVsync(sec(0.5));
+        return harness.decoder->decodeCalls.load() > blocked;
+    }));
+    EXPECT_LT(std::chrono::steady_clock::now() - opened, 15ms);
 }
 
 TEST(VideoPipelineTest, EosEndsThePipelineOnceTheQueueDrains) {

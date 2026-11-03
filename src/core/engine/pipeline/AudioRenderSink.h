@@ -26,6 +26,7 @@ class AudioRenderSink final : public AudioSink {
     bool write(AVFrameRefPtr frame) override;
     [[nodiscard]] Time::TimePoint position() const override;
     [[nodiscard]] bool primed() const override;
+    [[nodiscard]] double bufferedSec() const override;
     void start() override;
     void pause() override;
     void setVolume(float volume) override;

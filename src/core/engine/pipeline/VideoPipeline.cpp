@@ -5,23 +5,24 @@
 
 #include <algorithm>
 #include <chrono>
+#include <format>
 #include <functional>
 #include <utility>
-
-#include <format>
 
 #include "AVSync.h"
 #include "Log.hpp"
 #include "MediaClock.h"
+#include "Thread.h"
 #include "VideoSink.h"
 
 namespace slark::engine {
 namespace {
 
 using namespace std::chrono_literals;
-constexpr auto kWakeupTick = 20ms;
-// At one tick per try this bounds a wedged codec to about 2s.
-constexpr int kMaxDecodeRetries = 100;
+// Retry period for a refused frame, undrained codec output, and the catch-up probe.
+constexpr auto kRetryTick = 20ms;
+// Refused input without any decoder progress for this long fails the pipeline.
+constexpr auto kCodecStallLimit = 2s;
 constexpr double kPrerollSlackSec = 0.001;  // pts ≥ target − 1ms
 
 [[nodiscard]] bool isPresentableKeyframe(const AVFrameRefPtr& frame) noexcept {
@@ -53,6 +54,12 @@ VideoPipeline::VideoPipeline(Receiver<AVFrameRefPtr>& input,
     decoder_->setReceiveFunc([this](DecoderData data) {
         handleDecoded(std::move(data));
     });
+    decoder_->setWakeupCallback([gate = wakeGate_, this] {
+        AccessGate::Scope access(gate.get());
+        if (access) {
+            wakeLoop();
+        }
+    });
     thread_ = LoopThread::create("videoPipeline", [this](LoopThread&) {
         run();
     });
@@ -62,11 +69,15 @@ VideoPipeline::VideoPipeline(Receiver<AVFrameRefPtr>& input,
 }
 
 VideoPipeline::~VideoPipeline() {
+    wakeGate_->closeAndWait();
+    if (decoder_) {
+        decoder_->setWakeupCallback({});
+    }
     {
         std::lock_guard lock(mutex_);
         closed_ = true;
     }
-    cv_.notify_all();
+    wakeLoop();
     if (thread_) {
         thread_->stop();
         thread_->join();
@@ -84,20 +95,25 @@ void VideoPipeline::flush(SeekEpoch epoch, Time::TimePoint target, SeekMode mode
         prerolled_ = false;
         starved_ = false;
         starvedVsyncs_ = 0;
+        refusedSince_.reset();
+        blockedOnFull_ = false;
         queue_.clear();
         (void)input_.tryReceiveAll();
     }
     if (decoder_) {
         decoder_->flush();
     }
-    cv_.notify_all();
+    wakeLoop();
 }
 
 void VideoPipeline::retarget(SeekEpoch epoch, Time::TimePoint target, SeekMode mode) {
-    std::lock_guard lock(mutex_);
-    epoch_ = epoch;
-    target_ = target;
-    seekMode_ = mode;
+    {
+        std::lock_guard lock(mutex_);
+        epoch_ = epoch;
+        target_ = target;
+        seekMode_ = mode;
+    }
+    wakeLoop();
 }
 
 void VideoPipeline::setPlaying(bool playing) {
@@ -155,6 +171,7 @@ std::optional<Error> VideoPipeline::failure() const {
 
 void VideoPipeline::onVsync(Time::TimePoint clockNow) {
     bool changed = false;
+    bool roomOpened = false;
     {
         std::lock_guard lock(mutex_);
         if (closed_ || failure_) {
@@ -164,9 +181,17 @@ void VideoPipeline::onVsync(Time::TimePoint clockNow) {
         const bool wasEnded = endedLocked();
         advanceLocked(clockNow);
         changed = wasReady != readyLocked() || wasEnded != endedLocked();
+        // The capacity moves with the sink's held count too, so compare against the blocked state.
+        roomOpened = blockedOnFull_ && static_cast<int32_t>(queue_.size()) < queueCapacityLocked();
+        if (roomOpened) {
+            blockedOnFull_ = false;
+        }
     }
     if (changed && wake_) {
         wake_();
+    }
+    if (roomOpened) {
+        wakeLoop();
     }
 }
 
@@ -228,17 +253,16 @@ void VideoPipeline::run() {
     while (true) {
         {
             std::lock_guard lock(mutex_);
+            wakeRequested_ = false;
             if (closed_ || failure_) {
                 // A failed pipeline must not keep feeding the dead codec.
                 return;
             }
         }
-        for (auto& frame : input_.tryReceiveAll()) {
-            handleInput(frame);
-            std::lock_guard lock(mutex_);
-            if (failure_) {
-                return;
-            }
+        pullInput();
+        drainInbox();
+        if (stopping()) {
+            return;
         }
         drainDecoderOutput();
         {
@@ -247,30 +271,58 @@ void VideoPipeline::run() {
                 catchUpToKeyframeLocked();
             }
         }
-        std::unique_lock lock(mutex_);
-        waitTick(lock);
+        waitForWork();
     }
 }
 
-void VideoPipeline::handleInput(AVFrameRefPtr& frame) {
-    if (!frame || frame->isEOS) {
-        if (frame && frame->isEOS) {
-            {
-                std::lock_guard lock(mutex_);
-                eosReceived_ = true;
+void VideoPipeline::pullInput() {
+    for (auto& frame : input_.tryReceiveAll()) {
+        inbox_.push_back(std::move(frame));
+    }
+}
+
+void VideoPipeline::drainInbox() {
+    while (!stopping()) {
+        if (!staged_) {
+            if (inbox_.empty()) {
+                return;
             }
-            if (wake_) {
-                wake_();
-            }
+            staged_ = std::move(inbox_.front());
+            inbox_.pop_front();
         }
-        return;
+        if (!attempt(staged_)) {
+            return;
+        }
+        staged_.reset();
+    }
+}
+
+bool VideoPipeline::stopping() const {
+    std::lock_guard lock(mutex_);
+    return closed_ || failure_.has_value();
+}
+
+bool VideoPipeline::attempt(AVFrameRefPtr& frame) {
+    blockedByCodec_ = false;
+    if (!frame) {
+        return true;
+    }
+    if (frame->isEOS) {
+        {
+            std::lock_guard lock(mutex_);
+            eosReceived_ = true;
+        }
+        if (wake_) {
+            wake_();
+        }
+        return true;
     }
     Time::TimePoint target;
     SeekMode mode = SeekMode::Exact;
     {
         std::lock_guard lock(mutex_);
         if (frame->seekEpoch != epoch_) {
-            return;
+            return true;
         }
         target = target_;
         mode = seekMode_;
@@ -279,62 +331,55 @@ void VideoPipeline::handleInput(AVFrameRefPtr& frame) {
     if (mode == SeekMode::Exact && frame->ptsTime() < target.second() && !frame->isDiscard) {
         frame->isDiscard = true;
     }
-    if (!decodeOne(frame)) {
-        return;
+    if (queueFull()) {
+        // Presentation is the bottleneck: drain, then wait; do not drop the input frame.
+        drainDecoderOutput();
+        if (queueFull()) {
+            std::lock_guard lock(mutex_);
+            blockedOnFull_ = true;
+            return false;
+        }
     }
+    decoder_->setCurrentSeekEpoch(frame->seekEpoch);
+    const auto error = decoder_->decode(frame);
+    if (error == Error::Success) {
+        noteProgress();
+        // Take the frame out at once: holding it keeps the codec's output buffer checked out.
+        drainDecoderOutput();
+        return true;
+    }
+    if (error != Error::CodecAgain && error != Error::CodecNotProcessed) {
+        fail(error);
+        return true;
+    }
+    // Input is full because outputs are still checked out; draining lets the codec accept it.
     drainDecoderOutput();
+    if (refusalExceededLimit()) {
+        LogE("video decoder refused input without progress, pts:{:.3f}", frame->ptsTime());
+        fail(Error::CodecResourceExhausted);
+        return true;
+    }
+    blockedByCodec_ = true;
+    return false;
 }
 
-bool VideoPipeline::decodeOne(AVFrameRefPtr& frame) {
-    // A codec that refuses input without producing output is dead: fail instead of waiting.
-    int againRetries = 0;
-    while (true) {
-        {
-            std::unique_lock lock(mutex_);
-            if (closed_) {
-                return false;
-            }
-            if (frame->seekEpoch != epoch_) {
-                // A flush happened while this frame was waiting for room.
-                return false;
-            }
-            if (static_cast<int32_t>(queue_.size()) >= queueCapacityLocked()) {
-                // Presentation is the bottleneck: drain, then wait; do not drop the input frame.
-                lock.unlock();
-                drainDecoderOutput();
-                lock.lock();
-                if (closed_) {
-                    return false;
-                }
-                if (static_cast<int32_t>(queue_.size()) >= queueCapacityLocked()) {
-                    waitTick(lock);
-                }
-                continue;
-            }
-        }
-        // Platform decoders stamp their output with this epoch; otherwise frames drop as stale.
-        decoder_->setCurrentSeekEpoch(frame->seekEpoch);
-        const auto error = decoder_->decode(frame);
-        if (error == Error::Success) {
-            // Take the frame out at once: holding it keeps the codec's output buffer checked out.
-            drainDecoderOutput();
-            return true;
-        }
-        if (error != Error::CodecAgain && error != Error::CodecNotProcessed) {
-            fail(error);
-            return false;
-        }
-        // Input is full because outputs are still checked out; draining lets the codec accept it.
-        drainDecoderOutput();
-        if (++againRetries > kMaxDecodeRetries) {
-            LogE("video decode retry exhausted after {}, pts:{:.3f}", againRetries,
-                 frame->ptsTime());
-            fail(Error::CodecResourceExhausted);
-            return false;
-        }
-        std::unique_lock lock(mutex_);
-        waitTick(lock);
+bool VideoPipeline::queueFull() const {
+    std::lock_guard lock(mutex_);
+    return static_cast<int32_t>(queue_.size()) >= queueCapacityLocked();
+}
+
+bool VideoPipeline::refusalExceededLimit() {
+    const auto now = std::chrono::steady_clock::now();
+    std::lock_guard lock(mutex_);
+    if (!refusedSince_) {
+        refusedSince_ = now;
     }
+    return now - *refusedSince_ >= kCodecStallLimit;
+}
+
+void VideoPipeline::noteProgress() {
+    std::lock_guard lock(mutex_);
+    refusedSince_.reset();
 }
 
 void VideoPipeline::handleDecoded(slark::DecoderData data) {
@@ -352,7 +397,7 @@ void VideoPipeline::handleDecoded(slark::DecoderData data) {
     }
     data.frame->seekEpoch = epoch;
     queue_.push_back(std::move(data.frame));
-    cv_.notify_all();
+    refusedSince_.reset();
 }
 
 void VideoPipeline::drainDecoderOutput() {
@@ -365,12 +410,13 @@ void VideoPipeline::drainDecoderOutput() {
             break;
         }
     }
+    outputPending_ = decoder_->hasPendingOutput();
     bool eos = false;
     {
         std::lock_guard lock(mutex_);
         eos = eosReceived_;
     }
-    if (eos && !decoder_->hasPendingOutput()) {
+    if (eos && !outputPending_) {
         std::lock_guard lock(mutex_);
         if (!decoderEnded_) {
             decoderEnded_ = true;
@@ -387,6 +433,43 @@ void VideoPipeline::catchUpToKeyframeLocked() {
     }
     prerolled_ = false;
     ++catchUpCount_;
+}
+
+void VideoPipeline::waitForWork() {
+    const auto timeout = waitTimeout();
+    if (inputClosed_) {
+        waitForWake(timeout);
+        return;
+    }
+    auto next = timeout ? input_.receiveFor(*timeout) : input_.receive();
+    if (next) {
+        inbox_.push_back(std::move(*next));
+    } else if (next.error() == ChannelEventType::Closed) {
+        inputClosed_ = true;
+    }
+}
+
+void VideoPipeline::waitForWake(std::optional<std::chrono::milliseconds> timeout) {
+    Thread::ScopedInactive inactive;
+    std::unique_lock lock(mutex_);
+    const auto woken = [this] {
+        return wakeRequested_ || closed_;
+    };
+    if (timeout) {
+        cv_.wait_for(lock, *timeout, woken);
+    } else {
+        cv_.wait(lock, woken);
+    }
+    wakeRequested_ = false;
+}
+
+std::optional<std::chrono::milliseconds> VideoPipeline::waitTimeout() const {
+    std::lock_guard lock(mutex_);
+    // A live catch-up probe is evaluated on every tick; otherwise the queue opens through onVsync.
+    if (blockedByCodec_ || outputPending_ || catchUpProbe_) {
+        return kRetryTick;
+    }
+    return std::nullopt;
 }
 
 std::string VideoPipeline::debugState() const {
@@ -414,16 +497,16 @@ void VideoPipeline::fail(slark::Error error) {
             failure_ = error;
         }
     }
-    wake();
+    wakeLoop();
 }
 
-void VideoPipeline::wake() {
+void VideoPipeline::wakeLoop() {
+    {
+        std::lock_guard lock(mutex_);
+        wakeRequested_ = true;
+    }
     cv_.notify_all();
-}
-
-void VideoPipeline::waitTick(std::unique_lock<std::mutex>& lock) {
-    Thread::ScopedInactive inactive;
-    cv_.wait_for(lock, kWakeupTick);
+    input_.wakeup();
 }
 
 }  // namespace slark::engine

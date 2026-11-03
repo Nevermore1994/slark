@@ -130,6 +130,13 @@ bool AudioRenderSink::primed() const {
     return info_->dataLen2TimePoint(plane_->buffer.length()).second() >= prefillSec_;
 }
 
+double AudioRenderSink::bufferedSec() const {
+    if (!plane_) {
+        return 0.0;
+    }
+    return info_->dataLen2TimePoint(plane_->buffer.length()).second();
+}
+
 void AudioRenderSink::start() {
     if (render_) {
         render_->play();

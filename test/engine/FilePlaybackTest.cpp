@@ -75,6 +75,10 @@ struct AcceptingAudioSink : public AudioSink {
         return written >= 1;
     }
 
+    [[nodiscard]] double bufferedSec() const override {
+        return 0.0;
+    }
+
     void start() override {}
 
     void pause() override {}
@@ -118,6 +122,10 @@ struct SharedCountingAudioSink : public AudioSink {
 
     [[nodiscard]] bool primed() const override {
         return primed_->load();
+    }
+
+    [[nodiscard]] double bufferedSec() const override {
+        return 0.0;
     }
 
     void start() override {}

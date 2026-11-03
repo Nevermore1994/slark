@@ -5,22 +5,26 @@
 
 #include <algorithm>
 #include <chrono>
+#include <format>
 #include <functional>
 #include <utility>
 
 #include "AudioSink.h"
-#include <format>
-
 #include "Log.hpp"
 #include "MediaClock.h"
+#include "Thread.h"
 
 namespace slark::engine {
 namespace {
 
 using namespace std::chrono_literals;
-constexpr auto kWakeupTick = 20ms;
-// At one tick per try this bounds a wedged codec to about 2s.
-constexpr int kMaxDecodeRetries = 100;
+// Retry period for a refused frame and for a sink that is full while the pipeline is blocked.
+constexpr auto kRetryTick = 20ms;
+// While playing, clock anchoring and sink refills follow the buffered audio within this range.
+constexpr auto kSinkTickMin = 10ms;
+constexpr auto kSinkTickMax = 100ms;
+// Refused input without any decoder progress for this long fails the pipeline.
+constexpr auto kCodecStallLimit = 2s;
 
 }  // namespace
 
@@ -45,6 +49,12 @@ AudioPipeline::AudioPipeline(Receiver<AVFrameRefPtr>& input,
     decoder_->setReceiveFunc([this](DecoderData data) {
         handleDecoded(std::move(data));
     });
+    decoder_->setWakeupCallback([gate = wakeGate_, this] {
+        AccessGate::Scope access(gate.get());
+        if (access) {
+            wakeLoop();
+        }
+    });
     thread_ = LoopThread::create("audioPipeline", [this](LoopThread&) {
         run();
     });
@@ -54,29 +64,35 @@ AudioPipeline::AudioPipeline(Receiver<AVFrameRefPtr>& input,
 }
 
 AudioPipeline::~AudioPipeline() {
+    wakeGate_->closeAndWait();
+    if (decoder_) {
+        decoder_->setWakeupCallback({});
+    }
     {
         std::lock_guard lock(mutex_);
         closed_ = true;
     }
-    cv_.notify_all();
+    wakeLoop();
     if (thread_) {
         thread_->stop();
         thread_->join();
     }
 }
 
-void AudioPipeline::flush(SeekEpoch epoch, Time::TimePoint target, SeekMode mode) {
+void AudioPipeline::flush(SeekEpoch epoch, Time::TimePoint target, SeekMode /*mode*/) {
     {
         std::lock_guard lock(mutex_);
         epoch_ = epoch;
         target_ = target;
-        seekMode_ = mode;
         eosReceived_ = false;
         decoderEnded_ = false;
         lastDecodedPts_.reset();
         primedOnce_ = false;
         lastAnchored_ = target;
         pendingOutput_.clear();
+        written_.clear();
+        recording_ = true;
+        refusedSince_.reset();
         (void)input_.tryReceiveAll();
         if (sink_) {
             sink_->flush(target);
@@ -85,14 +101,42 @@ void AudioPipeline::flush(SeekEpoch epoch, Time::TimePoint target, SeekMode mode
     if (decoder_) {
         decoder_->flush();
     }
-    cv_.notify_all();
+    wakeLoop();
 }
 
-void AudioPipeline::retarget(SeekEpoch epoch, Time::TimePoint target, SeekMode mode) {
-    std::lock_guard lock(mutex_);
-    epoch_ = epoch;
-    target_ = target;
-    seekMode_ = mode;
+void AudioPipeline::retarget(SeekEpoch epoch, Time::TimePoint target, SeekMode /*mode*/) {
+    {
+        std::lock_guard lock(mutex_);
+        epoch_ = epoch;
+        target_ = target;
+        rebaseLocked(target);
+    }
+    wakeLoop();
+}
+
+// Audio queued for the old target must not play; what lies at or after the new one stays.
+void AudioPipeline::rebaseLocked(Time::TimePoint target) {
+    std::deque<AVFrameRefPtr> kept;
+    for (auto* frames : {&written_, &pendingOutput_}) {
+        for (auto& frame : *frames) {
+            if (frame->ptsTime() >= target.second()) {
+                kept.push_back(std::move(frame));
+            }
+        }
+        frames->clear();
+    }
+    // Flush even when nothing was written: it also moves the sink's timeline to the new target.
+    if (sink_) {
+        sink_->flush(target);
+    }
+    lastDecodedPts_.reset();
+    for (const auto& frame : kept) {
+        lastDecodedPts_ = std::max(lastDecodedPts_.value_or(frame->ptsTime()), frame->ptsTime());
+    }
+    pendingOutput_ = std::move(kept);
+    decoderEnded_ = false;
+    primedOnce_ = false;
+    lastAnchored_ = target;
 }
 
 void AudioPipeline::setClock(MediaClock& clock) {
@@ -107,12 +151,18 @@ void AudioPipeline::setPlaying(bool playing) {
             return;
         }
         playing_ = playing;
+        if (playing) {
+            // A retarget needs a seek in flight, and each seek reopens the record in flush().
+            recording_ = false;
+            written_.clear();
+        }
     }
     if (playing) {
         sink_->start();
     } else {
         sink_->pause();
     }
+    wakeLoop();
 }
 
 void AudioPipeline::setVolume(float volume) {
@@ -152,101 +202,121 @@ void AudioPipeline::run() {
     while (true) {
         {
             std::lock_guard lock(mutex_);
+            wakeRequested_ = false;
             if (closed_ || failure_) {
                 // A failed pipeline must not keep feeding the dead codec.
                 return;
             }
         }
-        for (auto& frame : input_.tryReceiveAll()) {
-            handleInput(frame);
-            std::lock_guard lock(mutex_);
-            if (failure_) {
-                return;
-            }
+        pullInput();
+        drainInbox();
+        if (stopping()) {
+            return;
         }
-        drainDecoderOutput();
         pump();
-        std::unique_lock lock(mutex_);
-        waitTick(lock);
+        drainDecoderOutput();
+        if (staged_ && !blockedByCodec_ && !outputFull()) {
+            // The pump made room for the frame that waited on the sink.
+            continue;
+        }
+        waitForWork();
     }
 }
 
-void AudioPipeline::handleInput(AVFrameRefPtr& frame) {
-    if (!frame || frame->isEOS) {
-        if (frame && frame->isEOS) {
-            {
-                std::lock_guard lock(mutex_);
-                eosReceived_ = true;
-            }
-            if (wake_) {
-                wake_();
-            }
-        }
-        return;
+void AudioPipeline::pullInput() {
+    for (auto& frame : input_.tryReceiveAll()) {
+        inbox_.push_back(std::move(frame));
     }
-    std::optional<Time::TimePoint> target;
-    SeekMode mode = SeekMode::Exact;
+}
+
+void AudioPipeline::drainInbox() {
+    while (!stopping()) {
+        if (!staged_) {
+            if (inbox_.empty()) {
+                return;
+            }
+            staged_ = std::move(inbox_.front());
+            inbox_.pop_front();
+        }
+        if (!attempt(staged_)) {
+            return;
+        }
+        staged_.reset();
+    }
+}
+
+bool AudioPipeline::stopping() const {
+    std::lock_guard lock(mutex_);
+    return closed_ || failure_.has_value();
+}
+
+bool AudioPipeline::attempt(AVFrameRefPtr& frame) {
+    blockedByCodec_ = false;
+    if (!frame) {
+        return true;
+    }
+    if (frame->isEOS) {
+        {
+            std::lock_guard lock(mutex_);
+            eosReceived_ = true;
+        }
+        if (wake_) {
+            wake_();
+        }
+        return true;
+    }
+    Time::TimePoint target;
     {
         std::lock_guard lock(mutex_);
         if (frame->seekEpoch != epoch_) {
-            return;
-        }
-        target = target_;
-        mode = seekMode_;
-    }
-    const auto pts = frame->ptsTime();
-    if (mode == SeekMode::Exact && !frame->isDiscard && pts < target->second()) {
-        return;
-    }
-    if (!decodeOne(frame)) {
-        return;
-    }
-    drainDecoderOutput();
-    pump();
-}
-
-bool AudioPipeline::decodeOne(AVFrameRefPtr& frame) {
-    // A codec that refuses input without producing output is dead: fail instead of waiting.
-    int againRetries = 0;
-    while (true) {
-        {
-            std::unique_lock lock(mutex_);
-            if (closed_) {
-                return false;
-            }
-            if (pendingOutput_.size() >= kMaxPendingOutput) {
-                // The sink is the bottleneck: pump here and wait only if nothing could be written.
-                lock.unlock();
-                pump();
-                lock.lock();
-                if (closed_) {
-                    return false;
-                }
-                if (pendingOutput_.size() >= kMaxPendingOutput) {
-                    waitTick(lock);
-                }
-                continue;
-            }
-        }
-        // Platform decoders stamp their output with this epoch; otherwise frames drop as stale.
-        decoder_->setCurrentSeekEpoch(frame->seekEpoch);
-        const auto error = decoder_->decode(frame);
-        if (error == Error::Success) {
             return true;
         }
-        if (error != Error::CodecAgain && error != Error::CodecNotProcessed) {
-            fail(error);
-            return false;
-        }
-        if (++againRetries > kMaxDecodeRetries) {
-            LogE("audio decode retry exhausted after {}, pts:{:.3f}", againRetries,
-                 frame->ptsTime());
-            fail(Error::CodecResourceExhausted);
-            return false;
-        }
-        std::unique_lock lock(mutex_);
-        waitTick(lock);
+        target = target_;
     }
+    // Audio never plays before the target, whatever the seek mode.
+    if (!frame->isDiscard && frame->ptsTime() < target.second()) {
+        return true;
+    }
+    if (outputFull()) {
+        return false;
+    }
+    // Platform decoders stamp their output with this epoch; otherwise frames drop as stale.
+    decoder_->setCurrentSeekEpoch(frame->seekEpoch);
+    const auto error = decoder_->decode(frame);
+    if (error == Error::Success) {
+        noteProgress();
+        return true;
+    }
+    if (error != Error::CodecAgain && error != Error::CodecNotProcessed) {
+        fail(error);
+        return true;
+    }
+    if (refusalExceededLimit()) {
+        LogE("audio decoder refused input without progress, pts:{:.3f}", frame->ptsTime());
+        fail(Error::CodecResourceExhausted);
+        return true;
+    }
+    blockedByCodec_ = true;
+    return false;
+}
+
+bool AudioPipeline::outputFull() const {
+    std::lock_guard lock(mutex_);
+    return pendingOutput_.size() >= kMaxPendingOutput;
+}
+
+bool AudioPipeline::refusalExceededLimit() {
+    const auto now = std::chrono::steady_clock::now();
+    std::lock_guard lock(mutex_);
+    if (!refusedSince_) {
+        refusedSince_ = now;
+    }
+    return now - *refusedSince_ >= kCodecStallLimit;
+}
+
+void AudioPipeline::noteProgress() {
+    std::lock_guard lock(mutex_);
+    refusedSince_.reset();
 }
 
 void AudioPipeline::handleDecoded(slark::DecoderData data) {
@@ -258,17 +328,24 @@ void AudioPipeline::handleDecoded(slark::DecoderData data) {
     }
     // Prefer DecoderData.seekEpoch; the frame's own copy is only a fallback.
     const auto epoch = data.seekEpoch != 0 ? data.seekEpoch : data.frame->seekEpoch;
-    std::lock_guard lock(mutex_);
-    if (closed_ || data.frame->isEOS || data.frame->isDiscard || epoch != epoch_) {
-        return;
+    {
+        std::lock_guard lock(mutex_);
+        if (closed_ || data.frame->isEOS || data.frame->isDiscard || epoch != epoch_) {
+            return;
+        }
+        const auto pts = data.frame->ptsTime();
+        // Input accepted before a retarget can still come out; it is no longer wanted.
+        if (pts < target_.second()) {
+            return;
+        }
+        data.frame->seekEpoch = epoch;
+        if (!lastDecodedPts_ || pts > *lastDecodedPts_) {
+            lastDecodedPts_ = pts;
+        }
+        pendingOutput_.push_back(std::move(data.frame));
+        refusedSince_.reset();
     }
-    data.frame->seekEpoch = epoch;
-    const auto pts = data.frame->ptsTime();
-    if (!lastDecodedPts_ || pts > *lastDecodedPts_) {
-        lastDecodedPts_ = pts;
-    }
-    pendingOutput_.push_back(std::move(data.frame));
-    cv_.notify_all();
+    wakeLoop();
 }
 
 void AudioPipeline::drainDecoderOutput() {
@@ -306,19 +383,65 @@ void AudioPipeline::drainDecoderOutput() {
 
 void AudioPipeline::pump() {
     std::lock_guard lock(mutex_);
-    bool wrote = false;
     while (!pendingOutput_.empty() && sink_->write(pendingOutput_.front())) {
+        if (recording_) {
+            written_.push_back(std::move(pendingOutput_.front()));
+        }
         pendingOutput_.pop_front();
-        wrote = true;
-    }
-    if (wrote) {
-        cv_.notify_all();
     }
     const auto position = sink_->position();
     if (clock_ && position > lastAnchored_) {
         clock_->anchor(position);
         lastAnchored_ = position;
     }
+}
+
+void AudioPipeline::waitForWork() {
+    const auto timeout = waitTimeout();
+    if (inputClosed_) {
+        waitForWake(timeout);
+        return;
+    }
+    auto next = timeout ? input_.receiveFor(*timeout) : input_.receive();
+    if (next) {
+        inbox_.push_back(std::move(*next));
+    } else if (next.error() == ChannelEventType::Closed) {
+        inputClosed_ = true;
+    }
+}
+
+void AudioPipeline::waitForWake(std::optional<std::chrono::milliseconds> timeout) {
+    Thread::ScopedInactive inactive;
+    std::unique_lock lock(mutex_);
+    const auto woken = [this] {
+        return wakeRequested_ || closed_;
+    };
+    if (timeout) {
+        cv_.wait_for(lock, *timeout, woken);
+    } else {
+        cv_.wait(lock, woken);
+    }
+    wakeRequested_ = false;
+}
+
+std::optional<std::chrono::milliseconds> AudioPipeline::waitTimeout() const {
+    std::lock_guard lock(mutex_);
+    std::optional<std::chrono::milliseconds> timeout;
+    if (blockedByCodec_) {
+        timeout = kRetryTick;
+    }
+    // A paused sink does not drain; setPlaying(true) wakes the loop instead of polling.
+    if (playing_) {
+        const auto tick = sinkTickLocked();
+        timeout = timeout ? std::min(*timeout, tick) : tick;
+    }
+    return timeout;
+}
+
+std::chrono::milliseconds AudioPipeline::sinkTickLocked() const {
+    const std::chrono::duration<double> half(sink_->bufferedSec() / 2.0);
+    return std::clamp(std::chrono::duration_cast<std::chrono::milliseconds>(half), kSinkTickMin,
+                      kSinkTickMax);
 }
 
 std::string AudioPipeline::debugState() const {
@@ -336,16 +459,16 @@ void AudioPipeline::fail(slark::Error error) {
             failure_ = error;
         }
     }
-    wake();
+    wakeLoop();
 }
 
-void AudioPipeline::wake() {
+void AudioPipeline::wakeLoop() {
+    {
+        std::lock_guard lock(mutex_);
+        wakeRequested_ = true;
+    }
     cv_.notify_all();
-}
-
-void AudioPipeline::waitTick(std::unique_lock<std::mutex>& lock) {
-    Thread::ScopedInactive inactive;
-    cv_.wait_for(lock, kWakeupTick);
+    input_.wakeup();
 }
 
 }  // namespace slark::engine

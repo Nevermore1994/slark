@@ -76,6 +76,10 @@ struct GatedAudioSink {
         return ended.load();
     }
 
+    [[nodiscard]] double bufferedSec() const {
+        return buffered.load() * 0.02;
+    }
+
     int capacity = 8;
     std::atomic<int> buffered{0};
     std::atomic<int> consumed{0};
@@ -97,6 +101,10 @@ struct SharedAudioSink : public AudioSink {
     }
     [[nodiscard]] bool primed() const override {
         return inner_->primed();
+    }
+
+    [[nodiscard]] double bufferedSec() const override {
+        return inner_->bufferedSec();
     }
     void start() override {}
     void pause() override {}

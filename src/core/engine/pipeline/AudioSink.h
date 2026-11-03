@@ -27,6 +27,9 @@ class AudioSink {
     // Buffered audio covers the prefill threshold, i.e. starting playback will not underrun.
     [[nodiscard]] virtual bool primed() const = 0;
 
+    // Audio queued but not yet played, in seconds; the pipeline paces its retries by it.
+    [[nodiscard]] virtual double bufferedSec() const = 0;
+
     virtual void start() = 0;
     virtual void pause() = 0;
     virtual void setVolume(float volume) {

@@ -63,6 +63,10 @@ struct CountingAudioSink : public AudioSink {
         return writes >= 1;
     }
 
+    [[nodiscard]] double bufferedSec() const override {
+        return 0.0;
+    }
+
     void start() override {}
 
     void pause() override {}

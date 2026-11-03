@@ -3,6 +3,7 @@
 //
 #pragma once
 
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <functional>
@@ -11,6 +12,7 @@
 #include <optional>
 
 #include "AVFrame.hpp"
+#include "AccessGate.hpp"
 #include "Channel.hpp"
 #include "Error.h"
 #include "IDecoder.h"
@@ -54,14 +56,23 @@ class AudioPipeline final : public Pipeline {
 
  private:
     void run();
-    void handleInput(AVFrameRefPtr& frame);
-    bool decodeOne(AVFrameRefPtr& frame);
+    void pullInput();
+    void drainInbox();
+    bool attempt(AVFrameRefPtr& frame);
     void handleDecoded(slark::DecoderData data);
     void drainDecoderOutput();
     void pump();
+    void rebaseLocked(Time::TimePoint target);
+    void waitForWork();
+    void waitForWake(std::optional<std::chrono::milliseconds> timeout);
+    [[nodiscard]] std::optional<std::chrono::milliseconds> waitTimeout() const;
+    [[nodiscard]] std::chrono::milliseconds sinkTickLocked() const;
+    [[nodiscard]] bool stopping() const;
+    [[nodiscard]] bool outputFull() const;
+    [[nodiscard]] bool refusalExceededLimit();
+    void noteProgress();
     void fail(slark::Error error);
-    void wake();
-    void waitTick(std::unique_lock<std::mutex>& lock);
+    void wakeLoop();
 
     Receiver<AVFrameRefPtr>& input_;
     std::function<void()> wake_;
@@ -74,11 +85,15 @@ class AudioPipeline final : public Pipeline {
     mutable std::mutex mutex_;
     std::condition_variable cv_;
     bool closed_ = false;
+    bool wakeRequested_ = false;
+    // Guarded by mutex_: set when the decoder refuses input, cleared by any decoder progress.
+    std::optional<std::chrono::steady_clock::time_point> refusedSince_;
+    // The decoder's wakeup callback holds this gate; the destructor closes it before teardown.
+    std::shared_ptr<AccessGate> wakeGate_ = std::make_shared<AccessGate>();
 
     // Guarded by mutex_ and owned by the pipeline thread between commands.
     SeekEpoch epoch_ = kInvalidSeekEpoch;
     Time::TimePoint target_{};
-    SeekMode seekMode_ = SeekMode::Exact;
     bool playing_ = false;
     bool eosReceived_ = false;
     bool decoderEnded_ = false;
@@ -86,8 +101,17 @@ class AudioPipeline final : public Pipeline {
     // Stays ready once the prefill was reached: dipping below it is normal while playing.
     mutable bool primedOnce_ = false;
     std::deque<AVFrameRefPtr> pendingOutput_;
+    // Frames the sink took since flush(); bounded by its capacity, dropped when playback starts.
+    std::deque<AVFrameRefPtr> written_;
+    bool recording_ = true;
     Time::TimePoint lastAnchored_{};
     std::optional<Error> failure_;
+
+    // Pipeline thread only.
+    std::deque<AVFrameRefPtr> inbox_;
+    AVFrameRefPtr staged_;
+    bool inputClosed_ = false;
+    bool blockedByCodec_ = false;
 
     static constexpr size_t kMaxPendingOutput = 32;
 };

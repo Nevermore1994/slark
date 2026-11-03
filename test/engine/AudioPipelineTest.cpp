@@ -8,11 +8,13 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <mutex>
 #include <thread>
+#include <vector>
 
 #include "AudioSink.h"
-#include "MediaClock.h"
 #include "ManualScheduler.h"
+#include "MediaClock.h"
 #include "SourceSupport.h"
 #include "ThreadManager.h"
 
@@ -71,7 +73,7 @@ struct FakeDecoder : public IDecoder {
         if (holdInput.load() && !released.load()) {
             return Error::CodecAgain;
         }
-        emit(frame->ptsTime() + 0.5, frame->isDiscard);
+        emit(frame->ptsTime() + ptsOffset.load(), frame->isDiscard);
         return Error::Success;
     }
 
@@ -88,6 +90,8 @@ struct FakeDecoder : public IDecoder {
 
     std::atomic<bool> holdInput{false};
     std::atomic<bool> released{false};
+    // Real decoders keep the input pts; the default shifts it so tests can tell output from input.
+    std::atomic<double> ptsOffset{0.5};
     std::atomic<int> decodeCalls{0};
     std::atomic<int> flushes{0};
     std::function<void()> onFlush;
@@ -111,6 +115,10 @@ struct FakeAudioSink : public AudioSink {
         }
         ++bufferedFrames;
         lastWrittenPts.store(frame->ptsTime());
+        {
+            std::lock_guard lock(writtenMutex_);
+            written_.push_back(frame->ptsTime());
+        }
         return true;
     }
 
@@ -121,6 +129,10 @@ struct FakeAudioSink : public AudioSink {
 
     [[nodiscard]] bool primed() const override {
         return bufferedFrames.load() >= prefillFrames;
+    }
+
+    [[nodiscard]] double bufferedSec() const override {
+        return bufferedFrames.load() * 0.02;
     }
 
     void start() override {
@@ -137,6 +149,8 @@ struct FakeAudioSink : public AudioSink {
         offsetUs = offset.point();
         decoderEnded = false;
         ++flushes;
+        std::lock_guard lock(writtenMutex_);
+        written_.clear();
     }
 
     void markDecoderEnded() override {
@@ -154,6 +168,12 @@ struct FakeAudioSink : public AudioSink {
         }
     }
 
+    // Pts of the frames accepted since the last flush, in write order.
+    [[nodiscard]] std::vector<double> writtenPts() const {
+        std::lock_guard lock(writtenMutex_);
+        return written_;
+    }
+
     std::shared_ptr<AudioInfo> audioInfo_;
     std::atomic<uint32_t> capacityFrames{1024};
     std::atomic<int> bufferedFrames{0};
@@ -168,6 +188,10 @@ struct FakeAudioSink : public AudioSink {
     std::atomic<bool> hardwareTailPlayed{false};
     std::atomic<double> lastWrittenPts{-1.0};
     std::function<void()> onWrite;
+
+ private:
+    mutable std::mutex writtenMutex_;
+    std::vector<double> written_;
 };
 
 struct PipelineHarness {
@@ -374,6 +398,7 @@ TEST(AudioPipelineTest, ClockIsAnchoredAgainAfterABackwardSeek) {
     MediaClock clock(scheduler);
     auto harness = PipelineHarness::create();
     harness.pipeline->setClock(clock);
+    harness.pipeline->setPlaying(true);
     for (int i = 0; i < 8; ++i) {
         harness.sender->post(audioFrame(10.0 + i * 0.2));
     }
@@ -422,6 +447,156 @@ TEST(AudioPipelineTest, TheWorkerIsARegisteredThreadThatLeavesWithThePipeline) {
     EXPECT_EQ(threads.size(), before);
 }
 
+TEST(AudioPipelineTest, AnIdlePipelineShutsDownPromptly) {
+    auto harness = PipelineHarness::create();
+    std::this_thread::sleep_for(50ms);
+    const auto start = std::chrono::steady_clock::now();
+    harness.pipeline.reset();
+    EXPECT_LT(std::chrono::steady_clock::now() - start, 500ms);
+}
+
+TEST(AudioPipelineTest, RetargetKeepsOnlyAudioFromTheNewTargetInOrder) {
+    auto harness = PipelineHarness::create();
+    harness.decoder->ptsOffset = 0.0;
+    harness.pipeline->flush(1, sec(0.95), SeekMode::Fast);
+    for (int i = 0; i < 12; ++i) {
+        harness.sender->post(audioFrame(1.0 + i * 0.1));
+    }
+    ASSERT_TRUE(waitUntil([&] {
+        return harness.sinkPtr->writtenPts().size() == 12;
+    }));
+
+    harness.pipeline->retarget(1, sec(1.65), SeekMode::Fast);
+    // Nothing before the new target may remain, and nothing after it may be lost.
+    ASSERT_TRUE(waitUntil([&] {
+        return harness.sinkPtr->writtenPts().size() == 5;
+    }));
+    const auto pts = harness.sinkPtr->writtenPts();
+    for (size_t i = 0; i < pts.size(); ++i) {
+        EXPECT_NEAR(pts[i], 1.7 + 0.1 * static_cast<double>(i), 1e-4);
+    }
+}
+
+TEST(AudioPipelineTest, RetargetNeedsAFreshPrefillBeforeItIsReady) {
+    auto harness = PipelineHarness::create();
+    harness.decoder->ptsOffset = 0.0;
+    harness.pipeline->flush(1, sec(0.95), SeekMode::Fast);
+    for (int i = 0; i < 8; ++i) {
+        harness.sender->post(audioFrame(1.0 + i * 0.1));
+    }
+    ASSERT_TRUE(waitUntil([&] {
+        return harness.pipeline->ready(1, sec(0.95));
+    }));
+
+    harness.pipeline->retarget(1, sec(1.55), SeekMode::Fast);
+    // Only 1.6 and 1.7 survive, fewer than the four-frame prefill: the old priming is void.
+    ASSERT_TRUE(waitUntil([&] {
+        return harness.sinkPtr->writtenPts().size() == 2;
+    }));
+    EXPECT_FALSE(harness.pipeline->ready(1, sec(1.55)));
+
+    for (int i = 0; i < 3; ++i) {
+        harness.sender->post(audioFrame(1.8 + i * 0.1));
+    }
+    EXPECT_TRUE(waitUntil([&] {
+        return harness.pipeline->ready(1, sec(1.55));
+    }));
+}
+
+TEST(AudioPipelineTest, RetargetDiscardsDecodedAudioThatArrivesLate) {
+    auto harness = PipelineHarness::create();
+    harness.decoder->ptsOffset = 0.0;
+    harness.pipeline->flush(1, sec(0.95), SeekMode::Fast);
+    harness.sender->post(audioFrame(1.0));
+    ASSERT_TRUE(waitUntil([&] {
+        return harness.sinkPtr->writtenPts().size() == 1;
+    }));
+
+    harness.pipeline->retarget(1, sec(2.05), SeekMode::Fast);
+    // A hardware decoder may still deliver output for input it accepted before the retarget.
+    harness.decoder->emit(1.2);
+    harness.decoder->emit(2.1);
+    ASSERT_TRUE(waitUntil([&] {
+        return harness.sinkPtr->writtenPts().size() == 1;
+    }));
+    EXPECT_NEAR(harness.sinkPtr->writtenPts().front(), 2.1, 1e-4);
+}
+
+TEST(AudioPipelineTest, RetargetMovesTheSinkTimelineEvenWhenNothingWasWritten) {
+    auto harness = PipelineHarness::create();
+    harness.pipeline->flush(1, sec(1.0), SeekMode::Fast);
+    const auto flushesBefore = harness.sinkPtr->flushes.load();
+
+    harness.pipeline->retarget(1, sec(1.5), SeekMode::Fast);
+    EXPECT_EQ(harness.sinkPtr->flushes.load(), flushesBefore + 1);
+    EXPECT_EQ(harness.sinkPtr->offsetUs.load(), sec(1.5).point());
+}
+
+TEST(AudioPipelineTest, RetargetAnchorsTheClockOnTheNewTimeline) {
+    slark::test::ManualScheduler scheduler;
+    MediaClock clock(scheduler);
+    auto harness = PipelineHarness::create();
+    harness.decoder->ptsOffset = 0.0;
+    harness.pipeline->setClock(clock);
+    harness.pipeline->flush(1, sec(0.95), SeekMode::Fast);
+    for (int i = 0; i < 8; ++i) {
+        harness.sender->post(audioFrame(1.0 + i * 0.1));
+    }
+    ASSERT_TRUE(waitUntil([&] {
+        return harness.sinkPtr->writtenPts().size() == 8;
+    }));
+
+    harness.pipeline->retarget(1, sec(1.55), SeekMode::Fast);
+    clock.seekTo(sec(1.55));
+    ASSERT_TRUE(waitUntil([&] {
+        return harness.sinkPtr->writtenPts().size() == 2;
+    }));
+    harness.pipeline->setPlaying(true);
+    harness.sinkPtr->consumeOne();
+    harness.sinkPtr->consumeOne();
+    // Two frames of 21ms from 1.55; a stale timeline would anchor near 0.99 and be refused.
+    EXPECT_TRUE(waitUntil([&] {
+        return clock.now().second() > 1.58;
+    }));
+}
+
+TEST(AudioPipelineTest, RetargetAfterEndOfStreamStillEndsOnceTheRestHasPlayed) {
+    auto harness = PipelineHarness::create();
+    harness.decoder->ptsOffset = 0.0;
+    harness.pipeline->flush(1, sec(0.95), SeekMode::Fast);
+    for (int i = 0; i < 6; ++i) {
+        harness.sender->post(audioFrame(1.0 + i * 0.1));
+    }
+    harness.sender->post(eosFrame());
+    ASSERT_TRUE(waitUntil([&] {
+        return harness.sinkPtr->decoderEnded.load();
+    }));
+
+    harness.pipeline->retarget(1, sec(1.25), SeekMode::Fast);
+    // The end-of-stream marker was consumed once and will not come again: it has to survive.
+    ASSERT_TRUE(waitUntil([&] {
+        return harness.sinkPtr->writtenPts().size() == 3 && harness.sinkPtr->decoderEnded.load();
+    }));
+    harness.sinkPtr->hardwareTailPlayed = true;
+    EXPECT_TRUE(harness.pipeline->ended());
+}
+
+TEST(AudioPipelineTest, RetargetOfAnEmptyQueueKeepsLaterInputWorking) {
+    auto harness = PipelineHarness::create();
+    harness.decoder->ptsOffset = 0.0;
+    harness.pipeline->flush(1, sec(0.95), SeekMode::Fast);
+    harness.pipeline->retarget(1, sec(2.0), SeekMode::Fast);
+    harness.pipeline->retarget(1, sec(2.5), SeekMode::Fast);
+    // Input behind the new target is dropped before decoding; input at or after it plays.
+    harness.sender->post(audioFrame(2.1));
+    harness.sender->post(audioFrame(2.6));
+    ASSERT_TRUE(waitUntil([&] {
+        return !harness.sinkPtr->writtenPts().empty();
+    }));
+    EXPECT_NEAR(harness.sinkPtr->writtenPts().front(), 2.6, 1e-4);
+    EXPECT_EQ(harness.decoder->decodeCalls.load(), 1);
+}
+
 TEST(AudioPipelineTest, CloseIsIdempotent) {
     auto harness = PipelineHarness::create();
     harness.sender->post(audioFrame(1.0));
@@ -449,6 +624,75 @@ TEST(AudioPipelineTest, PermanentlyRefusingCodecFailsThePipeline) {
     const auto callsAtFailure = harness.decoder->decodeCalls.load();
     std::this_thread::sleep_for(std::chrono::milliseconds(120));
     EXPECT_EQ(harness.decoder->decodeCalls.load(), callsAtFailure);
+}
+
+TEST(AudioPipelineTest, WedgedCodecFailsAboutTwoSecondsAfterTheFirstRefusal) {
+    auto harness = PipelineHarness::create();
+    harness.decoder->holdInput = true;
+    const auto start = std::chrono::steady_clock::now();
+    harness.sender->post(audioFrame(1.0));
+    ASSERT_TRUE(waitUntil(
+        [&] {
+            return harness.pipeline->failure().has_value();
+        },
+        8000ms));
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+    EXPECT_EQ(harness.pipeline->failure().value(), Error::CodecResourceExhausted);
+    EXPECT_GE(elapsed, 1500ms);
+    EXPECT_LE(elapsed, 4000ms);
+}
+
+TEST(AudioPipelineTest, AnIdlePausedPipelineMakesNoDecoderOrSinkCalls) {
+    auto harness = PipelineHarness::create();
+    harness.sender->post(audioFrame(1.0));
+    harness.sender->post(eosFrame());
+    ASSERT_TRUE(waitUntil([&] {
+        return harness.pipeline->ended() || harness.pipeline->ready(1, sec(0.0));
+    }));
+    std::this_thread::sleep_for(100ms);
+    const auto decodesSettled = harness.decoder->decodeCalls.load();
+    const auto writesSettled = harness.sinkPtr->writeCalls.load();
+    std::this_thread::sleep_for(500ms);
+    EXPECT_EQ(harness.decoder->decodeCalls.load(), decodesSettled);
+    EXPECT_EQ(harness.sinkPtr->writeCalls.load(), writesSettled);
+}
+
+TEST(AudioPipelineTest, FastSeekDecodesOnlyFromTheTarget) {
+    auto harness = PipelineHarness::create();
+    harness.pipeline->flush(1, sec(7.0), SeekMode::Fast);
+    for (int i = 0; i <= 80; ++i) {
+        harness.sender->post(audioFrame(0.05 + i * 0.1));
+    }
+    ASSERT_TRUE(waitUntil([&] {
+        return harness.decoder->decodeCalls.load() >= 11;
+    }));
+    std::this_thread::sleep_for(50ms);
+    // Frames 0.05 to 6.95 lie before the target and never reach the decoder, in any seek mode.
+    EXPECT_EQ(harness.decoder->decodeCalls.load(), 11);
+    EXPECT_TRUE(waitUntil([&] {
+        return harness.pipeline->ready(1, sec(7.0));
+    }));
+}
+
+TEST(AudioPipelineTest, APausedFullSinkMakesNoWritesUntilPlaybackResumes) {
+    auto harness = PipelineHarness::create();
+    harness.sinkPtr->capacityFrames = 4;
+    for (int i = 0; i < 12; ++i) {
+        harness.sender->post(audioFrame(1.0 + i * 0.1));
+    }
+    ASSERT_TRUE(waitUntil([&] {
+        return harness.sinkPtr->writeCalls.load() >= 4;
+    }));
+    std::this_thread::sleep_for(100ms);
+    const auto settled = harness.sinkPtr->writeCalls.load();
+    std::this_thread::sleep_for(500ms);
+    EXPECT_EQ(harness.sinkPtr->writeCalls.load(), settled);
+
+    harness.pipeline->setPlaying(true);
+    harness.sinkPtr->consumeOne();
+    ASSERT_TRUE(waitUntil([&] {
+        return harness.sinkPtr->bufferedFrames.load() == 4;
+    }));
 }
 
 TEST(AudioPipelineTest, ExactModeDropsFramesBeforeTargetButKeepsDiscardMarkers) {

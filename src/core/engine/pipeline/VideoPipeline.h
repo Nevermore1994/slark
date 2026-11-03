@@ -3,6 +3,7 @@
 //
 #pragma once
 
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <functional>
@@ -11,6 +12,7 @@
 #include <optional>
 
 #include "AVFrame.hpp"
+#include "AccessGate.hpp"
 #include "Channel.hpp"
 #include "Error.h"
 #include "IDecoder.h"
@@ -68,14 +70,21 @@ class VideoPipeline final : public Pipeline {
 
  private:
     void run();
-    void handleInput(AVFrameRefPtr& frame);
-    bool decodeOne(AVFrameRefPtr& frame);
+    void pullInput();
+    void drainInbox();
+    bool attempt(AVFrameRefPtr& frame);
     void handleDecoded(slark::DecoderData data);
     void drainDecoderOutput();
     void catchUpToKeyframeLocked();
+    void waitForWork();
+    void waitForWake(std::optional<std::chrono::milliseconds> timeout);
+    [[nodiscard]] std::optional<std::chrono::milliseconds> waitTimeout() const;
+    [[nodiscard]] bool stopping() const;
+    [[nodiscard]] bool queueFull() const;
+    [[nodiscard]] bool refusalExceededLimit();
+    void noteProgress();
     void fail(slark::Error error);
-    void wake();
-    void waitTick(std::unique_lock<std::mutex>& lock);
+    void wakeLoop();
     void advanceLocked(Time::TimePoint clockNow);
     [[nodiscard]] bool readyLocked() const noexcept;
     [[nodiscard]] bool endedLocked() const noexcept;
@@ -95,6 +104,11 @@ class VideoPipeline final : public Pipeline {
     mutable std::mutex mutex_;
     std::condition_variable cv_;
     bool closed_ = false;
+    bool wakeRequested_ = false;
+    // Guarded by mutex_: set when the decoder refuses input, cleared by any decoder progress.
+    std::optional<std::chrono::steady_clock::time_point> refusedSince_;
+    // The decoder's wakeup callback holds this gate; the destructor closes it before teardown.
+    std::shared_ptr<AccessGate> wakeGate_ = std::make_shared<AccessGate>();
 
     // Guarded by mutex_; mutated on the pipeline thread between commands, read on vsync.
     SeekEpoch epoch_ = kInvalidSeekEpoch;
@@ -109,6 +123,15 @@ class VideoPipeline final : public Pipeline {
     bool playing_ = false;
     std::deque<AVFrameRefPtr> queue_;
     std::optional<Error> failure_;
+
+    // Pipeline thread only.
+    std::deque<AVFrameRefPtr> inbox_;
+    AVFrameRefPtr staged_;
+    bool inputClosed_ = false;
+    bool blockedByCodec_ = false;
+    bool outputPending_ = false;
+    // Guarded by mutex_: the pipeline stopped on a full presentation queue and waits for vsync.
+    bool blockedOnFull_ = false;
 };
 
 }  // namespace slark::engine
