@@ -12,6 +12,7 @@
 
 using namespace slark;
 using namespace std::literals;
+using namespace std::chrono_literals;
 
 TEST(ChannelTest, CheckType) {
     using type = std::string;
@@ -419,6 +420,58 @@ TEST(ChannelTest, TryReceiveOnEmpty) {
     res = rp->tryReceive();
     ASSERT_TRUE(res.has_value());
     EXPECT_EQ(*res, 1);
+}
+
+TEST(ChannelTest, ReceiveForTimesOutOnEmptyOpenChannel) {
+    auto _ch = Channel<int>::create();
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
+    const auto start = std::chrono::steady_clock::now();
+    auto res = rp->receiveFor(30ms);
+    const auto waited = std::chrono::steady_clock::now() - start;
+    ASSERT_FALSE(res.has_value());
+    EXPECT_EQ(res.error(), ChannelEventType::Timeout);
+    EXPECT_GE(waited, 25ms);
+}
+
+TEST(ChannelTest, ReceiveForReturnsAtOnceWhenAMessageIsQueued) {
+    auto _ch = Channel<int>::create();
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
+    sp << 7;
+    const auto start = std::chrono::steady_clock::now();
+    auto res = rp->receiveFor(5s);
+    EXPECT_LT(std::chrono::steady_clock::now() - start, 1s);
+    ASSERT_TRUE(res.has_value());
+    EXPECT_EQ(*res, 7);
+}
+
+TEST(ChannelTest, ReceiveForReturnsAwakenedOnWakeup) {
+    auto _ch = Channel<int>::create();
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
+    std::thread waker([&] {
+        std::this_thread::sleep_for(10ms);
+        rp->wakeup();
+    });
+    auto res = rp->receiveFor(5s);
+    waker.join();
+    ASSERT_FALSE(res.has_value());
+    EXPECT_EQ(res.error(), ChannelEventType::Awakened);
+}
+
+TEST(ChannelTest, ReceiveForReturnsClosedWhenTheSenderIsDone) {
+    auto _ch = Channel<int>::create();
+    auto sp = std::move(std::get<0>(_ch));
+    auto rp = std::move(std::get<1>(_ch));
+    std::thread closer([&] {
+        std::this_thread::sleep_for(10ms);
+        sp->done();
+    });
+    auto res = rp->receiveFor(5s);
+    closer.join();
+    ASSERT_FALSE(res.has_value());
+    EXPECT_EQ(res.error(), ChannelEventType::Closed);
 }
 
 TEST(ChannelTest, ReceiveOnClosedEmpty) {

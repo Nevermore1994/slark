@@ -4,6 +4,7 @@
 
 #pragma once
 #include <atomic>
+#include <chrono>
 #include <concepts>
 #include <condition_variable>
 #include <deque>
@@ -119,6 +120,7 @@ enum class ChannelEventType {
     Closed,
     None,
     Awakened,  // woken by wakeup() (e.g. for flush scenarios)
+    Timeout,   // receiveFor() ran out of time with nothing to receive
 };
 
 template <typename T>
@@ -423,6 +425,38 @@ class Receiver final {
             std::unreachable();
         }
 
+        // Waits up to `timeout` for a message, a wakeup or close; Timeout when none of them came.
+        inline auto receiveFor(std::chrono::milliseconds timeout) noexcept
+            -> std::expected<T, ChannelEventType>
+            requires std::movable<T>
+        {
+            std::unique_lock<std::mutex> lock(channel_->mutex_);
+            const auto ready = [this] {
+                return !channel_->messages_.empty() || channel_->isClosed_ || channel_->awakened_;
+            };
+            if (!ready()) {
+                _channel_detail::setCurrentThreadActive(false);
+                channel_->cond_.wait_for(lock, timeout, ready);
+                _channel_detail::setCurrentThreadActive(true);
+            }
+            if (!channel_->messages_.empty()) {
+                auto value = std::move(channel_->messages_.front());
+                channel_->messages_.pop_front();
+                if (channel_->capacity_ > 0) {
+                    channel_->cond_.notify_one();
+                }
+                return value;
+            }
+            if (channel_->isClosed_) {
+                return std::unexpected(ChannelEventType::Closed);
+            }
+            if (channel_->awakened_) {
+                channel_->awakened_ = false;
+                return std::unexpected(ChannelEventType::Awakened);
+            }
+            return std::unexpected(ChannelEventType::Timeout);
+        }
+
         inline auto tryReceive() noexcept -> std::expected<T, ChannelEventType> {
             std::unique_lock<std::mutex> lock(channel_->mutex_);
             if (channel_->messages_.empty()) {
@@ -510,6 +544,11 @@ class Receiver final {
 
     inline auto receive() noexcept -> std::expected<T, ChannelEventType> {
         return impl_->receive();
+    }
+
+    inline auto receiveFor(std::chrono::milliseconds timeout) noexcept
+        -> std::expected<T, ChannelEventType> {
+        return impl_->receiveFor(timeout);
     }
 
     inline auto tryReceive() noexcept -> std::expected<T, ChannelEventType> {

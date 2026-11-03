@@ -10,19 +10,37 @@
 namespace slark::engine {
 namespace {
 
-std::mutex g_factoryMutex;
-AudioRenderSink::RenderFactory g_factory;
+class PlatformAudioRenderFactory {
+ public:
+    static PlatformAudioRenderFactory& shareInstance() noexcept {
+        // Never destroyed: threads that outlive main() may still call the accessors.
+        static PlatformAudioRenderFactory* instance = new PlatformAudioRenderFactory();
+        return *instance;
+    }
+
+    void set(AudioRenderSink::RenderFactory factory) noexcept {
+        std::lock_guard lock(mutex_);
+        factory_ = std::move(factory);
+    }
+
+    AudioRenderSink::RenderFactory get() const noexcept {
+        std::lock_guard lock(mutex_);
+        return factory_;
+    }
+
+ private:
+    mutable std::mutex mutex_;
+    AudioRenderSink::RenderFactory factory_;
+};
 
 }  // namespace
 
 void setPlatformAudioRenderFactory(AudioRenderSink::RenderFactory factory) noexcept {
-    std::lock_guard lock(g_factoryMutex);
-    g_factory = std::move(factory);
+    PlatformAudioRenderFactory::shareInstance().set(std::move(factory));
 }
 
 AudioRenderSink::RenderFactory platformAudioRenderFactory() noexcept {
-    std::lock_guard lock(g_factoryMutex);
-    return g_factory;
+    return PlatformAudioRenderFactory::shareInstance().get();
 }
 
 AudioRenderSink::AudioRenderSink(RenderFactory factory, double prefillSec)

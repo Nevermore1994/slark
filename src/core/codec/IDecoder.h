@@ -108,7 +108,11 @@ class IDecoder : public NonCopyMovable {
     }
 
     void setWakeupCallback(WakeupCallback cb) noexcept {
-        wakeupCallback_ = std::move(cb);
+        if (cb) {
+            wakeupCallback_.reset(std::make_shared<WakeupCallback>(std::move(cb)));
+        } else {
+            wakeupCallback_.reset();
+        }
     }
 
     bool isCompleted() const noexcept {
@@ -122,8 +126,8 @@ class IDecoder : public NonCopyMovable {
     }
 
     void notifyWakeup() noexcept {
-        if (wakeupCallback_) {
-            wakeupCallback_();
+        if (auto callback = wakeupCallback_.load()) {
+            (*callback)();
         }
     }
 
@@ -139,7 +143,7 @@ class IDecoder : public NonCopyMovable {
     std::atomic_bool isOpen_ = false;
     std::atomic_bool isCompleted_ = false;
     AtomicSharedPtr<DecoderReceiveFunc> receiveFunc_;
-    WakeupCallback wakeupCallback_;
+    AtomicSharedPtr<WakeupCallback> wakeupCallback_;
     DecoderType decoderType_ = DecoderType::Unknown;
     std::shared_ptr<DecoderConfig> config_;
     uint64_t currentSeekEpoch_ = 0;
