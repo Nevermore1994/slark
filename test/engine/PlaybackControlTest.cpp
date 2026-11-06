@@ -73,7 +73,7 @@ struct GatedAudioSink {
         ended.store(true);
     }
     [[nodiscard]] bool drained() const {
-        return ended.load();
+        return ended.load() && buffered.load() == 0;
     }
 
     [[nodiscard]] double bufferedSec() const {
@@ -282,8 +282,8 @@ struct Harness {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
         while (std::chrono::steady_clock::now() < deadline) {
             engine->notifyVsync();
-            if (playMedia && audioSink->buffered.load() > 4) {
-                // Keep the prefill above the priming watermark; play out the surplus.
+            if (playMedia && (audioSink->buffered.load() > 4 || audioSink->ended.load())) {
+                // After the decoder ends the hardware callback reads the rest out.
                 audioSink->consume(1);
             }
             if (predicate()) {

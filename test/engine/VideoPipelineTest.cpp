@@ -57,6 +57,7 @@ struct FakeVideoDecoder : public IDecoder {
         if (onFlush) {
             onFlush();
         }
+        stickyFlag_ = false;
         ++flushes;
     }
 
@@ -73,10 +74,10 @@ struct FakeVideoDecoder : public IDecoder {
         // Model a codec whose output buffers are still checked out: it refuses new input
         // until renderOutput() takes them, exactly like Texture-mode MediaCodec.
         const auto limit = maxCheckedOutOutput.load();
-        if (limit > 0) {
+        if (limit > 0 || stickyPending.load()) {
             {
                 std::lock_guard lock(pendingMutex_);
-                if (static_cast<int>(pendingOutput_.size()) >= limit) {
+                if (limit > 0 && static_cast<int>(pendingOutput_.size()) >= limit) {
                     return Error::CodecAgain;
                 }
             }
@@ -89,8 +90,14 @@ struct FakeVideoDecoder : public IDecoder {
             pending->info = keepsFrameType.load() ? frame->info : decodedVideoInfo();
             pending->data = std::make_unique<Data>();
             pending->data->append(std::vector<uint8_t>(32, 0));
-            std::lock_guard lock(pendingMutex_);
-            pendingOutput_.push_back(std::move(pending));
+            {
+                std::lock_guard lock(pendingMutex_);
+                pendingOutput_.push_back(std::move(pending));
+            }
+            if (stickyPending.load()) {
+                stickyFlag_ = true;
+                notifyWakeup();
+            }
             return Error::Success;
         }
         auto out = std::make_shared<AVFrame>(AVFrameType::Video);
@@ -107,8 +114,15 @@ struct FakeVideoDecoder : public IDecoder {
     }
 
     bool hasPendingOutput() const noexcept override {
+        if (stickyPending.load()) {
+            return stickyFlag_.load();
+        }
         std::lock_guard lock(pendingMutex_);
         return !pendingOutput_.empty();
+    }
+
+    void clearPendingOutput() noexcept override {
+        stickyFlag_ = false;
     }
 
     Error renderOutput() noexcept override {
@@ -139,6 +153,9 @@ struct FakeVideoDecoder : public IDecoder {
     std::atomic<bool> epochOnlyInData{false};
     // Real decoders drop the frame type; only the live catch-up probe reads it from the output.
     std::atomic<bool> keepsFrameType{false};
+    // Android texture decoder: an output sets the flag and only clearPendingOutput() resets it.
+    std::atomic<bool> stickyPending{false};
+    std::atomic<bool> stickyFlag_{false};
     mutable std::mutex pendingMutex_;
     std::deque<AVFrameRefPtr> pendingOutput_;
     std::function<void()> onFlush;
@@ -376,6 +393,20 @@ TEST(VideoPipelineTest, EosEndsThePipelineOnceTheQueueDrains) {
         return harness.pipeline->ended();
     }));
     EXPECT_TRUE(harness.pipeline->ready(1, sec(0.0)));
+}
+
+TEST(VideoPipelineTest, EosEndsThePipelineWhenTheDecoderKeepsItsPendingFlag) {
+    auto harness = PipelineHarness::create();
+    harness.decoder->stickyPending = true;
+    for (int i = 0; i < 4; ++i) {
+        harness.sender->post(videoFrame(0.04 * i, 1, i == 0));
+    }
+    harness.sender->post(eosFrame());
+    ASSERT_TRUE(waitUntil([&] {
+        harness.pipeline->onVsync(sec(1.0));
+        return harness.pipeline->ended();
+    }));
+    EXPECT_EQ(harness.decoder->renderCalls.load(), 4);
 }
 
 TEST(VideoPipelineTest, FlushResetsPrerollAndEpoch) {

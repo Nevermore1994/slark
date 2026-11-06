@@ -199,6 +199,7 @@ void Engine::onSetSpeed(SetSpeed& c) {
 
 void Engine::onSetRepeat(SetRepeat& c) {
     state_.repeat = c.mode;
+    LogI("repeat mode: {}", c.mode == RepeatMode::One ? "one" : "off");
 }
 
 void Engine::onSetVolume(SetVolume& c) {
@@ -410,10 +411,20 @@ bool Engine::completeSeek() {
 }
 
 bool Engine::repeatIfEnded() {
-    if (state_.repeat == RepeatMode::Off || state_.seekTarget || pipelines_.empty() ||
-        !std::ranges::all_of(pipelines_, &Pipeline::ended)) {
+    if (state_.repeat == RepeatMode::Off || state_.seekTarget || pipelines_.empty()) {
         return false;
     }
+    if (!std::ranges::all_of(pipelines_, &Pipeline::ended)) {
+        if (std::ranges::any_of(pipelines_, &Pipeline::ended)) {
+            std::string states;
+            for (const auto& pipeline : pipelines_) {
+                states += pipeline->debugState() + ' ';
+            }
+            LogIThrottle(1000, "repeat waits for the other pipeline: {}", states);
+        }
+        return false;
+    }
+    LogI("repeat: restarting from 0, epoch={}", readyEpoch_);
     notifier_.notify(PlayEnd{});
     requestSeek({}, SeekMode::Exact, true);
     return true;

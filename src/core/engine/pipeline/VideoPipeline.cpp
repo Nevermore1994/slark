@@ -407,12 +407,15 @@ void VideoPipeline::drainDecoderOutput() {
         return;
     }
     // Drain everything the decoder holds: in Texture mode this releases its output buffers.
+    bool exhausted = false;
     while (decoder_->hasPendingOutput()) {
         if (decoder_->renderOutput() != Error::Success) {
+            // The Android texture decoder keeps its flag set; the next output wakes the loop.
+            exhausted = true;
             break;
         }
     }
-    outputPending_ = decoder_->hasPendingOutput();
+    outputPending_ = !exhausted && decoder_->hasPendingOutput();
     bool eos = false;
     {
         std::lock_guard lock(mutex_);
