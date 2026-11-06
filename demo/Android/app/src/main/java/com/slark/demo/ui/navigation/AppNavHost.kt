@@ -92,7 +92,7 @@ fun AppNavHost(navController: NavHostController, innerPadding: PaddingValues) {
         }
 
         composable(Screen.AudioPlayerScreen.route) {
-            AudioPlayerScreenRoute(navController = navController)
+            AudioPlayerScreenRoute(navController = navController, innerPadding = innerPadding)
         }
     }
 }

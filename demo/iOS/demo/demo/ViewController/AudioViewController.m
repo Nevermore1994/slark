@@ -11,12 +11,22 @@
 #include "SlarkPlayer.h"
 
 #import <AVFoundation/AVFoundation.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
-@interface AudioViewController () <UIGestureRecognizerDelegate, ISlarkPlayerObserver>
+static NSString* const kTrackCellId = @"audioTrackCell";
+static NSString* const kBundledAudioName = @"sample-3s.wav";
+
+@interface AudioViewController () <UIDocumentPickerDelegate,
+                                   UITableViewDataSource,
+                                   UITableViewDelegate,
+                                   ISlarkPlayerObserver>
 @property (nonatomic, strong) UIImageView* iconView;
 @property (nonatomic, strong) PlayerControllerView* controllerView;
-@property (nonatomic, strong) UILabel* nameLabel;
-@property (nonatomic, assign) BOOL hasAuthorization;
+@property (nonatomic, strong) UITableView* tableView;
+@property (nonatomic, strong) NSMutableArray<NSURL*>* tracks;
+@property (nonatomic, strong) NSMutableArray<NSString*>* trackTitles;
+@property (nonatomic, assign) NSInteger currentIndex;
+@property (nonatomic, assign) BOOL loopEnabled;
 @property (nonatomic, strong) SlarkPlayer* player;
 @end
 
@@ -24,50 +34,22 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    self.tracks = [NSMutableArray array];
+    self.trackTitles = [NSMutableArray array];
+    self.currentIndex = -1;
     [self initSubviews];
-    [self initData];
-    NSLog(@"audio viewDidLoad");
+    [self loadBundledTrack];
 }
 
 - (void)dealloc {
+    [self.player stop];
+    self.player.delegate = nil;
     self.player = nil;
 }
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
-    self.navigationController.interactivePopGestureRecognizer.delegate = self;
-    AVAuthorizationStatus AVstatus =
-        [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
-    switch (AVstatus) {
-        case AVAuthorizationStatusAuthorized: {
-            NSLog(@"Authorized");
-            self.hasAuthorization = YES;
-        } break;
-        case AVAuthorizationStatusDenied: {
-            NSLog(@"Denied");
-            self.hasAuthorization = NO;
-        } break;
-        case AVAuthorizationStatusNotDetermined: {
-            NSLog(@"not Determined");
-            @weakify(self);
-            [self requestAccess:^(BOOL grant) {
-                @strongify(self);
-                self.hasAuthorization = grant;
-            }];
-        } break;
-        case AVAuthorizationStatusRestricted: {
-            NSLog(@"Restricted");
-            self.hasAuthorization = YES;
-        } break;
-        default:
-            break;
-    }
     [self setupAudioSession];
-    NSLog(@"audio viewDidAppear");
-}
-
-- (void)requestAccess:(void (^)(BOOL))block {
-    [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:block];
 }
 
 - (void)setupAudioSession {
@@ -77,65 +59,128 @@
     [session setActive:YES error:&error];
 }
 
-- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer*)gestureRecognizer {
-    return NO;
-}
-
 - (void)initSubviews {
-    self.navigationItem.title = @"music";
-    [self.navigationController.navigationBar
-        setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor blackColor]}];
     self.view.backgroundColor = [UIColor blackColor];
+    self.navigationItem.title = @"Audio";
+    [self.navigationController.navigationBar
+        setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor whiteColor]}];
+
+    UIBarButtonItem* addItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAdd
+                                                                              target:self
+                                                                              action:@selector(browseAudioFiles)];
+    self.navigationItem.rightBarButtonItem = addItem;
+
     [self.view addSubview:self.iconView];
     [self.view addSubview:self.controllerView];
-    [self.iconView mas_makeConstraints:^(MASConstraintMaker* make) {
-        UIEdgeInsets insets = UIEdgeInsetsMake(100, 60, 300, 60);
-        make.edges.equalTo(self.view).with.insets(insets);
-    }];
+    [self.view addSubview:self.tableView];
+
     [self.controllerView mas_makeConstraints:^(MASConstraintMaker* make) {
-        make.width.mas_equalTo(self.view.mas_width);
-        make.height.mas_equalTo(120);
-        make.centerX.equalTo(self.view);
-        make.top.mas_equalTo(self.iconView.mas_bottom).mas_offset(40);
+        make.left.right.mas_equalTo(self.view);
+        make.bottom.equalTo(self.tableView.mas_top);
+    }];
+    [self.tableView mas_makeConstraints:^(MASConstraintMaker* make) {
+        make.left.right.mas_equalTo(self.view);
+        make.bottom.mas_equalTo(self.view.mas_safeAreaLayoutGuideBottom);
+        make.height.mas_equalTo(180);
+    }];
+    [self.iconView mas_makeConstraints:^(MASConstraintMaker* make) {
+        make.top.mas_equalTo(self.view.mas_safeAreaLayoutGuideTop).offset(16);
+        make.left.right.mas_equalTo(self.view).insets(UIEdgeInsetsMake(0, 60, 0, 60));
+        make.bottom.equalTo(self.controllerView.mas_top).offset(-16);
     }];
 }
 
-- (void)initData {
+- (void)loadBundledTrack {
     NSString* bundlePath = [[NSBundle mainBundle] pathForResource:@"resource" ofType:@"bundle"];
-    NSBundle* resouceBundle = [NSBundle bundleWithPath:bundlePath];
-    NSString* path = [resouceBundle pathForResource:@"sample-3s.wav" ofType:@""];
-    self.player = [[SlarkPlayer alloc] initWithPath:path];
+    NSBundle* resourceBundle = [NSBundle bundleWithPath:bundlePath];
+    NSURL* url = [resourceBundle URLForResource:kBundledAudioName withExtension:nil];
+    if (url) {
+        [self.tracks addObject:url];
+        [self.trackTitles addObject:kBundledAudioName];
+        [self.tableView reloadData];
+        [self playTrackAtIndex:0];
+    }
+}
+
+- (void)playTrackAtIndex:(NSInteger)index {
+    if (index < 0 || index >= (NSInteger)self.tracks.count) {
+        return;
+    }
+    self.currentIndex = index;
+    [self.tableView reloadData];
+    [self.tableView selectRowAtIndexPath:[NSIndexPath indexPathForRow:index inSection:0]
+                                animated:NO
+                          scrollPosition:UITableViewScrollPositionNone];
+
+    [self.player stop];
+    self.player.delegate = nil;
+    self.player = nil;
+    [self.controllerView syncPause:YES];
+    [self.controllerView updateCurrentTime:0];
+    [self.controllerView updateTotalTime:0];
+    [self.controllerView updateCacheTime:0];
+
+    self.navigationItem.title = self.trackTitles[index];
+    self.player = [[SlarkPlayer alloc] init:self.tracks[index].path];
     self.player.delegate = self;
-    self.hasAuthorization = NO;
+    self.player.isLoop = self.loopEnabled;
     [self.player prepare];
 }
 
-- (UIView*)iconView {
+- (void)playPreviousTrack {
+    if (self.tracks.count == 0) {
+        return;
+    }
+    NSInteger previous = self.currentIndex > 0 ? self.currentIndex - 1 : (NSInteger)self.tracks.count - 1;
+    [self playTrackAtIndex:previous];
+}
+
+- (void)playNextTrack {
+    if (self.tracks.count == 0) {
+        return;
+    }
+    NSInteger next = self.currentIndex < (NSInteger)self.tracks.count - 1 ? self.currentIndex + 1 : 0;
+    [self playTrackAtIndex:next];
+}
+
+- (void)browseAudioFiles {
+    UIDocumentPickerViewController* picker =
+        [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeAudio]
+                                                                    asCopy:YES];
+    picker.delegate = self;
+    [self presentViewController:picker animated:YES completion:nil];
+}
+
+- (void)documentPicker:(UIDocumentPickerViewController*)controller
+    didPickDocumentsAtURLs:(NSArray<NSURL*>*)urls {
+    NSURL* url = urls.firstObject;
+    if (!url.isFileURL) {
+        return;
+    }
+    [self.tracks addObject:url];
+    [self.trackTitles addObject:url.lastPathComponent];
+    [self.tableView reloadData];
+    [self playTrackAtIndex:(NSInteger)self.tracks.count - 1];
+}
+
+- (void)handlePlayClick:(BOOL)isPlay {
+    if (self.player == nil) {
+        return;
+    }
+    if (isPlay) {
+        [self.player play];
+    } else {
+        [self.player pause];
+    }
+}
+
+- (UIImageView*)iconView {
     if (_iconView == nil) {
         _iconView = [[UIImageView alloc] init];
         _iconView.image = [UIImage imageNamed:@"music_normal"];
         _iconView.contentMode = UIViewContentModeScaleAspectFit;
     }
     return _iconView;
-}
-
-- (void)handlePlayClick:(BOOL)isPlay {
-    if (!isPlay) {
-        [self.player pause];
-        return;
-    }
-    if (!self.hasAuthorization) {
-        @weakify(self);
-        [self requestAccess:^(BOOL grant) {
-            @strongify(self);
-            self.hasAuthorization = grant;
-            if (grant) {
-                [self.player play];
-            }
-        }];
-    } else {
-        [self.player play];
-    }
 }
 
 - (PlayerControllerView*)controllerView {
@@ -146,23 +191,77 @@
             @strongify(self);
             [self handlePlayClick:isPlay];
         };
+        _controllerView.onPrevClick = ^{
+            @strongify(self);
+            [self playPreviousTrack];
+        };
+        _controllerView.onNextClick = ^{
+            @strongify(self);
+            [self playNextTrack];
+        };
         _controllerView.onSeekClick = ^(double time) {
             @strongify(self);
             [self.player seek:time];
-            NSLog(@"seek to:%f", time);
         };
         _controllerView.onSeekDone = ^(double time) {
             @strongify(self);
             [self.player seek:time isAccurate:YES];
-            NSLog(@"seek done");
         };
         _controllerView.onSetLoopClick = ^(BOOL loop) {
             @strongify(self);
+            self.loopEnabled = loop;
             self.player.isLoop = loop;
+        };
+        _controllerView.onSetMute = ^(BOOL isMute) {
+            @strongify(self);
+            self.player.isMute = isMute;
+        };
+        _controllerView.onVolumeChange = ^(float volume) {
+            @strongify(self);
+            self.player.volume = volume;
         };
     }
     return _controllerView;
 }
+
+- (UITableView*)tableView {
+    if (_tableView == nil) {
+        _tableView = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain];
+        _tableView.backgroundColor = [UIColor blackColor];
+        _tableView.separatorColor = [[UIColor whiteColor] colorWithAlphaComponent:0.2];
+        _tableView.dataSource = self;
+        _tableView.delegate = self;
+        [_tableView registerClass:UITableViewCell.class forCellReuseIdentifier:kTrackCellId];
+    }
+    return _tableView;
+}
+
+#pragma mark - UITableViewDataSource
+
+- (NSInteger)tableView:(UITableView*)tableView numberOfRowsInSection:(NSInteger)section {
+    return (NSInteger)self.trackTitles.count;
+}
+
+- (UITableViewCell*)tableView:(UITableView*)tableView cellForRowAtIndexPath:(NSIndexPath*)indexPath {
+    UITableViewCell* cell = [tableView dequeueReusableCellWithIdentifier:kTrackCellId
+                                                            forIndexPath:indexPath];
+    cell.backgroundColor = [UIColor blackColor];
+    cell.textLabel.text = self.trackTitles[indexPath.row];
+    cell.textLabel.textColor = indexPath.row == self.currentIndex
+                                   ? [UIColor systemBlueColor]
+                                   : [UIColor whiteColor];
+    cell.textLabel.font = [UIFont systemFontOfSize:15];
+    return cell;
+}
+
+#pragma mark - UITableViewDelegate
+
+- (void)tableView:(UITableView*)tableView didSelectRowAtIndexPath:(NSIndexPath*)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    [self playTrackAtIndex:indexPath.row];
+}
+
+#pragma mark - ISlarkPlayerObserver
 
 - (void)notifyTime:(NSString*)playerId time:(double)time {
     [self.controllerView updateCurrentTime:time];
@@ -173,9 +272,9 @@
         [self.controllerView updateTotalTime:CMTimeGetSeconds(self.player.totalDuration)];
         [self.controllerView setIsSeekable:self.player.isSeekable];
     } else if (state == SlarkPlayerStateCompleted || state == SlarkPlayerStatePause) {
-        [self.controllerView setIsPause:YES];
+        [self.controllerView syncPause:YES];
     } else if (state == SlarkPlayerStatePlaying) {
-        [self.controllerView setIsPause:NO];
+        [self.controllerView syncPause:NO];
     }
 }
 

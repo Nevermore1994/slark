@@ -49,7 +49,7 @@ private fun formatTime(ms: Long): String {
     else "%02d:%02d".format(minutes, seconds)
 }
 
-private val kControlTint = Color(0xFFF0F0F0)
+internal val kControlTint = Color(0xFFF0F0F0)
 
 @Composable
 fun PlayerControls(

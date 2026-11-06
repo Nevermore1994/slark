@@ -466,10 +466,18 @@ static NSArray<NSNumber*>* speedOptions(void) {
 }
 
 - (void)setIsPause:(BOOL)isPause {
+    [self applyPause:isPause];
+    !self.onPlayClick ?: self.onPlayClick(!isPause);
+}
+
+- (void)applyPause:(BOOL)isPause {
     _isPause = isPause;
     UIImage* img = [UIImage imageNamed:isPause ? @"play_icon" : @"pause_icon"];
     [self.playButton setImage:img forState:UIControlStateNormal];
-    !self.onPlayClick ?: self.onPlayClick(!isPause);
+}
+
+- (void)syncPause:(BOOL)isPause {
+    [self applyPause:isPause];
 }
 
 - (void)setIsSeekable:(BOOL)isSeekable {
