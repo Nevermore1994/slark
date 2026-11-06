@@ -33,6 +33,16 @@
 		C1E0D0BA2CBAD45E002FE528 /* Sample.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = C1E0D0B92CBAD45E002FE528 /* Sample.mp4 */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		7F6815DD47DEF3F378C54165 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C118380C2ADFCC6800DB0127 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C1DA2DC82C9716BD00DF03CB;
+			remoteInfo = resource;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		17C352FC5441DA44DC8441B5 /* Pods_demo.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_demo.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		4BD8428B2E3292A10082F6F3 /* VideoPickerViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = VideoPickerViewController.h; sourceTree = "<group>"; };
@@ -246,6 +256,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				421D4AEFC522DB058744821A /* PBXTargetDependency */,
 			);
 			name = demo;
 			productName = demo;
@@ -401,6 +412,15 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		421D4AEFC522DB058744821A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = resource;
+			target = C1DA2DC82C9716BD00DF03CB /* resource */;
+			targetProxy = 7F6815DD47DEF3F378C54165 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		C118382B2ADFCC6900DB0127 /* Debug */ = {

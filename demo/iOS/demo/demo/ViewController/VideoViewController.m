@@ -98,7 +98,7 @@
     [self.controllerView mas_makeConstraints:^(MASConstraintMaker* make) {
         make.left.mas_equalTo(16);
         make.right.mas_equalTo(-16);
-        make.bottom.mas_equalTo(-SafeBottomHeight - 16);
+        make.bottom.mas_equalTo(-SAFE_BOTTOM_HEIGHT - 16);
         make.height.mas_equalTo(160);
     }];
 }
@@ -236,10 +236,10 @@
         self.loadingView.hidden = YES;
         SlarkPlayerErrorCode code = (SlarkPlayerErrorCode)[value intValue];
         NSString* msg = @"error";
-        if (code == SlarkPlayerErrorMediaOpenFailed || code == SlarkPlayerErrorPipelineOpenFailed) {
+        if (code == SlarkPlayerErrorCodeMediaOpenFailed || code == SlarkPlayerErrorCodePipelineOpenFailed) {
             msg = @"file error";
-        } else if (code == SlarkPlayerErrorNetworkError ||
-                   code == SlarkPlayerErrorConnectionFailed) {
+        } else if (code == SlarkPlayerErrorCodeNetworkError ||
+                   code == SlarkPlayerErrorCodeConnectionFailed) {
             msg = @"network error";
         }
         [self showToast:msg duration:2.0];

@@ -4,6 +4,9 @@
 
 #import "SelectUrlViewController.h"
 
+#import "Masonry.h"
+#import "iOSUtil.h"
+
 @interface VideoItem : NSObject
 @property (nonatomic, copy) NSString* name;
 @property (nonatomic, copy) NSString* url;
@@ -69,7 +72,7 @@
     inputContainer.layer.masksToBounds = YES;
     [self.view addSubview:inputContainer];
     [inputContainer mas_makeConstraints:^(MASConstraintMaker* make) {
-        make.top.mas_equalTo(NavigationHeight + 12);
+        make.top.mas_equalTo(NAVIGATION_HEIGHT + 12);
         make.left.mas_equalTo(16);
         make.right.mas_equalTo(-16);
         make.height.mas_equalTo(44);
@@ -113,7 +116,7 @@
     sectionLabel.textColor = [UIColor secondaryLabelColor];
     [self.view addSubview:sectionLabel];
     [sectionLabel mas_makeConstraints:^(MASConstraintMaker* make) {
-        make.top.mas_equalTo(NavigationHeight + 68);
+        make.top.mas_equalTo(NAVIGATION_HEIGHT + 68);
         make.left.mas_equalTo(20);
     }];
 
@@ -123,9 +126,9 @@
     self.tableView.backgroundColor = [UIColor systemBackgroundColor];
     [self.view addSubview:self.tableView];
     [self.tableView mas_makeConstraints:^(MASConstraintMaker* make) {
-        make.top.mas_equalTo(NavigationHeight + 90);
+        make.top.mas_equalTo(NAVIGATION_HEIGHT + 90);
         make.left.right.mas_equalTo(0);
-        make.bottom.mas_equalTo(-SafeBottomHeight);
+        make.bottom.mas_equalTo(-SAFE_BOTTOM_HEIGHT);
     }];
 }
 

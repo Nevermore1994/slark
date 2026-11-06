@@ -57,7 +57,7 @@
     MASViewAttribute *viewAttribute = [[MASViewAttribute alloc] initWithView:self.view layoutAttribute:layoutAttribute];
     MASViewConstraint *newConstraint = [[MASViewConstraint alloc] initWithFirstViewAttribute:viewAttribute];
     if ([constraint isKindOfClass:MASViewConstraint.class]) {
-        replace with composite constraint
+        // replace with composite constraint
         NSArray *children = @[constraint, newConstraint];
         MASCompositeConstraint *compositeConstraint = [[MASCompositeConstraint alloc] initWithChildren:children];
         compositeConstraint.delegate = self;

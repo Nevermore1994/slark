@@ -311,9 +311,9 @@ static char kInstalledConstraintsKey;
     MAS_VIEW *secondLayoutItem = self.secondViewAttribute.item;
     NSLayoutAttribute secondLayoutAttribute = self.secondViewAttribute.layoutAttribute;
 
-    alignment attributes must have a secondViewAttribute
-    therefore we assume that is refering to superview
-    eg make.left.equalTo(@10)
+    // alignment attributes must have a secondViewAttribute
+    //     // therefore we assume that is refering to superview
+    // eg make.left.equalTo(@10)
     if (!self.firstViewAttribute.isSizeAttribute && !self.secondViewAttribute) {
         secondLayoutItem = self.firstViewAttribute.view.superview;
         secondLayoutAttribute = firstLayoutAttribute;
@@ -348,7 +348,7 @@ static char kInstalledConstraintsKey;
         existingConstraint = [self layoutConstraintSimilarTo:layoutConstraint];
     }
     if (existingConstraint) {
-        just update the constant
+        // just update the constant
         existingConstraint.constant = layoutConstraint.constant;
         self.layoutConstraint = existingConstraint;
     } else {
@@ -359,10 +359,10 @@ static char kInstalledConstraintsKey;
 }
 
 - (MASLayoutConstraint *)layoutConstraintSimilarTo:(MASLayoutConstraint *)layoutConstraint {
-    check if any constraints are the same apart from the only mutable property constant
-
-    go through constraints in reverse as we do not want to match auto-resizing or interface builder constraints
-    and they are likely to be added first.
+    // check if any constraints are the same apart from the only mutable property constant
+    //
+    // go through constraints in reverse as we do not want to match auto-resizing or interface builder constraints
+    // and they are likely to be added first.
     for (NSLayoutConstraint *existingConstraint in self.installedView.constraints.reverseObjectEnumerator) {
         if (![existingConstraint isKindOfClass:MASLayoutConstraint.class]) continue;
         if (existingConstraint.firstItem != layoutConstraint.firstItem) continue;
