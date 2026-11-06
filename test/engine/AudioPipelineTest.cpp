@@ -267,6 +267,33 @@ TEST(AudioPipelineTest, FlushClearsStateAndResetsReady) {
     }));
 }
 
+// flush() cannot reach an EOS that is already in the pipeline's own inbox.
+TEST(AudioPipelineTest, AnEndOfStreamFromBeforeTheFlushDoesNotEndTheNewEpoch) {
+    auto harness = PipelineHarness::create();
+    harness.decoder->holdInput = true;
+    harness.sender->post(audioFrame(5.0, 1));
+    harness.sender->post(eosFrame(1));
+    // The frame sticks in the pipeline because the codec refuses it; the EOS waits behind it.
+    ASSERT_TRUE(waitUntil([&] {
+        return harness.decoder->decodeCalls.load() > 2;
+    }));
+
+    harness.pipeline->flush(2, sec(1.0), SeekMode::Exact);
+    harness.decoder->released = true;
+    std::this_thread::sleep_for(100ms);
+
+    EXPECT_FALSE(harness.pipeline->ready(2, sec(1.0)));
+    EXPECT_FALSE(harness.pipeline->ended());
+
+    for (int i = 0; i < 6; ++i) {
+        harness.sender->post(audioFrame(1.0 + i * 0.1, /*epoch=*/2));
+    }
+    ASSERT_TRUE(waitUntil([&] {
+        return harness.pipeline->ready(2, sec(1.0));
+    }));
+    EXPECT_FALSE(harness.pipeline->ended());
+}
+
 TEST(AudioPipelineTest, DecoderFlushRunsWithoutThePipelineLock) {
     auto harness = PipelineHarness::create();
     std::atomic<bool> callbackDone{false};

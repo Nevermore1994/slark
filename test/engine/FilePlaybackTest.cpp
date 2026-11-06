@@ -169,7 +169,7 @@ struct EchoVideoDecoder : public IDecoder {
         out->pts = frame->pts;
         out->timeScale = frame->timeScale;
         out->seekEpoch = currentSeekEpoch();
-        out->info = frame->info;
+        out->info = fake::decodedVideoInfo();
         out->data = std::make_unique<Data>();
         out->data->append(std::vector<uint8_t>(64, 0));
         invokeReceiveFunc(DecoderData{AVFrameRefPtr(std::move(out)), Error::Success,

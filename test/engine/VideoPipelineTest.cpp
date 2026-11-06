@@ -86,7 +86,7 @@ struct FakeVideoDecoder : public IDecoder {
             pending->seekEpoch =
                 epochOnlyInData.load() ? 0 : currentSeekEpoch();
             pending->isDiscard = frame->isDiscard;
-            pending->info = frame->info;
+            pending->info = keepsFrameType.load() ? frame->info : decodedVideoInfo();
             pending->data = std::make_unique<Data>();
             pending->data->append(std::vector<uint8_t>(32, 0));
             std::lock_guard lock(pendingMutex_);
@@ -98,7 +98,7 @@ struct FakeVideoDecoder : public IDecoder {
         out->timeScale = frame->timeScale;
         out->seekEpoch = epochOnlyInData.load() ? 0 : currentSeekEpoch();
         out->isDiscard = frame->isDiscard;
-        out->info = frame->info;
+        out->info = keepsFrameType.load() ? frame->info : decodedVideoInfo();
         out->data = std::make_unique<Data>();
         out->data->append(std::vector<uint8_t>(32, 0));
         invokeReceiveFunc(DecoderData{AVFrameRefPtr(std::move(out)), Error::Success,
@@ -137,6 +137,8 @@ struct FakeVideoDecoder : public IDecoder {
     // When true, outputs carry their epoch only in DecoderData (the audio path's old
     // behaviour); the pipeline must still accept them.
     std::atomic<bool> epochOnlyInData{false};
+    // Real decoders drop the frame type; only the live catch-up probe reads it from the output.
+    std::atomic<bool> keepsFrameType{false};
     mutable std::mutex pendingMutex_;
     std::deque<AVFrameRefPtr> pendingOutput_;
     std::function<void()> onFlush;
@@ -396,6 +398,33 @@ TEST(VideoPipelineTest, FlushResetsPrerollAndEpoch) {
     EXPECT_DOUBLE_EQ(harness.sink->presentedPts.back(), 1.0);
 }
 
+// flush() cannot reach an EOS that is already in the pipeline's own inbox.
+TEST(VideoPipelineTest, AnEndOfStreamFromBeforeTheFlushDoesNotEndTheNewEpoch) {
+    auto harness = PipelineHarness::create(1, sec(0.0));
+    harness.decoder->holdInput = true;
+    harness.sender->post(videoFrame(5.0, 1, /*keyframe=*/true));
+    harness.sender->post(eosFrame(1));
+    // The frame sticks in the pipeline because the codec refuses it; the EOS waits behind it.
+    ASSERT_TRUE(waitUntil([&] {
+        return harness.decoder->decodeCalls.load() > 2;
+    }));
+
+    harness.pipeline->flush(2, sec(1.0), SeekMode::Fast);
+    harness.decoder->holdInput = false;
+    std::this_thread::sleep_for(100ms);
+    harness.pipeline->onVsync(sec(1.0));
+
+    EXPECT_FALSE(harness.pipeline->ended());
+    EXPECT_FALSE(harness.pipeline->ready(2, sec(1.0)));
+
+    harness.sender->post(videoFrame(1.0, 2, /*keyframe=*/true));
+    ASSERT_TRUE(waitUntil([&] {
+        harness.pipeline->onVsync(sec(1.0));
+        return harness.pipeline->ready(2, sec(1.0));
+    }));
+    EXPECT_FALSE(harness.pipeline->ended());
+}
+
 TEST(VideoPipelineTest, FramesCarryingEpochOnlyInDecoderDataArePresented) {
     auto harness = PipelineHarness::create(1, sec(0.0));
     harness.decoder->epochOnlyInData = true;
@@ -446,6 +475,7 @@ TEST(VideoPipelineTest, PermanentlyRefusingCodecFailsThePipeline) {
 
 TEST(VideoPipelineTest, LiveCatchUpDrainsToTheNextKeyframe) {
     auto harness = PipelineHarness::create();
+    harness.decoder->keepsFrameType = true;
     harness.pipeline->setCatchUpProbe([] {
         return true;
     });

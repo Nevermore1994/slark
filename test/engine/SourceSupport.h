@@ -62,4 +62,9 @@ inline bool isKey(const AVFrame& f) {
     return f.info && f.info->isKeyFrame();
 }
 
+// Hardware decoders report the picture format only, never the type of the packet they decoded.
+inline std::shared_ptr<FrameInfo> decodedVideoInfo() {
+    return std::make_shared<VideoFrameInfo>();
+}
+
 }  // namespace slark::engine::fake

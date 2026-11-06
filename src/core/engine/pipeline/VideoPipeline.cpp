@@ -196,8 +196,7 @@ void VideoPipeline::onVsync(Time::TimePoint clockNow) {
 }
 
 void VideoPipeline::advanceLocked(Time::TimePoint clockNow) {
-
-    // Preroll skips the clock: Fast takes the first keyframe, Exact the first frame at the target.
+    // Fast preroll takes the first frame: the source always starts a seek at a keyframe.
     if (!prerolled_) {
         while (!queue_.empty()) {
             const auto& frame = queue_.front();
@@ -205,9 +204,8 @@ void VideoPipeline::advanceLocked(Time::TimePoint clockNow) {
                 queue_.pop_front();
                 continue;
             }
-            const bool qualifies = seekMode_ == SeekMode::Fast
-                                       ? isPresentableKeyframe(frame)
-                                       : frame->ptsTime() >= target_.second() - kPrerollSlackSec;
+            const bool qualifies = seekMode_ == SeekMode::Fast ||
+                                   frame->ptsTime() >= target_.second() - kPrerollSlackSec;
             if (qualifies) {
                 sink_->present(frame);
                 presentedFrame_ = true;
@@ -310,6 +308,10 @@ bool VideoPipeline::attempt(AVFrameRefPtr& frame) {
     if (frame->isEOS) {
         {
             std::lock_guard lock(mutex_);
+            // An EOS from before the last flush describes a position nobody is playing from now.
+            if (frame->seekEpoch != epoch_) {
+                return true;
+            }
             eosReceived_ = true;
         }
         if (wake_) {

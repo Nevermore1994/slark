@@ -258,6 +258,10 @@ bool AudioPipeline::attempt(AVFrameRefPtr& frame) {
     if (frame->isEOS) {
         {
             std::lock_guard lock(mutex_);
+            // An EOS from before the last flush describes a position nobody is playing from now.
+            if (frame->seekEpoch != epoch_) {
+                return true;
+            }
             eosReceived_ = true;
         }
         if (wake_) {

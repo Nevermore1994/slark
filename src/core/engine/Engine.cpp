@@ -239,6 +239,8 @@ void Engine::retargetSeek(Time::TimePoint target, SeekMode mode) {
     state_.seekMode = mode;
     readyTarget_ = target;
     silentSeek_ = false;
+    LogI("seek retarget: target={:.3f}s mode={} epoch={}", target.second(),
+         mode == SeekMode::Fast ? "fast" : "exact", readyEpoch_);
     clock_.seekTo(target);
     for (auto& pipeline : pipelines_) {
         pipeline->retarget(readyEpoch_, target, mode);
@@ -341,6 +343,8 @@ bool Engine::startSeek() {
     clock_.stop();
     clock_.seekTo(target);
     seekStartedAt_ = scheduler_.now();
+    LogI("seek start: target={:.3f}s mode={} epoch={}", target.second(),
+         state_.seekMode == SeekMode::Fast ? "fast" : "exact", readyEpoch_);
     source_->setSeeking(true);
     // Pipelines must hold the new epoch before the source publishes it, or its keyframe is dropped as stale.
     for (auto& pipeline : pipelines_) {
@@ -390,6 +394,8 @@ bool Engine::completeSeek() {
     if (!ready) {
         return false;
     }
+    LogI("seek done: epoch={} after {:.3f}s retries={}", readyEpoch_,
+         (scheduler_.now() - seekStartedAt_).second(), seekAttempts_);
     state_.seekTarget.reset();
     state_.issuedEpoch = kInvalidSeekEpoch;
     seekAttempts_ = 0;
