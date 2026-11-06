@@ -132,6 +132,7 @@ class StreamSource : public Source {
     void seekOnLoader(Time::TimePoint target, SeekEpoch epoch);
     void refreshTracksOnLoader();
     void feedDemuxer(DataPacket& packet);
+    void refreshStreamFacts();
     bool createDemuxer();
     void openDemuxer();
     void publishFrames(DemuxerResult& result);

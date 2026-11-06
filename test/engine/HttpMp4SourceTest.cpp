@@ -191,6 +191,13 @@ TEST_F(HttpMp4SourceTest, ServerIgnoringRangeStillPlaysAFileWithMoovAtTheFront) 
     EXPECT_FALSE(source->info().isSeekable);
 }
 
+TEST_F(HttpMp4SourceTest, RangeCapableServerMakesTheSourceSeekable) {
+    serve(moovFirst(file), true);
+    auto source = open();
+    ASSERT_TRUE(waitTracks(*source));
+    EXPECT_TRUE(source->info().isSeekable);
+}
+
 TEST_F(HttpMp4SourceTest, NotFoundIsAFailureNotMediaData) {
     server.failWith("404 Not Found");
     ASSERT_TRUE(server.start());

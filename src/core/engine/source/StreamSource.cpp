@@ -307,10 +307,20 @@ void StreamSource::onStreamError(Error error, int32_t origin) {
     fail(error, origin);
 }
 
+void StreamSource::refreshStreamFacts() {
+    if (!stream_) {
+        return;
+    }
+    const auto info = stream_->info();
+    // Duration comes from the demuxer for plain streams, so only the flags are synced here.
+    mergeStreamFacts(info.isLive, info.isSeekable, 0.0);
+}
+
 void StreamSource::feedDemuxer(DataPacket& packet) {
     if (packet.sourceGeneration != streamGeneration_) {
         return;
     }
+    refreshStreamFacts();
     onPacket(packet);
     if (verifyOffset_) {
         if (packet.offset != pendingOffset_) {
