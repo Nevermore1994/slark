@@ -64,6 +64,10 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
 
     override fun prepare() {
         SlarkPlayerManager.doAction(playerId, SlarkPlayerManager.Action.PREPARE.ordinal)
+        // The core drops setLoop before prepare, so replay the cached value.
+        if (isLoop) {
+            SlarkPlayerManager.setLoop(playerId, true)
+        }
     }
 
     override fun play() {

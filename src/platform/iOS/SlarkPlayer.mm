@@ -159,6 +159,10 @@ static slark::FlowConfig toFlowConfig(SlarkFlowConfig* config) {
 - (void)prepare {
     if (_player) {
         _player->prepare();
+        // The core drops setLoop before prepare, so replay the cached value.
+        if (_isLoop) {
+            _player->setLoop(true);
+        }
     }
 }
 
