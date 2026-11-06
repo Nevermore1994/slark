@@ -54,38 +54,42 @@ Pod::Spec.new do |s|
         s.dependency "OpenSSL-Universal"
     end
 
+    s.preserve_paths = 'include/**/*', 'internal/**/*'
+
     s.pod_target_xcconfig = { 
         'ONLY_ACTIVE_ARCH' => 'YES',
         'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'arm64',
         'CLANG_C_LANGUAGE_STANDARD' => 'c17',
         'CLANG_CXX_LANGUAGE_STANDARD' => 'c++23',
-        'GCC_PREPROCESSOR_DEFINITIONS' => 'ENABLE_HTTPS=#{enable_https_flag} SLARK_IOS=1',
+        'GCC_PREPROCESSOR_DEFINITIONS' => "ENABLE_HTTPS=#{enable_https_flag} SLARK_IOS=1",
         'HEADER_SEARCH_PATHS' => %(
             $(inherited)
             $(PODS_TARGET_SRCROOT)/include
-            $(PODS_TARGET_SRCROOT)/libs/openssl/ios/include
         ).gsub("\n", " "),
         'USER_HEADER_SEARCH_PATHS' => %(
             $(PODS_TARGET_SRCROOT)
+            $(PODS_TARGET_SRCROOT)/include
+            $(PODS_TARGET_SRCROOT)/internal
             $(PODS_TARGET_SRCROOT)/src/base
+            $(PODS_TARGET_SRCROOT)/src/base/coroutine
             $(PODS_TARGET_SRCROOT)/src/core
             $(PODS_TARGET_SRCROOT)/src/core/media
             $(PODS_TARGET_SRCROOT)/src/core/stream
             $(PODS_TARGET_SRCROOT)/src/core/render
             $(PODS_TARGET_SRCROOT)/src/core/codec
             $(PODS_TARGET_SRCROOT)/src/core/demuxer
-            $(PODS_TARGET_SRCROOT)/src/http/include
-            $(PODS_TARGET_SRCROOT)/src/http/include/public
+            $(PODS_TARGET_SRCROOT)/src/core/perf
+            $(PODS_TARGET_SRCROOT)/src/core/engine
+            $(PODS_TARGET_SRCROOT)/src/core/engine/pipeline
+            $(PODS_TARGET_SRCROOT)/src/core/engine/source
+            $(PODS_TARGET_SRCROOT)/src/http
             $(PODS_TARGET_SRCROOT)/src/platform/iOS
             $(PODS_TARGET_SRCROOT)/src/platform/iOS/interface
         ).gsub("\n", " "),
-        'OTHER_LDFLAGS' => %(
-            $(inherited)
-            $(PODS_TARGET_SRCROOT)/libs/openssl/ios/libssl.a
-            $(PODS_TARGET_SRCROOT)/libs/openssl/ios/libcrypto.a
-        ).gsub("\n", " "),
         'OTHER_CPLUSPLUSFLAGS' => '-Wall -Wextra -Wpedantic -Wcast-align -Wcast-qual -Wconversion -Wdisabled-optimization -Wendif-labels -Wfloat-equal -Winit-self -Winline -Wmissing-include-dirs -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual -Wpacked -Wpointer-arith -Wredundant-decls -Wshadow -Wsign-promo -Wvariadic-macros -Wwrite-strings -Wno-variadic-macros -Wno-unknown-pragmas'
     }
-    s.frameworks = 'Foundation', 'AVFoundation', 'VideoToolBox', 'AudioToolBox', 'CoreMedia'
+    s.frameworks = 'Foundation', 'CoreFoundation', 'AVFoundation', 'VideoToolbox', 'AudioToolbox',
+                   'CoreMedia', 'CoreVideo', 'CoreGraphics', 'QuartzCore', 'Metal', 'MetalKit', 'UIKit'
+    s.weak_frameworks = 'OpenGLES', 'GLKit'
   end
 
