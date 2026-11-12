@@ -32,6 +32,7 @@ namespace {
 
 constexpr std::string_view kSourceSignature = "Lcom/slark/api/SlarkFlowConfig$Source;";
 constexpr std::string_view kBufferingSignature = "Lcom/slark/api/SlarkFlowConfig$Buffering;";
+constexpr std::string_view kDnsSignature = "Lcom/slark/api/SlarkFlowConfig$Dns;";
 
 void raiseIllegalArgument(JNIEnv* env, std::string_view message) {
     if (!env || env->ExceptionCheck()) {
@@ -80,6 +81,24 @@ template <typename Group, typename... Fields>
                          field("rebufferExitSec", &BufferingConfig::rebufferExitSec));
 }
 
+[[nodiscard]] JNI::GroupRead readDnsGroup(JNIEnv* env, jobject dns, DnsConfig& group) {
+    ClassReference dnsClass(env, env->GetObjectClass(dns));
+    if (!dnsClass ||
+        !JNI::readStringList(env, dns, dnsClass.get(), "preResolveUrls", group.preResolveUrls) ||
+        !JNI::readFields(env, dns, group, field("cacheTtlSec", &DnsConfig::cacheTtlSec))) {
+        return std::unexpected("dns");
+    }
+    return JNI::GroupRead{};
+}
+
+[[nodiscard]] JNI::GroupRead readDns(JNIEnv* env, jobject object, jclass cls, DnsConfig& group) {
+    const auto value = JNI::readObjectField(env, object, cls, "dns", kDnsSignature);
+    if (!value) {
+        return std::unexpected("dns");
+    }
+    return readDnsGroup(env, value.get(), group);
+}
+
 [[nodiscard]] JNI::GroupRead readFlowConfig(JNIEnv* env, jobject object, FlowConfig& config) {
     if (!env) {
         return std::unexpected("flowConfig");
@@ -100,6 +119,9 @@ template <typename Group, typename... Fields>
         },
         [&] {
             return readBuffering(env, object, cls.get(), config.buffering);
+        },
+        [&] {
+            return readDns(env, object, cls.get(), config.dns);
         });
 }
 
@@ -155,6 +177,18 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_createPlayerWithFlowConfig(
         return nullptr;
     }
     return createPlayer(env, path, start, duration, flowConfig);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_slark_sdk_SlarkPlayerManager_00024Companion_preResolve(JNIEnv* env,
+                                                                jobject /*thiz*/,
+                                                                jobject dns) {
+    DnsConfig config;
+    if (!dns || !readDnsGroup(env, dns, config).has_value()) {
+        raiseIllegalArgument(env, "dns must not be null");
+        return;
+    }
+    Player::preResolve(config);
 }
 
 extern "C" JNIEXPORT void JNICALL

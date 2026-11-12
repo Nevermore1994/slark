@@ -24,6 +24,7 @@ inline constexpr std::string_view ByteArray = "[B";
 inline constexpr std::string_view IntArray = "[I";
 inline constexpr std::string_view ByteBuffer = "Ljava/nio/ByteBuffer;";
 inline constexpr std::string_view Object = "Ljava/lang/Object;";
+inline constexpr std::string_view List = "Ljava/util/List;";
 }  // namespace Sig
 
 inline std::string makeArray(std::string_view type) {

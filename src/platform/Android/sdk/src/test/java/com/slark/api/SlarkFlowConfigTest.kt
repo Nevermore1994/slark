@@ -22,13 +22,16 @@ class SlarkFlowConfigTest {
         assertEquals(2.0, config.buffering.startBufferSec, 0.0)
         assertEquals(3.0, config.buffering.rebufferEnterSec, 0.0)
         assertEquals(4.5, config.buffering.rebufferExitSec, 0.0)
+        assertEquals(emptyList<String>(), config.dns.preResolveUrls)
+        assertEquals(60.0, config.dns.cacheTtlSec, 0.0)
     }
 
     @Test
     fun nativeFieldLayoutMatchesFlowConfigGroups() {
         val groups = mapOf(
             "source" to SlarkFlowConfig.Source::class.java,
-            "buffering" to SlarkFlowConfig.Buffering::class.java
+            "buffering" to SlarkFlowConfig.Buffering::class.java,
+            "dns" to SlarkFlowConfig.Dns::class.java
         )
         groups.forEach { (field, type) ->
             assertEquals(type, SlarkFlowConfig::class.java.getDeclaredField(field).type)
@@ -44,13 +47,16 @@ class SlarkFlowConfigTest {
         checkFields(SlarkFlowConfig.Buffering::class.java,
             "startBufferSec" to doubleType, "rebufferEnterSec" to doubleType,
             "rebufferExitSec" to doubleType)
+        checkFields(SlarkFlowConfig.Dns::class.java,
+            "preResolveUrls" to java.util.List::class.java, "cacheTtlSec" to doubleType)
     }
 
     @Test
     fun explicitConfigIsPreservedAsWholeValue() {
         val override = SlarkFlowConfig(
             source = SlarkFlowConfig.Source(lowWatermarkSec = 1.0, highWatermarkSec = 6.0),
-            buffering = SlarkFlowConfig.Buffering(startBufferSec = 1.0)
+            buffering = SlarkFlowConfig.Buffering(startBufferSec = 1.0),
+            dns = SlarkFlowConfig.Dns(preResolveUrls = listOf("https://cdn.example.com/a.m3u8"))
         )
         assertEquals(override, SlarkPlayerConfig("sample.mp4", flowConfig = override).flowConfig)
     }

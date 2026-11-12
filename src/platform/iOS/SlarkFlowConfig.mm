@@ -33,12 +33,26 @@
 
 @end
 
+@implementation SlarkDnsFlowConfig
+
+- (instancetype)init {
+    if (self = [super init]) {
+        const slark::DnsConfig config;
+        _preResolveUrls = @[];
+        _cacheTtlSec = config.cacheTtlSec;
+    }
+    return self;
+}
+
+@end
+
 @implementation SlarkFlowConfig
 
 - (instancetype)init {
     if (self = [super init]) {
         _source = [SlarkSourceFlowConfig new];
         _buffering = [SlarkBufferingFlowConfig new];
+        _dns = [SlarkDnsFlowConfig new];
     }
     return self;
 }

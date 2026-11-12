@@ -19,9 +19,15 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign) double rebufferExitSec;
 @end
 
+@interface SlarkDnsFlowConfig : NSObject
+@property(nonatomic, copy) NSArray<NSString*>* preResolveUrls;
+@property(nonatomic, assign) double cacheTtlSec;
+@end
+
 @interface SlarkFlowConfig : NSObject
 @property(nonatomic, strong) SlarkSourceFlowConfig* source;
 @property(nonatomic, strong) SlarkBufferingFlowConfig* buffering;
+@property(nonatomic, strong) SlarkDnsFlowConfig* dns;
 @end
 
 NS_ASSUME_NONNULL_END

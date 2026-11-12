@@ -75,6 +75,8 @@ class SlarkPlayerManager {
             path: String, start: Double, duration: Double, flowConfig: SlarkFlowConfig
         ): String
 
+        external fun preResolve(dns: SlarkFlowConfig.Dns)
+
         external fun doAction(playerId: String, action: Int)
 
         external fun setLoop(playerId: String, isLoop: Boolean)

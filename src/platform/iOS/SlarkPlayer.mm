@@ -72,8 +72,19 @@ struct PlayerObserver final : public slark::IPlayerObserver {
     std::function<void(NSString*, SlarkPlayerEvent, NSString*)> notifyEventFunc;
 };
 
+static slark::DnsConfig toDnsConfig(SlarkDnsFlowConfig* config) {
+    slark::DnsConfig result;
+    for (NSString* url in config.preResolveUrls) {
+        if (const char* utf8 = url.UTF8String) {
+            result.preResolveUrls.emplace_back(utf8);
+        }
+    }
+    result.cacheTtlSec = config.cacheTtlSec;
+    return result;
+}
+
 static slark::FlowConfig toFlowConfig(SlarkFlowConfig* config) {
-    if (!config.source || !config.buffering) {
+    if (!config.source || !config.buffering || !config.dns) {
         [NSException raise:NSInvalidArgumentException format:@"FlowConfig groups must not be nil"];
     }
     slark::FlowConfig result;
@@ -82,6 +93,7 @@ static slark::FlowConfig toFlowConfig(SlarkFlowConfig* config) {
     result.buffering.startBufferSec = config.buffering.startBufferSec;
     result.buffering.rebufferEnterSec = config.buffering.rebufferEnterSec;
     result.buffering.rebufferExitSec = config.buffering.rebufferExitSec;
+    result.dns = toDnsConfig(config.dns);
     return result;
 }
 
@@ -94,6 +106,10 @@ static slark::FlowConfig toFlowConfig(SlarkFlowConfig* config) {
 @end
 
 @implementation SlarkPlayer
+
++ (void)preResolve:(SlarkDnsFlowConfig*)config {
+    slark::Player::preResolve(toDnsConfig(config));
+}
 
 - (instancetype)init:(NSString*)path {
     return [self init:path flowConfig:nil];

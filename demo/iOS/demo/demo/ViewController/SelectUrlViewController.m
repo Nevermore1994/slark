@@ -5,6 +5,7 @@
 #import "SelectUrlViewController.h"
 
 #import "Masonry.h"
+#import "SlarkPlayer.h"
 #import "iOSUtil.h"
 
 @interface VideoItem : NSObject
@@ -63,6 +64,13 @@
 
     [self setupInputArea];
     [self setupTableView];
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    SlarkDnsFlowConfig* dns = [SlarkDnsFlowConfig new];
+    dns.preResolveUrls = [self.items valueForKey:@"url"];
+    [SlarkPlayer preResolve:dns];
 }
 
 - (void)setupInputArea {

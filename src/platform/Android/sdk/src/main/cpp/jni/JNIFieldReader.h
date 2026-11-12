@@ -11,8 +11,11 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "JNIBase.h"
+#include "JNICache.h"
+#include "JNIMarshal.h"
 #include "JNISignature.h"
 
 namespace slark::JNI {
@@ -78,6 +81,43 @@ template <typename Group, typename... Fields>
     const auto fieldSignature = std::string(signature);
     const auto id = env->GetFieldID(cls, fieldName.c_str(), fieldSignature.c_str());
     return {env, id ? env->GetObjectField(object, id) : nullptr};
+}
+
+[[nodiscard]] inline bool readStringList(JNIEnv* env,
+                                         jobject object,
+                                         jclass cls,
+                                         std::string_view name,
+                                         std::vector<std::string>& out) {
+    const auto list = readObjectField(env, object, cls, name, Sig::List);
+    if (!env || env->ExceptionCheck()) {
+        return false;
+    }
+    if (!list) {
+        return true;
+    }
+    ClassReference listClass(env, env->GetObjectClass(list.get()));
+    const auto size = listClass ? JNICache::instance().getMethod(listClass, "size", "()I")
+                                : MethodReference{};
+    const auto get = listClass
+                         ? JNICache::instance().getMethod(listClass, "get", "(I)Ljava/lang/Object;")
+                         : MethodReference{};
+    if (!size || !get) {
+        return false;
+    }
+    const auto count = env->CallIntMethod(list.get(), size.get());
+    if (env->ExceptionCheck()) {
+        return false;
+    }
+    out.clear();
+    out.reserve(static_cast<size_t>(count));
+    for (jint i = 0; i < count; ++i) {
+        ObjectReference item(env, env->CallObjectMethod(list.get(), get.get(), i));
+        if (env->ExceptionCheck()) {
+            return false;
+        }
+        out.push_back(item ? FromJVM::str(env, static_cast<jstring>(item.get())) : std::string{});
+    }
+    return true;
 }
 
 // Error value naming the group that was missing or unreadable.

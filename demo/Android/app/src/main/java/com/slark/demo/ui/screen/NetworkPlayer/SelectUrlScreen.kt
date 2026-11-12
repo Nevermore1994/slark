@@ -25,6 +25,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
+import com.slark.api.SlarkFlowConfig
+import com.slark.api.SlarkSdk
 import com.slark.demo.ui.PlayUrl
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -33,6 +35,10 @@ fun SelectUrlScreen(innerPadding: PaddingValues, onItemClick: (Uri) -> Unit) {
     val items = PlayUrl.urls
     var customUrl by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
+
+    LaunchedEffect(Unit) {
+        SlarkSdk.preResolve(SlarkFlowConfig.Dns(preResolveUrls = items.map { it.url }))
+    }
 
     fun playUrl(url: String) {
         val trimmed = url.trim()

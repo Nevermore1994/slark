@@ -122,6 +122,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign, readonly) BOOL isSeekable;
 @property(nonatomic, weak, nullable) id<ISlarkPlayerObserver> delegate;
 
++ (void)preResolve:(SlarkDnsFlowConfig* _Nonnull)config;
+
 - (instancetype _Nonnull)init:(NSString* _Nonnull)path;
 
 - (instancetype _Nonnull)init:(NSString* _Nonnull)path
