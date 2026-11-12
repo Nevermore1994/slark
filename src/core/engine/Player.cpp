@@ -115,10 +115,12 @@ Player::~Player() {
     if (!pimpl_) {
         return;
     }
-    // Stop the scheduler first; detach so a release from an observer cannot deadlock.
     auto stack = std::move(pimpl_);
     std::thread([stack = std::move(stack)]() mutable {
         GLContextManager::shareInstance().removeMainContext(stack->playerId);
+        if (stack->engine) {
+            stack->engine->close();
+        }
         if (stack->scheduler) {
             stack->scheduler->stop();
         }

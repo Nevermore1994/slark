@@ -42,6 +42,16 @@ TEST_F(EngineCommandTest, PlayAndPauseAfterFailureAreRejected) {
     EXPECT_FALSE(engine->snapshot().wantPlay);
 }
 
+TEST_F(EngineCommandTest, CloseTurnsCommandsQueuedBeforeItIntoNoOps) {
+    Prepare prepare;
+    prepare.item.path = "fake";
+    engine->post(std::move(prepare));
+    engine->close();
+    sched.runUntilIdle();
+    EXPECT_EQ(factory->sourcesCreated, 0);
+    EXPECT_EQ(status(), Status::Idle);
+}
+
 TEST_F(EngineCommandTest, FailedClearsWantPlay) {
     open();
     send(Play{});

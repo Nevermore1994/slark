@@ -74,7 +74,9 @@ void StreamSource::start() {
         return;
     }
     (void)loader_->postTask(ThreadTask([this] {
-        openOnLoader();
+        if (!closed_.load(std::memory_order_acquire)) {
+            openOnLoader();
+        }
     }));
 }
 

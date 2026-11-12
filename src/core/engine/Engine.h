@@ -29,6 +29,7 @@ class Engine : public std::enable_shared_from_this<Engine> {
                                           PlaybackFactory factory);
 
     void post(Command command);
+    void close() noexcept;
     // vsync tick from the render side; paces the video pipeline.
     void notifyVsync();
     [[nodiscard]] Snapshot snapshot() const;
@@ -95,6 +96,7 @@ class Engine : public std::enable_shared_from_this<Engine> {
     bool released_ = false;
 
     std::atomic<bool> wakePending_{false};
+    std::atomic<bool> closed_{false};
     mutable std::mutex snapshotMutex_;
     Snapshot snapshot_;
 };

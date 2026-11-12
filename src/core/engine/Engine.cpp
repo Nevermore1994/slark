@@ -40,10 +40,17 @@ Engine::Engine(Scheduler& scheduler, Notifier& notifier, PlaybackFactory factory
 void Engine::post(Command command) {
     scheduler_.execute([weak = weak_from_this(), command = std::move(command)]() mutable {
         if (auto self = weak.lock()) {
+            if (self->closed_.load(std::memory_order_acquire)) {
+                return;
+            }
             self->apply(command);
             self->reconcile();
         }
     });
+}
+
+void Engine::close() noexcept {
+    closed_.store(true, std::memory_order_release);
 }
 
 Snapshot Engine::snapshot() const {
@@ -65,6 +72,9 @@ void Engine::wake() {
     }
     scheduler_.execute([weak = weak_from_this()] {
         if (auto self = weak.lock()) {
+            if (self->closed_.load(std::memory_order_acquire)) {
+                return;
+            }
             self->wakePending_.store(false, std::memory_order_release);
             self->reconcile();
         }
@@ -572,6 +582,9 @@ void Engine::scheduleWakeup() {
     }
     scheduler_.postAt(kWakeSlot, std::max(*at, now + kMinWakeGap), [weak = weak_from_this()] {
         if (auto self = weak.lock()) {
+            if (self->closed_.load(std::memory_order_acquire)) {
+                return;
+            }
             self->reconcile();
         }
     });
