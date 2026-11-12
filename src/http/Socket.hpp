@@ -125,10 +125,10 @@ inline bool isIpLiteral(const std::string& host) noexcept {
     return inet_pton(AF_INET6, host.c_str(), &v6) == 1;
 }
 
-using AddressInfoPtr = std::unique_ptr<addrinfo, decltype(&freeaddrinfo)>;
+using AddressInfoPtr = std::shared_ptr<addrinfo>;
 
 inline AddressInfoPtr makeAddressInfo(addrinfo* info) {
-    return AddressInfoPtr(info, &freeaddrinfo);
+    return info ? AddressInfoPtr(info, &freeaddrinfo) : AddressInfoPtr();
 }
 
 inline void destroyClonedAddressInfo(addrinfo* info) noexcept {
@@ -142,7 +142,7 @@ inline void destroyClonedAddressInfo(addrinfo* info) noexcept {
 }
 
 inline AddressInfoPtr makeClonedAddressInfo(addrinfo* info) {
-    return AddressInfoPtr(info, &destroyClonedAddressInfo);
+    return info ? AddressInfoPtr(info, &destroyClonedAddressInfo) : AddressInfoPtr();
 }
 
 inline int getAddressFamily(IPVersion ipVersion) noexcept {
