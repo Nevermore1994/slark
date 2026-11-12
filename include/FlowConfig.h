@@ -4,6 +4,9 @@
 
 #pragma once
 
+#include <string>
+#include <vector>
+
 namespace slark {
 
 // Loads ahead of the playback position: stops at the high watermark, resumes below the low one.
@@ -27,12 +30,22 @@ struct BufferingConfig {
     }
 };
 
+struct DnsConfig {
+    std::vector<std::string> preResolveUrls;
+    double cacheTtlSec = 60.0;
+
+    [[nodiscard]] bool isValid() const noexcept {
+        return cacheTtlSec > 0.0;
+    }
+};
+
 struct FlowConfig {
     SourceWatermarkConfig source;
     BufferingConfig buffering;
+    DnsConfig dns;
 
     [[nodiscard]] bool isValid() const noexcept {
-        return source.isValid() && buffering.isValid() &&
+        return source.isValid() && buffering.isValid() && dns.isValid() &&
                buffering.rebufferExitSec < source.highWatermarkSec;
     }
 };

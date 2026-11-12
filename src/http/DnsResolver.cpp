@@ -8,6 +8,7 @@
 #include <new>
 
 #include "Log.hpp"
+#include "Url.h"
 
 namespace slark::http {
 
@@ -72,18 +73,7 @@ Task<AddressInfoPtr> DnsResolver::resolveAsyncImpl(std::shared_ptr<State> state,
         awaiter->complete(makeAddressInfo(nullptr));
     });
     auto future = state->threadPool.submit([host, port, ipVersion, awaiter]() {
-        struct addrinfo hints{};
-        hints.ai_family = getAddressFamily(ipVersion);
-        hints.ai_socktype = SOCK_STREAM;
-
-        struct addrinfo* result = nullptr;
-        int32_t ret = getaddrinfo(host.c_str(), port.c_str(), &hints, &result);
-        if (ret != 0 || !result) {
-            LogW("DNS resolve failed for {}:{} err={}", host, port, gai_strerror(ret));
-            awaiter->complete(makeAddressInfo(nullptr));
-            return;
-        }
-        awaiter->complete(makeAddressInfo(result));
+        awaiter->complete(queryAddress(host, port, ipVersion));
     });
 
     if (!future.has_value()) {
@@ -95,13 +85,62 @@ Task<AddressInfoPtr> DnsResolver::resolveAsyncImpl(std::shared_ptr<State> state,
 
     if (resolved) {
         std::lock_guard lock(state->cacheMutex);
-        insertCache(*state, key, resolved);
+        insertCache(*state, key, resolved, state->config.cacheTtl);
         LogI("[DnsResolver::resolveAsync] resolved & cached: {}:{}", host, port);
     } else {
         LogE("[DnsResolver::resolveAsync] resolve returned null: {}:{}", host, port);
     }
 
     co_return resolved;
+}
+
+void DnsResolver::prefetchUrls(const std::vector<std::string>& urls,
+                               std::chrono::duration<double> ttl) {
+    for (const auto& urlString : urls) {
+        const Url url(urlString);
+        if (!url.isValid() || !url.isSupportScheme()) {
+            continue;
+        }
+        prefetch(state_, url.host, std::to_string(url.portNumber()), IPVersion::Auto, ttl);
+    }
+}
+
+void DnsResolver::prefetch(const std::shared_ptr<State>& state,
+                           const std::string& host,
+                           const std::string& port,
+                           IPVersion ipVersion,
+                           std::chrono::duration<double> ttl) {
+    (void)state->threadPool.postJob(JobPriority::Low, [state, host, port, ipVersion, ttl] {
+        const auto begin = std::chrono::steady_clock::now();
+        auto resolved = queryAddress(host, port, ipVersion);
+        if (!resolved) {
+            return;
+        }
+        {
+            std::lock_guard lock(state->cacheMutex);
+            insertCache(*state, makeKey(host, port, ipVersion), resolved, ttl);
+        }
+        LogI("[DnsResolver::prefetch] cached: {}:{} in {}ms", host, port,
+             std::chrono::duration_cast<std::chrono::milliseconds>(
+                 std::chrono::steady_clock::now() - begin)
+                 .count());
+    });
+}
+
+AddressInfoPtr DnsResolver::queryAddress(const std::string& host,
+                                         const std::string& port,
+                                         IPVersion ipVersion) {
+    struct addrinfo hints{};
+    hints.ai_family = getAddressFamily(ipVersion);
+    hints.ai_socktype = SOCK_STREAM;
+
+    struct addrinfo* result = nullptr;
+    int32_t ret = getaddrinfo(host.c_str(), port.c_str(), &hints, &result);
+    if (ret != 0 || !result) {
+        LogW("DNS resolve failed for {}:{} err={}", host, port, gai_strerror(ret));
+        return makeAddressInfo(nullptr);
+    }
+    return makeAddressInfo(result);
 }
 
 void DnsResolver::invalidate(const std::string& host) noexcept {
@@ -148,7 +187,8 @@ AddressInfoPtr DnsResolver::lookupCache(State& state, const std::string& key) no
 
 void DnsResolver::insertCache(State& state,
                               const std::string& key,
-                              const AddressInfoPtr& addr) {
+                              const AddressInfoPtr& addr,
+                              std::chrono::duration<double> ttl) {
     if (state.config.maxCacheSize == 0) {
         return;
     }
@@ -164,14 +204,14 @@ void DnsResolver::insertCache(State& state,
         state.lruList.pop_back();
     }
 
+    const auto expireAt = std::chrono::steady_clock::now() +
+                          std::chrono::duration_cast<std::chrono::steady_clock::duration>(ttl);
     state.lruList.push_front(key);
     state.cache.insert_or_assign(
-        key,
-        State::CacheValue{
-            .entry = {.address = cloneAddrInfo(addr.get()),
-                      .expireAt = std::chrono::steady_clock::now() + state.config.cacheTtl},
-            .lruIt = state.lruList.begin(),
-        });
+        key, State::CacheValue{
+                 .entry = {.address = cloneAddrInfo(addr.get()), .expireAt = expireAt},
+                 .lruIt = state.lruList.begin(),
+             });
 }
 
 AddressInfoPtr DnsResolver::cloneAddrInfo(const addrinfo* src) noexcept {

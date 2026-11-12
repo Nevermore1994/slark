@@ -14,6 +14,8 @@ class Player {
 
     ~Player();
 
+    static void preResolve(const DnsConfig& config);
+
  public:
     void prepare() noexcept;
 

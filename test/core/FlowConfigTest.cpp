@@ -63,6 +63,23 @@ TEST(FlowConfigTest, RebufferExitMustStayBelowSourceHighWatermark) {
     EXPECT_FALSE(cfg.isValid()) << "exit level above the high watermark never recovers";
 }
 
+TEST(FlowConfigTest, DnsSliceDefaultsToNoPrefetch) {
+    const FlowConfig cfg;
+    EXPECT_TRUE(cfg.dns.preResolveUrls.empty());
+    EXPECT_DOUBLE_EQ(cfg.dns.cacheTtlSec, 60.0);
+    EXPECT_TRUE(cfg.dns.isValid());
+}
+
+TEST(FlowConfigTest, DnsTtlMustBePositive) {
+    auto cfg = FlowConfig{};
+    cfg.dns.cacheTtlSec = 0.0;
+    EXPECT_FALSE(cfg.dns.isValid());
+    EXPECT_FALSE(cfg.isValid());
+
+    cfg.dns.cacheTtlSec = 0.5;
+    EXPECT_TRUE(cfg.isValid()) << "sub-second TTLs are meaningful for prefetch";
+}
+
 TEST(FlowConfigTest, SourceWatermarkBoundaries) {
     auto cfg = FlowConfig{};
     cfg.source.lowWatermarkSec = 0.0;

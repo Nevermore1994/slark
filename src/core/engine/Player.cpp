@@ -8,6 +8,7 @@
 
 #include "AudioRenderSink.h"
 #include "ComponentFactories.h"
+#include "DnsResolver.h"
 #include "Engine.h"
 #include "GLContextManager.h"
 #include "Log.hpp"
@@ -109,6 +110,17 @@ Player::Player(std::unique_ptr<PlayerParams> params) : pimpl_(std::make_shared<I
     // Must precede anything async: decoder resource creation needs this context.
     GLContextManager::shareInstance().addMainContext(pimpl_->playerId,
                                                      pimpl_->params->mainGLContext);
+    if (const auto& flow = pimpl_->params->setting.flowConfig) {
+        preResolve(flow->dns);
+    }
+}
+
+void Player::preResolve(const DnsConfig& config) {
+    if (config.preResolveUrls.empty() || !config.isValid()) {
+        return;
+    }
+    http::DnsResolver::instance().prefetchUrls(config.preResolveUrls,
+                                               std::chrono::duration<double>(config.cacheTtlSec));
 }
 
 Player::~Player() {

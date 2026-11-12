@@ -37,6 +37,21 @@ class DnsResolverTest : public ::testing::Test {
         return coro.isDone() ? coro.result() : makeAddressInfo(nullptr);
     }
 
+    bool isCached(DnsResolver& r, const std::string& host, const std::string& port) {
+        CancellationToken cancelled;
+        cancelled.cancel();
+        auto coro = r.resolveAsync(host, port, IPVersion::Auto, cancelled);
+        coro.resume();
+        return coro.isDone() && coro.result().get() != nullptr;
+    }
+
+    bool waitUntilCached(DnsResolver& r, const std::string& host, const std::string& port) {
+        for (int32_t i = 0; i < 500 && !isCached(r, host, port); ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        return isCached(r, host, port);
+    }
+
     std::unique_ptr<DnsResolver> resolver_;
 };
 
@@ -250,4 +265,21 @@ TEST_F(DnsResolverTest, ResolveWithTimeout) {
     }
     EXPECT_TRUE(coro.isDone());
     EXPECT_NE(coro.result().get(), nullptr);
+}
+
+TEST_F(DnsResolverTest, PrefetchedUrlIsCachedWithoutAnyRequest) {
+    resolver_->prefetchUrls({"http://localhost:19081/video.m3u8"}, std::chrono::seconds(60));
+    EXPECT_TRUE(waitUntilCached(*resolver_, "localhost", "19081"));
+}
+
+TEST_F(DnsResolverTest, PrefetchDefaultPortFollowsTheScheme) {
+    resolver_->prefetchUrls({"http://localhost/video.m3u8"}, std::chrono::seconds(60));
+    EXPECT_TRUE(waitUntilCached(*resolver_, "localhost", "80"));
+}
+
+TEST_F(DnsResolverTest, PrefetchedAddressExpiresAfterItsOwnTtl) {
+    resolver_->prefetchUrls({"http://localhost:19082/video.m3u8"}, std::chrono::seconds(1));
+    ASSERT_TRUE(waitUntilCached(*resolver_, "localhost", "19082"));
+    std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+    EXPECT_FALSE(isCached(*resolver_, "localhost", "19082"));
 }

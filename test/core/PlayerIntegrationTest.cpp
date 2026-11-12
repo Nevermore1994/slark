@@ -12,7 +12,9 @@
 #include <string>
 #include <thread>
 
+#include "CancellationToken.h"
 #include "Data.h"
+#include "DnsResolver.h"
 #include "Player.h"
 #include "VideoInfo.h"
 
@@ -485,6 +487,39 @@ TEST(PlayerIntegrationTest, ToggleLoopDuringPlayback) {
     player.setLoop(false);
     player.setLoop(true);
     safeDestroy(player);
+}
+
+static bool isDnsCached(const std::string& host, const std::string& port) {
+    CancellationToken cancelled;
+    cancelled.cancel();
+    auto coro =
+        http::DnsResolver::instance().resolveAsync(host, port, http::IPVersion::Auto, cancelled);
+    coro.resume();
+    return coro.isDone() && coro.result().get() != nullptr;
+}
+
+static bool waitUntilDnsCached(const std::string& host, const std::string& port) {
+    for (int32_t i = 0; i < 500 && !isDnsCached(host, port); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return isDnsCached(host, port);
+}
+
+TEST(PlayerIntegrationTest, PreResolveCachesTheHostsOfTheUrls) {
+    DnsConfig config;
+    config.preResolveUrls = {"http://localhost:18943/video.m3u8"};
+    Player::preResolve(config);
+    EXPECT_TRUE(waitUntilDnsCached("localhost", "18943"));
+}
+
+TEST(PlayerIntegrationTest, PreResolvedAddressLivesForTheConfiguredTtl) {
+    DnsConfig config;
+    config.preResolveUrls = {"http://localhost:18944/video.m3u8"};
+    config.cacheTtlSec = 1.0;
+    Player::preResolve(config);
+    ASSERT_TRUE(waitUntilDnsCached("localhost", "18944"));
+    std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+    EXPECT_FALSE(isDnsCached("localhost", "18944"));
 }
 
 }  // namespace slark

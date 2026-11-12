@@ -10,6 +10,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "Awaitable.hpp"
 #include "CancellationToken.h"
@@ -44,6 +45,8 @@ class DnsResolver {
                                       IPVersion ipVersion,
                                       CancellationToken token = {});
 
+    void prefetchUrls(const std::vector<std::string>& urls, std::chrono::duration<double> ttl);
+
     void invalidate(const std::string& host) noexcept;
     void clearCache() noexcept;
 
@@ -56,13 +59,23 @@ class DnsResolver {
                                                  IPVersion ipVersion,
                                                  CancellationToken token);
 
+    static void prefetch(const std::shared_ptr<State>& state,
+                         const std::string& host,
+                         const std::string& port,
+                         IPVersion ipVersion,
+                         std::chrono::duration<double> ttl);
+    static AddressInfoPtr queryAddress(const std::string& host,
+                                       const std::string& port,
+                                       IPVersion ipVersion);
+
     static std::string makeKey(const std::string& host,
                                const std::string& port,
                                IPVersion ipVersion);
     static AddressInfoPtr lookupCache(State& state, const std::string& key) noexcept;
     static void insertCache(State& state,
                             const std::string& key,
-                            const AddressInfoPtr& addr);
+                            const AddressInfoPtr& addr,
+                            std::chrono::duration<double> ttl);
     static AddressInfoPtr cloneAddrInfo(const addrinfo* src) noexcept;
 
     std::shared_ptr<State> state_;
