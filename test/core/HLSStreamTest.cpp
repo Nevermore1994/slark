@@ -129,7 +129,7 @@ TEST_F(HLSStreamTest, L1_MasterVariantMediaSegmentFlow) {
     EXPECT_EQ(server_.requestCount("/media.m3u8"), 1);
     EXPECT_EQ(server_.requestCount("/seg0.ts"), 1);
     EXPECT_EQ(server_.requestCount("/seg1.ts"), 1);
-    EXPECT_EQ(server_.connectionCount(), 2);
+    EXPECT_EQ(server_.connectionCount(), 1);
 }
 
 TEST_F(HLSStreamTest, ProductionGateStopsSchedulingNextSegment) {
@@ -286,7 +286,7 @@ TEST_F(HLSStreamTest, SegmentReconnectsAfterTruncatedResponse) {
     EXPECT_TRUE(stream_->isCompleted());
     EXPECT_GE(server_.requestCount("/seg0.ts"), 2);
     EXPECT_EQ(server_.requestCount("/seg1.ts"), 1);
-    EXPECT_GE(server_.connectionCount(), 3);
+    EXPECT_GE(server_.connectionCount(), 2);
     std::lock_guard lock(chunksMutex);
     ASSERT_FALSE(chunks.empty());
     uint64_t expectedOffset = 0;

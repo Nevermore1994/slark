@@ -26,15 +26,18 @@ class StreamFactory {
     // ownerThread: injected into network streams (HttpStream/HLSStream) constructors,
     // ignored by local file streams
     static FactoryResult<std::shared_ptr<IStream>> createStream(
-        const std::string& uri, std::shared_ptr<TaskThread> ownerThread = nullptr);
+        const std::string& uri,
+        std::shared_ptr<TaskThread> ownerThread = nullptr);
 
     static FactoryResult<std::shared_ptr<IStream>> createFileStream(const std::string& uri);
 
     static FactoryResult<std::shared_ptr<IStream>> createHttpStream(
-        const std::string& uri, std::shared_ptr<TaskThread> ownerThread = nullptr);
+        const std::string& uri,
+        std::shared_ptr<TaskThread> ownerThread = nullptr);
 
     static FactoryResult<std::shared_ptr<IStream>> createHLSStream(
-        const std::string& uri, std::shared_ptr<TaskThread> ownerThread = nullptr);
+        const std::string& uri,
+        std::shared_ptr<TaskThread> ownerThread = nullptr);
 
     [[nodiscard]] static StreamType detectStreamType(const std::string& uri);
 

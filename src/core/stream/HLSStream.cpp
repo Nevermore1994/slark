@@ -250,6 +250,10 @@ Task<void> HLSStream::fetchPlaylist(std::shared_ptr<http::HttpRequest> request,
     });
 }
 
+std::shared_ptr<http::Http1Session> HLSStream::playlistSession() const {
+    return playlist_ && playlist_->isLive() ? controlSession_ : mediaSession_;
+}
+
 void HLSStream::requestPlaylist(const std::string& url) {
     if (url.empty() || playlistOp_ || closing_ || isPaused_ || !isRunning_) {
         return;
@@ -265,7 +269,7 @@ void HLSStream::requestPlaylist(const std::string& url) {
     requestInfo.url = url;
     requestInfo.methodType = http::HttpMethodType::Get;
     requestInfo.connectionMode = http::HttpConnectionMode::KeepAlive;
-    requestInfo.session = controlSession_;
+    requestInfo.session = playlistSession();
 
     auto task = fetchPlaylist(request, requestInfo, control, generation, operationId);
     playlistOp_.emplace(

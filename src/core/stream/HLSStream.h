@@ -102,6 +102,7 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
     void downloadSegment(uint32_t segIndex);
     void refreshPlaylist();
     void requestPlaylist(const std::string& url);
+    [[nodiscard]] std::shared_ptr<http::Http1Session> playlistSession() const;
     void schedulePlaylistRefresh();
     void schedulePlaylistRetry(Error error, int32_t originCode);
     void scheduleRetry(uint64_t sequence);
