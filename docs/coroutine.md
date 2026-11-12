@@ -1,7 +1,8 @@
 # Slark C++20 协程框架设计
 
 > 状态：已实现
-> 更新：2026-08-11
+> 更新：2026-11-12
+> 第 3–5 节描述重构前的设计；其中 `CoroutineControlBlock`、`SharedCoroutineHandle`、`Coroutine<T>` 已不存在，实现以第 8 节为准。
 > 作者：Nevermore-
 > 关联代码：`src/base/coroutine/`、`src/http/IOContext.h`、`src/core/stream/HttpStream*`、`src/core/stream/HLSStream*`
 
@@ -598,46 +599,48 @@ public:
 template <typename T>
 class CompletionAwaiter {
 public:
-    bool await_ready() const noexcept {
-        return state_.load() != State::Init;
-    }
+    [[nodiscard]] bool isCompleted() const noexcept;   // 轮询，不挂起
 
-    template <typename Promise>
-    bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
-        auto sharedHandle = handle.promise().makeResumeHandle();
-        auto expected = State::Init;
-        if (!state_.compare_exchange_strong(expected, State::Waiting, ...)) {
-            return false;  // 已经在 await_ready 和 await_suspend 之间被 complete
-        }
-        handle_ = std::move(sharedHandle);
-        return handle_ && handle_->suspend();
-    }
+    // 每次 co_await 产生一个 Waiter，拥有本次等待的 gate 与取消注册
+    class Waiter {
+    public:
+        bool await_ready() const noexcept;             // 已完成则不挂起
+        template <typename Promise>
+        bool await_suspend(std::coroutine_handle<Promise> handle) noexcept;
+        T await_resume();                              // 取消抛 CancelledException，失败抛原异常
+    private:
+        std::shared_ptr<State> state_;
+        std::shared_ptr<ResumeGate> gate_;
+        std::list<std::shared_ptr<ResumeGate>>::iterator position_;
+        CancellationTokenRegistration cancelReg_;
+    };
 
-    void complete(T result) noexcept {
-        result_.emplace(std::move(result));
-        finish();
-    }
+    Waiter operator co_await() noexcept;
+
+    void complete(T value);      // 仅首次生效
+    void complete();             // void 版本
+    void fail(std::exception_ptr e);
 
 private:
-    enum class State : uint8_t { Init, Waiting, Completed };
-
-    void finish() noexcept {
-        auto expected = State::Waiting;
-        if (state_.compare_exchange_strong(expected, State::Completed, ...)) {
-            if (handle_ && handle_->notify()) {
-                CoroutineScheduler::instance().schedule(handle_);
-            }
-            return;
-        }
-        state_.store(State::Completed, ...);  // 让 await_suspend 看到 Completed，不挂起
-    }
+    struct State {
+        std::mutex mutex;
+        bool completed = false;
+        std::optional<ResultType> result;
+        std::exception_ptr exception;
+        std::list<std::shared_ptr<ResumeGate>> waiters; // 尚未结束等待的等待者
+    };
+    std::shared_ptr<State> state_;
 };
 ```
 
-**设计要点**：解决 "complete 在 await_suspend 之前还是之后" 的竞态
-- `complete()` 先于 `await_suspend` 调用：`finish()` 将 state 设为 `Completed`，`await_suspend` 看到 state != `Init` 返回 `false`（不挂起）
-- `await_suspend` 先于 `complete()` 调用：state 从 `Init → Waiting`，`complete()` 触发 `finish()` → `notify()` → `schedule()` 恢复协程
-- **用途**：将回调式 API 桥接到协程（如 DNS 解析 `getaddrinfo` 在线程池执行，完成后 `complete`）
+**设计要点**：
+- **共享状态**：completer 与所有等待者共享同一个 `State`（结果、完成标记、仍挂起的等待者列表）。
+- **每次等待一个 Waiter**：挂起状态（gate、取消注册、列表位置）放在 Waiter 上，多个协程同时等待互不覆盖。
+- **挂起**：在状态锁内完成入列、绑定取消并 `arm()`；若已完成则直接返回，不挂起。
+- **唤醒**：`complete()` / `fail()` 在锁内发布结果并快照等待者列表，锁外逐个 `signal()`；只有第一次生效。
+- **销毁**：`Waiter` 析构时在锁内从列表摘除自己并 `disarm()`，帧销毁后不会被唤醒。
+- **结果**：`T` 必须可拷贝（`requires` 编译期约束），每个等待者拿到一份拷贝，与 Kotlin 的 `Deferred` 共享同一结果一致；只能移动的值请用 `std::shared_ptr` 包装。生产者析构时仍挂起的等待者被 `disarm`，不再被唤醒。
+- **用途**：将回调式 API 桥接到协程（如 DNS 解析 `getaddrinfo` 在线程池执行，完成后 `complete`），多个协程可等待同一完成事件。
 
 ### 3.9 CoroutineScheduler —— 协程调度器
 
@@ -854,7 +857,7 @@ class CancellationToken {
 | notify 在 suspend 前到达 | SharedCoroutineHandle + EventLoop | `State` 状态机：Registering → Signaled |
 | 多个完成源同时 notify | SharedCoroutineHandle | `resumed_` 原子 CAS |
 | complete/fail/timeout 竞争 | AsyncIOOperation | `CompletionState` CAS |
-| complete 在 await_suspend 之前/之后 | CompletionAwaiter | `State` CAS（Init/Waiting/Completed） |
+| complete 在 await_suspend 之前/之后 | CompletionAwaiter | 共享 `State` 的互斥锁：已完成则不挂起，否则入列后由 `complete` 唤醒 |
 | 消费者在生产者 yield 前销毁 | AsyncGenerator | `consumerControl_.lock()` 检查 |
 | Coroutine<T> 析构但 frame 还在运行 | CoroutineControlBlock | shared_ptr 引用计数 |
 | 父协程在子协程完成前销毁 | CoroutineAwaiter | makeResumeHandle 的 weak_ptr lock |
@@ -1021,12 +1024,13 @@ CoroutineScheduler::instance().schedule(streamCoroutine_);
 ### 6.5 带超时和取消的 fd 等待
 
 ```cpp
-// CancellableFdReadyAwaiter 结合 CancellationToken 和 EventLoop
-bool ready = co_await CancellableFdReadyAwaiter(fd, Interest::Read, cancelToken);
+// 读写等待同时绑定协程自身的取消令牌（如 with_timeout）和显式传入的令牌。
+// 任一被取消，等待以未就绪结束并返回 false；fd 被注销时同样返回 false。
+bool ready = co_await withCancellation(FdReadyAwaiter(fd, FdReadyAwaiter::Interest::Read), cancelToken);
 if (ready) {
     // 正常读取
 } else {
-    // 被取消
+    // 被取消、超时或 fd 已注销
 }
 ```
 
@@ -1077,8 +1081,19 @@ auto result = co_await std::move(pipeline).collect<std::vector>();
 | 生成器 owner 销毁后 frame 存活 | `DestroyedGeneratorOwnerDoesNotInvalidatePendingFrame` |
 | at-most-once resume | `ResumeAlreadyDone` |
 | share() 转移所有权 | `Share` |
-| CompletionAwaiter 竞态 | `CompleteBeforeAwait` / `CompleteAfterAwait` |
+| CompletionAwaiter 竞态 | `CompletionBeforeAwaitSuspensionIsConsumed` / `CompletionAfterSuspensionResumesExactlyOnce` / `CompleteRacingRegistrationWakesEveryWaiter`，多等待者：`MultipleWaitersAreAllWokenWithTheValue` 等 |
 | 多层 co_await | `CoAwaitDeepChain` |
+| 执行器拒绝后的续体 | `RefusedResumeIsCancelledAndUnwindsOnFallback` / `RefusedResumeDestroysLocalsOffTheCallerThread` / `RefusedResumeOnStoppedThreadSchedulerUnwindsOnFallback`；`ThreadSchedulerTest.TryExecuteRefusesAfterStop` |
+| 停止时已接受的任务 | `ThreadSchedulerTest.StopRunsEveryAcceptedTaskBeforeReturning` / `WorkPostedByADrainedTaskIsRefused` / `StopCancelsTimerWhoseCallbackIsQueuedBehindWork`；`ThreadBaseTest.StopRunsQueuedTasksAndReleasesCaptures`；`EngineCommandTest.CloseTurnsCommandsQueuedBeforeItIntoNoOps` |
+| AsyncIO 完成竞态与结果可见 | `AsyncIOOperationTest.CompleteRacingFailHasExactlyOneOutcome` / `CompleteRacingTimeoutHasExactlyOneOutcome` / `ResultCompletedOnAnotherThreadIsReadByTheWaiter` / `ErrorCompletedOnAnotherThreadIsReadByTheWaiter` |
+| 嵌套协程执行域继承 | `ExecutorTest.ChildWithoutExecutorResumesOnTheRootExecutorThroughTwoLevels` / `ChildKeepsItsOwnExecutorOverTheAwaitingParentsDomain` |
+| FdReady 取消、超时、注销与执行域 | `IOContextTest.CancellingTheCoroutineWakesAPendingFdReadyWait` / `TimeoutWakesAPendingFdReadyWait` / `UnregisteringTheSocketReportsAPendingWaitAsNotReady` / `ReadinessResumesTheCoroutineOnItsBoundExecutor`；显式令牌版本为 `CancellingTheTokenWakesAPendingFdReadyWait` |
+| 协程压力 | `CoroutineStressTest.*`：100 协程并发恢复、100 定时器并发触发、100 个 AsyncIO 并发完成、50 层嵌套 co_await、10 个 when_all 串行 |
+| 恢复派发计数 | `ResumeMetricsTest.*`：交给执行域、内联、被拒绝回退、排队延迟、pending（见 8.16） |
+| 竞态（完成、失败、取消、派发） | `AsyncIOOperationTest.FailRacingCancelHasExactlyOneOutcome`；`IOContextTest.ReadinessRacingCancelResumesExactlyOnce`；`StructuredConcurrencyTest.FailureRacingCompletionRethrowsOnlyAfterEveryChildFinishes`；`CancellationPropagationTest.AsyncScopeSpawnRacingCancelAllNeverRunsRejectedChildren` |
+| 超时边界 | `CoTimeoutTest.ZeroTimeoutExpiresBeforeTheChildCompletes` |
+| 在途协程析构 | `HttpStreamTest.DestroyDuringTransferReleasesTheStream`；`HLSStreamTest.DestroyWhileDownloadingReleasesTheStream` |
+| HLS 关闭与释放 | `HLSStreamTest.CloseCancelsThePlaylistRetryTimer` / `StreamIsReleasedOnceClosedWithoutAReferenceCycle` |
 
 ### 7.3 全局状态清理
 
@@ -1400,6 +1415,8 @@ producer、consumer、`next()`、`co_yield`、completion、close，以及 genera
 
 唯一允许和 owner close 竞争的跨线程入口是已注册 external `ResumeGate::signal()`；该竞争由 gate 状态和 frame control 的 active/destroyed/deferred 状态共同收敛。
 
+执行器契约：`tryExecute` 返回 `true` 的任务一定会在该执行器上执行且只执行一次；返回 `false` 表示未被接受，调用方必须把对应续体转交回退执行器（见 8.12）。`SerialExecutor`、`ThreadPool`、`ThreadScheduler` 与线程退出路径都遵守此契约：停止后拒绝新任务，已接受的任务在线程退出前全部执行。`ThreadScheduler::stop()` 与 `SerialExecutor` 的析构会等待它们完成后才返回，因此不要在持有这些任务所需的锁时停止。停止后通过 `tryExecute` 投递的任务（包括已接受任务内部投递的）返回 `false`。定时器的语义是停止即取消：未到期的定时器被取消，停止之后不再启动任何定时回调。`StreamSource` 等以 `closed_` 标志关闭的组件，其排队任务在关闭后只做空操作。
+
 以下行为违反契约：
 
 1. 绕过 `CoroutineFrameControl` 直接恢复受控 frame；
@@ -1409,34 +1426,146 @@ producer、consumer、`next()`、`co_yield`、completion、close，以及 genera
 5. 跨线程直接调用同一 generator 的 `next()`、close 或 producer 状态操作；
 6. 用 `void*`、裸 awaiter `this` 或 generator-specific callback 注入通用 frame control；
 7. continuation handoff 先 release 再重新 acquire，制造销毁空窗；
-8. 把 `OperationStatus::Closed` 当作底层 HTTP/IO 已完成。
+8. 把 `OperationStatus::Closed` 当作底层 HTTP/IO 已完成；
+9. 执行器拒绝派发后在调用方线程内联恢复续体，被拒绝的续体只能在回退执行器上恢复（见 8.12）。
 
 ### 8.12 组合与让出：when_all、when_any、AsyncScope、yield
 
 启动位置：`when_all`、`when_any` 和 `AsyncScope::spawn` 先把子任务在调用方线程上启动，直到第一个挂起点。显式传入非 inline 的 `IExecutor`（`when_all(exec, ...)`、`when_any(exec, ...)`、`AsyncScope::setDefaultExecutor`）时，子任务改为投递到该 executor；`when_all` 和 `when_any` 未显式传入时使用被等待协程自己的 executor。
 
+并发语义以 Kotlin 的结构化并发为准（`JobSupport.kt` 与 `Executors.kt` 已核实）。执行器拒绝派发时，等待被取消（`CancelledException`），协程仍在回退执行器 `CoroutineScheduler::fallbackExecutor()` 上恢复，使帧能展开；这与 Kotlin 的 `cancelJobOnRejection` 加 `Dispatchers.IO` 回退一致。回退执行器 `CoroutineScheduler::fallbackExecutor()` 是进程级、永不析构的线程池，首次使用时启动，因此析构期间的派发仍能落到存活的池上。它永不关闭，回退派发不会被拒绝；若仍被拒绝，说明不变量被破坏，记录错误日志并 `std::terminate()`，绝不在调用方线程内联恢复。Kotlin 没有这一分支（`Dispatchers.IO` 不拒绝派发）。代价：进程退出时仍在回退队列中的协程不再执行，其局部对象的析构也不会运行，帧随进程回收。
+
 `when_all(Task<Ts>...)`：
 
 - 所有子任务结束后才恢复，结果是各子任务返回值组成的 `std::tuple`；只要有一个子任务返回 `void`，`co_await` 的结果就是 `void`。
-- 子任务抛出异常时，等全部结束后重新抛出第一个异常，其余丢弃。
+- 子任务抛出非取消异常时，取消兄弟子任务（Kotlin：失败的子 Job 取消父与兄弟），等全部结束后重新抛出第一个非取消异常；取消异常不会掩盖根因。
+- 等待者（父协程）被销毁时，取消全部子任务（Kotlin：取消父会取消子）。子任务以 `CancelledException` 退出，帧在最后一个租约释放后销毁（8.2）。
+- 子任务的派发被执行器拒绝时，该子任务以取消结束且不启动，不会取消兄弟（Kotlin：被拒绝的任务是取消，不是失败）。
 - 无参数时不挂起。
 
-`when_any(Task<Ts>...)`，至少一个子任务：
+`when_any(AsyncScope&, Task<Ts>...)`，至少一个子任务：
 
 - 第一个结束的子任务获胜，结果是 `WhenAnyResult{winnerIndex, winnerValue}`，`winnerValue` 是 variant，`void` 子任务对应 `VoidResult`。
-- 获胜者抛出的异常会重新抛出；失败者的结果和异常都被丢弃。
-- 失败者不会被取消，继续运行，它们的 `Task` 被移交给共享状态保管。需要停止失败者时，调用方通过自己的 `CancellationToken` 通知。
+- 获胜者抛出的异常会重新抛出；落败者的结果被丢弃。落败者（以及获胜者）的非取消异常同样使 scope 失败：取消 scope，兄弟子任务随之取消，异常在 `join()` 时重新抛出（Kotlin：非 supervisor 的子 Job 失败取消父，与是否被 await 无关，见 `JobSupport.kt` 的 `cancelParent`）。
+- 子任务由传入的 `AsyncScope` 托管。落败者不会因为胜出而被取消，继续运行直到结束，或 scope 被取消（`cancelAll()`、析构、其它子任务的非取消失败）。
+- 全部子任务都被执行器拒绝时，等待者以 `CancelledException` 结束（Kotlin：全部分支被取消的 select 自身被取消）。
+- scope 必须在等待期间存活。
 
 `AsyncScope`：
 
-- `spawn()` 不加锁，只能从一个线程调用。
-- 已结束的子任务不会从内部列表移除，长期存活的 scope 会持续增长。
-- `waitAll()` 和析构最多各等待 5 秒；`waitAll()` 超时后会取消 token。超时后未结束子任务的 frame 保持存活、不会被销毁，所以不要在 loader 或 engine 线程上析构带阻塞子任务的 scope。
-- 子任务的返回值和异常被丢弃。
-- 取消是协作式的：`cancelAll()` 只置位 `token()`，由子任务自己检查。
+- `spawn()` 可从任意线程调用，包括与 `cancelAll()` 并发：子任务 id 原子分配，children 表受锁保护。`setDefaultExecutor` 须在首次 `spawn` 之前调用。返回 `false` 表示执行器拒绝了子任务，子任务从未启动（Kotlin：被拒绝的 `launch` 不执行 body）；子任务可以在任意线程完成。
+- 子任务表位于共享核心 `ScopeCore` 中。子任务持有核心的强引用（Kotlin：子协程保持父 Job 存活），结束时在自己的执行线程上把自己从表中摘除（Kotlin：`parentHandle.dispose()`），表条目数等于未结束的子任务数。
+- 摘除时帧仍在执行，帧的销毁推迟到本次 resume 返回（8.2）。
+- 子任务抛出非取消异常时，scope 被取消（Kotlin：失败的子 Job 取消父），保留第一个非取消异常，供 `join()` 重新抛出。
+- `join()` 是挂起式等待（Kotlin：`Job.join()`，不阻塞线程）：所有子任务结束后恢复，并重新抛出保留的异常。两种取消互不相同：等待者自身被取消时，`join()` 抛 `CancelledException`，不取消子任务（Kotlin：取消 join 不取消子 Job）；scope 被 `cancelAll()` 或析构取消时，子任务随之取消，`join()` 在子任务全部结束后正常返回，不抛取消。`join()` 本身不取消子任务，需要停止时先调用 `cancelAll()`。
+- 不响应取消的子任务会让 `join()` 一直等待，与 Kotlin 一致。
+- 析构只取消 token，不等待子任务。仍在运行的子任务与核心一起保持存活，直到结束后回收；析构时仍有子任务会记录一条警告日志。协程不会在 scope 析构后访问已释放的资源。
+- 析构不能挂起，因此拥有者应在销毁前 `co_await scope.join()`。在 scope 自己的执行器线程上销毁 scope 不会死锁。
+- 已移除 `waitAll()` 和带超时的析构等待。
+- 子任务的返回值被丢弃；非取消异常的处理见上文。析构时若失败从未被 `join()` 观察到，记录一条错误日志，不会静默丢失。
+- `cancelAll()` 置位 `token()` 并唤醒阻塞在库内 awaiter 上的子任务，子任务以 `CancelledException` 退出（见 8.13）。析构同样取消。仍在纯计算中的子任务只能自己检查 `token()`。
 
 `co_await slark::yield()`：
 
 - 总是先挂起，向 `CoroutineScheduler` 投递 0 ms 回调，之后在调度器线程上继续。回调先于挂起完成到达时（见 8.9），协程不挂起，在原线程继续。
-- 与 `TimerAwaiter`、`CompletionAwaiter` 不同，不调用 `registerExternalGate`：取消不会提前唤醒它，它自己会在下一个调度周期恢复。
+- 挂起时绑定取消：令牌已取消或挂起期间被取消时，恢复后抛出 `CancelledException`（见 8.13）。
 - 协程在挂起期间被销毁是安全的：`YieldAwaiter` 析构时 `disarm` gate，迟到的回调不会再恢复已销毁的 frame。
+
+### 8.13 隐式取消传播
+
+取消源是一个 `CancellationToken`，绑定在根 `Task` 上：
+
+```text
+Task<T>::setCancellationToken(token)
+    -> promise.cancelToken_ (std::optional，未绑定时不分配)
+```
+
+传播规则：
+
+1. `co_await childTask`：子任务没有令牌则继承父协程的；两边都有则以 `CancellationToken::link(child, parent)` 合并，任一取消即取消。
+2. `when_all` 的子任务绑定父协程令牌与组令牌的合并，组令牌在子任务失败或等待者被销毁时取消；`when_any` 的子任务由 `AsyncScope` 托管，令牌为 scope 令牌与等待者令牌的合并；`AsyncScope::spawn` 的子任务绑定 scope 令牌。
+3. `AsyncGenerator` 生产者在消费者首次 `next()` 时继承消费者的令牌，之后不再改绑。
+4. 叶子 awaiter 挂起时把取消回调注册到当前协程的令牌上：`TimerAwaiter`、`CompletionAwaiter`、`YieldAwaiter`、`AsyncIOOperationBase`。
+
+取消的语义：
+
+- 取消与正常完成竞争：`CompletionAwaiter` 与叶子 awaiter 通过 `ResumeGate::signalCancel()` 仲裁，只有一方恢复协程；`AsyncIOOperationBase` 通过 `SharedCompletion` 的终态仲裁，只有第一个终态生效。已经完成的结果不会因为之后的取消而丢失。
+- 令牌在挂起前已取消时，awaiter 不挂起。`TimerAwaiter`、`CompletionAwaiter`、`YieldAwaiter` 恢复后抛出 `CancelledException`；`AsyncIOOperationBase` 不启动 IO，以 `Error::Cancelled` 返回。
+- 取消回调注册在 awaiter 成员 `CancellationTokenRegistration` 上，awaiter 析构时自动注销，不会访问已销毁的协程。
+- 没有绑定令牌的协程不注册任何回调，行为与之前一致。
+- 没有绑定执行器的协程在调用 `cancel()` 的线程上同步恢复，可能嵌套在调用者的栈帧内。调用方不得在持有会被协程完成路径获取的锁时调用 `cancel()`。
+
+`co_await coro::cancellation_token()` 返回当前协程绑定的令牌（`std::optional<CancellationToken>`），供需要协作式检查的代码使用。
+
+### 8.14 with_timeout
+
+```cpp
+auto result = co_await coro::with_timeout(fetchOnce(url), 5s);
+```
+
+子任务完成、计时器到期、父令牌取消三者竞争同一个决议，先到者决定结果：
+
+- 子任务先完成：返回其结果，或重新抛出其异常。
+- 计时器先到：取消子任务，并抛出 `TimeoutException`。无论子任务之后以什么方式结束（返回值、异常、或吞掉取消后正常返回），结果都是超时。
+- 父协程的令牌先取消：抛出 `CancelledException`，不转换为超时。子任务吞掉取消后正常返回，也仍以取消为准。
+
+超时和取消后，`with_timeout` 仍会等子任务结束才恢复，子任务不会在后台运行。定时器在返回前撤销，不留下待触发的回调。
+
+限制：
+- 超时只在取消点生效。隐式取消覆盖的挂起点是 `TimerAwaiter`、`CompletionAwaiter`、`YieldAwaiter`、`AsyncIOOperationBase` 与 `FdReadyAwaiter`（读写等待、TLS 握手）。取消后 `FdReadyAwaiter` 以未就绪结束，与显式令牌的结果一致。
+- 纯计算和不挂起的循环不会被打断，只能在下一个挂起点退出。
+
+### 8.15 Task 组合子：then、and_then、or_else
+
+```cpp
+auto task = fetchOnce(url)
+    .then([](HttpResponse r) { return r.statusCode; })
+    .or_else([](std::exception_ptr) { return -1; });
+```
+
+- `then(f)`：`f(T)` 的返回值作为新结果；`Task<void>` 上的 `then(f)` 调用 `f()`。
+- `and_then(f)`：`f(T)` 返回 `Task<U>`，结果展平为 `U`。
+- `or_else(f)`：接收上游异常的 `exception_ptr`，返回值替代该异常，结果类型仍为 `T`。
+- 上游抛异常时，`then` 与 `and_then` 不调用 `f`，异常原样传递。
+- `or_else` 不拦截 `CancelledException`：取消必须继续向上传播。它会拦截 `TimeoutException`，因此 `with_timeout(...).or_else(fallback)` 可以把超时转换为回退值。
+
+这些组合子都返回新的 `Task`，把上游的所有权移入其协程帧，链式调用后原对象处于无效状态。
+
+- 空 `Task`（没有协程帧）传给 `then`、`and_then`、`with_timeout` 时，结果抛出 `std::runtime_error`；传给 `or_else` 时，异常交给回退函数处理。
+
+### 8.16 恢复派发计数
+
+`ResumeGate` 派发事件恢复（IO 就绪、定时器、完成通知）时计数，读取 `CoroutineScheduler::instance().resumeMetrics()`：
+
+- `inlined`：没有执行域（或执行域为 inline），在信号线程上直接恢复。
+- `dispatched`：交给执行域的恢复次数。在交付前计数，已运行的恢复一定能看到自己的计数。
+- `refused`：执行域拒绝、转交回退执行器的次数，即 8.11 的拒绝路径。
+- `pending`：已交给执行域、尚未开始运行的恢复数。交付时加一，开始运行时减一；被拒绝时撤销。
+- `queueLatencyUsTotal`、`queueLatencyUsMax`：从交付到开始执行的排队时间，单位微秒。
+
+限制：计数是进程级的，用差值统计时若有无关协程同时恢复，差值只是下界。只统计 `ResumeGate` 派发的恢复；`AsyncScope::spawn` 与 `when_all` 启动子协程不经过这里。每次派发多一次时钟读取与原子计数，热路径开销尚未在真实负载下测量。
+
+### 8.17 挂起点闭环总表
+
+每个挂起点都必须有且只有一个终态：恢复、取消、或被显式丢弃。下表列出每类挂起点的唤醒源，以及停止、析构和取消时的行为。
+
+| 挂起点 | 唤醒源 | 取消时 | 销毁或停止时 | 证明 |
+|---|---|---|---|---|
+| `TimerAwaiter` | 定时器回调 `signal()` | `signalCancel()`，抛 `CancelledException` | 撤销定时器，`disarm` | `CancellationPropagationTest.TimerWakesOnCancel` |
+| `YieldAwaiter` | 零延迟定时器 | 同上 | `disarm`，迟到回调无效 | `YieldTest.DestroyingASuspendedCoroutineIsSafe`、`CancellationPropagationTest.YieldRacesCancelResolvesOnce` |
+| `CompletionAwaiter::Waiter` | `complete()` / `fail()` | `signalCancel()` | 生产者销毁：仍挂起的等待者被 `disarm`，不再唤醒；帧随持有者释放 | `CompletionAwaiterTest.FrameOfAWaiterOrphanedByCompleterIsReleasedWithItsOwner`、`CompletionAwaiterTest.PendingCompletionCannotResumeDestroyedFrame` |
+| `AsyncIOOperationBase` | 唯一终态竞争者（完成、失败、超时、取消） | `requestCancel()` 设置 `Error::Cancelled` | 析构 `cancel()` 只标记终态，结果不可观测 | `AsyncIOOperationTest.FailRacingCancelHasExactlyOneOutcome`、`AsyncIOOperationTest.CompleteRacingTimeoutHasExactlyOneOutcome` |
+| `FdReadyAwaiter` | fd 就绪 `signal()`；注销 fd 或替换等待者 `signalTerminal()` | `signalCancel()` 经 `bindCancellation` | `disarm`，注销监听 | `IOContextTest.UnregisteringTheSocketReportsAPendingWaitAsNotReady`、`IOContextTest.ReadinessRacingCancelResumesExactlyOnce` |
+| `JoinAwaiter` | 最后一个子任务结束（`retireChild`） | `signalCancel()`，子任务不受影响 | scope 析构只取消、分离，等待者仍由 `core` 保持有效 | `CancellationPropagationTest.CancelAllWakesAJoinThatIsAlreadySuspended`、`CancellationPropagationTest.ScopeDestroyedWhileJoinIsSuspendedDoesNotDangle`、`StructuredConcurrencyTest.CancelledJoinStopsWaitingWithoutCancellingChildren` |
+| `CoWhenAll` / `CoWhenAny` 等待者 | 全部子任务结束或首个完成者 | 组令牌取消子任务，等待者抛取消 | 析构取消组令牌 | `StructuredConcurrencyTest.FailureRacingCompletionRethrowsOnlyAfterEveryChildFinishes`、`WhenAnyTest.WinnerThrowsIsPropagated` |
+| `Task` 的 `co_await`（子协程） | 子协程结束，经 continuation 恢复父协程 | 取消令牌沿 `co_await` 继承 | 任务销毁后取消仍安全，悬空回调已注销 | `CancellationPropagationTest.DeepChainInheritsParentToken`、`CancellationPropagationTest.CancelAfterSuspendedTaskDestroyedIsSafe` |
+| 线程停止时的已接受任务 | 线程退出前执行 | 不适用 | 停止时排空，之后投递被拒绝 | `ThreadSchedulerTest.StopRunsEveryAcceptedTaskBeforeReturning`、`ThreadSchedulerTest.WorkPostedByADrainedTaskIsRefused` |
+| 线程停止时的定时器 | 不再启动 | 不适用 | 未到期的取消；已到期但未运行的不启动 | `ThreadSchedulerTest.StopCancelsTimerWhoseCallbackIsQueuedBehindWork`、`TaskThreadTest.DelayTaskCancelledWhenThreadStops` |
+
+不变量：
+
+- 挂起点的终态由 `ResumeGate` 的状态机仲裁，`Signaled`、`Resuming`、`Disarmed` 不得重复恢复。
+- 执行器拒绝的恢复转交回退执行器；回退执行器也拒绝时终止进程，因为续体不能被丢弃。
+- 生产者或持有者销毁后，挂起的等待者不会被唤醒，它的帧随持有者释放。这是约定，不是遗漏。
+
+
