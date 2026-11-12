@@ -291,6 +291,28 @@ TEST_F(HttpStreamTest, H4_CloseDuringTransferIsSafe) {
     EXPECT_EQ(stream_->state(), StreamState::Idle);
 }
 
+TEST_F(HttpStreamTest, DestroyDuringTransferReleasesTheStream) {
+    MockHttpServer slowServer;
+    ASSERT_TRUE(slowServer.start(true, /*chunkDelayMs=*/2));
+
+    auto params = makeParams();
+    params.uri = slowServer.url();
+    auto totalBytes = std::make_shared<std::atomic<uint64_t>>(0);
+    params.onData = [totalBytes](DataChunk chunk) {
+        totalBytes->fetch_add(chunk.size(), std::memory_order_relaxed);
+    };
+
+    auto stream = std::make_shared<HttpStream>(ownerThread_);
+    std::weak_ptr<HttpStream> weak = stream;
+    ASSERT_TRUE(stream->open(params).has_value());
+    stream->start();
+    ASSERT_TRUE(waitUntil([&]() { return totalBytes->load() > 0; }));
+
+    stream.reset();
+    EXPECT_TRUE(waitUntil([&]() { return weak.expired(); }, 5000));
+    slowServer.stop();
+}
+
 TEST_F(HttpStreamTest, H5_RangeValidationRejectsServerIgnoringRange) {
     MockHttpServer noRangeServer;
     ASSERT_TRUE(noRangeServer.start(false));

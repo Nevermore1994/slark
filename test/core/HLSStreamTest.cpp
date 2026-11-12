@@ -504,6 +504,50 @@ TEST_F(HLSStreamTest, SeekAfterCompletionDownloadsAgain) {
     EXPECT_TRUE(stream_->isCompleted());
 }
 
+TEST_F(HLSStreamTest, CloseCancelsThePlaylistRetryTimer) {
+    server_.failNextMediaPlaylist();
+    auto params = makeParams();
+    params.uri = server_.masterUrl();
+    ASSERT_TRUE(stream_->open(params).has_value());
+    stream_->start();
+    ASSERT_TRUE(waitUntil([&]() { return ownerThread_->pendingTimerCount() > 0; }, 10000));
+
+    stream_->close();
+    EXPECT_EQ(ownerThread_->pendingTimerCount(), 0u) << "close must cancel the scheduled retry";
+}
+
+TEST_F(HLSStreamTest, DestroyWhileDownloadingReleasesTheStream) {
+    auto params = makeParams();
+    params.uri = server_.masterUrl();
+    auto stream = std::make_shared<HLSStream>(ownerThread_);
+    std::weak_ptr<HLSStream> weak = stream;
+    ASSERT_TRUE(stream->open(params).has_value());
+    stream->start();
+    ASSERT_TRUE(waitUntil([&]() { return server_.requestCount("/media.m3u8") >= 1; }, 15000));
+
+    stream.reset();
+    EXPECT_TRUE(waitUntil([&]() { return weak.expired(); }, 5000));
+}
+
+TEST_F(HLSStreamTest, StreamIsReleasedOnceClosedWithoutAReferenceCycle) {
+    auto stream = std::make_shared<HLSStream>(ownerThread_);
+    std::weak_ptr<HLSStream> weak = stream;
+    std::atomic<bool> completed{false};
+    auto params = makeParams();
+    params.uri = server_.masterUrl();
+    params.onComplete = [&completed](uint64_t) {
+        completed = true;
+    };
+    ASSERT_TRUE(stream->open(params).has_value());
+    stream->start();
+    ASSERT_TRUE(waitUntil([&]() { return completed.load(); }, 15000));
+
+    stream->close();
+    stream.reset();
+    EXPECT_TRUE(waitUntil([&]() { return weak.expired(); }, 5000))
+        << "a closed stream must be freed; a reference cycle would keep its frames alive";
+}
+
 TEST_F(HLSStreamTest, L5_ConcurrentStartSeekCloseIsSafe) {
     auto params = makeParams();
     params.uri = server_.masterUrl();
