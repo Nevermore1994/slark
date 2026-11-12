@@ -8,10 +8,14 @@
 #include <exception>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <utility>
 #include <vector>
 
+#include "CancellationToken.h"
+#include "CoroutineScheduler.hpp"
 #include "Executor.h"
+#include "Log.hpp"
 
 namespace slark {
 
@@ -420,16 +424,42 @@ class ResumeGate final {
     // coroutine. Silent disarm would leave it parked forever; the awaiter reports
     // "not ready" via consumeNotReady() instead.
     void signalTerminal() noexcept {
+        settle(false);
+    }
+
+    void signalCancel() noexcept {
+        settle(true);
+    }
+
+    [[nodiscard]] bool consumeNotReady() noexcept {
+        std::lock_guard lock(mutex_);
+        return std::exchange(notReady_, false);
+    }
+
+    [[nodiscard]] bool consumeCancelled() noexcept {
+        std::lock_guard lock(mutex_);
+        return std::exchange(cancelled_, false);
+    }
+
+    void setExecutor(std::shared_ptr<IExecutor> executor) noexcept {
+        executor_ = std::move(executor);
+    }
+
+private:
+    void settle(bool cancelled) noexcept {
         std::shared_ptr<CoroutineFrameControl> frameControl;
         std::coroutine_handle<> handle;
         {
             std::unique_lock lock(mutex_);
-            notReady_ = true;
-            if (state_ == State::Pending) {
-                state_ = State::Signaled;
+            if (!cancelled) {
+                notReady_ = true;
+            }
+            if (state_ != State::Pending && state_ != State::Armed) {
                 return;
             }
-            if (state_ != State::Armed) {
+            cancelled_ = cancelled;
+            if (state_ == State::Pending) {
+                state_ = State::Signaled;
                 return;
             }
             state_ = State::Resuming;
@@ -440,33 +470,44 @@ class ResumeGate final {
         dispatchResumeLocked(std::move(frameControl), handle);
     }
 
-    [[nodiscard]] bool consumeNotReady() noexcept {
-        std::lock_guard lock(mutex_);
-        return std::exchange(notReady_, false);
-    }
-
-    // Execution domain this frame must be resumed on. Owned, because a gate can outlive
-    // the code that created it (it is held by fd/timer/cancel callbacks).
-    void setExecutor(std::shared_ptr<IExecutor> executor) noexcept {
-        executor_ = std::move(executor);
-    }
-
- private:
-    // Dispatches the already-claimed resume to the frame's execution domain. Follows the
-    // existing precedent in CoScope/when_all: executor->execute({ control->resume(handle) }).
-    // Must be called without holding mutex_: the resumed coroutine may re-enter this gate.
     void dispatchResumeLocked(std::shared_ptr<CoroutineFrameControl> frameControl,
                               std::coroutine_handle<> handle) noexcept {
-        const auto executor = executor_;
-        if (executor != nullptr && !executor->isInline()) {
-            (void)executor->tryExecute(
-                [frameControl = std::move(frameControl), handle, executor]() noexcept {
-                    frameControl->resume(handle);
-                });
+        if (!frameControl) {
             return;
         }
-        if (frameControl) {
+        auto& metrics = CoroutineScheduler::instance().resumeMetrics();
+        const auto executor = executor_;
+        if (executor == nullptr || executor->isInline()) {
+            metrics.inlined.fetch_add(1, std::memory_order_relaxed);
             frameControl->resume(handle);
+            return;
+        }
+        metrics.dispatched.fetch_add(1, std::memory_order_relaxed);
+        metrics.pending.fetch_add(1, std::memory_order_relaxed);
+        const auto enqueuedAt = std::chrono::steady_clock::now();
+        const bool accepted = executor->tryExecute(
+            [frameControl, handle, executor, enqueuedAt]() noexcept {
+                auto& running = CoroutineScheduler::instance().resumeMetrics();
+                running.pending.fetch_sub(1, std::memory_order_relaxed);
+                running.recordQueueLatency(enqueuedAt);
+                frameControl->resume(handle);
+            });
+        if (accepted) {
+            return;
+        }
+        metrics.pending.fetch_sub(1, std::memory_order_relaxed);
+        metrics.refused.fetch_add(1, std::memory_order_relaxed);
+        {
+            std::lock_guard lock(mutex_);
+            cancelled_ = true;
+            notReady_ = true;
+        }
+        auto& fallback = CoroutineScheduler::instance().fallbackExecutor();
+        const bool resumedOnFallback = fallback.tryExecute(
+            [frameControl, handle]() noexcept { frameControl->resume(handle); });
+        if (!resumedOnFallback) {
+            LogE("coroutine resume refused by the fallback executor; aborting");
+            std::terminate();
         }
     }
 
@@ -476,6 +517,7 @@ class ResumeGate final {
     std::shared_ptr<IExecutor> executor_;
     State state_{State::Pending};
     bool notReady_{false};
+    bool cancelled_{false};
 };
 
 template <typename Promise>
@@ -533,4 +575,50 @@ void markCoroutineExecuting(Promise& promise) noexcept {
     }
 }
 
+class PromiseCancellation {
+public:
+    [[nodiscard]] const CancellationToken* cancelToken() const noexcept {
+        return token_ ? &*token_ : nullptr;
+    }
+
+    void setCancelToken(CancellationToken token) noexcept {
+        token_ = std::move(token);
+    }
+
+    void inheritCancelToken(const CancellationToken* parent) {
+        if (!parent) {
+            return;
+        }
+        if (token_) {
+            token_ = CancellationToken::link(*token_, *parent);
+        } else {
+            token_ = *parent;
+        }
+    }
+
+protected:
+    std::optional<CancellationToken> token_;
+};
+
+template <typename Promise, typename OnCancel>
+[[nodiscard]] CancellationTokenRegistration bindCancellation(Promise& promise, OnCancel onCancel) {
+    if constexpr (requires { promise.cancelToken(); }) {
+        if (const auto* token = promise.cancelToken()) {
+            return token->registerCallbackOrRun(std::move(onCancel));
+        }
+    }
+    return {};
+}
+
+template <typename Promise>
+[[nodiscard]] CancellationTokenRegistration bindGateCancellation(
+    Promise& promise, const std::shared_ptr<ResumeGate>& gate) {
+    return bindCancellation(promise, [weak = std::weak_ptr<ResumeGate>(gate)] {
+        if (auto locked = weak.lock()) {
+            locked->signalCancel();
+        }
+    });
+}
+
 }  // namespace slark
+

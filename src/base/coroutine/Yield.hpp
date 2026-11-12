@@ -8,6 +8,7 @@
 
 #include "CoroutineControl.hpp"
 #include "CoroutineScheduler.hpp"
+#include "Error.h"
 
 namespace slark {
 
@@ -33,13 +34,19 @@ struct YieldAwaiter {
                 gate->signal();
             }
         });
+        cancelReg_ = bindGateCancellation(handle.promise(), gate_);
         return gate_->arm();
     }
 
-    void await_resume() noexcept {}
+    void await_resume() {
+        if (gate_ && gate_->consumeCancelled()) {
+            throw CancelledException("Yield cancelled");
+        }
+    }
 
- private:
+private:
     std::shared_ptr<ResumeGate> gate_;
+    CancellationTokenRegistration cancelReg_;
 };
 
 inline YieldAwaiter yield() noexcept {

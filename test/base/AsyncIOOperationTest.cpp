@@ -1,0 +1,172 @@
+//
+// Copyright (c) 2026 Nevermore-. All rights reserved.
+//
+
+#include <gtest/gtest.h>
+
+#include <atomic>
+#include <chrono>
+#include <latch>
+#include <memory>
+#include <string>
+#include <thread>
+
+#include "AsyncIOOperation.hpp"
+#include "CoroutineTestSupport.h"
+#include "Executor.h"
+#include "Task.hpp"
+
+using namespace std::chrono_literals;
+using slark::Error;
+using slark::IOResult;
+using slark::SerialExecutor;
+using slark::Task;
+using slark::test::ManualIO;
+using slark::test::waitUntilDone;
+
+namespace {
+
+Task<IOResult<std::string>> awaitManual(std::shared_ptr<ManualIO> io, std::atomic<int>* resumes) {
+    auto outcome = co_await *io;
+    resumes->fetch_add(1, std::memory_order_relaxed);
+    co_return outcome;
+}
+
+}  // namespace
+
+TEST(AsyncIOOperationTest, CompleteRacingFailHasExactlyOneOutcome) {
+    for (int round = 0; round < 200; ++round) {
+        auto io = std::make_shared<ManualIO>();
+        std::atomic<int> resumes{0};
+        auto task = awaitManual(io, &resumes);
+        task.resume();
+        ASSERT_FALSE(task.isDone()) << "round " << round;
+
+        std::latch start(2);
+        std::thread completer([&] {
+            start.arrive_and_wait();
+            io->finish("value");
+        });
+        std::thread failer([&] {
+            start.arrive_and_wait();
+            io->abort(Error::NetworkError);
+        });
+        completer.join();
+        failer.join();
+
+        ASSERT_TRUE(waitUntilDone(task)) << "round " << round;
+        EXPECT_EQ(resumes.load(), 1) << "round " << round;
+        const auto outcome = task.result();
+        if (outcome.has_value()) {
+            EXPECT_EQ(outcome.value(), "value") << "round " << round;
+        } else {
+            EXPECT_EQ(outcome.error(), Error::NetworkError) << "round " << round;
+        }
+    }
+}
+
+TEST(AsyncIOOperationTest, CompleteRacingTimeoutHasExactlyOneOutcome) {
+    for (int round = 0; round < 100; ++round) {
+        auto io = std::make_shared<ManualIO>();
+        io->setTimeout(1ms);
+        std::atomic<int> resumes{0};
+        auto task = awaitManual(io, &resumes);
+        task.resume();
+
+        std::thread completer([&] {
+            std::this_thread::sleep_for(1ms);
+            io->finish("value");
+        });
+        completer.join();
+
+        ASSERT_TRUE(waitUntilDone(task)) << "round " << round;
+        EXPECT_EQ(resumes.load(), 1) << "round " << round;
+        const auto outcome = task.result();
+        if (outcome.has_value()) {
+            EXPECT_EQ(outcome.value(), "value") << "round " << round;
+        } else {
+            EXPECT_EQ(outcome.error(), Error::ConnectionTimeout) << "round " << round;
+        }
+    }
+}
+
+TEST(AsyncIOOperationTest, ResultCompletedOnAnotherThreadIsReadByTheWaiter) {
+    const std::string payload(4096, 'x');
+    auto executor = std::make_shared<SerialExecutor>();
+    for (int round = 0; round < 100; ++round) {
+        auto io = std::make_shared<ManualIO>();
+        std::atomic<int> resumes{0};
+        auto task = awaitManual(io, &resumes);
+        task.setExecutor(executor);
+        task.resume();
+
+        std::thread completer([&] {
+            io->finish(payload);
+        });
+        completer.join();
+
+        ASSERT_TRUE(waitUntilDone(task)) << "round " << round;
+        EXPECT_EQ(resumes.load(), 1) << "round " << round;
+        const auto outcome = task.result();
+        ASSERT_TRUE(outcome.has_value()) << "round " << round;
+        EXPECT_EQ(outcome.value(), payload) << "round " << round;
+    }
+}
+
+TEST(AsyncIOOperationTest, ErrorCompletedOnAnotherThreadIsReadByTheWaiter) {
+    auto executor = std::make_shared<SerialExecutor>();
+    for (int round = 0; round < 100; ++round) {
+        auto io = std::make_shared<ManualIO>();
+        std::atomic<int> resumes{0};
+        auto task = awaitManual(io, &resumes);
+        task.setExecutor(executor);
+        task.resume();
+
+        std::thread completer([&] {
+            io->abort(Error::ConnectionReset);
+        });
+        completer.join();
+
+        ASSERT_TRUE(waitUntilDone(task)) << "round " << round;
+        EXPECT_EQ(resumes.load(), 1) << "round " << round;
+        const auto outcome = task.result();
+        ASSERT_FALSE(outcome.has_value()) << "round " << round;
+        EXPECT_EQ(outcome.error(), Error::ConnectionReset) << "round " << round;
+    }
+}
+
+TEST(AsyncIOOperationTest, FailRacingCancelHasExactlyOneOutcome) {
+    for (int round = 0; round < 200; ++round) {
+        auto io = std::make_shared<ManualIO>();
+        std::atomic<int> resumes{0};
+        slark::CancellationToken token;
+        auto task = awaitManual(io, &resumes);
+        task.setCancellationToken(token);
+        task.resume();
+        ASSERT_FALSE(task.isDone()) << "round " << round;
+
+        std::atomic<bool> go{false};
+        std::thread failer([&] {
+            while (!go.load()) {
+                std::this_thread::yield();
+            }
+            io->abort(Error::NetworkError);
+        });
+        std::thread canceller([&] {
+            while (!go.load()) {
+                std::this_thread::yield();
+            }
+            token.cancel();
+        });
+        go.store(true);
+        failer.join();
+        canceller.join();
+
+        ASSERT_TRUE(waitUntilDone(task)) << "round " << round;
+        EXPECT_EQ(resumes.load(), 1) << "round " << round;
+        const auto outcome = task.result();
+        ASSERT_FALSE(outcome.has_value()) << "round " << round;
+        EXPECT_TRUE(outcome.error() == Error::NetworkError || outcome.error() == Error::Cancelled)
+            << "round " << round;
+    }
+}

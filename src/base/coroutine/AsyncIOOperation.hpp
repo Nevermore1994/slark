@@ -174,8 +174,16 @@ class AsyncIOOperationBase {
             return false;
         }
 
-        scheduleTimeout();
-        startOperation();
+        implicitCancelReg_ = bindCancellation(
+            handle.promise(), [weakCompletion = std::weak_ptr<SharedCompletion>(completion_)] {
+                if (auto completion = weakCompletion.lock()) {
+                    completion->requestCancel();
+                }
+            });
+        if (!isTerminal(getState())) {
+            scheduleTimeout();
+            startOperation();
+        }
         if (completion_->wait()) {
             return gate->arm();
         }
@@ -258,6 +266,7 @@ class AsyncIOOperationBase {
 
  private:
     CancellationTokenRegistration cancelReg_;
+    CancellationTokenRegistration implicitCancelReg_;
 
     [[nodiscard]] static bool isTerminal(IOOpState state) noexcept {
         return state == IOOpState::Completed || state == IOOpState::Failed ||

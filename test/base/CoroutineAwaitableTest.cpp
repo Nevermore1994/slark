@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "CoroutineTestSupport.h"
 #include "Task.hpp"
 
 namespace {
@@ -269,6 +270,19 @@ TEST(CompletionAwaiterTest, PendingCompletionCannotResumeDestroyedFrame) {
     }
 
     EXPECT_NO_THROW(awaiter->complete(7));
+}
+
+TEST(CompletionAwaiterTest, FrameOfAWaiterOrphanedByCompleterIsReleasedWithItsOwner) {
+    auto awaiter = std::make_shared<slark::CompletionAwaiter<int>>();
+    auto owner = std::make_shared<slark::Task<int>>(awaitCompletion(awaiter));
+    std::weak_ptr<slark::Task<int>> weakOwner = owner;
+    owner->resume();
+    ASSERT_FALSE(owner->isDone());
+
+    awaiter.reset();
+    EXPECT_FALSE(owner->isDone()) << "an orphaned waiter stays suspended, as documented";
+    owner.reset();
+    EXPECT_TRUE(weakOwner.expired()) << "the orphaned waiter's frame must be released with its owner";
 }
 
 TEST(CompletionAwaiterTest, ChildCompletionDoesNotDeadlockFrameDestruction) {
@@ -574,6 +588,110 @@ TEST(CompletionAwaiterTest, TransferLeaseIsReleasedBeforePendingCompletion) {
 
     EXPECT_EQ(destroyed->load(std::memory_order_relaxed), 1);
     EXPECT_NO_THROW(second->complete());
+}
+
+TEST(CompletionAwaiterTest, MultipleWaitersAreAllWokenWithTheValue) {
+    auto awaiter = std::make_shared<slark::CompletionAwaiter<int>>();
+    auto first = awaitCompletion(awaiter);
+    auto second = awaitCompletion(awaiter);
+    first.resume();
+    second.resume();
+    ASSERT_FALSE(first.isDone());
+    ASSERT_FALSE(second.isDone());
+
+    awaiter->complete(7);
+    ASSERT_TRUE(slark::test::waitUntilDone(first));
+    ASSERT_TRUE(slark::test::waitUntilDone(second));
+    EXPECT_EQ(first.result(), 7);
+    EXPECT_EQ(second.result(), 7);
+}
+
+TEST(CompletionAwaiterTest, MultipleWaitersAreAllWokenWithTheException) {
+    auto awaiter = std::make_shared<slark::CompletionAwaiter<int>>();
+    auto first = awaitCompletion(awaiter);
+    auto second = awaitCompletion(awaiter);
+    first.resume();
+    second.resume();
+    ASSERT_FALSE(first.isDone());
+    ASSERT_FALSE(second.isDone());
+
+    awaiter->fail(std::make_exception_ptr(std::runtime_error("failed")));
+    ASSERT_TRUE(slark::test::waitUntilDone(first));
+    ASSERT_TRUE(slark::test::waitUntilDone(second));
+    EXPECT_THROW(first.result(), std::runtime_error);
+    EXPECT_THROW(second.result(), std::runtime_error);
+}
+
+TEST(CompletionAwaiterTest, CancellingOneWaiterLeavesTheOthersSuspended) {
+    auto awaiter = std::make_shared<slark::CompletionAwaiter<int>>();
+    slark::CancellationToken token;
+    auto cancelled = awaitCompletion(awaiter);
+    cancelled.setCancellationToken(token);
+    auto other = awaitCompletion(awaiter);
+    cancelled.resume();
+    other.resume();
+    ASSERT_FALSE(cancelled.isDone());
+    ASSERT_FALSE(other.isDone());
+
+    token.cancel();
+    ASSERT_TRUE(slark::test::waitUntilDone(cancelled));
+    EXPECT_THROW(cancelled.result(), slark::CancelledException);
+    EXPECT_FALSE(other.isDone());
+
+    awaiter->complete(9);
+    ASSERT_TRUE(slark::test::waitUntilDone(other));
+    EXPECT_EQ(other.result(), 9);
+}
+
+TEST(CompletionAwaiterTest, DestroyedWaiterIsUnlinkedAndTheOthersStillWake) {
+    auto awaiter = std::make_shared<slark::CompletionAwaiter<int>>();
+    auto survivor = awaitCompletion(awaiter);
+    survivor.resume();
+    {
+        auto gone = awaitCompletion(awaiter);
+        gone.resume();
+        ASSERT_FALSE(gone.isDone());
+    }
+    ASSERT_FALSE(survivor.isDone());
+
+    awaiter->complete(4);
+    ASSERT_TRUE(slark::test::waitUntilDone(survivor));
+    EXPECT_EQ(survivor.result(), 4);
+}
+
+TEST(CompletionAwaiterTest, CompleteRacingRegistrationWakesEveryWaiter) {
+    constexpr int kRounds = 200;
+    constexpr int kWaiters = 4;
+    for (int round = 0; round < kRounds; ++round) {
+        auto awaiter = std::make_shared<slark::CompletionAwaiter<int>>();
+        std::vector<slark::Task<int>> tasks;
+        for (int i = 0; i < kWaiters; ++i) {
+            tasks.push_back(awaitCompletion(awaiter));
+        }
+        std::thread completer([awaiter] { awaiter->complete(5); });
+        for (auto& task : tasks) {
+            task.resume();
+        }
+        completer.join();
+        for (auto& task : tasks) {
+            ASSERT_TRUE(slark::test::waitUntilDone(task));
+            EXPECT_EQ(task.result(), 5);
+        }
+    }
+}
+
+namespace {
+
+template <typename U>
+concept NamesCompletionAwaiter = requires { typename slark::CompletionAwaiter<U>; };
+
+}  // namespace
+
+static_assert(!NamesCompletionAwaiter<std::unique_ptr<int>>);
+static_assert(NamesCompletionAwaiter<std::shared_ptr<int>>);
+
+TEST(CompletionAwaiterTest, ValueTypeMustBeCopyableSoEveryWaiterGetsTheValue) {
+    SUCCEED();
 }
 
 TEST(AsyncGeneratorTest, ConsumerIsResumedAfterYield) {

@@ -118,3 +118,35 @@ TEST(ResumeGateTest, ConcurrentSignalAndOwnerDestroyHaveSingleSafeOutcome) {
         EXPECT_NO_THROW(gate->signal());
     }
 }
+
+TEST(ResumeGateTest, SignalCancelAfterArmResumesAndReportsCancelled) {
+    GateFixture fx;
+    ASSERT_TRUE(fx.gate->arm());
+    fx.gate->signalCancel();
+    EXPECT_TRUE(fx.done());
+    EXPECT_TRUE(fx.gate->consumeCancelled());
+}
+
+TEST(ResumeGateTest, SignalCancelBeforeArmIsReportedWhenArmRefused) {
+    GateFixture fx;
+    fx.gate->signalCancel();
+    EXPECT_FALSE(fx.gate->arm());
+    EXPECT_FALSE(fx.done());
+    EXPECT_TRUE(fx.gate->consumeCancelled());
+}
+
+TEST(ResumeGateTest, SignalCancelAfterNormalResumeIsNoop) {
+    GateFixture fx;
+    ASSERT_TRUE(fx.gate->arm());
+    fx.gate->signal();
+    ASSERT_TRUE(fx.done());
+    fx.gate->signalCancel();
+    EXPECT_FALSE(fx.gate->consumeCancelled());
+}
+
+TEST(ResumeGateTest, SignalCancelDoesNotReportNotReady) {
+    GateFixture fx;
+    ASSERT_TRUE(fx.gate->arm());
+    fx.gate->signalCancel();
+    EXPECT_FALSE(fx.gate->consumeNotReady());
+}

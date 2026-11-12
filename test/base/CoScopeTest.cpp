@@ -7,14 +7,25 @@
 #include <chrono>
 #include <future>
 #include <memory>
+#include <thread>
 
 #include "Awaitable.hpp"
 #include "CoWhenAll.hpp"
+#include "CoroutineTestSupport.h"
 #include "Executor.h"
 #include "Task.hpp"
 
 using namespace slark;
 using namespace slark::coro;
+
+namespace slark::coro {
+struct AsyncScopeTestAccess {
+    static std::size_t trackedChildren(const AsyncScope& scope) {
+        std::lock_guard lock(scope.core_->mutex);
+        return scope.core_->children.size();
+    }
+};
+}  // namespace slark::coro
 
 Task<int> simpleInt(int v) {
     co_return v;
@@ -43,7 +54,7 @@ TEST(CoScopeTest, SpawnAndWait) {
         result = v;
     }));
 
-    scope.waitAll();
+    ASSERT_TRUE(slark::test::joinScope(scope));
     EXPECT_EQ(result, 42);
 }
 
@@ -58,7 +69,7 @@ TEST(CoScopeTest, MultipleSpawns) {
         }));
     }
 
-    scope.waitAll();
+    ASSERT_TRUE(slark::test::joinScope(scope));
     EXPECT_EQ(counter.load(), 45);
 }
 
@@ -72,14 +83,14 @@ TEST(CoScopeTest, CancelAll) {
     }));
 
     scope.cancelAll();
-    scope.waitAll();
+    ASSERT_TRUE(slark::test::joinScope(scope));
 }
 
-TEST(CoScopeTest, CancelBeforeWait) {
+TEST(CoScopeTest, CancelBeforeJoin) {
     AsyncScope scope;
 
     scope.cancelAll();
-    scope.waitAll();
+    ASSERT_TRUE(slark::test::joinScope(scope));
 }
 
 TEST(CoScopeTest, DestroyWithBlockedChildIsSafe) {
@@ -192,7 +203,7 @@ TEST(CoWhenAllTest, CoWhenAllInScope) {
         result = a + b;
     }));
 
-    scope.waitAll();
+    ASSERT_TRUE(slark::test::joinScope(scope));
     EXPECT_EQ(result, 15);
 }
 
@@ -289,4 +300,153 @@ TEST(SerialExecutorTest, LastOwnerMayBeReleasedByWorkerTask) {
 
     EXPECT_EQ(secondTaskFuture.wait_for(std::chrono::seconds(2)), std::future_status::ready)
         << "the worker must finish draining its queue after its task releases the last executor owner";
+}
+
+namespace {
+
+struct UncancellableWait {
+    std::shared_ptr<std::shared_ptr<ResumeGate>> gateOut;
+
+    bool await_ready() const noexcept {
+        return false;
+    }
+
+    template <typename Promise>
+    bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
+        releaseTransferLeases(handle.promise());
+        markExternalAwait(handle.promise());
+        *gateOut = makeResumeGate(handle);
+        return (*gateOut)->arm();
+    }
+
+    void await_resume() const noexcept {}
+};
+
+Task<void> parkUncancellable(std::shared_ptr<int> payload,
+                             std::shared_ptr<std::shared_ptr<ResumeGate>> gateOut,
+                             std::shared_ptr<bool> ranAfterWait) {
+    co_await UncancellableWait{gateOut};
+    *ranAfterWait = true;
+    (void)payload;
+}
+
+}  // namespace
+
+TEST(CoScopeTest, DestructorDoesNotWaitForChildThatIgnoresCancel) {
+    auto gateOut = std::make_shared<std::shared_ptr<ResumeGate>>();
+    auto ranAfterWait = std::make_shared<bool>(false);
+    const auto start = std::chrono::steady_clock::now();
+    {
+        AsyncScope scope;
+        scope.spawn(parkUncancellable(std::make_shared<int>(1), gateOut, ranAfterWait));
+    }
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(1))
+        << "the destructor must not block on the child";
+    EXPECT_FALSE(*ranAfterWait) << "cancellation cannot wake the uncancellable child";
+    ASSERT_TRUE(static_cast<bool>(*gateOut));
+
+    (*gateOut)->signal();
+    EXPECT_TRUE(*ranAfterWait) << "the detached child still runs to completion";
+}
+
+TEST(CoScopeTest, JoinWaitsForChildThatIgnoresCancel) {
+    auto gateOut = std::make_shared<std::shared_ptr<ResumeGate>>();
+    auto ranAfterWait = std::make_shared<bool>(false);
+    AsyncScope scope;
+    scope.spawn(parkUncancellable(std::make_shared<int>(1), gateOut, ranAfterWait));
+    std::thread releaser([gateOut] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        if (*gateOut) {
+            (*gateOut)->signal();
+        }
+    });
+    ASSERT_TRUE(slark::test::joinScope(scope, std::chrono::seconds(5)));
+    EXPECT_TRUE(*ranAfterWait) << "join returned before the child finished";
+    releaser.join();
+}
+
+TEST(CoScopeTest, FinishedChildrenAreReclaimedAcrossSpawns) {
+    AsyncScope scope;
+    auto probe = std::make_shared<int>(0);
+    for (int i = 0; i < 5000; ++i) {
+        scope.spawn(runVoidTask([probe]() -> Task<void> {
+            co_return;
+        }));
+    }
+    EXPECT_EQ(AsyncScopeTestAccess::trackedChildren(scope), 0u);
+    EXPECT_EQ(probe.use_count(), 1);
+}
+
+TEST(CoScopeTest, ReclaimKeepsParkedChildrenAlive) {
+    AsyncScope scope;
+    std::vector<std::shared_ptr<std::shared_ptr<ResumeGate>>> gates;
+    std::vector<std::shared_ptr<bool>> ranAfterWait;
+    for (int i = 0; i < 3; ++i) {
+        gates.push_back(std::make_shared<std::shared_ptr<ResumeGate>>());
+        ranAfterWait.push_back(std::make_shared<bool>(false));
+        scope.spawn(parkUncancellable(std::make_shared<int>(i), gates.back(), ranAfterWait.back()));
+    }
+    for (int i = 0; i < 1000; ++i) {
+        scope.spawn(emptyTask());
+    }
+    EXPECT_EQ(AsyncScopeTestAccess::trackedChildren(scope), 3u);
+
+    for (const auto& gate : gates) {
+        ASSERT_TRUE(static_cast<bool>(*gate));
+        (*gate)->signal();
+    }
+    EXPECT_EQ(AsyncScopeTestAccess::trackedChildren(scope), 0u);
+    for (const auto& ran : ranAfterWait) {
+        EXPECT_TRUE(*ran);
+    }
+    ASSERT_TRUE(slark::test::joinScope(scope));
+}
+
+TEST(CoScopeTest, CompletedChildrenLeaveTableWithoutNextCall) {
+    auto executor = std::make_shared<SerialExecutor>();
+    auto done = std::make_shared<std::atomic<int>>(0);
+    AsyncScope scope;
+    scope.setDefaultExecutor(*executor);
+    constexpr int kSpawns = 200;
+    for (int i = 0; i < kSpawns; ++i) {
+        scope.spawn(runVoidTask([done]() -> Task<void> {
+            done->fetch_add(1, std::memory_order_relaxed);
+            co_return;
+        }));
+    }
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (AsyncScopeTestAccess::trackedChildren(scope) != 0 &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    EXPECT_EQ(done->load(), kSpawns);
+    EXPECT_EQ(AsyncScopeTestAccess::trackedChildren(scope), 0u);
+}
+
+TEST(CoScopeTest, SpawnReclaimRacesWithChildCompletionOnWorker) {
+    auto executor = std::make_shared<SerialExecutor>();
+    auto done = std::make_shared<std::atomic<int>>(0);
+    AsyncScope scope;
+    scope.setDefaultExecutor(*executor);
+    constexpr int kSpawns = 3000;
+    for (int i = 0; i < kSpawns; ++i) {
+        scope.spawn(runVoidTask([done]() -> Task<void> {
+            co_await simpleInt(1);
+            done->fetch_add(1, std::memory_order_relaxed);
+        }));
+    }
+    ASSERT_TRUE(slark::test::joinScope(scope));
+    EXPECT_EQ(done->load(), kSpawns);
+    EXPECT_EQ(AsyncScopeTestAccess::trackedChildren(scope), 0u);
+}
+
+TEST(CoScopeTest, ReclaimRacesWithExecutorCompletions) {
+    auto executor = std::make_shared<SerialExecutor>();
+    AsyncScope scope;
+    scope.setDefaultExecutor(*executor);
+    for (int i = 0; i < 2000; ++i) {
+        scope.spawn(emptyTask());
+    }
+    ASSERT_TRUE(slark::test::joinScope(scope));
+    EXPECT_EQ(AsyncScopeTestAccess::trackedChildren(scope), 0u);
 }

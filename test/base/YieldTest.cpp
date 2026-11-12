@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "CoScope.hpp"
+#include "CoroutineTestSupport.h"
 #include "Task.hpp"
 
 using namespace std::chrono_literals;
@@ -32,7 +33,7 @@ TEST(YieldTest, ContinuesAfterEveryYield) {
     slark::coro::AsyncScope scope;
     std::atomic<int> steps{0};
     scope.spawn(yieldTimes(100, steps));
-    scope.waitAll();
+    ASSERT_TRUE(slark::test::joinScope(scope));
     EXPECT_EQ(steps.load(), 100);
 }
 

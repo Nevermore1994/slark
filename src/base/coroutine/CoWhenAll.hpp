@@ -12,6 +12,7 @@
 #include <variant>
 #include <vector>
 
+#include "CoScope.hpp"
 #include "Executor.h"
 #include "Task.hpp"
 
@@ -41,27 +42,11 @@ struct WhenContinuationState {
 
     void recordException(std::exception_ptr error) noexcept {
         std::lock_guard lock(mutex);
-        if (!exception) {
+        if (!exception || (isCancellation(exception) && !isCancellation(error))) {
             exception = std::move(error);
         }
     }
 };
-
-template <typename MakeChild, typename ChildTasks>
-void startChildTask(IExecutor* exec, ChildTasks& childTasks, MakeChild&& makeChild) {
-    auto child = std::forward<MakeChild>(makeChild)();
-    auto handle = child.getHandle();
-    auto frameControl = handle.promise().frameControl();
-    childTasks.push_back(std::move(child));
-
-    if (exec && !exec->isInline()) {
-        exec->execute([frameControl, handle]() noexcept {
-            frameControl->resume(handle);
-        });
-    } else {
-        childTasks.back().resume();
-    }
-}
 
 }  // namespace detail
 
@@ -69,6 +54,21 @@ template <typename... Ts>
 struct WhenAllState : detail::WhenContinuationState {
     std::tuple<std::optional<WhenAllResultType<Ts>>...> results;
     std::atomic<int> remaining{0};
+    CancellationToken group;
+
+    void childRefused() noexcept {
+        recordException(
+            std::make_exception_ptr(CancelledException("executor refused the child task")));
+        finishChild();
+    }
+
+    void finishChild() noexcept {
+        if (remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+            if (auto gate = takeContinuationGate()) {
+                gate->signal();
+            }
+        }
+    }
 };
 
 namespace detail {
@@ -86,15 +86,13 @@ Task<void> whenAllChild(std::shared_ptr<WhenAllState<Ts...>> state,
             std::get<I>(state->results).emplace(VoidResult{});
         }
     } catch (...) {
-        state->recordException(std::current_exception());
-    }
-
-    auto prev = state->remaining.fetch_sub(1, std::memory_order_acq_rel);
-    if (prev == 1) {
-        if (auto gate = state->takeContinuationGate()) {
-            gate->signal();
+        auto error = std::current_exception();
+        if (!isCancellation(error)) {
+            state->group.cancel();
         }
+        state->recordException(std::move(error));
     }
+    state->finishChild();
 }
 
 }  // namespace detail
@@ -105,6 +103,17 @@ class WhenAllAwaiter {
     explicit WhenAllAwaiter(std::tuple<Task<Ts>...> tasks)
         : tasks_(std::move(tasks)), state_(std::make_shared<WhenAllState<Ts...>>()) {
         state_->remaining = static_cast<int>(sizeof...(Ts));
+    }
+
+    WhenAllAwaiter(WhenAllAwaiter&&) noexcept = default;
+    WhenAllAwaiter& operator=(WhenAllAwaiter&&) noexcept = default;
+    WhenAllAwaiter(const WhenAllAwaiter&) = delete;
+    WhenAllAwaiter& operator=(const WhenAllAwaiter&) = delete;
+
+    ~WhenAllAwaiter() {
+        if (state_) {
+            state_->group.cancel();
+        }
     }
 
     void scheduleVia(IExecutor& exec) noexcept {
@@ -123,7 +132,7 @@ class WhenAllAwaiter {
         state_->setContinuationGate(gate);
 
         IExecutor* exec = defaultExecutor_ ? defaultExecutor_ : h.promise().executor_.get();
-        startTasks(exec, std::index_sequence_for<Ts...>{});
+        startTasks(exec, h.promise().cancelToken(), std::index_sequence_for<Ts...>{});
 
         return gate->arm();
     }
@@ -144,15 +153,30 @@ class WhenAllAwaiter {
     }
 
     template <size_t I>
-    void startOne(IExecutor* exec) {
-        detail::startChildTask(exec, childTasks_, [this]() {
-            return detail::whenAllChild<I>(state_, std::move(std::get<I>(tasks_)));
-        });
+    void startOne(IExecutor* exec, const CancellationToken& token) {
+        auto child = detail::whenAllChild<I>(state_, std::move(std::get<I>(tasks_)));
+        child.setCancellationToken(token);
+        auto handle = child.getHandle();
+        auto frameControl = handle.promise().frameControl();
+        childTasks_.push_back(std::move(child));
+
+        if (exec && !exec->isInline()) {
+            const bool accepted = exec->tryExecute(
+                [frameControl, handle]() noexcept { frameControl->resume(handle); });
+            if (!accepted) {
+                state_->childRefused();
+            }
+        } else {
+            childTasks_.back().resume();
+        }
     }
 
     template <size_t... Is>
-    void startTasks(IExecutor* exec, std::index_sequence<Is...>) {
-        (startOne<Is>(exec), ...);
+    void startTasks(IExecutor* exec, const CancellationToken* parent,
+                    std::index_sequence<Is...>) {
+        const CancellationToken token =
+            parent ? CancellationToken::link(state_->group, *parent) : state_->group;
+        (startOne<Is>(exec, token), ...);
     }
 
     std::tuple<Task<Ts>...> tasks_;
@@ -184,9 +208,6 @@ struct WhenAnyState : detail::WhenContinuationState {
     std::tuple<std::optional<WhenAllResultType<Ts>>...> results;
     std::atomic<int> completed{0};
     std::atomic<size_t> winnerIndex{0};
-
-    std::mutex orphanMutex;
-    std::vector<Task<void>> orphanTasks;
 };
 
 namespace detail {
@@ -213,14 +234,15 @@ Task<void> whenAnyChild(std::shared_ptr<WhenAnyState<Ts...>> state,
         // First finisher is the winner: record index and exception, wake the parent coroutine
         state->winnerIndex.store(I, std::memory_order_relaxed);
         if (error) {
-            state->recordException(std::move(error));
+            state->recordException(error);
         }
         if (auto gate = state->takeContinuationGate()) {
             gate->signal();
         }
     }
-    // Loser results stay alive in results but are never read; loser exceptions are swallowed
-    // and do not affect the winner
+    if (error) {
+        std::rethrow_exception(error);
+    }
 }
 
 }  // namespace detail
@@ -230,12 +252,10 @@ class WhenAnyAwaiter {
  public:
     static_assert(sizeof...(Ts) > 0, "when_any requires at least one task");
 
-    explicit WhenAnyAwaiter(std::tuple<Task<Ts>...> tasks)
-        : tasks_(std::move(tasks)), state_(std::make_shared<WhenAnyState<Ts...>>()) {}
-
-    void scheduleVia(IExecutor& exec) noexcept {
-        defaultExecutor_ = &exec;
-    }
+    WhenAnyAwaiter(AsyncScope& scope, std::tuple<Task<Ts>...> tasks)
+        : scope_(scope),
+          tasks_(std::move(tasks)),
+          state_(std::make_shared<WhenAnyState<Ts...>>()) {}
 
     bool await_ready() const noexcept {
         return false;
@@ -247,8 +267,13 @@ class WhenAnyAwaiter {
         markExternalAwait(h.promise());
         auto gate = makeResumeGate(h);
         state_->setContinuationGate(gate);
-        IExecutor* exec = defaultExecutor_ ? defaultExecutor_ : h.promise().executor_.get();
-        startTasks(exec, std::index_sequence_for<Ts...>{});
+        const std::size_t accepted =
+            startTasks(childToken(h.promise()), std::index_sequence_for<Ts...>{});
+        if (accepted == 0) {
+            state_->recordException(
+                std::make_exception_ptr(CancelledException("executor refused every child task")));
+            gate->signal();
+        }
         return gate->arm();
     }
 
@@ -257,31 +282,31 @@ class WhenAnyAwaiter {
             std::rethrow_exception(state_->exception);
         }
         auto index = state_->winnerIndex.load(std::memory_order_relaxed);
-
-        if (childTasks_.size() > 1) {
-            std::lock_guard lock(state_->orphanMutex);
-            for (size_t i = 0; i < childTasks_.size(); ++i) {
-                if (i != index) {
-                    state_->orphanTasks.push_back(std::move(childTasks_[i]));
-                }
-            }
-        }
-
         return WhenAnyResult<Ts...>{index,
                                     buildWinnerValue(index, std::index_sequence_for<Ts...>{})};
     }
 
  private:
+    template <typename Promise>
+    [[nodiscard]] CancellationToken childToken(const Promise& promise) const {
+        auto token = scope_.token();
+        if (const auto* parent = promise.cancelToken()) {
+            return CancellationToken::link(token, *parent);
+        }
+        return token;
+    }
+
     template <size_t I>
-    void startOne(IExecutor* exec) {
-        detail::startChildTask(exec, childTasks_, [this]() {
-            return detail::whenAnyChild<I>(state_, std::move(std::get<I>(tasks_)));
-        });
+    bool startOne(const CancellationToken& token) {
+        return scope_.spawn(detail::whenAnyChild<I>(state_, std::move(std::get<I>(tasks_))),
+                            token);
     }
 
     template <size_t... Is>
-    void startTasks(IExecutor* exec, std::index_sequence<Is...>) {
-        (startOne<Is>(exec), ...);
+    std::size_t startTasks(const CancellationToken& token, std::index_sequence<Is...>) {
+        std::size_t accepted = 0;
+        ((accepted += startOne<Is>(token) ? 1 : 0), ...);
+        return accepted;
     }
 
     // Build the variant only from the winner index's result; other optionals are not read
@@ -298,22 +323,14 @@ class WhenAnyAwaiter {
         return value;
     }
 
+    AsyncScope& scope_;
     std::tuple<Task<Ts>...> tasks_;
     std::shared_ptr<WhenAnyState<Ts...>> state_;
-    std::vector<Task<void>> childTasks_;
-    IExecutor* defaultExecutor_ = nullptr;
 };
 
 template <typename... Ts>
-auto when_any(Task<Ts>... tasks) {
-    return WhenAnyAwaiter<Ts...>(std::make_tuple(std::move(tasks)...));
-}
-
-template <typename... Ts>
-auto when_any(IExecutor& exec, Task<Ts>... tasks) {
-    auto awaiter = WhenAnyAwaiter<Ts...>(std::make_tuple(std::move(tasks)...));
-    awaiter.scheduleVia(exec);
-    return awaiter;
+auto when_any(AsyncScope& scope, Task<Ts>... tasks) {
+    return WhenAnyAwaiter<Ts...>(scope, std::make_tuple(std::move(tasks)...));
 }
 
 }  // namespace slark::coro

@@ -4,18 +4,23 @@
 
 #include <atomic>
 #include <chrono>
+#include <concepts>
 #include <coroutine>
 #include <cstdint>
 #include <exception>
+#include <iterator>
+#include <list>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include "CoroutineControl.hpp"
 #include "CoroutineScheduler.hpp"
+#include "Error.h"
 
 namespace slark {
 
@@ -43,10 +48,15 @@ class TimerAwaiter {
                 gate->signal();
             }
         });
+        cancelReg_ = bindGateCancellation(handle.promise(), gate_);
         return gate_->arm();
     }
 
-    void await_resume() noexcept {}
+    void await_resume() {
+        if (gate_ && gate_->consumeCancelled()) {
+            throw CancelledException("Timer cancelled");
+        }
+    }
 
  private:
     void cancel() noexcept {
@@ -62,56 +72,110 @@ class TimerAwaiter {
     std::chrono::milliseconds duration_;
     std::shared_ptr<ResumeGate> gate_;
     TimerId timerId_;
+    CancellationTokenRegistration cancelReg_;
 };
 
 template <typename T>
+    requires(std::is_void_v<T> || std::copy_constructible<T>)
 class CompletionAwaiter {
+    using ResultType = std::conditional_t<std::is_void_v<T>, std::monostate, T>;
+    using WaiterList = std::list<std::shared_ptr<ResumeGate>>;
+
+    struct State {
+        std::mutex mutex;
+        bool completed = false;
+        std::optional<ResultType> result;
+        std::exception_ptr exception;
+        WaiterList waiters;
+    };
+
  public:
-    ~CompletionAwaiter() {
-        std::lock_guard lock(mutex_);
-        if (gate_) {
-            gate_->disarm();
-        }
-    }
+    class Waiter {
+     public:
+        explicit Waiter(std::shared_ptr<State> state) noexcept : state_(std::move(state)) {}
 
-    bool await_ready() const noexcept {
-        return state_.load(std::memory_order_acquire) == Completed;
-    }
+        Waiter(const Waiter&) = delete;
+        Waiter& operator=(const Waiter&) = delete;
 
-    template <typename Promise>
-    bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
-        releaseTransferLeases(handle.promise());
-        markExternalAwait(handle.promise());
-        auto gate = makeResumeGate(handle);
-        {
-            std::lock_guard lock(mutex_);
-            gate_ = gate;
-            auto expected = Init;
-            if (!state_.compare_exchange_strong(expected, Installing, std::memory_order_acq_rel)) {
+        ~Waiter() {
+            if (linked_) {
+                std::lock_guard lock(state_->mutex);
+                state_->waiters.erase(position_);
+            }
+            if (gate_) {
                 gate_->disarm();
-                return false;
             }
         }
 
-        std::lock_guard lock(mutex_);
-        auto expected = Installing;
-        if (state_.compare_exchange_strong(expected, Waiting, std::memory_order_acq_rel)) {
-            registerExternalGate(handle.promise(), gate);
+        bool await_ready() const noexcept {
+            std::lock_guard lock(state_->mutex);
+            return state_->completed;
+        }
+
+        template <typename Promise>
+        bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
+            releaseTransferLeases(handle.promise());
+            markExternalAwait(handle.promise());
+            gate_ = makeResumeGate(handle);
+            std::lock_guard lock(state_->mutex);
+            if (state_->completed) {
+                gate_->disarm();
+                return false;
+            }
+            state_->waiters.push_back(gate_);
+            position_ = std::prev(state_->waiters.end());
+            linked_ = true;
+            registerExternalGate(handle.promise(), gate_);
+            cancelReg_ = bindGateCancellation(handle.promise(), gate_);
             return gate_->arm();
         }
-        gate_->disarm();
-        return false;
+
+        T await_resume() {
+            if (gate_ && gate_->consumeCancelled()) {
+                throw CancelledException("Completion cancelled");
+            }
+            std::lock_guard lock(state_->mutex);
+            if (state_->exception) {
+                std::rethrow_exception(state_->exception);
+            }
+            if constexpr (std::is_void_v<T>) {
+                return;
+            } else {
+                return *state_->result;
+            }
+        }
+
+     private:
+        std::shared_ptr<State> state_;
+        std::shared_ptr<ResumeGate> gate_;
+        WaiterList::iterator position_;
+        bool linked_ = false;
+        CancellationTokenRegistration cancelReg_;
+    };
+
+    CompletionAwaiter() : state_(std::make_shared<State>()) {}
+
+    CompletionAwaiter(const CompletionAwaiter&) = delete;
+    CompletionAwaiter& operator=(const CompletionAwaiter&) = delete;
+
+    ~CompletionAwaiter() {
+        std::vector<std::shared_ptr<ResumeGate>> pending;
+        {
+            std::lock_guard lock(state_->mutex);
+            pending.assign(state_->waiters.begin(), state_->waiters.end());
+        }
+        for (const auto& gate : pending) {
+            gate->disarm();
+        }
     }
 
-    T await_resume() {
-        if (exception_) {
-            std::rethrow_exception(exception_);
-        }
-        if constexpr (std::is_void_v<T>) {
-            return;
-        } else {
-            return std::move(*result_);
-        }
+    [[nodiscard]] bool isCompleted() const noexcept {
+        std::lock_guard lock(state_->mutex);
+        return state_->completed;
+    }
+
+    [[nodiscard]] Waiter operator co_await() noexcept {
+        return Waiter(state_);
     }
 
     template <typename U>
@@ -119,7 +183,7 @@ class CompletionAwaiter {
         requires(!std::is_void_v<T> && std::is_convertible_v<U, T>)
     {
         finish([&] {
-            result_.emplace(T(std::move(value)));
+            state_->result.emplace(T(std::move(value)));
         });
     }
 
@@ -132,40 +196,29 @@ class CompletionAwaiter {
 
     void fail(std::exception_ptr exception) noexcept {
         finish([&] {
-            exception_ = std::move(exception);
+            state_->exception = std::move(exception);
         });
     }
 
  private:
-    enum State : uint8_t { Init, Installing, Waiting, Completed };
-
-    using ResultType = std::conditional_t<std::is_void_v<T>, std::monostate, T>;
-
     template <typename Publish>
     void finish(Publish&& publish) noexcept {
-        std::shared_ptr<ResumeGate> gate;
-        bool shouldSignal = false;
+        std::vector<std::shared_ptr<ResumeGate>> toSignal;
         {
-            std::lock_guard lock(mutex_);
-            auto state = state_.load(std::memory_order_relaxed);
-            if (state == Completed) {
+            std::lock_guard lock(state_->mutex);
+            if (state_->completed) {
                 return;
             }
             publish();
-            state_.store(Completed, std::memory_order_release);
-            shouldSignal = state == Installing || state == Waiting;
-            gate = gate_;
+            state_->completed = true;
+            toSignal.assign(state_->waiters.begin(), state_->waiters.end());
         }
-        if (shouldSignal && gate) {
+        for (const auto& gate : toSignal) {
             gate->signal();
         }
     }
 
-    mutable std::mutex mutex_;
-    std::optional<ResultType> result_;
-    std::exception_ptr exception_;
-    std::shared_ptr<ResumeGate> gate_;
-    std::atomic<State> state_{Init};
+    std::shared_ptr<State> state_;
 };
 
 }  // namespace slark

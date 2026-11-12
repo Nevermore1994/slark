@@ -4,6 +4,7 @@
 
 #include <coroutine>
 #include <exception>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -11,6 +12,7 @@
 #include <utility>
 
 #include "CoroutineControl.hpp"
+#include "Error.h"
 #include "NonCopyable.h"
 
 namespace slark {
@@ -20,7 +22,7 @@ struct IExecutor;
 template <typename T = void>
 class Task;
 
-struct TaskPromiseBase {
+struct TaskPromiseBase : PromiseCancellation {
     ContinuationLink continuation_;
     // Owned, not borrowed: a resume may be dispatched long after the code that bound it,
     // from whichever thread notified the gate.
@@ -162,6 +164,12 @@ void destroyTaskFrame(Handle handle) noexcept {
         handle.destroy();
     }
 }
+
+template <typename T, typename F>
+struct TaskInvokeResult : std::invoke_result<F, T> {};
+
+template <typename F>
+struct TaskInvokeResult<void, F> : std::invoke_result<F> {};
 }  // namespace detail
 
 template <typename T>
@@ -216,6 +224,9 @@ class TaskAwaiter {
             childLease_.reset();
             return awaiting;
         }
+        if constexpr (requires { awaiting.promise().cancelToken(); }) {
+            childPromise.inheritCancelToken(awaiting.promise().cancelToken());
+        }
         // Local/explicit domain wins; the parent's domain is only a fallback.
         if constexpr (requires { awaiting.promise().executor(); }) {
             if (childPromise.executor_ == nullptr) {
@@ -236,6 +247,9 @@ class TaskAwaiter {
     }
 
     T await_resume() {
+        if (!handle_) {
+            throw std::runtime_error("Task is not valid");
+        }
         auto& childPromise = handle_.promise();
         childPromise.releaseContinuation();
         childLease_.reset();
@@ -307,6 +321,21 @@ class [[nodiscard]] Task : public NonCopyable {
         }
     }
 
+    void setCancellationToken(CancellationToken token) noexcept {
+        if (handle_) {
+            handle_.promise().setCancelToken(std::move(token));
+        }
+    }
+
+    template <typename F>
+    auto then(F func) && -> Task<typename detail::TaskInvokeResult<T, F>::type>;
+
+    template <typename F>
+    auto and_then(F func) && -> typename detail::TaskInvokeResult<T, F>::type;
+
+    template <typename F>
+    Task<T> or_else(F func) &&;
+
     T result() {
         if (!handle_) {
             throw std::runtime_error("Task is not valid");
@@ -339,5 +368,112 @@ inline Task<void> TaskPromise<void>::get_return_object() noexcept {
     auto handle = std::coroutine_handle<TaskPromise<void>>::from_promise(*this);
     return Task<void>(handle);
 }
+
+namespace detail {
+
+template <typename T>
+void requireValidTask(const Task<T>& task) {
+    if (!task.isValid()) {
+        throw std::runtime_error("Task is not valid");
+    }
+}
+
+template <typename T, typename F>
+Task<typename TaskInvokeResult<T, F>::type> thenImpl(Task<T> task, F func) {
+    requireValidTask(task);
+    if constexpr (std::is_void_v<T>) {
+        co_await std::move(task);
+        co_return std::invoke(func);
+    } else {
+        co_return std::invoke(func, co_await std::move(task));
+    }
+}
+
+template <typename T, typename F>
+typename TaskInvokeResult<T, F>::type andThenImpl(Task<T> task, F func) {
+    requireValidTask(task);
+    if constexpr (std::is_void_v<T>) {
+        co_await std::move(task);
+        co_return co_await std::invoke(func);
+    } else {
+        co_return co_await std::invoke(func, co_await std::move(task));
+    }
+}
+
+template <typename T, typename F>
+Task<T> orElseImpl(Task<T> task, F func) {
+    std::exception_ptr failure;
+    try {
+        requireValidTask(task);
+        if constexpr (std::is_void_v<T>) {
+            co_await std::move(task);
+            co_return;
+        } else {
+            co_return co_await std::move(task);
+        }
+    } catch (const CancelledException&) {
+        throw;
+    } catch (...) {
+        failure = std::current_exception();
+    }
+    if constexpr (std::is_void_v<T>) {
+        std::invoke(func, failure);
+        co_return;
+    } else {
+        co_return std::invoke(func, failure);
+    }
+}
+
+}  // namespace detail
+
+template <typename T>
+template <typename F>
+auto Task<T>::then(F func) && -> Task<typename detail::TaskInvokeResult<T, F>::type> {
+    return detail::thenImpl(std::move(*this), std::move(func));
+}
+
+template <typename T>
+template <typename F>
+auto Task<T>::and_then(F func) && -> typename detail::TaskInvokeResult<T, F>::type {
+    return detail::andThenImpl(std::move(*this), std::move(func));
+}
+
+template <typename T>
+template <typename F>
+Task<T> Task<T>::or_else(F func) && {
+    return detail::orElseImpl(std::move(*this), std::move(func));
+}
+
+namespace coro {
+
+class CancellationTokenAwaiter {
+public:
+    bool await_ready() const noexcept {
+        return false;
+    }
+
+    template <typename Promise>
+    bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
+        if constexpr (requires { handle.promise().cancelToken(); }) {
+            if (const auto* token = handle.promise().cancelToken()) {
+                token_ = *token;
+            }
+        }
+        return false;
+    }
+
+    std::optional<CancellationToken> await_resume() noexcept {
+        return std::move(token_);
+    }
+
+private:
+    std::optional<CancellationToken> token_;
+};
+
+inline CancellationTokenAwaiter cancellation_token() noexcept {
+    return {};
+}
+
+}  // namespace coro
 
 }  // namespace slark

@@ -159,7 +159,7 @@ void HttpStream::startLocked() noexcept {
             // A per-chunk round trip to the owner thread caps throughput; only block once
             // the window is full
             inFlight.push_back(std::move(delivered));
-            while (!inFlight.empty() && inFlight.front()->await_ready()) {
+            while (!inFlight.empty() && inFlight.front()->isCompleted()) {
                 inFlight.pop_front();
             }
             while (inFlight.size() >= kMaxPendingChunks) {

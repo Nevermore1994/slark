@@ -330,8 +330,8 @@ class AsyncGeneratorFinalAwaiter {
 };
 
 template <typename T>
-class AsyncGeneratorPromise {
- public:
+class AsyncGeneratorPromise : public PromiseCancellation {
+public:
     using value_type = T;
     using reference_type = T&;
     using state_type = GeneratorState<T>;
@@ -559,6 +559,12 @@ class AsyncGeneratorNextAwaiter {
         if constexpr (requires { consumer.promise().executor(); }) {
             if (promise.executor() == nullptr) {
                 promise.setExecutor(consumer.promise().executor());
+            }
+        }
+        if constexpr (requires { consumer.promise().cancelToken(); }) {
+            const auto* token = consumer.promise().cancelToken();
+            if (token && !promise.cancelToken()) {
+                promise.setCancelToken(*token);
             }
         }
 
