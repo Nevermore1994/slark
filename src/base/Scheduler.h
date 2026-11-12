@@ -43,6 +43,7 @@ class ThreadScheduler final : public Scheduler, public NonCopyable {
     // Safe to call from a task running on this scheduler: it then does not join itself.
     void stop() noexcept;
 
+    bool tryExecute(Task task) noexcept override;
     void execute(Task task) noexcept override;
     void postAt(Slot slot, Time::TimePoint at, Task task) override;
     void cancel(Slot slot) override;

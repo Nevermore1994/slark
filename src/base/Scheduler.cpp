@@ -30,10 +30,15 @@ void ThreadScheduler::stop() noexcept {
     slots_.clear();
 }
 
-void ThreadScheduler::execute(Task task) noexcept {
-    if (thread_ && task) {
-        (void)thread_->postTask(ThreadTask(std::move(task)));
+bool ThreadScheduler::tryExecute(Task task) noexcept {
+    if (!thread_ || !task) {
+        return false;
     }
+    return thread_->postTask(ThreadTask(std::move(task))).has_value();
+}
+
+void ThreadScheduler::execute(Task task) noexcept {
+    (void)tryExecute(std::move(task));
 }
 
 void ThreadScheduler::postAt(Slot slot, Time::TimePoint at, Task task) {

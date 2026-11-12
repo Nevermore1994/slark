@@ -102,7 +102,7 @@ TEST(ThreadBaseTest, StopRejectsFurtherTasks) {
     EXPECT_EQ(calls.load(), 0);
 }
 
-TEST(ThreadBaseTest, StopDropsQueuedTasksAndReleasesCaptures) {
+TEST(ThreadBaseTest, StopRunsQueuedTasksAndReleasesCaptures) {
     auto worker = TaskThread::create(Util::genRandomName("worker"));
     ASSERT_NE(worker, nullptr);
 
@@ -124,10 +124,10 @@ TEST(ThreadBaseTest, StopDropsQueuedTasksAndReleasesCaptures) {
     }
     EXPECT_EQ(capture.use_count(), 10);  // token + capture + 8 queued copies
 
-    worker->stop();  // the loop must exit without draining the queued batch
+    worker->stop();
     blocker.release();
     worker->join();
-    EXPECT_EQ(executed.load(), 0);
+    EXPECT_EQ(executed.load(), 8);
     EXPECT_EQ(capture.use_count(), 2);  // token + capture survive, queue copies destroyed
 }
 
@@ -176,7 +176,7 @@ TEST(ThreadBaseTest, PostAndWaitCancelledWhenWorkerStopsWithTaskQueued) {
     ASSERT_EQ(entered.wait_for(2s), std::future_status::ready);
 
     auto outcome = test::withWatchdog([&] {
-        worker->stop();  // queued completion task must be dropped with Cancelled
+        worker->stop();
         return worker->postAndWait([] {});
     });
     EXPECT_FALSE(outcome.has_value());

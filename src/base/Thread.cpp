@@ -242,13 +242,17 @@ void Thread::runWorker(ThreadTask body) noexcept {
         body();
     }
 
-    std::vector<ThreadTask> abandoned;
+    std::vector<ThreadTask> accepted;
     {
         std::lock_guard lock(mutex_);
         stopRequested_.store(true, std::memory_order_release);
-        abandoned = taskQueue_.tryPopAll();
+        accepted = taskQueue_.tryPopAll();
     }
-    abandoned.clear();
+    for (auto& task : accepted) {
+        if (task) {
+            task();
+        }
+    }
     setActive(false);
     tlsCurrentWorker = nullptr;
     {

@@ -301,7 +301,7 @@ TEST(ThreadSchedulerTest, CancelPreventsTheTimer) {
     EXPECT_EQ(fired.load(), 0);
 }
 
-TEST(ThreadSchedulerTest, StopIsIdempotentAndDropsLaterWork) {
+TEST(ThreadSchedulerTest, StopIsIdempotentAndRefusesLaterWork) {
     ThreadScheduler sched("schedulerTest");
     sched.stop();
     sched.stop();
@@ -314,6 +314,87 @@ TEST(ThreadSchedulerTest, StopIsIdempotentAndDropsLaterWork) {
     });
     std::this_thread::sleep_for(50ms);
     EXPECT_EQ(ran.load(), 0);
+}
+
+TEST(ThreadSchedulerTest, StopRunsEveryAcceptedTaskBeforeReturning) {
+    ThreadScheduler sched("schedulerTest");
+    Latch started;
+    sched.execute([&] {
+        started.signal();
+        std::this_thread::sleep_for(100ms);
+    });
+    ASSERT_TRUE(started.waitFor(1));
+
+    std::atomic<int> ran{0};
+    int accepted = 0;
+    for (int i = 0; i < 10; ++i) {
+        const bool ok = sched.tryExecute([&] {
+            ++ran;
+        });
+        accepted += ok ? 1 : 0;
+    }
+    sched.stop();
+    EXPECT_EQ(accepted, 10);
+    EXPECT_EQ(ran.load(), accepted) << "every accepted task must run before stop() returns";
+}
+
+TEST(ThreadSchedulerTest, WorkPostedByADrainedTaskIsRefused) {
+    ThreadScheduler sched("schedulerTest");
+    Latch started;
+    sched.execute([&] {
+        started.signal();
+        std::this_thread::sleep_for(100ms);
+    });
+    ASSERT_TRUE(started.waitFor(1));
+
+    std::atomic<bool> drainedRan{false};
+    std::atomic<bool> lateRefused{false};
+    std::atomic<bool> lateRan{false};
+    ASSERT_TRUE(sched.tryExecute([&] {
+        drainedRan = true;
+        lateRefused = !sched.tryExecute([&] {
+            lateRan = true;
+        });
+    }));
+    sched.stop();
+    EXPECT_TRUE(drainedRan.load());
+    EXPECT_TRUE(lateRefused.load());
+    EXPECT_FALSE(lateRan.load());
+}
+
+TEST(ThreadSchedulerTest, StopCancelsTimerWhoseCallbackIsQueuedBehindWork) {
+    ThreadScheduler sched("schedulerTest");
+    Latch started;
+    sched.execute([&] {
+        started.signal();
+        std::this_thread::sleep_for(100ms);
+    });
+    ASSERT_TRUE(started.waitFor(1));
+
+    std::atomic<int> fired{0};
+    sched.postAt(7, slark::Time::nowTimeStamp(), [&] {
+        ++fired;
+    });
+    std::this_thread::sleep_for(30ms);
+    sched.stop();
+    EXPECT_EQ(fired.load(), 0) << "a timer must not start once the scheduler is stopping";
+}
+
+TEST(ThreadSchedulerTest, TryExecuteRefusesAfterStop) {
+    ThreadScheduler sched("schedulerTest");
+    Latch ran;
+    EXPECT_TRUE(sched.tryExecute([&] {
+        ran.signal();
+    }));
+    ASSERT_TRUE(ran.waitFor(1));
+
+    sched.stop();
+    std::atomic<int> refusedRan{0};
+    EXPECT_FALSE(sched.tryExecute([&] {
+        ++refusedRan;
+    })) << "a stopped scheduler must refuse work so the caller can unwind";
+    std::this_thread::sleep_for(20ms);
+    EXPECT_EQ(refusedRan.load(), 0);
 }
 
 TEST(ThreadSchedulerTest, DestructorWithPendingWorkDoesNotHang) {

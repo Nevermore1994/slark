@@ -176,6 +176,9 @@ void TaskThread::runRepeatTasks(std::chrono::milliseconds& waitTime) noexcept {
     }
 
     for (const auto& repeat : due) {
+        if (isStopRequested()) {
+            return;
+        }
         auto expected = RepeatState::Idle;
         if (!repeat->state.compare_exchange_strong(expected, RepeatState::Running,
                                                    std::memory_order_acq_rel)) {
@@ -220,14 +223,16 @@ TimerId TaskThread::postOneShot(Time::TimePoint at, ThreadTask task) noexcept {
             }
             auto self = std::static_pointer_cast<TaskThread>(base);
             auto queued = ThreadTask([weak, oneShot] {
+                auto owner = weak.lock();
+                if (!owner || owner->isStopRequested()) {
+                    return;
+                }
                 auto expected = OneShotState::Pending;
                 if (!oneShot->state.compare_exchange_strong(expected, OneShotState::Running,
                                                             std::memory_order_acq_rel)) {
                     return;
                 }
-                if (auto owner = weak.lock()) {
-                    std::static_pointer_cast<TaskThread>(owner)->eraseOneShot(oneShot->id);
-                }
+                std::static_pointer_cast<TaskThread>(owner)->eraseOneShot(oneShot->id);
                 if (oneShot->task) {
                     oneShot->task();
                 }
