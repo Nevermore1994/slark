@@ -274,6 +274,11 @@ class FdReadyAwaiter {
 
         auto fdInterest = (interest_ == Interest::Read) ? FdInterest::Read : FdInterest::Write;
         token_ = IOContext::instance().registerContinuationWithInterest(fd_, fdInterest, gate_);
+        cancelReg_ = bindCancellation(handle.promise(), [weak = std::weak_ptr<ResumeGate>(gate_)] {
+            if (auto gate = weak.lock()) {
+                gate->signalTerminal();
+            }
+        });
         return gate_->arm();
     }
 
@@ -291,6 +296,7 @@ class FdReadyAwaiter {
     Interest interest_;
     std::shared_ptr<ResumeGate> gate_;
     EventLoop::RegistrationToken token_;
+    slark::CancellationTokenRegistration cancelReg_;
     bool notReady_{false};
 };
 
@@ -332,6 +338,7 @@ class CancellableAwaiter {
     }
 
     bool await_resume() {
+        awaiter_.await_resume();
         if (awaiter_.isNotReady()) {
             return false;
         }
