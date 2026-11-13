@@ -6,13 +6,16 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <future>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <thread>
 #include <utility>
 #include <vector>
 
 #include "CoroutineTestSupport.h"
+#include "Executor.h"
 #include "Task.hpp"
 
 namespace {
@@ -692,6 +695,154 @@ static_assert(NamesCompletionAwaiter<std::shared_ptr<int>>);
 
 TEST(CompletionAwaiterTest, ValueTypeMustBeCopyableSoEveryWaiterGetsTheValue) {
     SUCCEED();
+}
+
+namespace {
+
+slark::AsyncGenerator<int> yieldAfterGate(std::shared_ptr<slark::CompletionAwaiter<void>> gate) {
+    co_await *gate;
+    co_yield 1;
+}
+
+slark::Task<std::optional<int>> nextFrom(slark::AsyncGenerator<int>& generator) {
+    co_return co_await generator.next();
+}
+
+}  // namespace
+
+TEST(AsyncGeneratorTest, SetExecutorAfterFirstNextThrows) {
+    auto gate = std::make_shared<slark::CompletionAwaiter<void>>();
+    auto generator = yieldAfterGate(gate);
+    auto consumer = nextFrom(generator);
+    consumer.resume();
+    ASSERT_FALSE(consumer.isDone());
+
+    auto executor = std::make_shared<slark::SerialExecutor>();
+    EXPECT_THROW(generator.setExecutor(executor), std::logic_error)
+        << "the producer's domain cannot change once its frame has started";
+
+    gate->complete();
+    ASSERT_TRUE(slark::test::waitUntilDone(consumer));
+    auto value = consumer.result();
+    ASSERT_TRUE(value.has_value());
+    EXPECT_EQ(*value, 1);
+}
+
+namespace {
+
+slark::AsyncGenerator<int> singleValueGenerator() {
+    co_yield 1;
+}
+
+slark::AsyncGenerator<int> recordThreadAfterGate(
+    std::shared_ptr<slark::CompletionAwaiter<void>> gate,
+    std::atomic<std::thread::id>* resumedOn) {
+    co_await *gate;
+    resumedOn->store(std::this_thread::get_id());
+    co_yield 1;
+}
+
+std::thread::id threadOnExecutor(slark::IExecutor& executor) {
+    std::promise<std::thread::id> probe;
+    auto id = probe.get_future();
+    executor.execute([p = std::move(probe)]() mutable {
+        p.set_value(std::this_thread::get_id());
+    });
+    return id.get();
+}
+
+}  // namespace
+
+TEST(AsyncGeneratorTest, SetExecutorBeforeFirstNextRunsTheProducerOnItsDomain) {
+    auto executor = std::make_shared<slark::SerialExecutor>();
+    const auto worker = threadOnExecutor(*executor);
+    auto gate = std::make_shared<slark::CompletionAwaiter<void>>();
+    std::atomic<std::thread::id> resumedOn{};
+    auto generator = recordThreadAfterGate(gate, &resumedOn);
+    generator.setExecutor(executor);
+    auto consumer = nextFrom(generator);
+    consumer.resume();
+    ASSERT_FALSE(consumer.isDone());
+
+    gate->complete();
+    ASSERT_TRUE(slark::test::waitUntilDone(consumer));
+    EXPECT_EQ(resumedOn.load(), worker) << "the producer's wait must resume on the bound domain";
+    auto value = consumer.result();
+    ASSERT_TRUE(value.has_value());
+    EXPECT_EQ(*value, 1);
+}
+
+TEST(AsyncGeneratorTest, SetExecutorNullBeforeFirstNextClearsTheDomain) {
+    auto executor = std::make_shared<slark::SerialExecutor>();
+    auto gate = std::make_shared<slark::CompletionAwaiter<void>>();
+    std::atomic<std::thread::id> resumedOn{};
+    auto generator = recordThreadAfterGate(gate, &resumedOn);
+    generator.setExecutor(executor);
+    generator.setExecutor(nullptr);
+    auto consumer = nextFrom(generator);
+    consumer.resume();
+    ASSERT_FALSE(consumer.isDone());
+
+    const auto completer = std::this_thread::get_id();
+    gate->complete();
+    ASSERT_TRUE(slark::test::waitUntilDone(consumer));
+    EXPECT_EQ(resumedOn.load(), completer) << "a cleared domain resumes on the notifying thread";
+}
+
+TEST(AsyncGeneratorTest, SetExecutorNullAfterFirstNextThrows) {
+    auto gate = std::make_shared<slark::CompletionAwaiter<void>>();
+    auto generator = yieldAfterGate(gate);
+    auto consumer = nextFrom(generator);
+    consumer.resume();
+    ASSERT_FALSE(consumer.isDone());
+    EXPECT_THROW(generator.setExecutor(nullptr), std::logic_error)
+        << "clearing the domain of a started producer is rejected like any other binding";
+    gate->complete();
+    ASSERT_TRUE(slark::test::waitUntilDone(consumer));
+}
+
+TEST(AsyncGeneratorTest, SetExecutorAfterCloseIsANoOp) {
+    auto gate = std::make_shared<slark::CompletionAwaiter<void>>();
+    auto generator = yieldAfterGate(gate);
+    auto consumer = nextFrom(generator);
+    consumer.resume();
+    ASSERT_FALSE(consumer.isDone());
+
+    generator.close();
+    ASSERT_TRUE(slark::test::waitUntilDone(consumer));
+    EXPECT_NO_THROW(generator.setExecutor(std::make_shared<slark::SerialExecutor>()))
+        << "a closed generator has no producer left to bind";
+    gate->complete();
+    auto value = consumer.result();
+    EXPECT_FALSE(value.has_value()) << "close ends the stream for the pending consumer";
+}
+
+TEST(AsyncGeneratorTest, SetExecutorAfterCompletionThrows) {
+    auto generator = singleValueGenerator();
+    auto first = nextFrom(generator);
+    first.resume();
+    ASSERT_TRUE(first.isDone());
+    auto firstValue = first.result();
+    ASSERT_TRUE(firstValue.has_value());
+    EXPECT_EQ(*firstValue, 1);
+
+    auto second = nextFrom(generator);
+    second.resume();
+    ASSERT_TRUE(second.isDone());
+    auto end = second.result();
+    EXPECT_FALSE(end.has_value());
+    EXPECT_THROW(generator.setExecutor(std::make_shared<slark::SerialExecutor>()),
+                 std::logic_error)
+        << "a completed producer has started, so its domain is fixed";
+}
+
+TEST(AsyncGeneratorTest, SetExecutorOnAMovedFromOrEmptyGeneratorIsANoOp) {
+    auto generator = singleValueGenerator();
+    auto owner = std::move(generator);
+    EXPECT_NO_THROW(generator.setExecutor(std::make_shared<slark::SerialExecutor>()));
+
+    slark::AsyncGenerator<int> empty;
+    EXPECT_NO_THROW(empty.setExecutor(std::make_shared<slark::SerialExecutor>()));
 }
 
 TEST(AsyncGeneratorTest, ConsumerIsResumedAfterYield) {

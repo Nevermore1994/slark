@@ -69,8 +69,8 @@ struct TaskPromiseBase : PromiseCancellation {
         return {};
     }
 
-    std::suspend_always initial_suspend() noexcept {
-        return {};
+    FrameStartAwaiter<TaskPromiseBase> initial_suspend() noexcept {
+        return {this};
     }
 
     void releaseIncomingTransferLease() noexcept {
@@ -203,9 +203,14 @@ class TaskAwaiter {
         return !handle_ || handle_.promise().frameControl()->isDone(handle_);
     }
 
+    // A child that was already resumed is parked on its own wait; entering it here would
+    // resume that wait without its event. Checked before any lease is taken or released.
     template <typename ParentPromise>
         requires ContinuationPromise<ParentPromise>
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<ParentPromise> awaiting) noexcept {
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<ParentPromise> awaiting) {
+        if (handle_ && handle_.promise().hasStarted()) {
+            throw std::logic_error("co_await on a Task that was already resumed");
+        }
         releaseTransferLeases(awaiting.promise());
         if (!handle_) {
             return awaiting;
@@ -314,15 +319,18 @@ class [[nodiscard]] Task : public NonCopyable {
     }
 
     // Binds the root task to an execution domain; propagated to child tasks that have no
-    // domain of their own.
-    void setExecutor(std::shared_ptr<IExecutor> executor) noexcept {
+    // domain of their own. Must precede the first resume.
+    void setExecutor(std::shared_ptr<IExecutor> executor) {
         if (handle_) {
+            detail::requireNotStarted(handle_.promise(), "Task::setExecutor after the first resume");
             handle_.promise().setExecutor(std::move(executor));
         }
     }
 
-    void setCancellationToken(CancellationToken token) noexcept {
+    void setCancellationToken(CancellationToken token) {
         if (handle_) {
+            detail::requireNotStarted(handle_.promise(),
+                                      "Task::setCancellationToken after the first resume");
             handle_.promise().setCancelToken(std::move(token));
         }
     }

@@ -4,9 +4,11 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
 #include <future>
 #include <memory>
+#include <stdexcept>
 #include <thread>
 
 #include "Awaitable.hpp"
@@ -449,4 +451,208 @@ TEST(CoScopeTest, ReclaimRacesWithExecutorCompletions) {
     }
     ASSERT_TRUE(slark::test::joinScope(scope));
     EXPECT_EQ(AsyncScopeTestAccess::trackedChildren(scope), 0u);
+}
+
+namespace {
+
+Task<void> markRanOnce(std::shared_ptr<std::atomic<int>> ran) {
+    ran->fetch_add(1);
+    co_return;
+}
+
+Task<void> parkThenMarkRan(std::shared_ptr<CompletionAwaiter<void>> gate,
+                           std::shared_ptr<std::atomic<int>> ran) {
+    co_await *gate;
+    ran->fetch_add(1);
+}
+
+}  // namespace
+
+TEST(CoScopeTest, SpawnOfAnEmptyTaskThrowsAndRegistersNothing) {
+    AsyncScope scope;
+    EXPECT_THROW(scope.spawn(Task<void>{}), std::logic_error);
+    EXPECT_EQ(AsyncScopeTestAccess::trackedChildren(scope), 0u);
+    EXPECT_FALSE(scope.token().isCancelled())
+        << "a rejected spawn is a caller error, not a scope failure";
+    EXPECT_TRUE(slark::test::joinScope(scope)) << "nothing was registered, so join returns";
+}
+
+TEST(CoScopeTest, SpawnOfAnEmptyTaskWithExplicitTokenThrowsAndRegistersNothing) {
+    AsyncScope scope;
+    CancellationToken own;
+    EXPECT_THROW(scope.spawn(Task<void>{}, own), std::logic_error);
+    EXPECT_EQ(AsyncScopeTestAccess::trackedChildren(scope), 0u);
+    EXPECT_FALSE(scope.token().isCancelled());
+}
+
+TEST(CoScopeTest, SpawnOfAStartedSuspendedTaskThrowsAndNeverResumesIt) {
+    auto gate = std::make_shared<CompletionAwaiter<void>>();
+    auto ran = std::make_shared<std::atomic<int>>(0);
+    Task<void> child = parkThenMarkRan(gate, ran);
+    child.resume();
+    ASSERT_FALSE(child.isDone());
+
+    AsyncScope scope;
+    EXPECT_THROW(scope.spawn(std::move(child)), std::logic_error)
+        << "a started child is parked on its own wait; the scope must not enter it";
+    EXPECT_EQ(AsyncScopeTestAccess::trackedChildren(scope), 0u);
+    EXPECT_FALSE(scope.token().isCancelled())
+        << "the scope must not fail because of a rejected spawn";
+
+    gate->complete();
+    EXPECT_EQ(ran->load(), 0) << "the rejected child is released and must not run on";
+    EXPECT_TRUE(slark::test::joinScope(scope));
+}
+
+TEST(CoScopeTest, SpawnOfACompletedTaskThrows) {
+    auto ran = std::make_shared<std::atomic<int>>(0);
+    Task<void> child = markRanOnce(ran);
+    child.resume();
+    ASSERT_TRUE(child.isDone());
+
+    AsyncScope scope;
+    EXPECT_THROW(scope.spawn(std::move(child)), std::logic_error);
+    EXPECT_EQ(ran->load(), 1) << "the child ran once, before it was offered to the scope";
+    EXPECT_EQ(AsyncScopeTestAccess::trackedChildren(scope), 0u);
+}
+
+TEST(CoScopeTest, RefusedSpawnReturnsFalseAndNeverRuns) {
+    auto executor = std::make_shared<SerialExecutor>();
+    AsyncScope scope(executor);
+    executor->requestStop();
+    auto ran = std::make_shared<std::atomic<int>>(0);
+    EXPECT_FALSE(scope.spawn(markRanOnce(ran)))
+        << "a stopped domain refuses the child, which must not start";
+    EXPECT_TRUE(slark::test::joinScope(scope)) << "a refused child leaves no join obligation";
+    EXPECT_EQ(ran->load(), 0);
+    EXPECT_EQ(AsyncScopeTestAccess::trackedChildren(scope), 0u);
+}
+
+TEST(CoScopeTest, RefusedSpawnWithExplicitTokenReturnsFalseAndNeverRuns) {
+    auto executor = std::make_shared<SerialExecutor>();
+    AsyncScope scope(executor);
+    executor->requestStop();
+    auto ran = std::make_shared<std::atomic<int>>(0);
+    CancellationToken own;
+    EXPECT_FALSE(scope.spawn(markRanOnce(ran), own));
+    EXPECT_TRUE(slark::test::joinScope(scope));
+    EXPECT_EQ(ran->load(), 0);
+}
+
+TEST(CoScopeTest, RefusedSpawnDoesNotCancelTheScope) {
+    auto executor = std::make_shared<SerialExecutor>();
+    AsyncScope scope(executor);
+    executor->requestStop();
+    auto refused = std::make_shared<std::atomic<int>>(0);
+    EXPECT_FALSE(scope.spawn(markRanOnce(refused)));
+    EXPECT_FALSE(scope.token().isCancelled())
+        << "refusal is a per-child outcome, not a scope failure";
+}
+
+TEST(CoScopeTest, ConstructorWithNullExecutorRunsChildrenInline) {
+    AsyncScope scope(nullptr);
+    auto ran = std::make_shared<std::atomic<int>>(0);
+    ASSERT_TRUE(scope.spawn(markRanOnce(ran)));
+    EXPECT_EQ(ran->load(), 1) << "without a domain the child starts on the spawning thread";
+    EXPECT_TRUE(slark::test::joinScope(scope));
+}
+
+TEST(CoScopeTest, ConstructorExecutorOutlivesTheScopeReference) {
+    auto executor = std::make_shared<SerialExecutor>();
+    std::weak_ptr<SerialExecutor> watch = executor;
+    {
+        AsyncScope scope(executor);
+        executor.reset();
+        auto ran = std::make_shared<std::atomic<int>>(0);
+        ASSERT_TRUE(scope.spawn(markRanOnce(ran)));
+        ASSERT_TRUE(slark::test::joinScope(scope));
+        EXPECT_EQ(ran->load(), 1);
+        EXPECT_FALSE(watch.expired()) << "the scope keeps its owned domain alive";
+    }
+    EXPECT_TRUE(watch.expired()) << "destroying the scope releases the owned domain";
+}
+
+TEST(CoScopeTest, SetDefaultExecutorReplacesTheDomainForLaterChildren) {
+    auto first = std::make_shared<SerialExecutor>();
+    auto second = std::make_shared<SerialExecutor>();
+    AsyncScope scope;
+    scope.setDefaultExecutor(*first);
+    scope.setDefaultExecutor(*second);
+    auto ran = std::make_shared<std::atomic<int>>(0);
+    ASSERT_TRUE(scope.spawn(markRanOnce(ran)));
+    ASSERT_TRUE(slark::test::joinScope(scope));
+    EXPECT_EQ(ran->load(), 1);
+}
+
+
+namespace {
+
+Task<void> awaitGateRecordingCancel(std::shared_ptr<CompletionAwaiter<void>> gate,
+                                    std::shared_ptr<std::atomic<bool>> cancelled) {
+    try {
+        co_await *gate;
+    } catch (const CancelledException&) {
+        cancelled->store(true);
+    }
+}
+
+Task<void> reportThreadOnce(std::shared_ptr<std::promise<std::thread::id>> out) {
+    out->set_value(std::this_thread::get_id());
+    co_return;
+}
+
+}  // namespace
+
+TEST(CoScopeTest, SpawnWithExplicitTokenIsCancelledByScope) {
+    auto gate = std::make_shared<CompletionAwaiter<void>>();
+    auto cancelled = std::make_shared<std::atomic<bool>>(false);
+    AsyncScope scope;
+    CancellationToken own;
+    ASSERT_TRUE(scope.spawn(awaitGateRecordingCancel(gate, cancelled), own));
+
+    scope.cancelAll();
+    EXPECT_TRUE(cancelled->load()) << "cancelAll must reach a child that also carries its own token";
+    gate->complete();
+    EXPECT_TRUE(slark::test::joinScope(scope));
+}
+
+TEST(CoScopeTest, SpawnWithExplicitTokenIsCancelledByItsOwnToken) {
+    auto gate = std::make_shared<CompletionAwaiter<void>>();
+    auto cancelled = std::make_shared<std::atomic<bool>>(false);
+    AsyncScope scope;
+    CancellationToken own;
+    ASSERT_TRUE(scope.spawn(awaitGateRecordingCancel(gate, cancelled), own));
+
+    own.cancel();
+    EXPECT_TRUE(cancelled->load());
+    gate->complete();
+    EXPECT_TRUE(slark::test::joinScope(scope));
+}
+
+TEST(CoScopeTest, SetDefaultExecutorAfterSpawnThrows) {
+    auto executor = std::make_shared<SerialExecutor>();
+    AsyncScope scope;
+    scope.spawn(emptyTask());
+    EXPECT_THROW(scope.setDefaultExecutor(*executor), std::logic_error)
+        << "children spawned earlier already chose their domain";
+    EXPECT_TRUE(slark::test::joinScope(scope));
+}
+
+TEST(CoScopeTest, ConstructorExecutorRunsChildrenOnItsDomain) {
+    auto executor = std::make_shared<SerialExecutor>();
+    std::promise<std::thread::id> workerProbe;
+    auto workerFuture = workerProbe.get_future();
+    executor->execute([p = std::move(workerProbe)]() mutable {
+        p.set_value(std::this_thread::get_id());
+    });
+    const auto worker = workerFuture.get();
+
+    auto ranOn = std::make_shared<std::promise<std::thread::id>>();
+    auto ranOnFuture = ranOn->get_future();
+    AsyncScope scope(executor);
+    ASSERT_TRUE(scope.spawn(reportThreadOnce(ranOn)));
+    ASSERT_TRUE(slark::test::joinScope(scope));
+    ASSERT_EQ(ranOnFuture.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    EXPECT_EQ(ranOnFuture.get(), worker)
+        << "a scope constructed with a domain must run its children on that domain";
 }

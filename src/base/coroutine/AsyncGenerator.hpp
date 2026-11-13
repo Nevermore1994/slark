@@ -339,8 +339,8 @@ public:
     AsyncGeneratorPromise()
         : state_(std::make_shared<state_type>(std::coroutine_handle<>{}, frameControl_)) {}
 
-    std::suspend_always initial_suspend() noexcept {
-        return {};
+    FrameStartAwaiter<AsyncGeneratorPromise<T>> initial_suspend() noexcept {
+        return {this};
     }
 
     AsyncGeneratorFinalAwaiter<T> final_suspend() noexcept {
@@ -681,13 +681,16 @@ class [[nodiscard]] AsyncGenerator : public NonCopyable {
         }
     }
 
-    // Binds the producer to an execution domain before it is first driven.
-    void setExecutor(std::shared_ptr<IExecutor> executor) noexcept {
-        if (state_ == nullptr || executor == nullptr) {
+    // Binds the producer to an execution domain before its first next(). A closed generator
+    // has no producer left to bind, so the call does nothing there.
+    void setExecutor(std::shared_ptr<IExecutor> executor) {
+        if (state_ == nullptr) {
             return;
         }
         if (auto producer = state_->producer()) {
-            handle_type::from_address(producer.address()).promise().setExecutor(executor);
+            auto& promise = handle_type::from_address(producer.address()).promise();
+            detail::requireNotStarted(promise, "AsyncGenerator::setExecutor after the first next()");
+            promise.setExecutor(std::move(executor));
         }
     }
 

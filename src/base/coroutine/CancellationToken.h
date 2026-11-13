@@ -70,8 +70,6 @@ class CancellationToken {
         return !isCancelled();
     }
 
-    // Combine two tokens: cancelled when either is cancelled. Used to unify request cancellation
-    // state so HttpRequest's internal cancelToken_ stays in sync with the caller's token.
     [[nodiscard]] static CancellationToken link(const CancellationToken& a,
                                                 const CancellationToken& b);
 
@@ -83,6 +81,8 @@ class CancellationToken {
         std::mutex mutex;
         std::unordered_map<TokenId, Callback> callbackMap;
         TokenId nextTokenId{0};
+        // Keeps the sources alive while the forwarding registrations below still point at them
+        std::vector<std::shared_ptr<State>> linkSources;
         // Forward-callback registrations created by link(), kept alive with the State
         std::vector<std::shared_ptr<CancellationTokenRegistration>> linkedRegs;
     };
@@ -192,17 +192,19 @@ inline CancellationToken CancellationToken::link(const CancellationToken& a,
         linked.cancel();
         return linked;
     }
+    linked.state_->linkSources.push_back(a.state_);
+    linked.state_->linkSources.push_back(b.state_);
     auto weakLinked = std::weak_ptr<State>(linked.state_);
-    auto regA = std::make_shared<CancellationTokenRegistration>(
-        a.registerCallbackOrRun([weakLinked]() {
+    auto regA =
+        std::make_shared<CancellationTokenRegistration>(a.registerCallbackOrRun([weakLinked]() {
             if (auto linkedState = weakLinked.lock()) {
                 CancellationToken t;
                 t.state_ = std::move(linkedState);
                 t.cancel();
             }
         }));
-    auto regB = std::make_shared<CancellationTokenRegistration>(
-        b.registerCallbackOrRun([weakLinked]() {
+    auto regB =
+        std::make_shared<CancellationTokenRegistration>(b.registerCallbackOrRun([weakLinked]() {
             if (auto linkedState = weakLinked.lock()) {
                 CancellationToken t;
                 t.state_ = std::move(linkedState);

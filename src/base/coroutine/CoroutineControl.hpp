@@ -2,13 +2,15 @@
 
 #pragma once
 
+#include <atomic>
 #include <concepts>
-#include <cstdint>
 #include <coroutine>
+#include <cstdint>
 #include <exception>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -173,9 +175,6 @@ class CoroutineFrameControl final {
         return executionConflicts_;
     }
 
-    // Resumes the frame. Holds single-execution ownership for the whole execution: a
-    // concurrent resume is a scheduling conflict, counted and refused rather than running
-    // the same frame on two threads.
     bool resume(std::coroutine_handle<> handle) noexcept {
         std::coroutine_handle<> deferredHandle;
         bool outermost = false;
@@ -309,11 +308,10 @@ struct ContinuationLink final {
         reset();
     }
 
-    static ContinuationLink create(
-        std::coroutine_handle<> target,
-        std::shared_ptr<CoroutineFrameControl> targetControl,
-        ExecutionLease* targetSlot,
-        ExecutionLease* sourceSlot = nullptr) noexcept {
+    static ContinuationLink create(std::coroutine_handle<> target,
+                                   std::shared_ptr<CoroutineFrameControl> targetControl,
+                                   ExecutionLease* targetSlot,
+                                   ExecutionLease* sourceSlot = nullptr) noexcept {
         auto link = registerTarget(target, std::move(targetControl), targetSlot, sourceSlot);
         if (!link.isRegistered() || !link.acquireTarget()) {
             link.reset();
@@ -321,11 +319,10 @@ struct ContinuationLink final {
         return link;
     }
 
-    static ContinuationLink registerTarget(
-        std::coroutine_handle<> target,
-        std::shared_ptr<CoroutineFrameControl> targetControl,
-        ExecutionLease* targetSlot,
-        ExecutionLease* sourceSlot = nullptr) noexcept {
+    static ContinuationLink registerTarget(std::coroutine_handle<> target,
+                                           std::shared_ptr<CoroutineFrameControl> targetControl,
+                                           ExecutionLease* targetSlot,
+                                           ExecutionLease* sourceSlot = nullptr) noexcept {
         ContinuationLink link;
         if (!target || !targetControl || !targetSlot || targetControl->isDone(target)) {
             return link;
@@ -419,10 +416,6 @@ class ResumeGate final {
         }
     }
 
-    // Terminal notification: a wait that can no longer be satisfied by its event source
-    // (fd unregistered, waiter replaced, loop stopped) must still wake the suspended
-    // coroutine. Silent disarm would leave it parked forever; the awaiter reports
-    // "not ready" via consumeNotReady() instead.
     void signalTerminal() noexcept {
         settle(false);
     }
@@ -445,7 +438,7 @@ class ResumeGate final {
         executor_ = std::move(executor);
     }
 
-private:
+ private:
     void settle(bool cancelled) noexcept {
         std::shared_ptr<CoroutineFrameControl> frameControl;
         std::coroutine_handle<> handle;
@@ -485,8 +478,8 @@ private:
         metrics.dispatched.fetch_add(1, std::memory_order_relaxed);
         metrics.pending.fetch_add(1, std::memory_order_relaxed);
         const auto enqueuedAt = std::chrono::steady_clock::now();
-        const bool accepted = executor->tryExecute(
-            [frameControl, handle, executor, enqueuedAt]() noexcept {
+        const bool accepted =
+            executor->tryExecute([frameControl, handle, executor, enqueuedAt]() noexcept {
                 auto& running = CoroutineScheduler::instance().resumeMetrics();
                 running.pending.fetch_sub(1, std::memory_order_relaxed);
                 running.recordQueueLatency(enqueuedAt);
@@ -503,8 +496,9 @@ private:
             notReady_ = true;
         }
         auto& fallback = CoroutineScheduler::instance().fallbackExecutor();
-        const bool resumedOnFallback = fallback.tryExecute(
-            [frameControl, handle]() noexcept { frameControl->resume(handle); });
+        const bool resumedOnFallback = fallback.tryExecute([frameControl, handle]() noexcept {
+            frameControl->resume(handle);
+        });
         if (!resumedOnFallback) {
             LogE("coroutine resume refused by the fallback executor; aborting");
             std::terminate();
@@ -525,7 +519,9 @@ template <typename Promise>
 std::shared_ptr<ResumeGate> makeResumeGate(std::coroutine_handle<Promise> handle) noexcept {
     auto gate = std::make_shared<ResumeGate>(handle, handle.promise().frameControl());
     if constexpr (requires {
-                      { handle.promise().executor() } -> std::convertible_to<std::shared_ptr<IExecutor>>;
+                      {
+                          handle.promise().executor()
+                      } -> std::convertible_to<std::shared_ptr<IExecutor>>;
                   }) {
         gate->setExecutor(handle.promise().executor());
     }
@@ -576,7 +572,7 @@ void markCoroutineExecuting(Promise& promise) noexcept {
 }
 
 class PromiseCancellation {
-public:
+ public:
     [[nodiscard]] const CancellationToken* cancelToken() const noexcept {
         return token_ ? &*token_ : nullptr;
     }
@@ -596,9 +592,44 @@ public:
         }
     }
 
-protected:
+    // Bindings must precede the first resume; a later one would be silently lost.
+    [[nodiscard]] bool hasStarted() const noexcept {
+        return started_.load(std::memory_order_acquire);
+    }
+
+    void markStarted() noexcept {
+        started_.store(true, std::memory_order_release);
+    }
+
+ protected:
     std::optional<CancellationToken> token_;
+    std::atomic<bool> started_{false};
 };
+
+template <typename Promise>
+struct FrameStartAwaiter {
+    Promise* promise;
+
+    bool await_ready() const noexcept {
+        return false;
+    }
+
+    void await_suspend(std::coroutine_handle<>) const noexcept {}
+
+    void await_resume() const noexcept {
+        promise->markStarted();
+    }
+};
+
+namespace detail {
+
+inline void requireNotStarted(const PromiseCancellation& promise, const char* message) {
+    if (promise.hasStarted()) {
+        throw std::logic_error(message);
+    }
+}
+
+}  // namespace detail
 
 template <typename Promise, typename OnCancel>
 [[nodiscard]] CancellationTokenRegistration bindCancellation(Promise& promise, OnCancel onCancel) {
@@ -612,7 +643,8 @@ template <typename Promise, typename OnCancel>
 
 template <typename Promise>
 [[nodiscard]] CancellationTokenRegistration bindGateCancellation(
-    Promise& promise, const std::shared_ptr<ResumeGate>& gate) {
+    Promise& promise,
+    const std::shared_ptr<ResumeGate>& gate) {
     return bindCancellation(promise, [weak = std::weak_ptr<ResumeGate>(gate)] {
         if (auto locked = weak.lock()) {
             locked->signalCancel();
@@ -621,4 +653,3 @@ template <typename Promise>
 }
 
 }  // namespace slark
-

@@ -475,3 +475,83 @@ TEST(CoroutineBoundaryTest, WhenAllPropagatesFirstExceptionAfterAllFinish) {
     EXPECT_THROW(task.result(), std::runtime_error);
     EXPECT_TRUE(sibling.load()) << "siblings must still run to completion";
 }
+
+namespace {
+
+Task<void> boundaryPark(std::shared_ptr<CompletionAwaiter<void>> gate, std::atomic<bool>* passed) {
+    co_await *gate;
+    passed->store(true);
+}
+
+Task<void> boundaryAwaitVoid(Task<void> child) {
+    co_await std::move(child);
+}
+
+Task<int> boundaryAwaitInt(Task<int> child) {
+    co_return co_await std::move(child);
+}
+
+}  // namespace
+
+TEST(CoroutineBoundaryTest, BindingsOnAnEmptyTaskAreNoOps) {
+    Task<void> empty;
+    CancellationToken token;
+    EXPECT_NO_THROW(empty.setCancellationToken(token));
+    EXPECT_NO_THROW(empty.setExecutor(std::make_shared<SerialExecutor>()));
+    EXPECT_FALSE(empty.isValid());
+}
+
+TEST(CoroutineBoundaryTest, MovedFromTaskIgnoresLaterBindings) {
+    Task<void> source = voidTask();
+    Task<void> destination = std::move(source);
+    CancellationToken token;
+    EXPECT_NO_THROW(source.setCancellationToken(token));
+    EXPECT_NO_THROW(source.setExecutor(std::make_shared<SerialExecutor>()));
+    destination.resume();
+    EXPECT_TRUE(destination.isDone());
+}
+
+TEST(CoroutineBoundaryTest, MovedStartedTaskStillRejectsBindings) {
+    auto gate = std::make_shared<CompletionAwaiter<void>>();
+    std::atomic<bool> passed{false};
+    Task<void> original = boundaryPark(gate, &passed);
+    original.resume();
+    Task<void> moved = std::move(original);
+
+    CancellationToken token;
+    EXPECT_THROW(moved.setCancellationToken(token), std::logic_error)
+        << "the started state belongs to the frame, so it survives moving the Task";
+    EXPECT_THROW(moved.setExecutor(std::make_shared<SerialExecutor>()), std::logic_error);
+    gate->complete();
+    ASSERT_TRUE(waitUntilDone(moved));
+    EXPECT_TRUE(passed.load());
+}
+
+TEST(CoroutineBoundaryTest, CoAwaitOfAStartedSuspendedTaskIsRejectedWithoutResumingIt) {
+    auto gate = std::make_shared<CompletionAwaiter<void>>();
+    std::atomic<bool> passed{false};
+    Task<void> child = boundaryPark(gate, &passed);
+    child.resume();
+    ASSERT_FALSE(child.isDone());
+
+    auto parent = boundaryAwaitVoid(std::move(child));
+    parent.resume();
+    ASSERT_TRUE(parent.isDone());
+    EXPECT_THROW(parent.result(), std::logic_error)
+        << "entering a child parked on its own wait would resume it without the event";
+    EXPECT_FALSE(passed.load());
+
+    gate->complete();
+    EXPECT_FALSE(passed.load()) << "the rejected child was released and must not run on";
+}
+
+TEST(CoroutineBoundaryTest, CoAwaitOfAStartedTaskThatAlreadyCompletedReturnsItsResult) {
+    Task<int> child = valueTask(7);
+    child.resume();
+    ASSERT_TRUE(child.isDone());
+
+    auto parent = boundaryAwaitInt(std::move(child));
+    parent.resume();
+    ASSERT_TRUE(parent.isDone());
+    EXPECT_EQ(parent.result(), 7);
+}

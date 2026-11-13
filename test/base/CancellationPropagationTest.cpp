@@ -6,6 +6,7 @@
 #include <chrono>
 #include <future>
 #include <memory>
+#include <stdexcept>
 #include <thread>
 
 #include "AsyncGenerator.hpp"
@@ -130,6 +131,10 @@ Task<bool> observeToken(bool* bound) {
     co_return token.has_value() && token->isCancelled();
 }
 
+Task<void> waitUntilGateOpens(std::shared_ptr<CompletionAwaiter<void>> gate) {
+    co_await *gate;
+}
+
 }  // namespace
 
 TEST(CancellationPropagationTest, RegisterOrRunRunsTheCallbackImmediatelyWhenAlreadyCancelled) {
@@ -149,6 +154,16 @@ TEST(CancellationPropagationTest, RegisterOrRunKeepsTheCallbackUntilCancelled) {
     EXPECT_EQ(ran, 0);
     token.cancel();
     EXPECT_EQ(ran, 1);
+}
+
+TEST(CancellationPropagationTest, LinkedTokenKeepsItsSourcesAlive) {
+    CancellationToken parent;
+    CancellationToken other;
+    auto linked =
+        CancellationToken::link(CancellationToken::link(parent, other), CancellationToken{});
+    parent.cancel();
+    EXPECT_TRUE(linked.isCancelled())
+        << "a temporary intermediate link must not drop the forwarding registration";
 }
 
 TEST(CancellationPropagationTest, TimerWakesOnCancel) {
@@ -303,6 +318,23 @@ TEST(CancellationPropagationTest, CancellationTokenAwaiterReportsBinding) {
     bound.resume();
     EXPECT_TRUE(boundSawToken);
     EXPECT_TRUE(bound.result());
+}
+
+TEST(CancellationPropagationTest, SetCancellationTokenAfterFirstResumeThrows) {
+    auto gate = std::make_shared<CompletionAwaiter<void>>();
+    auto task = waitUntilGateOpens(gate);
+    task.resume();
+    ASSERT_FALSE(task.isDone());
+
+    CancellationToken token;
+    EXPECT_THROW(task.setCancellationToken(token), std::logic_error)
+        << "a token bound after the first resume would never wake the wait already registered";
+    token.cancel();
+    EXPECT_FALSE(task.isDone()) << "the rejected token must not be bound to the running frame";
+
+    gate->complete();
+    ASSERT_TRUE(task.isDone());
+    EXPECT_NO_THROW(task.result());
 }
 
 TEST(CancellationPropagationTest, WhenAllChildrenInheritParentToken) {

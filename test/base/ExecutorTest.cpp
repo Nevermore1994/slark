@@ -7,6 +7,7 @@
 #include <atomic>
 #include <future>
 #include <memory>
+#include <stdexcept>
 #include <thread>
 
 #include "Awaitable.hpp"
@@ -87,4 +88,61 @@ TEST(ExecutorTest, ChildKeepsItsOwnExecutorOverTheAwaitingParentsDomain) {
     ASSERT_TRUE(waitUntilDone(root));
     EXPECT_EQ(resumedOn.load(), childWorker) << "an explicit child domain must win";
     EXPECT_NE(resumedOn.load(), parentWorker);
+}
+
+TEST(ExecutorTest, SetExecutorAfterFirstResumeThrows) {
+    auto executor = std::make_shared<SerialExecutor>();
+    auto gate = std::make_shared<CompletionAwaiter<void>>();
+    ThreadSlot resumedOn{};
+    auto root = recordAfterWait(gate, &resumedOn);
+    root.resume();
+    ASSERT_FALSE(root.isDone());
+
+    EXPECT_THROW(root.setExecutor(executor), std::logic_error)
+        << "the wait already registered its gate on the previous domain";
+    gate->complete();
+    ASSERT_TRUE(waitUntilDone(root));
+}
+
+namespace {
+
+Task<void> finishImmediately() {
+    co_return;
+}
+
+}  // namespace
+
+TEST(ExecutorTest, SetExecutorAfterCompletionThrows) {
+    auto task = finishImmediately();
+    task.resume();
+    ASSERT_TRUE(task.isDone());
+    EXPECT_THROW(task.setExecutor(std::make_shared<SerialExecutor>()), std::logic_error);
+}
+
+TEST(ExecutorTest, SetExecutorNullBeforeStartClearsTheDomain) {
+    auto executor = std::make_shared<SerialExecutor>();
+    auto gate = std::make_shared<CompletionAwaiter<void>>();
+    ThreadSlot resumedOn{};
+    auto root = recordAfterWait(gate, &resumedOn);
+    root.setExecutor(executor);
+    root.setExecutor(nullptr);
+    root.resume();
+    ASSERT_FALSE(root.isDone());
+
+    const auto completer = std::this_thread::get_id();
+    gate->complete();
+    ASSERT_TRUE(waitUntilDone(root));
+    EXPECT_EQ(resumedOn.load(), completer) << "a cleared domain resumes on the notifying thread";
+}
+
+TEST(ExecutorTest, SetExecutorNullAfterFirstResumeThrows) {
+    auto gate = std::make_shared<CompletionAwaiter<void>>();
+    ThreadSlot resumedOn{};
+    auto root = recordAfterWait(gate, &resumedOn);
+    root.resume();
+    ASSERT_FALSE(root.isDone());
+    EXPECT_THROW(root.setExecutor(nullptr), std::logic_error)
+        << "clearing the domain of a started task is rejected like any other binding";
+    gate->complete();
+    ASSERT_TRUE(waitUntilDone(root));
 }

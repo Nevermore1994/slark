@@ -7,6 +7,7 @@
 #include <exception>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
@@ -49,7 +50,8 @@ inline std::string describeException(const std::exception_ptr& error) {
 struct ScopeCore {
     std::mutex mutex;
     slark::CancellationToken cancelToken;
-    IExecutor* defaultExecutor = nullptr;
+    std::shared_ptr<IExecutor> defaultExecutor;
+    bool spawned = false;
     std::unordered_map<std::uint64_t, Task<void>> children;
     std::vector<std::shared_ptr<ResumeGate>> joinWaiters;
     std::exception_ptr failure;
@@ -173,6 +175,12 @@ class AsyncScope {
  public:
     AsyncScope() : core_(std::make_shared<detail::ScopeCore>()) {}
 
+    // Owns the domain: children are dispatched on it for the scope's whole lifetime.
+    explicit AsyncScope(std::shared_ptr<IExecutor> executor)
+        : core_(std::make_shared<detail::ScopeCore>()) {
+        core_->defaultExecutor = std::move(executor);
+    }
+
     AsyncScope(const AsyncScope&) = delete;
     AsyncScope& operator=(const AsyncScope&) = delete;
     AsyncScope(AsyncScope&&) = delete;
@@ -201,34 +209,12 @@ class AsyncScope {
 
     template <typename T>
     bool spawn(Task<T> task) {
-        return spawn(std::move(task), core_->cancelToken);
+        return startChild(std::move(task), core_->cancelToken);
     }
 
     template <typename T>
     bool spawn(Task<T> task, slark::CancellationToken token) {
-        const auto id = nextId_.fetch_add(1, std::memory_order_relaxed);
-        auto wrapperTask = detail::scopeWrapper<T>(core_, id, std::move(task));
-        wrapperTask.setCancellationToken(std::move(token));
-        auto handle = wrapperTask.getHandle();
-        auto frameControl = handle.promise().frameControl();
-        {
-            std::lock_guard lock(core_->mutex);
-            core_->children.emplace(id, std::move(wrapperTask));
-        }
-
-        if (core_->defaultExecutor && !core_->defaultExecutor->isInline()) {
-            const bool accepted =
-                core_->defaultExecutor->tryExecute([frameControl, handle]() noexcept {
-                    frameControl->resume(handle);
-                });
-            if (!accepted) {
-                detail::retireChild(core_, id);
-                return false;
-            }
-        } else {
-            frameControl->resume(handle);
-        }
-        return true;
+        return startChild(std::move(task), slark::CancellationToken::link(core_->cancelToken, token));
     }
 
     [[nodiscard]] JoinAwaiter join() noexcept {
@@ -239,8 +225,18 @@ class AsyncScope {
         core_->cancelToken.cancel();
     }
 
-    void setDefaultExecutor(IExecutor& exec) noexcept {
-        core_->defaultExecutor = &exec;
+    void setDefaultExecutor(IExecutor& exec) {
+        std::shared_ptr<IExecutor> replaced;
+        {
+            std::lock_guard lock(core_->mutex);
+            if (core_->spawned) {
+                throw std::logic_error("AsyncScope::setDefaultExecutor after the first spawn");
+            }
+            // Non-owning alias: the caller keeps exec alive for the scope's lifetime.
+            replaced = std::exchange(core_->defaultExecutor,
+                                     std::shared_ptr<IExecutor>(&exec, [](IExecutor*) noexcept {}));
+        }
+        // Released outside the lock: destroying an owned executor joins its worker thread.
     }
 
     [[nodiscard]] slark::CancellationToken token() const noexcept {
@@ -249,6 +245,39 @@ class AsyncScope {
 
  private:
     friend struct AsyncScopeTestAccess;
+
+    template <typename T>
+    bool startChild(Task<T> task, slark::CancellationToken token) {
+        // Caller errors: rejected before anything is registered, so the scope is not failed.
+        if (!task.isValid() || task.getHandle().promise().hasStarted()) {
+            throw std::logic_error("AsyncScope::spawn requires a valid Task that has not started");
+        }
+        const auto id = nextId_.fetch_add(1, std::memory_order_relaxed);
+        auto wrapperTask = detail::scopeWrapper<T>(core_, id, std::move(task));
+        wrapperTask.setCancellationToken(std::move(token));
+        auto handle = wrapperTask.getHandle();
+        auto frameControl = handle.promise().frameControl();
+        std::shared_ptr<IExecutor> executor;
+        {
+            std::lock_guard lock(core_->mutex);
+            core_->spawned = true;
+            executor = core_->defaultExecutor;
+            core_->children.emplace(id, std::move(wrapperTask));
+        }
+
+        if (executor && !executor->isInline()) {
+            const bool accepted = executor->tryExecute([frameControl, handle]() noexcept {
+                frameControl->resume(handle);
+            });
+            if (!accepted) {
+                detail::retireChild(core_, id);
+                return false;
+            }
+        } else {
+            frameControl->resume(handle);
+        }
+        return true;
+    }
 
     std::shared_ptr<detail::ScopeCore> core_;
     std::atomic<std::uint64_t> nextId_{0};
