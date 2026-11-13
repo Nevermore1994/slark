@@ -191,16 +191,27 @@ class AsyncIOOperationBase {
         return false;
     }
 
+    // Cancellation and a refused resume throw; failures are values. A wait that was woken
+    // without reaching a terminal state either was abandoned by its event source (SocketClosed)
+    // or became ready, and the derived operation retries the work.
     IOResult<T> await_resume() {
-        auto s = completion_->state.load(std::memory_order_acquire);
-        if (s == IOOpState::Failed || s == IOOpState::TimedOut || s == IOOpState::Cancelled) {
+        if (auto gate = ioGate(); gate && gate->consumeCancelled()) {
+            throw CancelledException("IO wait cancelled");
+        }
+        const auto s = completion_->state.load(std::memory_order_acquire);
+        if (s == IOOpState::Cancelled) {
+            throw CancelledException("IO operation cancelled");
+        }
+        if (s == IOOpState::Failed || s == IOOpState::TimedOut) {
             return std::unexpected(completion_->getError().value_or(Error::NetworkError));
         }
-        if constexpr (std::is_void_v<T>) {
-            return {};
-        } else {
-            return derived().getResult();
+        if (s == IOOpState::Completed) {
+            return completedResult();
         }
+        if (auto gate = ioGate(); gate && gate->consumeNotReady()) {
+            return std::unexpected(Error::SocketClosed);
+        }
+        return readyResult();
     }
 
     void setTimeout(std::chrono::milliseconds t) noexcept {
@@ -271,6 +282,22 @@ class AsyncIOOperationBase {
 
     Derived& derived() noexcept {
         return static_cast<Derived&>(*this);
+    }
+
+    IOResult<T> completedResult() {
+        if constexpr (std::is_void_v<T>) {
+            return {};
+        } else {
+            return derived().getResult();
+        }
+    }
+
+    IOResult<T> readyResult() {
+        if constexpr (requires { derived().resumeAfterReadiness(); }) {
+            return derived().resumeAfterReadiness();
+        } else {
+            return completedResult();
+        }
     }
 
     void scheduleTimeout() noexcept {

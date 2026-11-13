@@ -23,13 +23,13 @@ Task<void> suspendedOn(std::shared_ptr<CompletionAwaiter<void>> awaiter) {
     co_await *awaiter;
 }
 
-Task<bool> awaitReadable(int fd, CancellationToken token) {
-    co_return co_await withCancellation(FdReadyAwaiter(fd, FdReadyAwaiter::Interest::Read), token);
+// The token is bound to the coroutine by its caller; the wait itself takes no token.
+Task<bool> awaitReadable(int fd) {
+    co_return co_await FdReadyAwaiter(fd, FdReadyAwaiter::Interest::Read);
 }
 
 Task<bool> awaitReadableRecording(int fd, std::atomic<std::thread::id>* resumedOn) {
-    const bool ready = co_await withCancellation(
-        FdReadyAwaiter(fd, FdReadyAwaiter::Interest::Read), CancellationToken{});
+    const bool ready = co_await FdReadyAwaiter(fd, FdReadyAwaiter::Interest::Read);
     resumedOn->store(std::this_thread::get_id());
     co_return ready;
 }
@@ -107,7 +107,8 @@ TEST(IOContextTest, CancellingTheTokenWakesAPendingFdReadyWait) {
     IOContext::instance().registerSocket(fds[0]);
 
     CancellationToken token;
-    auto task = awaitReadable(fds[0], token);
+    auto task = awaitReadable(fds[0]);
+    task.setCancellationToken(token);
     task.resume();
     ASSERT_FALSE(task.isDone()) << "an empty pipe is not readable, so the wait must be pending";
 
@@ -117,7 +118,7 @@ TEST(IOContextTest, CancellingTheTokenWakesAPendingFdReadyWait) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     ASSERT_TRUE(task.isDone()) << "cancelling the token must wake the wait";
-    EXPECT_FALSE(task.result()) << "a cancelled wait reports that the fd is not ready";
+    EXPECT_THROW(task.result(), CancelledException) << "a cancelled wait ends as an exception";
 
     IOContext::instance().unregisterSocket(fds[0]);
     ::close(fds[0]);
@@ -130,14 +131,15 @@ TEST(IOContextTest, CancellingTheCoroutineWakesAPendingFdReadyWait) {
     IOContext::instance().registerSocket(fds[0]);
 
     CancellationToken token;
-    auto task = awaitReadable(fds[0], CancellationToken{});
+    auto task = awaitReadable(fds[0]);
     task.setCancellationToken(token);
     task.resume();
     ASSERT_FALSE(task.isDone());
 
     token.cancel();
     ASSERT_TRUE(waitForDone(task)) << "cancelling the coroutine must wake its pending fd wait";
-    EXPECT_FALSE(task.result()) << "a wait woken by cancellation is reported as not ready";
+    EXPECT_THROW(task.result(), CancelledException)
+        << "a wait woken by cancellation ends as an exception";
 
     IOContext::instance().unregisterSocket(fds[0]);
     ::close(fds[0]);
@@ -149,7 +151,7 @@ TEST(IOContextTest, TimeoutWakesAPendingFdReadyWait) {
     ASSERT_EQ(pipe(fds), 0);
     IOContext::instance().registerSocket(fds[0]);
 
-    auto timed = slark::coro::with_timeout(awaitReadable(fds[0], CancellationToken{}),
+    auto timed = slark::coro::with_timeout(awaitReadable(fds[0]),
                                            std::chrono::milliseconds(50));
     timed.resume();
     ASSERT_TRUE(waitForDone(timed)) << "with_timeout must not wait for the fd to become readable";
@@ -194,7 +196,7 @@ TEST(IOContextTest, UnregisteringTheSocketReportsAPendingWaitAsNotReady) {
     ASSERT_EQ(pipe(fds), 0);
     IOContext::instance().registerSocket(fds[0]);
 
-    auto task = awaitReadable(fds[0], CancellationToken{});
+    auto task = awaitReadable(fds[0]);
     task.resume();
     ASSERT_FALSE(task.isDone());
 
@@ -209,10 +211,14 @@ TEST(IOContextTest, UnregisteringTheSocketReportsAPendingWaitAsNotReady) {
 namespace {
 
 Task<bool> awaitReadableCounting(int fd, std::atomic<int>* resumes) {
-    const bool ready = co_await withCancellation(FdReadyAwaiter(fd, FdReadyAwaiter::Interest::Read),
-                                                 CancellationToken{});
-    resumes->fetch_add(1);
-    co_return ready;
+    try {
+        const bool ready = co_await FdReadyAwaiter(fd, FdReadyAwaiter::Interest::Read);
+        resumes->fetch_add(1);
+        co_return ready;
+    } catch (const CancelledException&) {
+        resumes->fetch_add(1);
+        co_return false;
+    }
 }
 
 }  // namespace

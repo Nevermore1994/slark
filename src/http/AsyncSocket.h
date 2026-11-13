@@ -111,8 +111,7 @@ class TLSTransport final : public ITransport {
     TLSTransport(Socket fd, const std::string& hostname);
     ~TLSTransport();
 
-    Task<Error> performHandshake(std::chrono::milliseconds timeout,
-                                 CancellationToken token = CancellationToken{});
+    Task<Error> performHandshake(std::chrono::milliseconds timeout);
 
     ssize_t write(const void* data, size_t size) noexcept override;
     ssize_t read(void* buffer, size_t size) noexcept override;
@@ -141,26 +140,16 @@ class IAsyncSocket {
     virtual ~IAsyncSocket() = default;
 
     virtual Task<void> asyncConnect(ConnectAddress address,
-                                    std::chrono::milliseconds timeout = kDefaultConnectTimeout,
-                                    CancellationToken token = CancellationToken{}) = 0;
+                                    std::chrono::milliseconds timeout = kDefaultConnectTimeout) = 0;
 
     virtual Task<AsyncSocketResult> asyncSend(
         const std::string_view& data,
         std::chrono::milliseconds timeout = kDefaultWriteTimeout) = 0;
 
-    virtual Task<AsyncSocketResult> asyncSend(const std::string_view& data,
-                                              std::chrono::milliseconds timeout,
-                                              CancellationToken token) = 0;
-
     virtual Task<AsyncSocketResult> asyncReceive(
         void* buffer,
         size_t size,
         std::chrono::milliseconds timeout = kDefaultReadTimeout) = 0;
-
-    virtual Task<AsyncSocketResult> asyncReceive(void* buffer,
-                                                 size_t size,
-                                                 std::chrono::milliseconds timeout,
-                                                 CancellationToken token) = 0;
 
     virtual void close() noexcept = 0;
     [[nodiscard]] virtual bool isValid() const noexcept = 0;
@@ -176,26 +165,16 @@ class AsyncSocket final : public IAsyncSocket, public NonCopyable {
     ~AsyncSocket();
 
     Task<void> asyncConnect(ConnectAddress address,
-                            std::chrono::milliseconds timeout = kDefaultConnectTimeout,
-                            CancellationToken token = CancellationToken{}) override;
+                            std::chrono::milliseconds timeout = kDefaultConnectTimeout) override;
 
     Task<AsyncSocketResult> asyncSend(
         const std::string_view& data,
         std::chrono::milliseconds timeout = kDefaultWriteTimeout) override;
 
-    Task<AsyncSocketResult> asyncSend(const std::string_view& data,
-                                      std::chrono::milliseconds timeout,
-                                      CancellationToken token) override;
-
     Task<AsyncSocketResult> asyncReceive(
         void* buffer,
         size_t size,
         std::chrono::milliseconds timeout = kDefaultReadTimeout) override;
-
-    Task<AsyncSocketResult> asyncReceive(void* buffer,
-                                         size_t size,
-                                         std::chrono::milliseconds timeout,
-                                         CancellationToken token) override;
 
     void close() noexcept override;
 

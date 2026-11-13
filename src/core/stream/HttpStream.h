@@ -12,6 +12,7 @@
 #include "Awaitable.hpp"
 #include "HttpRequest.h"
 #include "IStream.h"
+#include "Job.hpp"
 #include "StringUtil.h"
 #include "Task.hpp"
 #include "TaskThread.h"
@@ -69,7 +70,7 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
         uint64_t generation = 0;
         uint64_t operationId = 0;
         std::shared_ptr<http::HttpRequest> request;
-        Task<void> task;  // network coroutine (keeps the frame alive)
+        coro::Job<void> job;  // network coroutine; cancelled and released with the operation
         std::shared_ptr<StreamControl> control;
     };
 
@@ -94,7 +95,7 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
 
     void updateRangeCapability(RangeCapability capability) noexcept;
 
-    // Cancels and waits for the task to settle; on timeout the frame is left alive on purpose
+    // Cancels the network coroutine and waits at most timeoutMs for it to settle
     void cancelCurrentOperation(uint64_t timeoutMs) noexcept;
 
     // Requires mutex_ to be held (reused by seek)

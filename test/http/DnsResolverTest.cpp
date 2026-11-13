@@ -37,12 +37,17 @@ class DnsResolverTest : public ::testing::Test {
         return coro.isDone() ? coro.result() : makeAddressInfo(nullptr);
     }
 
+    // A cancelled probe answers only from the cache; a miss ends as CancelledException.
     bool isCached(DnsResolver& r, const std::string& host, const std::string& port) {
         CancellationToken cancelled;
         cancelled.cancel();
         auto coro = r.resolveAsync(host, port, IPVersion::Auto, cancelled);
         coro.resume();
-        return coro.isDone() && coro.result().get() != nullptr;
+        try {
+            return coro.isDone() && coro.result().get() != nullptr;
+        } catch (const CancelledException&) {
+            return false;
+        }
     }
 
     bool waitUntilCached(DnsResolver& r, const std::string& host, const std::string& port) {

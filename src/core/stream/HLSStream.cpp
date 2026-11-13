@@ -272,9 +272,9 @@ void HLSStream::requestPlaylist(const std::string& url) {
     requestInfo.session = playlistSession();
 
     auto task = fetchPlaylist(request, requestInfo, control, generation, operationId);
-    playlistOp_.emplace(
-        PlaylistOp{generation, operationId, request, std::move(task), std::move(control)});
-    playlistOp_->task.resume();
+    playlistOp_.emplace(PlaylistOp{generation, operationId, request,
+                                   coro::makeJob(std::move(task)), std::move(control)});
+    playlistOp_->job.start();
 }
 
 void HLSStream::handlePlaylistEvent(PlaylistEvent event) noexcept {
@@ -521,9 +521,9 @@ void HLSStream::downloadSegment(uint32_t segIndex) {
 
     auto task = downloadTask(request, requestInfo, weakThis, weakControl, ownerThread_, sequence,
                              gen, opId);
-    segmentOp_.emplace(
-        SegmentOp{gen, opId, sequence, false, request, std::move(task), std::move(control)});
-    segmentOp_->task.resume();
+    segmentOp_.emplace(SegmentOp{gen, opId, sequence, false, request,
+                                 coro::makeJob(std::move(task)), std::move(control)});
+    segmentOp_->job.start();
 }
 
 void HLSStream::handleSegmentEvent(SegmentEvent event) noexcept {
@@ -805,17 +805,13 @@ void HLSStream::cancelPlaylistOp(uint64_t timeoutMs) {
     playlistOp_->request->cancel();
     playlistOp_->control->alive = false;
 
-    auto opTask = std::move(playlistOp_->task);
+    auto job = std::move(playlistOp_->job);
     playlistOp_.reset();
+    job.cancel();
     mutex_.unlock();
 
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
-    while (!opTask.isDone()) {
-        if (std::chrono::steady_clock::now() >= deadline) {
-            LogW("[HLSStream::cancelPlaylistOp] task not settled within {}ms", timeoutMs);
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    if (!job.waitFor(std::chrono::milliseconds(timeoutMs))) {
+        LogW("[HLSStream::cancelPlaylistOp] task not settled within {}ms", timeoutMs);
     }
     mutex_.lock();
 }
@@ -828,17 +824,13 @@ void HLSStream::cancelSegmentOp(uint64_t timeoutMs) {
     segmentOp_->control->alive = false;
     pendingSegmentData_.reset();
 
-    auto opTask = std::move(segmentOp_->task);
+    auto job = std::move(segmentOp_->job);
     segmentOp_.reset();
+    job.cancel();
     mutex_.unlock();
 
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
-    while (!opTask.isDone()) {
-        if (std::chrono::steady_clock::now() >= deadline) {
-            LogW("[HLSStream::cancelSegmentOp] task not settled within {}ms", timeoutMs);
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    if (!job.waitFor(std::chrono::milliseconds(timeoutMs))) {
+        LogW("[HLSStream::cancelSegmentOp] task not settled within {}ms", timeoutMs);
     }
     mutex_.lock();
 }

@@ -13,21 +13,22 @@
 
 namespace slark::http {
 
-// Note: the token parameter in process() controls cancellation per request and is not
-// stored as an object member.
+// Note: the token overloads bind the caller's token to the request and are not stored as an
+// object member. The overloads without a token inherit the token of the awaiting coroutine.
 class HttpProcessor : public NonCopyable {
  public:
     HttpProcessor() = default;
     ~HttpProcessor() = default;
 
-    static Task<ResponseResult> process(RequestInfo requestInfo, CancellationToken token = {});
+    static Task<ResponseResult> process(RequestInfo requestInfo);
+    static Task<ResponseResult> process(RequestInfo requestInfo, CancellationToken token);
 
+    static AsyncGenerator<StreamChunk> processStreaming(RequestInfo requestInfo);
     static AsyncGenerator<StreamChunk> processStreaming(RequestInfo requestInfo,
-                                                         CancellationToken token = {});
+                                                        CancellationToken token);
 
  private:
-    static AsyncGenerator<HttpResponseEvent> processEvents(RequestInfo requestInfo,
-                                                           CancellationToken token = {});
+    static AsyncGenerator<HttpResponseEvent> processEvents(RequestInfo requestInfo);
 
     struct ParsedRequest {
         std::optional<Url> url;
@@ -35,10 +36,9 @@ class HttpProcessor : public NonCopyable {
         ErrorInfo error;
     };
 
-    static Task<ResponseResult> collectResponse(RequestInfo requestInfo, CancellationToken token);
+    static Task<ResponseResult> collectResponse(RequestInfo requestInfo);
 
-    static AsyncGenerator<HttpResponseEvent> executeEventsSingle(RequestInfo requestInfo,
-                                                                 CancellationToken token);
+    static AsyncGenerator<HttpResponseEvent> executeEventsSingle(RequestInfo requestInfo);
 
     [[nodiscard]] static ParsedRequest parseUrl(const std::string& urlStr);
 

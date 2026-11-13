@@ -42,8 +42,12 @@ class DnsResolver {
 
     Task<AddressInfoPtr> resolveAsync(const std::string& host,
                                       const std::string& port,
+                                      IPVersion ipVersion);
+
+    Task<AddressInfoPtr> resolveAsync(const std::string& host,
+                                      const std::string& port,
                                       IPVersion ipVersion,
-                                      CancellationToken token = {});
+                                      CancellationToken token);
 
     void prefetchUrls(const std::vector<std::string>& urls, std::chrono::duration<double> ttl);
 
@@ -56,8 +60,7 @@ class DnsResolver {
     static Task<AddressInfoPtr> resolveAsyncImpl(std::shared_ptr<State> state,
                                                  std::string host,
                                                  std::string port,
-                                                 IPVersion ipVersion,
-                                                 CancellationToken token);
+                                                 IPVersion ipVersion);
 
     static void prefetch(const std::shared_ptr<State>& state,
                          const std::string& host,

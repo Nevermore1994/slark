@@ -25,8 +25,11 @@ class Http1Session final : public NonCopyable, public std::enable_shared_from_th
     Http1Session() = default;
     ~Http1Session();
 
+    // The session's close() cancels the request, so every request is linked with the closing
+    // token. The overload without a token inherits the token of the awaiting coroutine.
+    AsyncGenerator<HttpResponseEvent> executeEvents(RequestInfo requestInfo);
     AsyncGenerator<HttpResponseEvent> executeEvents(RequestInfo requestInfo,
-                                                     CancellationToken token = {});
+                                                    CancellationToken token);
 
     void close() noexcept;
 
@@ -58,17 +61,17 @@ class Http1Session final : public NonCopyable, public std::enable_shared_from_th
         ~BusyGuard();
     };
 
+    AsyncGenerator<HttpResponseEvent> executeEventsImpl(RequestInfo requestInfo);
+
     Task<ConnectionResult> acquireConnection(const RequestInfo& requestInfo,
-                                              const Url& url,
-                                              RequestPerf& perf,
-                                              CancellationToken& token);
+                                             const Url& url,
+                                             RequestPerf& perf);
 
     void discardConnection(const std::shared_ptr<OwnedConnection>& connection) noexcept;
 
     static Task<ErrorInfo> sendRequest(const std::shared_ptr<OwnedConnection>& connection,
                                        const RequestInfo& requestInfo,
-                                       const Url& url,
-                                       CancellationToken& token);
+                                       const Url& url);
 
     [[nodiscard]] static std::optional<Url> parseUrl(const std::string& urlString,
                                                      ErrorInfo& error);

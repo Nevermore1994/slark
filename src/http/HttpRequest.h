@@ -68,9 +68,8 @@ class HttpRequest : public NonCopyable {
  private:
     using OperationStatePtr = std::shared_ptr<OperationState>;
 
-    static Task<HttpResponse> executeWithToken(RequestInfo requestInfo,
-                                               OperationStatePtr operation,
-                                               CancellationToken token);
+    static Task<HttpResponse> executeOperation(RequestInfo requestInfo,
+                                               OperationStatePtr operation);
     static AsyncGenerator<StreamChunk> streamWithOperation(
         AsyncGenerator<StreamChunk> generator,
         OperationStatePtr operation);

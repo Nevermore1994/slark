@@ -76,24 +76,26 @@ void OperationState::close() noexcept {
 
 Task<HttpResponse> HttpRequest::asyncExecute(const RequestInfo& requestInfo) {
     auto operation = beginOperation();
-    return executeWithToken(requestInfo, operation, operation->token);
+    auto task = executeOperation(requestInfo, operation);
+    task.setCancellationToken(operation->token);
+    return task;
 }
 
 Task<HttpResponse> HttpRequest::asyncExecute(const RequestInfo& requestInfo,
                                              CancellationToken token) {
     auto operation = beginOperation();
     operation->bindExternalCancellation(token);
-    return executeWithToken(requestInfo, operation,
-                            CancellationToken::link(token, operation->token));
+    auto task = executeOperation(requestInfo, operation);
+    task.setCancellationToken(CancellationToken::link(token, operation->token));
+    return task;
 }
 
-Task<HttpResponse> HttpRequest::executeWithToken(RequestInfo requestInfo,
-                                                 OperationStatePtr operation,
-                                                 CancellationToken token) {
+Task<HttpResponse> HttpRequest::executeOperation(RequestInfo requestInfo,
+                                                 OperationStatePtr operation) {
     LogI("[HttpRequest::asyncExecute] url={} method={}", requestInfo.url,
          static_cast<int>(requestInfo.methodType));
     try {
-        auto result = co_await HttpProcessor::process(requestInfo, std::move(token));
+        auto result = co_await HttpProcessor::process(requestInfo);
 
         if (result.has_value()) {
             LogI("[HttpRequest::asyncExecute] done, status={} url={}",
@@ -155,8 +157,8 @@ AsyncGenerator<StreamChunk> HttpRequest::streamingExecute(const RequestInfo& req
          static_cast<int>(requestInfo.methodType));
     auto operation = beginOperation();
     operation->bindExternalCancellation(token);
-    auto generator = HttpProcessor::processStreaming(
-        requestInfo, CancellationToken::link(token, operation->token));
+    auto generator = HttpProcessor::processStreaming(requestInfo);
+    generator.setCancellationToken(CancellationToken::link(token, operation->token));
     return streamWithOperation(std::move(generator), std::move(operation));
 }
 

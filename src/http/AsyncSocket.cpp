@@ -61,69 +61,42 @@ Socket createAndConfigureSocket(int32_t addressFamily) {
     return sock;
 }
 
-Task<void> tcpConnect(Socket socket,
-                      ConnectAddress address,
-                      std::chrono::milliseconds timeout,
-                      CancellationToken token = CancellationToken{}) {
+Task<void> tcpConnect(Socket socket, ConnectAddress address, std::chrono::milliseconds timeout) {
     auto connector = AsyncConnect(socket, std::move(address));
     connector.setTimeout(timeout);
-    connector.setCancellationToken(token);
+    // A cancelled connect throws CancelledException from the awaiter itself.
     auto result = co_await connector;
     if (!result) {
-        auto error = result.error();
-        if (error == Error::Cancelled) {
-            throw CancelledException("Connection cancelled");
-        }
-        throw NetworkException(error, "Connection failed");
+        throw NetworkException(result.error(), "Connection failed");
     }
 }
 
 Task<bool> waitFdReadyWithTimeout(Socket socket,
                                   FdReadyAwaiter::Interest interest,
-                                  Time::Deadline& deadline,
-                                  CancellationToken* externalToken = nullptr) {
+                                  Time::Deadline& deadline) {
     if (deadline.isExpired()) {
         co_return false;
     }
 
-    auto remaining = deadline.remaining();
+    const auto remaining = deadline.remaining();
     if (remaining <= std::chrono::milliseconds(0)) {
         co_return false;
     }
 
-    CancellationToken localToken;
-    auto timerId =
-        CoroutineScheduler::instance().scheduleCallback(remaining, [token = localToken]() mutable {
-            token.cancel();
-        });
-
-    ScopeGuard timerGuard([timerId]() {
-        CoroutineScheduler::instance().cancel(timerId);
-    });
-
-    // registration must outlive the entire wait, otherwise the callback gets unregistered
-    CancellationTokenRegistration registration;
-    if (externalToken) {
-        registration = externalToken->registerCallback([token = localToken]() mutable {
-            token.cancel();
-        });
-        if (!registration.isValid()) {
-            co_return false;
-        }
+    bool ready = false;
+    try {
+        ready = co_await FdReadyAwaiter(socket, interest, remaining);
+    } catch (const CancelledException&) {
+        // The caller tells cancellation from a deadline expiry by checking its own token.
+        co_return false;
     }
-
-    auto fdInterest = interest;
-
-    auto awaiter = withCancellation(FdReadyAwaiter(socket, fdInterest), localToken);
-    bool ready = co_await awaiter;
     if (!ready) {
         co_return false;
     }
 
-    if (externalToken && externalToken->isCancelled()) {
+    if (co_await coro::cancellation_requested()) {
         co_return false;
     }
-
     co_return !deadline.isExpired();
 }
 
@@ -144,9 +117,7 @@ AsyncSocket::~AsyncSocket() {
     close();
 }
 
-Task<void> AsyncSocket::asyncConnect(ConnectAddress address,
-                                     std::chrono::milliseconds timeout,
-                                     CancellationToken token) {
+Task<void> AsyncSocket::asyncConnect(ConnectAddress address, std::chrono::milliseconds timeout) {
     if (!address.isValid()) {
         throw std::invalid_argument("Invalid connect address");
     }
@@ -161,7 +132,7 @@ Task<void> AsyncSocket::asyncConnect(ConnectAddress address,
     ScopeGuard guard([this] {
         closeSocket(socket_);
     });
-    co_await tcpConnect(socket_, std::move(address), timeout, token);
+    co_await tcpConnect(socket_, std::move(address), timeout);
     guard.dismiss();
 
     LogI("[AsyncSocket::asyncConnect] tcp connect ok: fd={} timeoutMs={}", socket_,
@@ -174,12 +145,6 @@ Task<void> AsyncSocket::asyncConnect(ConnectAddress address,
 
 Task<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data,
                                                std::chrono::milliseconds timeout) {
-    return asyncSend(data, timeout, CancellationToken{});
-}
-
-Task<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data,
-                                               std::chrono::milliseconds timeout,
-                                               CancellationToken token) {
     if (socket_ == kInvalidSocket || !transport_) {
         co_return std::unexpected(Error::InvalidSocket);
     }
@@ -189,7 +154,7 @@ Task<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data,
     int32_t retryCount = 0;
 
     while (totalSent < data.size()) {
-        if (token.isCancelled()) {
+        if (co_await coro::cancellation_requested()) {
             co_return std::unexpected(Error::Cancelled);
         }
 
@@ -212,9 +177,9 @@ Task<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data,
                 continue;
             }
             bool ready = co_await waitFdReadyWithTimeout(socket_, transport_->retryInterest(result),
-                                                         deadline, &token);
+                                                         deadline);
             if (!ready) {
-                if (token.isCancelled()) {
+                if (co_await coro::cancellation_requested()) {
                     co_return std::unexpected(Error::Cancelled);
                 }
                 if (perf_) {
@@ -241,13 +206,6 @@ Task<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data,
 Task<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
                                                   size_t size,
                                                   std::chrono::milliseconds timeout) {
-    return asyncReceive(buffer, size, timeout, CancellationToken{});
-}
-
-Task<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
-                                                  size_t size,
-                                                  std::chrono::milliseconds timeout,
-                                                  CancellationToken token) {
     if (socket_ == kInvalidSocket || !transport_) {
         co_return std::unexpected(Error::InvalidSocket);
     }
@@ -256,7 +214,7 @@ Task<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
     int32_t waitCount = 0;
 
     while (true) {
-        if (token.isCancelled()) {
+        if (co_await coro::cancellation_requested()) {
             co_return std::unexpected(Error::Cancelled);
         }
 
@@ -281,9 +239,9 @@ Task<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
                 continue;
             }
             bool ready = co_await waitFdReadyWithTimeout(socket_, transport_->retryInterest(result),
-                                                         deadline, &token);
+                                                         deadline);
             if (!ready) {
-                if (token.isCancelled()) {
+                if (co_await coro::cancellation_requested()) {
                     co_return std::unexpected(Error::Cancelled);
                 }
                 if (perf_) {
@@ -330,8 +288,7 @@ TLSTransport::~TLSTransport() {
     shutdown();
 }
 
-Task<Error> TLSTransport::performHandshake(std::chrono::milliseconds timeout,
-                                           CancellationToken token) {
+Task<Error> TLSTransport::performHandshake(std::chrono::milliseconds timeout) {
     if (!sslPtr_) {
         LogW("TLS handshake failed: SSL create failed");
         co_return Error::HttpSslError;
@@ -339,7 +296,7 @@ Task<Error> TLSTransport::performHandshake(std::chrono::milliseconds timeout,
 
     Time::Deadline deadline(timeout);
     while (true) {
-        if (token.isCancelled()) {
+        if (co_await coro::cancellation_requested()) {
             co_return Error::Cancelled;
         }
         if (deadline.isExpired()) {
@@ -359,10 +316,11 @@ Task<Error> TLSTransport::performHandshake(std::chrono::milliseconds timeout,
         if (sslError == SSL_ERROR_WANT_READ || sslError == SSL_ERROR_WANT_WRITE) {
             lastInterest_ = (sslError == SSL_ERROR_WANT_READ) ? FdReadyAwaiter::Interest::Read
                                                               : FdReadyAwaiter::Interest::Write;
-            bool ready = co_await waitFdReadyWithTimeout(fd_, lastInterest_, deadline, &token);
+            bool ready = co_await waitFdReadyWithTimeout(fd_, lastInterest_, deadline);
             if (!ready) {
                 LogW("TLS handshake failed: waitFdReady timeout");
-                co_return token.isCancelled() ? Error::Cancelled : Error::ConnectionTimeout;
+                co_return (co_await coro::cancellation_requested()) ? Error::Cancelled
+                                                                    : Error::ConnectionTimeout;
             }
         } else if (sslError == SSL_ERROR_SYSCALL && savedErrno == EINTR) {
             continue;
@@ -372,10 +330,11 @@ Task<Error> TLSTransport::performHandshake(std::chrono::milliseconds timeout,
                                       ? FdReadyAwaiter::Interest::Write
                                       : FdReadyAwaiter::Interest::Read;
             lastInterest_ = interest;
-            bool ready = co_await waitFdReadyWithTimeout(fd_, interest, deadline, &token);
+            bool ready = co_await waitFdReadyWithTimeout(fd_, interest, deadline);
             if (!ready) {
                 LogW("TLS handshake failed: waitFdReady timeout");
-                co_return token.isCancelled() ? Error::Cancelled : Error::ConnectionTimeout;
+                co_return (co_await coro::cancellation_requested()) ? Error::Cancelled
+                                                                    : Error::ConnectionTimeout;
             }
         } else {
             const char* errStr = ERR_reason_error_string(ERR_get_error());

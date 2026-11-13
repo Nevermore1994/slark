@@ -5,48 +5,29 @@
 #include <chrono>
 #include <coroutine>
 #include <memory>
+#include <optional>
 
 #include "CoroutineControl.hpp"
 #include "CoroutineScheduler.hpp"
 #include "Error.h"
+#include "ExternalWaitBase.hpp"
 
 namespace slark {
 
-struct YieldAwaiter {
-    ~YieldAwaiter() {
-        if (gate_) {
-            gate_->disarm();
-        }
-    }
-
-    bool await_ready() const noexcept {
+struct YieldAwaiter final : ExternalWaitBase<YieldAwaiter, ScheduledCallback> {
+    [[nodiscard]] bool ready() const noexcept {
         return false;
     }
 
-    template <typename Promise>
-    bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
-        releaseTransferLeases(handle.promise());
-        markExternalAwait(handle.promise());
-        gate_ = makeResumeGate(handle);
-        auto weakGate = std::weak_ptr<ResumeGate>(gate_);
-        CoroutineScheduler::instance().scheduleCallback(std::chrono::milliseconds(0), [weakGate]() {
-            if (auto gate = weakGate.lock()) {
-                gate->signal();
-            }
-        });
-        cancelReg_ = bindGateCancellation(handle.promise(), gate_);
-        return gate_->arm();
+    [[nodiscard]] std::optional<ScheduledCallback> start(const std::shared_ptr<ResumeGate>& gate) {
+        return scheduleGateSignal(std::chrono::milliseconds(0), gate);
     }
 
-    void await_resume() {
-        if (gate_ && gate_->consumeCancelled()) {
-            throw CancelledException("Yield cancelled");
-        }
-    }
+    void finish() const noexcept {}
 
-private:
-    std::shared_ptr<ResumeGate> gate_;
-    CancellationTokenRegistration cancelReg_;
+    static const char* cancelMessage() noexcept {
+        return "Yield cancelled";
+    }
 };
 
 inline YieldAwaiter yield() noexcept {

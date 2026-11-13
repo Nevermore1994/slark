@@ -845,6 +845,41 @@ TEST(AsyncGeneratorTest, SetExecutorOnAMovedFromOrEmptyGeneratorIsANoOp) {
     EXPECT_NO_THROW(empty.setExecutor(std::make_shared<slark::SerialExecutor>()));
 }
 
+TEST(AsyncGeneratorTest, ProducerTokenIsLinkedWithTheConsumerTokenOnFirstNext) {
+    for (int source = 0; source < 2; ++source) {
+        auto gate = std::make_shared<slark::CompletionAwaiter<void>>();
+        auto generator = yieldAfterGate(gate);
+        slark::CancellationToken producerToken;
+        slark::CancellationToken consumerToken;
+        generator.setCancellationToken(producerToken);
+        auto consumer = nextFrom(generator);
+        consumer.setCancellationToken(consumerToken);
+        consumer.resume();
+        ASSERT_FALSE(consumer.isDone());
+
+        (source == 0 ? consumerToken : producerToken).cancel();
+        ASSERT_TRUE(slark::test::waitUntilDone(consumer)) << "source " << source;
+        EXPECT_THROW(consumer.result(), slark::CancelledException)
+            << "either token must reach the producer's wait, source " << source;
+        gate->complete();
+    }
+}
+
+TEST(AsyncGeneratorTest, SetCancellationTokenAfterFirstNextThrows) {
+    auto gate = std::make_shared<slark::CompletionAwaiter<void>>();
+    auto generator = yieldAfterGate(gate);
+    auto consumer = nextFrom(generator);
+    consumer.resume();
+    ASSERT_FALSE(consumer.isDone());
+
+    slark::CancellationToken token;
+    EXPECT_THROW(generator.setCancellationToken(token), std::logic_error)
+        << "the producer's token cannot change once its frame has started";
+    gate->complete();
+    ASSERT_TRUE(slark::test::waitUntilDone(consumer));
+    EXPECT_TRUE(consumer.result().has_value());
+}
+
 TEST(AsyncGeneratorTest, ConsumerIsResumedAfterYield) {
     auto task = consumeTwoValues();
 

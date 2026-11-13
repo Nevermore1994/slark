@@ -38,16 +38,23 @@ DnsResolver::DnsResolver(const Config& config) : state_(std::make_shared<State>(
 
 Task<AddressInfoPtr> DnsResolver::resolveAsync(const std::string& host,
                                                const std::string& port,
+                                               IPVersion ipVersion) {
+    return resolveAsyncImpl(state_, host, port, ipVersion);
+}
+
+Task<AddressInfoPtr> DnsResolver::resolveAsync(const std::string& host,
+                                               const std::string& port,
                                                IPVersion ipVersion,
                                                CancellationToken token) {
-    return resolveAsyncImpl(state_, host, port, ipVersion, std::move(token));
+    auto task = resolveAsyncImpl(state_, host, port, ipVersion);
+    task.setCancellationToken(std::move(token));
+    return task;
 }
 
 Task<AddressInfoPtr> DnsResolver::resolveAsyncImpl(std::shared_ptr<State> state,
                                                     std::string host,
                                                     std::string port,
-                                                    IPVersion ipVersion,
-                                                    CancellationToken token) {
+                                                    IPVersion ipVersion) {
     auto key = makeKey(host, port, ipVersion);
 
     {
@@ -59,19 +66,16 @@ Task<AddressInfoPtr> DnsResolver::resolveAsyncImpl(std::shared_ptr<State> state,
         }
     }
 
-    if (token.isCancelled()) {
-        co_return makeAddressInfo(nullptr);
+    if (co_await coro::cancellation_requested()) {
+        throw CancelledException("DNS resolution cancelled");
     }
 
     LogI("[DnsResolver::resolveAsync] resolving: {}:{} ipv={}", host, port,
          static_cast<int>(ipVersion));
 
     auto awaiter = std::make_shared<CompletionAwaiter<AddressInfoPtr>>();
-    // Cancellation propagation: a token cancel while DNS is suspended ends
-    // early without waiting for the thread pool
-    auto cancelReg = token.registerCallbackOrRun([awaiter]() {
-        awaiter->complete(makeAddressInfo(nullptr));
-    });
+    // A cancel while DNS is suspended ends the await at once with CancelledException, without
+    // waiting for the pool: the awaiter's implicit binding delivers it.
     auto future = state->threadPool.submit([host, port, ipVersion, awaiter]() {
         awaiter->complete(queryAddress(host, port, ipVersion));
     });

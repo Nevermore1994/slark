@@ -20,11 +20,15 @@ Task<std::expected<std::unique_ptr<AsyncSocket>, ErrorInfo>> resolveAndConnect(
     NetworkAddressPolicy addressPolicy,
     std::chrono::milliseconds connectTimeout,
     std::chrono::milliseconds& connectMs,
-    RequestPerf* perf,
-    CancellationToken& token) {
-    auto addrInfo =
-        co_await DnsResolver::instance().resolveAsync(host, std::to_string(port), ipVersion, token);
-    if (token.isCancelled()) {
+    RequestPerf* perf) {
+    AddressInfoPtr addrInfo;
+    try {
+        addrInfo = co_await DnsResolver::instance().resolveAsync(host, std::to_string(port),
+                                                                 ipVersion);
+    } catch (const CancelledException&) {
+        co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
+    }
+    if (co_await coro::cancellation_requested()) {
         co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
     }
     if (!addrInfo) {
@@ -47,7 +51,7 @@ Task<std::expected<std::unique_ptr<AsyncSocket>, ErrorInfo>> resolveAndConnect(
     }
 
     for (const auto* candidate = addrInfo.get(); candidate; candidate = candidate->ai_next) {
-        if (token.isCancelled()) {
+        if (co_await coro::cancellation_requested()) {
             co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
         }
 
@@ -81,7 +85,7 @@ Task<std::expected<std::unique_ptr<AsyncSocket>, ErrorInfo>> resolveAndConnect(
         socket->setPerf(perf);
         const auto connectStart = Time::nowTimeStamp();
         try {
-            co_await socket->asyncConnect(std::move(*candidateAddress), attemptBudget, token);
+            co_await socket->asyncConnect(std::move(*candidateAddress), attemptBudget);
         } catch (const CancelledException&) {
             LogW("[openConnection] connect cancelled for {}", host);
             co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
@@ -109,7 +113,7 @@ Task<std::expected<std::unique_ptr<AsyncSocket>, ErrorInfo>> resolveAndConnect(
             continue;
         }
 
-        if (token.isCancelled()) {
+        if (co_await coro::cancellation_requested()) {
             co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
         }
         connectMs = (Time::nowTimeStamp() - connectStart).toMilliSeconds();
@@ -137,19 +141,18 @@ Task<std::expected<std::unique_ptr<AsyncSocket>, ErrorInfo>> resolveAndConnect(
 Task<Error> performTlsHandshake(AsyncSocket& socket,
                                 const std::string& host,
                                 std::chrono::milliseconds tlsHandshakeTimeout,
-                                RequestPerf* perf,
-                                CancellationToken& token) {
+                                RequestPerf* perf) {
 #if ENABLE_HTTPS
     auto tlsTransport = std::make_unique<TLSTransport>(socket.getFd(), host);
     auto tlsTimeout = tlsHandshakeTimeout.count() > 0 ? tlsHandshakeTimeout : kDefaultTlsTimeout;
     auto tlsStart = Time::nowTimeStamp();
-    auto tlsResult = co_await tlsTransport->performHandshake(tlsTimeout, token);
+    auto tlsResult = co_await tlsTransport->performHandshake(tlsTimeout);
     auto tlsEnd = Time::nowTimeStamp();
 
     if (perf) {
         perf->connection.tlsHandshakeTimeMs = (tlsEnd - tlsStart).toMilliSeconds().count();
     }
-    if (tlsResult == slark::Error::Cancelled || token.isCancelled()) {
+    if (tlsResult == slark::Error::Cancelled || (co_await coro::cancellation_requested())) {
         co_return slark::Error::Cancelled;
     }
     if (tlsResult != slark::Error::Success) {
@@ -172,6 +175,21 @@ Task<Error> performTlsHandshake(AsyncSocket& socket,
 
 }  // namespace
 
+Task<OpenConnectionResult> openConnection(std::string host,
+                                          uint16_t port,
+                                          std::string scheme,
+                                          IPVersion ipVersion,
+                                          NetworkAddressPolicy addressPolicy,
+                                          std::chrono::milliseconds connectTimeout,
+                                          std::chrono::milliseconds tlsHandshakeTimeout,
+                                          RequestPerf* perf,
+                                          CancellationToken token) {
+    auto task = openConnection(std::move(host), port, std::move(scheme), ipVersion, addressPolicy,
+                               connectTimeout, tlsHandshakeTimeout, perf);
+    task.setCancellationToken(std::move(token));
+    return task;
+}
+
 Task<OpenConnectionResult> openConnection(
     std::string host,
     uint16_t port,
@@ -180,15 +198,14 @@ Task<OpenConnectionResult> openConnection(
     NetworkAddressPolicy addressPolicy,
     std::chrono::milliseconds connectTimeout,
     std::chrono::milliseconds tlsHandshakeTimeout,
-    RequestPerf* perf,
-    CancellationToken token) {
+    RequestPerf* perf) {
     if (perf) {
         perf->host = host;
     }
 
     std::chrono::milliseconds connectMs{0};
     auto socketResult = co_await resolveAndConnect(host, port, ipVersion, addressPolicy,
-                                                    connectTimeout, connectMs, perf, token);
+                                                   connectTimeout, connectMs, perf);
     if (!socketResult) {
         co_return std::unexpected(socketResult.error());
     }
@@ -196,8 +213,8 @@ Task<OpenConnectionResult> openConnection(
 
 #if ENABLE_HTTPS
     if (scheme == "https") {
-        const auto tlsError = co_await performTlsHandshake(*socket, host, tlsHandshakeTimeout, perf,
-                                                           token);
+        const auto tlsError =
+            co_await performTlsHandshake(*socket, host, tlsHandshakeTimeout, perf);
         if (tlsError != slark::Error::Success) {
             if (perf) {
                 perf->connection.connectResult = tlsError;

@@ -562,9 +562,8 @@ class AsyncGeneratorNextAwaiter {
             }
         }
         if constexpr (requires { consumer.promise().cancelToken(); }) {
-            const auto* token = consumer.promise().cancelToken();
-            if (token && !promise.cancelToken()) {
-                promise.setCancelToken(*token);
+            if (const auto* token = consumer.promise().cancelToken()) {
+                promise.inheritCancelToken(token);
             }
         }
 
@@ -691,6 +690,20 @@ class [[nodiscard]] AsyncGenerator : public NonCopyable {
             auto& promise = handle_type::from_address(producer.address()).promise();
             detail::requireNotStarted(promise, "AsyncGenerator::setExecutor after the first next()");
             promise.setExecutor(std::move(executor));
+        }
+    }
+
+    // Binds the producer's token before it is first driven; the first next() links it with the
+    // consumer's token. A closed generator has no producer left to bind.
+    void setCancellationToken(CancellationToken token) {
+        if (state_ == nullptr) {
+            return;
+        }
+        if (auto producer = state_->producer()) {
+            auto& promise = handle_type::from_address(producer.address()).promise();
+            detail::requireNotStarted(promise,
+                                      "AsyncGenerator::setCancellationToken after the first next()");
+            promise.setCancelToken(std::move(token));
         }
     }
 

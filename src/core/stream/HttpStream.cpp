@@ -170,8 +170,9 @@ void HttpStream::startLocked() noexcept {
     };
 
     auto task = streamTask(request, requestInfo, weakThis, weakControl, ownerThread_, gen, opId);
-    operation_.emplace(StreamOperation{gen, opId, request, std::move(task), std::move(control)});
-    operation_->task.resume();
+    operation_.emplace(StreamOperation{gen, opId, request, coro::makeJob(std::move(task)),
+                                       std::move(control)});
+    operation_->job.start();
 }
 
 void HttpStream::pause() noexcept {
@@ -228,17 +229,13 @@ void HttpStream::cancelCurrentOperation(uint64_t timeoutMs) noexcept {
     operation_->request->cancel();
     operation_->control->alive = false;
 
-    auto opTask = std::move(operation_->task);
+    auto job = std::move(operation_->job);
     operation_.reset();
+    job.cancel();
     mutex_.unlock();
 
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
-    while (!opTask.isDone()) {
-        if (std::chrono::steady_clock::now() >= deadline) {
-            LogW("[HttpStream::cancelCurrentOperation] task not settled within {}ms", timeoutMs);
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    if (!job.waitFor(std::chrono::milliseconds(timeoutMs))) {
+        LogW("[HttpStream::cancelCurrentOperation] task not settled within {}ms", timeoutMs);
     }
     mutex_.lock();
 }

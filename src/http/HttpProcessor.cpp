@@ -23,10 +23,9 @@ inline int64_t streamProgressLogBytes() {
 }
 
 Task<OpenConnectionResult> openRequestConnection(const RequestInfo& requestInfo,
-                                          const Url& url,
-                                          RequestPerf& perf,
-                                          CancellationToken& token) {
-    if (token.isCancelled()) {
+                                                 const Url& url,
+                                                 RequestPerf& perf) {
+    if (co_await coro::cancellation_requested()) {
         co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
     }
 
@@ -34,7 +33,7 @@ Task<OpenConnectionResult> openRequestConnection(const RequestInfo& requestInfo,
         url.host, url.portNumber(), url.scheme, requestInfo.ipVersion,
         requestInfo.isRedirectTarget ? requestInfo.networkAddressPolicy
                                      : NetworkAddressPolicy::AllowAny,
-        requestInfo.connectTimeout, requestInfo.tlsHandshakeTimeout, &perf, token);
+        requestInfo.connectTimeout, requestInfo.tlsHandshakeTimeout, &perf);
     if (!result) {
         LogE("[HttpProcessor::openRequestConnection] failed: error={} url={}",
              toString(result.error().retCode), requestInfo.url);
@@ -49,19 +48,16 @@ Task<OpenConnectionResult> openRequestConnection(const RequestInfo& requestInfo,
     co_return std::move(conn);
 }
 
-Task<ErrorInfo> sendRequest(OwnedConnection& conn,
-                            const RequestInfo& requestInfo,
-                            const Url& url,
-                            CancellationToken& token) {
+Task<ErrorInfo> sendRequest(OwnedConnection& conn, const RequestInfo& requestInfo, const Url& url) {
     const auto request = Util::buildRequestString(requestInfo, url, false);
-    auto error = co_await sendRequestPart(conn, request, requestInfo, token, "headers");
+    auto error = co_await sendRequestPart(conn, request, requestInfo, "headers");
     if (error.retCode != slark::Error::Success || requestInfo.bodyEmpty()) {
         co_return error;
     }
 
     const std::string_view body(reinterpret_cast<const char*>(requestInfo.body->data()),
                                 requestInfo.body->size());
-    co_return co_await sendRequestPart(conn, body, requestInfo, token, "body");
+    co_return co_await sendRequestPart(conn, body, requestInfo, "body");
 }
 
 }  // namespace
@@ -82,13 +78,18 @@ HttpProcessor::ParsedRequest HttpProcessor::parseUrl(const std::string& urlStr) 
     return result;
 }
 
-Task<ResponseResult> HttpProcessor::process(RequestInfo requestInfo, CancellationToken token) {
-    return collectResponse(std::move(requestInfo), std::move(token));
+Task<ResponseResult> HttpProcessor::process(RequestInfo requestInfo) {
+    return collectResponse(std::move(requestInfo));
 }
 
-Task<ResponseResult> HttpProcessor::collectResponse(RequestInfo requestInfo,
-                                                     CancellationToken token) {
-    auto events = processEvents(std::move(requestInfo), token);
+Task<ResponseResult> HttpProcessor::process(RequestInfo requestInfo, CancellationToken token) {
+    auto task = process(std::move(requestInfo));
+    task.setCancellationToken(std::move(token));
+    return task;
+}
+
+Task<ResponseResult> HttpProcessor::collectResponse(RequestInfo requestInfo) {
+    auto events = processEvents(std::move(requestInfo));
     HttpResponse response;
     DataPtr body = std::make_unique<Data>();
     bool hasHeaders = false;
@@ -96,8 +97,9 @@ Task<ResponseResult> HttpProcessor::collectResponse(RequestInfo requestInfo,
     while (true) {
         auto event = co_await events.next();
         if (!event.has_value()) {
-            co_return std::unexpected(token.isCancelled() ? ErrorInfo{slark::Error::Cancelled}
-                                                          : ErrorInfo{slark::Error::ConnectionReset});
+            co_return std::unexpected((co_await coro::cancellation_requested())
+                                          ? ErrorInfo{slark::Error::Cancelled}
+                                          : ErrorInfo{slark::Error::ConnectionReset});
         }
 
         switch (event->type) {
@@ -136,14 +138,13 @@ Task<ResponseResult> HttpProcessor::collectResponse(RequestInfo requestInfo,
     }
 }
 
-AsyncGenerator<HttpResponseEvent> HttpProcessor::processEvents(RequestInfo requestInfo,
-                                                                CancellationToken token) {
+AsyncGenerator<HttpResponseEvent> HttpProcessor::processEvents(RequestInfo requestInfo) {
     auto currentInfo = std::move(requestInfo);
     int32_t redirectCount = 0;
     RedirectPolicy redirectPolicy;
 
     while (true) {
-        auto events = executeEventsSingle(currentInfo, token);
+        auto events = executeEventsSingle(currentInfo);
         std::optional<HttpResponseEvent> connectedEvent;
         bool redirected = false;
 
@@ -151,8 +152,9 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::processEvents(RequestInfo reque
             auto event = co_await events.next();
             if (!event.has_value()) {
                 co_yield HttpResponseEvent::makeError(
-                    token.isCancelled() ? ErrorInfo{slark::Error::Cancelled}
-                                         : ErrorInfo{slark::Error::ConnectionReset});
+                    (co_await coro::cancellation_requested())
+                        ? ErrorInfo{slark::Error::Cancelled}
+                        : ErrorInfo{slark::Error::ConnectionReset});
                 co_return;
             }
 
@@ -208,9 +210,7 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::processEvents(RequestInfo reque
     }
 }
 
-AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(
-    RequestInfo requestInfo,
-    CancellationToken token) {
+AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(RequestInfo requestInfo) {
     const auto requestStart = Time::nowTimeStamp();
     RequestPerf perf;
     perf.host = requestInfo.url;
@@ -218,7 +218,7 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(
     LogI("[HttpProcessor::executeEventsSingle] enter url={} method={}", requestInfo.url,
          static_cast<int>(requestInfo.methodType));
 
-    if (token.isCancelled()) {
+    if (co_await coro::cancellation_requested()) {
         co_yield HttpResponseEvent::makeError(ErrorInfo{slark::Error::Cancelled}, std::move(perf));
         co_return;
     }
@@ -243,15 +243,16 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(
         }
         // Read the domain before requestInfo is moved into the request.
         const auto requestExecutor = requestInfo.session->executor();
-        auto sessionEvents = requestInfo.session->executeEvents(std::move(requestInfo), token);
+        auto sessionEvents = requestInfo.session->executeEvents(std::move(requestInfo));
         // Bind the producer to the session's execution domain before it is first driven.
         sessionEvents.setExecutor(requestExecutor);
         while (true) {
             auto event = co_await sessionEvents.next();
             if (!event.has_value()) {
                 co_yield HttpResponseEvent::makeError(
-                    token.isCancelled() ? ErrorInfo{slark::Error::Cancelled}
-                                         : ErrorInfo{slark::Error::ConnectionReset},
+                    (co_await coro::cancellation_requested())
+                        ? ErrorInfo{slark::Error::Cancelled}
+                        : ErrorInfo{slark::Error::ConnectionReset},
                     std::move(perf));
                 co_return;
             }
@@ -264,14 +265,14 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(
         }
     }
 
-    auto connectionResult = co_await openRequestConnection(requestInfo, *parsed.url, perf, token);
+    auto connectionResult = co_await openRequestConnection(requestInfo, *parsed.url, perf);
     if (!connectionResult) {
         co_yield HttpResponseEvent::makeError(connectionResult.error(), std::move(perf));
         co_return;
     }
     auto conn = std::move(*connectionResult);
 
-    const auto sendError = co_await sendRequest(*conn, requestInfo, *parsed.url, token);
+    const auto sendError = co_await sendRequest(*conn, requestInfo, *parsed.url);
     if (sendError.retCode != slark::Error::Success) {
         co_yield HttpResponseEvent::makeError(sendError, std::move(perf));
         co_return;
@@ -292,7 +293,7 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(
 
     while (!parser.isCompleted() && !parser.hasError()) {
         auto read = co_await http::readStreamChunk(conn, readBuffer, overallDeadline, requestInfo,
-                                                   perf, token, "HttpProcessor::readStreamChunk");
+                                                   perf, "HttpProcessor::readStreamChunk");
         if (read.status == StreamReadStatus::Error) {
             co_yield HttpResponseEvent::makeError(std::move(read.error), std::move(perf));
             co_return;
@@ -344,13 +345,12 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(
     }
 }
 
-AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(RequestInfo requestInfo,
-                                                            CancellationToken token) {
-    auto events = processEvents(std::move(requestInfo), token);
+AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(RequestInfo requestInfo) {
+    auto events = processEvents(std::move(requestInfo));
     while (true) {
         auto event = co_await events.next();
         if (!event.has_value()) {
-            co_yield StreamChunk::makeError(token.isCancelled()
+            co_yield StreamChunk::makeError((co_await coro::cancellation_requested())
                                                 ? ErrorInfo{slark::Error::Cancelled}
                                                 : ErrorInfo{slark::Error::ConnectionReset});
             co_return;
@@ -367,7 +367,7 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(RequestInfo requestI
                 // The consumer may have cancelled between the header and this body chunk
                 // (both come from the same read). Once cancelled, no further data is
                 // delivered; the stream ends with Cancelled instead.
-                if (token.isCancelled()) {
+                if (co_await coro::cancellation_requested()) {
                     co_yield StreamChunk::makeError(ErrorInfo{slark::Error::Cancelled});
                     co_return;
                 }
@@ -381,6 +381,13 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(RequestInfo requestI
                 co_return;
         }
     }
+}
+
+AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(RequestInfo requestInfo,
+                                                            CancellationToken token) {
+    auto stream = processStreaming(std::move(requestInfo));
+    stream.setCancellationToken(std::move(token));
+    return stream;
 }
 
 }  // namespace slark::http

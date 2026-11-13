@@ -166,6 +166,29 @@ TEST(CancellationPropagationTest, LinkedTokenKeepsItsSourcesAlive) {
         << "a temporary intermediate link must not drop the forwarding registration";
 }
 
+namespace {
+
+Task<bool> readFrameCancellation() {
+    co_return co_await slark::coro::cancellation_requested();
+}
+
+}  // namespace
+
+TEST(CancellationPropagationTest, CancellationRequestedReadsTheFrameTokenWithoutSuspending) {
+    CancellationToken token;
+    auto bound = readFrameCancellation();
+    bound.setCancellationToken(token);
+    token.cancel();
+    bound.resume();
+    ASSERT_TRUE(bound.isDone()) << "reading the state must never suspend the frame";
+    EXPECT_TRUE(bound.result());
+
+    auto unbound = readFrameCancellation();
+    unbound.resume();
+    ASSERT_TRUE(unbound.isDone());
+    EXPECT_FALSE(unbound.result()) << "a frame without a token is never cancelled";
+}
+
 TEST(CancellationPropagationTest, TimerWakesOnCancel) {
     CancellationToken token;
     auto task = waitTimer(5000ms);
@@ -213,7 +236,7 @@ TEST(CancellationPropagationTest, YieldThrowsWhenAlreadyCancelled) {
     EXPECT_THROW(task.result(), CancelledException);
 }
 
-TEST(CancellationPropagationTest, IoOperationReportsCancelledError) {
+TEST(CancellationPropagationTest, IoOperationReportsCancelledAsAnException) {
     CancellationToken token;
     auto task = awaitNeverCompletes();
     task.setCancellationToken(token);
@@ -222,9 +245,8 @@ TEST(CancellationPropagationTest, IoOperationReportsCancelledError) {
 
     token.cancel();
     ASSERT_TRUE(task.isDone());
-    const auto result = task.result();
-    ASSERT_FALSE(result.has_value());
-    EXPECT_EQ(result.error(), Error::Cancelled);
+    EXPECT_THROW(task.result(), CancelledException)
+        << "cancelling an IO wait is an exception, like every other suspension point";
 }
 
 TEST(CancellationPropagationTest, DeepChainInheritsParentToken) {
@@ -468,9 +490,7 @@ TEST(CancellationPropagationTest, IoOperationWithCancelledTokenDoesNotStartIo) {
     task.setCancellationToken(token);
     task.resume();
     ASSERT_TRUE(task.isDone());
-    const auto result = task.result();
-    ASSERT_FALSE(result.has_value());
-    EXPECT_EQ(result.error(), Error::Cancelled);
+    EXPECT_THROW(task.result(), CancelledException);
     EXPECT_EQ(started.load(), 0);
 }
 
@@ -480,9 +500,7 @@ TEST(CancellationPropagationTest, CancelDuringOperationStartDoesNotSuspend) {
     task.setCancellationToken(token);
     task.resume();
     ASSERT_TRUE(task.isDone());
-    const auto result = task.result();
-    ASSERT_FALSE(result.has_value());
-    EXPECT_EQ(result.error(), Error::Cancelled);
+    EXPECT_THROW(task.result(), CancelledException);
 }
 
 TEST(CancellationPropagationTest, WhenAnyChildrenInheritParentToken) {

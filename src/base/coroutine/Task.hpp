@@ -478,6 +478,35 @@ private:
     std::optional<CancellationToken> token_;
 };
 
+// Reads whether the running frame's cancellation has been requested. Never suspends.
+class CancellationRequestedAwaiter {
+public:
+    bool await_ready() const noexcept {
+        return false;
+    }
+
+    template <typename Promise>
+    bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
+        if constexpr (requires { handle.promise().cancelToken(); }) {
+            if (const auto* token = handle.promise().cancelToken()) {
+                cancelled_ = token->isCancelled();
+            }
+        }
+        return false;
+    }
+
+    bool await_resume() const noexcept {
+        return cancelled_;
+    }
+
+private:
+    bool cancelled_ = false;
+};
+
+inline CancellationRequestedAwaiter cancellation_requested() noexcept {
+    return {};
+}
+
 inline CancellationTokenAwaiter cancellation_token() noexcept {
     return {};
 }

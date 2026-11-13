@@ -17,6 +17,7 @@
 #include "CancellationToken.h"
 #include "Error.h"
 #include "Executor.h"
+#include "ExternalWaitBase.hpp"
 #include "Log.hpp"
 #include "Task.hpp"
 
@@ -109,49 +110,33 @@ Task<void> scopeWrapper(std::shared_ptr<ScopeCore> core, std::uint64_t id, Task<
 
 }  // namespace detail
 
-class JoinAwaiter {
- public:
+namespace detail {
+
+// Join waiters stay in the scope's join list until it settles, so there is nothing to unlink.
+struct JoinSlot {};
+
+}  // namespace detail
+
+class JoinAwaiter final : public ExternalWaitBase<JoinAwaiter, detail::JoinSlot> {
+public:
     explicit JoinAwaiter(std::shared_ptr<detail::ScopeCore> core) noexcept
         : core_(std::move(core)) {}
 
-    JoinAwaiter(const JoinAwaiter&) = delete;
-    JoinAwaiter& operator=(const JoinAwaiter&) = delete;
-    JoinAwaiter(JoinAwaiter&&) = delete;
-    JoinAwaiter& operator=(JoinAwaiter&&) = delete;
-
-    ~JoinAwaiter() {
-        if (gate_) {
-            gate_->disarm();
-        }
-    }
-
-    bool await_ready() const noexcept {
+    [[nodiscard]] bool ready() const noexcept {
         std::lock_guard lock(core_->mutex);
         return core_->children.empty();
     }
 
-    template <typename Promise>
-    bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
-        releaseTransferLeases(handle.promise());
-        markExternalAwait(handle.promise());
-        gate_ = makeResumeGate(handle);
-        {
-            std::lock_guard lock(core_->mutex);
-            if (core_->children.empty()) {
-                gate_->disarm();
-                return false;
-            }
-            core_->joinWaiters.push_back(gate_);
+    [[nodiscard]] std::optional<detail::JoinSlot> start(const std::shared_ptr<ResumeGate>& gate) {
+        std::lock_guard lock(core_->mutex);
+        if (core_->children.empty()) {
+            return std::nullopt;
         }
-        registerExternalGate(handle.promise(), gate_);
-        cancelReg_ = bindGateCancellation(handle.promise(), gate_);
-        return gate_->arm();
+        core_->joinWaiters.push_back(gate);
+        return detail::JoinSlot{};
     }
 
-    void await_resume() {
-        if (gate_ && gate_->consumeCancelled()) {
-            throw CancelledException("Scope join cancelled");
-        }
+    void finish() {
         std::exception_ptr failure;
         {
             std::lock_guard lock(core_->mutex);
@@ -165,10 +150,12 @@ class JoinAwaiter {
         }
     }
 
- private:
+    static const char* cancelMessage() noexcept {
+        return "Scope join cancelled";
+    }
+
+private:
     std::shared_ptr<detail::ScopeCore> core_;
-    std::shared_ptr<ResumeGate> gate_;
-    CancellationTokenRegistration cancelReg_;
 };
 
 class AsyncScope {

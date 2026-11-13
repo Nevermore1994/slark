@@ -14,6 +14,7 @@
 #include "IStream.h"
 #include "M3U8Parser.h"
 #include "MediaPlaylist.h"
+#include "Job.hpp"
 #include "Task.hpp"
 #include "TaskThread.h"
 #include "Timer.h"
@@ -69,7 +70,7 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
         uint64_t generation = 0;
         uint64_t operationId = 0;
         std::shared_ptr<http::HttpRequest> request;
-        Task<void> task;
+        coro::Job<void> job;
         std::shared_ptr<StreamControl> control;
     };
 
@@ -79,7 +80,7 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
         uint64_t sequence = 0;
         bool responseValidated = false;
         std::shared_ptr<http::HttpRequest> request;
-        Task<void> task;
+        coro::Job<void> job;
         std::shared_ptr<StreamControl> control;
     };
 

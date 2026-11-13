@@ -47,12 +47,6 @@ class OwnedConnection {
         co_return co_await socket_->asyncSend(data, timeout);
     }
 
-    Task<AsyncSocketResult> asyncSend(std::string_view data,
-                                      std::chrono::milliseconds timeout,
-                                      CancellationToken token) {
-        co_return co_await socket_->asyncSend(data, timeout, token);
-    }
-
     void close() noexcept {
         if (socket_) {
             socket_->close();
@@ -103,7 +97,17 @@ Task<OpenConnectionResult> openConnection(
     NetworkAddressPolicy addressPolicy = NetworkAddressPolicy::AllowAny,
     std::chrono::milliseconds connectTimeout = std::chrono::milliseconds{0},
     std::chrono::milliseconds tlsHandshakeTimeout = std::chrono::milliseconds{0},
-    RequestPerf* perf = nullptr,
-    CancellationToken token = {});
+    RequestPerf* perf = nullptr);
+
+// Binds the caller's token to the connection attempt; cancelling it ends the attempt.
+Task<OpenConnectionResult> openConnection(std::string host,
+                                          uint16_t port,
+                                          std::string scheme,
+                                          IPVersion ipVersion,
+                                          NetworkAddressPolicy addressPolicy,
+                                          std::chrono::milliseconds connectTimeout,
+                                          std::chrono::milliseconds tlsHandshakeTimeout,
+                                          RequestPerf* perf,
+                                          CancellationToken token);
 
 }  // namespace slark::http

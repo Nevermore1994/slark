@@ -8,6 +8,7 @@
 #include <chrono>
 #include <latch>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -27,9 +28,14 @@ using slark::test::waitUntilDone;
 namespace {
 
 Task<IOResult<std::string>> awaitManual(std::shared_ptr<ManualIO> io, std::atomic<int>* resumes) {
-    auto outcome = co_await *io;
-    resumes->fetch_add(1, std::memory_order_relaxed);
-    co_return outcome;
+    try {
+        auto outcome = co_await *io;
+        resumes->fetch_add(1, std::memory_order_relaxed);
+        co_return outcome;
+    } catch (const slark::CancelledException&) {
+        resumes->fetch_add(1, std::memory_order_relaxed);
+        throw;
+    }
 }
 
 }  // namespace
@@ -198,9 +204,19 @@ TEST(AsyncIOOperationTest, FailRacingCancelHasExactlyOneOutcome) {
 
         ASSERT_TRUE(waitUntilDone(task)) << "round " << round;
         EXPECT_EQ(resumes.load(), 1) << "round " << round;
-        const auto outcome = task.result();
-        ASSERT_FALSE(outcome.has_value()) << "round " << round;
-        EXPECT_TRUE(outcome.error() == Error::NetworkError || outcome.error() == Error::Cancelled)
-            << "round " << round;
+        // Exactly one winner: a failure is a value, a cancellation is an exception.
+        std::optional<Error> failure;
+        bool cancelled = false;
+        try {
+            const auto outcome = task.result();
+            ASSERT_FALSE(outcome.has_value()) << "round " << round;
+            failure = outcome.error();
+        } catch (const slark::CancelledException&) {
+            cancelled = true;
+        }
+        EXPECT_NE(cancelled, failure.has_value()) << "round " << round;
+        if (failure) {
+            EXPECT_EQ(*failure, Error::NetworkError) << "round " << round;
+        }
     }
 }

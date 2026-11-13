@@ -1,7 +1,6 @@
 //
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
-
 #include "Http1Session.h"
 
 #include <algorithm>
@@ -68,8 +67,7 @@ std::optional<Url> Http1Session::parseUrl(const std::string& urlString, ErrorInf
 
 Task<Http1Session::ConnectionResult> Http1Session::acquireConnection(const RequestInfo& requestInfo,
                                                                      const Url& url,
-                                                                     RequestPerf& perf,
-                                                                     CancellationToken& token) {
+                                                                     RequestPerf& perf) {
     std::shared_ptr<OwnedConnection> staleConnection;
     uint64_t generation = 0;
     {
@@ -97,7 +95,7 @@ Task<Http1Session::ConnectionResult> Http1Session::acquireConnection(const Reque
     if (staleConnection) {
         staleConnection->close();
     }
-    if (token.isCancelled()) {
+    if (co_await coro::cancellation_requested()) {
         co_return std::unexpected(ErrorInfo{slark::Error::Cancelled});
     }
 
@@ -105,7 +103,7 @@ Task<Http1Session::ConnectionResult> Http1Session::acquireConnection(const Reque
         url.host, url.portNumber(), url.scheme, requestInfo.ipVersion,
         requestInfo.isRedirectTarget ? requestInfo.networkAddressPolicy
                                      : NetworkAddressPolicy::AllowAny,
-        requestInfo.connectTimeout, requestInfo.tlsHandshakeTimeout, &perf, token);
+        requestInfo.connectTimeout, requestInfo.tlsHandshakeTimeout, &perf);
     if (!result) {
         co_return std::unexpected(result.error());
     }
@@ -115,7 +113,7 @@ Task<Http1Session::ConnectionResult> Http1Session::acquireConnection(const Reque
         co_return std::unexpected(ErrorInfo{slark::Error::ConnectionFailed});
     }
 
-    bool discard = token.isCancelled();
+    bool discard = co_await coro::cancellation_requested();
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (generation != generation_) {
@@ -133,8 +131,9 @@ Task<Http1Session::ConnectionResult> Http1Session::acquireConnection(const Reque
 
     if (discard) {
         newConnection->close();
-        co_return std::unexpected(token.isCancelled() ? ErrorInfo{slark::Error::Cancelled}
-                                                      : ErrorInfo{slark::Error::ConnectionReset});
+        co_return std::unexpected((co_await coro::cancellation_requested())
+                                      ? ErrorInfo{slark::Error::Cancelled}
+                                      : ErrorInfo{slark::Error::ConnectionReset});
     }
     if (newConnection) {
         co_return newConnection;
@@ -169,37 +168,52 @@ void Http1Session::discardConnection(const std::shared_ptr<OwnedConnection>& con
 
 Task<ErrorInfo> Http1Session::sendRequest(const std::shared_ptr<OwnedConnection>& connection,
                                           const RequestInfo& requestInfo,
-                                          const Url& url,
-                                          CancellationToken& token) {
+                                          const Url& url) {
     const auto request = Util::buildRequestString(
         requestInfo, url, requestInfo.connectionMode == HttpConnectionMode::KeepAlive);
     if (request.empty()) {
         co_return ErrorInfo{slark::Error::InvalidArgument};
     }
 
-    auto error = co_await sendRequestPart(*connection, request, requestInfo, token, "headers");
+    auto error = co_await sendRequestPart(*connection, request, requestInfo, "headers");
     if (error.retCode != slark::Error::Success || requestInfo.bodyEmpty()) {
         co_return error;
     }
 
     const std::string_view body(reinterpret_cast<const char*>(requestInfo.body->data()),
                                 requestInfo.body->size());
-    co_return co_await sendRequestPart(*connection, body, requestInfo, token, "body");
+    co_return co_await sendRequestPart(*connection, body, requestInfo, "body");
 }
 
-AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo requestInfo,
-                                                              CancellationToken token) {
-    // Keep the session alive for the whole request: close()/destruction only cancels the
-    // request and retires the cached connection, so an in-flight request must not leave a
-    // dangling session behind. Null for a stack-allocated session (caller must outlive it).
-    const auto self = weak_from_this().lock();
-
+AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo requestInfo) {
     CancellationToken sessionToken;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         sessionToken = closeToken_;
     }
-    auto effectiveToken = CancellationToken::link(token, sessionToken);
+    auto events = executeEventsImpl(std::move(requestInfo));
+    events.setCancellationToken(std::move(sessionToken));
+    return events;
+}
+
+AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo requestInfo,
+                                                              CancellationToken token) {
+    CancellationToken sessionToken;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        sessionToken = closeToken_;
+    }
+    auto events = executeEventsImpl(std::move(requestInfo));
+    events.setCancellationToken(CancellationToken::link(token, sessionToken));
+    return events;
+}
+
+AsyncGenerator<HttpResponseEvent> Http1Session::executeEventsImpl(RequestInfo requestInfo) {
+    // Keep the session alive for the whole request: close()/destruction only cancels the
+    // request and retires the cached connection, so an in-flight request must not leave a
+    // dangling session behind. Null for a stack-allocated session (caller must outlive it).
+    const auto self = weak_from_this().lock();
+
     if (busy_.exchange(true, std::memory_order_acq_rel)) {
         co_yield HttpResponseEvent::makeError(ErrorInfo{slark::Error::InvalidOperation});
         co_return;
@@ -209,7 +223,7 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo reques
     RequestPerf perf;
     perf.host = requestInfo.url;
     const auto requestStart = Time::nowTimeStamp();
-    if (effectiveToken.isCancelled()) {
+    if (co_await coro::cancellation_requested()) {
         busyGuard.release();
         co_yield HttpResponseEvent::makeError(ErrorInfo{slark::Error::Cancelled}, std::move(perf));
         co_return;
@@ -228,8 +242,7 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo reques
         co_return;
     }
 
-    auto connectionResult =
-        co_await acquireConnection(requestInfo, *parsedUrl, perf, effectiveToken);
+    auto connectionResult = co_await acquireConnection(requestInfo, *parsedUrl, perf);
     if (!connectionResult) {
         busyGuard.release();
         co_yield HttpResponseEvent::makeError(connectionResult.error(), std::move(perf));
@@ -237,8 +250,7 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo reques
     }
     auto connection = std::move(*connectionResult);
 
-    const auto sendError =
-        co_await sendRequest(connection, requestInfo, *parsedUrl, effectiveToken);
+    const auto sendError = co_await sendRequest(connection, requestInfo, *parsedUrl);
     if (sendError.retCode != slark::Error::Success) {
         discardConnection(connection);
         busyGuard.release();
@@ -267,7 +279,7 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo reques
             parser.feed(reinterpret_cast<const Byte*>(pending.data()), pending.size());
         } else {
             auto read = co_await http::readStreamChunk(connection, readBuffer, overallDeadline,
-                                                       requestInfo, perf, effectiveToken,
+                                                       requestInfo, perf,
                                                        "Http1Session::readStreamChunk");
             if (read.status == StreamReadStatus::Error) {
                 discardConnection(connection);
@@ -315,7 +327,7 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo reques
         co_return;
     }
 
-    if (effectiveToken.isCancelled()) {
+    if (co_await coro::cancellation_requested()) {
         discardConnection(connection);
         busyGuard.release();
         co_yield HttpResponseEvent::makeError(ErrorInfo{slark::Error::Cancelled}, std::move(perf));

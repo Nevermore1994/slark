@@ -62,17 +62,16 @@ inline HttpResponseParser::Callbacks makeParserCallbacks(ParserEventState& state
 inline Task<ErrorInfo> sendRequestPart(OwnedConnection& connection,
                                        std::string_view data,
                                        const RequestInfo& requestInfo,
-                                       CancellationToken& token,
                                        std::string_view partName) {
-    if (token.isCancelled()) {
+    if (co_await slark::coro::cancellation_requested()) {
         co_return ErrorInfo{slark::Error::Cancelled};
     }
 
-    auto result = co_await connection.asyncSend(data, requestInfo.writeTimeout, token);
+    auto result = co_await connection.asyncSend(data, requestInfo.writeTimeout);
     if (result) {
         co_return ErrorInfo{};
     }
-    if (token.isCancelled()) {
+    if (co_await slark::coro::cancellation_requested()) {
         co_return ErrorInfo{slark::Error::Cancelled};
     }
 
@@ -111,11 +110,10 @@ Task<StreamReadResult> readStreamChunk(const ConnectionHolder& connection,
                                        const Time::Deadline& overallDeadline,
                                        const RequestInfo& requestInfo,
                                        RequestPerf& perf,
-                                       CancellationToken& token,
                                        std::string_view logTag) {
     StreamReadResult result;
 
-    if (token.isCancelled()) {
+    if (co_await coro::cancellation_requested()) {
         result.status = StreamReadStatus::Error;
         result.error = ErrorInfo{slark::Error::Cancelled};
         co_return result;
@@ -140,10 +138,9 @@ Task<StreamReadResult> readStreamChunk(const ConnectionHolder& connection,
     }
 
     const auto readTimeout = std::min(requestInfo.readIdleTimeout, overallDeadline.remaining());
-    auto readResult =
-        co_await socket->asyncReceive(readBuffer.data(), readBuffer.size(), readTimeout, token);
+    auto readResult = co_await socket->asyncReceive(readBuffer.data(), readBuffer.size(), readTimeout);
     if (!readResult) {
-        if (token.isCancelled()) {
+        if (co_await coro::cancellation_requested()) {
             result.status = StreamReadStatus::Error;
             result.error = ErrorInfo{slark::Error::Cancelled};
             co_return result;

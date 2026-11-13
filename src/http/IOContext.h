@@ -17,6 +17,7 @@
 
 #include "AsyncIOOperation.hpp"
 #include "CancellationToken.h"
+#include "ExternalWaitBase.hpp"
 #include "EventLoop.h"
 #include "Socket.hpp"
 #include "Time.hpp"
@@ -187,7 +188,22 @@ class AsyncRead : public slark::AsyncIOOperationBase<AsyncRead, size_t> {
         return value_;
     }
 
- private:
+    // Reached after readiness: the read is attempted once more. Still-empty input is WouldBlock.
+    IOResult<size_t> resumeAfterReadiness() {
+        const ssize_t result = ::read(fd_, buffer_, size_);
+        if (result > 0) {
+            return static_cast<size_t>(result);
+        }
+        if (result == 0) {
+            return std::unexpected(Error::ConnectionReset);
+        }
+        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+            return std::unexpected(Error::WouldBlock);
+        }
+        return std::unexpected(Error::NetworkError);
+    }
+
+private:
     void* buffer_;
     size_t size_;
     size_t value_{0};
@@ -230,131 +246,104 @@ class AsyncWrite : public slark::AsyncIOOperationBase<AsyncWrite, size_t> {
         return value_;
     }
 
- private:
+    // Reached after readiness: the write is attempted once more. Still-full output is WouldBlock.
+    IOResult<size_t> resumeAfterReadiness() {
+        const auto result = ::write(fd_, buffer_, size_);
+        if (result >= 0) {
+            return static_cast<size_t>(result);
+        }
+        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+            return std::unexpected(Error::WouldBlock);
+        }
+        return std::unexpected(Error::BrokenPipe);
+    }
+
+private:
     const void* buffer_;
     size_t size_;
     size_t value_{0};
 };
 
-class FdReadyAwaiter {
+// Readiness of one fd, optionally bounded by a deadline. The fd continuation and the deadline
+// both signal the same gate: readiness resumes the frame, an elapsed deadline reports "not
+// ready". Cancellation of the frame's token raises CancelledException.
+struct FdRegistration final {
+    FdRegistration(EventLoop::RegistrationToken registration, slark::ScheduledCallback timer) noexcept
+        : token(std::move(registration)), deadline(std::move(timer)) {}
+
+    FdRegistration(FdRegistration&& other) noexcept
+        : token(std::exchange(other.token, {})), deadline(std::move(other.deadline)) {}
+
+    FdRegistration& operator=(FdRegistration&& other) noexcept {
+        if (this != &other) {
+            unregister();
+            token = std::exchange(other.token, {});
+            deadline = std::move(other.deadline);
+        }
+        return *this;
+    }
+
+    FdRegistration(const FdRegistration&) = delete;
+    FdRegistration& operator=(const FdRegistration&) = delete;
+
+    ~FdRegistration() {
+        unregister();
+    }
+
+    void unregister() noexcept {
+        if (token.valid()) {
+            token.cancel();
+            token = {};
+        }
+    }
+
+    EventLoop::RegistrationToken token;
+    slark::ScheduledCallback deadline;
+};
+
+class FdReadyAwaiter final
+    : public slark::ExternalWaitBase<FdReadyAwaiter, FdRegistration, bool> {
  public:
     enum class Interest : uint8_t { Read, Write };
 
-    FdReadyAwaiter(int32_t fd, Interest interest) noexcept : fd_(fd), interest_(interest) {}
+    FdReadyAwaiter(int32_t fd,
+                   Interest interest,
+                   std::optional<std::chrono::milliseconds> timeout = {}) noexcept
+        : fd_(fd), interest_(interest), timeout_(timeout) {}
 
-    FdReadyAwaiter(FdReadyAwaiter&&) = default;
-    FdReadyAwaiter& operator=(FdReadyAwaiter&&) = default;
-
-    ~FdReadyAwaiter() {
-        cancel();
-    }
-
-    bool await_ready() const noexcept {
+    [[nodiscard]] bool ready() const noexcept {
         return false;
     }
 
-    void setResumeGate(std::shared_ptr<ResumeGate> gate) noexcept {
-        gate_ = std::move(gate);
-    }
-
-    void cancel() noexcept {
-        if (gate_) {
-            gate_->disarm();
+    [[nodiscard]] std::optional<FdRegistration> start(const std::shared_ptr<ResumeGate>& gate) {
+        const auto fdInterest = (interest_ == Interest::Read) ? FdInterest::Read : FdInterest::Write;
+        auto registration =
+            IOContext::instance().registerContinuationWithInterest(fd_, fdInterest, gate);
+        slark::ScheduledCallback deadline;
+        if (timeout_) {
+            deadline = slark::ScheduledCallback(slark::CoroutineScheduler::instance().scheduleCallback(
+                *timeout_, [weak = std::weak_ptr<ResumeGate>(gate)]() {
+                    if (auto locked = weak.lock()) {
+                        locked->signalTerminal();
+                    }
+                }));
         }
-        token_.cancel();
+        return FdRegistration(std::move(registration), std::move(deadline));
     }
 
-    template <typename Promise>
-    bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
-        releaseTransferLeases(handle.promise());
-        markExternalAwait(handle.promise());
-        if (!gate_) {
-            gate_ = makeResumeGate(handle);
-        }
-
-        auto fdInterest = (interest_ == Interest::Read) ? FdInterest::Read : FdInterest::Write;
-        token_ = IOContext::instance().registerContinuationWithInterest(fd_, fdInterest, gate_);
-        cancelReg_ = bindCancellation(handle.promise(), [weak = std::weak_ptr<ResumeGate>(gate_)] {
-            if (auto gate = weak.lock()) {
-                gate->signalTerminal();
-            }
-        });
-        return gate_->arm();
-    }
-
-    void await_resume() noexcept {
+    bool finish() {
         // A terminal notification means the wait was abandoned, not satisfied.
-        notReady_ = gate_ && gate_->consumeNotReady();
+        return gate() && !gate()->consumeNotReady();
     }
 
-    [[nodiscard]] bool isNotReady() const noexcept {
-        return notReady_;
+    static const char* cancelMessage() noexcept {
+        return "Fd wait cancelled";
     }
 
  private:
     int32_t fd_;
     Interest interest_;
-    std::shared_ptr<ResumeGate> gate_;
-    EventLoop::RegistrationToken token_;
-    slark::CancellationTokenRegistration cancelReg_;
-    bool notReady_{false};
+    std::optional<std::chrono::milliseconds> timeout_;
 };
-
-template <typename Awaiter>
-class CancellableAwaiter {
- public:
-    static_assert(
-        requires(Awaiter& awaiter, std::shared_ptr<ResumeGate> gate) {
-            awaiter.setResumeGate(std::move(gate));
-        },
-        "CancellableAwaiter requires an awaiter with a shared ResumeGate");
-
-    CancellableAwaiter(Awaiter&& awaiter, slark::CancellationToken token) noexcept
-        : awaiter_(std::move(awaiter)), token_(std::move(token)) {}
-
-    CancellableAwaiter(CancellableAwaiter&&) = default;
-    CancellableAwaiter& operator=(CancellableAwaiter&&) = default;
-
-    bool await_ready() const noexcept {
-        return token_.isCancelled() || awaiter_.await_ready();
-    }
-
-    template <typename Promise>
-    bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
-        releaseTransferLeases(handle.promise());
-        markExternalAwait(handle.promise());
-        if (token_.isCancelled()) {
-            return false;
-        }
-        gate_ = makeResumeGate(handle);
-        awaiter_.setResumeGate(gate_);
-        auto weakGate = std::weak_ptr<ResumeGate>(gate_);
-        cancelReg_ = token_.registerCallbackOrRun([weakGate]() {
-            if (auto gate = weakGate.lock()) {
-                gate->signal();
-            }
-        });
-        return awaiter_.await_suspend(handle);
-    }
-
-    bool await_resume() {
-        awaiter_.await_resume();
-        if (awaiter_.isNotReady()) {
-            return false;
-        }
-        return !token_.isCancelled();
-    }
-
- private:
-    Awaiter awaiter_;
-    slark::CancellationToken token_;
-    slark::CancellationTokenRegistration cancelReg_;
-    std::shared_ptr<ResumeGate> gate_;
-};
-
-template <typename Awaiter>
-inline auto withCancellation(Awaiter awaiter, slark::CancellationToken token) noexcept {
-    return CancellableAwaiter<Awaiter>{std::move(awaiter), std::move(token)};
-}
 
 }  // namespace slark::http
