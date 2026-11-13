@@ -209,12 +209,8 @@ class AsyncIOOperationBase {
 
     // External cancellation (C-06): token cancellation wakes the suspended coroutine
     void setCancellationToken(CancellationToken token) {
-        if (token.isCancelled()) {
-            completion_->requestCancel();
-            return;
-        }
         auto weakCompletion = std::weak_ptr<SharedCompletion>(completion_);
-        cancelReg_ = token.registerCallback([weakCompletion]() {
+        cancelReg_ = token.registerCallbackOrRun([weakCompletion]() {
             if (auto completion = weakCompletion.lock()) {
                 completion->requestCancel();
             }

@@ -1091,6 +1091,7 @@ auto result = co_await std::move(pipeline).collect<std::vector>();
 | 协程压力 | `CoroutineStressTest.*`：100 协程并发恢复、100 定时器并发触发、100 个 AsyncIO 并发完成、50 层嵌套 co_await、10 个 when_all 串行 |
 | 恢复派发计数 | `ResumeMetricsTest.*`：交给执行域、内联、被拒绝回退、排队延迟、pending（见 8.16） |
 | 竞态（完成、失败、取消、派发） | `AsyncIOOperationTest.FailRacingCancelHasExactlyOneOutcome`；`IOContextTest.ReadinessRacingCancelResumesExactlyOnce`；`StructuredConcurrencyTest.FailureRacingCompletionRethrowsOnlyAfterEveryChildFinishes`；`CancellationPropagationTest.AsyncScopeSpawnRacingCancelAllNeverRunsRejectedChildren` |
+| 令牌注册窗口 | `AsyncIOOperationTest.CancelRacingSetCancellationTokenNeverLosesTheWake`（改回两步写法后 2000 轮中丢失 81 轮，突变验证）；`CancellationPropagationTest.RegisterOrRunRunsTheCallbackImmediatelyWhenAlreadyCancelled` / `RegisterOrRunKeepsTheCallbackUntilCancelled` |
 | 超时边界 | `CoTimeoutTest.ZeroTimeoutExpiresBeforeTheChildCompletes` |
 | 在途协程析构 | `HttpStreamTest.DestroyDuringTransferReleasesTheStream`；`HLSStreamTest.DestroyWhileDownloadingReleasesTheStream` |
 | HLS 关闭与释放 | `HLSStreamTest.CloseCancelsThePlaylistRetryTimer` / `StreamIsReleasedOnceClosedWithoutAReferenceCycle` |
@@ -1492,6 +1493,7 @@ Task<T>::setCancellationToken(token)
 - 取消与正常完成竞争：`CompletionAwaiter` 与叶子 awaiter 通过 `ResumeGate::signalCancel()` 仲裁，只有一方恢复协程；`AsyncIOOperationBase` 通过 `SharedCompletion` 的终态仲裁，只有第一个终态生效。已经完成的结果不会因为之后的取消而丢失。
 - 令牌在挂起前已取消时，awaiter 不挂起。`TimerAwaiter`、`CompletionAwaiter`、`YieldAwaiter` 恢复后抛出 `CancelledException`；`AsyncIOOperationBase` 不启动 IO，以 `Error::Cancelled` 返回。
 - 取消回调注册在 awaiter 成员 `CancellationTokenRegistration` 上，awaiter 析构时自动注销，不会访问已销毁的协程。
+- 注册必须用 `CancellationToken::registerCallbackOrRun`：它在锁内原子地检查并注册，已取消时在锁外立即运行回调。先 `isCancelled()` 再 `registerCallback()` 是两步操作，中间的取消会丢失，协程挂起后永远不被唤醒。`AsyncIOOperationBase::setCancellationToken` 与 `DnsResolver::resolveAsync` 曾因此出现丢失取消，现已修复（`AsyncIOOperationTest.CancelRacingSetCancellationTokenNeverLosesTheWake`）。
 - 没有绑定令牌的协程不注册任何回调，行为与之前一致。
 - 没有绑定执行器的协程在调用 `cancel()` 的线程上同步恢复，可能嵌套在调用者的栈帧内。调用方不得在持有会被协程完成路径获取的锁时调用 `cancel()`。
 

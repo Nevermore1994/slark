@@ -34,6 +34,40 @@ Task<IOResult<std::string>> awaitManual(std::shared_ptr<ManualIO> io, std::atomi
 
 }  // namespace
 
+TEST(AsyncIOOperationTest, CancelRacingSetCancellationTokenNeverLosesTheWake) {
+    int lost = 0;
+    for (int round = 0; round < 2000; ++round) {
+        auto io = std::make_shared<ManualIO>();
+        std::atomic<int> resumes{0};
+        slark::CancellationToken token;
+        auto task = awaitManual(io, &resumes);
+
+        std::latch start(2);
+        std::thread binder([&] {
+            start.arrive_and_wait();
+            io->setCancellationToken(token);
+        });
+        std::thread canceller([&] {
+            start.arrive_and_wait();
+            token.cancel();
+        });
+        binder.join();
+        canceller.join();
+
+        task.resume();
+        if (!task.isDone()) {
+            const auto deadline = std::chrono::steady_clock::now() + 50ms;
+            while (!task.isDone() && std::chrono::steady_clock::now() < deadline) {
+                std::this_thread::sleep_for(1ms);
+            }
+        }
+        if (!task.isDone() && token.isCancelled()) {
+            ++lost;
+        }
+    }
+    EXPECT_EQ(lost, 0) << "a cancel that lands while the token is being bound must still wake the wait";
+}
+
 TEST(AsyncIOOperationTest, CompleteRacingFailHasExactlyOneOutcome) {
     for (int round = 0; round < 200; ++round) {
         auto io = std::make_shared<ManualIO>();

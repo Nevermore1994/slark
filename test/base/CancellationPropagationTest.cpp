@@ -132,6 +132,25 @@ Task<bool> observeToken(bool* bound) {
 
 }  // namespace
 
+TEST(CancellationPropagationTest, RegisterOrRunRunsTheCallbackImmediatelyWhenAlreadyCancelled) {
+    CancellationToken token;
+    token.cancel();
+    int ran = 0;
+    auto registration = token.registerCallbackOrRun([&ran] { ++ran; });
+    EXPECT_EQ(ran, 1);
+    EXPECT_FALSE(registration.isValid());
+}
+
+TEST(CancellationPropagationTest, RegisterOrRunKeepsTheCallbackUntilCancelled) {
+    CancellationToken token;
+    int ran = 0;
+    auto registration = token.registerCallbackOrRun([&ran] { ++ran; });
+    EXPECT_TRUE(registration.isValid());
+    EXPECT_EQ(ran, 0);
+    token.cancel();
+    EXPECT_EQ(ran, 1);
+}
+
 TEST(CancellationPropagationTest, TimerWakesOnCancel) {
     CancellationToken token;
     auto task = waitTimer(5000ms);
