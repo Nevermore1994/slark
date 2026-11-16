@@ -1024,13 +1024,12 @@ CoroutineScheduler::instance().schedule(streamCoroutine_);
 ### 6.5 带超时和取消的 fd 等待
 
 ```cpp
-// 读写等待同时绑定协程自身的取消令牌（如 with_timeout）和显式传入的令牌。
-// 任一被取消，等待以未就绪结束并返回 false；fd 被注销时同样返回 false。
-bool ready = co_await withCancellation(FdReadyAwaiter(fd, FdReadyAwaiter::Interest::Read), cancelToken);
+// 读等待受截止时间约束；协程被取消（例如外层 with_timeout 超时）时抛出 CancelledException。
+bool ready = co_await FdReadyAwaiter(fd, FdReadyAwaiter::Interest::Read, std::chrono::milliseconds{5000});
 if (ready) {
     // 正常读取
 } else {
-    // 被取消、超时或 fd 已注销
+    // 截止时间已到，或 fd 已注销
 }
 ```
 
@@ -1101,6 +1100,11 @@ auto result = co_await std::move(pipeline).collect<std::vector>();
 | scope 令牌与显式令牌合并 | `CoScopeTest.SpawnWithExplicitTokenIsCancelledByScope`；`CoScopeTest.SpawnWithExplicitTokenIsCancelledByItsOwnToken` |
 | 令牌 link 的生命周期 | `CancellationPropagationTest.LinkedTokenKeepsItsSourcesAlive`；`CancellationPropagationTest.WhenAnyChildrenInheritParentToken` |
 | spawn 拒绝空 Task 与已启动 Task | `CoScopeTest.SpawnOfAnEmptyTaskThrowsAndRegistersNothing`；`CoScopeTest.SpawnOfAnEmptyTaskWithExplicitTokenThrowsAndRegistersNothing`；`CoScopeTest.SpawnOfAStartedSuspendedTaskThrowsAndNeverResumesIt`；`CoScopeTest.SpawnOfACompletedTaskThrows` |
+| 生成器令牌 link 与启动后绑定（8.13） | `AsyncGeneratorTest.ProducerTokenIsLinkedWithTheConsumerTokenOnFirstNext`（突变验证：还原旧规则后变红）；`AsyncGeneratorTest.SetCancellationTokenAfterFirstNextThrows`；`CancellationPropagationTest.CancellationRequestedReadsTheFrameTokenWithoutSuspending` |
+| FdReady 截止时间（8.20） | `SuspensionMatrixTest.FdReadyDeadlineEndsTheWaitAsNotReady`；`SuspensionMatrixTest.ReadinessBeforeDeadlineCancelsTheDeadline` |
+| Job 生命周期（8.18） | `JobTest.JoinReturnsNormallyWhenTheBodySucceeds`、`JobTest.FailureIsRethrownByResultButNotByJoin`、`JobTest.CancelWakesTheBodyAndSettlesItAsCancelled`、`JobTest.WaitForIsWokenByCompletionOnAnotherThread`、`JobTest.DestroyingAStartedJobCancelsItsBodyWithoutWaiting`、`JobTest.DestroyingAnUnstartedJobNeverRunsItAndReleasesItsJoiners`、`JobTest.MoveAssignmentCancelsThePreviousJob`、`JobTest.ExecutorRunsTheBodyOnItsDomain`、`JobTest.RefusedExecutorSettlesTheJobAsCancelledAndNeverRunsIt`、`JobTest.CompletionRacingCancelSettlesExactlyOnce`、`JobTest.DestroyRacingCompletionNeverTouchesAFreedFrame` |
+| 挂起点矩阵，基础层（8.19） | `SuspensionMatrixTest.TimerPreCancelEndsCancelledWithoutSuspending`、`SuspensionMatrixTest.TimerDestroyedWhileSuspendedNeverResumes`、`SuspensionMatrixTest.TimerRefusedDispatchEndsCancelled`、`SuspensionMatrixTest.YieldCancelRacingItsTickResolvesToExactlyOneOutcome`、`SuspensionMatrixTest.CompletionMidCancelEndsCancelledAndLaterCompletionIsInert`、`SuspensionMatrixTest.CompletionAlreadyCompletedDoesNotSuspend`、`SuspensionMatrixTest.CompletionRefusedDispatchEndsCancelled`、`SuspensionMatrixTest.JoinMidCancelEndsCancelledAndLeavesTheJobRunning`、`SuspensionMatrixTest.JoinReleasedByDestroyingTheJobEndsNormally`、`SuspensionMatrixTest.IoCompletedInStartDoesNotSuspend`、`SuspensionMatrixTest.IoRefusedDispatchEndsCancelled` |
+| 挂起点矩阵，fd 层（8.19） | `SuspensionMatrixTest.FdReadyMidCancelEndsCancelled`、`SuspensionMatrixTest.FdReadyUnregisteredReportsNotReadyWithoutThrowing`、`SuspensionMatrixTest.FdReadyRefusedDispatchEndsCancelled`、`SuspensionMatrixTest.ReadPreCancelEndsCancelledWithoutReading`、`SuspensionMatrixTest.ReadWokenByReadinessRetriesAndReturnsTheData`、`SuspensionMatrixTest.ReadUnregisteredReportsSocketClosed`、`SuspensionMatrixTest.ReadDestroyedWhileSuspendedLeavesLaterDataUnread`、`SuspensionMatrixTest.WriteWokenByWritabilityRetriesAndReturnsTheCount`、`SuspensionMatrixTest.WriteUnregisteredReportsSocketClosed` |
 | 超时边界 | `CoTimeoutTest.ZeroTimeoutExpiresBeforeTheChildCompletes` |
 | 在途协程析构 | `HttpStreamTest.DestroyDuringTransferReleasesTheStream`；`HLSStreamTest.DestroyWhileDownloadingReleasesTheStream` |
 | HLS 关闭与释放 | `HLSStreamTest.CloseCancelsThePlaylistRetryTimer` / `StreamIsReleasedOnceClosedWithoutAReferenceCycle` |
@@ -1386,7 +1390,9 @@ releaseTransferLeases(promise)
 
 `AsyncIOOperation` 的 `Completed`、`Failed`、`TimedOut`、`Cancelled` 由唯一终态竞争者提交。胜出者负责发布结果、保存错误、撤销 timer、提取 cleanup 和触发 gate；cleanup 在锁外执行。
 
-`CancellableAwaiter` 的外部取消回调必须与底层 awaiter 共享同一个 gate，不能形成两个独立 resume 入口。取消 callback 只能发出取消或 signal 请求，不能保存并直接访问已销毁 frame。
+`FdReadyAwaiter` 的隐式令牌回调与它的 fd 续体、截止时间定时器共享同一个 gate，不能形成两个独立 resume 入口。取消 callback 只能发出取消或 signal 请求，不能保存并直接访问已销毁 frame。
+
+取消统一为异常：挂起点在取消时抛出 `CancelledException`，包括执行器拒绝派发的恢复（等待结束，续体不运行）。覆盖的挂起点有 `TimerAwaiter`、`YieldAwaiter`、`CompletionAwaiter`、`Job::join`、`AsyncIOOperationBase` 与 `FdReadyAwaiter`。fd 注销或等待者被替换是终态通知而非取消：`FdReadyAwaiter` 报告未就绪，`AsyncIOOperationBase` 以 `Error::SocketClosed` 返回。`AsyncRead` 与 `AsyncWrite` 在就绪唤醒后重试一次系统调用，仍无数据时报告 `WouldBlock`，不再把唤醒当作成功返回。fd 等待的取消在 `waitFdReadyWithTimeout` 转换为“未就绪”，调用方用 `coro::cancellation_requested()` 区分取消与超时；DNS 取消同样抛出，`ConnectionFactory` 在边界映射为 `Error::Cancelled`。
 
 ### 8.10 OperationState 与 OperationStatus
 
@@ -1496,17 +1502,17 @@ Task<T>::setCancellationToken(token)
 
 1. `co_await childTask`：子任务没有令牌则继承父协程的；两边都有则以 `CancellationToken::link(child, parent)` 合并，任一取消即取消。
 2. `when_all` 的子任务绑定父协程令牌与组令牌的合并，组令牌在子任务失败或等待者被销毁时取消；`when_any` 的子任务由 `AsyncScope` 托管，令牌为 scope 令牌与等待者令牌的合并；`AsyncScope::spawn(task, token)` 的子任务绑定 scope 令牌与 `token` 的合并。
-3. `AsyncGenerator` 生产者在消费者首次 `next()` 时继承消费者的令牌，之后不再改绑。
+3. `AsyncGenerator` 生产者在消费者首次 `next()` 时与消费者的令牌取 link（与 `Task` 一致），生产者自身绑定的令牌保留。
 4. 叶子 awaiter 挂起时把取消回调注册到当前协程的令牌上：`TimerAwaiter`、`CompletionAwaiter`、`YieldAwaiter`、`AsyncIOOperationBase`。
 
-绑定时机：`Task::setCancellationToken` 与 `Task::setExecutor` 只能在首次 `resume()` 之前调用。协程启动后绑定会静默丢失，因为挂起的 awaiter 已经登记了它自己的回调，新令牌无法唤醒它，因此启动后调用抛出 `std::logic_error`，`nullptr` 执行器同样适用。`AsyncGenerator::setExecutor` 与之一致，以首次 `next()` 为界；生成器已关闭时没有可绑定的生产者，调用为空操作。移动 `Task` 不改变启动状态，移动后的对象仍拒绝绑定。
+绑定时机：`Task::setCancellationToken` 与 `Task::setExecutor` 只能在首次 `resume()` 之前调用。协程启动后绑定会静默丢失，因为挂起的 awaiter 已经登记了它自己的回调，新令牌无法唤醒它，因此启动后调用抛出 `std::logic_error`，`nullptr` 执行器同样适用。`AsyncGenerator::setExecutor` 与 `setCancellationToken` 同样以首次 `next()` 为界；生成器已关闭时没有可绑定的生产者，调用为空操作。移动 `Task` 不改变启动状态，移动后的对象仍拒绝绑定。
 
 `co_await` 一个已经启动的 `Task` 同样被拒绝：它正挂在自己的等待上，若直接转入会在没有事件的情况下恢复该等待。`TaskAwaiter::await_suspend` 在触碰任何租约之前检查启动状态，抛出 `std::logic_error`，子协程保持挂起、不被恢复。已完成的子协程不受影响，直接返回结果。
 
 取消的语义：
 
 - 取消与正常完成竞争：`CompletionAwaiter` 与叶子 awaiter 通过 `ResumeGate::signalCancel()` 仲裁，只有一方恢复协程；`AsyncIOOperationBase` 通过 `SharedCompletion` 的终态仲裁，只有第一个终态生效。已经完成的结果不会因为之后的取消而丢失。
-- 令牌在挂起前已取消时，awaiter 不挂起。`TimerAwaiter`、`CompletionAwaiter`、`YieldAwaiter` 恢复后抛出 `CancelledException`；`AsyncIOOperationBase` 不启动 IO，以 `Error::Cancelled` 返回。
+- 令牌在挂起前已取消时，awaiter 不挂起。`TimerAwaiter`、`CompletionAwaiter`、`YieldAwaiter`、`AsyncIOOperationBase` 与 `FdReadyAwaiter` 恢复后抛出 `CancelledException`；`AsyncIOOperationBase` 不启动 IO。
 - 取消回调注册在 awaiter 成员 `CancellationTokenRegistration` 上，awaiter 析构时自动注销，不会访问已销毁的协程。
 - 注册必须用 `CancellationToken::registerCallbackOrRun`：它在锁内原子地检查并注册，已取消时在锁外立即运行回调。先 `isCancelled()` 再 `registerCallback()` 是两步操作，中间的取消会丢失，协程挂起后永远不被唤醒。`AsyncIOOperationBase::setCancellationToken` 与 `DnsResolver::resolveAsync` 曾因此出现丢失取消，现已修复（`AsyncIOOperationTest.CancelRacingSetCancellationTokenNeverLosesTheWake`）。
 - `CancellationToken::link(a, b)` 的结果持有 `a` 与 `b` 的状态：转发注册只持弱引用，若输出不保有输入，临时的中间令牌在调用返回后被释放，取消链即断开（`CancellationPropagationTest.LinkedTokenKeepsItsSourcesAlive`）。
@@ -1530,7 +1536,7 @@ auto result = co_await coro::with_timeout(fetchOnce(url), 5s);
 超时和取消后，`with_timeout` 仍会等子任务结束才恢复，子任务不会在后台运行。定时器在返回前撤销，不留下待触发的回调。
 
 限制：
-- 超时只在取消点生效。隐式取消覆盖的挂起点是 `TimerAwaiter`、`CompletionAwaiter`、`YieldAwaiter`、`AsyncIOOperationBase` 与 `FdReadyAwaiter`（读写等待、TLS 握手）。取消后 `FdReadyAwaiter` 以未就绪结束，与显式令牌的结果一致。
+- 超时只在取消点生效。隐式取消覆盖的挂起点是 `TimerAwaiter`、`CompletionAwaiter`、`YieldAwaiter`、`AsyncIOOperationBase` 与 `FdReadyAwaiter`（读写等待、TLS 握手）。取消后 `FdReadyAwaiter` 抛出 `CancelledException`；超时与取消在 IO 边界统一为未就绪，由调用方用 `coro::cancellation_requested()` 区分。
 - 纯计算和不挂起的循环不会被打断，只能在下一个挂起点退出。
 
 ### 8.15 Task 组合子：then、and_then、or_else
@@ -1572,8 +1578,9 @@ auto task = fetchOnce(url)
 | `TimerAwaiter` | 定时器回调 `signal()` | `signalCancel()`，抛 `CancelledException` | 撤销定时器，`disarm` | `CancellationPropagationTest.TimerWakesOnCancel` |
 | `YieldAwaiter` | 零延迟定时器 | 同上 | `disarm`，迟到回调无效 | `YieldTest.DestroyingASuspendedCoroutineIsSafe`、`CancellationPropagationTest.YieldRacesCancelResolvesOnce` |
 | `CompletionAwaiter::Waiter` | `complete()` / `fail()` | `signalCancel()` | 生产者销毁：仍挂起的等待者被 `disarm`，不再唤醒；帧随持有者释放 | `CompletionAwaiterTest.FrameOfAWaiterOrphanedByCompleterIsReleasedWithItsOwner`、`CompletionAwaiterTest.PendingCompletionCannotResumeDestroyedFrame` |
-| `AsyncIOOperationBase` | 唯一终态竞争者（完成、失败、超时、取消） | `requestCancel()` 设置 `Error::Cancelled` | 析构 `cancel()` 只标记终态，结果不可观测 | `AsyncIOOperationTest.FailRacingCancelHasExactlyOneOutcome`、`AsyncIOOperationTest.CompleteRacingTimeoutHasExactlyOneOutcome` |
-| `FdReadyAwaiter` | fd 就绪 `signal()`；注销 fd 或替换等待者 `signalTerminal()` | `signalCancel()` 经 `bindCancellation` | `disarm`，注销监听 | `IOContextTest.UnregisteringTheSocketReportsAPendingWaitAsNotReady`、`IOContextTest.ReadinessRacingCancelResumesExactlyOnce` |
+| `AsyncIOOperationBase` | 唯一终态竞争者（完成、失败、超时、取消） | `requestCancel()`，恢复时抛出 `CancelledException` | 析构 `cancel()` 只标记终态，结果不可观测 | `AsyncIOOperationTest.FailRacingCancelHasExactlyOneOutcome`、`AsyncIOOperationTest.CompleteRacingTimeoutHasExactlyOneOutcome`、`SuspensionMatrixTest.IoMidCancelEndsCancelledAndLaterCompletionIsInert`、`SuspensionMatrixTest.ReadWokenByReadinessRetriesAndReturnsTheData`、`SuspensionMatrixTest.ReadUnregisteredReportsSocketClosed` |
+| `FdReadyAwaiter` | fd 就绪 `signal()`；注销 fd 或替换等待者 `signalTerminal()` | `signalCancel()` 经 `bindCancellation`，恢复时抛出 `CancelledException` | `disarm`，注销监听 | `IOContextTest.UnregisteringTheSocketReportsAPendingWaitAsNotReady`、`IOContextTest.ReadinessRacingCancelResumesExactlyOnce`、`SuspensionMatrixTest.FdReadyMidCancelEndsCancelled`、`SuspensionMatrixTest.FdReadyUnregisteredReportsNotReadyWithoutThrowing` |
+| `Job::join` | Job 结算（`settle`，只生效一次） | `signalCancel()`，只结束 join，Job 不受影响 | 析构结算为取消并释放等待者；等待者销毁后不再恢复 | `JobTest.JoinReturnsNormallyWhenTheBodySucceeds`、`JobTest.CancellingAJoinerStopsWaitingWithoutCancellingTheJob`、`SuspensionMatrixTest.JoinReleasedByDestroyingTheJobEndsNormally`、`SuspensionMatrixTest.JoinMidCancelEndsCancelledAndLeavesTheJobRunning` |
 | `JoinAwaiter` | 最后一个子任务结束（`retireChild`） | `signalCancel()`，子任务不受影响 | scope 析构只取消、分离，等待者仍由 `core` 保持有效 | `CancellationPropagationTest.CancelAllWakesAJoinThatIsAlreadySuspended`、`CancellationPropagationTest.ScopeDestroyedWhileJoinIsSuspendedDoesNotDangle`、`StructuredConcurrencyTest.CancelledJoinStopsWaitingWithoutCancellingChildren` |
 | `CoWhenAll` / `CoWhenAny` 等待者 | 全部子任务结束或首个完成者 | 组令牌取消子任务，等待者抛取消 | 析构取消组令牌 | `StructuredConcurrencyTest.FailureRacingCompletionRethrowsOnlyAfterEveryChildFinishes`、`WhenAnyTest.WinnerThrowsIsPropagated` |
 | `Task` 的 `co_await`（子协程） | 子协程结束，经 continuation 恢复父协程 | 取消令牌沿 `co_await` 继承 | 任务销毁后取消仍安全，悬空回调已注销 | `CancellationPropagationTest.DeepChainInheritsParentToken`、`CancellationPropagationTest.CancelAfterSuspendedTaskDestroyedIsSafe` |
@@ -1585,5 +1592,53 @@ auto task = fetchOnce(url)
 - 挂起点的终态由 `ResumeGate` 的状态机仲裁，`Signaled`、`Resuming`、`Disarmed` 不得重复恢复。
 - 执行器拒绝的恢复转交回退执行器；回退执行器也拒绝时终止进程，因为续体不能被丢弃。
 - 生产者或持有者销毁后，挂起的等待者不会被唤醒，它的帧随持有者释放。这是约定，不是遗漏。
+
+### 8.18 Job：根任务的生命周期
+
+`coro::Job<T>`（`Job.hpp`）持有一个操作的根 `Task`，是 HTTP 流与 HLS 流取消与释放网络协程的句柄。
+
+- `makeJob(task, options)` 创建未启动的 Job，`launch(task, options)` 等于创建后调用 `start()`。`options.token` 与 Job 自己的令牌合并后绑定到根协程，`options.executor` 绑定执行域。空 `Task`，以及已启动（包括已完成）的 `Task`，在登记前抛出 `std::logic_error`。
+- `start()` 幂等。有执行域时在其上派发首次恢复，执行器拒绝派发则以 `CancelledException` 结算，协程体不运行；没有执行域或执行域为内联时，首次恢复在调用线程同步运行。
+- `cancel()` 取消 Job 自己的令牌，协程体在下一个挂起点停止。
+- `waitFor(d)` 在条件变量上最多等待 `d`，不轮询，返回是否已结算。若在 Job 的执行域上调用，协程体无法运行，只能等到超时。
+- `co_await job.join()` 挂起直到结算，不重新抛出 Job 的失败。等待者自身被取消时抛出 `CancelledException`，Job 不受影响。多个等待者都会被唤醒。
+- `result()` 结算后返回值或重新抛出失败；结算前抛出 `std::runtime_error`。
+- 结算只生效一次。协程体正常结束、取消、执行器拒绝与析构都经同一个结算点。
+- 析构取消并分离，不等待协程体。未结算的 Job 以 `CancelledException` 结算，因此等待者不会永久挂起。仍在等待不可取消挂起点的协程体被分离，它在被唤醒时运行到结束，与 `AsyncScope` 的子协程一致（见 8.12）。
+- 移动后源对象为空：`isDone()` 为真，`join()` 抛出 `std::logic_error`。移动赋值先取消并分离被替换的 Job。
+- 线程：`start`、`cancel`、`join` 与析构由所有者线程调用；`isDone` 与 `waitFor` 可从任意线程调用。
+- 流：`HttpStream` 与 `HLSStream` 以 Job 持有网络协程。取消时先取消请求与 Job，再以有限超时调用 `waitFor` 等待（HLS 使用 `kWaitSettleTimeout`）；超时只记录日志，不再轮询 `isDone()`。
+
+### 8.19 挂起点契约矩阵
+
+每类挂起点按同一组场景验证：挂起前取消、挂起中取消、已完成不挂起、挂起中销毁、终态通知（仅适用于会被事件源终止的挂起点）、执行器拒绝。不适用的格子在测试文件中注明原因：
+
+- `yield` 总是先挂起并在零延迟后恢复，无法确定性地构造“已完成不挂起”与“拒绝派发”，改为取消与恢复的竞态用例，要求恰好一个结果。
+- 定时器的终态通知不适用：停止调度器取消定时器，等待者不会被唤醒，这是 8.17 的既定行为，由拥有者通过令牌结束等待。
+- `CompletionAwaiter` 的生产者销毁后等待者不被唤醒，这是 8.17 的约定，不计入终态通知。
+
+基础层矩阵见 `test/base/SuspensionMatrixTest.cpp`，fd 层矩阵见 `test/http/SuspensionMatrixTest.cpp`。
+
+### 8.20 ExternalWaitBase：单门叶子挂起点的统一协议
+
+`ExternalWaitBase<Derived, Source, Result>`（`ExternalWaitBase.hpp`）是 `TimerAwaiter`、`YieldAwaiter`、`CompletionAwaiter::Waiter`、`JoinAwaiter` 与 `FdReadyAwaiter` 的公共基类。派生类只提供四项：
+
+- `ready()`：快速路径，为真时不挂起。
+- `start(gate)`：登记事件源，返回 RAII 的 `Source`；返回空值表示事件已经发生，帧继续运行。
+- `finish()`：恢复后映射结果。
+- `cancelMessage()`：`CancelledException` 的文本。
+
+基类负责门（`ResumeGate`）、传输租约、外部等待标记、`bindGateCancellation` 的令牌登记，以及 `arm()` 与恢复的仲裁。`Source` 析构即撤销登记：定时回调、fd 续体与截止时间定时器、完成等待列表中的位置。析构时先撤销门再析构 `Source`，因此没有任何路径能恢复一个正在销毁的帧。`JoinAwaiter` 的登记保留在作用域的 join 列表中直到结算，不需要撤销。
+
+`FdReadyAwaiter` 的两个事件源（fd 续体与可选的截止时间定时器）共用同一个门：就绪唤醒恢复帧，截止时间到达以 `signalTerminal()` 报告未就绪。`withCancellation` 与 `CancellableAwaiter` 已删除，取消只来自协程自身的令牌。
+
+### 8.21 HTTP 内部的令牌边界
+
+HTTP 层内部不再逐层传递令牌参数。规则：
+
+- 入口（`HttpRequest::asyncExecute` / `streamingExecute`、`HttpProcessor::process` / `processStreaming`、`Http1Session::executeEvents`、`openConnection`、`DnsResolver::resolveAsync`）保留带令牌的重载。它在返回未启动的 `Task` 或生成器之前用 `setCancellationToken` 绑定一次，之后靠 `co_await` 与生成器 `next()` 的继承获得令牌。
+- 协程内部查询取消用 `co_await coro::cancellation_requested()`，不挂起，只读取当前帧的令牌。
+- `Http1Session` 的会话关闭令牌作为生成器自身的令牌绑定，与消费者令牌取 link；会话令牌在调用 `executeEvents` 时取快照。
+- 无令牌的重载不得向下传入新建的 `CancellationToken{}`：它永远不会被取消，轮询会看不到外部取消。
 
 
