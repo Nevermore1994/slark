@@ -279,6 +279,8 @@ TEST_F(FileSourceTest, SeekResetsCacheEndToTheTarget) {
     ASSERT_TRUE(waitEos(*source, out));
     ASSERT_GT(source->cacheEnd().second(), 60.0);
 
+    // A clock at the target lets the watermark gate park the reload; otherwise it reaches EOS.
+    source->regulate(sec(10.0));
     source->seekTo(sec(10.0), 2);
     ASSERT_TRUE(waitUntil([&] {
         return source->isLoading();

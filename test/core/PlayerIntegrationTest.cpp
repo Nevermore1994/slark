@@ -495,7 +495,15 @@ static bool isDnsCached(const std::string& host, const std::string& port) {
     auto coro =
         http::DnsResolver::instance().resolveAsync(host, port, http::IPVersion::Auto, cancelled);
     coro.resume();
-    return coro.isDone() && coro.result().get() != nullptr;
+    if (!coro.isDone()) {
+        return false;
+    }
+    try {
+        return coro.result().get() != nullptr;
+    } catch (const CancelledException&) {
+        // A miss on a cancelled token ends with CancelledException instead of resolving.
+        return false;
+    }
 }
 
 static bool waitUntilDnsCached(const std::string& host, const std::string& port) {
