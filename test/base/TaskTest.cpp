@@ -5,7 +5,9 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
+#include <future>
 #include <memory>
 #include <thread>
 
@@ -71,6 +73,38 @@ TEST(TaskTest, IsDoneCanBeObservedWhileAnotherThreadCompletes) {
         std::this_thread::yield();
     }
     completer.join();
+    EXPECT_TRUE(task.isDone());
+}
+
+Task<void> blockUntilReleased(std::atomic<bool>* started, std::atomic<bool>* release) {
+    started->store(true);
+    while (!release->load()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    co_return;
+}
+
+TEST(TaskTest, IsDoneFromAnotherThreadDoesNotWaitForTheRunningBody) {
+    std::atomic<bool> started{false};
+    std::atomic<bool> release{false};
+    auto task = blockUntilReleased(&started, &release);
+    std::thread runner([&task] {
+        task.resume();
+    });
+    while (!started.load()) {
+        std::this_thread::yield();
+    }
+
+    auto probe = std::async(std::launch::async, [&task] {
+        return task.isDone();
+    });
+    const auto status = probe.wait_for(std::chrono::seconds(2));
+    release.store(true);
+    runner.join();
+
+    ASSERT_EQ(status, std::future_status::ready)
+        << "isDone() must not wait for a body that is running on another thread";
+    EXPECT_FALSE(probe.get()) << "the body had not finished when isDone() was read";
     EXPECT_TRUE(task.isDone());
 }
 

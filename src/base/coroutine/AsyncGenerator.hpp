@@ -8,6 +8,7 @@
 #include <exception>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -74,6 +75,10 @@ class GeneratorState final {
 
     [[nodiscard]] GeneratorPhase phase() const noexcept {
         return phase_;
+    }
+
+    [[nodiscard]] bool isParked() const noexcept {
+        return phase_ == GeneratorPhase::InitialSuspended || phase_ == GeneratorPhase::Yielded;
     }
 
     void setFailure(std::exception_ptr failure) noexcept {
@@ -539,8 +544,11 @@ class AsyncGeneratorNextAwaiter {
 
     template <typename ConsumerPromise>
         requires ContinuationPromise<ConsumerPromise>
-    std::coroutine_handle<> await_suspend(
-        std::coroutine_handle<ConsumerPromise> consumer) noexcept {
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<ConsumerPromise> consumer) {
+        // Entering a producer parked on its own wait would skip that wait without its event.
+        if (state_ && state_->status() == GeneratorStatus::Running && !state_->isParked()) {
+            throw std::logic_error("AsyncGenerator::next() while the previous next() is pending");
+        }
         releaseTransferLeases(consumer.promise());
         if (!state_ || state_->status() != GeneratorStatus::Running) {
             return consumer;

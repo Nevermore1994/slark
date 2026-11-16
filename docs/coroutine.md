@@ -1101,6 +1101,8 @@ auto result = co_await std::move(pipeline).collect<std::vector>();
 | 令牌 link 的生命周期 | `CancellationPropagationTest.LinkedTokenKeepsItsSourcesAlive`；`CancellationPropagationTest.WhenAnyChildrenInheritParentToken` |
 | spawn 拒绝空 Task 与已启动 Task | `CoScopeTest.SpawnOfAnEmptyTaskThrowsAndRegistersNothing`；`CoScopeTest.SpawnOfAnEmptyTaskWithExplicitTokenThrowsAndRegistersNothing`；`CoScopeTest.SpawnOfAStartedSuspendedTaskThrowsAndNeverResumesIt`；`CoScopeTest.SpawnOfACompletedTaskThrows` |
 | 生成器令牌 link 与启动后绑定（8.13） | `AsyncGeneratorTest.ProducerTokenIsLinkedWithTheConsumerTokenOnFirstNext`（突变验证：还原旧规则后变红）；`AsyncGeneratorTest.SetCancellationTokenAfterFirstNextThrows`；`CancellationPropagationTest.CancellationRequestedReadsTheFrameTokenWithoutSuspending` |
+| 生成器单消费者（8.6） | `AsyncGeneratorTest.SecondPendingNextIsRejectedWithoutDrivingTheProducer`、`AsyncGeneratorTest.NextIsRejectedWhileTheProducerServesADestroyedConsumer`（突变验证：关闭检查后两者都变红） |
+| 跨线程 `isDone()`（8.2） | `TaskTest.IsDoneFromAnotherThreadDoesNotWaitForTheRunningBody`（突变验证：改回持锁实现后因超时变红）；`TaskTest.DestroyingTheTaskRightAfterIsDoneIsRaceFree`；`TaskTest.IsDoneCanBeObservedWhileAnotherThreadCompletes` |
 | FdReady 截止时间（8.20） | `SuspensionMatrixTest.FdReadyDeadlineEndsTheWaitAsNotReady`；`SuspensionMatrixTest.ReadinessBeforeDeadlineCancelsTheDeadline` |
 | Job 生命周期（8.18） | `JobTest.JoinReturnsNormallyWhenTheBodySucceeds`、`JobTest.FailureIsRethrownByResultButNotByJoin`、`JobTest.CancelWakesTheBodyAndSettlesItAsCancelled`、`JobTest.WaitForIsWokenByCompletionOnAnotherThread`、`JobTest.DestroyingAStartedJobCancelsItsBodyWithoutWaiting`、`JobTest.DestroyingAnUnstartedJobNeverRunsItAndReleasesItsJoiners`、`JobTest.MoveAssignmentCancelsThePreviousJob`、`JobTest.ExecutorRunsTheBodyOnItsDomain`、`JobTest.RefusedExecutorSettlesTheJobAsCancelledAndNeverRunsIt`、`JobTest.CompletionRacingCancelSettlesExactlyOnce`、`JobTest.DestroyRacingCompletionNeverTouchesAFreedFrame` |
 | 挂起点矩阵，基础层（8.19） | `SuspensionMatrixTest.TimerPreCancelEndsCancelledWithoutSuspending`、`SuspensionMatrixTest.TimerDestroyedWhileSuspendedNeverResumes`、`SuspensionMatrixTest.TimerRefusedDispatchEndsCancelled`、`SuspensionMatrixTest.YieldCancelRacingItsTickResolvesToExactlyOneOutcome`、`SuspensionMatrixTest.CompletionMidCancelEndsCancelledAndLaterCompletionIsInert`、`SuspensionMatrixTest.CompletionAlreadyCompletedDoesNotSuspend`、`SuspensionMatrixTest.CompletionRefusedDispatchEndsCancelled`、`SuspensionMatrixTest.JoinMidCancelEndsCancelledAndLeavesTheJobRunning`、`SuspensionMatrixTest.JoinReleasedByDestroyingTheJobEndsNormally`、`SuspensionMatrixTest.IoCompletedInStartDoesNotSuspend`、`SuspensionMatrixTest.IoRefusedDispatchEndsCancelled` |
@@ -1193,6 +1195,12 @@ activeCount   = activeResumes + activeLeases
 3. 返回前减少 `activeResumes`；
 4. 最后一个 active protection 释放时处理 `deferredHandle`；
 5. 同一 frame 不得并行执行两个 `resume()`。
+
+`isDone(handle)` 的契约：
+
+- 跟踪终态的帧（`Task`）只读原子的 `finished_` 与 `destroyed_`，不取 control mutex。`resume()` 在整个协程体运行期间持有该 mutex，所以任意线程都可以在协程体运行时调用 `isDone()`，它不会被协程体阻塞。`finished_` 在 `finish()` 内以 release 存储，读到 `true` 的线程能看到协程体写入的结果。
+- 不跟踪终态的帧（生成器）读 `handle.done()`，仍在 mutex 内，与 `resume()` 互斥。
+- 读到 `true` 之后销毁帧仍然安全：`finished_` 在 `finish()` 内置位，那是 final awaiter 对 promise 的最后一次访问。`finish()` 之前帧处于收尾阶段（已 `markFinalizing()`），此时的 `destroy()` 只登记延迟销毁，由 `finish()` 在置位之后执行。
 
 `destroy(handle)` 是销毁请求，不是等待接口：
 
@@ -1297,9 +1305,9 @@ Running -> Closed
 |---|---|
 | `InitialSuspended` | producer 已创建，尚未驱动 |
 | `Executing` | producer 正在执行 |
-| `WaitingConsumer` | producer 等待下一次 `next()` |
+| `WaitingConsumer` | 刚登记 consumer，随即被 `markExecuting()` 改为 `Executing`，不会作为静止状态出现 |
 | `WaitingExternal` | producer 等待 timer、fd、completion 或 IO 事件 |
-| `Yielded` | producer 已产生 value，正在 handoff |
+| `Yielded` | producer 停在 `co_yield` 上：value 已产生，保持到下一次 `next()` 把它改为 `Executing` |
 | `FinalSuspended` | producer 已完成、失败或关闭 |
 
 phase 是 owner executor 上的状态，不是并发锁。
@@ -1308,13 +1316,16 @@ phase 是 owner executor 上的状态，不是并发锁。
 
 `next()` 的 awaiter 在 pending consumer 阶段执行以下顺序：
 
-1. 释放 consumer 旧 transfer leases；
-2. 检查 generator status、producer handle 和已有 value；
-3. 通过 `registerTarget()` 注册 consumer continuation；
-4. generation 自增；
-5. 安装 typed `PendingConsumerRegistration<T>`；
-6. producer 标记 `Executing`；
-7. 返回 producer handle，执行 symmetric transfer。
+1. 在触碰任何租约之前检查 producer 是否停在可恢复的位置：generator 仍为 `Running` 且 phase 不是 `InitialSuspended` 或 `Yielded` 时抛出 `std::logic_error`；
+2. 释放 consumer 旧 transfer leases；
+3. 检查 generator status、producer handle 和已有 value；
+4. 通过 `registerTarget()` 注册 consumer continuation；
+5. generation 自增；
+6. 安装 typed `PendingConsumerRegistration<T>`；
+7. producer 标记 `Executing`；
+8. 返回 producer handle，执行 symmetric transfer。
+
+单消费者契约：同一个 generator 同一时刻只允许一个未决的 `next()`。producer 只有停在初始挂起点或 `co_yield` 上（phase 为 `InitialSuspended` 或 `Yielded`）才能被 `next()` 的 symmetric transfer 恢复。上一个 `next()` 还没返回时（phase 为 `Executing` 或 `WaitingExternal`），producer 要么正在运行，要么停在自己的外部等待上，这时再恢复它会越过等待，而事件并没有发生。所以这种 `next()` 在第 1 步抛出 `std::logic_error`，不改变 generator 的任何状态：已登记的 consumer 仍在等待，producer 仍停在原处，事件到来后正常交出 value。consumer 销毁后 producer 仍在服务它的请求，期间的 `next()` 同样被拒绝；请求完成后产生的 value 保留给下一次 `next()`。generator 不提供多个消费者排队的语义。
 
 `PendingConsumerRegistration<T>` 持有：
 
@@ -1445,6 +1456,7 @@ producer、consumer、`next()`、`co_yield`、completion、close，以及 genera
 8. 把 `OperationStatus::Closed` 当作底层 HTTP/IO 已完成；
 9. 执行器拒绝派发后在调用方线程内联恢复续体，被拒绝的续体只能在回退执行器上恢复（见 8.12）。
 10. 在协程首次 `resume()`（生成器为首次 `next()`）之后绑定令牌或执行域。挂起的 awaiter 已登记自己的回调，之后的绑定会静默丢失或改投已登记的等待者，因此抛出 `std::logic_error`（见 8.13）。
+11. 在上一个 `next()` 尚未返回时再次 `next()`，包括上一个 consumer 已销毁、producer 仍在服务其请求的情况。producer 停在自己的外部等待上，恢复它会越过等待，因此这次调用抛出 `std::logic_error`（见 8.6）。
 
 ### 8.12 组合与让出：when_all、when_any、AsyncScope、yield
 

@@ -119,12 +119,15 @@ class CoroutineFrameControl final {
     }
 
     bool isDone(std::coroutine_handle<> handle) const noexcept {
-        std::lock_guard lock(mutex_);
-        if (destroyed_ || !handle) {
+        if (!handle || destroyed_.load(std::memory_order_acquire)) {
             return true;
         }
-        // handle.done() races with a frame running on another thread; use finished_ instead.
-        return tracksFinalSuspend_ ? finished_ : handle.done();
+        // resume() holds mutex_ for the whole body, so a tracked frame is read without it.
+        if (tracksFinalSuspend_) {
+            return finished_.load(std::memory_order_acquire);
+        }
+        std::lock_guard lock(mutex_);
+        return destroyed_ || handle.done();
     }
 
     // Called from final_suspend(), before the frame is suspended.
@@ -140,7 +143,7 @@ class CoroutineFrameControl final {
         {
             std::lock_guard lock(mutex_);
             takeOwnership();
-            finished_ = true;
+            finished_.store(true, std::memory_order_release);
             if (destroyed_ && activeCount() == 0) {
                 deferredHandle = std::exchange(deferredHandle_, nullptr);
             }
@@ -213,7 +216,7 @@ class CoroutineFrameControl final {
         if (destroyed_ || !handle) {
             return false;
         }
-        destroyed_ = true;
+        destroyed_.store(true, std::memory_order_release);
         if (activeCount() == 0 && !finalizingLocked()) {
             return true;
         }
@@ -248,8 +251,8 @@ class CoroutineFrameControl final {
     mutable std::recursive_mutex mutex_;
     const bool tracksFinalSuspend_{false};
     bool finalizing_{false};
-    bool finished_{false};
-    bool destroyed_{false};
+    std::atomic<bool> finished_{false};
+    std::atomic<bool> destroyed_{false};
     bool running_{false};
     uint32_t activeResumes_{0};
     uint32_t activeLeases_{0};

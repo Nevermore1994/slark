@@ -880,6 +880,52 @@ TEST(AsyncGeneratorTest, SetCancellationTokenAfterFirstNextThrows) {
     EXPECT_TRUE(consumer.result().has_value());
 }
 
+TEST(AsyncGeneratorTest, SecondPendingNextIsRejectedWithoutDrivingTheProducer) {
+    auto gate = std::make_shared<slark::CompletionAwaiter<void>>();
+    auto generator = yieldAfterGate(gate);
+    auto first = nextFrom(generator);
+    first.resume();
+    ASSERT_FALSE(first.isDone());
+    ASSERT_EQ(generator.phase(), slark::GeneratorPhase::WaitingExternal);
+
+    auto second = nextFrom(generator);
+    second.resume();
+    ASSERT_TRUE(second.isDone()) << "a rejected next() must end at once";
+    EXPECT_THROW(second.result(), std::logic_error);
+    EXPECT_FALSE(first.isDone()) << "the producer must stay parked on its own wait";
+    EXPECT_EQ(generator.phase(), slark::GeneratorPhase::WaitingExternal);
+
+    gate->complete();
+    ASSERT_TRUE(slark::test::waitUntilDone(first));
+    auto value = first.result();
+    ASSERT_TRUE(value.has_value()) << "the rejected call must not take over the pending consumer";
+    EXPECT_EQ(*value, 1);
+}
+
+TEST(AsyncGeneratorTest, NextIsRejectedWhileTheProducerServesADestroyedConsumer) {
+    auto gate = std::make_shared<slark::CompletionAwaiter<void>>();
+    auto generator = yieldAfterGate(gate);
+    {
+        auto abandoned = nextFrom(generator);
+        abandoned.resume();
+        ASSERT_FALSE(abandoned.isDone());
+    }
+
+    auto late = nextFrom(generator);
+    late.resume();
+    ASSERT_TRUE(late.isDone());
+    EXPECT_THROW(late.result(), std::logic_error)
+        << "the producer is still serving the abandoned request";
+
+    gate->complete();
+    auto later = nextFrom(generator);
+    later.resume();
+    ASSERT_TRUE(later.isDone()) << "the abandoned request's value is kept for the next caller";
+    auto value = later.result();
+    ASSERT_TRUE(value.has_value());
+    EXPECT_EQ(*value, 1);
+}
+
 TEST(AsyncGeneratorTest, ConsumerIsResumedAfterYield) {
     auto task = consumeTwoValues();
 
