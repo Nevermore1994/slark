@@ -35,6 +35,8 @@ using namespace slark::http;
 
 namespace {
 
+constexpr int kStopPollMs = 20;
+
 class KeepAliveServer final {
  public:
     explicit KeepAliveServer(std::vector<std::string> responses, bool combineResponses = false)
@@ -73,13 +75,14 @@ class KeepAliveServer final {
     }
 
     ~KeepAliveServer() {
-        if (listenFd_ >= 0) {
-            ::shutdown(listenFd_, SHUT_RDWR);
-            ::close(listenFd_);
-            listenFd_ = -1;
-        }
+        // listenFd_ is only touched after the worker has been joined.
+        stopped_ = true;
         if (worker_.joinable()) {
             worker_.join();
+        }
+        if (listenFd_ >= 0) {
+            ::close(listenFd_);
+            listenFd_ = -1;
         }
     }
 
@@ -124,12 +127,21 @@ class KeepAliveServer final {
         return true;
     }
 
+    // shutdown() does not wake accept() on every platform, so the worker polls and checks stopped_.
+    bool waitForClient() const {
+        pollfd entry{listenFd_, POLLIN, 0};
+        return ::poll(&entry, 1, kStopPollMs) > 0;
+    }
+
     void serve() noexcept {
         size_t responseIndex = 0;
-        while (responseIndex < responses_.size()) {
+        while (responseIndex < responses_.size() && !stopped_) {
+            if (!waitForClient()) {
+                continue;
+            }
             const int clientFd = ::accept(listenFd_, nullptr, nullptr);
             if (clientFd < 0) {
-                return;
+                continue;
             }
             acceptCount_.fetch_add(1);
 
@@ -173,6 +185,7 @@ class KeepAliveServer final {
     bool combineResponses_ = false;
     std::atomic<int> acceptCount_{0};
     std::atomic<int> requestCount_{0};
+    std::atomic<bool> stopped_{false};
     std::thread worker_;
 };
 
@@ -214,13 +227,12 @@ class BlockingHttpServer final {
             stop_ = true;
         }
         condition_.notify_all();
-        if (listenFd_ >= 0) {
-            ::shutdown(listenFd_, SHUT_RDWR);
-            ::close(listenFd_);
-            listenFd_ = -1;
-        }
         if (worker_.joinable()) {
             worker_.join();
+        }
+        if (listenFd_ >= 0) {
+            ::close(listenFd_);
+            listenFd_ = -1;
         }
     }
 
@@ -250,9 +262,21 @@ class BlockingHttpServer final {
         return true;
     }
 
+    bool waitForClient() const {
+        while (!stop_) {
+            pollfd entry{listenFd_, POLLIN, 0};
+            if (::poll(&entry, 1, kStopPollMs) > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     void serve() noexcept {
-        const int listenFd = listenFd_;
-        const int clientFd = ::accept(listenFd, nullptr, nullptr);
+        if (!waitForClient()) {
+            return;
+        }
+        const int clientFd = ::accept(listenFd_, nullptr, nullptr);
         if (clientFd < 0) {
             return;
         }
@@ -268,7 +292,7 @@ class BlockingHttpServer final {
         condition_.notify_all();
 
         std::unique_lock lock(mutex_);
-        condition_.wait(lock, [this] { return stop_; });
+        condition_.wait(lock, [this] { return stop_.load(); });
         lock.unlock();
         ::close(clientFd);
     }
@@ -278,7 +302,7 @@ class BlockingHttpServer final {
     std::mutex mutex_;
     std::condition_variable condition_;
     bool requestReceived_ = false;
-    bool stop_ = false;
+    std::atomic<bool> stop_{false};
     std::thread worker_;
 };
 

@@ -5,6 +5,7 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -129,14 +130,13 @@ class MockHlsServer {
 
     void stop() {
         stopped_ = true;
-        if (listenFd_ >= 0) {
-            ::shutdown(listenFd_, SHUT_RDWR);
-            ::close(listenFd_);
-        }
         if (thread_.joinable()) {
             thread_.join();
         }
-        listenFd_ = -1;
+        if (listenFd_ >= 0) {
+            ::close(listenFd_);
+            listenFd_ = -1;
+        }
         for (auto& t : connThreads_) {
             if (t.joinable()) {
                 t.join();
@@ -184,13 +184,19 @@ class MockHlsServer {
         return {};
     }
 
+    // shutdown() may not wake accept(), so the loop polls and checks stopped_.
+    bool waitForClient() const {
+        pollfd entry{listenFd_, POLLIN, 0};
+        return ::poll(&entry, 1, kStopPollMs) > 0;
+    }
+
     void run() {
         while (!stopped_) {
+            if (!waitForClient()) {
+                continue;
+            }
             int fd = ::accept(listenFd_, nullptr, nullptr);
             if (fd < 0) {
-                if (stopped_) {
-                    break;
-                }
                 continue;
             }
             connectionCount_.fetch_add(1, std::memory_order_release);
@@ -355,6 +361,8 @@ class MockHlsServer {
         }
         ::close(fd);
     }
+
+    static constexpr int kStopPollMs = 20;
 
     int listenFd_ = -1;
     int port_ = 0;

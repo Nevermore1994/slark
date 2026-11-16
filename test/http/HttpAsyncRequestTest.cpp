@@ -44,6 +44,8 @@ void resumeAndWait(Task<void>& coro) {
     }
 }
 
+constexpr int kStopPollMs = 20;
+
 class StreamingCancellationServer final {
  public:
     StreamingCancellationServer() {
@@ -73,12 +75,11 @@ class StreamingCancellationServer final {
 
     ~StreamingCancellationServer() {
         stopped_.store(true, std::memory_order_release);
-        if (listenFd_ >= 0) {
-            ::shutdown(listenFd_, SHUT_RDWR);
-            ::close(listenFd_);
-        }
         if (worker_.joinable()) {
             worker_.join();
+        }
+        if (listenFd_ >= 0) {
+            ::close(listenFd_);
         }
     }
 
@@ -117,7 +118,20 @@ class StreamingCancellationServer final {
         return count == 0;
     }
 
+    bool waitForClient() const noexcept {
+        while (!stopped_.load(std::memory_order_acquire)) {
+            pollfd event{listenFd_, POLLIN, 0};
+            if (::poll(&event, 1, kStopPollMs) > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     void serve() noexcept {
+        if (!waitForClient()) {
+            return;
+        }
         const int client = ::accept(listenFd_, nullptr, nullptr);
         if (client < 0) {
             return;
