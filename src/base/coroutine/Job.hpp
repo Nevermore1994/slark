@@ -45,6 +45,7 @@ struct JobState {
     std::exception_ptr error;
     Value value{};
     CompletionAwaiter<void> joined;
+    Task<void> detachedBody;
 
     // Settles at most once. Waiters are released after the state is visible to waitFor.
     bool settle(std::exception_ptr failure) noexcept {
@@ -59,6 +60,24 @@ struct JobState {
         settled.notify_all();
         joined.complete();
         return true;
+    }
+
+    // A body that outlives its destroyed Job is owned here until it ends.
+    bool adopt(Task<void>& body) noexcept {
+        std::lock_guard lock(mutex);
+        if (finished) {
+            return false;
+        }
+        detachedBody = std::move(body);
+        return true;
+    }
+
+    void release() noexcept {
+        Task<void> body;
+        {
+            std::lock_guard lock(mutex);
+            body = std::move(detachedBody);
+        }
     }
 };
 
@@ -77,6 +96,7 @@ Task<void> runJobBody(std::shared_ptr<JobState<T>> state, Task<T> task) {
         failure = std::current_exception();
     }
     state->settle(std::move(failure));
+    state->release();
 }
 
 }  // namespace detail
@@ -220,6 +240,9 @@ private:
             return;
         }
         own_.cancel();
+        if (started_) {
+            state_->adopt(body_);
+        }
         state_->settle(std::make_exception_ptr(CancelledException("Job detached before completion")));
     }
 

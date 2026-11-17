@@ -409,3 +409,74 @@ TEST(JobTest, DestroyRacingCompletionNeverTouchesAFreedFrame) {
         EXPECT_LE(finished->load(), 1) << "round " << round;
     }
 }
+
+namespace {
+
+Task<void> holdWhileUncancellable(std::shared_ptr<std::shared_ptr<slark::ResumeGate>> out,
+                                  Counter finished, std::shared_ptr<int> keep) {
+    (void)keep;
+    co_await UncancellableGate{out};
+    finished->fetch_add(1);
+}
+
+Task<void> holdWhileWaiting(std::shared_ptr<CompletionAwaiter<void>> gate, std::shared_ptr<int> keep) {
+    (void)keep;
+    co_await *gate;
+}
+
+}  // namespace
+
+TEST(JobTest, ADetachedBodyReleasesItsFramesWhenItEnds) {
+    auto out = std::make_shared<std::shared_ptr<slark::ResumeGate>>();
+    auto finished = makeCounter();
+    std::weak_ptr<int> watch;
+    {
+        auto sentinel = std::make_shared<int>(0);
+        watch = sentinel;
+        auto job = launch(holdWhileUncancellable(out, finished, std::move(sentinel)));
+    }
+    EXPECT_FALSE(watch.expired()) << "the detached body is still parked on its wait";
+
+    ASSERT_TRUE(*out);
+    (*out)->signal();
+    EXPECT_EQ(finished->load(), 1);
+    EXPECT_TRUE(watch.expired()) << "the detached body frees itself when it ends";
+}
+
+TEST(JobTest, ARefusedJobReleasesItsBodyWhenDestroyed) {
+    auto executor = std::make_shared<SerialExecutor>();
+    executor->requestStop();
+    auto gate = std::make_shared<CompletionAwaiter<void>>();
+    std::weak_ptr<int> watch;
+    {
+        auto sentinel = std::make_shared<int>(0);
+        watch = sentinel;
+        auto job = launch(holdWhileWaiting(gate, std::move(sentinel)),
+                          LaunchOptions{.token = {}, .executor = executor});
+        ASSERT_TRUE(job.isDone()) << "a refused dispatch settles the job";
+    }
+    EXPECT_TRUE(watch.expired()) << "a body that never ran must not be kept alive";
+}
+
+TEST(JobTest, DestroyRacingTheBodyUnwindingOnItsExecutorReleasesEveryFrame) {
+    auto executor = std::make_shared<SerialExecutor>();
+    for (int round = 0; round < 300; ++round) {
+        auto gate = std::make_shared<CompletionAwaiter<void>>();
+        std::weak_ptr<int> watch;
+        {
+            auto sentinel = std::make_shared<int>(0);
+            watch = sentinel;
+            auto job = launch(holdWhileWaiting(gate, std::move(sentinel)),
+                              LaunchOptions{.token = {}, .executor = executor});
+            std::promise<void> settledOnExecutor;
+            auto reached = settledOnExecutor.get_future();
+            executor->execute([&settledOnExecutor] { settledOnExecutor.set_value(); });
+            reached.wait();
+        }
+        const auto deadline = std::chrono::steady_clock::now() + 3s;
+        while (!watch.expired() && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(100us);
+        }
+        ASSERT_TRUE(watch.expired()) << "round " << round;
+    }
+}

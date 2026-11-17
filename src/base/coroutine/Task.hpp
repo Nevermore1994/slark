@@ -50,7 +50,7 @@ struct TaskPromiseBase : PromiseCancellation {
                 continuation = std::move(promise.continuation_);
             });
 
-            if (!continuation.isValid()) {
+            if (!continuation.isRegistered() || !continuation.acquireTarget()) {
                 continuation.reset();
                 return std::noop_coroutine();
             }
@@ -223,9 +223,9 @@ class TaskAwaiter {
             return awaiting;
         }
 
-        auto link = ContinuationLink::create(awaiting, awaiting.promise().frameControl(),
-                                             awaiting.promise().continuationLeaseSlot());
-        if (!link.isValid()) {
+        auto link = ContinuationLink::registerTarget(awaiting, awaiting.promise().frameControl(),
+                                                     awaiting.promise().continuationLeaseSlot());
+        if (!link.isRegistered()) {
             childLease_.reset();
             return awaiting;
         }
