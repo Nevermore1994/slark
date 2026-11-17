@@ -7,6 +7,7 @@
 #include <chrono>
 #include <format>
 #include <latch>
+#include <memory>
 #include <vector>
 
 #include "TimerManager.h"
@@ -17,8 +18,8 @@ using namespace slark;
 using namespace std::chrono_literals;
 
 TEST(Timer, delay) {
-    auto now = Time::nowTimeStamp();
-    TimerManager::shareInstance().runAfter(10ms, [&] {
+    const auto now = Time::nowTimeStamp();
+    TimerManager::shareInstance().runAfter(10ms, [now] {
         auto t = Time::nowTimeStamp() - now;
         std::println("delay {}", t.toMilliSeconds());
         ASSERT_GE(t, 10.0);
@@ -28,13 +29,13 @@ TEST(Timer, delay) {
 }
 
 TEST(Timer, loop) {
-    auto now = Time::nowTimeStamp();
-    auto timerId = TimerManager::shareInstance().runLoop(10ms, [&] {
+    auto last = std::make_shared<Time::TimePoint>(Time::nowTimeStamp());
+    auto timerId = TimerManager::shareInstance().runLoop(10ms, [last] {
         auto n = Time::nowTimeStamp();
-        auto t = n - now;
+        auto t = n - *last;
         std::println("delay {}", t.toMilliSeconds());
         ASSERT_GE(t, 10.0);
-        now = n;
+        *last = n;
     });
     std::this_thread::sleep_for(3s);
     TimerManager::shareInstance().cancel(timerId);
