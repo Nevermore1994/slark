@@ -188,6 +188,8 @@ class CoroutineFrameControl final {
             }
             if (running_) {
                 ++executionConflicts_;
+                CoroutineScheduler::instance().resumeMetrics().conflicts.fetch_add(
+                    1, std::memory_order_relaxed);
                 return false;
             }
             running_ = true;

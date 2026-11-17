@@ -42,6 +42,7 @@ struct ResumeMetrics {
     std::atomic<uint64_t> dispatched{0};
     std::atomic<uint64_t> refused{0};
     std::atomic<uint64_t> pending{0};
+    std::atomic<uint64_t> conflicts{0};
     std::atomic<uint64_t> queueLatencyUsTotal{0};
     std::atomic<uint64_t> queueLatencyUsMax{0};
 

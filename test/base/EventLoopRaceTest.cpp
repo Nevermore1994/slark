@@ -244,6 +244,65 @@ TEST(EventLoopRaceTest, ReplacingWaiterSignalsTerminalOutsideLock) {
     state->loop.unregisterFd(fd);
 }
 
+TEST(EventLoopRaceTest, SecondWaiterOnTheSameFdAndDirectionEndsTheFirstAsNotReady) {
+    LoopFixture fx;
+    SocketPair sp;
+    ASSERT_TRUE(sp.open());
+    fx.loop.registerFd(sp.fds[0]);
+
+    auto awaiter1 = std::make_shared<CompletionAwaiter<void>>();
+    Task<void> task1;
+    auto gate1 = makeGate(task1, awaiter1);
+    auto reg1 = fx.loop.registerContinuation(sp.fds[0], FdInterest::Read, gate1);
+    fx.loop.setReadable(sp.fds[0], true);
+    gate1->arm();
+
+    auto awaiter2 = std::make_shared<CompletionAwaiter<void>>();
+    Task<void> task2;
+    auto gate2 = makeGate(task2, awaiter2);
+    auto reg2 = fx.loop.registerContinuation(sp.fds[0], FdInterest::Read, gate2);
+    fx.loop.setReadable(sp.fds[0], true);
+    gate2->arm();
+
+    EXPECT_TRUE(waitDone(task1)) << "the replaced waiter is released, never left parked";
+    EXPECT_TRUE(gate1->consumeNotReady()) << "replacement reaches the old waiter as a terminal notice";
+    EXPECT_FALSE(task2.isDone()) << "the new waiter stays registered until its fd is ready";
+
+    ASSERT_EQ(::write(sp.fds[1], "x", 1), 1);
+    EXPECT_TRUE(waitDone(task2));
+    EXPECT_FALSE(gate2->consumeNotReady()) << "readiness is not a terminal notice";
+    reg2.cancel();
+}
+
+TEST(EventLoopRaceTest, ReadAndWriteWaitersOnTheSameFdAreIndependent) {
+    LoopFixture fx;
+    SocketPair sp;
+    ASSERT_TRUE(sp.open());
+    fx.loop.registerFd(sp.fds[0]);
+
+    auto readAwaiter = std::make_shared<CompletionAwaiter<void>>();
+    Task<void> readTask;
+    auto readGate = makeGate(readTask, readAwaiter);
+    auto readReg = fx.loop.registerContinuation(sp.fds[0], FdInterest::Read, readGate);
+    fx.loop.setReadable(sp.fds[0], true);
+    readGate->arm();
+
+    auto writeAwaiter = std::make_shared<CompletionAwaiter<void>>();
+    Task<void> writeTask;
+    auto writeGate = makeGate(writeTask, writeAwaiter);
+    auto writeReg = fx.loop.registerContinuation(sp.fds[0], FdInterest::Write, writeGate);
+    fx.loop.setWritable(sp.fds[0], true);
+    writeGate->arm();
+
+    EXPECT_TRUE(waitDone(writeTask)) << "an idle socket is writable";
+    EXPECT_FALSE(readTask.isDone()) << "a write waiter must not displace the read waiter";
+    EXPECT_FALSE(readGate->consumeNotReady());
+
+    ASSERT_EQ(::write(sp.fds[1], "x", 1), 1);
+    EXPECT_TRUE(waitDone(readTask));
+    readReg.cancel();
+}
+
 TEST(EventLoopRaceTest, DispatchAndRegisterInterleaving) {
     LoopFixture fx;
     SocketPair sp;

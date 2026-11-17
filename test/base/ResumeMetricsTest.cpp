@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <coroutine>
 #include <memory>
 #include <thread>
 
@@ -117,4 +118,40 @@ TEST(ResumeMetricsTest, PendingCountsAcceptedResumesUntilTheyStart) {
     release.store(true);
     ASSERT_TRUE(waitUntilDone(task));
     EXPECT_EQ(metrics.pending.load(), baseline);
+}
+
+namespace {
+
+struct ResumeOwnFrame {
+    bool* refused;
+
+    bool await_ready() const noexcept {
+        return false;
+    }
+
+    template <typename Promise>
+    bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
+        *refused = !handle.promise().frameControl()->resume(handle);
+        return false;
+    }
+
+    void await_resume() const noexcept {}
+};
+
+Task<void> resumeItselfWhileRunning(bool* refused) {
+    co_await ResumeOwnFrame{refused};
+}
+
+}  // namespace
+
+TEST(ResumeMetricsTest, ResumeOfAFrameThatIsStillRunningIsRefusedAndCounted) {
+    auto& metrics = CoroutineScheduler::instance().resumeMetrics();
+    const auto before = metrics.conflicts.load();
+    bool refused = false;
+    auto task = resumeItselfWhileRunning(&refused);
+    task.resume();
+    ASSERT_TRUE(task.isDone());
+    EXPECT_TRUE(refused) << "a frame must not be resumed while its body is still running";
+    EXPECT_EQ(metrics.conflicts.load() - before, 1u);
+    EXPECT_EQ(task.getHandle().promise().frameControl()->executionConflicts(), 1u);
 }
