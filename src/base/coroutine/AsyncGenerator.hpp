@@ -569,7 +569,7 @@ class AsyncGeneratorNextAwaiter {
                 promise.setExecutor(consumer.promise().executor());
             }
         }
-        inheritCancellation(promise, consumer.promise());
+        attach(promise, AwaitEdge{}, cancellationTokenOf(consumer.promise()));
 
         uint64_t generation = 0;
         if (!promise.setWaitingConsumer(
@@ -709,6 +709,20 @@ class [[nodiscard]] AsyncGenerator : public NonCopyable {
                                       "AsyncGenerator::setCancellationToken after the first next()");
             promise.setCancelToken(std::move(token));
         }
+    }
+
+    // Root form of attach(): the producer's token is a child of `scope`, merged with `extra`.
+    // A closed generator has no producer left to bind.
+    CancellationToken attach(SpawnEdge, const CancellationToken* scope,
+                             const CancellationToken* extra = nullptr) {
+        if (state_ == nullptr) {
+            return {};
+        }
+        if (auto producer = state_->producer()) {
+            auto& promise = handle_type::from_address(producer.address()).promise();
+            return ::slark::attach(promise, SpawnEdge{}, scope, extra);
+        }
+        return {};
     }
 
     auto next() & noexcept {

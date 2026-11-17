@@ -229,7 +229,7 @@ class TaskAwaiter {
             childLease_.reset();
             return awaiting;
         }
-        inheritCancellation(childPromise, awaiting.promise());
+        attach(childPromise, AwaitEdge{}, cancellationTokenOf(awaiting.promise()));
         // Local/explicit domain wins; the parent's domain is only a fallback.
         if constexpr (requires { awaiting.promise().executor(); }) {
             if (childPromise.executor_ == nullptr) {
@@ -331,6 +331,15 @@ class [[nodiscard]] Task : public NonCopyable {
                                       "Task::setCancellationToken after the first resume");
             handle_.promise().setCancelToken(std::move(token));
         }
+    }
+
+    // Root form of attach(): the task's token is a child of `scope`, merged with `extra`.
+    CancellationToken attach(SpawnEdge, const CancellationToken* scope,
+                             const CancellationToken* extra = nullptr) {
+        if (!handle_) {
+            return {};
+        }
+        return ::slark::attach(handle_.promise(), SpawnEdge{}, scope, extra);
     }
 
     template <typename F>

@@ -25,10 +25,7 @@ public:
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
         auto& promise = handle.promise();
-        releaseTransferLeases(promise);
-        markExternalAwait(promise);
-        gate_ = makeResumeGate(handle);
-        registerExternalGate(promise, gate_);
+        gate_ = enterExternalWait(handle);
         // The awaiting coroutine's token flows down to the children; it never wakes this wait.
         derived().start(gate_, cancellationTokenOf(promise), executorOf(promise));
         return gate_->arm();

@@ -384,6 +384,56 @@ TEST(HttpLoopbackTest, HttpErrorPreservesBodyAndTrailers) {
     EXPECT_EQ(response.trailers.at("x-trace"), "error-123");
 }
 
+TEST(HttpLoopbackTest, FollowsRedirectToSecondEndpoint) {
+    LoopbackHttpServer finalServer(
+        "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello");
+    const auto target = "http://127.0.0.1:" + std::to_string(finalServer.port()) + "/final";
+    LoopbackHttpServer redirectServer("HTTP/1.1 302 Found\r\nLocation: " + target +
+                                      "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+
+    auto info = makeLoopbackRequest(redirectServer.port());
+    info.isAllowRedirect = true;
+    info.networkAddressPolicy = NetworkAddressPolicy::AllowAny;
+
+    ThreadPool pool(ThreadPoolConfig{2});
+    std::atomic<bool> done{false};
+    HttpResponse result;
+    auto task = runVoidTask([&]() -> Task<void> {
+        HttpProcessor processor;
+        auto response = co_await processor.process(info);
+        if (response.has_value()) {
+            result = std::move(*response);
+        } else {
+            result.error = response.error();
+        }
+        done.store(true);
+    });
+    task.resume();
+
+    for (int i = 0; i < 200 && !done.load(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(done.load());
+    EXPECT_EQ(result.error.retCode, Error::Success);
+    EXPECT_EQ(result.statusCode, HttpStatusCode::OK);
+    ASSERT_NE(result.body, nullptr);
+    EXPECT_EQ(std::string(reinterpret_cast<const char*>(result.body->data()),
+                          result.body->length()),
+              "hello");
+}
+
+TEST(HttpLoopbackTest, RedirectWithoutLocationDeliversOriginalResponse) {
+    const auto response = executeLoopback(
+        "HTTP/1.1 302 Found\r\nContent-Length: 2\r\nConnection: close\r\n\r\nhi");
+
+    EXPECT_EQ(response.error.retCode, Error::Success);
+    EXPECT_EQ(response.statusCode, HttpStatusCode::Found);
+    ASSERT_NE(response.body, nullptr);
+    EXPECT_EQ(std::string(reinterpret_cast<const char*>(response.body->data()),
+                          response.body->length()),
+              "hi");
+}
+
 TEST(HttpLoopbackTest, WriteTimeoutPreservesConnectionTimeout) {
     LoopbackBlackholeServer server;
     RequestInfo info;

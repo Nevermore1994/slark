@@ -6,6 +6,7 @@
 #include <coroutine>
 #include <memory>
 #include <optional>
+#include <string_view>
 
 #include "CoroutineControl.hpp"
 #include "CoroutineScheduler.hpp"
@@ -25,7 +26,7 @@ struct YieldAwaiter final : ExternalWaitBase<YieldAwaiter, ScheduledCallback> {
 
     void finish() const noexcept {}
 
-    static const char* cancelMessage() noexcept {
+    static std::string_view cancelMessage() noexcept {
         return "Yield cancelled";
     }
 };

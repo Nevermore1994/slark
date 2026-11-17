@@ -192,7 +192,7 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo reques
         sessionToken = closeToken_;
     }
     auto events = executeEventsImpl(std::move(requestInfo));
-    events.setCancellationToken(std::move(sessionToken));
+    events.attach(SpawnEdge{}, &sessionToken);
     return events;
 }
 
@@ -204,7 +204,7 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo reques
         sessionToken = closeToken_;
     }
     auto events = executeEventsImpl(std::move(requestInfo));
-    events.setCancellationToken(CancellationToken::link(token, sessionToken));
+    events.attach(SpawnEdge{}, &sessionToken, &token);
     return events;
 }
 

@@ -186,7 +186,7 @@ Task<OpenConnectionResult> openConnection(std::string host,
                                           CancellationToken token) {
     auto task = openConnection(std::move(host), port, std::move(scheme), ipVersion, addressPolicy,
                                connectTimeout, tlsHandshakeTimeout, perf);
-    task.setCancellationToken(std::move(token));
+    task.attach(SpawnEdge{}, &token);
     return task;
 }
 

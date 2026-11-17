@@ -12,6 +12,7 @@
 #include <coroutine>
 #include <cstring>
 #include <mutex>
+#include <string_view>
 #include <thread>
 #include <utility>
 
@@ -336,7 +337,7 @@ class FdReadyAwaiter final
         return gate() && !gate()->consumeNotReady();
     }
 
-    static const char* cancelMessage() noexcept {
+    static std::string_view cancelMessage() noexcept {
         return "Fd wait cancelled";
     }
 

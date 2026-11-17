@@ -6,11 +6,13 @@
 #include <concepts>
 #include <coroutine>
 #include <cstdint>
+#include <cstdio>
 #include <exception>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -617,6 +619,14 @@ class PromiseCancellation {
         started_.store(true, std::memory_order_release);
     }
 
+    void markAttached() noexcept {
+        attached_ = true;
+    }
+
+    [[nodiscard]] bool isAttached() const noexcept {
+        return attached_;
+    }
+
  protected:
     [[nodiscard]] bool sameInheritance(const CancellationToken* parent) const noexcept {
         if (!parent) {
@@ -629,6 +639,7 @@ class PromiseCancellation {
     std::optional<CancellationToken> ownToken_;
     std::optional<CancellationToken> inheritedFrom_;
     std::atomic<bool> started_{false};
+    bool attached_{false};
 };
 
 template <typename Promise>
@@ -648,9 +659,9 @@ struct FrameStartAwaiter {
 
 namespace detail {
 
-inline void requireNotStarted(const PromiseCancellation& promise, const char* message) {
+inline void requireNotStarted(const PromiseCancellation& promise, std::string_view message) {
     if (promise.hasStarted()) {
-        throw std::logic_error(message);
+        throw std::logic_error(std::string(message));
     }
 }
 
@@ -665,28 +676,69 @@ template <typename Promise>
     }
 }
 
-template <typename ChildPromise, typename ParentPromise>
-void inheritCancellation(ChildPromise& child, ParentPromise& parent) {
-    child.inheritCancelToken(cancellationTokenOf(parent));
+template <typename Promise>
+std::shared_ptr<ResumeGate> enterExternalWait(std::coroutine_handle<Promise> handle) noexcept {
+    releaseTransferLeases(handle.promise());
+    markExternalAwait(handle.promise());
+    auto gate = makeResumeGate(handle);
+    registerExternalGate(handle.promise(), gate);
+    return gate;
 }
 
+// Refuses a frame that no edge attached: its token would never arrive.
+struct RequireAttachedEdge {
+    bool await_ready() const noexcept {
+        return false;
+    }
+
+    template <typename Promise>
+    bool await_suspend(std::coroutine_handle<Promise> handle) const noexcept {
+        if (!handle.promise().isAttached()) {
+            constexpr std::string_view message =
+                "composed coroutine started without a cancellation edge; aborting";
+            LogE("{}", message);
+            std::fwrite(message.data(), 1, message.size(), stderr);
+            std::fputc('\n', stderr);
+            std::terminate();
+        }
+        return false;
+    }
+
+    void await_resume() const noexcept {}
+};
+
+struct AwaitEdge {};
+struct SpawnEdge {};
+struct LeafEdge {};
+
+template <typename ChildPromise>
+void attach(ChildPromise& child, AwaitEdge, const CancellationToken* awaiting) {
+    child.inheritCancelToken(awaiting);
+}
+
+// A frame made by a composition: its token is a child of `scope`, and of `extra` when given.
+template <typename ChildPromise>
+CancellationToken attach(ChildPromise& child, SpawnEdge, const CancellationToken* scope,
+                         const CancellationToken* extra = nullptr) {
+    detail::requireNotStarted(child, "attach: a spawned frame must not have started");
+    if (child.cancelToken() != nullptr) {
+        throw std::logic_error("attach: the spawned frame already has a cancellation token");
+    }
+    CancellationToken own = (scope != nullptr && extra != nullptr)
+                                ? CancellationToken::link(*scope, *extra)
+                                : CancellationToken::childOf(scope != nullptr ? scope : extra);
+    child.setCancelToken(own);
+    child.markAttached();
+    return own;
+}
+
+// Destroying the result unregisters the wait, so an abandoned leaf cannot be woken.
 template <typename Promise, typename OnCancel>
-[[nodiscard]] CancellationTokenRegistration bindCancellation(Promise& promise, OnCancel onCancel) {
-    if (const auto* token = cancellationTokenOf(promise)) {
+[[nodiscard]] CancellationTokenRegistration attach(Promise& frame, LeafEdge, OnCancel onCancel) {
+    if (const auto* token = cancellationTokenOf(frame)) {
         return token->registerCallbackOrRun(std::move(onCancel));
     }
     return {};
-}
-
-template <typename Promise>
-[[nodiscard]] CancellationTokenRegistration bindGateCancellation(
-    Promise& promise,
-    const std::shared_ptr<ResumeGate>& gate) {
-    return bindCancellation(promise, [weak = std::weak_ptr<ResumeGate>(gate)] {
-        if (auto locked = weak.lock()) {
-            locked->signalCancel();
-        }
-    });
 }
 
 }  // namespace slark

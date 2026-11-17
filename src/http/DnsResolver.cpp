@@ -47,7 +47,7 @@ Task<AddressInfoPtr> DnsResolver::resolveAsync(const std::string& host,
                                                IPVersion ipVersion,
                                                CancellationToken token) {
     auto task = resolveAsyncImpl(state_, host, port, ipVersion);
-    task.setCancellationToken(std::move(token));
+    task.attach(SpawnEdge{}, &token);
     return task;
 }
 

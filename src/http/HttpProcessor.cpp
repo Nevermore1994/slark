@@ -60,6 +60,40 @@ Task<ErrorInfo> sendRequest(OwnedConnection& conn, const RequestInfo& requestInf
     co_return co_await sendRequestPart(conn, body, requestInfo, "body");
 }
 
+[[nodiscard]] bool isTerminalEvent(const HttpResponseEvent& event) noexcept {
+    return event.type == HttpResponseEventType::Completed ||
+           event.type == HttpResponseEventType::Error;
+}
+
+struct RedirectDecision {
+    std::optional<RequestInfo> request;
+    bool blocked = false;
+};
+
+RedirectDecision evaluateRedirect(const HttpResponseEvent& headers,
+                                  const RequestInfo& currentInfo,
+                                  int32_t redirectCount,
+                                  const RedirectPolicy& policy) {
+    HttpResponse response;
+    response.statusCode = headers.header.httpStatusCode;
+    response.headers = headers.header.headers;
+    if (!policy.shouldRedirect(response, currentInfo, redirectCount)) {
+        return {};
+    }
+
+    auto location = policy.extractRedirectLocation(headers.header.headers);
+    if (!location.has_value()) {
+        return {};
+    }
+
+    auto request = RedirectPolicy::buildRedirectRequest(
+        currentInfo, headers.header.httpStatusCode, std::move(*location));
+    if (!request.has_value()) {
+        return {.request = std::nullopt, .blocked = true};
+    }
+    return {.request = std::move(request)};
+}
+
 }  // namespace
 
 HttpProcessor::ParsedRequest HttpProcessor::parseUrl(const std::string& urlStr) {
@@ -84,7 +118,7 @@ Task<ResponseResult> HttpProcessor::process(RequestInfo requestInfo) {
 
 Task<ResponseResult> HttpProcessor::process(RequestInfo requestInfo, CancellationToken token) {
     auto task = process(std::move(requestInfo));
-    task.setCancellationToken(std::move(token));
+    task.attach(SpawnEdge{}, &token);
     return task;
 }
 
@@ -143,68 +177,58 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::processEvents(RequestInfo reque
     int32_t redirectCount = 0;
     RedirectPolicy redirectPolicy;
 
+    auto events = executeEventsSingle(currentInfo);
+    std::optional<HttpResponseEvent> connectedEvent;
+    std::optional<RequestInfo> pendingRedirect;
+
     while (true) {
-        auto events = executeEventsSingle(currentInfo);
-        std::optional<HttpResponseEvent> connectedEvent;
-        bool redirected = false;
+        auto event = co_await events.next();
+        if (!event.has_value()) {
+            co_yield HttpResponseEvent::makeError(
+                (co_await coro::cancellation_requested())
+                    ? ErrorInfo{slark::Error::Cancelled}
+                    : ErrorInfo{slark::Error::ConnectionReset});
+            co_return;
+        }
 
-        while (true) {
-            auto event = co_await events.next();
-            if (!event.has_value()) {
-                co_yield HttpResponseEvent::makeError(
-                    (co_await coro::cancellation_requested())
-                        ? ErrorInfo{slark::Error::Cancelled}
-                        : ErrorInfo{slark::Error::ConnectionReset});
-                co_return;
-            }
-
-            if (event->type == HttpResponseEventType::Connected) {
-                connectedEvent = std::move(*event);
-                continue;
-            }
-
-            if (event->type == HttpResponseEventType::Headers && !redirected) {
-                HttpResponse headerResponse;
-                headerResponse.statusCode = event->header.httpStatusCode;
-                headerResponse.headers = event->header.headers;
-                if (redirectPolicy.shouldRedirect(headerResponse, currentInfo, redirectCount)) {
-                    auto location = redirectPolicy.extractRedirectLocation(event->header.headers);
-                    if (location.has_value()) {
-                        auto redirectRequest = RedirectPolicy::buildRedirectRequest(
-                            currentInfo, event->header.httpStatusCode, std::move(*location));
-                        if (!redirectRequest.has_value()) {
-                            co_yield HttpResponseEvent::makeError(
-                                ErrorInfo{slark::Error::SchemeDowngradeBlocked});
-                            co_return;
-                        }
-                        currentInfo = std::move(*redirectRequest);
-                        ++redirectCount;
-                        redirected = true;
-                    }
-                }
-            }
-
-            const bool terminal = event->type == HttpResponseEventType::Completed ||
-                                  event->type == HttpResponseEventType::Error;
-            if (redirected) {
-                if (terminal) {
-                    break;
-                }
-                continue;
-            }
-
-            if (connectedEvent.has_value()) {
-                co_yield std::move(*connectedEvent);
+        // Drain the redirected response to its terminal event before starting the next request.
+        if (pendingRedirect.has_value()) {
+            if (isTerminalEvent(*event)) {
+                currentInfo = std::move(*pendingRedirect);
+                pendingRedirect.reset();
                 connectedEvent.reset();
+                ++redirectCount;
+                events = executeEventsSingle(currentInfo);
             }
+            continue;
+        }
 
-            co_yield std::move(*event);
-            if (terminal) {
+        if (event->type == HttpResponseEventType::Connected) {
+            connectedEvent = std::move(*event);
+            continue;
+        }
+
+        if (event->type == HttpResponseEventType::Headers) {
+            auto decision = evaluateRedirect(*event, currentInfo, redirectCount, redirectPolicy);
+            if (decision.blocked) {
+                co_yield HttpResponseEvent::makeError(
+                    ErrorInfo{slark::Error::SchemeDowngradeBlocked});
                 co_return;
+            }
+            if (decision.request.has_value()) {
+                pendingRedirect = std::move(decision.request);
+                continue;
             }
         }
 
-        if (!redirected) {
+        const bool terminal = isTerminalEvent(*event);
+        if (connectedEvent.has_value()) {
+            co_yield std::move(*connectedEvent);
+            connectedEvent.reset();
+        }
+
+        co_yield std::move(*event);
+        if (terminal) {
             co_return;
         }
     }
@@ -386,7 +410,7 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(RequestInfo requestI
 AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(RequestInfo requestInfo,
                                                             CancellationToken token) {
     auto stream = processStreaming(std::move(requestInfo));
-    stream.setCancellationToken(std::move(token));
+    stream.attach(SpawnEdge{}, &token);
     return stream;
 }
 

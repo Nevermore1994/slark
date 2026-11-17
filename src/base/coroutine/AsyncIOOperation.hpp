@@ -166,20 +166,18 @@ class AsyncIOOperationBase {
 
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
-        releaseTransferLeases(handle.promise());
-        markExternalAwait(handle.promise());
-        auto gate = makeResumeGate(handle);
+        auto gate = enterExternalWait(handle);
         if (!completion_->begin(gate)) {
             gate->disarm();
             return false;
         }
 
-        cancelReg_ = bindCancellation(
-            handle.promise(), [weakCompletion = std::weak_ptr<SharedCompletion>(completion_)] {
-                if (auto completion = weakCompletion.lock()) {
-                    completion->requestCancel();
-                }
-            });
+        cancelReg_ = attach(handle.promise(), LeafEdge{},
+                            [weakCompletion = std::weak_ptr<SharedCompletion>(completion_)] {
+                                if (auto completion = weakCompletion.lock()) {
+                                    completion->requestCancel();
+                                }
+                            });
         if (!isTerminal(getState())) {
             scheduleTimeout();
             startOperation();

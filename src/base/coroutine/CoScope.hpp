@@ -10,6 +10,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
@@ -128,6 +129,7 @@ inline void retireChild(const std::shared_ptr<ScopeCore>& core, std::uint64_t id
 
 template <typename T>
 Task<void> scopeWrapper(std::shared_ptr<ScopeCore> core, std::uint64_t id, Task<T> task) {
+    co_await RequireAttachedEdge{};
     try {
         if constexpr (std::is_same_v<T, void>) {
             co_await std::move(task);
@@ -183,7 +185,7 @@ public:
         }
     }
 
-    static const char* cancelMessage() noexcept {
+    static std::string_view cancelMessage() noexcept {
         return "Scope join cancelled";
     }
 
@@ -236,12 +238,12 @@ class AsyncScope {
 
     template <typename T>
     bool spawn(Task<T> task) {
-        return startChild(std::move(task), core_->cancelToken);
+        return startChild(std::move(task), nullptr);
     }
 
     template <typename T>
     bool spawn(Task<T> task, slark::CancellationToken token) {
-        return startChild(std::move(task), slark::CancellationToken::link(core_->cancelToken, token));
+        return startChild(std::move(task), &token);
     }
 
     [[nodiscard]] JoinAwaiter join() noexcept {
@@ -283,14 +285,14 @@ class AsyncScope {
     }
 
     template <typename T>
-    bool startChild(Task<T> task, slark::CancellationToken token) {
+    bool startChild(Task<T> task, const slark::CancellationToken* extra) {
         // Caller errors: rejected before anything is registered, so the scope is not failed.
         if (!task.isValid() || task.getHandle().promise().hasStarted()) {
             throw std::logic_error("AsyncScope::spawn requires a valid Task that has not started");
         }
         const auto id = nextId_.fetch_add(1, std::memory_order_relaxed);
         auto wrapperTask = detail::scopeWrapper<T>(core_, id, std::move(task));
-        wrapperTask.setCancellationToken(std::move(token));
+        attach(wrapperTask.getHandle().promise(), SpawnEdge{}, &core_->cancelToken, extra);
         auto handle = wrapperTask.getHandle();
         auto frameControl = handle.promise().frameControl();
         std::shared_ptr<IExecutor> executor;

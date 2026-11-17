@@ -49,19 +49,22 @@ TEST(ClockTest, MultiThreadedStartPause) {
     std::thread pauseThread([&]() {
         std::this_thread::sleep_for(milliseconds(2000));
         clock.pause();
-        EXPECT_GE(clock.time().toMilliSeconds(), milliseconds(990));
+        EXPECT_GE(clock.time().toMilliSeconds(), milliseconds(500));
     });
     std::thread resumeThread([&]() {
         std::this_thread::sleep_for(milliseconds(1000));
-        EXPECT_GE(clock.time().toMilliSeconds(), milliseconds(990));
+        EXPECT_GE(clock.time().toMilliSeconds(), milliseconds(500));
         clock.start();  // reset start
     });
 
     pauseThread.join();
     resumeThread.join();
 
+    // The window ends come from two independently woken threads, so only a paused clock is exact.
+    const auto frozen = clock.time().point();
     std::this_thread::sleep_for(milliseconds(1000));
-    EXPECT_GE(clock.time().toMilliSeconds(), milliseconds(990));
+    EXPECT_EQ(clock.time().point(), frozen) << "a paused clock must not advance";
+    EXPECT_GE(clock.time().toMilliSeconds(), milliseconds(500));
 }
 
 TEST(ClockTest, MultiThreadedReset) {

@@ -83,6 +83,7 @@ struct JobState {
 
 template <typename T>
 Task<void> runJobBody(std::shared_ptr<JobState<T>> state, Task<T> task) {
+    co_await RequireAttachedEdge{};
     std::exception_ptr failure;
     try {
         if constexpr (std::is_void_v<T>) {
@@ -224,9 +225,8 @@ private:
             throw std::logic_error("coro::makeJob requires a valid Task that has not started");
         }
         auto state = std::make_shared<detail::JobState<T>>();
-        auto own = CancellationToken::childOf(&options.token);
         Task<void> body = detail::runJobBody<T>(state, std::move(task));
-        body.setCancellationToken(own);
+        auto own = attach(body.getHandle().promise(), SpawnEdge{}, &options.token);
         if (options.executor) {
             body.setExecutor(std::move(options.executor));
         }

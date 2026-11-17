@@ -38,6 +38,7 @@ struct TimeoutState {
 
     std::atomic<int> decision{Undecided};
     CancellationToken expired;
+    std::optional<CancellationToken> parent;
     std::optional<TimeoutValue<T>> value;
     std::exception_ptr error;
 };
@@ -71,17 +72,24 @@ Task<T> withTimeoutImpl(Task<T> task, std::chrono::milliseconds timeout) {
     }
 
     auto state = std::make_shared<TimeoutState<T>>();
-    auto timerId = CoroutineScheduler::instance().scheduleCallback(timeout, [state, parent] {
-        if (parent && parent->isCancelled()) {
-            state->decide(TimeoutState<T>::Cancelled);
-        } else if (state->decide(TimeoutState<T>::TimedOut)) {
-            state->expired.cancel();
-        }
-    });
+    state->parent = parent;
+    // A cancelled timer keeps its captures until it expires, so it must not own the state.
+    auto timerId = CoroutineScheduler::instance().scheduleCallback(
+        timeout, [weak = std::weak_ptr<TimeoutState<T>>(state)] {
+            auto locked = weak.lock();
+            if (!locked) {
+                return;
+            }
+            if (locked->parent && locked->parent->isCancelled()) {
+                locked->decide(TimeoutState<T>::Cancelled);
+            } else if (locked->decide(TimeoutState<T>::TimedOut)) {
+                locked->expired.cancel();
+            }
+        });
     ScopeGuard timerGuard([timerId] { CoroutineScheduler::instance().cancel(timerId); });
 
     Task<void> child = runTimedChild<T>(state, parent, std::move(task));
-    child.setCancellationToken(state->expired);
+    attach(child.getHandle().promise(), SpawnEdge{}, &state->expired);
     co_await std::move(child);
 
     const int decision = state->decision.load(std::memory_order_acquire);

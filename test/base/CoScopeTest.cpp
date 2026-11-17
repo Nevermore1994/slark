@@ -468,6 +468,26 @@ Task<void> parkThenMarkRan(std::shared_ptr<CompletionAwaiter<void>> gate,
 
 }  // namespace
 
+Task<void> publishOwnTokenThenPark(std::shared_ptr<CancellationToken> out,
+                                   std::shared_ptr<CompletionAwaiter<void>> gate) {
+    auto token = co_await slark::coro::cancellation_token();
+    *out = token.value();
+    co_await *gate;
+}
+
+TEST(CoScopeTest, SpawnedChildHoldsItsOwnTokenSoCancellingItDoesNotCancelTheScope) {
+    AsyncScope scope;
+    auto out = std::make_shared<CancellationToken>();
+    auto gate = std::make_shared<CompletionAwaiter<void>>();
+    ASSERT_TRUE(scope.spawn(publishOwnTokenThenPark(out, gate)));
+    EXPECT_NE(out->identity(), scope.token().identity())
+        << "a spawned child gets a child token, not the scope's own token";
+
+    out->cancel();
+    EXPECT_FALSE(scope.token().isCancelled()) << "a child cancels only itself";
+    EXPECT_TRUE(slark::test::joinScope(scope));
+}
+
 TEST(CoScopeTest, SpawnOfAnEmptyTaskThrowsAndRegistersNothing) {
     AsyncScope scope;
     EXPECT_THROW(scope.spawn(Task<void>{}), std::logic_error);

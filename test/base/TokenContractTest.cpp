@@ -10,12 +10,16 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 #include "AsyncGenerator.hpp"
+#include "AsyncIOOperation.hpp"
 #include "Awaitable.hpp"
 #include "CancellationToken.h"
 #include "CoScope.hpp"
+#include "CoTimeout.hpp"
 #include "CoWhenAll.hpp"
+#include "CoroutineControl.hpp"
 #include "CoroutineTestSupport.h"
 #include "Error.h"
 #include "Job.hpp"
@@ -39,14 +43,42 @@ struct Probe {
     std::atomic<bool> completed{false};
 };
 
-Task<void> parkedLeaf(std::shared_ptr<Probe> probe) {
-    try {
-        co_await TimerAwaiter(5000ms);
-        probe->completed = true;
-    } catch (const CancelledException&) {
-        probe->cancelled = true;
-        throw;
+class ParkedIo final : public slark::AsyncIOOperationBase<ParkedIo, void> {
+protected:
+    void startOperation() noexcept override {}
+};
+
+struct TimerLeaf {
+    static constexpr std::string_view kName = "Timer";
+
+    static Task<void> park(std::shared_ptr<Probe> probe) {
+        try {
+            co_await TimerAwaiter(5000ms);
+            probe->completed = true;
+        } catch (const CancelledException&) {
+            probe->cancelled = true;
+            throw;
+        }
     }
+};
+
+struct IoLeaf {
+    static constexpr std::string_view kName = "Io";
+
+    static Task<void> park(std::shared_ptr<Probe> probe) {
+        try {
+            (void)co_await ParkedIo{};
+            probe->completed = true;
+        } catch (const CancelledException&) {
+            probe->cancelled = true;
+            throw;
+        }
+    }
+};
+
+template <typename Leaf>
+Task<void> parkedLeaf(std::shared_ptr<Probe> probe) {
+    return Leaf::park(std::move(probe));
 }
 
 Task<void> quickLeaf() {
@@ -64,8 +96,9 @@ std::size_t callbacksOn(const CancellationToken& token) {
 
 constexpr std::size_t kNotDone = std::numeric_limits<std::size_t>::max();
 
+template <typename Leaf>
 Task<void> awaitLeaf(std::shared_ptr<Probe> probe) {
-    co_await parkedLeaf(std::move(probe));
+    co_await parkedLeaf<Leaf>(std::move(probe));
 }
 
 Task<void> awaitOwnTokenChildren(int rounds, const CancellationToken* upstream,
@@ -78,14 +111,18 @@ Task<void> awaitOwnTokenChildren(int rounds, const CancellationToken* upstream,
     }
 }
 
+template <typename Leaf>
 struct AwaitEntry {
-    static constexpr const char* kName = "Await";
+    static std::string name() {
+        return "Await_" + std::string(Leaf::kName);
+    }
     static constexpr bool kOwnScope = false;
+    static constexpr bool kEntersLeaf = true;
 
     struct Run {
         Run(std::shared_ptr<Probe> probe, const CancellationToken& upstream)
-            : root(awaitLeaf(std::move(probe))) {
-            root.setCancellationToken(upstream);
+            : root(awaitLeaf<Leaf>(std::move(probe))) {
+            root.attach(slark::SpawnEdge{}, &upstream);
             root.resume();
         }
 
@@ -98,14 +135,15 @@ struct AwaitEntry {
     static std::size_t repeat(int rounds, const CancellationToken& upstream) {
         std::size_t maxSeen = 0;
         auto root = awaitOwnTokenChildren(rounds, &upstream, &maxSeen);
-        root.setCancellationToken(upstream);
+        root.attach(slark::SpawnEdge{}, &upstream);
         root.resume();
         return root.isDone() ? maxSeen : kNotDone;
     }
 };
 
+template <typename Leaf>
 AsyncGenerator<int> generatorOverLeaf(std::shared_ptr<Probe> probe) {
-    co_await parkedLeaf(std::move(probe));
+    co_await parkedLeaf<Leaf>(std::move(probe));
     co_yield 1;
 }
 
@@ -126,15 +164,19 @@ Task<void> drainObserving(AsyncGenerator<int>* generator, const CancellationToke
     }
 }
 
+template <typename Leaf>
 struct GeneratorEntry {
-    static constexpr const char* kName = "Generator";
+    static std::string name() {
+        return "Generator_" + std::string(Leaf::kName);
+    }
     static constexpr bool kOwnScope = false;
+    static constexpr bool kEntersLeaf = true;
 
     struct Run {
         Run(std::shared_ptr<Probe> probe, const CancellationToken& upstream)
-            : generator(generatorOverLeaf(std::move(probe))),
+            : generator(generatorOverLeaf<Leaf>(std::move(probe))),
               consumer(consumeFirstValue(&generator)) {
-            consumer.setCancellationToken(upstream);
+            consumer.attach(slark::SpawnEdge{}, &upstream);
             consumer.resume();
         }
 
@@ -150,15 +192,17 @@ struct GeneratorEntry {
         auto generator = countingProducer(rounds);
         generator.setCancellationToken(CancellationToken{});
         auto consumer = drainObserving(&generator, &upstream, &maxSeen);
-        consumer.setCancellationToken(upstream);
+        consumer.attach(slark::SpawnEdge{}, &upstream);
         consumer.resume();
         return consumer.isDone() ? maxSeen : kNotDone;
     }
 };
 
+template <typename Leaf>
 Task<void> whenAllOfLeaf(std::shared_ptr<Probe> probe,
                          std::shared_ptr<CompletionAwaiter<void>> failGate) {
-    co_await slark::coro::when_all(parkedLeaf(std::move(probe)), failAfter(std::move(failGate)));
+    co_await slark::coro::when_all(parkedLeaf<Leaf>(std::move(probe)),
+                                   failAfter(std::move(failGate)));
 }
 
 Task<void> whenAllRepeatedly(int rounds, const CancellationToken* upstream, std::size_t* maxSeen) {
@@ -168,15 +212,19 @@ Task<void> whenAllRepeatedly(int rounds, const CancellationToken* upstream, std:
     }
 }
 
+template <typename Leaf>
 struct WhenAllEntry {
-    static constexpr const char* kName = "WhenAll";
+    static std::string name() {
+        return "WhenAll_" + std::string(Leaf::kName);
+    }
     static constexpr bool kOwnScope = true;
+    static constexpr bool kEntersLeaf = true;
 
     struct Run {
         Run(std::shared_ptr<Probe> probe, const CancellationToken& upstream)
             : failGate(std::make_shared<CompletionAwaiter<void>>()),
-              root(whenAllOfLeaf(std::move(probe), failGate)) {
-            root.setCancellationToken(upstream);
+              root(whenAllOfLeaf<Leaf>(std::move(probe), failGate)) {
+            root.attach(slark::SpawnEdge{}, &upstream);
             root.resume();
         }
 
@@ -190,14 +238,15 @@ struct WhenAllEntry {
     static std::size_t repeat(int rounds, const CancellationToken& upstream) {
         std::size_t maxSeen = 0;
         auto root = whenAllRepeatedly(rounds, &upstream, &maxSeen);
-        root.setCancellationToken(upstream);
+        root.attach(slark::SpawnEdge{}, &upstream);
         root.resume();
         return root.isDone() ? maxSeen : kNotDone;
     }
 };
 
+template <typename Leaf>
 Task<int> whenAnyOfLeaf(AsyncScope* scope, std::shared_ptr<Probe> probe) {
-    auto result = co_await slark::coro::when_any(*scope, parkedLeaf(std::move(probe)));
+    auto result = co_await slark::coro::when_any(*scope, parkedLeaf<Leaf>(std::move(probe)));
     co_return static_cast<int>(result.winnerIndex);
 }
 
@@ -205,14 +254,18 @@ Task<void> whenAnyOfQuickLeaves(AsyncScope* scope) {
     (void)co_await slark::coro::when_any(*scope, quickLeaf(), quickLeaf());
 }
 
+template <typename Leaf>
 struct WhenAnyEntry {
-    static constexpr const char* kName = "WhenAny";
+    static std::string name() {
+        return "WhenAny_" + std::string(Leaf::kName);
+    }
     static constexpr bool kOwnScope = true;
+    static constexpr bool kEntersLeaf = true;
 
     struct Run {
         Run(std::shared_ptr<Probe> probe, const CancellationToken& upstream)
-            : root(whenAnyOfLeaf(&scope, std::move(probe))) {
-            root.setCancellationToken(upstream);
+            : root(whenAnyOfLeaf<Leaf>(&scope, std::move(probe))) {
+            root.attach(slark::SpawnEdge{}, &upstream);
             root.resume();
         }
 
@@ -229,7 +282,7 @@ struct WhenAnyEntry {
         AsyncScope scope;
         for (int i = 0; i < rounds; ++i) {
             auto root = whenAnyOfQuickLeaves(&scope);
-            root.setCancellationToken(upstream);
+            root.attach(slark::SpawnEdge{}, &upstream);
             root.resume();
             if (!root.isDone()) {
                 return kNotDone;
@@ -240,13 +293,17 @@ struct WhenAnyEntry {
     }
 };
 
+template <typename Leaf>
 struct ScopeEntry {
-    static constexpr const char* kName = "Scope";
+    static std::string name() {
+        return "Scope_" + std::string(Leaf::kName);
+    }
     static constexpr bool kOwnScope = true;
+    static constexpr bool kEntersLeaf = true;
 
     struct Run {
         Run(std::shared_ptr<Probe> probe, const CancellationToken& upstream) {
-            scope.spawn(parkedLeaf(std::move(probe)), upstream);
+            scope.spawn(parkedLeaf<Leaf>(std::move(probe)), upstream);
         }
 
         bool unwound() { return slark::test::joinScope(scope); }
@@ -266,13 +323,17 @@ struct ScopeEntry {
     }
 };
 
+template <typename Leaf>
 struct JobEntry {
-    static constexpr const char* kName = "Job";
+    static std::string name() {
+        return "Job_" + std::string(Leaf::kName);
+    }
     static constexpr bool kOwnScope = true;
+    static constexpr bool kEntersLeaf = true;
 
     struct Run {
         Run(std::shared_ptr<Probe> probe, const CancellationToken& upstream)
-            : job(slark::coro::launch(parkedLeaf(std::move(probe)),
+            : job(slark::coro::launch(parkedLeaf<Leaf>(std::move(probe)),
                                       slark::coro::LaunchOptions{.token = upstream})) {}
 
         bool unwound() { return job.isDone(); }
@@ -295,18 +356,66 @@ struct JobEntry {
     }
 };
 
+template <typename Leaf>
+Task<void> timedLeaf(std::shared_ptr<Probe> probe) {
+    co_await slark::coro::with_timeout(parkedLeaf<Leaf>(std::move(probe)), 60s);
+}
+
+Task<void> timedRepeatedly(int rounds, const CancellationToken* upstream, std::size_t* maxSeen) {
+    for (int i = 0; i < rounds; ++i) {
+        co_await slark::coro::with_timeout(quickLeaf(), 60s);
+        *maxSeen = std::max(*maxSeen, callbacksOn(*upstream));
+    }
+}
+
+template <typename Leaf>
+struct WithTimeoutEntry {
+    static std::string name() {
+        return "WithTimeout_" + std::string(Leaf::kName);
+    }
+    static constexpr bool kOwnScope = false;
+    // with_timeout refuses a cancelled upstream before its child, and so the leaf, ever starts.
+    static constexpr bool kEntersLeaf = false;
+
+    struct Run {
+        Run(std::shared_ptr<Probe> probe, const CancellationToken& upstream)
+            : root(timedLeaf<Leaf>(std::move(probe))) {
+            root.attach(slark::SpawnEdge{}, &upstream);
+            root.resume();
+        }
+
+        bool unwound() { return root.isDone(); }
+        void cancelOwnScope() {}
+
+        Task<void> root;
+    };
+
+    static std::size_t repeat(int rounds, const CancellationToken& upstream) {
+        std::size_t maxSeen = 0;
+        auto root = timedRepeatedly(rounds, &upstream, &maxSeen);
+        root.attach(slark::SpawnEdge{}, &upstream);
+        root.resume();
+        return root.isDone() ? maxSeen : kNotDone;
+    }
+};
+
 struct EntryNames {
     template <typename Entry>
     static std::string GetName(int) {
-        return Entry::kName;
+        return Entry::name();
     }
 };
 
 template <typename Entry>
 class TokenContractTest : public ::testing::Test {};
 
-using Entries =
-    ::testing::Types<AwaitEntry, GeneratorEntry, WhenAllEntry, WhenAnyEntry, ScopeEntry, JobEntry>;
+using Entries = ::testing::Types<AwaitEntry<TimerLeaf>,     AwaitEntry<IoLeaf>,
+                                 GeneratorEntry<TimerLeaf>, GeneratorEntry<IoLeaf>,
+                                 WhenAllEntry<TimerLeaf>,   WhenAllEntry<IoLeaf>,
+                                 WhenAnyEntry<TimerLeaf>,   WhenAnyEntry<IoLeaf>,
+                                 ScopeEntry<TimerLeaf>,     ScopeEntry<IoLeaf>,
+                                 JobEntry<TimerLeaf>,       JobEntry<IoLeaf>,
+                                 WithTimeoutEntry<TimerLeaf>, WithTimeoutEntry<IoLeaf>>;
 TYPED_TEST_SUITE(TokenContractTest, Entries, EntryNames);
 
 }  // namespace
@@ -328,9 +437,13 @@ TYPED_TEST(TokenContractTest, AnAlreadyCancelledUpstreamNeverParksTheLeaf) {
     upstream.cancel();
     auto probe = std::make_shared<Probe>();
     auto run = std::make_unique<typename TypeParam::Run>(probe, upstream);
-    EXPECT_TRUE(probe->cancelled);
+    if constexpr (TypeParam::kEntersLeaf) {
+        EXPECT_TRUE(probe->cancelled) << "the leaf must observe the cancellation instead of parking";
+    } else {
+        EXPECT_FALSE(probe->cancelled) << "the entry refuses before it enters the leaf";
+    }
     EXPECT_FALSE(probe->completed);
-    EXPECT_TRUE(run->unwound());
+    EXPECT_TRUE(run->unwound()) << "the entry must unwind without waiting on the leaf";
 }
 
 TYPED_TEST(TokenContractTest, CancellingTheOwnScopeDoesNotCancelTheUpstream) {
@@ -366,4 +479,90 @@ TYPED_TEST(TokenContractTest, DestroyingTheEntryReleasesItsRegistrations) {
     }
     EXPECT_EQ(callbacksOn(upstream), baseline);
     EXPECT_FALSE(upstream.isCancelled());
+}
+
+TEST(TokenEdgeGuardTest, AnAttachedFrameWithoutTokenRunsToCompletion) {
+    auto body = slark::coro::detail::runJobBody<void>(
+        std::make_shared<slark::coro::detail::JobState<void>>(), quickLeaf());
+    slark::attach(body.getHandle().promise(), slark::SpawnEdge{}, nullptr);
+    body.resume();
+    EXPECT_TRUE(body.isDone());
+}
+
+TEST(TokenEdgeGuardTest, AttachingAFrameTwiceIsRejected) {
+    auto body = slark::coro::detail::runJobBody<void>(
+        std::make_shared<slark::coro::detail::JobState<void>>(), quickLeaf());
+    slark::attach(body.getHandle().promise(), slark::SpawnEdge{}, nullptr);
+    EXPECT_THROW(slark::attach(body.getHandle().promise(), slark::SpawnEdge{}, nullptr),
+                 std::logic_error);
+}
+
+constexpr auto kGuardMessage = "composed coroutine started without a cancellation edge";
+
+namespace {
+
+Task<void> cancelOwnTokenThenPark() {
+    auto token = co_await slark::coro::cancellation_token();
+    token->cancel();
+    try {
+        co_await TimerAwaiter(5000ms);
+    } catch (const CancelledException&) {
+    }
+}
+
+}  // namespace
+
+TEST(TokenEdgeGuardTest, RootAttachedToASourceIsCancelledBySourceButNeverCancelsIt) {
+    CancellationToken source;
+    auto root = cancelOwnTokenThenPark();
+    root.attach(slark::SpawnEdge{}, &source);
+    root.resume();
+    EXPECT_TRUE(root.isDone());
+    EXPECT_FALSE(source.isCancelled()) << "a root cancels only its own token";
+}
+
+TEST(TokenEdgeGuardTest, GeneratorRootAttachedToASourceIsCancelledBySource) {
+    CancellationToken source;
+    auto probe = std::make_shared<Probe>();
+    auto generator = generatorOverLeaf<TimerLeaf>(probe);
+    generator.attach(slark::SpawnEdge{}, &source);
+    auto consumer = consumeFirstValue(&generator);
+    consumer.resume();
+    ASSERT_FALSE(probe->cancelled);
+    source.cancel();
+    EXPECT_TRUE(probe->cancelled);
+}
+
+TEST(TokenEdgeGuardDeathTest, UnattachedComposedFrameAbortsBeforeItsBodyRuns) {
+    testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_DEATH(
+        {
+            auto body = slark::coro::detail::runJobBody<void>(
+                std::make_shared<slark::coro::detail::JobState<void>>(), quickLeaf());
+            body.resume();
+        },
+        kGuardMessage);
+}
+
+TEST(TokenEdgeGuardDeathTest, HandWrittenBindingDoesNotSatisfyTheGuard) {
+    testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_DEATH(
+        {
+            auto body = slark::coro::detail::runJobBody<void>(
+                std::make_shared<slark::coro::detail::JobState<void>>(), quickLeaf());
+            body.setCancellationToken(CancellationToken{});
+            body.resume();
+        },
+        kGuardMessage);
+}
+
+TEST(TokenEdgeGuardDeathTest, UnattachedScopeChildAbortsBeforeItsBodyRuns) {
+    testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_DEATH(
+        {
+            auto child = slark::coro::detail::scopeWrapper<void>(
+                std::make_shared<slark::coro::detail::ScopeCore>(), 0, quickLeaf());
+            child.resume();
+        },
+        kGuardMessage);
 }

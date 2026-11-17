@@ -77,7 +77,7 @@ void OperationState::close() noexcept {
 Task<HttpResponse> HttpRequest::asyncExecute(const RequestInfo& requestInfo) {
     auto operation = beginOperation();
     auto task = executeOperation(requestInfo, operation);
-    task.setCancellationToken(operation->token);
+    task.attach(SpawnEdge{}, &operation->token);
     return task;
 }
 
@@ -86,7 +86,7 @@ Task<HttpResponse> HttpRequest::asyncExecute(const RequestInfo& requestInfo,
     auto operation = beginOperation();
     operation->bindExternalCancellation(token);
     auto task = executeOperation(requestInfo, operation);
-    task.setCancellationToken(CancellationToken::link(token, operation->token));
+    task.attach(SpawnEdge{}, &operation->token, &token);
     return task;
 }
 
@@ -158,7 +158,7 @@ AsyncGenerator<StreamChunk> HttpRequest::streamingExecute(const RequestInfo& req
     auto operation = beginOperation();
     operation->bindExternalCancellation(token);
     auto generator = HttpProcessor::processStreaming(requestInfo);
-    generator.setCancellationToken(CancellationToken::link(token, operation->token));
+    generator.attach(SpawnEdge{}, &operation->token, &token);
     return streamWithOperation(std::move(generator), std::move(operation));
 }
 

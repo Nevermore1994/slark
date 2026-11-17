@@ -13,6 +13,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -39,7 +40,7 @@ public:
 
     void finish() const noexcept {}
 
-    static const char* cancelMessage() noexcept {
+    static std::string_view cancelMessage() noexcept {
         return "Timer cancelled";
     }
 
@@ -127,7 +128,7 @@ class CompletionAwaiter {
             }
         }
 
-        static const char* cancelMessage() noexcept {
+        static std::string_view cancelMessage() noexcept {
             return "Completion cancelled";
         }
 

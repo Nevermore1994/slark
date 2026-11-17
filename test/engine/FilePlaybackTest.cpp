@@ -202,6 +202,25 @@ Prepare makePrepare(const std::string& uri = kWavPath) {
     return prepare;
 }
 
+// Release joins the source loader, which keeps calling into the scheduler until then.
+class EngineReleaseGuard {
+public:
+    EngineReleaseGuard(const std::shared_ptr<Engine>& engine, slark::test::ManualScheduler& scheduler)
+        : engine_(engine), scheduler_(scheduler) {}
+
+    EngineReleaseGuard(const EngineReleaseGuard&) = delete;
+    EngineReleaseGuard& operator=(const EngineReleaseGuard&) = delete;
+
+    ~EngineReleaseGuard() {
+        engine_->post(Release{});
+        scheduler_.runUntilIdle();
+    }
+
+private:
+    const std::shared_ptr<Engine>& engine_;
+    slark::test::ManualScheduler& scheduler_;
+};
+
 }  // namespace
 
 TEST(FilePlaybackTest, AudioFilePlaysThroughAndStops) {
@@ -300,6 +319,7 @@ TEST(FilePlaybackTest, MissingAudioSinkFailsWithFormatNotSupported) {
     auto engine = Engine::create(
         scheduler, notifier,
         makePlaybackFactory(PlayerSetting{}, PlayerContext{}, factories));
+    EngineReleaseGuard releaseEngine(engine, scheduler);
     engine->post(makePrepare());
     ASSERT_TRUE(waitUntil([&] {
         scheduler.advance(10ms);
@@ -320,6 +340,7 @@ TEST(FilePlaybackTest, DecoderFailureFailsTheEngine) {
     auto engine = Engine::create(
         scheduler, notifier,
         makePlaybackFactory(PlayerSetting{}, PlayerContext{}, factories));
+    EngineReleaseGuard releaseEngine(engine, scheduler);
     engine->post(makePrepare());
     ASSERT_TRUE(waitUntil([&] {
         scheduler.advance(10ms);

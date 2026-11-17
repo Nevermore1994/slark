@@ -67,7 +67,7 @@ inline ScheduledCallback scheduleGateSignal(std::chrono::milliseconds delay,
 //                                           nullopt when the event has already happened, so the
 //                                           frame keeps running
 //   Result finish()                         maps the outcome once the frame has resumed
-//   static const char* cancelMessage()      text of the CancelledException
+//   static std::string_view cancelMessage() text of the CancelledException
 // Source is a movable RAII handle: destroying it unregisters the event source. The base owns the
 // gate, the transfer leases, the token registration and the arm/resume race, so every leaf wait
 // cancels and tears down the same way.
@@ -91,16 +91,18 @@ public:
 
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
-        releaseTransferLeases(handle.promise());
-        markExternalAwait(handle.promise());
-        gate_ = makeResumeGate(handle);
-        registerExternalGate(handle.promise(), gate_);
+        gate_ = enterExternalWait(handle);
         source_ = derived().start(gate_);
         if (!source_) {
             gate_->disarm();
             return false;
         }
-        cancelReg_ = bindGateCancellation(handle.promise(), gate_);
+        cancelReg_ = attach(handle.promise(), LeafEdge{},
+                            [weak = std::weak_ptr<ResumeGate>(gate_)] {
+                                if (auto locked = weak.lock()) {
+                                    locked->signalCancel();
+                                }
+                            });
         return gate_->arm();
     }
 
