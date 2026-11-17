@@ -98,6 +98,21 @@ TEST(CoTimeoutTest, ParentCancellationIsNotReportedAsTimeout) {
     EXPECT_THROW(task.result(), CancelledException);
 }
 
+TEST(CoTimeoutTest, TokenBoundToTheChildItselfStillCancelsIt) {
+    CancellationToken token;
+    std::atomic<bool> exited{false};
+    auto child = recordExit(&exited, 5000ms);
+    child.setCancellationToken(token);
+    auto task = with_timeout(std::move(child), 5000ms);
+    task.resume();
+    ASSERT_FALSE(task.isDone());
+
+    token.cancel();
+    ASSERT_TRUE(task.isDone());
+    EXPECT_TRUE(exited.load()) << "the token bound to the wrapped child must reach its leaf";
+    EXPECT_THROW(task.result(), CancelledException);
+}
+
 TEST(CoTimeoutTest, OrElseRecoversFromExpiry) {
     auto task = with_timeout(slowValue(5000ms), 30ms).or_else([](std::exception_ptr) {
         return -1;

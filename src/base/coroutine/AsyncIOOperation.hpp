@@ -174,7 +174,7 @@ class AsyncIOOperationBase {
             return false;
         }
 
-        implicitCancelReg_ = bindCancellation(
+        cancelReg_ = bindCancellation(
             handle.promise(), [weakCompletion = std::weak_ptr<SharedCompletion>(completion_)] {
                 if (auto completion = weakCompletion.lock()) {
                     completion->requestCancel();
@@ -216,16 +216,6 @@ class AsyncIOOperationBase {
 
     void setTimeout(std::chrono::milliseconds t) noexcept {
         timeout_ = t;
-    }
-
-    // External cancellation (C-06): token cancellation wakes the suspended coroutine
-    void setCancellationToken(CancellationToken token) {
-        auto weakCompletion = std::weak_ptr<SharedCompletion>(completion_);
-        cancelReg_ = token.registerCallbackOrRun([weakCompletion]() {
-            if (auto completion = weakCompletion.lock()) {
-                completion->requestCancel();
-            }
-        });
     }
 
  protected:
@@ -273,7 +263,6 @@ class AsyncIOOperationBase {
 
  private:
     CancellationTokenRegistration cancelReg_;
-    CancellationTokenRegistration implicitCancelReg_;
 
     [[nodiscard]] static bool isTerminal(IOOpState state) noexcept {
         return state == IOOpState::Completed || state == IOOpState::Failed ||

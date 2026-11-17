@@ -9,6 +9,7 @@
 #include <thread>
 #include <utility>
 
+#include "AsyncGenerator.hpp"
 #include "Awaitable.hpp"
 #include "CoScope.hpp"
 #include "CoWhenAll.hpp"
@@ -82,13 +83,43 @@ Task<void> parentHoldingChild(std::shared_ptr<CompletionAwaiter<void>> gate,
     co_await when_all(holdPayload(std::move(gate), std::move(observed), std::move(payload)));
 }
 
-Task<void> parentWhenAllOn(IExecutor& executor, std::shared_ptr<std::atomic<bool>> ran) {
+Task<void> parentWhenAllOn(std::shared_ptr<IExecutor> executor,
+                           std::shared_ptr<std::atomic<bool>> ran) {
     co_await when_all(executor, markRan(std::move(ran)));
 }
 
 Task<int> parentWhenAnyOn(AsyncScope& scope, std::shared_ptr<std::atomic<bool>> ran) {
     auto result = co_await when_any(scope, markRan(ran), markRan(ran));
     co_return static_cast<int>(result.winnerIndex);
+}
+
+using ThreadsAroundTimer = slark::test::ThreadsAroundTimer;
+
+Task<void> whenAllRecordingOn(std::shared_ptr<IExecutor> executor,
+                              std::shared_ptr<ThreadsAroundTimer> first,
+                              std::shared_ptr<ThreadsAroundTimer> second) {
+    co_await when_all(executor, slark::test::recordThreadsAroundTimer(std::move(first)),
+                      slark::test::recordThreadsAroundTimer(std::move(second)));
+}
+
+Task<void> whenAllRecordingOnOwnDomain(std::shared_ptr<ThreadsAroundTimer> first,
+                                       std::shared_ptr<ThreadsAroundTimer> second) {
+    co_await when_all(slark::test::recordThreadsAroundTimer(std::move(first)),
+                      slark::test::recordThreadsAroundTimer(std::move(second)));
+}
+
+Task<void> recordAfterGate(std::shared_ptr<CompletionAwaiter<void>> gate,
+                           std::shared_ptr<ThreadsAroundTimer> out) {
+    co_await *gate;
+    out->after = std::this_thread::get_id();
+}
+
+struct HeldWhenAll {
+    slark::coro::WhenAllAwaiter<void> awaiter;
+};
+
+Task<void> awaitHeld(HeldWhenAll* held) {
+    co_await std::move(held->awaiter);
 }
 
 }  // namespace
@@ -203,7 +234,7 @@ TEST(StructuredConcurrencyTest, RefusedWhenAllChildIsCancelledWithoutRunning) {
     auto executor = std::make_shared<SerialExecutor>();
     executor->requestStop();
     auto ran = std::make_shared<std::atomic<bool>>(false);
-    auto parent = parentWhenAllOn(*executor, ran);
+    auto parent = parentWhenAllOn(executor, ran);
 
     parent.resume();
 
@@ -212,11 +243,59 @@ TEST(StructuredConcurrencyTest, RefusedWhenAllChildIsCancelledWithoutRunning) {
     EXPECT_THROW(parent.result(), CancelledException);
 }
 
+TEST(StructuredConcurrencyTest, WhenAllChildrenStayOnTheExplicitDomainAcrossASuspension) {
+    auto executor = std::make_shared<SerialExecutor>();
+    const auto worker = slark::test::workerThreadOf(*executor);
+    auto first = std::make_shared<ThreadsAroundTimer>();
+    auto second = std::make_shared<ThreadsAroundTimer>();
+    auto parent = whenAllRecordingOn(executor, first, second);
+    parent.resume();
+    ASSERT_TRUE(waitUntilDone(parent));
+    EXPECT_NO_THROW(parent.result());
+    EXPECT_EQ(first->before, worker);
+    EXPECT_EQ(first->after, worker) << "a resume after a suspension must stay on the domain";
+    EXPECT_EQ(second->before, worker);
+    EXPECT_EQ(second->after, worker);
+}
+
+TEST(StructuredConcurrencyTest, WhenAllChildrenStayOnTheAwaiterDomainAcrossASuspension) {
+    auto executor = std::make_shared<SerialExecutor>();
+    const auto worker = slark::test::workerThreadOf(*executor);
+    auto first = std::make_shared<ThreadsAroundTimer>();
+    auto second = std::make_shared<ThreadsAroundTimer>();
+    auto parent = whenAllRecordingOnOwnDomain(first, second);
+    parent.setExecutor(executor);
+    parent.resume();
+    ASSERT_TRUE(waitUntilDone(parent));
+    EXPECT_NO_THROW(parent.result());
+    EXPECT_EQ(first->before, worker);
+    EXPECT_EQ(first->after, worker) << "children follow the awaiting coroutine's domain";
+    EXPECT_EQ(second->before, worker);
+    EXPECT_EQ(second->after, worker);
+}
+
+TEST(StructuredConcurrencyTest, WhenAllOwnsItsDomainUntilTheStoredAwaiterRuns) {
+    auto executor = std::make_shared<SerialExecutor>();
+    std::weak_ptr<SerialExecutor> watch = executor;
+    auto gate = std::make_shared<CompletionAwaiter<void>>();
+    auto seen = std::make_shared<ThreadsAroundTimer>();
+    std::unique_ptr<HeldWhenAll> held(new HeldWhenAll{when_all(executor, recordAfterGate(gate, seen))});
+    executor.reset();
+    ASSERT_FALSE(watch.expired()) << "a stored awaiter owns its domain until it is awaited";
+    auto parent = awaitHeld(held.get());
+    parent.resume();
+    gate->complete();
+    ASSERT_TRUE(waitUntilDone(parent));
+    EXPECT_NO_THROW(parent.result());
+    EXPECT_NE(seen->after, std::thread::id{})
+        << "the child resumed on the domain after the caller let go";
+}
+
 TEST(StructuredConcurrencyTest, WhenAnyWithOnlyRefusedChildrenIsCancelled) {
     auto executor = std::make_shared<SerialExecutor>();
     executor->requestStop();
     AsyncScope scope;
-    scope.setDefaultExecutor(*executor);
+    scope.setDefaultExecutor(executor);
     auto ran = std::make_shared<std::atomic<bool>>(false);
     auto parent = parentWhenAnyOn(scope, ran);
 
@@ -276,9 +355,10 @@ Task<void> ownerJoins(AsyncScope& scope, std::shared_ptr<std::atomic<bool>> join
     joined->store(true);
 }
 
-Task<void> ownerSpawnsOnExecutor(IExecutor* executor, std::shared_ptr<std::atomic<bool>> childRan) {
+Task<void> ownerSpawnsOnExecutor(std::weak_ptr<SerialExecutor> executor,
+                                 std::shared_ptr<std::atomic<bool>> childRan) {
     AsyncScope scope;
-    scope.setDefaultExecutor(*executor);
+    scope.setDefaultExecutor(std::move(executor));
     scope.spawn(markRan(std::move(childRan)));
     co_return;
 }
@@ -289,7 +369,7 @@ TEST(StructuredConcurrencyTest, ScopeDestroyedOnItsOwnExecutorDoesNotDeadlock) {
     auto executor = std::make_shared<SerialExecutor>();
     auto childRan = std::make_shared<std::atomic<bool>>(false);
     auto ownerFinished = std::make_shared<std::atomic<bool>>(false);
-    auto owner = std::make_shared<Task<void>>(ownerSpawnsOnExecutor(executor.get(), childRan));
+    auto owner = std::make_shared<Task<void>>(ownerSpawnsOnExecutor(executor, childRan));
     executor->execute([owner, ownerFinished]() {
         owner->resume();
         ownerFinished->store(true);
@@ -302,6 +382,57 @@ TEST(StructuredConcurrencyTest, ScopeDestroyedOnItsOwnExecutorDoesNotDeadlock) {
     }
     EXPECT_TRUE(ownerFinished->load()) << "destroying a scope must not wait for its own executor";
     EXPECT_TRUE(childRan->load()) << "a detached child still runs on its executor";
+}
+
+namespace {
+
+Task<void> parkThenMarkRan(std::shared_ptr<CompletionAwaiter<void>> gate,
+                           std::shared_ptr<std::atomic<bool>> reached,
+                           std::shared_ptr<std::atomic<bool>> ran) {
+    reached->store(true);
+    co_await *gate;
+    ran->store(true);
+}
+
+Task<void> whenAllOnWeakDomain(std::weak_ptr<SerialExecutor> executor,
+                               std::shared_ptr<CompletionAwaiter<void>> gate,
+                               std::shared_ptr<std::atomic<bool>> reached,
+                               std::shared_ptr<std::atomic<bool>> ran) {
+    co_await when_all(std::move(executor),
+                      parkThenMarkRan(std::move(gate), std::move(reached), std::move(ran)));
+}
+
+Task<void> whenAllOnEmptyWeakDomain(std::shared_ptr<std::atomic<bool>> ran) {
+    co_await when_all(std::weak_ptr<SerialExecutor>{}, markRan(std::move(ran)));
+}
+
+}  // namespace
+
+TEST(StructuredConcurrencyTest, WhenAllWeakDomainDoesNotKeepTheExecutorAlive) {
+    auto executor = std::make_shared<SerialExecutor>();
+    std::weak_ptr<SerialExecutor> watch = executor;
+    auto gate = std::make_shared<CompletionAwaiter<void>>();
+    auto reached = std::make_shared<std::atomic<bool>>(false);
+    auto ran = std::make_shared<std::atomic<bool>>(false);
+    auto parent = whenAllOnWeakDomain(watch, gate, reached, ran);
+    parent.resume();
+    ASSERT_TRUE(slark::test::waitUntilSet(*reached));
+    executor.reset();
+    ASSERT_TRUE(slark::test::waitUntilExpired(watch))
+        << "a parked when_all child does not keep its weak domain alive";
+    gate->complete();
+    ASSERT_TRUE(waitUntilDone(parent));
+    EXPECT_FALSE(ran->load()) << "a refused child must not continue its body";
+    EXPECT_THROW(parent.result(), CancelledException);
+}
+
+TEST(StructuredConcurrencyTest, WhenAllWithAnEmptyWeakDomainRefusesItsChildren) {
+    auto ran = std::make_shared<std::atomic<bool>>(false);
+    auto parent = whenAllOnEmptyWeakDomain(ran);
+    parent.resume();
+    ASSERT_TRUE(parent.isDone()) << "a refused child must not leave the parent suspended";
+    EXPECT_FALSE(ran->load()) << "an empty weak domain never falls back to the awaiting domain";
+    EXPECT_THROW(parent.result(), CancelledException);
 }
 
 TEST(StructuredConcurrencyTest, JoinSuspendsOwnerUntilChildrenFinish) {
@@ -364,4 +495,74 @@ TEST(StructuredConcurrencyTest, ScopeChildFailureCancelsSiblingsAndJoinRethrowsR
     } catch (const std::runtime_error& error) {
         EXPECT_STREQ(error.what(), "boom");
     }
+}
+
+namespace {
+
+Task<int> constantTask(int value) {
+    co_return value;
+}
+
+slark::AsyncGenerator<int> sumOfTwoInGenerator() {
+    auto [first, second] = co_await when_all(constantTask(1), constantTask(2));
+    co_yield first + second;
+}
+
+slark::AsyncGenerator<int> winnerIndexInGenerator(AsyncScope* scope) {
+    auto result = co_await when_any(*scope, constantTask(7), constantTask(8));
+    co_yield static_cast<int>(result.winnerIndex);
+}
+
+Task<void> parkedChild(std::shared_ptr<CompletionAwaiter<void>> gate,
+                       std::shared_ptr<std::atomic<bool>> cancelled) {
+    try {
+        co_await *gate;
+    } catch (const CancelledException&) {
+        cancelled->store(true);
+        throw;
+    }
+}
+
+slark::AsyncGenerator<int> parkedInWhenAll(std::shared_ptr<CompletionAwaiter<void>> gate,
+                                           std::shared_ptr<std::atomic<bool>> cancelled) {
+    co_await when_all(parkedChild(std::move(gate), std::move(cancelled)));
+    co_yield 1;
+}
+
+Task<int> pullValue(slark::AsyncGenerator<int>* generator) {
+    auto value = co_await generator->next();
+    co_return value.value_or(-1);
+}
+
+}  // namespace
+
+TEST(StructuredConcurrencyTest, WhenAllRunsInsideAGeneratorBody) {
+    auto generator = sumOfTwoInGenerator();
+    auto consumer = pullValue(&generator);
+    consumer.resume();
+    ASSERT_TRUE(consumer.isDone());
+    EXPECT_EQ(consumer.result(), 3);
+}
+
+TEST(StructuredConcurrencyTest, WhenAnyRunsInsideAGeneratorBody) {
+    AsyncScope scope;
+    auto generator = winnerIndexInGenerator(&scope);
+    auto consumer = pullValue(&generator);
+    consumer.resume();
+    ASSERT_TRUE(consumer.isDone());
+    EXPECT_EQ(consumer.result(), 0);
+    EXPECT_TRUE(slark::test::joinScope(scope));
+}
+
+TEST(StructuredConcurrencyTest, ClosingAGeneratorParkedInWhenAllCancelsItsChildren) {
+    auto gate = std::make_shared<CompletionAwaiter<void>>();
+    auto cancelled = std::make_shared<std::atomic<bool>>(false);
+    {
+        auto generator = parkedInWhenAll(gate, cancelled);
+        auto consumer = pullValue(&generator);
+        consumer.resume();
+        ASSERT_FALSE(consumer.isDone());
+        ASSERT_FALSE(cancelled->load());
+    }
+    EXPECT_TRUE(cancelled->load()) << "closing the generator destroys the wait and cancels its children";
 }

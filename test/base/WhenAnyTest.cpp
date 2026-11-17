@@ -241,3 +241,30 @@ TEST(WhenAnyTest, CancelledLosersDoNotFailTheScope) {
     EXPECT_NO_THROW(join.result());
 }
 
+namespace {
+
+Task<void> parentWhenAnyRecording(AsyncScope& scope,
+                                  std::shared_ptr<slark::test::ThreadsAroundTimer> first,
+                                  std::shared_ptr<slark::test::ThreadsAroundTimer> second) {
+    (void)co_await when_any(scope, slark::test::recordThreadsAroundTimer(std::move(first)),
+                            slark::test::recordThreadsAroundTimer(std::move(second)));
+}
+
+}  // namespace
+
+TEST(WhenAnyTest, ChildrenStayOnTheScopeDomainAcrossASuspension) {
+    auto executor = std::make_shared<slark::SerialExecutor>();
+    const auto worker = slark::test::workerThreadOf(*executor);
+    auto first = std::make_shared<slark::test::ThreadsAroundTimer>();
+    auto second = std::make_shared<slark::test::ThreadsAroundTimer>();
+    AsyncScope scope(executor);
+    auto parent = parentWhenAnyRecording(scope, first, second);
+    parent.resume();
+    ASSERT_TRUE(slark::test::waitUntilDone(parent));
+    ASSERT_TRUE(slark::test::joinScope(scope)) << "the loser keeps running until it finishes";
+    EXPECT_EQ(first->before, worker);
+    EXPECT_EQ(first->after, worker) << "a resume after a suspension must stay on the scope's domain";
+    EXPECT_EQ(second->before, worker);
+    EXPECT_EQ(second->after, worker);
+}
+

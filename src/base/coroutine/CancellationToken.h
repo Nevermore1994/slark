@@ -73,8 +73,17 @@ class CancellationToken {
     [[nodiscard]] static CancellationToken link(const CancellationToken& a,
                                                 const CancellationToken& b);
 
+    // Cancelled whenever the parent is; cancelling it never cancels the parent. Null means no parent.
+    [[nodiscard]] static CancellationToken childOf(const CancellationToken* parent);
+
+    // Equal identities mean the same shared state, that is the same token.
+    [[nodiscard]] const void* identity() const noexcept {
+        return state_.get();
+    }
+
  private:
     friend class CancellationTokenRegistration;
+    friend struct CancellationTokenTestAccess;
 
     struct State {
         std::atomic<bool> cancelled{false};
@@ -83,9 +92,14 @@ class CancellationToken {
         TokenId nextTokenId{0};
         // Keeps the sources alive while the forwarding registrations below still point at them
         std::vector<std::shared_ptr<State>> linkSources;
-        // Forward-callback registrations created by link(), kept alive with the State
+        // Forward-callback registrations created by follow(), kept alive with the State
         std::vector<std::shared_ptr<CancellationTokenRegistration>> linkedRegs;
     };
+
+    explicit CancellationToken(std::shared_ptr<State> state) noexcept : state_(std::move(state)) {}
+
+    // Only for a token nobody else holds yet: a cycle of followers could never be released.
+    void follow(const CancellationToken& source);
 
     std::shared_ptr<State> state_;
 };
@@ -185,6 +199,19 @@ inline void CancellationTokenRegistration::unregister() noexcept {
     tokenId_ = 0;
 }
 
+inline void CancellationToken::follow(const CancellationToken& source) {
+    state_->linkSources.push_back(source.state_);
+    auto registration = std::make_shared<CancellationTokenRegistration>(
+        source.registerCallbackOrRun([weak = std::weak_ptr<State>(state_)]() {
+            if (auto state = weak.lock()) {
+                CancellationToken(std::move(state)).cancel();
+            }
+        }));
+    if (registration->isValid()) {
+        state_->linkedRegs.push_back(std::move(registration));
+    }
+}
+
 inline CancellationToken CancellationToken::link(const CancellationToken& a,
                                                  const CancellationToken& b) {
     CancellationToken linked;
@@ -192,32 +219,17 @@ inline CancellationToken CancellationToken::link(const CancellationToken& a,
         linked.cancel();
         return linked;
     }
-    linked.state_->linkSources.push_back(a.state_);
-    linked.state_->linkSources.push_back(b.state_);
-    auto weakLinked = std::weak_ptr<State>(linked.state_);
-    auto regA =
-        std::make_shared<CancellationTokenRegistration>(a.registerCallbackOrRun([weakLinked]() {
-            if (auto linkedState = weakLinked.lock()) {
-                CancellationToken t;
-                t.state_ = std::move(linkedState);
-                t.cancel();
-            }
-        }));
-    auto regB =
-        std::make_shared<CancellationTokenRegistration>(b.registerCallbackOrRun([weakLinked]() {
-            if (auto linkedState = weakLinked.lock()) {
-                CancellationToken t;
-                t.state_ = std::move(linkedState);
-                t.cancel();
-            }
-        }));
-    if (regA->isValid()) {
-        linked.state_->linkedRegs.push_back(std::move(regA));
-    }
-    if (regB->isValid()) {
-        linked.state_->linkedRegs.push_back(std::move(regB));
-    }
+    linked.follow(a);
+    linked.follow(b);
     return linked;
+}
+
+inline CancellationToken CancellationToken::childOf(const CancellationToken* parent) {
+    CancellationToken child;
+    if (parent != nullptr) {
+        child.follow(*parent);
+    }
+    return child;
 }
 
 }  // namespace slark

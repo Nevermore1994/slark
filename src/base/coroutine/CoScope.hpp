@@ -3,6 +3,7 @@
 #pragma once
 
 #include <atomic>
+#include <concepts>
 #include <cstdint>
 #include <exception>
 #include <memory>
@@ -47,6 +48,38 @@ inline std::string describeException(const std::exception_ptr& error) {
         return "unknown exception";
     }
 }
+
+// Dispatches on an executor it does not keep alive. An accepted task holds the executor until it
+// has run, so queued work keeps its worker alive; a dispatch after the executor is gone is refused.
+class WeakExecutor final : public IExecutor {
+public:
+    explicit WeakExecutor(std::weak_ptr<IExecutor> target) : target_(std::move(target)) {
+        if (auto live = target_.lock()) {
+            inline_ = live->isInline();
+        }
+    }
+
+    void execute(MoveOnlyFunction<void()> task) noexcept override {
+        (void)tryExecute(std::move(task));
+    }
+
+    bool tryExecute(MoveOnlyFunction<void()> task) noexcept override {
+        auto live = target_.lock();
+        if (!live) {
+            return false;
+        }
+        return live->tryExecute([live, task = std::move(task)]() mutable { task(); });
+    }
+
+    // Takes no strong reference: the dispatch path calls this under the resume gate's lock.
+    bool isInline() const noexcept override {
+        return inline_ && !target_.expired();
+    }
+
+private:
+    std::weak_ptr<IExecutor> target_;
+    bool inline_ = false;
+};
 
 struct ScopeCore {
     std::mutex mutex;
@@ -162,10 +195,17 @@ class AsyncScope {
  public:
     AsyncScope() : core_(std::make_shared<detail::ScopeCore>()) {}
 
-    // Owns the domain: children are dispatched on it for the scope's whole lifetime.
+    // Owning: children hold the domain until they finish, even after the scope is destroyed.
     explicit AsyncScope(std::shared_ptr<IExecutor> executor)
         : core_(std::make_shared<detail::ScopeCore>()) {
         core_->defaultExecutor = std::move(executor);
+    }
+
+    // Weak: the scope does not keep the executor alive; once it is gone, dispatch is refused.
+    template <std::derived_from<IExecutor> E>
+    explicit AsyncScope(std::weak_ptr<E> executor)
+        : core_(std::make_shared<detail::ScopeCore>()) {
+        core_->defaultExecutor = std::make_shared<detail::WeakExecutor>(std::move(executor));
     }
 
     AsyncScope(const AsyncScope&) = delete;
@@ -212,18 +252,15 @@ class AsyncScope {
         core_->cancelToken.cancel();
     }
 
-    void setDefaultExecutor(IExecutor& exec) {
-        std::shared_ptr<IExecutor> replaced;
-        {
-            std::lock_guard lock(core_->mutex);
-            if (core_->spawned) {
-                throw std::logic_error("AsyncScope::setDefaultExecutor after the first spawn");
-            }
-            // Non-owning alias: the caller keeps exec alive for the scope's lifetime.
-            replaced = std::exchange(core_->defaultExecutor,
-                                     std::shared_ptr<IExecutor>(&exec, [](IExecutor*) noexcept {}));
-        }
-        // Released outside the lock: destroying an owned executor joins its worker thread.
+    // Owning: children hold the domain until they finish, even after the scope is destroyed.
+    void setDefaultExecutor(std::shared_ptr<IExecutor> exec) {
+        setDomain(std::move(exec));
+    }
+
+    // Weak: the scope does not keep the executor alive; once it is gone, dispatch is refused.
+    template <std::derived_from<IExecutor> E>
+    void setDefaultExecutor(std::weak_ptr<E> exec) {
+        setDomain(std::make_shared<detail::WeakExecutor>(std::move(exec)));
     }
 
     [[nodiscard]] slark::CancellationToken token() const noexcept {
@@ -232,6 +269,18 @@ class AsyncScope {
 
  private:
     friend struct AsyncScopeTestAccess;
+
+    void setDomain(std::shared_ptr<IExecutor> exec) {
+        std::shared_ptr<IExecutor> replaced;
+        {
+            std::lock_guard lock(core_->mutex);
+            if (core_->spawned) {
+                throw std::logic_error("AsyncScope::setDefaultExecutor after the first spawn");
+            }
+            replaced = std::exchange(core_->defaultExecutor, std::move(exec));
+        }
+        // Released outside the lock: destroying an owned executor joins its worker thread.
+    }
 
     template <typename T>
     bool startChild(Task<T> task, slark::CancellationToken token) {
@@ -249,6 +298,9 @@ class AsyncScope {
             std::lock_guard lock(core_->mutex);
             core_->spawned = true;
             executor = core_->defaultExecutor;
+            if (executor && !executor->isInline()) {
+                wrapperTask.setExecutor(executor);
+            }
             core_->children.emplace(id, std::move(wrapperTask));
         }
 

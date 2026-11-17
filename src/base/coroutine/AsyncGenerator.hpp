@@ -569,11 +569,7 @@ class AsyncGeneratorNextAwaiter {
                 promise.setExecutor(consumer.promise().executor());
             }
         }
-        if constexpr (requires { consumer.promise().cancelToken(); }) {
-            if (const auto* token = consumer.promise().cancelToken()) {
-                promise.inheritCancelToken(token);
-            }
-        }
+        inheritCancellation(promise, consumer.promise());
 
         uint64_t generation = 0;
         if (!promise.setWaitingConsumer(

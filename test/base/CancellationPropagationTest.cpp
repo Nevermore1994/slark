@@ -2,12 +2,16 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <future>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <thread>
+#include <vector>
 
 #include "AsyncGenerator.hpp"
 #include "AsyncIOOperation.hpp"
@@ -164,6 +168,57 @@ TEST(CancellationPropagationTest, LinkedTokenKeepsItsSourcesAlive) {
     parent.cancel();
     EXPECT_TRUE(linked.isCancelled())
         << "a temporary intermediate link must not drop the forwarding registration";
+}
+
+TEST(CancellationPropagationTest, ChildOfIsCancelledByItsParent) {
+    CancellationToken parent;
+    auto child = CancellationToken::childOf(&parent);
+    EXPECT_FALSE(child.isCancelled());
+    parent.cancel();
+    EXPECT_TRUE(child.isCancelled());
+}
+
+TEST(CancellationPropagationTest, ChildOfNeverCancelsItsParent) {
+    CancellationToken parent;
+    auto child = CancellationToken::childOf(&parent);
+    child.cancel();
+    EXPECT_TRUE(child.isCancelled());
+    EXPECT_FALSE(parent.isCancelled());
+}
+
+TEST(CancellationPropagationTest, ChildOfACancelledParentIsBornCancelled) {
+    CancellationToken parent;
+    parent.cancel();
+    auto child = CancellationToken::childOf(&parent);
+    EXPECT_TRUE(child.isCancelled());
+}
+
+TEST(CancellationPropagationTest, ChildOfNothingIsAnIndependentToken) {
+    auto child = CancellationToken::childOf(nullptr);
+    EXPECT_FALSE(child.isCancelled());
+    EXPECT_EQ(slark::CancellationTokenTestAccess::callbackCount(child), 0u);
+    child.cancel();
+    EXPECT_TRUE(child.isCancelled());
+}
+
+TEST(CancellationPropagationTest, ChildOfKeepsATemporaryParentChainAlive) {
+    CancellationToken root;
+    CancellationToken grandchild;
+    {
+        auto middle = CancellationToken::childOf(&root);
+        grandchild = CancellationToken::childOf(&middle);
+    }
+    root.cancel();
+    EXPECT_TRUE(grandchild.isCancelled()) << "the middle token is gone but must still forward";
+}
+
+TEST(CancellationPropagationTest, ChildOfRegistersOnceAndLeavesWhenTheChildIsReleased) {
+    CancellationToken parent;
+    {
+        auto child = CancellationToken::childOf(&parent);
+        EXPECT_EQ(slark::CancellationTokenTestAccess::callbackCount(parent), 1u);
+    }
+    EXPECT_EQ(slark::CancellationTokenTestAccess::callbackCount(parent), 0u);
 }
 
 namespace {
@@ -384,6 +439,211 @@ TEST(CancellationPropagationTest, GeneratorProducerInheritsConsumerToken) {
     EXPECT_THROW(consumer.result(), CancelledException);
 }
 
+namespace {
+
+struct TokenObservations {
+    std::vector<CancellationToken> seen;
+    std::vector<std::size_t> consumerCallbacks;
+};
+
+slark::AsyncGenerator<int> yieldsObservingItsToken(int count, const CancellationToken* consumer,
+                                                   TokenObservations* out) {
+    for (int i = 0; i < count; ++i) {
+        auto token = co_await slark::coro::cancellation_token();
+        out->seen.push_back(*token);
+        out->consumerCallbacks.push_back(
+            slark::CancellationTokenTestAccess::callbackCount(*consumer));
+        co_yield i;
+    }
+}
+
+slark::AsyncGenerator<int> yieldsThenWaits(int count) {
+    for (int i = 0; i < count; ++i) {
+        co_yield i;
+    }
+    co_await TimerAwaiter(5000ms);
+    co_yield count;
+}
+
+Task<int> countValues(slark::AsyncGenerator<int>& generator) {
+    int count = 0;
+    while (co_await generator.next()) {
+        ++count;
+    }
+    co_return count;
+}
+
+void observeProducerToken(int nexts, bool producerHasOwnToken, TokenObservations* out) {
+    CancellationToken consumerToken;
+    auto generator = yieldsObservingItsToken(nexts, &consumerToken, out);
+    if (producerHasOwnToken) {
+        generator.setCancellationToken(CancellationToken{});
+    }
+    auto consumer = countValues(generator);
+    consumer.setCancellationToken(consumerToken);
+    consumer.resume();
+    ASSERT_TRUE(consumer.isDone());
+    ASSERT_EQ(consumer.result(), nexts);
+}
+
+}  // namespace
+
+TEST(CancellationPropagationTest, GeneratorLinksTheConsumerTokenOnlyOnce) {
+    constexpr int kNexts = 64;
+    TokenObservations observed;
+    observeProducerToken(kNexts, false, &observed);
+    ASSERT_EQ(observed.seen.size(), static_cast<std::size_t>(kNexts));
+
+    using Access = slark::CancellationTokenTestAccess;
+    EXPECT_EQ(Access::linkDepth(observed.seen.back()), Access::linkDepth(observed.seen.front()))
+        << "every next() must not stack another link on the producer token";
+    EXPECT_EQ(observed.consumerCallbacks.back(), observed.consumerCallbacks.front())
+        << "every next() must not register another forwarding callback on the consumer token";
+}
+
+TEST(CancellationPropagationTest, GeneratorWithItsOwnTokenLinksTheConsumerTokenOnlyOnce) {
+    constexpr int kNexts = 64;
+    TokenObservations observed;
+    observeProducerToken(kNexts, true, &observed);
+    ASSERT_EQ(observed.seen.size(), static_cast<std::size_t>(kNexts));
+
+    using Access = slark::CancellationTokenTestAccess;
+    EXPECT_EQ(Access::linkDepth(observed.seen.front()), 1u)
+        << "the first next() links the producer's own token with the consumer's";
+    EXPECT_EQ(Access::linkDepth(observed.seen.back()), 1u);
+    EXPECT_EQ(observed.consumerCallbacks.back(), observed.consumerCallbacks.front());
+}
+
+TEST(CancellationPropagationTest, ConsumerCancellationReachesTheProducerAfterManyNexts) {
+    CancellationToken token;
+    auto generator = yieldsThenWaits(32);
+    auto consumer = countValues(generator);
+    consumer.setCancellationToken(token);
+    consumer.resume();
+    ASSERT_FALSE(consumer.isDone()) << "the producer is parked on its timer";
+
+    token.cancel();
+    ASSERT_TRUE(consumer.isDone());
+    EXPECT_THROW(consumer.result(), CancelledException);
+}
+
+namespace {
+
+struct HandoffProbe {
+    std::atomic<bool> cancelled{false};
+};
+
+struct StepRecord {
+    bool cancelled;
+    std::size_t depth;
+};
+
+slark::AsyncGenerator<int> yieldsThenParksOnTimer(std::shared_ptr<HandoffProbe> probe) {
+    co_yield 1;
+    co_yield 2;
+    try {
+        co_await TimerAwaiter(5000ms);
+    } catch (const CancelledException&) {
+        probe->cancelled = true;
+        throw;
+    }
+    co_yield 3;
+}
+
+slark::AsyncGenerator<int> recordsEachStepsToken(int count, std::vector<StepRecord>* steps) {
+    for (int i = 0; i < count; ++i) {
+        auto token = co_await slark::coro::cancellation_token();
+        steps->push_back({token->isCancelled(),
+                          slark::CancellationTokenTestAccess::linkDepth(*token)});
+        co_yield i;
+    }
+}
+
+Task<void> takeOne(slark::AsyncGenerator<int>* generator) {
+    (void)co_await generator->next();
+}
+
+Task<void> takeTwoThenPark(slark::AsyncGenerator<int>* generator) {
+    (void)co_await generator->next();
+    (void)co_await generator->next();
+}
+
+}  // namespace
+
+TEST(CancellationPropagationTest, GeneratorHandoffFollowsTheCurrentConsumer) {
+    auto probe = std::make_shared<HandoffProbe>();
+    CancellationToken previous;
+    CancellationToken current;
+    auto generator = yieldsThenParksOnTimer(probe);
+
+    auto first = takeOne(&generator);
+    first.setCancellationToken(previous);
+    first.resume();
+    ASSERT_TRUE(first.isDone());
+
+    auto second = takeTwoThenPark(&generator);
+    second.setCancellationToken(current);
+    second.resume();
+    ASSERT_FALSE(second.isDone()) << "the producer is parked on its timer";
+
+    previous.cancel();
+    EXPECT_FALSE(probe->cancelled) << "a consumer that handed the generator over must not reach it";
+    EXPECT_FALSE(second.isDone());
+
+    current.cancel();
+    EXPECT_TRUE(probe->cancelled) << "the current consumer's token must reach the producer";
+    ASSERT_TRUE(second.isDone());
+    EXPECT_THROW(second.result(), CancelledException);
+}
+
+TEST(CancellationPropagationTest, GeneratorHandoffToATokenlessConsumerDropsThePreviousOne) {
+    auto probe = std::make_shared<HandoffProbe>();
+    CancellationToken previous;
+    auto generator = yieldsThenParksOnTimer(probe);
+
+    auto first = takeOne(&generator);
+    first.setCancellationToken(previous);
+    first.resume();
+    ASSERT_TRUE(first.isDone());
+
+    auto second = takeTwoThenPark(&generator);
+    second.resume();
+    ASSERT_FALSE(second.isDone()) << "the producer is parked on its timer";
+
+    previous.cancel();
+    EXPECT_FALSE(probe->cancelled) << "the previous consumer's token is dropped on handoff";
+    EXPECT_FALSE(second.isDone());
+}
+
+TEST(CancellationPropagationTest, GeneratorHandoffsFollowEachConsumerAndStayBounded) {
+    constexpr int kConsumers = 32;
+    std::vector<StepRecord> steps;
+    std::vector<CancellationToken> tokens(kConsumers);
+    auto generator = recordsEachStepsToken(kConsumers, &steps);
+    generator.setCancellationToken(CancellationToken{});
+
+    for (int i = 0; i < kConsumers; ++i) {
+        if (i % 2 == 1) {
+            tokens[i].cancel();
+        }
+        auto consumer = takeOne(&generator);
+        consumer.setCancellationToken(tokens[i]);
+        consumer.resume();
+        ASSERT_TRUE(consumer.isDone()) << "consumer " << i;
+    }
+
+    ASSERT_EQ(steps.size(), static_cast<std::size_t>(kConsumers));
+    for (int i = 0; i < kConsumers; ++i) {
+        EXPECT_EQ(steps[i].cancelled, i % 2 == 1)
+            << "step " << i << " must observe the token of the consumer that pulled it";
+        EXPECT_LE(steps[i].depth, 1u) << "a handoff rebuilds the link instead of stacking it";
+    }
+    for (int i = 0; i + 1 < kConsumers; ++i) {
+        EXPECT_EQ(slark::CancellationTokenTestAccess::callbackCount(tokens[i]), 0u)
+            << "consumer " << i << " was handed over and must not stay linked";
+    }
+}
+
 TEST(CancellationPropagationTest, AsyncScopeCancelAllWakesBlockedChild) {
     slark::coro::AsyncScope scope;
     scope.spawn(waitTimer(5000ms));
@@ -436,7 +696,7 @@ TEST(CancellationPropagationTest, AsyncScopeSpawnRacingCancelAllNeverRunsRejecte
 }
 
 TEST(CancellationPropagationTest, AsyncScopeWaitAllDoesNotStallOnFastChildren) {
-    slark::SerialExecutor executor;
+    auto executor = std::make_shared<slark::SerialExecutor>();
     slark::coro::AsyncScope scope;
     scope.setDefaultExecutor(executor);
     const auto start = std::chrono::steady_clock::now();

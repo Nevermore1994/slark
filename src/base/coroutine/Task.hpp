@@ -229,9 +229,7 @@ class TaskAwaiter {
             childLease_.reset();
             return awaiting;
         }
-        if constexpr (requires { awaiting.promise().cancelToken(); }) {
-            childPromise.inheritCancelToken(awaiting.promise().cancelToken());
-        }
+        inheritCancellation(childPromise, awaiting.promise());
         // Local/explicit domain wins; the parent's domain is only a fallback.
         if constexpr (requires { awaiting.promise().executor(); }) {
             if (childPromise.executor_ == nullptr) {
@@ -462,10 +460,8 @@ public:
 
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
-        if constexpr (requires { handle.promise().cancelToken(); }) {
-            if (const auto* token = handle.promise().cancelToken()) {
-                token_ = *token;
-            }
+        if (const auto* token = cancellationTokenOf(handle.promise())) {
+            token_ = *token;
         }
         return false;
     }
@@ -487,10 +483,8 @@ public:
 
     template <typename Promise>
     bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
-        if constexpr (requires { handle.promise().cancelToken(); }) {
-            if (const auto* token = handle.promise().cancelToken()) {
-                cancelled_ = token->isCancelled();
-            }
+        if (const auto* token = cancellationTokenOf(handle.promise())) {
+            cancelled_ = token->isCancelled();
         }
         return false;
     }

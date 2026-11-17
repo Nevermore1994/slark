@@ -188,7 +188,7 @@ TEST(CoWhenAllTest, ExceptionInTask) {
 TEST(CoWhenAllTest, WhenAllWithExecutor) {
     auto exec = std::make_shared<InlineExecutor>();
     auto task = runIntTask([&]() -> Task<int> {
-        auto [a, b] = co_await when_all(*exec, simpleInt(5), simpleInt(15));
+        auto [a, b] = co_await when_all(exec, simpleInt(5), simpleInt(15));
         co_return a + b;
     });
 
@@ -408,7 +408,7 @@ TEST(CoScopeTest, CompletedChildrenLeaveTableWithoutNextCall) {
     auto executor = std::make_shared<SerialExecutor>();
     auto done = std::make_shared<std::atomic<int>>(0);
     AsyncScope scope;
-    scope.setDefaultExecutor(*executor);
+    scope.setDefaultExecutor(executor);
     constexpr int kSpawns = 200;
     for (int i = 0; i < kSpawns; ++i) {
         scope.spawn(runVoidTask([done]() -> Task<void> {
@@ -429,7 +429,7 @@ TEST(CoScopeTest, SpawnReclaimRacesWithChildCompletionOnWorker) {
     auto executor = std::make_shared<SerialExecutor>();
     auto done = std::make_shared<std::atomic<int>>(0);
     AsyncScope scope;
-    scope.setDefaultExecutor(*executor);
+    scope.setDefaultExecutor(executor);
     constexpr int kSpawns = 3000;
     for (int i = 0; i < kSpawns; ++i) {
         scope.spawn(runVoidTask([done]() -> Task<void> {
@@ -445,7 +445,7 @@ TEST(CoScopeTest, SpawnReclaimRacesWithChildCompletionOnWorker) {
 TEST(CoScopeTest, ReclaimRacesWithExecutorCompletions) {
     auto executor = std::make_shared<SerialExecutor>();
     AsyncScope scope;
-    scope.setDefaultExecutor(*executor);
+    scope.setDefaultExecutor(executor);
     for (int i = 0; i < 2000; ++i) {
         scope.spawn(emptyTask());
     }
@@ -572,12 +572,25 @@ TEST(CoScopeTest, ConstructorExecutorOutlivesTheScopeReference) {
     EXPECT_TRUE(watch.expired()) << "destroying the scope releases the owned domain";
 }
 
+TEST(CoScopeTest, SetDefaultExecutorOutlivesTheCallersReferenceWhileAChildIsParked) {
+    auto executor = std::make_shared<SerialExecutor>();
+    std::weak_ptr<SerialExecutor> watch = executor;
+    auto seen = std::make_shared<slark::test::ThreadsAroundTimer>();
+    AsyncScope scope;
+    scope.setDefaultExecutor(executor);
+    ASSERT_TRUE(scope.spawn(slark::test::recordThreadsAroundTimer(seen)));
+    executor.reset();
+    ASSERT_FALSE(watch.expired()) << "the scope owns its domain while the child is parked";
+    ASSERT_TRUE(slark::test::joinScope(scope));
+    EXPECT_NE(seen->after, std::thread::id{}) << "the child resumed after the caller let go";
+}
+
 TEST(CoScopeTest, SetDefaultExecutorReplacesTheDomainForLaterChildren) {
     auto first = std::make_shared<SerialExecutor>();
     auto second = std::make_shared<SerialExecutor>();
     AsyncScope scope;
-    scope.setDefaultExecutor(*first);
-    scope.setDefaultExecutor(*second);
+    scope.setDefaultExecutor(first);
+    scope.setDefaultExecutor(second);
     auto ran = std::make_shared<std::atomic<int>>(0);
     ASSERT_TRUE(scope.spawn(markRanOnce(ran)));
     ASSERT_TRUE(slark::test::joinScope(scope));
@@ -633,7 +646,7 @@ TEST(CoScopeTest, SetDefaultExecutorAfterSpawnThrows) {
     auto executor = std::make_shared<SerialExecutor>();
     AsyncScope scope;
     scope.spawn(emptyTask());
-    EXPECT_THROW(scope.setDefaultExecutor(*executor), std::logic_error)
+    EXPECT_THROW(scope.setDefaultExecutor(executor), std::logic_error)
         << "children spawned earlier already chose their domain";
     EXPECT_TRUE(slark::test::joinScope(scope));
 }
@@ -655,4 +668,140 @@ TEST(CoScopeTest, ConstructorExecutorRunsChildrenOnItsDomain) {
     ASSERT_EQ(ranOnFuture.wait_for(std::chrono::seconds(1)), std::future_status::ready);
     EXPECT_EQ(ranOnFuture.get(), worker)
         << "a scope constructed with a domain must run its children on that domain";
+}
+
+namespace {
+
+Task<void> awaitNestedTimer(std::shared_ptr<slark::test::ThreadsAroundTimer> out) {
+    co_await slark::test::recordThreadsAroundTimer(std::move(out));
+}
+
+}  // namespace
+
+TEST(CoScopeTest, ConstructorExecutorKeepsChildrenOnItsDomainAcrossASuspension) {
+    auto executor = std::make_shared<SerialExecutor>();
+    const auto worker = slark::test::workerThreadOf(*executor);
+    auto seen = std::make_shared<slark::test::ThreadsAroundTimer>();
+    AsyncScope scope(executor);
+    ASSERT_TRUE(scope.spawn(slark::test::recordThreadsAroundTimer(seen)));
+    ASSERT_TRUE(slark::test::joinScope(scope));
+    EXPECT_EQ(seen->before, worker);
+    EXPECT_EQ(seen->after, worker) << "a resume after a suspension must stay on the scope's domain";
+}
+
+TEST(CoScopeTest, DefaultExecutorKeepsChildrenOnItsDomainAcrossASuspension) {
+    auto executor = std::make_shared<SerialExecutor>();
+    const auto worker = slark::test::workerThreadOf(*executor);
+    auto seen = std::make_shared<slark::test::ThreadsAroundTimer>();
+    AsyncScope scope;
+    scope.setDefaultExecutor(executor);
+    ASSERT_TRUE(scope.spawn(slark::test::recordThreadsAroundTimer(seen)));
+    ASSERT_TRUE(slark::test::joinScope(scope));
+    EXPECT_EQ(seen->before, worker);
+    EXPECT_EQ(seen->after, worker);
+}
+
+namespace {
+
+Task<void> parkRecordingCancel(std::shared_ptr<CompletionAwaiter<void>> gate,
+                               std::shared_ptr<std::atomic<bool>> reached,
+                               std::shared_ptr<std::atomic<bool>> cancelled) {
+    reached->store(true);
+    try {
+        co_await *gate;
+    } catch (const CancelledException&) {
+        cancelled->store(true);
+    }
+}
+
+}  // namespace
+
+TEST(CoScopeTest, ConstructorWeakExecutorRunsChildrenOnItsDomain) {
+    auto executor = std::make_shared<SerialExecutor>();
+    const auto worker = slark::test::workerThreadOf(*executor);
+    std::weak_ptr<SerialExecutor> watch = executor;
+    auto ranOn = std::make_shared<std::promise<std::thread::id>>();
+    auto ranOnFuture = ranOn->get_future();
+    AsyncScope scope(watch);
+    ASSERT_TRUE(scope.spawn(reportThreadOnce(ranOn)));
+    ASSERT_TRUE(slark::test::joinScope(scope));
+    ASSERT_EQ(ranOnFuture.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    EXPECT_EQ(ranOnFuture.get(), worker)
+        << "a scope built on a weak domain must run its children on that domain";
+}
+
+TEST(CoScopeTest, WeakDomainDoesNotKeepTheExecutorAliveAndRefusesLaterChildren) {
+    auto executor = std::make_shared<SerialExecutor>();
+    std::weak_ptr<SerialExecutor> watch = executor;
+    AsyncScope scope;
+    scope.setDefaultExecutor(watch);
+    auto ran = std::make_shared<std::atomic<int>>(0);
+    ASSERT_TRUE(scope.spawn(markRanOnce(ran)));
+    ASSERT_TRUE(slark::test::joinScope(scope));
+    executor.reset();
+    ASSERT_TRUE(slark::test::waitUntilExpired(watch))
+        << "a weak domain must not keep its executor alive";
+    EXPECT_FALSE(scope.spawn(markRanOnce(ran)))
+        << "a dispatch after the executor is gone is refused";
+    EXPECT_TRUE(slark::test::joinScope(scope));
+    EXPECT_EQ(ran->load(), 1);
+}
+
+TEST(CoScopeTest, WeakDomainKeepsAnAcceptedDispatchAliveUntilItRuns) {
+    auto executor = std::make_shared<SerialExecutor>();
+    std::weak_ptr<SerialExecutor> watch = executor;
+    std::promise<void> release;
+    std::shared_future<void> released = release.get_future().share();
+    executor->execute([released] { (void)released.wait_for(std::chrono::seconds(2)); });
+    AsyncScope scope;
+    scope.setDefaultExecutor(watch);
+    auto ran = std::make_shared<std::atomic<int>>(0);
+    EXPECT_TRUE(scope.spawn(markRanOnce(ran))) << "the child is queued behind the blocker";
+    executor.reset();
+    EXPECT_FALSE(watch.expired()) << "an accepted dispatch holds the executor until it has run";
+    release.set_value();
+    EXPECT_TRUE(slark::test::joinScope(scope));
+    EXPECT_EQ(ran->load(), 1);
+    EXPECT_TRUE(slark::test::waitUntilExpired(watch));
+}
+
+TEST(CoScopeTest, WeakDomainRefusesAParkedChildOnceTheExecutorIsGone) {
+    auto executor = std::make_shared<SerialExecutor>();
+    std::weak_ptr<SerialExecutor> watch = executor;
+    auto gate = std::make_shared<CompletionAwaiter<void>>();
+    auto reached = std::make_shared<std::atomic<bool>>(false);
+    auto cancelled = std::make_shared<std::atomic<bool>>(false);
+    AsyncScope scope;
+    scope.setDefaultExecutor(watch);
+    ASSERT_TRUE(scope.spawn(parkRecordingCancel(gate, reached, cancelled)));
+    ASSERT_TRUE(slark::test::waitUntilSet(*reached));
+    executor.reset();
+    ASSERT_TRUE(slark::test::waitUntilExpired(watch))
+        << "a parked child does not keep its executor alive";
+    gate->complete();
+    EXPECT_TRUE(slark::test::joinScope(scope));
+    EXPECT_TRUE(cancelled->load()) << "a resume dispatched after the executor is gone is refused";
+}
+
+TEST(CoScopeTest, NestedAwaitsInAChildStayOnTheScopeDomain) {
+    auto executor = std::make_shared<SerialExecutor>();
+    const auto worker = slark::test::workerThreadOf(*executor);
+    auto seen = std::make_shared<slark::test::ThreadsAroundTimer>();
+    AsyncScope scope(executor);
+    ASSERT_TRUE(scope.spawn(awaitNestedTimer(seen)));
+    ASSERT_TRUE(slark::test::joinScope(scope));
+    EXPECT_EQ(seen->after, worker) << "a grandchild inherits the domain through its parent";
+}
+
+TEST(CoScopeTest, ChildWithItsOwnDomainKeepsItAcrossASuspension) {
+    auto scopeDomain = std::make_shared<SerialExecutor>();
+    auto childDomain = std::make_shared<SerialExecutor>();
+    const auto childWorker = slark::test::workerThreadOf(*childDomain);
+    auto seen = std::make_shared<slark::test::ThreadsAroundTimer>();
+    AsyncScope scope(scopeDomain);
+    auto child = slark::test::recordThreadsAroundTimer(seen);
+    child.setExecutor(childDomain);
+    ASSERT_TRUE(scope.spawn(std::move(child)));
+    ASSERT_TRUE(slark::test::joinScope(scope));
+    EXPECT_EQ(seen->after, childWorker) << "a domain bound on the child wins over the scope's";
 }

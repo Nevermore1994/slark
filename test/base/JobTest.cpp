@@ -14,6 +14,7 @@
 #include "Awaitable.hpp"
 #include "CancellationToken.h"
 #include "CoroutineControl.hpp"
+#include "CoroutineTestSupport.h"
 #include "Executor.h"
 #include "Job.hpp"
 #include "Task.hpp"
@@ -275,6 +276,17 @@ TEST(JobTest, ExecutorRunsTheBodyOnItsDomain) {
     auto job = launch(recordThread(&ranOn), LaunchOptions{.token = {}, .executor = executor});
     ASSERT_TRUE(job.waitFor(3s));
     EXPECT_EQ(ranOn.load(), worker);
+}
+
+TEST(JobTest, ExecutorKeepsTheBodyOnItsDomainAcrossASuspension) {
+    auto executor = std::make_shared<SerialExecutor>();
+    const auto worker = threadOf(*executor);
+    auto seen = std::make_shared<slark::test::ThreadsAroundTimer>();
+    auto job = launch(slark::test::recordThreadsAroundTimer(seen),
+                      LaunchOptions{.token = {}, .executor = executor});
+    ASSERT_TRUE(job.waitFor(3s));
+    EXPECT_EQ(seen->before, worker);
+    EXPECT_EQ(seen->after, worker) << "a resume after a suspension must stay on the job's domain";
 }
 
 TEST(JobTest, RefusedExecutorSettlesTheJobAsCancelledAndNeverRunsIt) {

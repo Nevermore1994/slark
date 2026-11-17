@@ -3,6 +3,7 @@
 #pragma once
 
 #include <atomic>
+#include <concepts>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -13,6 +14,7 @@
 #include <vector>
 
 #include "CoScope.hpp"
+#include "CompositeWaitBase.hpp"
 #include "Executor.h"
 #include "Task.hpp"
 
@@ -54,7 +56,6 @@ template <typename... Ts>
 struct WhenAllState : detail::WhenContinuationState {
     std::tuple<std::optional<WhenAllResultType<Ts>>...> results;
     std::atomic<int> remaining{0};
-    CancellationToken group;
 
     void childRefused() noexcept {
         recordException(
@@ -75,7 +76,8 @@ namespace detail {
 
 template <size_t I, typename... Ts>
 Task<void> whenAllChild(std::shared_ptr<WhenAllState<Ts...>> state,
-                        Task<std::tuple_element_t<I, std::tuple<Ts...>>> task) {
+                        Task<std::tuple_element_t<I, std::tuple<Ts...>>> task,
+                        CancellationToken group) {
     using T = std::tuple_element_t<I, std::tuple<Ts...>>;
     try {
         if constexpr (!std::is_void_v<T>) {
@@ -88,7 +90,7 @@ Task<void> whenAllChild(std::shared_ptr<WhenAllState<Ts...>> state,
     } catch (...) {
         auto error = std::current_exception();
         if (!isCancellation(error)) {
-            state->group.cancel();
+            group.cancel();
         }
         state->recordException(std::move(error));
     }
@@ -98,43 +100,25 @@ Task<void> whenAllChild(std::shared_ptr<WhenAllState<Ts...>> state,
 }  // namespace detail
 
 template <typename... Ts>
-class WhenAllAwaiter {
+class WhenAllAwaiter : public CompositeWaitBase<WhenAllAwaiter<Ts...>> {
  public:
-    explicit WhenAllAwaiter(std::tuple<Task<Ts>...> tasks)
-        : tasks_(std::move(tasks)), state_(std::make_shared<WhenAllState<Ts...>>()) {
+    explicit WhenAllAwaiter(std::tuple<Task<Ts>...> tasks,
+                            std::shared_ptr<IExecutor> domain = nullptr)
+        : tasks_(std::move(tasks)),
+          domain_(std::move(domain)),
+          state_(std::make_shared<WhenAllState<Ts...>>()) {
         state_->remaining = static_cast<int>(sizeof...(Ts));
     }
 
-    WhenAllAwaiter(WhenAllAwaiter&&) noexcept = default;
-    WhenAllAwaiter& operator=(WhenAllAwaiter&&) noexcept = default;
-    WhenAllAwaiter(const WhenAllAwaiter&) = delete;
-    WhenAllAwaiter& operator=(const WhenAllAwaiter&) = delete;
-
     ~WhenAllAwaiter() {
-        if (state_) {
-            state_->group.cancel();
+        this->disarmGate();
+        if (group_) {
+            group_->cancel();
         }
-    }
-
-    void scheduleVia(IExecutor& exec) noexcept {
-        defaultExecutor_ = &exec;
     }
 
     bool await_ready() const noexcept {
         return sizeof...(Ts) == 0;
-    }
-
-    template <typename Promise>
-    bool await_suspend(std::coroutine_handle<Promise> h) noexcept {
-        releaseTransferLeases(h.promise());
-        markExternalAwait(h.promise());
-        auto gate = makeResumeGate(h);
-        state_->setContinuationGate(gate);
-
-        IExecutor* exec = defaultExecutor_ ? defaultExecutor_ : h.promise().executor_.get();
-        startTasks(exec, h.promise().cancelToken(), std::index_sequence_for<Ts...>{});
-
-        return gate->arm();
     }
 
     auto await_resume() {
@@ -147,21 +131,34 @@ class WhenAllAwaiter {
     }
 
  private:
+    friend class CompositeWaitBase<WhenAllAwaiter<Ts...>>;
+
+    void start(const std::shared_ptr<ResumeGate>& gate, const CancellationToken* inherited,
+               const std::shared_ptr<IExecutor>& awaitingDomain) {
+        state_->setContinuationGate(gate);
+        group_ = CancellationToken::childOf(inherited);
+        startAll(domain_ ? domain_ : awaitingDomain, std::index_sequence_for<Ts...>{});
+    }
+
     template <size_t... Is>
     auto doCollect(std::index_sequence<Is...>) {
         return std::make_tuple(std::move(*std::get<Is>(state_->results))...);
     }
 
     template <size_t I>
-    void startOne(IExecutor* exec, const CancellationToken& token) {
-        auto child = detail::whenAllChild<I>(state_, std::move(std::get<I>(tasks_)));
-        child.setCancellationToken(token);
+    void startOne(const std::shared_ptr<IExecutor>& domain) {
+        auto child = detail::whenAllChild<I>(state_, std::move(std::get<I>(tasks_)), *group_);
+        child.setCancellationToken(*group_);
+        const bool dispatch = domain && !domain->isInline();
+        if (dispatch) {
+            child.setExecutor(domain);
+        }
         auto handle = child.getHandle();
         auto frameControl = handle.promise().frameControl();
         childTasks_.push_back(std::move(child));
 
-        if (exec && !exec->isInline()) {
-            const bool accepted = exec->tryExecute(
+        if (dispatch) {
+            const bool accepted = domain->tryExecute(
                 [frameControl, handle]() noexcept { frameControl->resume(handle); });
             if (!accepted) {
                 state_->childRefused();
@@ -172,17 +169,15 @@ class WhenAllAwaiter {
     }
 
     template <size_t... Is>
-    void startTasks(IExecutor* exec, const CancellationToken* parent,
-                    std::index_sequence<Is...>) {
-        const CancellationToken token =
-            parent ? CancellationToken::link(state_->group, *parent) : state_->group;
-        (startOne<Is>(exec, token), ...);
+    void startAll(const std::shared_ptr<IExecutor>& domain, std::index_sequence<Is...>) {
+        (startOne<Is>(domain), ...);
     }
 
     std::tuple<Task<Ts>...> tasks_;
+    std::shared_ptr<IExecutor> domain_;
     std::shared_ptr<WhenAllState<Ts...>> state_;
+    std::optional<CancellationToken> group_;
     std::vector<Task<void>> childTasks_;
-    IExecutor* defaultExecutor_ = nullptr;
 };
 
 template <typename... Ts>
@@ -190,11 +185,18 @@ auto when_all(Task<Ts>... tasks) {
     return WhenAllAwaiter<Ts...>(std::make_tuple(std::move(tasks)...));
 }
 
+// Owning: the awaiter keeps the domain alive while its children are parked.
 template <typename... Ts>
-auto when_all(IExecutor& exec, Task<Ts>... tasks) {
-    auto awaiter = WhenAllAwaiter<Ts...>(std::make_tuple(std::move(tasks)...));
-    awaiter.scheduleVia(exec);
-    return awaiter;
+auto when_all(std::shared_ptr<IExecutor> exec, Task<Ts>... tasks) {
+    return WhenAllAwaiter<Ts...>(std::make_tuple(std::move(tasks)...), std::move(exec));
+}
+
+// Weak: the awaiter does not keep the executor alive; once it is gone, children are refused.
+template <std::derived_from<IExecutor> E, typename... Ts>
+auto when_all(std::weak_ptr<E> exec, Task<Ts>... tasks) {
+    return when_all(
+        std::shared_ptr<IExecutor>(std::make_shared<detail::WeakExecutor>(std::move(exec))),
+        std::move(tasks)...);
 }
 
 template <typename... Ts>
@@ -248,7 +250,7 @@ Task<void> whenAnyChild(std::shared_ptr<WhenAnyState<Ts...>> state,
 }  // namespace detail
 
 template <typename... Ts>
-class WhenAnyAwaiter {
+class WhenAnyAwaiter : public CompositeWaitBase<WhenAnyAwaiter<Ts...>> {
  public:
     static_assert(sizeof...(Ts) > 0, "when_any requires at least one task");
 
@@ -261,22 +263,6 @@ class WhenAnyAwaiter {
         return false;
     }
 
-    template <typename Promise>
-    bool await_suspend(std::coroutine_handle<Promise> h) noexcept {
-        releaseTransferLeases(h.promise());
-        markExternalAwait(h.promise());
-        auto gate = makeResumeGate(h);
-        state_->setContinuationGate(gate);
-        const std::size_t accepted =
-            startTasks(childToken(h.promise()), std::index_sequence_for<Ts...>{});
-        if (accepted == 0) {
-            state_->recordException(
-                std::make_exception_ptr(CancelledException("executor refused every child task")));
-            gate->signal();
-        }
-        return gate->arm();
-    }
-
     auto await_resume() {
         if (state_->exception) {
             std::rethrow_exception(state_->exception);
@@ -287,25 +273,35 @@ class WhenAnyAwaiter {
     }
 
  private:
-    template <typename Promise>
-    [[nodiscard]] CancellationToken childToken(const Promise& promise) const {
-        auto token = scope_.token();
-        if (const auto* parent = promise.cancelToken()) {
-            return CancellationToken::link(token, *parent);
+    friend class CompositeWaitBase<WhenAnyAwaiter<Ts...>>;
+
+    void start(const std::shared_ptr<ResumeGate>& gate, const CancellationToken* inherited,
+               const std::shared_ptr<IExecutor>&) {
+        state_->setContinuationGate(gate);
+        std::optional<CancellationToken> shared;
+        if (inherited != nullptr) {
+            shared = CancellationToken::childOf(inherited);
         }
-        return token;
+        const std::size_t accepted =
+            startAll(shared ? &*shared : nullptr, std::index_sequence_for<Ts...>{});
+        if (accepted == 0) {
+            state_->recordException(
+                std::make_exception_ptr(CancelledException("executor refused every child task")));
+            gate->signal();
+        }
     }
 
     template <size_t I>
-    bool startOne(const CancellationToken& token) {
-        return scope_.spawn(detail::whenAnyChild<I>(state_, std::move(std::get<I>(tasks_))),
-                            token);
+    bool startOne(const CancellationToken* shared) {
+        auto child = detail::whenAnyChild<I>(state_, std::move(std::get<I>(tasks_)));
+        return shared != nullptr ? scope_.spawn(std::move(child), *shared)
+                                 : scope_.spawn(std::move(child));
     }
 
     template <size_t... Is>
-    std::size_t startTasks(const CancellationToken& token, std::index_sequence<Is...>) {
+    std::size_t startAll(const CancellationToken* shared, std::index_sequence<Is...>) {
         std::size_t accepted = 0;
-        ((accepted += startOne<Is>(token) ? 1 : 0), ...);
+        ((accepted += startOne<Is>(shared) ? 1 : 0), ...);
         return accepted;
     }
 

@@ -314,7 +314,7 @@ TEST(CoroutineBoundaryTest, ScopeWithSerialExecutorRunsChildOnWorkerThread) {
         co_return;
     };
     AsyncScope scope;
-    scope.setDefaultExecutor(*executor);
+    scope.setDefaultExecutor(executor);
     scope.spawn(body());
     ASSERT_TRUE(slark::test::joinScope(scope));
     EXPECT_TRUE(onWorker.load());
@@ -324,7 +324,7 @@ TEST(CoroutineBoundaryTest, ScopeWithInlineExecutorRunsChildSynchronously) {
     auto executor = std::make_shared<InlineExecutor>();
     bool ran = false;
     AsyncScope scope;
-    scope.setDefaultExecutor(*executor);
+    scope.setDefaultExecutor(executor);
     scope.spawn([&ran]() -> Task<void> {
         ran = true;
         co_return;
@@ -338,7 +338,7 @@ TEST(CoroutineBoundaryTest, StoppedExecutorRefusesChildWithoutRunningIt) {
     executor->requestStop();
     std::atomic<bool> ran{false};
     AsyncScope scope;
-    scope.setDefaultExecutor(*executor);
+    scope.setDefaultExecutor(executor);
     scope.spawn([&ran]() -> Task<void> {
         ran.store(true);
         co_return;

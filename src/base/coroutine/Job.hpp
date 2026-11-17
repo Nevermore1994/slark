@@ -218,15 +218,15 @@ private:
     Job(std::shared_ptr<detail::JobState<T>> state, Task<void> body, CancellationToken own) noexcept
         : state_(std::move(state)), body_(std::move(body)), own_(std::move(own)) {}
 
-    // The body is bound to the caller's token and to the Job's own token, so either cancels it.
+    // The body's token is a child of the caller's, so either the caller or the Job cancels it.
     static Job create(Task<T> task, LaunchOptions options) {
         if (!task.isValid() || task.getHandle().promise().hasStarted()) {
             throw std::logic_error("coro::makeJob requires a valid Task that has not started");
         }
         auto state = std::make_shared<detail::JobState<T>>();
-        CancellationToken own;
+        auto own = CancellationToken::childOf(&options.token);
         Task<void> body = detail::runJobBody<T>(state, std::move(task));
-        body.setCancellationToken(CancellationToken::link(options.token, own));
+        body.setCancellationToken(own);
         if (options.executor) {
             body.setExecutor(std::move(options.executor));
         }

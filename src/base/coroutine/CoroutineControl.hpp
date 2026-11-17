@@ -520,16 +520,21 @@ class ResumeGate final {
 };
 
 template <typename Promise>
+[[nodiscard]] std::shared_ptr<IExecutor> executorOf(Promise& promise) {
+    if constexpr (requires {
+                      { promise.executor() } -> std::convertible_to<std::shared_ptr<IExecutor>>;
+                  }) {
+        return promise.executor();
+    } else {
+        return nullptr;
+    }
+}
+
+template <typename Promise>
     requires requires(Promise& promise) { promise.frameControl(); }
 std::shared_ptr<ResumeGate> makeResumeGate(std::coroutine_handle<Promise> handle) noexcept {
     auto gate = std::make_shared<ResumeGate>(handle, handle.promise().frameControl());
-    if constexpr (requires {
-                      {
-                          handle.promise().executor()
-                      } -> std::convertible_to<std::shared_ptr<IExecutor>>;
-                  }) {
-        gate->setExecutor(handle.promise().executor());
-    }
+    gate->setExecutor(executorOf(handle.promise()));
     return gate;
 }
 
@@ -586,15 +591,21 @@ class PromiseCancellation {
         token_ = std::move(token);
     }
 
+    // A handoff rebuilds the link from the own token, so consumers never stack on each other.
     void inheritCancelToken(const CancellationToken* parent) {
-        if (!parent) {
+        if (sameInheritance(parent)) {
             return;
         }
-        if (token_) {
-            token_ = CancellationToken::link(*token_, *parent);
-        } else {
-            token_ = *parent;
+        if (!inheritedFrom_) {
+            ownToken_ = token_;
         }
+        if (!parent) {
+            inheritedFrom_.reset();
+            token_ = ownToken_;
+            return;
+        }
+        inheritedFrom_ = *parent;
+        token_ = ownToken_ ? CancellationToken::link(*ownToken_, *parent) : *parent;
     }
 
     // Bindings must precede the first resume; a later one would be silently lost.
@@ -607,7 +618,16 @@ class PromiseCancellation {
     }
 
  protected:
+    [[nodiscard]] bool sameInheritance(const CancellationToken* parent) const noexcept {
+        if (!parent) {
+            return !inheritedFrom_;
+        }
+        return inheritedFrom_ && inheritedFrom_->identity() == parent->identity();
+    }
+
     std::optional<CancellationToken> token_;
+    std::optional<CancellationToken> ownToken_;
+    std::optional<CancellationToken> inheritedFrom_;
     std::atomic<bool> started_{false};
 };
 
@@ -636,12 +656,24 @@ inline void requireNotStarted(const PromiseCancellation& promise, const char* me
 
 }  // namespace detail
 
+template <typename Promise>
+[[nodiscard]] const CancellationToken* cancellationTokenOf(Promise& promise) noexcept {
+    if constexpr (requires { promise.cancelToken(); }) {
+        return promise.cancelToken();
+    } else {
+        return nullptr;
+    }
+}
+
+template <typename ChildPromise, typename ParentPromise>
+void inheritCancellation(ChildPromise& child, ParentPromise& parent) {
+    child.inheritCancelToken(cancellationTokenOf(parent));
+}
+
 template <typename Promise, typename OnCancel>
 [[nodiscard]] CancellationTokenRegistration bindCancellation(Promise& promise, OnCancel onCancel) {
-    if constexpr (requires { promise.cancelToken(); }) {
-        if (const auto* token = promise.cancelToken()) {
-            return token->registerCallbackOrRun(std::move(onCancel));
-        }
+    if (const auto* token = cancellationTokenOf(promise)) {
+        return token->registerCallbackOrRun(std::move(onCancel));
     }
     return {};
 }
