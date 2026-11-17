@@ -1,7 +1,7 @@
 # Slark C++20 协程框架设计
 
 > 状态：已实现
-> 更新：2026-11-12
+> 更新：2026-11-16
 > 第 3–5 节描述重构前的设计；其中 `CoroutineControlBlock`、`SharedCoroutineHandle`、`Coroutine<T>` 已不存在，实现以第 8 节为准。
 > 作者：Nevermore-
 > 关联代码：`src/base/coroutine/`、`src/http/IOContext.h`、`src/core/stream/HttpStream*`、`src/core/stream/HLSStream*`
@@ -1088,26 +1088,34 @@ auto result = co_await std::move(pipeline).collect<std::vector>();
 | 嵌套协程执行域继承 | `ExecutorTest.ChildWithoutExecutorResumesOnTheRootExecutorThroughTwoLevels` / `ChildKeepsItsOwnExecutorOverTheAwaitingParentsDomain` |
 | FdReady 取消、超时、注销与执行域 | `IOContextTest.CancellingTheCoroutineWakesAPendingFdReadyWait` / `TimeoutWakesAPendingFdReadyWait` / `UnregisteringTheSocketReportsAPendingWaitAsNotReady` / `ReadinessResumesTheCoroutineOnItsBoundExecutor`；显式令牌版本为 `CancellingTheTokenWakesAPendingFdReadyWait` |
 | 协程压力 | `CoroutineStressTest.*`：100 协程并发恢复、100 定时器并发触发、100 个 AsyncIO 并发完成、50 层嵌套 co_await、10 个 when_all 串行 |
-| 恢复派发计数 | `ResumeMetricsTest.*`：交给执行域、内联、被拒绝回退、排队延迟、pending（见 8.16） |
+| 恢复派发计数 | `ResumeMetricsTest.*`：交给执行域、内联、被拒绝回退、排队延迟、pending、`ResumeOfAFrameThatIsStillRunningIsRefusedAndCounted`（冲突，见 8.2、8.16） |
 | 竞态（完成、失败、取消、派发） | `AsyncIOOperationTest.FailRacingCancelHasExactlyOneOutcome`；`IOContextTest.ReadinessRacingCancelResumesExactlyOnce`；`StructuredConcurrencyTest.FailureRacingCompletionRethrowsOnlyAfterEveryChildFinishes`；`CancellationPropagationTest.AsyncScopeSpawnRacingCancelAllNeverRunsRejectedChildren` |
-| 令牌注册窗口 | `AsyncIOOperationTest.CancelRacingSetCancellationTokenNeverLosesTheWake`（改回两步写法后 2000 轮中丢失 81 轮，突变验证）；`CancellationPropagationTest.RegisterOrRunRunsTheCallbackImmediatelyWhenAlreadyCancelled` / `RegisterOrRunKeepsTheCallbackUntilCancelled` |
+| 令牌注册窗口 | `AsyncIOOperationTest.CancelRacingTheSuspensionNeverLosesTheWake`（改回两步写法后丢失取消，突变验证）；`CancellationPropagationTest.RegisterOrRunRunsTheCallbackImmediatelyWhenAlreadyCancelled` / `RegisterOrRunKeepsTheCallbackUntilCancelled` |
 | 启动后绑定与执行域冻结 | `CancellationPropagationTest.SetCancellationTokenAfterFirstResumeThrows`；`ExecutorTest.SetExecutorAfterFirstResumeThrows`；`ExecutorTest.SetExecutorAfterCompletionThrows`；`ExecutorTest.SetExecutorNullAfterFirstResumeThrows`；`AsyncGeneratorTest.SetExecutorAfterFirstNextThrows`；`AsyncGeneratorTest.SetExecutorNullAfterFirstNextThrows`；`AsyncGeneratorTest.SetExecutorAfterCompletionThrows`；`CoScopeTest.SetDefaultExecutorAfterSpawnThrows` |
 | 启动前绑定与清除 | `ExecutorTest.SetExecutorNullBeforeStartClearsTheDomain`；`AsyncGeneratorTest.SetExecutorBeforeFirstNextRunsTheProducerOnItsDomain`；`AsyncGeneratorTest.SetExecutorNullBeforeFirstNextClearsTheDomain`；`CoScopeTest.SetDefaultExecutorReplacesTheDomainForLaterChildren` |
 | 空、关闭与移后对象的绑定 | `CoroutineBoundaryTest.BindingsOnAnEmptyTaskAreNoOps`；`CoroutineBoundaryTest.MovedFromTaskIgnoresLaterBindings`；`CoroutineBoundaryTest.MovedStartedTaskStillRejectsBindings`；`AsyncGeneratorTest.SetExecutorAfterCloseIsANoOp`；`AsyncGeneratorTest.SetExecutorOnAMovedFromOrEmptyGeneratorIsANoOp` |
 | `co_await` 已启动的子协程 | `CoroutineBoundaryTest.CoAwaitOfAStartedSuspendedTaskIsRejectedWithoutResumingIt`；`CoroutineBoundaryTest.CoAwaitOfAStartedTaskThatAlreadyCompletedReturnsItsResult` |
 | scope 执行器被拒绝派发 | `CoScopeTest.RefusedSpawnReturnsFalseAndNeverRuns`；`CoScopeTest.RefusedSpawnWithExplicitTokenReturnsFalseAndNeverRuns`；`CoScopeTest.RefusedSpawnDoesNotCancelTheScope` |
 | scope 执行器的构造与生存期 | `CoScopeTest.ConstructorExecutorRunsChildrenOnItsDomain`；`CoScopeTest.ConstructorWithNullExecutorRunsChildrenInline`；`CoScopeTest.ConstructorExecutorOutlivesTheScopeReference` |
+| 执行器归属（8.12） | 拥有型：`CoScopeTest.SetDefaultExecutorOutlivesTheCallersReferenceWhileAChildIsParked`（子任务挂起时调用方释放引用）；`StructuredConcurrencyTest.WhenAllOwnsItsDomainUntilTheStoredAwaiterRuns`（先存放 awaiter 再 `co_await`）；`CoWhenAllTest.WhenAllWithExecutor`。弱引用：`CoScopeTest.ConstructorWeakExecutorRunsChildrenOnItsDomain`、`CoScopeTest.WeakDomainDoesNotKeepTheExecutorAliveAndRefusesLaterChildren`、`CoScopeTest.WeakDomainKeepsAnAcceptedDispatchAliveUntilItRuns`、`CoScopeTest.WeakDomainRefusesAParkedChildOnceTheExecutorIsGone`、`StructuredConcurrencyTest.WhenAllWeakDomainDoesNotKeepTheExecutorAlive`、`StructuredConcurrencyTest.WhenAllWithAnEmptyWeakDomainRefusesItsChildren`；`StructuredConcurrencyTest.ScopeDestroyedOnItsOwnExecutorDoesNotDeadlock` 的域改为弱引用。突变验证：弱引用改为拥有型、过期时内联执行、派发闭包不持有执行器，三者各自只使对应用例变红 |
 | scope 令牌与显式令牌合并 | `CoScopeTest.SpawnWithExplicitTokenIsCancelledByScope`；`CoScopeTest.SpawnWithExplicitTokenIsCancelledByItsOwnToken` |
-| 令牌 link 的生命周期 | `CancellationPropagationTest.LinkedTokenKeepsItsSourcesAlive`；`CancellationPropagationTest.WhenAnyChildrenInheritParentToken` |
+| 令牌 link 与子令牌的生命周期 | `CancellationPropagationTest.LinkedTokenKeepsItsSourcesAlive`；`CancellationPropagationTest.WhenAnyChildrenInheritParentToken`；`CancellationPropagationTest.ChildOfIsCancelledByItsParent` / `ChildOfNeverCancelsItsParent` / `ChildOfACancelledParentIsBornCancelled` / `ChildOfNothingIsAnIndependentToken` / `ChildOfKeepsATemporaryParentChainAlive` / `ChildOfRegistersOnceAndLeavesWhenTheChildIsReleased` |
+| 令牌契约套件（8.13） | `TokenContractTest/{Await,Generator,WhenAll,WhenAny,Scope,Job}.*`：到达、预取消、隔离、有界、无残留（5 条 × 6 个入口；`Await` 与 `Generator` 没有自己的作用域，隔离一条跳过）。突变验证：撤销"继承一次"、撤销 `when_all` 的作用域绑定、撤销 `Job` 的派生，各自只使对应入口变红 |
+| 嵌套协程链销毁（8.3） | `ChainDestroyTest.DestroyingTheRootOfANestedChainReleasesEveryFrame`、`ChainDestroyTest.ADestroyedParentNeverRunsAfterItsChildFinishes`、`ChainDestroyTest.ClosingAGeneratorThatAwaitsAParkedChildReleasesTheChain`、`ChainDestroyTest.DestroyRacingChildCompletionReleasesEveryFrame`（修复前挂起的子协程拖住父协程帧） |
+| 组合子在生成器体内（8.13） | `StructuredConcurrencyTest.WhenAllRunsInsideAGeneratorBody`、`WhenAnyRunsInsideAGeneratorBody`、`ClosingAGeneratorParkedInWhenAllCancelsItsChildren`（修复前读取 `Task` 专有的 `executor_`，编译失败） |
+| Job 分离体的释放（8.18） | `JobTest.ADetachedBodyReleasesItsFramesWhenItEnds`、`JobTest.ARefusedJobReleasesItsBodyWhenDestroyed`、`JobTest.DestroyRacingTheBodyUnwindingOnItsExecutorReleasesEveryFrame` |
+| 组合子子任务挂起后仍留在执行域（8.12） | `CoScopeTest.ConstructorExecutorKeepsChildrenOnItsDomainAcrossASuspension`、`CoScopeTest.DefaultExecutorKeepsChildrenOnItsDomainAcrossASuspension`、`CoScopeTest.NestedAwaitsInAChildStayOnTheScopeDomain`、`StructuredConcurrencyTest.WhenAllChildrenStayOnTheExplicitDomainAcrossASuspension`、`StructuredConcurrencyTest.WhenAllChildrenStayOnTheAwaiterDomainAcrossASuspension`、`WhenAnyTest.ChildrenStayOnTheScopeDomainAcrossASuspension`（修复前挂起后在定时器线程恢复）；守护用例 `CoScopeTest.ChildWithItsOwnDomainKeepsItAcrossASuspension`、`JobTest.ExecutorKeepsTheBodyOnItsDomainAcrossASuspension` |
+| fd 同方向单等待者（8.9） | `EventLoopRaceTest.SecondWaiterOnTheSameFdAndDirectionEndsTheFirstAsNotReady`（突变验证：去掉替换时的终态通知后变红）；`EventLoopRaceTest.ReadAndWriteWaitersOnTheSameFdAreIndependent` |
 | spawn 拒绝空 Task 与已启动 Task | `CoScopeTest.SpawnOfAnEmptyTaskThrowsAndRegistersNothing`；`CoScopeTest.SpawnOfAnEmptyTaskWithExplicitTokenThrowsAndRegistersNothing`；`CoScopeTest.SpawnOfAStartedSuspendedTaskThrowsAndNeverResumesIt`；`CoScopeTest.SpawnOfACompletedTaskThrows` |
 | 生成器令牌 link 与启动后绑定（8.13） | `AsyncGeneratorTest.ProducerTokenIsLinkedWithTheConsumerTokenOnFirstNext`（突变验证：还原旧规则后变红）；`AsyncGeneratorTest.SetCancellationTokenAfterFirstNextThrows`；`CancellationPropagationTest.CancellationRequestedReadsTheFrameTokenWithoutSuspending` |
+| 生成器令牌跟随当前消费者（8.13） | `CancellationPropagationTest.GeneratorLinksTheConsumerTokenOnlyOnce`、`CancellationPropagationTest.GeneratorWithItsOwnTokenLinksTheConsumerTokenOnlyOnce`（修复前链深 63、回调数 64，修复后不随 `next()` 次数增长）；交接：`CancellationPropagationTest.GeneratorHandoffFollowsTheCurrentConsumer`（修复前前一消费者的取消仍穿透到生产者）、`CancellationPropagationTest.GeneratorHandoffToATokenlessConsumerDropsThePreviousOne`、`CancellationPropagationTest.GeneratorHandoffsFollowEachConsumerAndStayBounded`（突变验证：改回叠加后变红）；守护用例 `CancellationPropagationTest.ConsumerCancellationReachesTheProducerAfterManyNexts` |
 | 生成器单消费者（8.6） | `AsyncGeneratorTest.SecondPendingNextIsRejectedWithoutDrivingTheProducer`、`AsyncGeneratorTest.NextIsRejectedWhileTheProducerServesADestroyedConsumer`（突变验证：关闭检查后两者都变红） |
 | 跨线程 `isDone()`（8.2） | `TaskTest.IsDoneFromAnotherThreadDoesNotWaitForTheRunningBody`（突变验证：改回持锁实现后因超时变红）；`TaskTest.DestroyingTheTaskRightAfterIsDoneIsRaceFree`；`TaskTest.IsDoneCanBeObservedWhileAnotherThreadCompletes` |
 | FdReady 截止时间（8.20） | `SuspensionMatrixTest.FdReadyDeadlineEndsTheWaitAsNotReady`；`SuspensionMatrixTest.ReadinessBeforeDeadlineCancelsTheDeadline` |
 | Job 生命周期（8.18） | `JobTest.JoinReturnsNormallyWhenTheBodySucceeds`、`JobTest.FailureIsRethrownByResultButNotByJoin`、`JobTest.CancelWakesTheBodyAndSettlesItAsCancelled`、`JobTest.WaitForIsWokenByCompletionOnAnotherThread`、`JobTest.DestroyingAStartedJobCancelsItsBodyWithoutWaiting`、`JobTest.DestroyingAnUnstartedJobNeverRunsItAndReleasesItsJoiners`、`JobTest.MoveAssignmentCancelsThePreviousJob`、`JobTest.ExecutorRunsTheBodyOnItsDomain`、`JobTest.RefusedExecutorSettlesTheJobAsCancelledAndNeverRunsIt`、`JobTest.CompletionRacingCancelSettlesExactlyOnce`、`JobTest.DestroyRacingCompletionNeverTouchesAFreedFrame` |
 | 挂起点矩阵，基础层（8.19） | `SuspensionMatrixTest.TimerPreCancelEndsCancelledWithoutSuspending`、`SuspensionMatrixTest.TimerDestroyedWhileSuspendedNeverResumes`、`SuspensionMatrixTest.TimerRefusedDispatchEndsCancelled`、`SuspensionMatrixTest.YieldCancelRacingItsTickResolvesToExactlyOneOutcome`、`SuspensionMatrixTest.CompletionMidCancelEndsCancelledAndLaterCompletionIsInert`、`SuspensionMatrixTest.CompletionAlreadyCompletedDoesNotSuspend`、`SuspensionMatrixTest.CompletionRefusedDispatchEndsCancelled`、`SuspensionMatrixTest.JoinMidCancelEndsCancelledAndLeavesTheJobRunning`、`SuspensionMatrixTest.JoinReleasedByDestroyingTheJobEndsNormally`、`SuspensionMatrixTest.IoCompletedInStartDoesNotSuspend`、`SuspensionMatrixTest.IoRefusedDispatchEndsCancelled` |
 | 挂起点矩阵，fd 层（8.19） | `SuspensionMatrixTest.FdReadyMidCancelEndsCancelled`、`SuspensionMatrixTest.FdReadyUnregisteredReportsNotReadyWithoutThrowing`、`SuspensionMatrixTest.FdReadyRefusedDispatchEndsCancelled`、`SuspensionMatrixTest.ReadPreCancelEndsCancelledWithoutReading`、`SuspensionMatrixTest.ReadWokenByReadinessRetriesAndReturnsTheData`、`SuspensionMatrixTest.ReadUnregisteredReportsSocketClosed`、`SuspensionMatrixTest.ReadDestroyedWhileSuspendedLeavesLaterDataUnread`、`SuspensionMatrixTest.WriteWokenByWritabilityRetriesAndReturnsTheCount`、`SuspensionMatrixTest.WriteUnregisteredReportsSocketClosed` |
-| 超时边界 | `CoTimeoutTest.ZeroTimeoutExpiresBeforeTheChildCompletes` |
+| 超时边界 | `CoTimeoutTest.ZeroTimeoutExpiresBeforeTheChildCompletes`；调用方令牌绑在子任务上（8.14）：`CoTimeoutTest.TokenBoundToTheChildItselfStillCancelsIt`（突变验证：覆盖子任务令牌后变红） |
 | 在途协程析构 | `HttpStreamTest.DestroyDuringTransferReleasesTheStream`；`HLSStreamTest.DestroyWhileDownloadingReleasesTheStream` |
 | HLS 关闭与释放 | `HLSStreamTest.CloseCancelsThePlaylistRetryTimer` / `StreamIsReleasedOnceClosedWithoutAReferenceCycle` |
 
@@ -1196,6 +1204,8 @@ activeCount   = activeResumes + activeLeases
 4. 最后一个 active protection 释放时处理 `deferredHandle`；
 5. 同一 frame 不得并行执行两个 `resume()`。
 
+协程体尚未声明挂起时，同一线程再次恢复同一帧会被拒绝：`resume()` 返回 `false`，计入 `executionConflicts()` 与 `ResumeMetrics::conflicts`（8.16），不排队补发。这个窗口只对绕过 `ResumeGate` 的直接恢复存在：外部事件总是先让 gate 进入 `Signaled`（8.4），`arm()` 之后才能恢复，而 `arm()` 是挂起前的最后一步；另一线程的恢复会在 control mutex 上等到协程体挂起，然后正常执行。所以计数非零表示调用方违反了契约，而不是丢失了合法的唤醒（`ResumeMetricsTest.ResumeOfAFrameThatIsStillRunningIsRefusedAndCounted`）。
+
 `isDone(handle)` 的契约：
 
 - 跟踪终态的帧（`Task`）只读原子的 `finished_` 与 `destroyed_`，不取 control mutex。`resume()` 在整个协程体运行期间持有该 mutex，所以任意线程都可以在协程体运行时调用 `isDone()`，它不会被协程体阻塞。`finished_` 在 `finish()` 内以 release 存储，读到 `true` 的线程能看到协程体写入的结果。
@@ -1216,6 +1226,8 @@ destroyed_ == false && activeCount != 0
 ```
 
 调用方只有在首次 `destroy()` 返回 `true` 时才可以直接调用 `handle.destroy()`。重复 destroy 不得再次销毁。
+
+帧锁与协程体互斥：`resume()` 在整个协程体运行期间持有 control mutex。`tryAcquire()`、`destroy()`，以及不跟踪终态的帧（生成器）的 `isDone()` 取同一把锁，所以在另一线程上对一个正在运行协程体的帧调用它们，会等到协程体挂起或结束；只有 `Task::isDone()` 不取锁。因此协程体不能等待销毁者持有的资源，销毁者也不应在持有协程体所需的锁时销毁 `Task`。
 
 ### 8.3 ContinuationLink 两阶段契约
 
@@ -1240,11 +1252,13 @@ Transferred
        handle + control + target lease
 ```
 
-- `create()` 用于普通 continuation，注册后立即 acquire target lease。
-- `registerTarget()` 用于 generator pending consumer，只注册目标，不提前持有 consumer frame lease。
-- `acquireTarget()` 只能在真实 yield/final/close handoff 前调用。
+- `registerTarget()` 用于所有等待中的续体：`co_await` 子 `Task` 的父协程，以及生成器的 pending consumer。只注册目标，等待期间不持有目标帧的租约。
+- `acquireTarget()` 只能在真实 final/yield/close handoff 前调用：子 `Task` 在 final suspend 才取父协程的租约，生成器在 yield、final 或 close 时才取消费者的租约。
+- `create()`（注册后立即 acquire）已不用于等待中的续体，保留给不跨越等待的短暂交接。
 - link reset 或析构释放自身 lease；lease 已转移后由目标 promise 的 lease slot 管理。
-- acquire 失败时必须清除 link，不得交付目标句柄。
+- acquire 失败时必须清除 link，不得交付目标句柄：目标帧已销毁时，子 `Task` 结束后不恢复它。
+
+等待期间不持有租约，是因为租约会推迟帧的物理销毁：父协程被销毁时，如果挂起的子协程持有它的租约，销毁请求只能登记为延迟，而子协程要等一个永远不来的事件才会 final，整条链就滞留到令牌被取消为止（嵌套深度越大越明显，令牌回调也随之滞留）。改为 final 时才取租约后，销毁父协程立即销毁它的帧，其 `TaskAwaiter` 随之销毁并销毁子协程帧，叶子等待逐层展开。回归用例：`ChainDestroyTest.DestroyingTheRootOfANestedChainReleasesEveryFrame`、`ChainDestroyTest.ADestroyedParentNeverRunsAfterItsChildFinishes`、`ChainDestroyTest.ClosingAGeneratorThatAwaitsAParkedChildReleasesTheChain`、`ChainDestroyTest.DestroyRacingChildCompletionReleasesEveryFrame`。
 
 ### 8.4 ResumeGate 契约
 
@@ -1405,6 +1419,8 @@ releaseTransferLeases(promise)
 
 取消统一为异常：挂起点在取消时抛出 `CancelledException`，包括执行器拒绝派发的恢复（等待结束，续体不运行）。覆盖的挂起点有 `TimerAwaiter`、`YieldAwaiter`、`CompletionAwaiter`、`Job::join`、`AsyncIOOperationBase` 与 `FdReadyAwaiter`。fd 注销或等待者被替换是终态通知而非取消：`FdReadyAwaiter` 报告未就绪，`AsyncIOOperationBase` 以 `Error::SocketClosed` 返回。`AsyncRead` 与 `AsyncWrite` 在就绪唤醒后重试一次系统调用，仍无数据时报告 `WouldBlock`，不再把唤醒当作成功返回。fd 等待的取消在 `waitFdReadyWithTimeout` 转换为“未就绪”，调用方用 `coro::cancellation_requested()` 区分取消与超时；DNS 取消同样抛出，`ConnectionFactory` 在边界映射为 `Error::Cancelled`。
 
+同一 fd 的同一方向（读或写）同时只允许一个等待者，读与写互相独立。后注册的等待者替换先注册的：`EventLoop` 记录一条警告，被替换者以终态通知结算（`FdReadyAwaiter` 报告未就绪，`AsyncIOOperationBase` 返回 `Error::SocketClosed`），不会停放在原处。需要多个消费者时，由调用方在 fd 之上自行串行化等待（`EventLoopRaceTest.SecondWaiterOnTheSameFdAndDirectionEndsTheFirstAsNotReady`、`EventLoopRaceTest.ReadAndWriteWaitersOnTheSameFdAreIndependent`）。
+
 ### 8.10 OperationState 与 OperationStatus
 
 HTTP operation 层在协程状态机之上维护：
@@ -1460,7 +1476,9 @@ producer、consumer、`next()`、`co_yield`、completion、close，以及 genera
 
 ### 8.12 组合与让出：when_all、when_any、AsyncScope、yield
 
-启动位置：`when_all`、`when_any` 和 `AsyncScope::spawn` 先把子任务在调用方线程上启动，直到第一个挂起点。显式传入非 inline 的 `IExecutor`（`when_all(exec, ...)`、`when_any(exec, ...)`、`AsyncScope::setDefaultExecutor`）时，子任务改为投递到该 executor；`when_all` 和 `when_any` 未显式传入时使用被等待协程自己的 executor。
+执行域：子任务没有域时，`when_all` 与 `AsyncScope::spawn` 先在调用方线程上启动到第一个挂起点，之后由事件源线程恢复。子任务有非 inline 的域时，帧绑定该域：首次启动投递到它，挂起后的每次恢复也经它派发，子任务内 `co_await` 的孙任务按 8.13 继承。域的来源：`when_all(exec, ...)` 的 `exec`，未显式传入时是被等待协程自己的 executor；`AsyncScope(executor)` 或 `setDefaultExecutor`；`when_any` 没有 `exec` 重载，子任务的域由传入的 `AsyncScope` 决定。子任务自己 `setExecutor` 绑定的域优先，挂起后的恢复在它自己的域上。`Job` 的 `options.executor` 同样绑定到根协程（8.18）。有域的子任务被取消唤醒时，恢复同样经该域派发，不在取消线程上同步展开，所以 `cancelAll()` 返回时子任务可能尚未退出。
+
+执行器归属有两种形式。拥有型（`shared_ptr`，`when_all(std::shared_ptr<IExecutor>, ...)`、`setDefaultExecutor(std::shared_ptr<IExecutor>)`、`AsyncScope(std::shared_ptr<IExecutor>)`）：拥有者（awaiter 或 scope）持有执行器直到子任务全部结束，调用方可以随时放开自己的引用。弱引用（`weak_ptr<E>`，同样三处）：不延长执行器寿命。弱引用的派发先加锁，成功时把强引用捕获进排队的任务，所以已接受的派发保持执行器存活到任务运行完毕；挂起中的子任务不保持它。实现为 `detail::WeakExecutor` 转发器，派发链路与拥有型相同，门与恢复机制不变。执行器已销毁（或 `weak_ptr` 为空）后的派发一律被拒绝，不回落到等待者的执行域：未启动的子任务不启动（`spawn` 返回 `false`，`when_all` 的子任务以 `CancelledException` 结束），挂起的子任务在恢复时以 `CancelledException` 在回退执行器上展开。引用别名（`IExecutor&`）已删除：它没有寿命保证，调用方须自行保证执行器活到所有子任务展开，而 scope 析构允许不 join。空指针表示不指定域，与 `AsyncScope(nullptr)` 一致。回归用例见 7.2「执行器归属」。
 
 并发语义以 Kotlin 的结构化并发为准（`JobSupport.kt` 与 `Executors.kt` 已核实）。执行器拒绝派发时，等待被取消（`CancelledException`），协程仍在回退执行器 `CoroutineScheduler::fallbackExecutor()` 上恢复，使帧能展开；这与 Kotlin 的 `cancelJobOnRejection` 加 `Dispatchers.IO` 回退一致。回退执行器 `CoroutineScheduler::fallbackExecutor()` 是进程级、永不析构的线程池，首次使用时启动，因此析构期间的派发仍能落到存活的池上。它永不关闭，回退派发不会被拒绝；若仍被拒绝，说明不变量被破坏，记录错误日志并 `std::terminate()`，绝不在调用方线程内联恢复。Kotlin 没有这一分支（`Dispatchers.IO` 不拒绝派发）。代价：进程退出时仍在回退队列中的协程不再执行，其局部对象的析构也不会运行，帧随进程回收。
 
@@ -1482,14 +1500,14 @@ producer、consumer、`next()`、`co_yield`、completion、close，以及 genera
 
 `AsyncScope`：
 
-- 执行域可在构造时传入：`AsyncScope(std::shared_ptr<IExecutor>)` 由 scope 持有，子任务全部在该域上派发。`setDefaultExecutor(IExecutor&)` 以非拥有别名保存，调用方须保证执行器存活。在首次 `spawn` 之后调用抛出 `std::logic_error`，已启动的子任务不会静默改投到新域。
+- 执行域可在构造时传入：`AsyncScope(std::shared_ptr<IExecutor>)` 或 `AsyncScope(std::weak_ptr<E>)`，`setDefaultExecutor` 同样提供两种形式（见上文执行器归属）。子任务的首次启动与挂起后的每次恢复都在该域上。拥有型的子任务持有该域直到结束，因此分离的子任务在 scope 析构后仍能在它上面恢复；弱引用型不保持执行器存活。在首次 `spawn` 之后调用抛出 `std::logic_error`，已启动的子任务不会静默改投到新域。
 - `spawn()` 可从任意线程调用，包括与 `cancelAll()` 并发：子任务 id 原子分配，children 表受锁保护。`spawn(task, token)` 的子任务同时受 scope 令牌与 `token` 控制（两者合并，任一取消即取消），`cancelAll()` 必达。返回 `false` 表示执行器拒绝了子任务，子任务从未启动（Kotlin：被拒绝的 `launch` 不执行 body）；子任务可以在任意线程完成。空 `Task`，以及已启动或已完成的 `Task`，调用 `spawn` 时在登记前抛出 `std::logic_error`，子任务表与 scope 状态不变（这是调用方错误，不是 scope 失败）。
 - 子任务表位于共享核心 `ScopeCore` 中。子任务持有核心的强引用（Kotlin：子协程保持父 Job 存活），结束时在自己的执行线程上把自己从表中摘除（Kotlin：`parentHandle.dispose()`），表条目数等于未结束的子任务数。
 - 摘除时帧仍在执行，帧的销毁推迟到本次 resume 返回（8.2）。
 - 子任务抛出非取消异常时，scope 被取消（Kotlin：失败的子 Job 取消父），保留第一个非取消异常，供 `join()` 重新抛出。
 - `join()` 是挂起式等待（Kotlin：`Job.join()`，不阻塞线程）：所有子任务结束后恢复，并重新抛出保留的异常。两种取消互不相同：等待者自身被取消时，`join()` 抛 `CancelledException`，不取消子任务（Kotlin：取消 join 不取消子 Job）；scope 被 `cancelAll()` 或析构取消时，子任务随之取消，`join()` 在子任务全部结束后正常返回，不抛取消。`join()` 本身不取消子任务，需要停止时先调用 `cancelAll()`。
 - 不响应取消的子任务会让 `join()` 一直等待，与 Kotlin 一致。
-- 析构只取消 token，不等待子任务。仍在运行的子任务与核心一起保持存活，直到结束后回收；析构时仍有子任务会记录一条警告日志。协程不会在 scope 析构后访问已释放的资源。
+- 析构只取消 token，不等待子任务。仍在运行的子任务与核心一起保持存活，直到结束后回收；析构时仍有子任务会记录一条警告日志。协程不会在 scope 析构后访问已释放的资源。库内的叶子挂起点都经 `bindCancellation` 绑定令牌，组合等待（`when_all`、`when_any`）则经子任务的令牌被取消，所以取消一定会唤醒库内的挂起点，子任务一定会结束；只有未绑定令牌的自定义 awaiter 且事件源永不触发时，子任务与核心会一直保留（见 8.20）。
 - 析构不能挂起，因此拥有者应在销毁前 `co_await scope.join()`。在 scope 自己的执行器线程上销毁 scope 不会死锁。
 - 已移除 `waitAll()` 和带超时的析构等待。
 - 子任务的返回值被丢弃；非取消异常的处理见上文。析构时若失败从未被 `join()` 观察到，记录一条错误日志，不会静默丢失。
@@ -1510,12 +1528,27 @@ Task<T>::setCancellationToken(token)
     -> promise.cancelToken_ (std::optional，未绑定时不分配)
 ```
 
-传播规则：
+传播规则：令牌由"边"决定，不由组合子决定。组合子只声明自己创建的作用域，不读取父令牌，也不手写合并。
 
-1. `co_await childTask`：子任务没有令牌则继承父协程的；两边都有则以 `CancellationToken::link(child, parent)` 合并，任一取消即取消。
-2. `when_all` 的子任务绑定父协程令牌与组令牌的合并，组令牌在子任务失败或等待者被销毁时取消；`when_any` 的子任务由 `AsyncScope` 托管，令牌为 scope 令牌与等待者令牌的合并；`AsyncScope::spawn(task, token)` 的子任务绑定 scope 令牌与 `token` 的合并。
-3. `AsyncGenerator` 生产者在消费者首次 `next()` 时与消费者的令牌取 link（与 `Task` 一致），生产者自身绑定的令牌保留。
-4. 叶子 awaiter 挂起时把取消回调注册到当前协程的令牌上：`TimerAwaiter`、`CompletionAwaiter`、`YieldAwaiter`、`AsyncIOOperationBase`。
+1. **await 边**：`co_await childTask` 与生成器 `next()` 经 `inheritCancellation(child, awaiting)` 调用 `PromiseCancellation::inheritCancelToken`。子帧没有令牌则继承父协程的；两边都有则以 `CancellationToken::link(child, parent)` 合并，任一取消即取消。生成器每次 `next()` 都会重新进入，但令牌只在消费者变化时重建：帧记住自己的令牌（首次继承前的 `ownToken_`）与当前被继承的令牌（`inheritedFrom_`，同一性用 `identity()` 判断）。同一消费者的连续 `next()` 不做任何事；换了消费者时，从自身令牌与新消费者的令牌重新 link，旧消费者的 link 随之释放，因此取消的始终是当前消费者；交给无令牌的消费者时，令牌回到自身令牌。令牌链深度与消费者令牌上的回调数只随交接次数变化，不随 `next()` 次数增长。
+2. **spawn 边**：组合子创建新的子协程时，令牌是父令牌的子令牌 `CancellationToken::childOf(parent*)`：父取消则它取消，它取消不影响父，空父表示独立令牌。
+   - `when_all` 与 `when_any` 派生 `CompositeWaitBase`（`CompositeWaitBase.hpp`）。基类在唯一的 `await_suspend` 里读一次等待者的令牌，交给派生类的 `start(gate, inherited, awaitingDomain)`；组合子的作用域令牌是 `childOf(inherited)`。`when_all` 的子任务绑定它，非取消失败与等待者销毁时取消它；`when_any` 把它作为额外令牌交给 `AsyncScope::spawn`，由 scope 令牌与它合并。该令牌从不唤醒等待者自己，等待者只由子任务结束唤醒。
+   - `AsyncScope::spawn(task, token)` 的子任务绑定 scope 令牌与 `token` 的合并，是唯一的 spawn 实现。
+   - `Job` 的令牌是 `LaunchOptions::token` 的子令牌；`Job::cancel()` 与析构取消它。
+3. **叶子边**：挂起点把取消回调注册到当前协程的令牌上，唯一入口是 `bindCancellation`（内部 `registerCallbackOrRun`）：`ExternalWaitBase` 的派生类经 `bindGateCancellation`，`AsyncIOOperationBase` 在 `await_suspend` 里直接绑定，它必须先于启动 IO 登记并自行仲裁四个终态，所以不并入 `ExternalWaitBase`。`AsyncIOOperationBase` 不再有显式的 `setCancellationToken`：令牌只来自当前协程。
+
+读取一个 promise 的令牌与执行域只有 `cancellationTokenOf(promise)` 和 `executorOf(promise)` 两个入口，对没有对应成员的 promise 返回空，所以组合子在 `Task` 与 `AsyncGenerator` 的协程体内用法相同（`StructuredConcurrencyTest.WhenAllRunsInsideAGeneratorBody`、`WhenAnyRunsInsideAGeneratorBody`）。
+
+新增组合子时按形状选择，不要手写令牌的继承、合并或登记：
+
+| 形状 | 做法 |
+|---|---|
+| 协程形（`then`、`with_timeout` 这类，自己是一个 `Task`） | 什么都不做，await 边自动继承 |
+| 等待者形（并发等多个子任务） | 派生 `CompositeWaitBase`，只使用基类交付的 `inherited` 令牌，用 `childOf` 建立作用域 |
+| 根形（脱离调用帧运行的任务，如 `Job`） | 令牌取 `childOf(显式来源)` |
+| 叶子（等外部事件） | 派生 `ExternalWaitBase`，不直接接触令牌 |
+
+每个新入口都要加进 `test/base/TokenContractTest.cpp` 的类型列表。套件对每个入口检查五条契约：取消上游令牌必须到达叶子；上游已取消时不得进入叶子等待；取消组合子自己的作用域不得取消上游；重复使用时上游令牌上的回调数不增长；入口销毁后回调数回到基线。突变验证（撤销"继承一次"、撤销 `when_all` 的作用域绑定、撤销 `Job` 的派生）各自只让对应入口变红。
 
 绑定时机：`Task::setCancellationToken` 与 `Task::setExecutor` 只能在首次 `resume()` 之前调用。协程启动后绑定会静默丢失，因为挂起的 awaiter 已经登记了它自己的回调，新令牌无法唤醒它，因此启动后调用抛出 `std::logic_error`，`nullptr` 执行器同样适用。`AsyncGenerator::setExecutor` 与 `setCancellationToken` 同样以首次 `next()` 为界；生成器已关闭时没有可绑定的生产者，调用为空操作。移动 `Task` 不改变启动状态，移动后的对象仍拒绝绑定。
 
@@ -1526,7 +1559,7 @@ Task<T>::setCancellationToken(token)
 - 取消与正常完成竞争：`CompletionAwaiter` 与叶子 awaiter 通过 `ResumeGate::signalCancel()` 仲裁，只有一方恢复协程；`AsyncIOOperationBase` 通过 `SharedCompletion` 的终态仲裁，只有第一个终态生效。已经完成的结果不会因为之后的取消而丢失。
 - 令牌在挂起前已取消时，awaiter 不挂起。`TimerAwaiter`、`CompletionAwaiter`、`YieldAwaiter`、`AsyncIOOperationBase` 与 `FdReadyAwaiter` 恢复后抛出 `CancelledException`；`AsyncIOOperationBase` 不启动 IO。
 - 取消回调注册在 awaiter 成员 `CancellationTokenRegistration` 上，awaiter 析构时自动注销，不会访问已销毁的协程。
-- 注册必须用 `CancellationToken::registerCallbackOrRun`：它在锁内原子地检查并注册，已取消时在锁外立即运行回调。先 `isCancelled()` 再 `registerCallback()` 是两步操作，中间的取消会丢失，协程挂起后永远不被唤醒。`AsyncIOOperationBase::setCancellationToken` 与 `DnsResolver::resolveAsync` 曾因此出现丢失取消，现已修复（`AsyncIOOperationTest.CancelRacingSetCancellationTokenNeverLosesTheWake`）。
+- 注册必须用 `CancellationToken::registerCallbackOrRun`：它在锁内原子地检查并注册，已取消时在锁外立即运行回调。先 `isCancelled()` 再 `registerCallback()` 是两步操作，中间的取消会丢失，协程挂起后永远不被唤醒。`AsyncIOOperationBase` 的登记与 `DnsResolver::resolveAsync` 曾因此出现丢失取消，现已修复（`AsyncIOOperationTest.CancelRacingTheSuspensionNeverLosesTheWake`）。`AsyncIOOperationBase` 曾另有一个显式的 `setCancellationToken`，生产代码没有调用方，已删除。
 - `CancellationToken::link(a, b)` 的结果持有 `a` 与 `b` 的状态：转发注册只持弱引用，若输出不保有输入，临时的中间令牌在调用返回后被释放，取消链即断开（`CancellationPropagationTest.LinkedTokenKeepsItsSourcesAlive`）。
 - 没有绑定令牌的协程不注册任何回调，行为与之前一致。
 - 没有绑定执行器的协程在调用 `cancel()` 的线程上同步恢复，可能嵌套在调用者的栈帧内。调用方不得在持有会被协程完成路径获取的锁时调用 `cancel()`。
@@ -1546,6 +1579,8 @@ auto result = co_await coro::with_timeout(fetchOnce(url), 5s);
 - 父协程的令牌先取消：抛出 `CancelledException`，不转换为超时。子任务吞掉取消后正常返回，也仍以取消为准。
 
 超时和取消后，`with_timeout` 仍会等子任务结束才恢复，子任务不会在后台运行。定时器在返回前撤销，不留下待触发的回调。
+
+调用方在传入前绑在子任务上的令牌（`task.setCancellationToken(t)`）不会被超时覆盖：超时令牌绑在内部包装协程上，包装协程 `co_await` 子任务时，子任务自己的令牌经 await 边与之合并，任一取消都会到达叶子等待（`CoTimeoutTest.TokenBoundToTheChildItselfStillCancelsIt`）。
 
 限制：
 - 超时只在取消点生效。隐式取消覆盖的挂起点是 `TimerAwaiter`、`CompletionAwaiter`、`YieldAwaiter`、`AsyncIOOperationBase` 与 `FdReadyAwaiter`（读写等待、TLS 握手）。取消后 `FdReadyAwaiter` 抛出 `CancelledException`；超时与取消在 IO 边界统一为未就绪，由调用方用 `coro::cancellation_requested()` 区分。
@@ -1577,9 +1612,10 @@ auto task = fetchOnce(url)
 - `dispatched`：交给执行域的恢复次数。在交付前计数，已运行的恢复一定能看到自己的计数。
 - `refused`：执行域拒绝、转交回退执行器的次数，即 8.11 的拒绝路径。
 - `pending`：已交给执行域、尚未开始运行的恢复数。交付时加一，开始运行时减一；被拒绝时撤销。
+- `conflicts`：同一帧的协程体仍在运行时被再次恢复而拒绝的次数（8.2）。由 `CoroutineFrameControl::resume` 直接计数，不经 `ResumeGate`；非零表示有调用方绕过了 gate 协议。
 - `queueLatencyUsTotal`、`queueLatencyUsMax`：从交付到开始执行的排队时间，单位微秒。
 
-限制：计数是进程级的，用差值统计时若有无关协程同时恢复，差值只是下界。只统计 `ResumeGate` 派发的恢复；`AsyncScope::spawn` 与 `when_all` 启动子协程不经过这里。每次派发多一次时钟读取与原子计数，热路径开销尚未在真实负载下测量。
+限制：计数是进程级的，用差值统计时若有无关协程同时恢复，差值只是下界。除 `conflicts` 外只统计 `ResumeGate` 派发的恢复；`AsyncScope::spawn` 与 `when_all` 启动子协程不经过这里。每次派发多一次时钟读取与原子计数，热路径开销尚未在真实负载下测量。
 
 ### 8.17 挂起点闭环总表
 
@@ -1594,8 +1630,8 @@ auto task = fetchOnce(url)
 | `FdReadyAwaiter` | fd 就绪 `signal()`；注销 fd 或替换等待者 `signalTerminal()` | `signalCancel()` 经 `bindCancellation`，恢复时抛出 `CancelledException` | `disarm`，注销监听 | `IOContextTest.UnregisteringTheSocketReportsAPendingWaitAsNotReady`、`IOContextTest.ReadinessRacingCancelResumesExactlyOnce`、`SuspensionMatrixTest.FdReadyMidCancelEndsCancelled`、`SuspensionMatrixTest.FdReadyUnregisteredReportsNotReadyWithoutThrowing` |
 | `Job::join` | Job 结算（`settle`，只生效一次） | `signalCancel()`，只结束 join，Job 不受影响 | 析构结算为取消并释放等待者；等待者销毁后不再恢复 | `JobTest.JoinReturnsNormallyWhenTheBodySucceeds`、`JobTest.CancellingAJoinerStopsWaitingWithoutCancellingTheJob`、`SuspensionMatrixTest.JoinReleasedByDestroyingTheJobEndsNormally`、`SuspensionMatrixTest.JoinMidCancelEndsCancelledAndLeavesTheJobRunning` |
 | `JoinAwaiter` | 最后一个子任务结束（`retireChild`） | `signalCancel()`，子任务不受影响 | scope 析构只取消、分离，等待者仍由 `core` 保持有效 | `CancellationPropagationTest.CancelAllWakesAJoinThatIsAlreadySuspended`、`CancellationPropagationTest.ScopeDestroyedWhileJoinIsSuspendedDoesNotDangle`、`StructuredConcurrencyTest.CancelledJoinStopsWaitingWithoutCancellingChildren` |
-| `CoWhenAll` / `CoWhenAny` 等待者 | 全部子任务结束或首个完成者 | 组令牌取消子任务，等待者抛取消 | 析构取消组令牌 | `StructuredConcurrencyTest.FailureRacingCompletionRethrowsOnlyAfterEveryChildFinishes`、`WhenAnyTest.WinnerThrowsIsPropagated` |
-| `Task` 的 `co_await`（子协程） | 子协程结束，经 continuation 恢复父协程 | 取消令牌沿 `co_await` 继承 | 任务销毁后取消仍安全，悬空回调已注销 | `CancellationPropagationTest.DeepChainInheritsParentToken`、`CancellationPropagationTest.CancelAfterSuspendedTaskDestroyedIsSafe` |
+| `CoWhenAll` / `CoWhenAny` 等待者 | 全部子任务结束或首个完成者 | 上游令牌取消作用域令牌，子任务以取消结束，等待者抛取消 | 析构取消作用域令牌；挂起中的生成器被关闭时同样展开 | `StructuredConcurrencyTest.FailureRacingCompletionRethrowsOnlyAfterEveryChildFinishes`、`WhenAnyTest.WinnerThrowsIsPropagated`、`StructuredConcurrencyTest.ClosingAGeneratorParkedInWhenAllCancelsItsChildren`、`TokenContractTest/WhenAll.*`、`TokenContractTest/WhenAny.*` |
+| `Task` 的 `co_await`（子协程） | 子协程结束，经 continuation 恢复父协程 | 取消令牌沿 `co_await` 继承 | 父协程销毁立即销毁其帧并逐层展开挂起的子协程，子协程结束后不恢复已销毁的父协程；任务销毁后取消仍安全，悬空回调已注销 | `CancellationPropagationTest.DeepChainInheritsParentToken`、`CancellationPropagationTest.CancelAfterSuspendedTaskDestroyedIsSafe`、`ChainDestroyTest.*` |
 | 线程停止时的已接受任务 | 线程退出前执行 | 不适用 | 停止时排空，之后投递被拒绝 | `ThreadSchedulerTest.StopRunsEveryAcceptedTaskBeforeReturning`、`ThreadSchedulerTest.WorkPostedByADrainedTaskIsRefused` |
 | 线程停止时的定时器 | 不再启动 | 不适用 | 未到期的取消；已到期但未运行的不启动 | `ThreadSchedulerTest.StopCancelsTimerWhoseCallbackIsQueuedBehindWork`、`TaskThreadTest.DelayTaskCancelledWhenThreadStops` |
 
@@ -1609,14 +1645,14 @@ auto task = fetchOnce(url)
 
 `coro::Job<T>`（`Job.hpp`）持有一个操作的根 `Task`，是 HTTP 流与 HLS 流取消与释放网络协程的句柄。
 
-- `makeJob(task, options)` 创建未启动的 Job，`launch(task, options)` 等于创建后调用 `start()`。`options.token` 与 Job 自己的令牌合并后绑定到根协程，`options.executor` 绑定执行域。空 `Task`，以及已启动（包括已完成）的 `Task`，在登记前抛出 `std::logic_error`。
+- `makeJob(task, options)` 创建未启动的 Job，`launch(task, options)` 等于创建后调用 `start()`。`options.token` 的子令牌绑定到根协程（`Job::cancel()` 与析构取消它，不影响 `options.token`），`options.executor` 绑定执行域。空 `Task`，以及已启动（包括已完成）的 `Task`，在登记前抛出 `std::logic_error`。
 - `start()` 幂等。有执行域时在其上派发首次恢复，执行器拒绝派发则以 `CancelledException` 结算，协程体不运行；没有执行域或执行域为内联时，首次恢复在调用线程同步运行。
 - `cancel()` 取消 Job 自己的令牌，协程体在下一个挂起点停止。
 - `waitFor(d)` 在条件变量上最多等待 `d`，不轮询，返回是否已结算。若在 Job 的执行域上调用，协程体无法运行，只能等到超时。
 - `co_await job.join()` 挂起直到结算，不重新抛出 Job 的失败。等待者自身被取消时抛出 `CancelledException`，Job 不受影响。多个等待者都会被唤醒。
 - `result()` 结算后返回值或重新抛出失败；结算前抛出 `std::runtime_error`。
 - 结算只生效一次。协程体正常结束、取消、执行器拒绝与析构都经同一个结算点。
-- 析构取消并分离，不等待协程体。未结算的 Job 以 `CancelledException` 结算，因此等待者不会永久挂起。仍在等待不可取消挂起点的协程体被分离，它在被唤醒时运行到结束，与 `AsyncScope` 的子协程一致（见 8.12）。
+- 析构取消并分离，不等待协程体。未结算的 Job 以 `CancelledException` 结算，因此等待者不会永久挂起。仍在等待不可取消挂起点的协程体被分离：它由 `JobState` 持有，被唤醒后运行到结束并在结束时自行释放（`JobTest.ADetachedBodyReleasesItsFramesWhenItEnds`），与 `AsyncScope` 的子协程一致（见 8.12）。库内的叶子挂起点都经 `bindCancellation` 绑定令牌，组合等待经子任务的令牌被取消，因此分离体只可能在未绑定令牌的自定义 awaiter 上、且事件源永不触发时永久保留（见 8.20）。从未启动的 Job，以及被执行器拒绝派发的 Job，其协程体随 Job 销毁，不被保留（`JobTest.ARefusedJobReleasesItsBodyWhenDestroyed`）。
 - 移动后源对象为空：`isDone()` 为真，`join()` 抛出 `std::logic_error`。移动赋值先取消并分离被替换的 Job。
 - 线程：`start`、`cancel`、`join` 与析构由所有者线程调用；`isDone` 与 `waitFor` 可从任意线程调用。
 - 流：`HttpStream` 与 `HLSStream` 以 Job 持有网络协程。取消时先取消请求与 Job，再以有限超时调用 `waitFor` 等待（HLS 使用 `kWaitSettleTimeout`）；超时只记录日志，不再轮询 `isDone()`。
@@ -1643,6 +1679,8 @@ auto task = fetchOnce(url)
 基类负责门（`ResumeGate`）、传输租约、外部等待标记、`bindGateCancellation` 的令牌登记，以及 `arm()` 与恢复的仲裁。`Source` 析构即撤销登记：定时回调、fd 续体与截止时间定时器、完成等待列表中的位置。析构时先撤销门再析构 `Source`，因此没有任何路径能恢复一个正在销毁的帧。`JoinAwaiter` 的登记保留在作用域的 join 列表中直到结算，不需要撤销。
 
 `FdReadyAwaiter` 的两个事件源（fd 续体与可选的截止时间定时器）共用同一个门：就绪唤醒恢复帧，截止时间到达以 `signalTerminal()` 报告未就绪。`withCancellation` 与 `CancellableAwaiter` 已删除，取消只来自协程自身的令牌。
+
+`CompositeWaitBase<Derived>`（`CompositeWaitBase.hpp`）是 `WhenAllAwaiter` 与 `WhenAnyAwaiter` 的公共基类，与 `ExternalWaitBase` 对称：叶子等一个外部事件，组合者等一组子任务。基类的 `await_suspend` 负责释放传输租约、外部等待标记、建门并登记为外部门，然后调用派生类的 `start(gate, inherited, awaitingDomain)`，最后 `arm()`。派生类不接触 promise：`inherited` 是等待者协程的令牌（可能为空），`awaitingDomain` 是等待者的执行域。与叶子不同，等待者自己的令牌不会唤醒这个等待：令牌只向下传给子任务，等待者只由子任务结束唤醒，子任务因取消而结束时，等待者以取消异常恢复。基类与派生类析构时先撤销门，再取消作用域令牌。
 
 ### 8.21 HTTP 内部的令牌边界
 
