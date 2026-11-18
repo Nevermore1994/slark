@@ -4,9 +4,12 @@
 
 #include "HttpStream.h"
 
+#include <array>
+#include <cassert>
 #include <chrono>
 #include <deque>
 #include <format>
+#include <optional>
 #include <limits>
 #include <thread>
 
@@ -27,6 +30,10 @@ constexpr std::chrono::milliseconds kCloseWaitTimeout{5000};
 
 // Chunks the network coroutine may post ahead of the owner thread (~16KB each)
 constexpr size_t kMaxPendingChunks = 16;
+
+struct WindowSlots {
+    std::array<std::optional<CompletionAwaiter<void>>, kMaxPendingChunks> slots;
+};
 
 constexpr std::chrono::hours kStreamTotalTimeout{24};
 constexpr std::chrono::seconds kStreamIdleTimeout{30};
@@ -127,7 +134,9 @@ void HttpStream::startLocked() noexcept {
                          std::shared_ptr<TaskThread> ownerThread, uint64_t generation,
                          uint64_t operationId) -> Task<void> {
         auto gen = req->streamingExecute(info);
+        auto slots = std::make_shared<WindowSlots>();
         std::deque<std::shared_ptr<CompletionAwaiter<void>>> inFlight;
+        size_t nextSlot = 0;
         while (true) {
             auto chunk = co_await gen.next();
             if (!chunk.has_value()) {
@@ -143,9 +152,17 @@ void HttpStream::startLocked() noexcept {
                 co_return;
             }
 
-            auto delivered = std::make_shared<CompletionAwaiter<void>>();
+            auto& slot = slots->slots[nextSlot];
+            if (slot.has_value()) {
+                assert(slot->isCompleted());
+                slot->reset();
+            } else {
+                slot.emplace();
+            }
+            auto delivered = std::shared_ptr<CompletionAwaiter<void>>(slots, &slot.value());
+            nextSlot = (nextSlot + 1) % kMaxPendingChunks;
             auto event = HttpStream::StreamEvent{
-                generation, operationId, std::move(*chunk), delivered};
+                generation, operationId, std::move(*chunk)};
             if (!ownerThread->postTask(
                     [weakStream, delivered, event = std::move(event)]() mutable {
                         if (auto s = weakStream.lock()) {

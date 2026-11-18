@@ -79,7 +79,6 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
         uint64_t generation = 0;
         uint64_t operationId = 0;
         http::StreamChunk chunk;
-        std::shared_ptr<CompletionAwaiter<void>> delivered;
     };
 
     void onEvent(StreamEvent event) noexcept;  // runs on the owner thread

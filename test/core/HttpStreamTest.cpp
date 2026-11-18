@@ -482,3 +482,63 @@ TEST_F(HttpStreamTest, R6_IgnoredRangeStopsTheDownload) {
         3000))
         << "the whole file must not keep downloading after Range was ignored";
 }
+
+TEST_F(HttpStreamTest, W1_WindowReuseKeepsEveryByteInOrder) {
+    constexpr size_t kBodySize = 512 * 1024;
+    std::string body(kBodySize, '\0');
+    for (size_t i = 0; i < kBodySize; ++i) {
+        body[i] = static_cast<char>('a' + i % 26);
+    }
+
+    MockHttpServer server;
+    server.setBody(body);
+    ASSERT_TRUE(server.start(true, /*chunkDelayMs=*/1));
+
+    auto params = makeParams();
+    params.uri = server.url();
+    std::string received;
+    received.reserve(kBodySize);
+    std::atomic<bool> completed{false};
+    params.onData = [&received](DataChunk chunk) {
+        const auto view = chunk.data.toStringView();
+        received.append(view.data(), view.size());
+    };
+    params.onComplete = [&completed](uint64_t) {
+        completed = true;
+    };
+
+    ASSERT_TRUE(stream_->open(params).has_value());
+    stream_->start();
+    EXPECT_TRUE(waitUntil([&]() {
+        return completed.load();
+    }));
+    EXPECT_EQ(received, body);
+    EXPECT_EQ(stream_->state(), StreamState::Completed);
+    server.stop();
+}
+
+TEST_F(HttpStreamTest, W2_PauseWhileWindowIsBackpressuredDoesNotDeadlock) {
+    constexpr size_t kBodySize = 512 * 1024;
+    MockHttpServer server;
+    server.setBody(std::string(kBodySize, 'x'));
+    ASSERT_TRUE(server.start(true, /*chunkDelayMs=*/1));
+
+    auto params = makeParams();
+    params.uri = server.url();
+    std::atomic<uint64_t> totalBytes{0};
+    params.onData = [&totalBytes](DataChunk chunk) {
+        totalBytes.fetch_add(chunk.size(), std::memory_order_relaxed);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    };
+
+    ASSERT_TRUE(stream_->open(params).has_value());
+    stream_->start();
+    ASSERT_TRUE(waitUntil([&]() {
+        return totalBytes.load() > 0;
+    }));
+    stream_->pause();
+    EXPECT_EQ(stream_->state(), StreamState::Paused);
+    stream_->close();
+    EXPECT_EQ(stream_->state(), StreamState::Idle);
+    server.stop();
+}
