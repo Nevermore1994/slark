@@ -157,6 +157,16 @@ class CompletionAwaiter {
         return state_->completed;
     }
 
+    // Retained enlistments unlink themselves; the waiter list must stay intact.
+    void reset() noexcept
+        requires std::is_void_v<T>
+    {
+        std::lock_guard lock(state_->mutex);
+        state_->completed = false;
+        state_->result.reset();
+        state_->exception = nullptr;
+    }
+
     [[nodiscard]] Waiter operator co_await() noexcept {
         return Waiter(state_);
     }

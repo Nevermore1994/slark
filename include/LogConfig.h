@@ -34,8 +34,9 @@ struct LogConfig {
     std::string logFileName;
 };
 
-// SDK global log config; set before creating a Player
+// SDK global log config; safe to update at runtime
 void setLogConfig(const LogConfig& config);
+// The returned snapshot stays valid until process exit
 const LogConfig& getLogConfig();
 
 }  // namespace slark

@@ -985,3 +985,57 @@ TEST(AsyncGeneratorTest, SynchronousHandoffRemainsStableUnderRepetition) {
         ASSERT_EQ(destroyed->load(std::memory_order_relaxed), 1);
     }
 }
+
+TEST(CompletionAwaiterTest, ResetRepeatsCompletionCycles) {
+    auto awaiter = std::make_shared<slark::CompletionAwaiter<void>>();
+    for (int i = 0; i < 20; ++i) {
+        std::atomic<int> resumed{0};
+        auto task = awaitCompletionVoid(awaiter, &resumed);
+        task.resume();
+        ASSERT_FALSE(task.isDone());
+
+        awaiter->complete();
+        ASSERT_TRUE(task.isDone());
+        EXPECT_EQ(resumed.load(std::memory_order_relaxed), 1);
+
+        awaiter->reset();
+        EXPECT_FALSE(awaiter->isCompleted());
+    }
+}
+
+TEST(CompletionAwaiterTest, ResetBeforeAwaitRearmsSuspension) {
+    auto awaiter = std::make_shared<slark::CompletionAwaiter<void>>();
+    awaiter->complete();
+    ASSERT_TRUE(awaiter->isCompleted());
+
+    awaiter->reset();
+    EXPECT_FALSE(awaiter->isCompleted());
+
+    std::atomic<int> resumed{0};
+    auto task = awaitCompletionVoid(awaiter, &resumed);
+    task.resume();
+    EXPECT_FALSE(task.isDone());
+
+    awaiter->complete();
+    EXPECT_TRUE(task.isDone());
+    EXPECT_EQ(resumed.load(std::memory_order_relaxed), 1);
+}
+
+TEST(CompletionAwaiterTest, ResetSurvivesConcurrentCompletionCycles) {
+    auto awaiter = std::make_shared<slark::CompletionAwaiter<void>>();
+    for (int i = 0; i < 20; ++i) {
+        std::atomic<int> resumed{0};
+        auto task = awaitCompletionVoid(awaiter, &resumed);
+        task.resume();
+        ASSERT_FALSE(task.isDone());
+
+        std::thread completer([awaiter] {
+            awaiter->complete();
+        });
+        completer.join();
+
+        ASSERT_TRUE(task.isDone());
+        EXPECT_EQ(resumed.load(std::memory_order_relaxed), 1);
+        awaiter->reset();
+    }
+}

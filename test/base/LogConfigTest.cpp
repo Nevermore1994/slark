@@ -5,8 +5,11 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <filesystem>
 #include <string>
+#include <thread>
+#include <vector>
 
 #include "Log.hpp"
 
@@ -121,4 +124,100 @@ TEST_F(LogConfigTest, MaxLogFileSizeZero) {
     config.maxLogFileSize = 0;
     setLogConfig(config);
     EXPECT_EQ(getLogConfig().maxLogFileSize, 0);
+}
+
+TEST_F(LogConfigTest, ConcurrentSetAndGetPublishesWholeSnapshots) {
+    LogConfig first;
+    first.progressLogBytes = 0x1111111111111111ULL;
+    first.maxLogFileSize = 0x1111111111111111ULL;
+    first.maxLogFileCount = 11;
+    first.minLogLevel = 1;
+    first.logDir = std::string(256, 'A');
+    first.logFileName = std::string(256, 'a');
+
+    LogConfig second;
+    second.progressLogBytes = 0x2222222222222222ULL;
+    second.maxLogFileSize = 0x2222222222222222ULL;
+    second.maxLogFileCount = 22;
+    second.minLogLevel = 2;
+    second.logDir = std::string(256, 'B');
+    second.logFileName = std::string(256, 'b');
+
+    const auto matches = [](const LogConfig& expected, const LogConfig& actual) {
+        return actual.progressLogBytes == expected.progressLogBytes &&
+               actual.maxLogFileSize == expected.maxLogFileSize &&
+               actual.maxLogFileCount == expected.maxLogFileCount &&
+               actual.minLogLevel == expected.minLogLevel && actual.logDir == expected.logDir &&
+               actual.logFileName == expected.logFileName;
+    };
+
+    setLogConfig(first);
+    std::atomic<bool> start{false};
+    std::atomic<int> tornReads{0};
+    std::vector<std::thread> threads;
+    threads.emplace_back([&] {
+        while (!start.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+        for (int i = 0; i < 200; ++i) {
+            setLogConfig((i & 1) ? second : first);
+        }
+    });
+    for (int t = 0; t < 4; ++t) {
+        threads.emplace_back([&] {
+            while (!start.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+            for (int i = 0; i < 2000; ++i) {
+                const auto& snapshot = getLogConfig();
+                if (!matches(first, snapshot) && !matches(second, snapshot)) {
+                    tornReads.fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+        });
+    }
+    start.store(true, std::memory_order_release);
+    for (auto& thread : threads) {
+        thread.join();
+    }
+    EXPECT_EQ(tornReads.load(), 0);
+}
+
+TEST_F(LogConfigTest, SnapshotReferenceSurvivesLaterUpdates) {
+    LogConfig initial;
+    initial.progressLogBytes = 1234;
+    initial.logDir = "stable/dir";
+    initial.logFileName = "stable";
+    setLogConfig(initial);
+
+    const LogConfig& held = getLogConfig();
+    for (uint64_t i = 0; i < 8; ++i) {
+        LogConfig next;
+        next.progressLogBytes = 2000 + i;
+        next.logDir = std::string(128, 'x');
+        next.logFileName = std::string(128, 'y');
+        setLogConfig(next);
+        EXPECT_EQ(getLogConfig().progressLogBytes, 2000 + i);
+    }
+    EXPECT_EQ(held.progressLogBytes, 1234);
+    EXPECT_EQ(held.logDir, "stable/dir");
+    EXPECT_EQ(held.logFileName, "stable");
+}
+
+TEST_F(LogConfigTest, ConcurrentWritersLeaveMinLevelMirrorAligned) {
+    std::vector<std::thread> writers;
+    for (int i = 0; i < 4; ++i) {
+        writers.emplace_back([i] {
+            for (int round = 0; round < 50; ++round) {
+                LogConfig config;
+                config.minLogLevel = (i + round) % 6;
+                setLogConfig(config);
+            }
+        });
+    }
+    for (auto& writer : writers) {
+        writer.join();
+    }
+    EXPECT_EQ(internal::gMinLogLevel.load(std::memory_order_relaxed),
+              getLogConfig().minLogLevel);
 }
