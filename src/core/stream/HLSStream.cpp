@@ -299,7 +299,7 @@ void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
         return;
     }
 
-    auto content = response.body->toString();
+    const auto content = response.body->toStringView();
     auto snapshotParser = std::make_unique<M3U8Parser>(playlistRequestUrl_);
     if (!snapshotParser->parse(content)) {
         LogE("[HLSStream::handlePlaylistResponse] M3U8 parse failed: bodySize={}", content.size());

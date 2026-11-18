@@ -362,3 +362,43 @@ TEST(BoxFactoryTest, CreateSidxBox) {
     EXPECT_EQ(box->info.symbol, "sidx");
     EXPECT_NE(std::dynamic_pointer_cast<BoxSidx>(box), nullptr);
 }
+
+TEST(SeekOffsetTest, SidxOffsetPicksFirstSegmentCoveringTargetTicks) {
+    const std::vector<TrackContext::SidxSegment> segments = {
+        {100, 10, 0},
+        {200, 10, 10},
+        {300, 10, 20},
+    };
+    EXPECT_EQ(detail::sidxOffsetFor(segments, 0), 100u);
+    EXPECT_EQ(detail::sidxOffsetFor(segments, 10), 200u);
+    EXPECT_EQ(detail::sidxOffsetFor(segments, 25), 300u);
+    EXPECT_EQ(detail::sidxOffsetFor(segments, 1000), 300u);
+}
+
+TEST(SeekOffsetTest, SidxOffsetKeepsZeroOffsetFallback) {
+    const std::vector<TrackContext::SidxSegment> segments = {
+        {0, 10, 0},
+        {200, 10, 10},
+    };
+    EXPECT_EQ(detail::sidxOffsetFor(segments, 0), 200u);
+}
+
+TEST(SeekOffsetTest, FragmentOffsetSkipsNonKeyVideoFramesAndFallsBack) {
+    const auto makeSample = [](uint64_t offset, int64_t dts, bool isKeyFrame) {
+        TrackContext::FragSample sample;
+        sample.offset = offset;
+        sample.dts = dts;
+        sample.isKeyFrame = isKeyFrame;
+        return sample;
+    };
+    const std::vector<TrackContext::FragSample> samples = {
+        makeSample(10, 0, true),
+        makeSample(20, 10, false),
+        makeSample(30, 20, true),
+        makeSample(40, 30, false),
+    };
+    EXPECT_EQ(detail::fragmentOffsetFor(samples, 0, TrackType::Audio, 999), 10u);
+    EXPECT_EQ(detail::fragmentOffsetFor(samples, 10, TrackType::Audio, 999), 20u);
+    EXPECT_EQ(detail::fragmentOffsetFor(samples, 10, TrackType::Video, 999), 30u);
+    EXPECT_EQ(detail::fragmentOffsetFor(samples, 100, TrackType::Video, 999), 999u);
+}

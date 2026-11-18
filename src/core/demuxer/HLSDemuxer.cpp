@@ -631,7 +631,7 @@ void HLSDemuxer::init(DemuxerConfig config) noexcept {
 
 bool HLSDemuxer::open(std::unique_ptr<Buffer>& buffer) noexcept {
     buffer_->append(buffer->detachData());
-    auto content = buffer_->view().toString();
+    const auto content = buffer_->view().toStringView();
 
     if (!mainParser_->isCompleted()) {
         if (!mainParser_->parse(content)) {

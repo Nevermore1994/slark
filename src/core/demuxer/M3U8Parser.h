@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 
 #include "MediaPlaylist.h"
 #include "NonCopyable.h"
@@ -18,10 +19,10 @@ class M3U8Parser : public NonCopyMovable {
     ~M3U8Parser() = default;
 
     void reset() noexcept;
-    bool parse(const std::string& content) noexcept;
+    bool parse(std::string_view content) noexcept;
 
-    [[nodiscard]] static std::string resolveUrl(const std::string& baseUrl,
-                                                const std::string& relativeUrl) noexcept;
+    [[nodiscard]] static std::string resolveUrl(std::string_view baseUrl,
+                                                std::string_view relativeUrl) noexcept;
 
     [[nodiscard]] std::shared_ptr<MediaPlaylist> playlist() const noexcept {
         return playlist_;
@@ -36,8 +37,8 @@ class M3U8Parser : public NonCopyMovable {
     }
 
  private:
-    bool parseMasterPlaylist(const std::string& content) noexcept;
-    bool parseMediaPlaylist(const std::string& content) noexcept;
+    bool parseMasterPlaylist(std::string_view content) noexcept;
+    bool parseMediaPlaylist(std::string_view content) noexcept;
 
     bool isMasterPlaylist_ = false;
     bool isCompleted_ = false;

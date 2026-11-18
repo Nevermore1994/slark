@@ -4,7 +4,10 @@
 
 #pragma once
 
+#include <algorithm>
 #include <optional>
+#include <ranges>
+#include <vector>
 
 #include "IDemuxer.h"
 #include "MediaDefs.h"
@@ -257,5 +260,33 @@ class Mp4Demuxer : public IDemuxer {
     uint32_t sidxCount_ = 0;
     bool isFragEnd_ = false;
 };
+
+namespace detail {
+
+[[nodiscard]] inline uint64_t sidxOffsetFor(
+    const std::vector<TrackContext::SidxSegment>& segments,
+    uint64_t targetTicks) noexcept {
+    const auto it = std::ranges::find_if(segments, [targetTicks](const auto& seg) {
+        return seg.startTime + seg.duration > targetTicks;
+    });
+    if (it == segments.end()) {
+        return segments.back().offset;
+    }
+    // A matched zero offset fell back to the last segment; keep that behavior.
+    return it->offset == 0 ? segments.back().offset : it->offset;
+}
+
+[[nodiscard]] inline uint64_t fragmentOffsetFor(
+    const std::vector<TrackContext::FragSample>& samples,
+    int64_t targetTicks,
+    TrackType type,
+    uint64_t fallback) noexcept {
+    const auto it = std::ranges::find_if(samples, [targetTicks, type](const auto& sample) {
+        return sample.dts >= targetTicks && (type != TrackType::Video || sample.isKeyFrame);
+    });
+    return it == samples.end() ? fallback : it->offset;
+}
+
+}  // namespace detail
 
 }  // namespace slark

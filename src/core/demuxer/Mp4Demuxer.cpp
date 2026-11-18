@@ -1511,39 +1511,24 @@ uint64_t Mp4Demuxer::getSeekToPos(double time) noexcept {
 }
 
 uint64_t Mp4Demuxer::seekPosFragmented(double time, uint64_t fallbackOffset) const noexcept {
-    uint64_t minOffset = UINT64_MAX;
+    std::optional<uint64_t> minOffset;
     for (const auto& track : std::views::values(tracks_)) {
+        uint64_t offset = 0;
         if (!track->sidxSegments.empty()) {
-            const auto timeScale = static_cast<double>(track->mdhd->timeScale);
-            const uint64_t targetTicks = static_cast<uint64_t>(time * timeScale);
-            uint64_t segOffset = 0;
-            for (const auto& seg : track->sidxSegments) {
-                if (seg.startTime + seg.duration > targetTicks) {
-                    segOffset = seg.offset;
-                    break;
-                }
-            }
-            if (segOffset == 0 && !track->sidxSegments.empty()) {
-                segOffset = track->sidxSegments.back().offset;
-            }
-            minOffset = std::min(minOffset, segOffset);
+            const auto targetTicks = static_cast<uint64_t>(
+                time * static_cast<double>(track->mdhd->timeScale));
+            offset = detail::sidxOffsetFor(track->sidxSegments, targetTicks);
         } else if (!track->fragSamples.empty()) {
-            const auto timeScale = static_cast<double>(track->mdhd->timeScale);
-            const int64_t targetTicks = static_cast<int64_t>(time * timeScale);
-            uint64_t bestOffset = nextBoxPos_;
-            for (const auto& s : track->fragSamples) {
-                if (s.dts >= targetTicks) {
-                    if (track->type == TrackType::Video && !s.isKeyFrame) {
-                        continue;
-                    }
-                    bestOffset = s.offset;
-                    break;
-                }
-            }
-            minOffset = std::min(minOffset, bestOffset);
+            const auto targetTicks = static_cast<int64_t>(
+                time * static_cast<double>(track->mdhd->timeScale));
+            offset = detail::fragmentOffsetFor(track->fragSamples, targetTicks, track->type,
+                                               nextBoxPos_);
+        } else {
+            continue;
         }
+        minOffset = std::min(minOffset.value_or(UINT64_MAX), offset);
     }
-    return minOffset == UINT64_MAX ? fallbackOffset : minOffset;
+    return minOffset.value_or(fallbackOffset);
 }
 
 uint64_t Mp4Demuxer::seekPosNormal(double time, uint64_t fallbackOffset) const noexcept {

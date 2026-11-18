@@ -256,3 +256,53 @@ TEST(M3U8ParserTest, RejectsMalformedByteRangeTags) {
         EXPECT_FALSE(segments[0].byteRange.has_value()) << line;
     }
 }
+
+TEST(M3U8ParserTest, ParsesStringViewWithCrLfWhitespaceAndNoTrailingNewline) {
+    constexpr std::string_view kPlaylist = "#EXTM3U\r\n"
+                                           "  #EXTINF:2.0,  \r\n"
+                                           "  seg0.ts  \r\n"
+                                           "\t\r\n"
+                                           "#EXTINF:3.0,\r\n"
+                                           "seg1.ts\r\n"
+                                           "#EXT-X-ENDLIST";
+    M3U8Parser parser("https://example.com/live/");
+    ASSERT_TRUE(parser.parse(kPlaylist));
+
+    const auto playlist = parser.playlist();
+    ASSERT_EQ(playlist->segments().size(), 2u);
+    EXPECT_DOUBLE_EQ(playlist->segments()[0].duration, 2.0);
+    EXPECT_EQ(playlist->segments()[0].uri, "https://example.com/live/seg0.ts");
+    EXPECT_DOUBLE_EQ(playlist->segments()[1].duration, 3.0);
+    EXPECT_EQ(playlist->segments()[1].uri, "https://example.com/live/seg1.ts");
+    EXPECT_DOUBLE_EQ(playlist->totalDuration(), 5.0);
+    EXPECT_FALSE(playlist->isLive());
+}
+
+TEST(M3U8ParserTest, ResolveUrlHandlesEmptyReferencesAndBoundaryForms) {
+    constexpr std::string_view kBase = "https://example.com/a/b/index.m3u8?token=1#frag";
+
+    EXPECT_EQ(M3U8Parser::resolveUrl(kBase, ""), std::string(kBase));
+    EXPECT_EQ(M3U8Parser::resolveUrl(kBase, "#new"),
+              "https://example.com/a/b/index.m3u8?token=1#new");
+    EXPECT_EQ(M3U8Parser::resolveUrl(kBase, "?token=2"),
+              "https://example.com/a/b/index.m3u8?token=2");
+    EXPECT_EQ(M3U8Parser::resolveUrl(kBase, "//cdn.example.com/x.ts"),
+              "https://cdn.example.com/x.ts");
+    EXPECT_EQ(M3U8Parser::resolveUrl(kBase, "https://other.example.com/y.ts"),
+              "https://other.example.com/y.ts");
+    EXPECT_EQ(M3U8Parser::resolveUrl("rel/base/", "seg.ts"), "rel/base/seg.ts");
+    EXPECT_EQ(M3U8Parser::resolveUrl(kBase, "/abs/../seg.ts"),
+              "https://example.com/seg.ts");
+}
+
+TEST(M3U8ParserTest, ParseDoesNotRetainInputView) {
+    std::string content = "#EXTM3U\n#EXTINF:1.0,\nseg.ts\n#EXT-X-ENDLIST\n";
+    M3U8Parser parser("https://example.com/live/");
+    ASSERT_TRUE(parser.parse(std::string_view(content)));
+
+    content.assign(content.size(), 'x');
+    const auto playlist = parser.playlist();
+    ASSERT_EQ(playlist->segments().size(), 1u);
+    EXPECT_EQ(playlist->segments()[0].uri, "https://example.com/live/seg.ts");
+    EXPECT_DOUBLE_EQ(playlist->totalDuration(), 1.0);
+}
