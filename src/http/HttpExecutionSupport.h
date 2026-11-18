@@ -93,6 +93,10 @@ struct StreamReadResult final {
     ErrorInfo error;
 };
 
+[[nodiscard]] inline ErrorInfo streamEndError(bool cancelled) noexcept {
+    return ErrorInfo{cancelled ? slark::Error::Cancelled : slark::Error::ConnectionReset};
+}
+
 inline ErrorInfo classifyStreamReadError(Error error,
                                          bool overallExpired,
                                          RequestPerf& perf) noexcept {

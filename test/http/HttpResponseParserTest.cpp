@@ -3,7 +3,9 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <chrono>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -745,4 +747,31 @@ TEST(HttpResponseParserTest, ChunkSizeLineAtLimitWaitsForMoreData) {
     // value is then rejected by the body-size limit, not the line limit).
     helper.feed("\r\n");
     EXPECT_TRUE(helper.hasError());
+}
+
+TEST(HttpResponseParserTest, KeepAliveTimeoutIsPreservedAcrossResponses) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n"
+                "Keep-Alive: timeout=5, max=100\r\nX-Custom: value\r\n\r\n");
+    ASSERT_TRUE(helper.isCompleted());
+    EXPECT_EQ(helper.result.headers["keep-alive"], "timeout=5, max=100");
+    EXPECT_EQ(helper.result.headers["x-custom"], "value");
+    ASSERT_TRUE(helper.rawParser()->keepAliveTimeout().has_value());
+    EXPECT_EQ(helper.rawParser()->keepAliveTimeout()->count(), 5);
+
+    helper.rawParser()->resetForNextResponse();
+    EXPECT_EQ(helper.rawParser()->keepAliveTimeout(), std::nullopt);
+    helper.feed("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nX-Other: second\r\n\r\n");
+    ASSERT_TRUE(helper.isCompleted());
+    EXPECT_EQ(helper.rawParser()->keepAliveTimeout(), std::nullopt);
+    EXPECT_EQ(helper.result.headers["x-other"], "second");
+    EXPECT_EQ(helper.result.headers.count("keep-alive"), 0u);
+}
+
+TEST(HttpResponseParserTest, InformationalResponseDoesNotLeakKeepAliveTimeout) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 100 Continue\r\nKeep-Alive: timeout=9\r\n\r\n"
+                "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+    ASSERT_TRUE(helper.isCompleted());
+    EXPECT_EQ(helper.rawParser()->keepAliveTimeout(), std::nullopt);
 }

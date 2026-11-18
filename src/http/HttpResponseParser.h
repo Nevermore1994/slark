@@ -218,6 +218,7 @@ class HttpResponseParser {
     HttpMethodType requestMethod_ = HttpMethodType::Unknown;
 
     std::optional<int64_t> contentLength_;
+    std::optional<std::chrono::seconds> keepAliveTimeout_;
     std::string transferEncodingValue_;
     int64_t bodyReceived_ = 0;
     uint64_t maxResponseBodySize_ = kDefaultMaxResponseBodySize;

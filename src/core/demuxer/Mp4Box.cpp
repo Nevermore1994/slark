@@ -103,6 +103,8 @@ uint64_t remainingBytes(const BoxInfo& info, const Buffer& buffer) noexcept {
     return std::min<uint64_t>(available, end > pos ? end - pos : 0);
 }
 
+constexpr uint32_t kMaxEntryCount = 10'000'000;
+
 bool entryCountFits(const BoxInfo& info,
                     const Buffer& buffer,
                     uint64_t entryCount,
@@ -391,7 +393,6 @@ bool BoxStsc::decode(Buffer& buffer) noexcept {
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
 
-    constexpr uint32_t kMaxEntryCount = 10'000'000;
     if (entryCount > kMaxEntryCount || !entryCountFits(info, buffer, entryCount, 12)) {
         LogE("BoxStsc: invalid entryCount {}", entryCount);
         return false;
@@ -422,7 +423,6 @@ bool BoxStsz::decode(Buffer& buffer) noexcept {
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
 
-    constexpr uint32_t kMaxEntryCount = 10'000'000;
     if (entryCount > kMaxEntryCount) {
         LogE("BoxStsz: entryCount {} exceeds limit", entryCount);
         return false;
@@ -456,7 +456,6 @@ bool BoxStco::decode(Buffer& buffer) noexcept {
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
 
-    constexpr uint32_t kMaxEntryCount = 10'000'000;
     if (entryCount > kMaxEntryCount || !entryCountFits(info, buffer, entryCount, 4)) {
         LogE("BoxStco: invalid entryCount {}", entryCount);
         return false;
@@ -482,7 +481,6 @@ bool BoxCo64::decode(Buffer& buffer) noexcept {
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
 
-    constexpr uint32_t kMaxEntryCount = 10'000'000;
     if (entryCount > kMaxEntryCount || !entryCountFits(info, buffer, entryCount, 8)) {
         LogE("BoxCo64: invalid entryCount {}", entryCount);
         return false;
@@ -508,6 +506,11 @@ bool BoxStts::decode(Buffer& buffer) noexcept {
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
 
+    if (entryCount > kMaxEntryCount || !entryCountFits(info, buffer, entryCount, 8)) {
+        LogE("BoxStts: invalid entryCount {}", entryCount);
+        return false;
+    }
+    entrys.reserve(entryCount);
     for (uint32_t i = 0; i < entryCount; i++) {
         if (!buffer.require(8)) {
             return false;
@@ -538,6 +541,11 @@ bool BoxCtts::decode(Buffer& buffer) noexcept {
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
 
+    if (entryCount > kMaxEntryCount || !entryCountFits(info, buffer, entryCount, 8)) {
+        LogE("BoxCtts: invalid entryCount {}", entryCount);
+        return false;
+    }
+    entrys.reserve(entryCount);
     for (size_t i = 0; i < entryCount; i++) {
         if (!buffer.require(8)) {
             return false;
@@ -559,6 +567,12 @@ bool BoxStss::decode(Buffer& buffer) noexcept {
     buffer.skip(1 + 3);  // version + flags
     uint32_t entryCount = 0;
     buffer.read4ByteBE(entryCount);
+
+    if (entryCount > kMaxEntryCount || !entryCountFits(info, buffer, entryCount, 4)) {
+        LogE("BoxStss: invalid entryCount {}", entryCount);
+        return false;
+    }
+    keyIndexs.reserve(entryCount);
     for (uint32_t i = 0; i < entryCount; i++) {
         if (!buffer.require(4)) {
             return false;

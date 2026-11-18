@@ -101,12 +101,9 @@ bool HttpResponseParser::checkHeaderOverflow(size_t appendSize) noexcept {
     return false;
 }
 
-std::optional<std::chrono::seconds> HttpResponseParser::keepAliveTimeout() const noexcept {
-    const auto it = headers_.find("keep-alive");
-    if (it == headers_.end()) {
-        return std::nullopt;
-    }
-    std::string_view params(it->second);
+namespace {
+
+std::optional<std::chrono::seconds> parseKeepAliveTimeout(std::string_view params) noexcept {
     while (!params.empty()) {
         const auto comma = params.find(',');
         const auto param = StringUtil::trimOws(params.substr(0, comma));
@@ -114,7 +111,8 @@ std::optional<std::chrono::seconds> HttpResponseParser::keepAliveTimeout() const
         if (equals != std::string_view::npos &&
             StringUtil::iequals(StringUtil::trimOws(param.substr(0, equals)), "timeout")) {
             int64_t seconds = 0;
-            if (!parseNonNegativeInt64(StringUtil::trimOws(param.substr(equals + 1)), 10, seconds)) {
+            if (!parseNonNegativeInt64(StringUtil::trimOws(param.substr(equals + 1)), 10,
+                                       seconds)) {
                 return std::nullopt;
             }
             return std::chrono::seconds(seconds);
@@ -125,6 +123,12 @@ std::optional<std::chrono::seconds> HttpResponseParser::keepAliveTimeout() const
         params.remove_prefix(comma + 1);
     }
     return std::nullopt;
+}
+
+}  // namespace
+
+std::optional<std::chrono::seconds> HttpResponseParser::keepAliveTimeout() const noexcept {
+    return keepAliveTimeout_;
 }
 
 void HttpResponseParser::processCurrentState() {
@@ -173,6 +177,7 @@ void HttpResponseParser::resetForNextResponse() noexcept {
     state_ = State::StatusLine;
     headers_.clear();
     trailers_.clear();
+    keepAliveTimeout_.reset();
     statusCode_ = HttpStatusCode::Unknown;
     isHttp10_ = false;
     shouldClose_ = false;
@@ -368,6 +373,7 @@ void HttpResponseParser::processHeaders() {
 
     auto headerBlock = data.substr(0, pos);
 
+    keepAliveTimeout_.reset();
     bool closeSeen = false;
     bool keepAliveSeen = false;
 
@@ -426,6 +432,8 @@ void HttpResponseParser::processHeaders() {
         } else if (name == "connection") {
             closeSeen = closeSeen || hasHeaderToken(value, "close");
             keepAliveSeen = keepAliveSeen || hasHeaderToken(value, "keep-alive");
+        } else if (name == "keep-alive") {
+            keepAliveTimeout_ = parseKeepAliveTimeout(value);
         }
         headers_[std::move(name)] = std::string(value);
 

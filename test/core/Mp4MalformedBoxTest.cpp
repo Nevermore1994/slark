@@ -187,6 +187,67 @@ TEST(Mp4MalformedBoxTest, StscCountBeyondPayloadFailsWithoutAllocating) {
     EXPECT_EQ(box.entrys.capacity(), 0u);
 }
 
+TEST(Mp4MalformedBoxTest, SttsCttsStssHugeEntryCountFailsWithoutAllocating) {
+    Bytes payload;
+    be32(payload, 0);
+    be32(payload, 0xFFFFFFFFu);
+    {
+        auto buffer = makeBuffer(payload);
+        BoxStts box(infoFor(payload));
+        EXPECT_FALSE(box.decode(*buffer));
+        EXPECT_EQ(box.entrys.capacity(), 0u);
+    }
+    {
+        auto buffer = makeBuffer(payload);
+        BoxCtts box(infoFor(payload));
+        EXPECT_FALSE(box.decode(*buffer));
+        EXPECT_EQ(box.entrys.capacity(), 0u);
+    }
+    {
+        auto buffer = makeBuffer(payload);
+        BoxStss box(infoFor(payload));
+        EXPECT_FALSE(box.decode(*buffer));
+        EXPECT_EQ(box.keyIndexs.capacity(), 0u);
+    }
+}
+
+TEST(Mp4MalformedBoxTest, SttsCttsStssReserveOnceForValidCounts) {
+    Bytes tablePayload;
+    be32(tablePayload, 0);
+    be32(tablePayload, 2);
+    be32(tablePayload, 3);
+    be32(tablePayload, 100);
+    be32(tablePayload, 4);
+    be32(tablePayload, 200);
+    {
+        auto buffer = makeBuffer(tablePayload);
+        BoxStts box(infoFor(tablePayload));
+        ASSERT_TRUE(box.decode(*buffer));
+        EXPECT_EQ(box.entrys.size(), 2u);
+        EXPECT_GE(box.entrys.capacity(), 2u);
+        EXPECT_EQ(box.entrys[1].sampleDelta, 200u);
+    }
+    {
+        auto buffer = makeBuffer(tablePayload);
+        BoxCtts box(infoFor(tablePayload));
+        ASSERT_TRUE(box.decode(*buffer));
+        EXPECT_EQ(box.entrys.size(), 2u);
+        EXPECT_GE(box.entrys.capacity(), 2u);
+    }
+
+    Bytes keyPayload;
+    be32(keyPayload, 0);
+    be32(keyPayload, 2);
+    be32(keyPayload, 7);
+    be32(keyPayload, 13);
+    auto keyBuffer = makeBuffer(keyPayload);
+    BoxStss box(infoFor(keyPayload));
+    ASSERT_TRUE(box.decode(*keyBuffer));
+    EXPECT_EQ(box.keyIndexs.size(), 2u);
+    EXPECT_GE(box.keyIndexs.capacity(), 2u);
+    EXPECT_EQ(box.keyIndexs[1], 13u);
+}
+
 TEST(Mp4MalformedBoxTest, StszWellFormedTableStillDecodes) {
     Bytes payload;
     be32(payload, 0);

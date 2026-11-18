@@ -131,9 +131,7 @@ Task<Http1Session::ConnectionResult> Http1Session::acquireConnection(const Reque
 
     if (discard) {
         newConnection->close();
-        co_return std::unexpected((co_await coro::cancellation_requested())
-                                      ? ErrorInfo{slark::Error::Cancelled}
-                                      : ErrorInfo{slark::Error::ConnectionReset});
+        co_return std::unexpected(streamEndError(co_await coro::cancellation_requested()));
     }
     if (newConnection) {
         co_return newConnection;

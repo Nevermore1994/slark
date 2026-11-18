@@ -199,3 +199,60 @@ TEST(M3U8ParserTest, StreamInfParsesBandwidth) {
     EXPECT_TRUE(variants[0].width.has_value());
     EXPECT_EQ(variants[0].width.value(), 1920u);
 }
+
+TEST(M3U8ParserTest, ParsesExtinfAndByteRangeVariants) {
+    constexpr std::string_view kM3U8 =
+        "#EXTM3U\n"
+        "#EXTINF:4,title\n"
+        "s0.ts\n"
+        "#EXTINF:4.0   ,\n"
+        "s1.ts\n"
+        "#EXTINF:2.5\n"
+        "s2.ts\n"
+        "#EXT-X-BYTERANGE:100@10\n"
+        "#EXTINF:1.5,\n"
+        "s3.ts\n"
+        "#EXT-X-BYTERANGE:50\n"
+        "#EXTINF:0.5,\n"
+        "s4.ts\n"
+        "#EXT-X-ENDLIST\n";
+
+    M3U8Parser parser("https://example.com/live/");
+    ASSERT_TRUE(parser.parse(std::string(kM3U8)));
+    const auto& segments = parser.playlist()->segments();
+    ASSERT_EQ(segments.size(), 5u);
+    EXPECT_DOUBLE_EQ(parser.playlist()->totalDuration(), 12.5);
+    EXPECT_FALSE(segments[2].byteRange.has_value());
+    ASSERT_TRUE(segments[3].byteRange.has_value());
+    EXPECT_EQ(segments[3].byteRange->pos, 10u);
+    EXPECT_EQ(segments[3].byteRange->size, 100);
+    ASSERT_TRUE(segments[4].byteRange.has_value());
+    EXPECT_EQ(segments[4].byteRange->pos, 110u);
+    EXPECT_EQ(segments[4].byteRange->size, 50);
+}
+
+TEST(M3U8ParserTest, RejectsMalformedExtinfTags) {
+    for (const auto* line : {"#EXTINF:not-a-number,", "#EXTINF:4.0x", "#EXTINF:,",
+                             "#EXTINF:86401.0,"}) {
+        std::string playlist = "#EXTM3U\n";
+        playlist += line;
+        playlist += "\ns.ts\n#EXT-X-ENDLIST\n";
+        M3U8Parser parser("https://example.com/live/");
+        EXPECT_FALSE(parser.parse(playlist)) << line;
+    }
+}
+
+TEST(M3U8ParserTest, RejectsMalformedByteRangeTags) {
+    for (const auto* line : {"#EXT-X-BYTERANGE:", "#EXT-X-BYTERANGE:100@",
+                             "#EXT-X-BYTERANGE:100@x", "#EXT-X-BYTERANGE:100@10x",
+                             "#EXT-X-BYTERANGE:99999999999999999999999@10"}) {
+        std::string playlist = "#EXTM3U\n#EXTINF:1.0,\n";
+        playlist += line;
+        playlist += "\ns.ts\n#EXT-X-ENDLIST\n";
+        M3U8Parser parser("https://example.com/live/");
+        ASSERT_TRUE(parser.parse(playlist)) << line;
+        const auto& segments = parser.playlist()->segments();
+        ASSERT_EQ(segments.size(), 1u) << line;
+        EXPECT_FALSE(segments[0].byteRange.has_value()) << line;
+    }
+}

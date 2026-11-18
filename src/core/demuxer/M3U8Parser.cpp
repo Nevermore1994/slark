@@ -84,32 +84,53 @@ bool M3U8Parser::parseMasterPlaylist(const std::string& content) noexcept {
 
 namespace {
 
-bool parseByteRangeLine(const std::string& line,
+constexpr std::string_view kByteRangeTag = "#EXT-X-BYTERANGE:";
+constexpr std::string_view kExtinfTag = "#EXTINF:";
+
+[[nodiscard]] constexpr bool isAsciiDigit(char c) noexcept {
+    return c >= '0' && c <= '9';
+}
+
+[[nodiscard]] bool isUnsignedInteger(std::string_view text) noexcept {
+    return !text.empty() && std::ranges::all_of(text, isAsciiDigit);
+}
+
+bool parseByteRangeLine(std::string_view line,
                         std::optional<Range>& pendingByteRange,
                         uint64_t& accumulatedOffset,
                         bool& hasAccumulatedOffset) noexcept {
-    std::smatch match;
-    if (!std::regex_match(line, match, std::regex(R"(#EXT-X-BYTERANGE:(\d+)(?:@(\d+))?)"))) {
+    if (!line.starts_with(kByteRangeTag)) {
         return false;
     }
-    Range range;
-    auto lenResult = StringUtil::fromChars<uint64_t>(match[1].str());
-    if (!lenResult) {
+    const auto payload = line.substr(kByteRangeTag.size());
+    const auto separator = payload.find('@');
+    const auto lengthText = payload.substr(0, separator);
+    const auto offsetText = separator == std::string_view::npos
+                                ? std::string_view{}
+                                : payload.substr(separator + 1);
+    if (!isUnsignedInteger(lengthText) ||
+        (separator != std::string_view::npos && !isUnsignedInteger(offsetText))) {
+        return false;
+    }
+
+    const auto length = StringUtil::fromChars<uint64_t>(lengthText);
+    if (!length) {
         return true;
     }
-    range.size = static_cast<int64_t>(*lenResult);
+    Range range;
+    range.size = static_cast<int64_t>(*length);
 
-    if (match[2].matched) {
-        auto offResult = StringUtil::fromChars<uint64_t>(match[2].str());
-        if (!offResult) {
+    if (separator != std::string_view::npos) {
+        const auto offset = StringUtil::fromChars<uint64_t>(offsetText);
+        if (!offset) {
             return true;
         }
-        range.pos = *offResult;
-        accumulatedOffset = *offResult + *lenResult;
+        range.pos = *offset;
+        accumulatedOffset = *offset + *length;
         hasAccumulatedOffset = true;
     } else if (hasAccumulatedOffset) {
         range.pos = accumulatedOffset;
-        accumulatedOffset += *lenResult;
+        accumulatedOffset += *length;
     } else {
         return true;
     }
@@ -117,13 +138,28 @@ bool parseByteRangeLine(const std::string& line,
     return true;
 }
 
-std::optional<double> parseExtinfDuration(const std::string& line) noexcept {
-    std::smatch match;
-    if (!std::regex_match(line, match,
-                          std::regex(R"(#EXTINF:([\d.]+)\s*(?:,([^\n]*))?)"))) {
+std::optional<double> parseExtinfDuration(std::string_view line) noexcept {
+    if (!line.starts_with(kExtinfTag)) {
         return std::nullopt;
     }
-    auto duration = StringUtil::fromChars<double>(match[1].str());
+    auto payload = line.substr(kExtinfTag.size());
+    const auto digitEnd = std::ranges::find_if_not(payload, [](char c) {
+        return isAsciiDigit(c) || c == '.';
+    });
+    const auto length = static_cast<size_t>(digitEnd - payload.begin());
+    if (length == 0) {
+        return std::nullopt;
+    }
+    const auto durationText = payload.substr(0, length);
+    payload.remove_prefix(length);
+    while (!payload.empty() && std::isspace(static_cast<unsigned char>(payload.front()))) {
+        payload.remove_prefix(1);
+    }
+    if (!payload.empty() && payload.front() != ',') {
+        return std::nullopt;
+    }
+
+    const auto duration = StringUtil::fromChars<double>(durationText);
     if (!duration || *duration < 0.0 || *duration > 86400.0) {
         return std::nullopt;
     }
@@ -167,13 +203,13 @@ bool M3U8Parser::parseMediaPlaylist(const std::string& content) noexcept {
         const auto last = line.find_last_not_of(" \t\r");
         line = line.substr(first, last - first + 1);
 
-        if (line.starts_with("#EXTINF:")) {
+        if (line.starts_with(kExtinfTag)) {
             if (const auto duration = parseExtinfDuration(line)) {
                 pendingDuration = *duration;
                 pendingDiscontinuity = hasDiscontinuity;
                 hasDiscontinuity = false;
             }
-        } else if (line.starts_with("#EXT-X-BYTERANGE:")) {
+        } else if (line.starts_with(kByteRangeTag)) {
             parseByteRangeLine(line, pendingByteRange, accumulatedOffset, hasAccumulatedOffset);
         } else if (line.starts_with("#EXT-X-DISCONTINUITY")) {
             hasDiscontinuity = true;

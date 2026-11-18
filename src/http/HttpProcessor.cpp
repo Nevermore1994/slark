@@ -76,7 +76,6 @@ RedirectDecision evaluateRedirect(const HttpResponseEvent& headers,
                                   const RedirectPolicy& policy) {
     HttpResponse response;
     response.statusCode = headers.header.httpStatusCode;
-    response.headers = headers.header.headers;
     if (!policy.shouldRedirect(response, currentInfo, redirectCount)) {
         return {};
     }
@@ -131,9 +130,7 @@ Task<ResponseResult> HttpProcessor::collectResponse(RequestInfo requestInfo) {
     while (true) {
         auto event = co_await events.next();
         if (!event.has_value()) {
-            co_return std::unexpected((co_await coro::cancellation_requested())
-                                          ? ErrorInfo{slark::Error::Cancelled}
-                                          : ErrorInfo{slark::Error::ConnectionReset});
+            co_return std::unexpected(streamEndError(co_await coro::cancellation_requested()));
         }
 
         switch (event->type) {
@@ -185,9 +182,7 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::processEvents(RequestInfo reque
         auto event = co_await events.next();
         if (!event.has_value()) {
             co_yield HttpResponseEvent::makeError(
-                (co_await coro::cancellation_requested())
-                    ? ErrorInfo{slark::Error::Cancelled}
-                    : ErrorInfo{slark::Error::ConnectionReset});
+                streamEndError(co_await coro::cancellation_requested()));
             co_return;
         }
 
@@ -274,14 +269,10 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(RequestInfo
             auto event = co_await sessionEvents.next();
             if (!event.has_value()) {
                 co_yield HttpResponseEvent::makeError(
-                    (co_await coro::cancellation_requested())
-                        ? ErrorInfo{slark::Error::Cancelled}
-                        : ErrorInfo{slark::Error::ConnectionReset},
-                    std::move(perf));
+                    streamEndError(co_await coro::cancellation_requested()), std::move(perf));
                 co_return;
             }
-            const bool terminal = event->type == HttpResponseEventType::Completed ||
-                                  event->type == HttpResponseEventType::Error;
+            const bool terminal = isTerminalEvent(*event);
             co_yield std::move(*event);
             if (terminal) {
                 co_return;
@@ -374,9 +365,8 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(RequestInfo requestI
     while (true) {
         auto event = co_await events.next();
         if (!event.has_value()) {
-            co_yield StreamChunk::makeError((co_await coro::cancellation_requested())
-                                                ? ErrorInfo{slark::Error::Cancelled}
-                                                : ErrorInfo{slark::Error::ConnectionReset});
+            co_yield StreamChunk::makeError(
+                streamEndError(co_await coro::cancellation_requested()));
             co_return;
         }
 
