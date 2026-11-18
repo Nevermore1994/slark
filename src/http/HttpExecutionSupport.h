@@ -24,7 +24,6 @@ namespace slark::http {
 struct ParserEventState final {
     ResponseHeader header;
     bool hasHeaders = false;
-    std::unordered_map<std::string, std::string> trailers;
     DataPtr pendingBody;
     bool parseError = false;
     Error parseErrorCode = slark::Error::Success;
@@ -37,12 +36,8 @@ inline HttpResponseParser::Callbacks makeParserCallbacks(ParserEventState& state
         state.header.httpStatusCode = code;
         state.header.reasonPhrase = reason;
     };
-    callbacks.onHeaders = [&state](std::unordered_map<std::string, std::string>&& headers) {
-        state.header.headers = std::move(headers);
+    callbacks.onHeaders = [&state](const std::unordered_map<std::string, std::string>&) {
         state.hasHeaders = true;
-    };
-    callbacks.onTrailers = [&state](std::unordered_map<std::string, std::string>&& trailers) {
-        state.trailers = std::move(trailers);
     };
     callbacks.onBodyData = [&state, &perf](const Byte* data, size_t size) {
         if (!state.pendingBody) {
@@ -79,6 +74,18 @@ inline Task<ErrorInfo> sendRequestPart(OwnedConnection& connection,
     LogE("[Http::sendRequestPart] {} failed: error={} legacyErr={} url={}", partName,
          toString(error), toString(result.error()), requestInfo.url);
     co_return ErrorInfo{error};
+}
+
+inline Task<ErrorInfo> sendRequestParts(OwnedConnection& connection,
+                                         std::string_view request,
+                                         const RequestInfo& requestInfo) {
+    auto error = co_await sendRequestPart(connection, request, requestInfo, "headers");
+    if (error.retCode != slark::Error::Success || requestInfo.bodyEmpty()) {
+        co_return error;
+    }
+    const std::string_view body(reinterpret_cast<const char*>(requestInfo.body->data()),
+                                requestInfo.body->size());
+    co_return co_await sendRequestPart(connection, body, requestInfo, "body");
 }
 
 enum class StreamReadStatus : uint8_t {

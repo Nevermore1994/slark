@@ -117,16 +117,24 @@ Task<HttpResponse> HttpRequest::executeOperation(RequestInfo requestInfo,
     }
 }
 
-HttpRequest::OperationStatePtr HttpRequest::beginOperation() noexcept {
-    std::lock_guard<std::mutex> lock(cancelMutex_);
+void HttpRequest::pruneInactiveOperationsLocked(
+    std::vector<OperationStatePtr>* active) noexcept {
     for (auto it = operations_.begin(); it != operations_.end();) {
         auto operation = it->lock();
         if (!operation || !operation->isActive()) {
             it = operations_.erase(it);
-        } else {
-            ++it;
+            continue;
         }
+        if (active != nullptr) {
+            active->push_back(std::move(operation));
+        }
+        ++it;
     }
+}
+
+HttpRequest::OperationStatePtr HttpRequest::beginOperation() noexcept {
+    std::lock_guard<std::mutex> lock(cancelMutex_);
+    pruneInactiveOperationsLocked();
     auto operation = std::make_shared<OperationState>();
     operations_.emplace_back(operation);
     return operation;
@@ -136,15 +144,7 @@ void HttpRequest::cancel() noexcept {
     std::vector<OperationStatePtr> activeOperations;
     {
         std::lock_guard<std::mutex> lock(cancelMutex_);
-        for (auto it = operations_.begin(); it != operations_.end();) {
-            auto operation = it->lock();
-            if (!operation || !operation->isActive()) {
-                it = operations_.erase(it);
-                continue;
-            }
-            activeOperations.push_back(std::move(operation));
-            ++it;
-        }
+        pruneInactiveOperationsLocked(&activeOperations);
     }
     for (const auto& operation : activeOperations) {
         operation->cancel();

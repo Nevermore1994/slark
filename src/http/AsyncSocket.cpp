@@ -8,6 +8,7 @@
 #include <netinet/tcp.h>
 #include <unistd.h>
 
+#include <optional>
 #include <utility>
 
 #include "Log.hpp"
@@ -100,6 +101,40 @@ Task<bool> waitFdReadyWithTimeout(Socket socket,
     co_return !deadline.isExpired();
 }
 
+struct IoWait final {
+    Time::Deadline& deadline;
+    TimeoutSource timeoutSource;
+    RequestPerf* perf;
+};
+
+Task<std::optional<Error>> checkIoWait(const IoWait& wait) {
+    if (co_await coro::cancellation_requested()) {
+        co_return Error::Cancelled;
+    }
+    if (wait.deadline.isExpired()) {
+        if (wait.perf) {
+            wait.perf->transport.timeoutSource = wait.timeoutSource;
+        }
+        co_return Error::ConnectionTimeout;
+    }
+    co_return std::nullopt;
+}
+
+Task<std::optional<Error>> waitForRetry(Socket socket,
+                                        FdReadyAwaiter::Interest interest,
+                                        const IoWait& wait) {
+    if (co_await waitFdReadyWithTimeout(socket, interest, wait.deadline)) {
+        co_return std::nullopt;
+    }
+    if (co_await coro::cancellation_requested()) {
+        co_return Error::Cancelled;
+    }
+    if (wait.perf) {
+        wait.perf->transport.timeoutSource = wait.timeoutSource;
+    }
+    co_return Error::ConnectionTimeout;
+}
+
 void closeSocket(Socket& socket) noexcept {
     if (socket != kInvalidSocket) {
         IOContext::instance().unregisterSocket(socket);
@@ -153,16 +188,10 @@ Task<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data,
     size_t totalSent = 0;
     int32_t retryCount = 0;
 
+    const IoWait wait{deadline, TimeoutSource::Write, perf_};
     while (totalSent < data.size()) {
-        if (co_await coro::cancellation_requested()) {
-            co_return std::unexpected(Error::Cancelled);
-        }
-
-        if (deadline.isExpired()) {
-            if (perf_) {
-                perf_->transport.timeoutSource = TimeoutSource::Write;
-            }
-            co_return std::unexpected(Error::ConnectionTimeout);
+        if (auto failure = co_await checkIoWait(wait)) {
+            co_return std::unexpected(*failure);
         }
 
         ssize_t result = transport_->write(data.data() + totalSent, data.size() - totalSent);
@@ -172,21 +201,14 @@ Task<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data,
         }
 
         if (transport_->needsRetry(result)) {
-            retryCount++;
+            ++retryCount;
             if (transport_->retryImmediately(result)) {
                 continue;
             }
-            bool ready = co_await waitFdReadyWithTimeout(socket_, transport_->retryInterest(result),
-                                                         deadline);
-            if (!ready) {
-                if (co_await coro::cancellation_requested()) {
-                    co_return std::unexpected(Error::Cancelled);
-                }
-                if (perf_) {
-                    perf_->transport.timeoutSource = TimeoutSource::Write;
-                }
+            if (auto failure = co_await waitForRetry(socket_, transport_->retryInterest(result),
+                                                     wait)) {
                 LogW("[AsyncSocket::asyncSend] write timeout: sent={}/{}", totalSent, data.size());
-                co_return std::unexpected(Error::ConnectionTimeout);
+                co_return std::unexpected(*failure);
             }
             continue;
         }
@@ -213,16 +235,10 @@ Task<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
     Time::Deadline deadline(timeout);
     int32_t waitCount = 0;
 
+    const IoWait wait{deadline, TimeoutSource::ReadIdle, perf_};
     while (true) {
-        if (co_await coro::cancellation_requested()) {
-            co_return std::unexpected(Error::Cancelled);
-        }
-
-        if (deadline.isExpired()) {
-            if (perf_) {
-                perf_->transport.timeoutSource = TimeoutSource::ReadIdle;
-            }
-            co_return std::unexpected(Error::ConnectionTimeout);
+        if (auto failure = co_await checkIoWait(wait)) {
+            co_return std::unexpected(*failure);
         }
 
         ssize_t result = transport_->read(buffer, size);
@@ -234,21 +250,14 @@ Task<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
         }
 
         if (transport_->needsRetry(result)) {
-            waitCount++;
+            ++waitCount;
             if (transport_->retryImmediately(result)) {
                 continue;
             }
-            bool ready = co_await waitFdReadyWithTimeout(socket_, transport_->retryInterest(result),
-                                                         deadline);
-            if (!ready) {
-                if (co_await coro::cancellation_requested()) {
-                    co_return std::unexpected(Error::Cancelled);
-                }
-                if (perf_) {
-                    perf_->transport.timeoutSource = TimeoutSource::ReadIdle;
-                }
+            if (auto failure = co_await waitForRetry(socket_, transport_->retryInterest(result),
+                                                     wait)) {
                 LogW("[AsyncSocket::asyncReceive] read timeout");
-                co_return std::unexpected(Error::ConnectionTimeout);
+                co_return std::unexpected(*failure);
             }
             continue;
         }
@@ -295,13 +304,13 @@ Task<Error> TLSTransport::performHandshake(std::chrono::milliseconds timeout) {
     }
 
     Time::Deadline deadline(timeout);
+    const IoWait wait{deadline, TimeoutSource::ReadIdle, nullptr};
     while (true) {
-        if (co_await coro::cancellation_requested()) {
-            co_return Error::Cancelled;
-        }
-        if (deadline.isExpired()) {
-            LogW("TLS handshake timeout");
-            co_return Error::ConnectionTimeout;
+        if (auto failure = co_await checkIoWait(wait)) {
+            if (*failure == Error::ConnectionTimeout) {
+                LogW("TLS handshake timeout");
+            }
+            co_return *failure;
         }
 
         errno = 0;
@@ -312,35 +321,30 @@ Task<Error> TLSTransport::performHandshake(std::chrono::milliseconds timeout) {
             co_return Error::Success;
         }
 
-        int32_t sslError = SSL_get_error(sslPtr_.get(), result);
-        if (sslError == SSL_ERROR_WANT_READ || sslError == SSL_ERROR_WANT_WRITE) {
-            lastInterest_ = (sslError == SSL_ERROR_WANT_READ) ? FdReadyAwaiter::Interest::Read
-                                                              : FdReadyAwaiter::Interest::Write;
-            bool ready = co_await waitFdReadyWithTimeout(fd_, lastInterest_, deadline);
-            if (!ready) {
-                LogW("TLS handshake failed: waitFdReady timeout");
-                co_return (co_await coro::cancellation_requested()) ? Error::Cancelled
-                                                                    : Error::ConnectionTimeout;
-            }
-        } else if (sslError == SSL_ERROR_SYSCALL && savedErrno == EINTR) {
+        const int32_t sslError = SSL_get_error(sslPtr_.get(), result);
+        if (sslError == SSL_ERROR_SYSCALL && savedErrno == EINTR) {
             continue;
+        }
+
+        FdReadyAwaiter::Interest interest = FdReadyAwaiter::Interest::Read;
+        if (sslError == SSL_ERROR_WANT_READ || sslError == SSL_ERROR_WANT_WRITE) {
+            interest = (sslError == SSL_ERROR_WANT_READ) ? FdReadyAwaiter::Interest::Read
+                                                         : FdReadyAwaiter::Interest::Write;
         } else if (sslError == SSL_ERROR_SYSCALL &&
                    (savedErrno == EAGAIN || savedErrno == EWOULDBLOCK)) {
-            const auto interest = SSL_want_write(sslPtr_.get())
-                                      ? FdReadyAwaiter::Interest::Write
-                                      : FdReadyAwaiter::Interest::Read;
-            lastInterest_ = interest;
-            bool ready = co_await waitFdReadyWithTimeout(fd_, interest, deadline);
-            if (!ready) {
-                LogW("TLS handshake failed: waitFdReady timeout");
-                co_return (co_await coro::cancellation_requested()) ? Error::Cancelled
-                                                                    : Error::ConnectionTimeout;
-            }
+            interest = SSL_want_write(sslPtr_.get()) ? FdReadyAwaiter::Interest::Write
+                                                     : FdReadyAwaiter::Interest::Read;
         } else {
             const char* errStr = ERR_reason_error_string(ERR_get_error());
             LogW("TLS handshake failed: sslError={}, errStr={}, errno={}", sslError,
                  errStr ? errStr : "unknown", savedErrno);
             co_return Error::HttpSslHandshakeFailed;
+        }
+
+        lastInterest_ = interest;
+        if (auto failure = co_await waitForRetry(fd_, interest, wait)) {
+            LogW("TLS handshake failed: waitFdReady timeout");
+            co_return *failure;
         }
     }
 }

@@ -61,6 +61,9 @@ class Http1Session final : public NonCopyable, public std::enable_shared_from_th
         ~BusyGuard();
     };
 
+    AsyncGenerator<HttpResponseEvent> makeSessionEvents(
+        RequestInfo requestInfo, const CancellationToken* externalToken);
+
     AsyncGenerator<HttpResponseEvent> executeEventsImpl(RequestInfo requestInfo);
 
     Task<ConnectionResult> acquireConnection(const RequestInfo& requestInfo,

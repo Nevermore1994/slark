@@ -25,12 +25,26 @@ std::string getMethodName(HttpMethodType type) {
     return std::string(index < std::size(kMethodNames) ? kMethodNames[index] : kMethodNames[0]);
 }
 
+std::optional<Url> parseRequestUrl(const std::string& urlString, ErrorInfo& error) {
+    Url url(urlString);
+    if (!url.isValid()) {
+        error = ErrorInfo{slark::Error::InvalidArgument, static_cast<int32_t>(url.error())};
+        return std::nullopt;
+    }
+    if (!url.isSupportScheme()) {
+        error = ErrorInfo{slark::Error::SchemeNotSupported};
+        return std::nullopt;
+    }
+    return url;
+}
+
 bool validateRequest(const RequestInfo& info, const Url& url) noexcept {
     if (!url.isValid() || info.methodType == HttpMethodType::Unknown) {
         return false;
     }
 
-    for (const auto& [key, value] : info.headers) {
+    for (auto it = info.headers.begin(); it != info.headers.end(); ++it) {
+        const auto& [key, value] = *it;
         if (key.empty() || key.find_first_of("\r\n") != std::string::npos ||
             value.find_first_of("\r\n") != std::string::npos) {
             return false;
@@ -51,11 +65,8 @@ bool validateRequest(const RequestInfo& info, const Url& url) noexcept {
             !StringUtil::iequals(value, "keep-alive")) {
             return false;
         }
-    }
-
-    for (auto first = info.headers.begin(); first != info.headers.end(); ++first) {
-        for (auto second = std::next(first); second != info.headers.end(); ++second) {
-            if (StringUtil::iequals(first->first, second->first)) {
+        for (auto prior = info.headers.begin(); prior != it; ++prior) {
+            if (StringUtil::iequals(prior->first, key)) {
                 return false;
             }
         }
@@ -70,14 +81,21 @@ std::string buildRequestString(const RequestInfo& info, const Url& url, bool kee
     std::string result;
     result.reserve(256);
 
-    const auto hasHeader = [&info](std::string_view name) {
-        return std::ranges::any_of(info.headers, [&name](const auto& header) {
-            return StringUtil::iequals(header.first, name);
-        });
-    };
-    const auto hasHost = hasHeader("Host");
-    const auto hasContentLength = hasHeader("Content-Length");
-    const auto hasConnection = hasHeader("Connection");
+    bool hasHost = false;
+    bool hasContentLength = false;
+    bool hasConnection = false;
+    for (const auto& [key, value] : info.headers) {
+        if (StringUtil::iequals(key, "Host")) {
+            hasHost = true;
+        } else if (StringUtil::iequals(key, "Content-Length")) {
+            hasContentLength = true;
+        } else if (StringUtil::iequals(key, "Connection")) {
+            hasConnection = true;
+        }
+        if (hasHost && hasContentLength && hasConnection) {
+            break;
+        }
+    }
 
     result.append(getMethodName(info.methodType)).append(" ").append(url.path);
     if (!url.query.empty()) {

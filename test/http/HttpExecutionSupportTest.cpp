@@ -25,7 +25,7 @@ TEST(HttpExecutionSupportTest, ParserCallbacksCollectResponsePartsAndPerf) {
     EXPECT_EQ(state.header.reasonPhrase, "OK");
     ASSERT_NE(state.pendingBody, nullptr);
     EXPECT_EQ(state.pendingBody->toString(), "hello");
-    EXPECT_EQ(state.trailers.at("x-trace"), "unit-test");
+    EXPECT_EQ(parser.trailers().at("x-trace"), "unit-test");
     EXPECT_EQ(perf.parser.bodySize, 5);
     EXPECT_FALSE(state.parseError);
 }

@@ -47,14 +47,14 @@ class ParserTestHelper {
             result.statusCode = code;
             result.reasonPhrase = reason;
         };
-        callbacks.onHeaders = [this](std::unordered_map<std::string, std::string>&& h) {
+        callbacks.onHeaders = [this](const std::unordered_map<std::string, std::string>& h) {
             ++result.headersCount;
             result.callbackOrder.push_back('H');
-            result.headers = std::move(h);
+            result.headers = h;
         };
-        callbacks.onTrailers = [this](std::unordered_map<std::string, std::string>&& values) {
+        callbacks.onTrailers = [this](const std::unordered_map<std::string, std::string>& values) {
             result.callbackOrder.push_back('T');
-            result.trailers = std::move(values);
+            result.trailers = values;
         };
         callbacks.onBodyData = [this](const Byte* data, size_t size) {
             ++result.bodyChunkCount;
@@ -774,4 +774,41 @@ TEST(HttpResponseParserTest, InformationalResponseDoesNotLeakKeepAliveTimeout) {
                 "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
     ASSERT_TRUE(helper.isCompleted());
     EXPECT_EQ(helper.rawParser()->keepAliveTimeout(), std::nullopt);
+}
+
+TEST(HttpResponseParserTest, TakeHeadersAndTrailersMoveOwnershipOnce) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nX-Custom: value\r\n\r\n"
+                "1\r\na\r\n0\r\nX-Trace: done\r\n\r\n");
+    ASSERT_TRUE(helper.isCompleted());
+    EXPECT_EQ(helper.result.headers.at("x-custom"), "value");
+    EXPECT_EQ(helper.result.trailers.at("x-trace"), "done");
+
+    auto* parser = helper.rawParser();
+    EXPECT_EQ(parser->headers().at("x-custom"), "value");
+    EXPECT_EQ(parser->trailers().at("x-trace"), "done");
+
+    const auto headers = parser->takeHeaders();
+    const auto trailers = parser->takeTrailers();
+    EXPECT_EQ(headers.at("x-custom"), "value");
+    EXPECT_EQ(trailers.at("x-trace"), "done");
+    EXPECT_TRUE(parser->headers().empty());
+    EXPECT_TRUE(parser->trailers().empty());
+    EXPECT_TRUE(parser->takeHeaders().empty());
+    EXPECT_TRUE(parser->takeTrailers().empty());
+}
+
+TEST(HttpResponseParserTest, TakeDoesNotLeakIntoNextResponse) {
+    ParserTestHelper helper;
+    helper.feed("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nX-First: one\r\n\r\n");
+    ASSERT_TRUE(helper.isCompleted());
+    const auto first = helper.rawParser()->takeHeaders();
+    EXPECT_EQ(first.at("x-first"), "one");
+
+    helper.rawParser()->resetForNextResponse();
+    helper.feed("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nX-Second: two\r\n\r\n");
+    ASSERT_TRUE(helper.isCompleted());
+    const auto second = helper.rawParser()->takeHeaders();
+    EXPECT_EQ(second.at("x-second"), "two");
+    EXPECT_EQ(second.count("x-first"), 0u);
 }

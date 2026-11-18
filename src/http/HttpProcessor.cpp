@@ -50,14 +50,7 @@ Task<OpenConnectionResult> openRequestConnection(const RequestInfo& requestInfo,
 
 Task<ErrorInfo> sendRequest(OwnedConnection& conn, const RequestInfo& requestInfo, const Url& url) {
     const auto request = Util::buildRequestString(requestInfo, url, false);
-    auto error = co_await sendRequestPart(conn, request, requestInfo, "headers");
-    if (error.retCode != slark::Error::Success || requestInfo.bodyEmpty()) {
-        co_return error;
-    }
-
-    const std::string_view body(reinterpret_cast<const char*>(requestInfo.body->data()),
-                                requestInfo.body->size());
-    co_return co_await sendRequestPart(conn, body, requestInfo, "body");
+    co_return co_await sendRequestParts(conn, request, requestInfo);
 }
 
 [[nodiscard]] bool isTerminalEvent(const HttpResponseEvent& event) noexcept {
@@ -97,13 +90,8 @@ RedirectDecision evaluateRedirect(const HttpResponseEvent& headers,
 
 HttpProcessor::ParsedRequest HttpProcessor::parseUrl(const std::string& urlStr) {
     ParsedRequest result;
-    auto url = Url(urlStr);
-    if (!url.isValid()) {
-        result.error = ErrorInfo{slark::Error::InvalidArgument, static_cast<int32_t>(url.error())};
-        return result;
-    }
-    if (!url.isSupportScheme()) {
-        result.error = ErrorInfo{slark::Error::SchemeNotSupported};
+    auto url = Util::parseRequestUrl(urlStr, result.error);
+    if (!url.has_value()) {
         return result;
     }
     result.url = std::move(url);
@@ -322,6 +310,7 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(RequestInfo
         parser.feed(readBuffer.data(), read.bytesRead);
 
         if (parserState.hasHeaders) {
+            parserState.header.headers = parser.takeHeaders();
             co_yield HttpResponseEvent::makeHeaders(std::move(parserState.header));
             parserState.hasHeaders = false;
         }
@@ -354,7 +343,7 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(RequestInfo
     perf.totalRequestTimeMs =
         (Time::nowTimeStamp() - requestStart).toMilliSeconds().count();
     const bool shouldClose = parser.shouldCloseConnection();
-    co_yield makeResponseTerminalEvent(parser, std::move(perf), std::move(parserState.trailers));
+    co_yield makeResponseTerminalEvent(parser, std::move(perf), parser.takeTrailers());
     if (shouldClose) {
         conn->close();
     }

@@ -17,12 +17,31 @@
 #include <optional>
 
 #include "Data.h"
+#include "Error.h"
 #include "Type.h"
 
 namespace slark::http {
 
 using Socket = int;
 constexpr Socket kInvalidSocket = kInvalid;
+
+[[nodiscard]] inline std::optional<Error> mapCommonSocketErrno(int error) noexcept {
+    switch (error) {
+        case ECONNRESET:
+            return Error::ConnectionReset;
+        case EBADF:
+        case ENOTSOCK:
+            return Error::InvalidSocket;
+        case EAGAIN:
+            return Error::WouldBlock;
+#if EWOULDBLOCK != EAGAIN
+        case EWOULDBLOCK:
+            return Error::WouldBlock;
+#endif
+        default:
+            return std::nullopt;
+    }
+}
 
 #if defined(__unix__) && !defined(__APPLE__) && !defined(__CYGWIN__)
 constexpr int kNoSignal = MSG_NOSIGNAL;

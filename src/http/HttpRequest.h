@@ -74,6 +74,8 @@ class HttpRequest : public NonCopyable {
         AsyncGenerator<StreamChunk> generator,
         OperationStatePtr operation);
     OperationStatePtr beginOperation() noexcept;
+    void pruneInactiveOperationsLocked(
+        std::vector<OperationStatePtr>* active = nullptr) noexcept;
 
     mutable std::mutex cancelMutex_;
     std::vector<std::weak_ptr<OperationState>> operations_;

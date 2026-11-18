@@ -463,7 +463,7 @@ void HttpResponseParser::processHeaders() {
     }
 
     if (callbacks_.onHeaders) {
-        callbacks_.onHeaders(std::unordered_map<std::string, std::string>(headers_));
+        callbacks_.onHeaders(headers_);
     }
     if (state_ == State::Completed) {
         complete();
@@ -657,7 +657,7 @@ void HttpResponseParser::processChunkTrailer() {
         LogI("[HttpResponseParser::processChunkTrailer] complete after trailer, totalChunks={}",
              perf_ ? perf_->parser.chunkCount : 0);
         if (callbacks_.onTrailers) {
-            callbacks_.onTrailers(std::unordered_map<std::string, std::string>(trailers_));
+            callbacks_.onTrailers(trailers_);
         }
         complete();
     } else {

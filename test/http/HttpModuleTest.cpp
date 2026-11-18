@@ -146,8 +146,8 @@ TEST_F(HttpModuleParserTest, ParseHeaders) {
         code = c;
         reason = r;
     };
-    callbacks.onHeaders = [&](std::unordered_map<std::string, std::string>&& h) {
-        headers = std::move(h);
+    callbacks.onHeaders = [&](const std::unordered_map<std::string, std::string>& h) {
+        headers = h;
     };
 
     parser_ = std::make_unique<HttpResponseParser>(std::move(callbacks));
@@ -688,4 +688,34 @@ TEST(HttpIntegrationTest, ChunkedResponseParsing) {
 
     EXPECT_TRUE(parser.isCompleted());
     EXPECT_EQ(accumulatedBody, "Hello World");
+}
+
+TEST(HttpUtilTest, ParseRequestUrlDistinguishesErrors) {
+    ErrorInfo error;
+    const auto valid = Util::parseRequestUrl("http://example.com/path", error);
+    ASSERT_TRUE(valid.has_value());
+    EXPECT_EQ(error.retCode, Error::Success);
+
+    EXPECT_FALSE(Util::parseRequestUrl("ftp://example.com/x", error).has_value());
+    EXPECT_EQ(error.retCode, Error::SchemeNotSupported);
+
+    EXPECT_FALSE(Util::parseRequestUrl("", error).has_value());
+    EXPECT_NE(error.retCode, Error::Success);
+}
+
+TEST(HttpUtilTest, BuildRequestRespectsUserSuppliedDefaultHeaders) {
+    RequestInfo info;
+    info.url = "http://example.com/path";
+    info.methodType = HttpMethodType::Get;
+    info.headers = {{"Host", "custom.example.com"},
+                    {"Content-Length", "0"},
+                    {"Connection", "keep-alive"}};
+
+    const Url url(info.url);
+    ASSERT_TRUE(Util::validateRequest(info, url));
+    const auto request = Util::buildRequestString(info, url, false);
+    EXPECT_THAT(request, ::testing::HasSubstr("Host: custom.example.com\r\n"));
+    EXPECT_THAT(request, ::testing::Not(::testing::HasSubstr("Host: example.com\r\n")));
+    EXPECT_THAT(request, ::testing::HasSubstr("Connection: keep-alive\r\n"));
+    EXPECT_THAT(request, ::testing::Not(::testing::HasSubstr("Connection: close\r\n")));
 }

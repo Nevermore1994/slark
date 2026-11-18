@@ -33,20 +33,10 @@ inline Error mapConnectErrno(int error) noexcept {
             return Error::ConnectionTimeout;
         case ECONNREFUSED:
             return Error::ConnectionRefused;
-        case ECONNRESET:
-            return Error::ConnectionReset;
-        case EAGAIN:
-            return Error::WouldBlock;
-#if EWOULDBLOCK != EAGAIN
-        case EWOULDBLOCK:
-            return Error::WouldBlock;
-#endif
-        case EBADF:
-        case ENOTSOCK:
-            return Error::InvalidSocket;
         default:
-            return Error::SocketError;
+            break;
     }
+    return mapCommonSocketErrno(error).value_or(Error::SocketError);
 }
 
 class IOContext : public slark::EventLoop {

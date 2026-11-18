@@ -53,16 +53,7 @@ Http1Session::BusyGuard::~BusyGuard() {
 }
 
 std::optional<Url> Http1Session::parseUrl(const std::string& urlString, ErrorInfo& error) {
-    Url url(urlString);
-    if (!url.isValid()) {
-        error = ErrorInfo{slark::Error::InvalidArgument, static_cast<int32_t>(url.error())};
-        return std::nullopt;
-    }
-    if (!url.isSupportScheme()) {
-        error = ErrorInfo{slark::Error::SchemeNotSupported};
-        return std::nullopt;
-    }
-    return url;
+    return Util::parseRequestUrl(urlString, error);
 }
 
 Task<Http1Session::ConnectionResult> Http1Session::acquireConnection(const RequestInfo& requestInfo,
@@ -173,37 +164,32 @@ Task<ErrorInfo> Http1Session::sendRequest(const std::shared_ptr<OwnedConnection>
         co_return ErrorInfo{slark::Error::InvalidArgument};
     }
 
-    auto error = co_await sendRequestPart(*connection, request, requestInfo, "headers");
-    if (error.retCode != slark::Error::Success || requestInfo.bodyEmpty()) {
-        co_return error;
-    }
-
-    const std::string_view body(reinterpret_cast<const char*>(requestInfo.body->data()),
-                                requestInfo.body->size());
-    co_return co_await sendRequestPart(*connection, body, requestInfo, "body");
+    co_return co_await sendRequestParts(*connection, request, requestInfo);
 }
 
-AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo requestInfo) {
+AsyncGenerator<HttpResponseEvent> Http1Session::makeSessionEvents(
+    RequestInfo requestInfo, const CancellationToken* externalToken) {
     CancellationToken sessionToken;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         sessionToken = closeToken_;
     }
     auto events = executeEventsImpl(std::move(requestInfo));
-    events.attach(SpawnEdge{}, &sessionToken);
+    if (externalToken != nullptr) {
+        events.attach(SpawnEdge{}, &sessionToken, externalToken);
+    } else {
+        events.attach(SpawnEdge{}, &sessionToken);
+    }
     return events;
+}
+
+AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo requestInfo) {
+    return makeSessionEvents(std::move(requestInfo), nullptr);
 }
 
 AsyncGenerator<HttpResponseEvent> Http1Session::executeEvents(RequestInfo requestInfo,
                                                               CancellationToken token) {
-    CancellationToken sessionToken;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        sessionToken = closeToken_;
-    }
-    auto events = executeEventsImpl(std::move(requestInfo));
-    events.attach(SpawnEdge{}, &sessionToken, &token);
-    return events;
+    return makeSessionEvents(std::move(requestInfo), &token);
 }
 
 AsyncGenerator<HttpResponseEvent> Http1Session::executeEventsImpl(RequestInfo requestInfo) {
@@ -294,6 +280,7 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEventsImpl(RequestInfo re
         }
 
         if (parserState.hasHeaders) {
+            parserState.header.headers = parser.takeHeaders();
             co_yield HttpResponseEvent::makeHeaders(std::move(parserState.header));
             parserState.hasHeaders = false;
         }
@@ -352,7 +339,7 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEventsImpl(RequestInfo re
     }
 
     busyGuard.release();
-    co_yield makeResponseTerminalEvent(parser, std::move(perf), std::move(parserState.trailers));
+    co_yield makeResponseTerminalEvent(parser, std::move(perf), parser.takeTrailers());
 }
 
 void Http1Session::close() noexcept {

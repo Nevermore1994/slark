@@ -274,3 +274,14 @@ TEST(IOContextTest, SetReadableWritable) {
     ::close(fds[0]);
     ::close(fds[1]);
 }
+
+TEST(IOContextTest, SharedErrnoBaseKeepsExclusiveBranchesSeparate) {
+    EXPECT_EQ(mapCommonSocketErrno(ECONNRESET), Error::ConnectionReset);
+    EXPECT_EQ(mapCommonSocketErrno(EAGAIN), Error::WouldBlock);
+    EXPECT_EQ(mapCommonSocketErrno(EIO), std::nullopt);
+
+    EXPECT_EQ(mapTransportErrno(ECONNABORTED), Error::ConnectionReset);
+    EXPECT_EQ(mapConnectErrno(ECONNREFUSED), Error::ConnectionRefused);
+    EXPECT_EQ(mapTransportErrno(ETIMEDOUT), Error::SocketError);
+    EXPECT_EQ(mapConnectErrno(EPIPE), Error::SocketError);
+}

@@ -9,11 +9,14 @@
 
 #include "ComponentFactories.h"
 #include "Engine.h"
+#include "LogOutput.h"
 #include "ManualScheduler.h"
 #include "MediaClock.h"
 #include "PlayerContext.h"
 #include "Scheduler.h"
+#include "ScopeGuard.h"
 #include "SourceSupport.h"
+#include "ThreadManager.h"
 
 using namespace std::chrono_literals;
 using namespace slark;
@@ -202,24 +205,22 @@ Prepare makePrepare(const std::string& uri = kWavPath) {
     return prepare;
 }
 
-// Release joins the source loader, which keeps calling into the scheduler until then.
-class EngineReleaseGuard {
-public:
-    EngineReleaseGuard(const std::shared_ptr<Engine>& engine, slark::test::ManualScheduler& scheduler)
-        : engine_(engine), scheduler_(scheduler) {}
+// ManualScheduler only runs its tasks when driven, so Release must be drained explicitly.
+void releaseManualSession(const std::shared_ptr<Engine>& engine,
+                          slark::test::ManualScheduler& scheduler) {
+    engine->post(Release{});
+    scheduler.runUntilIdle();
+}
 
-    EngineReleaseGuard(const EngineReleaseGuard&) = delete;
-    EngineReleaseGuard& operator=(const EngineReleaseGuard&) = delete;
-
-    ~EngineReleaseGuard() {
-        engine_->post(Release{});
-        scheduler_.runUntilIdle();
-    }
-
-private:
-    const std::shared_ptr<Engine>& engine_;
-    slark::test::ManualScheduler& scheduler_;
-};
+// Stop is async; drain teardown and join the scheduler thread before notifier/scheduler die.
+void shutdownThreadSession(const std::shared_ptr<Engine>& engine, ThreadScheduler& scheduler) {
+    engine->post(Stop{});
+    (void)waitUntil([&engine] {
+        return engine->snapshot().status == Status::Idle;
+    });
+    engine->close();
+    scheduler.stop();
+}
 
 }  // namespace
 
@@ -236,6 +237,7 @@ TEST(FilePlaybackTest, AudioFilePlaysThroughAndStops) {
     auto engine = Engine::create(
         *scheduler, notifier,
         makePlaybackFactory(PlayerSetting{}, PlayerContext{}, factories));
+    ScopeGuard shutdown([&] { shutdownThreadSession(engine, *scheduler); });
     engine->post(makePrepare());
     engine->post(Play{});
     // The 3s wav decodes straight through to Ended, then stop tears the session down.
@@ -268,6 +270,7 @@ TEST(FilePlaybackTest, AudioSessionLeavesBufferingWhenEpochArrivesOnlyInDecoderD
     auto engine = Engine::create(
         *scheduler, notifier,
         makePlaybackFactory(PlayerSetting{}, PlayerContext{}, factories));
+    ScopeGuard shutdown([&] { shutdownThreadSession(engine, *scheduler); });
     engine->post(makePrepare());  // no Play: readiness alone must leave Buffering
     ASSERT_TRUE(waitUntil([&] {
         return engine->snapshot().status == Status::Ready;
@@ -299,6 +302,7 @@ TEST(FilePlaybackTest, NotifyVsyncPresentsTheFirstVideoFrameAndLeavesBuffering) 
     auto engine = Engine::create(
         *scheduler, notifier,
         makePlaybackFactory(PlayerSetting{}, PlayerContext{}, factories));
+    ScopeGuard shutdown([&] { shutdownThreadSession(engine, *scheduler); });
     engine->post(makePrepare(kMp4Path));
     engine->post(Play{});
     // The platform's vsync hook calls this; the video pipeline ends buffering only after the
@@ -319,7 +323,7 @@ TEST(FilePlaybackTest, MissingAudioSinkFailsWithFormatNotSupported) {
     auto engine = Engine::create(
         scheduler, notifier,
         makePlaybackFactory(PlayerSetting{}, PlayerContext{}, factories));
-    EngineReleaseGuard releaseEngine(engine, scheduler);
+    ScopeGuard releaseEngine([&] { releaseManualSession(engine, scheduler); });
     engine->post(makePrepare());
     ASSERT_TRUE(waitUntil([&] {
         scheduler.advance(10ms);
@@ -340,7 +344,7 @@ TEST(FilePlaybackTest, DecoderFailureFailsTheEngine) {
     auto engine = Engine::create(
         scheduler, notifier,
         makePlaybackFactory(PlayerSetting{}, PlayerContext{}, factories));
-    EngineReleaseGuard releaseEngine(engine, scheduler);
+    ScopeGuard releaseEngine([&] { releaseManualSession(engine, scheduler); });
     engine->post(makePrepare());
     ASSERT_TRUE(waitUntil([&] {
         scheduler.advance(10ms);
@@ -372,4 +376,40 @@ TEST(FilePlaybackTest, RepeatedStopAndTeardownIsIdempotent) {
     }));
     const auto idleStatus = engine->snapshot().status;
     EXPECT_EQ(idleStatus, Status::Idle);
+}
+
+TEST(FilePlaybackTest, ShutdownGuardJoinsSessionThreadsBeforeNotifierDies) {
+    auto& threads = ThreadManager::shareInstance();
+    (void)LogOutput::shareInstance();
+    const auto baseline = threads.size();
+
+    {
+        auto scheduler = std::make_unique<ThreadScheduler>("shutdownTest");
+        Notifier notifier{"shutdownTest"};
+        ComponentFactories factories;
+        auto written = std::make_shared<std::atomic<int>>(0);
+        auto primed = std::make_shared<std::atomic<bool>>(false);
+        factories.makeAudioSink = [written, primed](std::shared_ptr<AudioInfo>) {
+            return std::make_unique<SharedCountingAudioSink>(written, primed);
+        };
+        factories.makeDecoder = [](bool) {
+            return std::make_shared<EchoAudioDecoder>();
+        };
+        auto engine = Engine::create(
+            *scheduler, notifier,
+            makePlaybackFactory(PlayerSetting{}, PlayerContext{}, factories));
+        {
+            ScopeGuard shutdown([&] { shutdownThreadSession(engine, *scheduler); });
+            engine->post(makePrepare());
+            ASSERT_TRUE(waitUntil([&] {
+                return engine->snapshot().status == Status::Ready;
+            }));
+            EXPECT_GT(threads.size(), baseline);
+        }
+        EXPECT_EQ(engine->snapshot().status, Status::Idle);
+    }
+
+    EXPECT_TRUE(waitUntil([&] {
+        return threads.size() == baseline;
+    })) << "baseline=" << baseline << " now=" << threads.size();
 }

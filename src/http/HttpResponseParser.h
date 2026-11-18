@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 
 #include "Data.h"
 #include "DataView.hpp"
@@ -36,8 +37,8 @@ class HttpResponseParser {
 
     struct Callbacks {
         std::function<void(HttpStatusCode, const std::string&)> onStatusLine;
-        std::function<void(std::unordered_map<std::string, std::string>&&)> onHeaders;
-        std::function<void(std::unordered_map<std::string, std::string>&&)> onTrailers;
+        std::function<void(const std::unordered_map<std::string, std::string>&)> onHeaders;
+        std::function<void(const std::unordered_map<std::string, std::string>&)> onTrailers;
         std::function<void(const Byte*, size_t)> onBodyData;
         std::function<void()> onCompleted;
         std::function<void(Error)> onError;
@@ -140,11 +141,19 @@ class HttpResponseParser {
         return headers_;
     }
 
+    [[nodiscard]] std::unordered_map<std::string, std::string> takeHeaders() noexcept {
+        return std::exchange(headers_, {});
+    }
+
     // Idle lifetime the server advertised via "Keep-Alive: timeout=N"
     [[nodiscard]] std::optional<std::chrono::seconds> keepAliveTimeout() const noexcept;
 
     [[nodiscard]] const std::unordered_map<std::string, std::string>& trailers() const noexcept {
         return trailers_;
+    }
+
+    [[nodiscard]] std::unordered_map<std::string, std::string> takeTrailers() noexcept {
+        return std::exchange(trailers_, {});
     }
 
     void reset() noexcept;

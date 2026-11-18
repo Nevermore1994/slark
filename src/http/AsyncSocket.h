@@ -32,21 +32,12 @@ inline Error mapTransportErrno(int error) noexcept {
     switch (error) {
         case EPIPE:
             return Error::BrokenPipe;
-        case ECONNRESET:
         case ECONNABORTED:
             return Error::ConnectionReset;
-        case EBADF:
-        case ENOTSOCK:
-            return Error::InvalidSocket;
-        case EAGAIN:
-            return Error::WouldBlock;
-#if EWOULDBLOCK != EAGAIN
-        case EWOULDBLOCK:
-            return Error::WouldBlock;
-#endif
         default:
-            return Error::SocketError;
+            break;
     }
+    return mapCommonSocketErrno(error).value_or(Error::SocketError);
 }
 
 class ITransport {

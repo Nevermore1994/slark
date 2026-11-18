@@ -495,8 +495,8 @@ TEST(HttpResponseParserTest, EofDelimitedResponseCannotBeReused) {
 TEST(HttpResponseParserTest, ChunkedTrailersAndLeftoverAreReusable) {
     std::unordered_map<std::string, std::string> trailers;
     HttpResponseParser::Callbacks callbacks;
-    callbacks.onTrailers = [&trailers](std::unordered_map<std::string, std::string>&& values) {
-        trailers = std::move(values);
+    callbacks.onTrailers = [&trailers](const std::unordered_map<std::string, std::string>& values) {
+        trailers = values;
     };
     HttpResponseParser parser(std::move(callbacks));
     const std::string first =
