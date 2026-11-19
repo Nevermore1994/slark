@@ -1,8 +1,8 @@
 # Slark C++20 协程框架设计
 
 > 状态：已实现
-> 更新：2026-11-16
-> 第 3–5 节描述重构前的设计；其中 `CoroutineControlBlock`、`SharedCoroutineHandle`、`Coroutine<T>` 已不存在，实现以第 8 节为准。
+> 更新：2026-11-18
+> 第 2–7 节是重构前的历史设计：`CoroutineControlBlock`、`SharedCoroutineHandle`、`Coroutine<T>`、`resume()` / `getResult()` 以及 §5 的 `resumeMutex_` 均已删除；第 2 节模块清单、第 6 节示例代码、第 7 节测试名都不可照抄。当前 API、契约与测试映射以第 8 节为准，闭环总表见 §8.17。
 > 作者：Nevermore-
 > 关联代码：`src/base/coroutine/`、`src/http/IOContext.h`、`src/core/stream/HttpStream*`、`src/core/stream/HLSStream*`
 
@@ -955,6 +955,8 @@ class CancellationToken {
 ---
 
 ## 6. 实际使用模式
+
+> 历史章节：以下 `Coroutine<int>` / `resume()` / `getResult()` 示例对应的 API 已删除，当前用法见第 8 节。
 
 ### 6.1 基本协程
 

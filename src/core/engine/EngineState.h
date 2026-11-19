@@ -15,7 +15,7 @@
 
 namespace slark::engine {
 
-// Engine thread only. Status is derived (deriveStatus), never stored.
+// Engine thread only. Facts are authoritative; Status is a derived result cached in Engine.
 struct EngineState {
     bool wantPlay = false;
     std::optional<Time::TimePoint> seekTarget;

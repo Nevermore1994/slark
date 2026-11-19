@@ -1,5 +1,7 @@
 # slark Core 模块代码审查报告
 
+> **历史文档**：本文描述的是已删除的 `PlayerImpl` / `PlayerStateMachine` / owner-thread 状态机架构，与当前内核（Facts → `deriveStatus` → `reconcile()`）不符。权威架构见 `docs/architecture.md`。保留本文仅作为当时的代码审查记录，下列问题清单不再作为待办依据。
+
 ## 一、整体架构印象
 
 slark 核心层呈现出清晰的**单 owner 线程 + 异步回调**架构：
