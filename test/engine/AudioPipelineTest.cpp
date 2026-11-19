@@ -736,3 +736,101 @@ TEST(AudioPipelineTest, ExactModeDropsFramesBeforeTargetButKeepsDiscardMarkers) 
     EXPECT_EQ(harness.decoder->decodeCalls.load(), 1);
     EXPECT_EQ(harness.sinkPtr->writeCalls.load(), 0);
 }
+
+TEST(AudioPipelineTest, UnderrunMakesPipelineNotReady) {
+    auto harness = PipelineHarness::create();
+    harness.pipeline->setPlaying(true);
+    for (int i = 0; i < 8; ++i) {
+        harness.sender->post(audioFrame(1.0 + 0.1 * i));
+    }
+    ASSERT_TRUE(waitUntil([&] {
+        return harness.sinkPtr->bufferedFrames.load() == 8;
+    }));
+    ASSERT_TRUE(harness.pipeline->ready(1, sec(0.0)));
+
+    for (int i = 0; i < 8; ++i) {
+        harness.sinkPtr->consumeOne();
+    }
+    ASSERT_FALSE(harness.sinkPtr->primed());
+    EXPECT_TRUE(waitUntil([&] {
+        return !harness.pipeline->ready(1, sec(0.0));
+    }));
+}
+
+TEST(AudioPipelineTest, UnderrunRecoversWhenDataArrives) {
+    auto harness = PipelineHarness::create();
+    harness.pipeline->setPlaying(true);
+    for (int i = 0; i < 8; ++i) {
+        harness.sender->post(audioFrame(1.0 + 0.1 * i));
+    }
+    ASSERT_TRUE(waitUntil([&] {
+        return harness.sinkPtr->bufferedFrames.load() == 8;
+    }));
+    ASSERT_TRUE(harness.pipeline->ready(1, sec(0.0)));
+    for (int i = 0; i < 8; ++i) {
+        harness.sinkPtr->consumeOne();
+    }
+    ASSERT_TRUE(waitUntil([&] {
+        return !harness.pipeline->ready(1, sec(0.0));
+    }));
+
+    for (int i = 0; i < 8; ++i) {
+        harness.sender->post(audioFrame(2.0 + 0.1 * i));
+    }
+    EXPECT_TRUE(waitUntil([&] {
+        return harness.pipeline->ready(1, sec(0.0));
+    }));
+}
+
+TEST(AudioPipelineTest, UnderrunDoesNotOscillateWhilePaused) {
+    auto harness = PipelineHarness::create();
+    harness.pipeline->setPlaying(true);
+    for (int i = 0; i < 8; ++i) {
+        harness.sender->post(audioFrame(1.0 + 0.1 * i));
+    }
+    ASSERT_TRUE(waitUntil([&] {
+        return harness.sinkPtr->bufferedFrames.load() == 8;
+    }));
+    ASSERT_TRUE(harness.pipeline->ready(1, sec(0.0)));
+    for (int i = 0; i < 8; ++i) {
+        harness.sinkPtr->consumeOne();
+    }
+    ASSERT_TRUE(waitUntil([&] {
+        return !harness.pipeline->ready(1, sec(0.0));
+    }));
+
+    // Buffering pauses the sink; the underrun must not clear itself before data returns.
+    harness.pipeline->setPlaying(false);
+    std::this_thread::sleep_for(80ms);
+    EXPECT_FALSE(harness.pipeline->ready(1, sec(0.0)));
+
+    for (int i = 0; i < 8; ++i) {
+        harness.sender->post(audioFrame(2.0 + 0.1 * i));
+    }
+    EXPECT_TRUE(waitUntil([&] {
+        return harness.pipeline->ready(1, sec(0.0));
+    }));
+}
+
+TEST(AudioPipelineTest, EosAndPausedSinkNeverLookUnderrun) {
+    auto paused = PipelineHarness::create();
+    for (int i = 0; i < 8; ++i) {
+        paused.sender->post(audioFrame(1.0 + 0.1 * i));
+    }
+    ASSERT_TRUE(waitUntil([&] {
+        return paused.sinkPtr->bufferedFrames.load() == 8;
+    }));
+    paused.pipeline->setPlaying(false);
+    ASSERT_TRUE(paused.pipeline->ready(1, sec(0.0)));
+    for (int i = 0; i < 8; ++i) {
+        paused.sinkPtr->consumeOne();
+    }
+    std::this_thread::sleep_for(80ms);
+    EXPECT_TRUE(paused.pipeline->ready(1, sec(0.0)));
+
+    auto ended = PipelineHarness::create();
+    ended.sender->post(eosFrame());
+    EXPECT_TRUE(waitUntil([&] {
+        return ended.pipeline->ready(1, sec(0.0));
+    }));
+}
