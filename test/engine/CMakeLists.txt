@@ -5,6 +5,7 @@ include(GoogleTest)
 project(Engine_test)
 
 set(CORE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/core)
+set(PERF_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/perf)
 set(ENGINE_SRC_DIR ${CORE_SRC_DIR}/engine)
 
 file(GLOB TEST_FILES CONFIGURE_DEPENDS
@@ -52,7 +53,7 @@ target_include_directories(${PROJECT_NAME}
     ${CORE_SRC_DIR}/media
     ${CORE_SRC_DIR}/stream
     ${CORE_SRC_DIR}/render
-    ${CORE_SRC_DIR}/perf
+    ${PERF_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src/http
     ${CMAKE_CURRENT_SOURCE_DIR}/../../internal
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include
@@ -62,6 +63,7 @@ target_include_directories(${PROJECT_NAME}
 
 target_link_libraries(${PROJECT_NAME}
     slark_base
+    slark_perf
     slark_internal
     gtest_main
     gmock

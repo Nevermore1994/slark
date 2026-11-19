@@ -57,6 +57,7 @@ class VideoPipeline final : public Pipeline {
     [[nodiscard]] std::uint64_t catchUpCount() const;
 
     [[nodiscard]] std::string debugState() const override;
+    [[nodiscard]] DebugInfo debugInfo() const override;
 
     [[nodiscard]] bool ready(SeekEpoch epoch, Time::TimePoint target) const override;
     [[nodiscard]] bool ended() const override;
@@ -132,6 +133,17 @@ class VideoPipeline final : public Pipeline {
     bool outputPending_ = false;
     // Guarded by mutex_: the pipeline stopped on a full presentation queue and waits for vsync.
     bool blockedOnFull_ = false;
+
+    struct ThreadSnapshot {
+        size_t inboxDepth = 0;
+        bool staged = false;
+        bool inputClosed = false;
+        bool blockedByCodec = false;
+        bool outputPending = false;
+    };
+
+    // Written by the pipeline thread only, read under mutex_ by debugInfo().
+    ThreadSnapshot threadSnapshot_;
 };
 
 }  // namespace slark::engine

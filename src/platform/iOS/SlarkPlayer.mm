@@ -268,6 +268,13 @@ static slark::FlowConfig toFlowConfig(SlarkFlowConfig* config) {
     return @"";
 }
 
+- (NSString*)debugSnapshot {
+    if (!_player) {
+        return @"";
+    }
+    return [NSString stringWithUTF8String:_player->debugSnapshot().c_str()];
+}
+
 - (void)setRotation:(SlarkPlayerRotation)rotation {
     _rotation = rotation;
     double t = 0;

@@ -6,9 +6,11 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <format>
 #include <type_traits>
 #include <utility>
 
+#include "DebugLines.h"
 #include "Log.hpp"
 
 namespace slark::engine {
@@ -25,6 +27,18 @@ constexpr auto kMinWakeGap = 1ms;
 // A seek that takes longer than this is considered stalled: retry it, then fail.
 constexpr auto kSeekStallTimeout = 3s;  // in seconds when compared via .second()
 constexpr int kMaxSeekAttempts = 3;
+
+[[nodiscard]] std::string_view statusName(Status status) noexcept {
+    switch (status) {
+        case Status::Idle: return "Idle";
+        case Status::Opening: return "Opening";
+        case Status::Buffering: return "Buffering";
+        case Status::Seeking: return "Seeking";
+        case Status::Ready: return "Ready";
+        case Status::Ended: return "Ended";
+        default: return "Failed";
+    }
+}
 
 }  // namespace
 
@@ -550,6 +564,85 @@ void Engine::publish() {
         snapshot_ = s;
     }
     notifier_.publish(s, scheduler_.now());
+    if (debugEnabled_.load(std::memory_order_relaxed)) {
+        refreshDebugInfo(s);
+    }
+}
+
+void Engine::refreshDebugInfo(const Snapshot& s) {
+    DebugInfo info;
+    DebugLines playback;
+    DebugLines buffer;
+
+    playback.add("Status", statusName(s.status));
+    playback.add("Position", s.position.second(), "s");
+    playback.add("Duration", s.duration.second(), "s");
+    playback.add("Progress", s.duration.second() > 0.0
+                                 ? s.position.second() / s.duration.second() * 100.0
+                                 : 0.0,
+                 "%");
+    playback.add("Speed", s.speed, "x");
+    playback.add("Volume", s.volume);
+    playback.add("Muted", s.muted);
+    playback.add("Repeat", state_.repeat == RepeatMode::One ? "One" : "Off");
+    playback.add("Want play", s.wantPlay);
+    if (state_.seekTarget) {
+        playback.add("Seek target", state_.seekTarget->second(), "s");
+    }
+    playback.add("Seek mode", state_.seekMode == SeekMode::Fast ? "Fast" : "Exact");
+    playback.add("Seek epoch", readyEpoch_);
+    playback.add("Seek attempts", seekAttempts_);
+
+    const double cacheEnd = source_ ? source_->cacheEnd().second() : 0.0;
+    const double clockNow = clock_.now().second();
+    buffer.add("Cache time", s.buffered.second(), "s");
+    buffer.add("Cache end", cacheEnd, "s");
+    buffer.add("Lead", cacheEnd - clockNow, "s");
+    buffer.add("Start buffer", bufferPolicy_.config().buffering.startBufferSec, "s");
+    buffer.add("Rebuffer enter", bufferPolicy_.config().buffering.rebufferEnterSec, "s");
+    buffer.add("Rebuffer exit", bufferPolicy_.config().buffering.rebufferExitSec, "s");
+    buffer.add("Rebuffering", rebuffering_);
+    buffer.add("Loading", s.isLoading);
+
+    if (source_) {
+        info.append(source_->debugInfo());
+    }
+    for (const auto& pipeline : pipelines_) {
+        info.append(pipeline->debugInfo());
+    }
+    info.playback += playback.take();
+    info.buffer = buffer.take() + info.buffer;
+
+    std::lock_guard lock(debugMutex_);
+    debugInfo_ = std::move(info);
+}
+
+DebugInfo Engine::debugInfo() const {
+    debugEnabled_.store(true, std::memory_order_relaxed);
+    {
+        std::lock_guard lock(debugMutex_);
+        if (!debugInfo_.playback.empty()) {
+            return debugInfo_;
+        }
+    }
+
+    // First call precedes the next publish(): build a snapshot from the locked
+    // state alone, without touching engine-thread-only members.
+    const auto s = snapshot();
+    DebugInfo info;
+    DebugLines playback;
+    DebugLines buffer;
+    playback.add("Status", statusName(s.status));
+    playback.add("Position", s.position.second(), "s");
+    playback.add("Duration", s.duration.second(), "s");
+    playback.add("Speed", s.speed, "x");
+    playback.add("Volume", s.volume);
+    playback.add("Muted", s.muted);
+    buffer.add("Cache time", s.buffered.second(), "s");
+    buffer.add("Loading", s.isLoading);
+    info.playback = playback.take();
+    info.buffer = buffer.take();
+    return info;
 }
 
 void Engine::scheduleWakeup() {

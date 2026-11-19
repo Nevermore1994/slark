@@ -83,3 +83,23 @@ TEST(HttpExecutionSupportTest, StreamReadTimeoutClassificationPreservesSource) {
     const auto network = classifyStreamReadError(Error::Failed, false, perf);
     EXPECT_EQ(network.retCode, Error::NetworkError);
 }
+
+TEST(HttpExecutionSupportTest, StreamChunkCarriesRequestPerfOnTerminal) {
+    RequestPerf perf;
+    perf.transport.redirectCount = 2;
+    perf.transport.recvLoops = 7;
+    perf.transport.totalSendTimeMs = 3;
+    perf.transport.totalReceiveTimeMs = 11;
+    perf.totalRequestTimeMs = 20;
+
+    const auto final = StreamChunk::makeFinal({}, perf);
+    EXPECT_TRUE(final.isFinal);
+    EXPECT_EQ(final.perf.transport.redirectCount, 2);
+    EXPECT_EQ(final.perf.transport.recvLoops, 7);
+    EXPECT_EQ(final.perf.totalRequestTimeMs, 20);
+
+    const auto error = StreamChunk::makeError(ErrorInfo{Error::ConnectionReset}, perf);
+    EXPECT_TRUE(error.hasError());
+    EXPECT_EQ(error.perf.transport.totalSendTimeMs, 3);
+    EXPECT_EQ(error.perf.transport.totalReceiveTimeMs, 11);
+}

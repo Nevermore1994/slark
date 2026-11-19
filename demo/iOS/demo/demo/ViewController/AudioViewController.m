@@ -28,6 +28,8 @@ static NSString* const kBundledAudioName = @"sample-3s.wav";
 @property (nonatomic, assign) NSInteger currentIndex;
 @property (nonatomic, assign) BOOL loopEnabled;
 @property (nonatomic, strong) SlarkPlayer* player;
+@property (nonatomic, strong) UILabel* debugLabel;
+@property (nonatomic, strong) NSTimer* debugTimer;
 @end
 
 @implementation AudioViewController
@@ -42,6 +44,8 @@ static NSString* const kBundledAudioName = @"sample-3s.wav";
 }
 
 - (void)dealloc {
+    [self.debugTimer invalidate];
+    self.debugTimer = nil;
     [self.player stop];
     self.player.delegate = nil;
     self.player = nil;
@@ -73,6 +77,7 @@ static NSString* const kBundledAudioName = @"sample-3s.wav";
     [self.view addSubview:self.iconView];
     [self.view addSubview:self.controllerView];
     [self.view addSubview:self.tableView];
+    [self.view addSubview:self.debugLabel];
 
     [self.controllerView mas_makeConstraints:^(MASConstraintMaker* make) {
         make.left.right.mas_equalTo(self.view);
@@ -88,6 +93,35 @@ static NSString* const kBundledAudioName = @"sample-3s.wav";
         make.left.right.mas_equalTo(self.view).insets(UIEdgeInsetsMake(0, 60, 0, 60));
         make.bottom.equalTo(self.controllerView.mas_top).offset(-16);
     }];
+    [self.debugLabel mas_makeConstraints:^(MASConstraintMaker* make) {
+        make.left.mas_equalTo(8);
+        make.top.mas_equalTo(self.view.mas_safeAreaLayoutGuideTop).offset(8);
+        make.width.mas_equalTo(300);
+        make.height.mas_lessThanOrEqualTo(180);
+    }];
+    self.debugTimer = [NSTimer scheduledTimerWithTimeInterval:0.2
+                                                      target:self
+                                                    selector:@selector(refreshDebugInfo)
+                                                    userInfo:nil
+                                                     repeats:YES];
+}
+
+- (void)refreshDebugInfo {
+    self.debugLabel.text = [NSString stringWithFormat:@"%@Backend: n/a\n",
+                                                     [self.player debugSnapshot]];
+}
+
+- (UILabel*)debugLabel {
+    if (_debugLabel == nil) {
+        _debugLabel = [[UILabel alloc] init];
+        _debugLabel.numberOfLines = 0;
+        _debugLabel.textColor = [UIColor whiteColor];
+        _debugLabel.font = [UIFont systemFontOfSize:9];
+        _debugLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.6];
+        _debugLabel.layer.cornerRadius = 8;
+        _debugLabel.clipsToBounds = YES;
+    }
+    return _debugLabel;
 }
 
 - (void)loadBundledTrack {

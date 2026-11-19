@@ -10,6 +10,7 @@
 
 @interface SlarkViewController : UIViewController
 @property(nonatomic, strong, readonly) SlarkPlayer* player;
+@property(nonatomic, assign, readonly) SlarkGraphicsBackend currentBackend;
 - (instancetype)initWithPlayer:(CGRect)frame player:(SlarkPlayer*)player;
 /// Switch graphics backend (OpenGL ES / Metal) without interrupting playback.
 - (void)switchGraphicsBackend:(SlarkGraphicsBackend)backend;

@@ -167,6 +167,8 @@ class PlayerViewModel(
         player?.seekTo(time, isAccurate)
     }
 
+    fun debugSnapshot(): String = player?.debugSnapshot() ?: ""
+
     fun skipPrev() {}
 
     fun skipNext() {}

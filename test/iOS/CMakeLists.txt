@@ -27,12 +27,14 @@ FetchContent_MakeAvailable(googletest)
 # --- 源文件收集（与 CMake-iOS.cmake 一致）---
 set(BASE_DIR "${ROOT_DIR}/src/base")
 set(CORE_DIR "${ROOT_DIR}/src/core")
+set(PERF_DIR "${ROOT_DIR}/src/perf")
 set(HTTP_DIR "${ROOT_DIR}/src/http")
 set(IOS_DIR "${ROOT_DIR}/src/platform/iOS")
 
 file(GLOB_RECURSE ALL_SOURCES CONFIGURE_DEPENDS
     "${BASE_DIR}/*.cpp" "${BASE_DIR}/*.hpp"
     "${CORE_DIR}/*.cpp" "${CORE_DIR}/*.hpp"
+    "${PERF_DIR}/*.cpp" "${PERF_DIR}/*.hpp" "${PERF_DIR}/*.h"
     "${HTTP_DIR}/*.cpp" "${HTTP_DIR}/*.hpp"
     "${IOS_DIR}/*.cpp" "${IOS_DIR}/*.hpp"
     "${IOS_DIR}/*.m" "${IOS_DIR}/*.mm"
@@ -57,7 +59,7 @@ target_include_directories(PlayerMediaIntegration_test PRIVATE
     "${CORE_DIR}/render"
     "${CORE_DIR}/codec"
     "${CORE_DIR}/demuxer"
-    "${CORE_DIR}/perf"
+    "${PERF_DIR}"
     "${HTTP_DIR}"
     "${IOS_DIR}"
     "${IOS_DIR}/interface"

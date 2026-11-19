@@ -147,6 +147,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (void)seek:(double)seekToTime isAccurate:(BOOL)isAccurate;
 
+// PotPlayer-style diagnostics text; refresh it periodically, not per frame.
+- (NSString*)debugSnapshot;
+
 @end
 
 NS_ASSUME_NONNULL_END

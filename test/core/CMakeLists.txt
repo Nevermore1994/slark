@@ -5,6 +5,7 @@ include(GoogleTest)
 project(Core_test)
 
 set(CORE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/core)
+set(PERF_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/perf)
 set(DEMUXER_SRC_DIR ${CORE_SRC_DIR}/demuxer)
 set(CODEC_SRC_DIR ${CORE_SRC_DIR}/codec)
 
@@ -27,7 +28,7 @@ set(CORE_TEST_SOURCES
     ${CORE_SRC_DIR}/media/MediaDefs.cpp
     ${CORE_SRC_DIR}/media/MediaUtil.cpp
     ${CORE_SRC_DIR}/stream/MediaPlaylist.cpp
-    ${CORE_SRC_DIR}/perf/PlaySession.cpp
+    ${PERF_DIR}/PlaySession.cpp
     ${DEMUXER_SRC_DIR}/M3U8Parser.cpp
     ${DEMUXER_SRC_DIR}/DemuxerManager.cpp
     ${DEMUXER_SRC_DIR}/Mp4Box.cpp
@@ -54,7 +55,7 @@ target_include_directories(${PROJECT_NAME}
     ${CORE_SRC_DIR}/media
     ${CORE_SRC_DIR}/stream
     ${CORE_SRC_DIR}/render
-    ${CORE_SRC_DIR}/perf
+    ${PERF_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src/http
     ${CMAKE_CURRENT_SOURCE_DIR}/../../internal
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include
@@ -105,7 +106,7 @@ if(NOT DISABLE_CORE)
         ${CORE_SRC_DIR}/media
         ${CORE_SRC_DIR}/stream
         ${CORE_SRC_DIR}/render
-        ${CORE_SRC_DIR}/perf
+        ${PERF_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/http
         ${CMAKE_CURRENT_SOURCE_DIR}/../../internal
         ${CMAKE_CURRENT_SOURCE_DIR}/../../include
@@ -113,6 +114,7 @@ if(NOT DISABLE_CORE)
 
     target_link_libraries(${PROJECT_NAME}
         slark_core
+        slark_perf
         slark_base
         slark_internal
         gtest_main
@@ -153,7 +155,7 @@ if(NOT DISABLE_CORE)
         ${CORE_SRC_DIR}/media
         ${CORE_SRC_DIR}/stream
         ${CORE_SRC_DIR}/render
-        ${CORE_SRC_DIR}/perf
+        ${PERF_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/http
         ${CMAKE_CURRENT_SOURCE_DIR}/../../internal
         ${CMAKE_CURRENT_SOURCE_DIR}/../../include
@@ -161,6 +163,7 @@ if(NOT DISABLE_CORE)
 
     target_link_libraries(${PROJECT_NAME}
         slark_core
+        slark_perf
         slark_base
         slark_internal
         gtest_main

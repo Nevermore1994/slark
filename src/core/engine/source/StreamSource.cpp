@@ -4,8 +4,10 @@
 #include "StreamSource.h"
 
 #include <algorithm>
+#include <format>
 #include <utility>
 
+#include "DebugLines.h"
 #include "DemuxerManager.h"
 #include "Log.hpp"
 #include "ScopeGuard.h"
@@ -138,6 +140,86 @@ Receiver<AVFrameRefPtr>* StreamSource::frames(TrackType type) {
         return hasAudio_ ? audioRx_.get() : nullptr;
     }
     return type == TrackType::Video && hasVideo_ ? videoRx_.get() : nullptr;
+}
+
+DebugInfo StreamSource::debugInfo() const {
+    TrackSnapshot track;
+    {
+        std::lock_guard lock(trackMutex_);
+        track = track_;
+    }
+    DebugInfo result;
+    DebugLines source;
+    DebugLines video;
+    DebugLines audio;
+    DebugLines buffer;
+
+    const auto mediaInfo = info();
+    const auto streamInfo = stream_ ? stream_->info() : StreamInfo{};
+    source.add("URL", options_.uri);
+    source.add("Protocol", [&] {
+        switch (streamInfo.type) {
+            case StreamType::Http:
+                return "HTTP/HTTPS";
+            case StreamType::HLS:
+                return "HLS";
+            case StreamType::File:
+                return "File";
+            default:
+                return "Unknown";
+        }
+    }());
+    source.add("Container", track.container);
+    source.add("File size", streamInfo.totalSize, "bytes");
+    source.add("Duration", mediaInfo.duration.second(), "s");
+    source.add("Live", mediaInfo.isLive);
+    source.add("Seekable", mediaInfo.isSeekable);
+    source.add("Tracks known", mediaInfo.tracksKnown);
+    source.add("Track count", static_cast<int>(mediaInfo.hasAudio) +
+                                  static_cast<int>(mediaInfo.hasVideo));
+
+    if (!track.videoCodec.empty()) {
+        video.add("Codec", track.videoCodec);
+        video.add("Profile", track.videoProfile);
+        video.add("Level", track.videoLevel);
+        video.add("Resolution", std::format("{}x{}", track.videoWidth, track.videoHeight));
+        video.add("FPS", track.videoFps);
+        video.add("Frame duration", track.frameDurationMs, "ms");
+        video.add("Rotation", track.rotationDegrees, "deg");
+        video.add("Time scale", track.videoTimeScale);
+        video.add("Parameter sets", track.parameterSets);
+        video.add("Bitrate", "n/a");
+    }
+    if (!track.audioCodec.empty()) {
+        audio.add("Codec", track.audioCodec);
+        audio.add("Profile", track.audioProfile);
+        audio.add("Sample rate", track.audioSampleRate, "Hz");
+        audio.add("Channels", track.audioChannels);
+        audio.add("Bits per sample", track.audioBitsPerSample);
+        audio.add("Bitrate", track.audioBitrate, "bit/s");
+        audio.add("Time scale", track.audioTimeScale);
+    }
+
+    buffer.add("Cache end", cacheEnd().second(), "s");
+    buffer.add("Audio end", Time::TimePoint(audioEndUs_.load()).second(), "s");
+    buffer.add("Video end", Time::TimePoint(videoEndUs_.load()).second(), "s");
+    buffer.add("Low watermark", options_.flow.source.lowWatermarkSec, "s");
+    buffer.add("High watermark", options_.flow.source.highWatermarkSec, "s");
+    buffer.add("Gate closed", gate_.isClosed());
+    buffer.add("Gate forced", gate_.isForced());
+    buffer.add("Gate held", gate_.isHeld());
+    buffer.add("Pending chunks", pendingChunks_.load(std::memory_order_relaxed));
+    buffer.add("Max pending chunks", kMaxPendingChunks);
+    buffer.add("Loading", isLoading());
+
+    result.source = source.take();
+    result.video = video.take();
+    result.audio = audio.take();
+    result.buffer = buffer.take();
+    if (stream_) {
+        result.append(stream_->debugInfo());
+    }
+    return result;
 }
 
 void StreamSource::applyFlowGate(bool closed) {
@@ -360,6 +442,52 @@ void StreamSource::refreshTracksOnLoader() {
     if (!demuxer_ || (!demuxer_->hasAudio() && !demuxer_->hasVideo())) {
         return;
     }
+
+    TrackSnapshot snapshot;
+    switch (demuxer_->type()) {
+        case DemuxerType::MP4:
+            snapshot.container = "MP4/fMP4";
+            break;
+        case DemuxerType::TS:
+            snapshot.container = "TS";
+            break;
+        case DemuxerType::WAV:
+            snapshot.container = "WAV";
+            break;
+        case DemuxerType::HLS:
+            snapshot.container = "HLS";
+            break;
+        default:
+            snapshot.container = "Unknown";
+            break;
+    }
+    if (const auto info = demuxer_->videoInfo()) {
+        snapshot.videoCodec = info->mediaInfo;
+        snapshot.videoProfile = info->profile;
+        snapshot.videoLevel = info->level;
+        snapshot.videoWidth = info->width;
+        snapshot.videoHeight = info->height;
+        snapshot.videoFps = info->fps;
+        snapshot.frameDurationMs = static_cast<double>(info->frameDurationMs().count());
+        snapshot.rotationDegrees = info->rotationDegrees;
+        snapshot.videoTimeScale = info->timeScale;
+        snapshot.parameterSets = std::format("sps={} pps={} vps={}", info->sps != nullptr,
+                                             info->pps != nullptr, info->vps != nullptr);
+    }
+    if (const auto info = demuxer_->audioInfo()) {
+        snapshot.audioCodec = info->mediaInfo;
+        snapshot.audioProfile = std::to_string(static_cast<int>(info->profile));
+        snapshot.audioSampleRate = info->sampleRate;
+        snapshot.audioChannels = info->channels;
+        snapshot.audioBitsPerSample = info->bitsPerSample;
+        snapshot.audioBitrate = info->bitrate();
+        snapshot.audioTimeScale = info->timeScale;
+    }
+    {
+        std::lock_guard lock(trackMutex_);
+        track_ = std::move(snapshot);
+    }
+
     bool becameKnown = false;
     {
         std::lock_guard lock(infoMutex_);

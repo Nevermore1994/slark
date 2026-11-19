@@ -15,6 +15,7 @@
 
 #include "CoroutineScheduler.hpp"
 #include "DataView.hpp"
+#include "DebugLines.h"
 #include "Log.hpp"
 #include "LogConfig.h"
 
@@ -269,6 +270,8 @@ void HttpStream::onEvent(StreamEvent event) noexcept {
     }
     auto& chunk = event.chunk;
 
+    refreshNetDebug(chunk, event.generation);
+
     if (chunk.hasError()) {
         LogE("[HttpStream::onEvent] error chunk: retCode={} originCode={} pos={} url={}",
              static_cast<int>(chunk.error.retCode), chunk.error.originErrorCode, position_.load(),
@@ -468,6 +471,84 @@ void HttpStream::handleFinal() noexcept {
     if (operationCoversSource_ && params_.onComplete) {
         params_.onComplete(sourceGeneration_);
     }
+}
+
+void HttpStream::refreshNetDebug(const http::StreamChunk& chunk, uint64_t generation) noexcept {
+    std::lock_guard<std::mutex> lock(debugMutex_);
+    auto& out = netDebug_;
+    out.positionBytes = position_.load(std::memory_order_relaxed);
+    out.totalBytes = info_.totalSize;
+    out.receivedBytes = deliveredPosition_;
+    out.connectionGeneration = generation;
+    out.connectionBusy = state_.load(std::memory_order_relaxed) == StreamState::Reading;
+    switch (rangeCapability_) {
+        case RangeCapability::Supported:
+            out.rangeCapability = "supported";
+            break;
+        case RangeCapability::Unsupported:
+            out.rangeCapability = "unsupported";
+            break;
+        default:
+            out.rangeCapability = "unknown";
+            break;
+    }
+    if (chunk.statusCode != http::HttpStatusCode::Unknown) {
+        out.statusCode = static_cast<int>(chunk.statusCode);
+        if (const auto it = chunk.headers.find("content-type"); it != chunk.headers.end()) {
+            out.contentType = it->second;
+        }
+    }
+    if (!chunk.isFinal) {
+        return;
+    }
+    const auto& perf = chunk.perf;
+    out.connectMs = static_cast<double>(perf.connection.connectTimeMs);
+    out.tlsHandshakeMs = static_cast<double>(perf.connection.tlsHandshakeTimeMs);
+    out.totalRequestMs = static_cast<double>(perf.totalRequestTimeMs);
+    out.headerParseUs = perf.parser.headerParseTimeUs;
+    out.chunkCount = perf.parser.chunkCount;
+    out.redirectCount = perf.transport.redirectCount;
+    out.recvLoops = perf.transport.recvLoops;
+    out.sendRetryCount = perf.transport.sendRetryCount;
+    out.receiveWaitCount = perf.transport.receiveWaitCount;
+    out.connectionReused = perf.connection.connectTimeMs == 0;
+    out.timeoutSource = std::to_string(static_cast<int>(perf.transport.timeoutSource));
+}
+
+DebugInfo HttpStream::debugInfo() const {
+    NetDebug snapshot;
+    {
+        std::lock_guard<std::mutex> lock(debugMutex_);
+        snapshot = netDebug_;
+    }
+    const auto info = this->info();
+    DebugLines lines;
+    lines.add("URL", info.uri);
+    lines.add("Host", host());
+    lines.add("Protocol", "HTTP/HTTPS");
+    lines.add("HTTP status", snapshot.statusCode);
+    lines.add("Content-Type", snapshot.contentType);
+    lines.add("Content-Length", snapshot.totalBytes, "bytes");
+    lines.add("Range", snapshot.rangeCapability);
+    lines.add("Received", snapshot.receivedBytes, "bytes");
+    lines.add("Total", snapshot.totalBytes, "bytes");
+    lines.add("Position", snapshot.positionBytes, "bytes");
+    lines.add("Connect", snapshot.connectMs, "ms");
+    lines.add("TLS handshake", snapshot.tlsHandshakeMs, "ms");
+    lines.add("Request total", snapshot.totalRequestMs, "ms");
+    lines.add("Header parse", snapshot.headerParseUs, "us");
+    lines.add("Chunks", snapshot.chunkCount);
+    lines.add("Redirects", snapshot.redirectCount);
+    lines.add("Recv loops", snapshot.recvLoops);
+    lines.add("Send retries", snapshot.sendRetryCount);
+    lines.add("Recv waits", snapshot.receiveWaitCount);
+    lines.add("Timeout source", snapshot.timeoutSource);
+    lines.add("Connection generation", snapshot.connectionGeneration);
+    lines.add("Connection reused", snapshot.connectionReused);
+    lines.add("Connection busy", snapshot.connectionBusy);
+    DebugInfo result;
+    result.network = lines.take();
+    return result;
 }
 
 StreamInfo HttpStream::info() const noexcept {

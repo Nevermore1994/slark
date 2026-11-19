@@ -145,6 +145,15 @@ fun PlayerScreen(
                     .fillMaxWidth()
             )
         }
+
+        PlayerDebugPanel(
+            viewModel,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .fillMaxWidth(0.55f)
+                .padding(8.dp)
+                .heightIn(max = 260.dp)
+        )
     }
 }
 

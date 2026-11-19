@@ -209,6 +209,9 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::processEvents(RequestInfo reque
             co_yield std::move(*connectedEvent);
             connectedEvent.reset();
         }
+        if (terminal) {
+            event->perf.transport.redirectCount = redirectCount;
+        }
 
         co_yield std::move(*event);
         if (terminal) {
@@ -307,6 +310,7 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(RequestInfo
         }
 
         ++recvLoops;
+        perf.transport.recvLoops = static_cast<int32_t>(recvLoops);
         parser.feed(readBuffer.data(), read.bytesRead);
 
         if (parserState.hasHeaders) {
@@ -377,10 +381,11 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(RequestInfo requestI
                 co_yield StreamChunk::makeData(std::move(event->data));
                 break;
             case HttpResponseEventType::Completed:
-                co_yield StreamChunk::makeFinal(std::move(event->trailers));
+                co_yield StreamChunk::makeFinal(std::move(event->trailers),
+                                               std::move(event->perf));
                 co_return;
             case HttpResponseEventType::Error:
-                co_yield StreamChunk::makeError(std::move(event->error));
+                co_yield StreamChunk::makeError(std::move(event->error), std::move(event->perf));
                 co_return;
         }
     }

@@ -9,6 +9,7 @@
 #include "AVFrame.hpp"
 #include "AudioInfo.h"
 #include "Channel.hpp"
+#include "DebugInfo.h"
 #include "Error.h"
 #include "ErrorDetail.h"
 #include "MediaInfo.h"
@@ -37,6 +38,11 @@ class Source {
 
     [[nodiscard]] virtual std::shared_ptr<VideoInfo> videoTrackInfo() const {
         return nullptr;
+    }
+
+    // Diagnostics only: implementations copy values under their own locks.
+    [[nodiscard]] virtual DebugInfo debugInfo() const {
+        return {};
     }
 
     // null when the media has no such track; the consumer drops frames from stale seek epochs.

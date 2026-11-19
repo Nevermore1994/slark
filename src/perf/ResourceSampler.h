@@ -13,20 +13,12 @@
 #include <vector>
 
 #include "PerfTypes.h"
+#include "ProcessMetrics.h"
 
 namespace slark::perf {
 
 class PlaySession;
 
-/// Process footprint in KB; stays 0 when the platform cannot report it.
-void readProcessMemoryKB(int64_t& rssKB, int64_t& vmSizeKB) noexcept;
-
-/**
- * @brief Background resource sampler, periodically samples CPU/memory and pushes
- *        snapshots to active PlaySessions
- *
- * Thread safety: start/stop/register/unregister are all callable from any thread.
- */
 class ResourceSampler {
  public:
     explicit ResourceSampler(uint32_t intervalMs = 1000);
@@ -46,8 +38,6 @@ class ResourceSampler {
  private:
     void sampleLoop();
     ResourceSnapshot sampleOnce();
-    double calcCpuUsage();
-    void readMemoryInfo(int64_t& rssKB, int64_t& vmSizeKB);
 
     uint32_t intervalMs_;
     std::atomic<bool> running_{false};
@@ -58,14 +48,7 @@ class ResourceSampler {
     std::mutex sessionsMutex_;
     std::vector<std::weak_ptr<PlaySession>> activeSessions_;
 
-    // Platform-specific CPU computation state
-    int64_t prevProcTimeUs_{0};
-    int64_t prevWallTimeUs_{0};
-
-#if defined(__ANDROID__)
-    int64_t prevProcTicks_{0};
-    int64_t prevSysTicks_{0};
-#endif
+    CpuBaseline cpuBaseline_;
 };
 
 }  // namespace slark::perf

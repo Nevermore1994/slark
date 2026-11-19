@@ -11,6 +11,7 @@
 
 #include "BufferPolicy.h"
 #include "Command.h"
+#include "DebugInfo.h"
 #include "EngineState.h"
 #include "MediaClock.h"
 #include "Notifier.h"
@@ -33,6 +34,7 @@ class Engine : public std::enable_shared_from_this<Engine> {
     // vsync tick from the render side; paces the video pipeline.
     void notifyVsync();
     [[nodiscard]] Snapshot snapshot() const;
+    [[nodiscard]] DebugInfo debugInfo() const;
 
  private:
     Engine(Scheduler& scheduler, Notifier& notifier, PlaybackFactory factory);
@@ -66,6 +68,7 @@ class Engine : public std::enable_shared_from_this<Engine> {
     PipelineView evaluatePipelines();
     void applyClock();
     void publish();
+    void refreshDebugInfo(const Snapshot& s);
     void scheduleWakeup();
     void wake();
     PlaybackFactory::Wake wakeFn();
@@ -99,6 +102,11 @@ class Engine : public std::enable_shared_from_this<Engine> {
     std::atomic<bool> closed_{false};
     mutable std::mutex snapshotMutex_;
     Snapshot snapshot_;
+
+    // Refreshed in publish() on the engine thread; copied out by debugInfo().
+    mutable std::atomic<bool> debugEnabled_{false};
+    mutable std::mutex debugMutex_;
+    DebugInfo debugInfo_;
 };
 
 }  // namespace slark::engine

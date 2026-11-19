@@ -18,6 +18,8 @@
 @property (nonatomic, strong) SlarkViewController* playerController;
 @property (nonatomic, strong) UIImageView* loadingView;
 @property (nonatomic, strong) NSTimer* hideControllerTimer;
+@property (nonatomic, strong) NSTimer* debugTimer;
+@property (nonatomic, strong) UILabel* debugLabel;
 @property (nonatomic, assign) NSInteger rotationAngle;
 @end
 
@@ -44,6 +46,8 @@
     [super viewWillDisappear:animated];
     [self.hideControllerTimer invalidate];
     self.hideControllerTimer = nil;
+    [self.debugTimer invalidate];
+    self.debugTimer = nil;
     [self.playerController removeFromParentViewController];
     self.playerController = nil;
 }
@@ -87,6 +91,7 @@
     [self.view addSubview:self.playerController.view];
     [self.view addSubview:self.loadingView];
     [self.view addSubview:self.controllerView];
+    [self.view addSubview:self.debugLabel];
 
     [self.playerController.view mas_makeConstraints:^(MASConstraintMaker* make) {
         make.edges.equalTo(self.view);
@@ -101,6 +106,38 @@
         make.bottom.mas_equalTo(-SAFE_BOTTOM_HEIGHT - 16);
         make.height.mas_equalTo(160);
     }];
+    [self.debugLabel mas_makeConstraints:^(MASConstraintMaker* make) {
+        make.left.mas_equalTo(8);
+        make.top.mas_equalTo(8);
+        make.width.mas_equalTo(320);
+        make.height.mas_lessThanOrEqualTo(260);
+    }];
+    self.debugTimer = [NSTimer scheduledTimerWithTimeInterval:0.2
+                                                      target:self
+                                                    selector:@selector(refreshDebugInfo)
+                                                    userInfo:nil
+                                                     repeats:YES];
+}
+
+- (void)refreshDebugInfo {
+    NSString* text = [self.playerController.player debugSnapshot];
+    NSString* backend = self.playerController.currentBackend == SlarkGraphicsBackendMetal
+                            ? @"Metal"
+                            : @"OpenGL ES";
+    self.debugLabel.text = [NSString stringWithFormat:@"%@Backend: %@\n", text, backend];
+}
+
+- (UILabel*)debugLabel {
+    if (_debugLabel == nil) {
+        _debugLabel = [[UILabel alloc] init];
+        _debugLabel.numberOfLines = 0;
+        _debugLabel.textColor = [UIColor whiteColor];
+        _debugLabel.font = [UIFont systemFontOfSize:9];
+        _debugLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.6];
+        _debugLabel.layer.cornerRadius = 8;
+        _debugLabel.clipsToBounds = YES;
+    }
+    return _debugLabel;
 }
 
 - (UIImageView*)loadingView {

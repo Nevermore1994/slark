@@ -13,6 +13,10 @@ class BufferPolicy {
  public:
     explicit BufferPolicy(const FlowConfig& config = {}) noexcept : config_(config) {}
 
+    [[nodiscard]] const FlowConfig& config() const noexcept {
+        return config_;
+    }
+
     [[nodiscard]] bool canStart(double aheadSec) const noexcept {
         return aheadSec >= config_.buffering.startBufferSec;
     }

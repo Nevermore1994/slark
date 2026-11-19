@@ -55,6 +55,8 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
         return isCompleted_.load();
     }
 
+    [[nodiscard]] DebugInfo debugInfo() const override;
+
     void setProductionGate(std::function<bool()> gate) noexcept override {
         productionGate_ = std::move(gate);
     }
@@ -180,6 +182,28 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
     std::atomic<int32_t> lastErrorOriginCode_{0};
 
     std::function<bool()> productionGate_;
+
+    struct HlsDebug {
+        uint64_t segmentSequence = 0;
+        uint32_t segmentIndex = 0;
+        double segmentDurationSec = 0.0;
+        double segmentStartSec = 0.0;
+        double playlistDurationSec = 0.0;
+        double targetDurationSec = 0.0;
+        size_t segmentCount = 0;
+        bool live = false;
+        uint64_t committedBytes = 0;
+        uint64_t receivedBytes = 0;
+        uint32_t variantBandwidth = 0;
+        uint32_t variantWidth = 0;
+        uint32_t variantHeight = 0;
+    };
+
+    // Written on the owner thread, read by debugInfo() from any thread.
+    mutable std::mutex debugMutex_;
+    HlsDebug hlsDebug_;
+
+    void refreshHlsDebug() noexcept;
 };
 
 }  // namespace slark

@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "AudioSink.h"
+#include "DebugLines.h"
 #include "Log.hpp"
 #include "MediaClock.h"
 #include "Thread.h"
@@ -215,6 +216,13 @@ void AudioPipeline::run() {
         }
         pump();
         drainDecoderOutput();
+        {
+            std::lock_guard lock(mutex_);
+            threadSnapshot_ = ThreadSnapshot{.inboxDepth = inbox_.size(),
+                                             .staged = staged_ != nullptr,
+                                             .inputClosed = inputClosed_,
+                                             .blockedByCodec = blockedByCodec_};
+        }
         if (staged_ && !blockedByCodec_ && !outputFull()) {
             // The pump made room for the frame that waited on the sink.
             continue;
@@ -446,6 +454,39 @@ std::chrono::milliseconds AudioPipeline::sinkTickLocked() const {
     const std::chrono::duration<double> half(sink_->bufferedSec() / 2.0);
     return std::clamp(std::chrono::duration_cast<std::chrono::milliseconds>(half), kSinkTickMin,
                       kSinkTickMax);
+}
+
+DebugInfo AudioPipeline::debugInfo() const {
+    DebugInfo result;
+    DebugLines queue;
+    DebugLines audio;
+    DebugLines render;
+    std::lock_guard lock(mutex_);
+
+    queue.add("Audio decode queue", threadSnapshot_.inboxDepth, "frames");
+    queue.add("Audio pending output", pendingOutput_.size(), "frames");
+    queue.add("Audio written", written_.size(), "frames");
+    queue.add("Audio buffered", sink_->bufferedSec(), "s");
+    queue.add("Audio primed", sink_->primed());
+    queue.add("Audio drained", sink_->drained());
+    queue.add("Blocked by codec", threadSnapshot_.blockedByCodec);
+    queue.add("Input closed", threadSnapshot_.inputClosed);
+    queue.add("Staged", threadSnapshot_.staged);
+
+    audio.add("Audio position", sink_->position().second(), "s");
+    audio.add("Last decoded pts", lastDecodedPts_ ? *lastDecodedPts_ : -1.0, "s");
+    audio.add("Decoder EOS", eosReceived_);
+    audio.add("Decoder ended", decoderEnded_);
+    audio.add("Epoch", epoch_);
+
+    render.add("Decoder type", decoder_ ? static_cast<int>(decoder_->type()) : 0);
+    render.add("Decoder open", decoder_ && decoder_->isOpen());
+    render.add("Decoder completed", decoder_ && decoder_->isCompleted());
+
+    result.queue = queue.take();
+    result.audio = audio.take();
+    result.render = render.take();
+    return result;
 }
 
 std::string AudioPipeline::debugState() const {

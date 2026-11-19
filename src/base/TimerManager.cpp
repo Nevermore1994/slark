@@ -191,4 +191,9 @@ void TimerManager::clear() noexcept {
     loopTasks_.clear();
 }
 
+size_t TimerManager::pendingTimerCount() const noexcept {
+    std::lock_guard lock(mutex_);
+    return timerPool_.size();
+}
+
 }  // end namespace slark

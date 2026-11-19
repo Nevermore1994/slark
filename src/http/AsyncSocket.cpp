@@ -187,6 +187,13 @@ Task<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data,
     Time::Deadline deadline(timeout);
     size_t totalSent = 0;
     int32_t retryCount = 0;
+    const auto started = Time::nowTimeStamp();
+    ScopeGuard sendTiming([this, started] {
+        if (perf_) {
+            perf_->transport.totalSendTimeMs +=
+                (Time::nowTimeStamp() - started).toMilliSeconds().count();
+        }
+    });
 
     const IoWait wait{deadline, TimeoutSource::Write, perf_};
     while (totalSent < data.size()) {
@@ -234,6 +241,13 @@ Task<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
 
     Time::Deadline deadline(timeout);
     int32_t waitCount = 0;
+    const auto started = Time::nowTimeStamp();
+    ScopeGuard receiveTiming([this, started] {
+        if (perf_) {
+            perf_->transport.totalReceiveTimeMs +=
+                (Time::nowTimeStamp() - started).toMilliSeconds().count();
+        }
+    });
 
     const IoWait wait{deadline, TimeoutSource::ReadIdle, perf_};
     while (true) {

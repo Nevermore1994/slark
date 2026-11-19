@@ -95,6 +95,11 @@ interface SlarkPlayer {
     fun currentTime(): Double
 
     /**
+     * PotPlayer-style diagnostics text; refresh it periodically, not per frame.
+     */
+    fun debugSnapshot(): String
+
+    /**
      * Request a render update with the given texture ID and size.
      * This method is used to request a render update for the player.
      */

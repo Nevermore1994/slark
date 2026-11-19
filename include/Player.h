@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <string>
+
 #include "PlayerTypes.h"
 
 namespace slark {
@@ -50,6 +52,9 @@ class Player {
     [[nodiscard]] std::string_view playerId() const noexcept;
 
     [[nodiscard]] double currentPlayedTime() noexcept;
+
+    // PotPlayer-style diagnostics; the backend line is appended by the platform layer.
+    [[nodiscard]] std::string debugSnapshot() noexcept;
 
  private:
     class Impl;

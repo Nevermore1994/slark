@@ -12,6 +12,7 @@
 
 #include "Data.h"
 #include "DataView.hpp"
+#include "DebugInfo.h"
 #include "Error.h"
 #include "Range.h"
 
@@ -113,6 +114,11 @@ class IStream {
     [[nodiscard]] virtual StreamInfo info() const noexcept = 0;
     [[nodiscard]] virtual uint64_t position() const noexcept = 0;
     [[nodiscard]] virtual bool isCompleted() const noexcept = 0;
+
+    // Diagnostics only: implementations read atomics or take their own locks.
+    [[nodiscard]] virtual DebugInfo debugInfo() const {
+        return {};
+    }
 };
 
 using StreamPtr = std::unique_ptr<IStream>;

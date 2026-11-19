@@ -28,6 +28,9 @@ class TimerPool : public NonCopyMovable {
     [[nodiscard]] std::chrono::milliseconds peekWaitTime() const noexcept;
     void clear() noexcept;
     [[nodiscard]] bool empty() const noexcept;
+    [[nodiscard]] size_t size() const noexcept {
+        return timers_.size();
+    }
 
  private:
     static constexpr uint32_t kWheelSize = 256;

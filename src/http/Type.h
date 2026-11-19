@@ -141,6 +141,8 @@ struct TransportPerf {
     TimeoutSource timeoutSource = TimeoutSource::None;
     int64_t totalSendTimeMs = 0;
     int64_t totalReceiveTimeMs = 0;
+    int32_t redirectCount = 0;
+    int32_t recvLoops = 0;
 };
 
 struct ParserPerf {
@@ -347,6 +349,7 @@ struct StreamChunk {
     HttpStatusCode statusCode = HttpStatusCode::Unknown;   // HTTP status code (carried by the first chunk)
     std::unordered_map<std::string, std::string> headers;  // response headers (carried by the first chunk)
     std::unordered_map<std::string, std::string> trailers; // final response metadata
+    RequestPerf perf;                                      // metrics (carried by the final chunk)
 
     [[nodiscard]] bool hasError() const noexcept {
         return error.retCode != slark::Error::Success;
@@ -365,21 +368,23 @@ struct StreamChunk {
     }
 
     static StreamChunk makeFinal(
-        std::unordered_map<std::string, std::string> responseTrailers = {}) {
+        std::unordered_map<std::string, std::string> responseTrailers = {},
+        RequestPerf requestPerf = {}) {
         return StreamChunk{.data = nullptr,
                            .isFinal = true,
                            .error = {},
                            .headers = {},
-                           .trailers = std::move(responseTrailers)};
+                           .trailers = std::move(responseTrailers),
+                           .perf = std::move(requestPerf)};
     }
 
-    static StreamChunk makeError(ErrorInfo err) {
+    static StreamChunk makeError(ErrorInfo err, RequestPerf requestPerf = {}) {
         return StreamChunk{.data = nullptr,
                            .isFinal = true,
                            .error = std::move(err),
                            .statusCode = HttpStatusCode::Unknown,
                            .headers = {},
-                           .trailers = {}};
+                           .perf = std::move(requestPerf)};
     }
 
     static StreamChunk makeHeader(HttpStatusCode code,

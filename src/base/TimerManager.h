@@ -34,6 +34,8 @@ class TimerManager final : public NonCopyMovable {
 
     void clear() noexcept;
 
+    [[nodiscard]] size_t pendingTimerCount() const noexcept;
+
  private:
     TimerManager();
 
@@ -58,7 +60,7 @@ class TimerManager final : public NonCopyMovable {
         }
     };
 
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::condition_variable cond_;
     bool hasNewTimer_ = false;
     TimerPool timerPool_;

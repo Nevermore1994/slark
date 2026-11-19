@@ -54,7 +54,11 @@
 
 ## 4. perf 子系统现状
 
-`src/core/perf/`、`include/IPerfReporter.h`、`PlayerTypes.h:56` 的 `perf::PerfConfig perfConfig` 是**离线会话报告模型**：采集件齐备，但 `perfConfig` 无读取点、`IPerfReporter` / `PerfMonitor` 无生产调用方、`PlayerEvent` 无指标事件，双端也不消费。这是当前缺口，不是「已迁移到 `PlayerStats`」；P4 声明的删除与新模型均未发生。补齐时按独立工作项处理，不因「零生产引用」删除基础件。
+`src/perf/`（独立模块，不属于 `src/core`）、`include/IPerfReporter.h`、`PlayerTypes.h:56` 的 `perf::PerfConfig perfConfig` 是**离线会话报告模型**：采集件齐备，但 `perfConfig` 无读取点、`IPerfReporter` / `PerfMonitor` 无生产调用方、`PlayerEvent` 无指标事件，双端也不消费。这是当前缺口，不是「已迁移到 `PlayerStats`」；P4 声明的删除与新模型均未发生。补齐时按独立工作项处理，不因「零生产引用」删除基础件。`Player.cpp` 的 debug 出口只复用 `src/perf/ProcessMetrics.cpp` 的进程级 CPU / 内存采样，与离线会话模型解耦。
+
+## 4.1 debug 状态量出口
+
+`Player::debugSnapshot()` 返回 PotPlayer 风格的十组多行文本。出口不改 `PlayerEvent` / `Notification` / `Snapshot` ABI：`Engine::publish()` 在 scheduler 线程生成 `DebugInfo` 快照，`debugInfo()` 只加锁返回拷贝；`Source`、`Pipeline`、`IStream` 各自在所属锁内产生分组行文本，底层只依赖 `src/base/DebugInfo.h`，不反向依赖 engine。线程专有字段由所属线程写入受锁保护的 POD 快照，UI 线程从不直读。进程级 CPU / 内存由 `src/perf/ProcessMetrics.cpp` 独立采集，不接 `perf` 单例全链路。显示项清单见 `.plan/metrics_pipeline_plan_2026-11-18.md` v5 §1。
 
 ## 5. 历史文档索引
 

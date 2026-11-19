@@ -317,3 +317,24 @@ TEST_F(EngineCommandTest, WakeAfterTheEngineIsGoneIsHarmless) {
     wake();
     sched.runUntilIdle();
 }
+
+TEST_F(EngineCommandTest, DebugInfoEnablesSnapshotAndReportsPlayback) {
+    openReady();
+    const auto info = engine->debugInfo();
+    EXPECT_FALSE(info.playback.empty());
+    EXPECT_NE(info.playback.find("Status: Ready"), std::string::npos);
+    EXPECT_NE(info.playback.find("Duration: 10 s"), std::string::npos);
+    EXPECT_FALSE(info.buffer.empty());
+    EXPECT_NE(info.buffer.find("Cache time:"), std::string::npos);
+    EXPECT_TRUE(info.source.empty());
+}
+
+TEST_F(EngineCommandTest, DebugInfoSurvivesTeardown) {
+    openReady();
+    (void)engine->debugInfo();
+    send(Stop{});
+    sched.runUntilIdle();
+    const auto info = engine->debugInfo();
+    EXPECT_FALSE(info.playback.empty());
+    EXPECT_NE(info.playback.find("Status: Idle"), std::string::npos);
+}

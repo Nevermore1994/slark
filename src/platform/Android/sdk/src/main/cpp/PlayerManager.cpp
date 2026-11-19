@@ -346,3 +346,17 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_isSeekable(JNIEnv* env,
     }
     return isSeekable;
 }
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_slark_sdk_SlarkPlayerManager_00024Companion_debugSnapshot(JNIEnv* env,
+                                                                   jobject /*thiz*/,
+                                                                   jstring jPlayerId) {
+    auto playerId = FromJVM::str(env, jPlayerId);
+    std::string snapshot;
+    if (auto player = PlayerManager::shareInstance().find(playerId)) {
+        snapshot = player->debugSnapshot();
+    } else {
+        LogE("not found player, {}", playerId);
+    }
+    return JNI::ToJVM::str(env, snapshot).detach();
+}

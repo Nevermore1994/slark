@@ -320,6 +320,7 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEventsImpl(RequestInfo re
     }
 
     perf.totalRequestTimeMs = (Time::nowTimeStamp() - requestStart).toMilliSeconds().count();
+    perf.transport.recvLoops = static_cast<int32_t>(recvLoops);
     const bool keepAlive = requestInfo.connectionMode == HttpConnectionMode::KeepAlive;
     const bool canReuse = keepAlive && parser.canReuseConnection();
     bool storedForReuse = false;

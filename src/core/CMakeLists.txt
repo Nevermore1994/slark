@@ -15,7 +15,7 @@ target_include_directories(slark_core
     ${CMAKE_CURRENT_SOURCE_DIR}/render
     ${CMAKE_CURRENT_SOURCE_DIR}/demuxer
     ${CMAKE_CURRENT_SOURCE_DIR}/codec
-    ${CMAKE_CURRENT_SOURCE_DIR}/perf
+    ${CMAKE_CURRENT_SOURCE_DIR}/../perf
     ${CMAKE_CURRENT_SOURCE_DIR}/engine
     ${CMAKE_CURRENT_SOURCE_DIR}/engine/pipeline
     ${CMAKE_CURRENT_SOURCE_DIR}/engine/source
@@ -29,7 +29,7 @@ if(SLARK_ANDROID)
     )
 endif()
 
-target_link_libraries(slark_core PUBLIC slark_base slark_internal slark_include)
+target_link_libraries(slark_core PUBLIC slark_base slark_internal slark_include slark_perf)
 
 if(NOT DISABLE_HTTP)
     target_link_libraries(slark_core PUBLIC slark_http)

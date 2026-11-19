@@ -11,10 +11,14 @@ file(GLOB TEST_FILES CONFIGURE_DEPENDS ${TEST_FILE_LISTS})
 
 add_executable(${PROJECT_NAME} ${TEST_FILES})
 
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../common)
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../common
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/perf
+)
 
 target_link_libraries(${PROJECT_NAME}
         slark_base
+        slark_perf
         gtest_main
         pthread)
 

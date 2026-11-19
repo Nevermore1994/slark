@@ -9,6 +9,7 @@ macro(add_ios_framework)
     set(ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
     set(BASE_DIR "${ROOT_DIR}/src/base")
     set(CORE_DIR "${ROOT_DIR}/src/core")
+    set(PERF_DIR "${ROOT_DIR}/src/perf")
     set(HTTP_DIR "${ROOT_DIR}/src/http")
     set(IOS_DIR "${ROOT_DIR}/src/platform/iOS")
 
@@ -16,6 +17,7 @@ macro(add_ios_framework)
 
     # --- 收集各模块源文件 ---
     slark_collect_sources(BASE_SOURCES "${BASE_DIR}")
+    slark_collect_sources(PERF_SOURCES "${PERF_DIR}")
 
     set(CORE_SOURCES "")
 
@@ -68,6 +70,7 @@ macro(add_ios_framework)
     # --- 创建 slark framework（唯一 target）---
     add_library(slark SHARED
         ${BASE_SOURCES}
+        ${PERF_SOURCES}
         ${CORE_SOURCES}
         ${HTTP_SOURCES}
         ${IOS_INTERFACE_SOURCES}
@@ -92,7 +95,7 @@ macro(add_ios_framework)
             "${CORE_DIR}/render"
             "${CORE_DIR}/codec"
             "${CORE_DIR}/demuxer"
-            "${CORE_DIR}/perf"
+            "${PERF_DIR}"
             "${CORE_DIR}/engine"
             "${CORE_DIR}/engine/pipeline"
             "${CORE_DIR}/engine/source"

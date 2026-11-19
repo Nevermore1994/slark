@@ -51,6 +51,7 @@ class AudioPipeline final : public Pipeline {
     [[nodiscard]] bool ready(SeekEpoch epoch, Time::TimePoint target) const override;
 
     [[nodiscard]] std::string debugState() const override;
+    [[nodiscard]] DebugInfo debugInfo() const override;
     [[nodiscard]] bool ended() const override;
     [[nodiscard]] std::optional<Error> failure() const override;
 
@@ -114,6 +115,16 @@ class AudioPipeline final : public Pipeline {
     bool blockedByCodec_ = false;
 
     static constexpr size_t kMaxPendingOutput = 32;
+
+    struct ThreadSnapshot {
+        size_t inboxDepth = 0;
+        bool staged = false;
+        bool inputClosed = false;
+        bool blockedByCodec = false;
+    };
+
+    // Written by the pipeline thread only, read under mutex_ by debugInfo().
+    ThreadSnapshot threadSnapshot_;
 };
 
 }  // namespace slark::engine

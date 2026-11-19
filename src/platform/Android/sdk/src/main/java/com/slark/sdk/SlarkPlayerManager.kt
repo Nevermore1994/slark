@@ -97,5 +97,7 @@ class SlarkPlayerManager {
 
         external fun isSeekable(playerId: String): Boolean
 
+        external fun debugSnapshot(playerId: String): String
+
     }
 }

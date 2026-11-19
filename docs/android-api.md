@@ -142,6 +142,12 @@ fun currentTime(): Double
 - **Description**: Get current playback time
 - **Return Value**: Current playback time (seconds)
 
+```kotlin
+fun debugSnapshot(): String
+```
+- **Description**: PotPlayer-style diagnostics text grouped into `[Source]`, `[Video]`, `[Audio]`, `[Playback]`, `[Sync]`, `[Buffer]`, `[Queue]`, `[Render]`, `[Network]`, `[System]`. Each line is `label: value unit`. Values unavailable on the current platform show `n/a`. The render backend is appended by the demo layer.
+- **Return Value**: Multi-line text; poll at ~200ms, not per frame.
+
 #### Lifecycle Management
 
 ```kotlin

@@ -8,6 +8,8 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
+#include <unordered_map>
 
 #include "Awaitable.hpp"
 #include "HttpRequest.h"
@@ -56,6 +58,8 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
         return StringUtil::extractHostFromUri(params_.uri);
     }
 
+    [[nodiscard]] DebugInfo debugInfo() const override;
+
     // The overall deadline is a wall clock that also runs during backpressure, and a media
     // file has no meaningful size cap, so only the idle timeout bounds a stalled transfer.
     static http::RequestInfo makeRequestInfo(const std::string& uri, const Range& range);
@@ -88,6 +92,7 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
     void handleFinal() noexcept;
 
     bool validateResponse(const http::StreamChunk& chunk) noexcept;
+    void refreshNetDebug(const http::StreamChunk& chunk, uint64_t generation) noexcept;
 
     // Reports the error, enters Error state and stops the download. Requires mutex_ held.
     bool failResponse(slark::Error error, int32_t originCode, std::string detail) noexcept;
@@ -129,6 +134,34 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
 
     StreamInfo info_;
     mutable std::mutex infoMutex_;  // protects the info_ snapshot (read by external threads)
+
+    struct NetDebug {
+        uint64_t positionBytes = 0;
+        uint64_t totalBytes = 0;
+        uint64_t receivedBytes = 0;
+        int statusCode = 0;
+        std::string reasonPhrase;
+        std::string contentType;
+        std::string rangeCapability;
+        std::string streamState;
+        double connectMs = 0.0;
+        double tlsHandshakeMs = 0.0;
+        double totalRequestMs = 0.0;
+        int64_t headerParseUs = 0;
+        int32_t chunkCount = 0;
+        int32_t redirectCount = 0;
+        int32_t recvLoops = 0;
+        int32_t sendRetryCount = 0;
+        int32_t receiveWaitCount = 0;
+        std::string timeoutSource;
+        uint64_t connectionGeneration = 0;
+        bool connectionReused = false;
+        bool connectionBusy = false;
+    };
+
+    // Written on the owner thread, read by debugLines() from any thread.
+    mutable std::mutex debugMutex_;
+    NetDebug netDebug_;
 
     std::atomic<StreamState> state_{StreamState::Idle};
     std::atomic<uint64_t> position_{0};

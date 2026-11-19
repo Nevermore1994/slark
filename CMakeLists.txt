@@ -59,6 +59,7 @@ else()
     add_subdirectory(include)
     add_subdirectory(internal)
     add_subdirectory(src/base)
+    add_subdirectory(src/perf)
 
     if(NOT DISABLE_HTTP)
         message(STATUS "enable http")
@@ -74,14 +75,16 @@ else()
     if(NOT DISABLE_CORE)
         add_library(${PROJECT_NAME} SHARED
             $<TARGET_OBJECTS:slark_base>
+            $<TARGET_OBJECTS:slark_perf>
             $<TARGET_OBJECTS:slark_core>
         )
-        target_link_libraries(${PROJECT_NAME} PUBLIC slark_core slark_base slark_include)
+        target_link_libraries(${PROJECT_NAME} PUBLIC slark_core slark_perf slark_base slark_include)
     else()
         add_library(${PROJECT_NAME} SHARED
             $<TARGET_OBJECTS:slark_base>
+            $<TARGET_OBJECTS:slark_perf>
         )
-        target_link_libraries(${PROJECT_NAME} PUBLIC slark_base slark_include)
+        target_link_libraries(${PROJECT_NAME} PUBLIC slark_perf slark_base slark_include)
     endif()
 
     if(${BUILD_PLATFORM} STREQUAL "Android")

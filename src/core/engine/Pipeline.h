@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 
+#include "DebugInfo.h"
 #include "Error.h"
 #include "SeekEpoch.h"
 #include "SeekMode.h"
@@ -54,6 +55,11 @@ class Pipeline {
 
     // One line of gating state for diagnostics (why this pipeline is or is not ready yet).
     [[nodiscard]] virtual std::string debugState() const {
+        return {};
+    }
+
+    // Diagnostics only: implementations copy values under their own locks.
+    [[nodiscard]] virtual DebugInfo debugInfo() const {
         return {};
     }
 

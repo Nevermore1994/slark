@@ -7,12 +7,14 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <format>
 #include <ranges>
 #include <string_view>
 #include <unordered_set>
 
 #include "CoroutineScheduler.hpp"
 #include "DataView.hpp"
+#include "DebugLines.h"
 #include "Log.hpp"
 #include "LogConfig.h"
 #include "M3U8Parser.h"
@@ -356,6 +358,7 @@ void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
              "sequence={} targetDuration={} totalDuration={}",
              playlist_->segments().size(), isLive, playlist_->mediaSequence(),
              playlist_->targetDuration(), playlist_->totalDuration());
+        refreshHlsDebug();
 
         if (mediaPlaylistUrl_.empty()) {
             mediaPlaylistUrl_ = params_.uri;
@@ -833,6 +836,64 @@ void HLSStream::cancelSegmentOp(uint64_t timeoutMs) {
         LogW("[HLSStream::cancelSegmentOp] task not settled within {}ms", timeoutMs);
     }
     mutex_.lock();
+}
+
+void HLSStream::refreshHlsDebug() noexcept {
+    if (!playlist_) {
+        return;
+    }
+    HlsDebug snapshot;
+    snapshot.segmentCount = playlist_->segmentCount();
+    snapshot.playlistDurationSec = playlist_->totalDuration();
+    snapshot.targetDurationSec = playlist_->targetDuration();
+    snapshot.live = playlist_->isLive();
+    snapshot.segmentSequence = nextSegmentSequence_;
+    snapshot.segmentIndex = currentSegmentIndex_.load(std::memory_order_relaxed);
+    snapshot.committedBytes = committedBytes_;
+    snapshot.receivedBytes = receivedBytes_;
+    if (const auto index = playlist_->findSegmentBySequence(nextSegmentSequence_)) {
+        const auto& segment = playlist_->segments()[*index];
+        snapshot.segmentDurationSec = segment.duration;
+        snapshot.segmentStartSec = segment.startTime;
+    }
+    if (playlist_->hasVariants()) {
+        const auto& variant = playlist_->variants().front();
+        snapshot.variantBandwidth = variant.bandwidth;
+        snapshot.variantWidth = variant.width.value_or(0);
+        snapshot.variantHeight = variant.height.value_or(0);
+    }
+    std::lock_guard<std::mutex> lock(debugMutex_);
+    hlsDebug_ = snapshot;
+}
+
+DebugInfo HLSStream::debugInfo() const {
+    HlsDebug snapshot;
+    {
+        std::lock_guard<std::mutex> lock(debugMutex_);
+        snapshot = hlsDebug_;
+    }
+    const auto streamInfo = this->info();
+    DebugLines lines;
+    lines.add("URL", mediaPlaylistUrl_.empty() ? streamInfo.uri : mediaPlaylistUrl_);
+    lines.add("Protocol", "HLS");
+    lines.add("Live", snapshot.live);
+    lines.add("Stream state", static_cast<int>(state_.load(std::memory_order_relaxed)));
+    lines.add("Received", snapshot.receivedBytes, "bytes");
+    lines.add("Committed", snapshot.committedBytes, "bytes");
+    lines.add("Position", position_.load(std::memory_order_relaxed), "bytes");
+    lines.add("Segment sequence", snapshot.segmentSequence);
+    lines.add("Segment index", snapshot.segmentIndex);
+    lines.add("Segment duration", snapshot.segmentDurationSec, "s");
+    lines.add("Segment start", snapshot.segmentStartSec, "s");
+    lines.add("Playlist duration", snapshot.playlistDurationSec, "s");
+    lines.add("Target duration", snapshot.targetDurationSec, "s");
+    lines.add("Segment count", snapshot.segmentCount);
+    lines.add("Variant bandwidth", snapshot.variantBandwidth, "bit/s");
+    lines.add("Variant resolution", std::format("{}x{}", snapshot.variantWidth,
+                                               snapshot.variantHeight));
+    DebugInfo result;
+    result.network = lines.take();
+    return result;
 }
 
 }  // namespace slark

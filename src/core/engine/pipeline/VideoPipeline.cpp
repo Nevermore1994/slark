@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "AVSync.h"
+#include "DebugLines.h"
 #include "Log.hpp"
 #include "MediaClock.h"
 #include "Thread.h"
@@ -268,6 +269,11 @@ void VideoPipeline::run() {
             if (catchUpProbe_ && catchUpProbe_()) {
                 catchUpToKeyframeLocked();
             }
+            threadSnapshot_ = ThreadSnapshot{.inboxDepth = inbox_.size(),
+                                     .staged = staged_ != nullptr,
+                                     .inputClosed = inputClosed_,
+                                     .blockedByCodec = blockedByCodec_,
+                                     .outputPending = outputPending_};
         }
         waitForWork();
     }
@@ -475,6 +481,48 @@ std::optional<std::chrono::milliseconds> VideoPipeline::waitTimeout() const {
         return kRetryTick;
     }
     return std::nullopt;
+}
+
+DebugInfo VideoPipeline::debugInfo() const {
+    DebugInfo result;
+    DebugLines queue;
+    DebugLines sync;
+    DebugLines render;
+    std::lock_guard lock(mutex_);
+
+    queue.add("Video decode queue", threadSnapshot_.inboxDepth, "frames");
+    queue.add("Video render queue", queue_.size(), "frames");
+    queue.add("Video render queue capacity", queueCapacityLocked(), "frames");
+    queue.add("Blocked by codec", threadSnapshot_.blockedByCodec);
+    queue.add("Output pending", threadSnapshot_.outputPending);
+    queue.add("Input closed", threadSnapshot_.inputClosed);
+    queue.add("Staged", threadSnapshot_.staged);
+
+    if (!queue_.empty() && clock_) {
+        const auto diffSec = clock_->now().second() - queue_.front()->ptsTime();
+        sync.add("A/V sync diff", diffSec * 1000.0, "ms");
+        sync.add("Current frame pts", queue_.front()->ptsTime(), "s");
+        sync.add("Current frame dts", queue_.front()->dtsTime(), "s");
+    } else {
+        sync.add("A/V sync diff", "n/a");
+    }
+    sync.add("Sync threshold", AVSync::kMinThreshold * 1000.0, "ms");
+    sync.add("Stalled", starved_);
+    sync.add("Stalled vsyncs", starvedVsyncs_);
+    sync.add("Decoder EOS", eosReceived_);
+    sync.add("Decoder ended", decoderEnded_);
+    sync.add("Epoch", epoch_);
+
+    render.add("Presented frame", presentedFrame_);
+    render.add("Catch-up count", catchUpCount_);
+    render.add("Decoder type", decoder_ ? static_cast<int>(decoder_->type()) : 0);
+    render.add("Decoder open", decoder_ && decoder_->isOpen());
+    render.add("Decoder completed", decoder_ && decoder_->isCompleted());
+
+    result.queue = queue.take();
+    result.sync = sync.take();
+    result.render = render.take();
+    return result;
 }
 
 std::string VideoPipeline::debugState() const {

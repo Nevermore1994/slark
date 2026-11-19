@@ -4,6 +4,7 @@ include(GoogleTest)
 
 set(BASE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/base)
 set(CORE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/core)
+set(PERF_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/perf)
 set(DEMUXER_SRC_DIR ${CORE_SRC_DIR}/demuxer)
 set(HTTP_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/http)
 
@@ -38,7 +39,7 @@ target_include_directories(CoreFuzz_test PRIVATE
     ${CORE_SRC_DIR}/media
     ${CORE_SRC_DIR}/stream
     ${CORE_SRC_DIR}/render
-    ${CORE_SRC_DIR}/perf
+    ${PERF_DIR}
     ${HTTP_SRC_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../internal
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include

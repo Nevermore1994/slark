@@ -49,6 +49,11 @@ class EventLoop : public NonCopyable {
     void setReadable(int32_t fd, bool enabled) noexcept;
     void setWritable(int32_t fd, bool enabled) noexcept;
 
+    [[nodiscard]] size_t fdCount() const noexcept {
+        std::lock_guard<std::mutex> lock(fdMutex_);
+        return fdSlots_.size();
+    }
+
     class RegistrationToken {
      public:
         RegistrationToken() = default;

@@ -47,9 +47,9 @@ class StreamSource : public Source {
     [[nodiscard]] std::optional<Error> failure() const override;
     [[nodiscard]] ErrorDetail failureDetail() const override;
     [[nodiscard]] Receiver<AVFrameRefPtr>* frames(TrackType type) override;
+    [[nodiscard]] DebugInfo debugInfo() const override;
 
-    void seekTo(Time::TimePoint target, SeekEpoch epoch) override;
-    bool retarget(Time::TimePoint target) override;
+    void seekTo(Time::TimePoint target, SeekEpoch epoch) override;    bool retarget(Time::TimePoint target) override;
     void regulate(Time::TimePoint clockNow) override;
 
     void setSeeking(bool seeking) noexcept override;
@@ -142,6 +142,31 @@ class StreamSource : public Source {
     void fail(Error error, int32_t origin = 0);
     bool repositionStream(uint64_t pos);
     void resetCache(Time::TimePoint to);
+
+    struct TrackSnapshot {
+        std::string container;
+        std::string videoCodec;
+        int videoProfile = 0;
+        int videoLevel = 0;
+        uint32_t videoWidth = 0;
+        uint32_t videoHeight = 0;
+        uint32_t videoFps = 0;
+        double frameDurationMs = 0.0;
+        int32_t rotationDegrees = 0;
+        uint32_t videoTimeScale = 0;
+        std::string parameterSets;
+        std::string audioCodec;
+        std::string audioProfile;
+        uint64_t audioSampleRate = 0;
+        uint16_t audioChannels = 0;
+        uint16_t audioBitsPerSample = 0;
+        uint64_t audioBitrate = 0;
+        uint32_t audioTimeScale = 0;
+    };
+
+    // Written on the loader thread, read by debugInfo() from any thread.
+    mutable std::mutex trackMutex_;
+    TrackSnapshot track_;
 
     std::shared_ptr<TaskThread> loader_;
     std::shared_ptr<IDemuxer> demuxer_;

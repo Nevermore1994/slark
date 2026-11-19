@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
+import com.slark.demo.ui.component.PlayerDebugPanel
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -193,6 +194,12 @@ private fun AudioPlayerScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(200.dp)
+        )
+        PlayerDebugPanel(
+            viewModel,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(120.dp)
         )
     }
 }

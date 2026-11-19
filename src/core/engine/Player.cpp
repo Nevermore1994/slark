@@ -8,8 +8,12 @@
 
 #include "AudioRenderSink.h"
 #include "ComponentFactories.h"
+#include "DebugInfo.h"
+#include "DebugLines.h"
 #include "DnsResolver.h"
 #include "Engine.h"
+#include "IOContext.h"
+#include "ProcessMetrics.h"
 #include "GLContextManager.h"
 #include "Log.hpp"
 #include "PlaybackFactory.h"
@@ -17,6 +21,8 @@
 #include "PlayerContext.h"
 #include "Random.hpp"
 #include "Scheduler.h"
+#include "ThreadManager.h"
+#include "TimerManager.h"
 #include "VideoRenderSink.h"
 
 namespace slark {
@@ -262,6 +268,23 @@ double Player::currentPlayedTime() noexcept {
         return 0.0;
     }
     return pimpl_->engine->snapshot().position.second();
+}
+
+std::string Player::debugSnapshot() noexcept {
+    DebugInfo info = pimpl_ && pimpl_->engine ? pimpl_->engine->debugInfo() : DebugInfo{};
+    DebugLines system;
+    int64_t rssKB = 0;
+    int64_t vmSizeKB = 0;
+    perf::readProcessMemoryKB(rssKB, vmSizeKB);
+    system.add("CPU", perf::readProcessCpuPercent(), "%");
+    system.add("Memory RSS", rssKB, "KB");
+    system.add("Memory VmSize", vmSizeKB, "KB");
+    system.add("Threads", ThreadManager::shareInstance().size());
+    system.add("Pending timers", TimerManager::shareInstance().pendingTimerCount());
+    system.add("Active connections", http::IOContext::instance().fdCount());
+    system.add("Texture pool", "n/a");
+    info.system += system.take();
+    return formatDebugInfo(info);
 }
 
 }  // namespace slark

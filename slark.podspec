@@ -36,6 +36,9 @@ Pod::Spec.new do |s|
                       'src/http/**/*.h',
                       'src/http/**/*.hpp',
                       'src/http/**/*.cpp',
+
+                      'src/perf/**/*.h',
+                      'src/perf/**/*.cpp',
                     
                       'src/platform/iOS/*.h',
                       'src/platform/iOS/*.cpp',
@@ -78,7 +81,7 @@ Pod::Spec.new do |s|
             $(PODS_TARGET_SRCROOT)/src/core/render
             $(PODS_TARGET_SRCROOT)/src/core/codec
             $(PODS_TARGET_SRCROOT)/src/core/demuxer
-            $(PODS_TARGET_SRCROOT)/src/core/perf
+            $(PODS_TARGET_SRCROOT)/src/perf
             $(PODS_TARGET_SRCROOT)/src/core/engine
             $(PODS_TARGET_SRCROOT)/src/core/engine/pipeline
             $(PODS_TARGET_SRCROOT)/src/core/engine/source
