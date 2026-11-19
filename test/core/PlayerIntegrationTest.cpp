@@ -235,7 +235,7 @@ TEST(PlayerIntegrationTest, SetLoopAfterPrepareDoesNotCrash) {
     Player player(makeParams());
     player.prepare();
     if (waitForPrepared(player) == PlayerState::Error) {
-        GTEST_SKIP() << "PlayerImpl in Error state (no media file)";
+        GTEST_SKIP() << "Player entered Error state during prepare (no media file)";
     }
     player.setLoop(true);
     player.setLoop(false);
@@ -245,7 +245,7 @@ TEST(PlayerIntegrationTest, SetVolumeAfterPrepareDoesNotCrash) {
     Player player(makeParams());
     player.prepare();
     if (waitForPrepared(player) == PlayerState::Error) {
-        GTEST_SKIP() << "PlayerImpl in Error state (no media file)";
+        GTEST_SKIP() << "Player entered Error state during prepare (no media file)";
     }
     player.setVolume(0.0f);
     player.setVolume(100.0f);
@@ -255,7 +255,7 @@ TEST(PlayerIntegrationTest, SetMuteAfterPrepareDoesNotCrash) {
     Player player(makeParams());
     player.prepare();
     if (waitForPrepared(player) == PlayerState::Error) {
-        GTEST_SKIP() << "PlayerImpl in Error state (no media file)";
+        GTEST_SKIP() << "Player entered Error state during prepare (no media file)";
     }
     player.setMute(true);
     player.setMute(false);
@@ -265,7 +265,7 @@ TEST(PlayerIntegrationTest, SeekAfterPrepareDoesNotCrash) {
     Player player(makeParams());
     player.prepare();
     if (waitForPrepared(player) == PlayerState::Error) {
-        GTEST_SKIP() << "PlayerImpl in Error state (no media file)";
+        GTEST_SKIP() << "Player entered Error state during prepare (no media file)";
     }
     player.seek(0.0, false);
     player.seek(-1.0, false);
@@ -387,7 +387,7 @@ TEST(PlayerIntegrationTest, RepeatedPlayStopCycles) {
     player.prepare();
     auto state = waitForPrepared(player);
     if (state == PlayerState::Error) {
-        GTEST_SKIP() << "PlayerImpl in Error state (no media file)";
+        GTEST_SKIP() << "Player entered Error state during prepare (no media file)";
     }
     for (int32_t i = 0; i < 3; ++i) {
         player.play();
@@ -403,7 +403,7 @@ TEST(PlayerIntegrationTest, PlayPauseCycle) {
     player.prepare();
     auto state = waitForPrepared(player);
     if (state == PlayerState::Error) {
-        GTEST_SKIP() << "PlayerImpl in Error state (no media file)";
+        GTEST_SKIP() << "Player entered Error state during prepare (no media file)";
     }
     player.play();
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -418,7 +418,7 @@ TEST(PlayerIntegrationTest, SeekDuringPlayDoesNotCrash) {
     player.prepare();
     auto state = waitForPrepared(player);
     if (state == PlayerState::Error) {
-        GTEST_SKIP() << "PlayerImpl in Error state (no media file)";
+        GTEST_SKIP() << "Player entered Error state during prepare (no media file)";
     }
     player.play();
     for (int32_t i = 0; i < 3; ++i) {
@@ -443,7 +443,7 @@ TEST(PlayerIntegrationTest, SetVolumeDuringPlayback) {
     player.prepare();
     auto state = waitForPrepared(player);
     if (state == PlayerState::Error) {
-        GTEST_SKIP() << "PlayerImpl in Error state (no media file)";
+        GTEST_SKIP() << "Player entered Error state during prepare (no media file)";
     }
     player.setVolume(0.0f);
     player.setVolume(50.0f);
@@ -456,7 +456,7 @@ TEST(PlayerIntegrationTest, SetMuteDuringPlayback) {
     player.prepare();
     auto state = waitForPrepared(player);
     if (state == PlayerState::Error) {
-        GTEST_SKIP() << "PlayerImpl in Error state (no media file)";
+        GTEST_SKIP() << "Player entered Error state during prepare (no media file)";
     }
     player.setMute(true);
     player.setMute(false);
@@ -468,7 +468,7 @@ TEST(PlayerIntegrationTest, RapidSeekDoesNotCrash) {
     player.prepare();
     auto state = waitForPrepared(player);
     if (state == PlayerState::Error) {
-        GTEST_SKIP() << "PlayerImpl in Error state (no media file)";
+        GTEST_SKIP() << "Player entered Error state during prepare (no media file)";
     }
     for (int32_t i = 0; i < 10; ++i) {
         player.seek(static_cast<double>(i), false);
@@ -481,7 +481,7 @@ TEST(PlayerIntegrationTest, ToggleLoopDuringPlayback) {
     player.prepare();
     auto state = waitForPrepared(player);
     if (state == PlayerState::Error) {
-        GTEST_SKIP() << "PlayerImpl in Error state (no media file)";
+        GTEST_SKIP() << "Player entered Error state during prepare (no media file)";
     }
     player.setLoop(true);
     player.setLoop(false);

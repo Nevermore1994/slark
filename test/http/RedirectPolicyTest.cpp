@@ -122,14 +122,6 @@ TEST(RedirectPolicyTest, SameOriginKeepsHeaders) {
     EXPECT_EQ(result->headers["Authorization"], "Bearer token");
 }
 
-TEST(RedirectPolicyTest, BuildRedirectWithLocationOnly) {
-    RequestInfo req;
-    req.url = "http://example.com/old";
-    auto result = RedirectPolicy::buildRedirectRequest(req, "/new");
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->url, "http://example.com/new");
-}
-
 TEST(RedirectPolicyTest, RedirectTargetUsesPublicOnlyByDefault) {
     RequestInfo req;
     req.url = "http://example.com/old";
@@ -273,6 +265,7 @@ TEST(RedirectPolicyTest, ResolvesRfc3986RelativeReferences) {
         {"g;x?y#s", "http://a/b/c/g;x?y#s"},
         {".", "http://a/b/c/"},
         {"..", "http://a/b/"},
+        {"../", "http://a/b/"},
         {"../g", "http://a/b/g"},
         {"../..", "http://a/"},
         {"../../g", "http://a/g"},

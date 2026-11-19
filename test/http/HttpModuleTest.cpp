@@ -518,7 +518,7 @@ TEST(RedirectPolicyTest, BuildRedirectRequest) {
     original.methodType = HttpMethodType::Get;
     original.headers["Authorization"] = "Bearer token";
 
-    auto redirect = RedirectPolicy::buildRedirectRequest(original, "http://example.com/new");
+    auto redirect = RedirectPolicy::buildRedirectRequest(original, HttpStatusCode::Found, "http://example.com/new");
 
     ASSERT_TRUE(redirect.has_value());
     EXPECT_EQ(redirect->url, "http://example.com/new");
@@ -532,7 +532,7 @@ TEST(RedirectPolicyTest, CrossDomainStripsSensitiveHeaders) {
     original.methodType = HttpMethodType::Get;
     original.headers["Authorization"] = "Bearer token";
 
-    auto redirect = RedirectPolicy::buildRedirectRequest(original, "http://new.example.com/new");
+    auto redirect = RedirectPolicy::buildRedirectRequest(original, HttpStatusCode::Found, "http://new.example.com/new");
 
     ASSERT_TRUE(redirect.has_value());
     EXPECT_EQ(redirect->url, "http://new.example.com/new");

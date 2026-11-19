@@ -3,6 +3,7 @@
 //
 
 #include "HttpMp4Source.h"
+#include "SourceFactory.h"
 
 #include <gtest/gtest.h>
 
@@ -369,4 +370,19 @@ TEST_F(HttpMp4SourceTest, ItIsDrivenByTheWatermarkNotPulledPerChunk) {
     serve();
     auto source = open();
     EXPECT_FALSE(source->pullsGateForTest());
+}
+
+TEST_F(HttpMp4SourceTest, HttpWavIsProbedInsteadOfBeingForcedToMp4) {
+    const std::string wav = readFile("../../test_sample/sample-3s.wav");
+    ASSERT_FALSE(wav.empty());
+    serve(wav);
+
+    Prepare prepare;
+    prepare.item.path = server.url();
+    auto source = SourceFactory::create(prepare, 1, [] {
+    });
+    ASSERT_NE(source, nullptr);
+    ASSERT_TRUE(waitTracks(*source));
+    EXPECT_TRUE(source->info().tracksKnown);
+    EXPECT_FALSE(source->failure());
 }

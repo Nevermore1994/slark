@@ -24,7 +24,6 @@ std::unique_ptr<Source> SourceFactory::create(const Prepare& prepare,
             options.demuxer = DemuxerType::TS;
             return HLSSource::create(std::move(options), epoch, std::move(wake));
         case StreamType::Http:
-            options.demuxer = DemuxerType::MP4;
             return HttpMp4Source::create(std::move(options), epoch, std::move(wake));
         case StreamType::File:
             return FileSource::create(std::move(options), epoch, std::move(wake));

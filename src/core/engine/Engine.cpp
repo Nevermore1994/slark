@@ -149,7 +149,7 @@ void Engine::onPrepare(Prepare& c) {
     readyTarget_ = Time::TimePoint{};
     source_ = factory_.createSource(c, readyEpoch_, wakeFn());
     if (!source_) {
-        fail(Error::IOError);
+        fail(Error::SchemeNotSupported);
         return;
     }
     if (c.startPos.point() > 0) {

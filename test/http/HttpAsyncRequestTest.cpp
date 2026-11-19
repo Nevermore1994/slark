@@ -291,7 +291,7 @@ TEST(HttpAsyncRequestTest, AsyncExecuteInvalidUrl) {
     EXPECT_TRUE(coro.isDone());
 }
 
-TEST(HttpAsyncRequestTest, LazyTaskOutlivesHttpRequest) {
+TEST(HttpAsyncRequestTest, TaskOutlivesHttpRequest) {
     RequestInfo info;
     info.url = "not-a-valid-url";
     info.methodType = HttpMethodType::Get;

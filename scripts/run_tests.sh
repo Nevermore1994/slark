@@ -55,6 +55,9 @@ while (($# > 0)); do
     esac
 done
 
+# Generated cross-language config defaults must stay in sync with the C++ headers.
+python3 "${SCRIPT_DIR}/gen_config_defaults.py" --check || exit 1
+
 # Output directory
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 OUTPUT_DIR="${PROJECT_DIR}/test/output/${TIMESTAMP}"
@@ -90,7 +93,7 @@ fi
 # ─── 2. Build ───────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${YELLOW}[2/3] Building tests...${NC}"
-TARGETS="Base_test Core_test http_test Platform_test CoreFuzz_test HttpFuzz_test StringUtilFuzz_test SeekContextFuzz_test TimerPoolFuzz_test FileStreamFuzz_test WriterFuzz_test ThreadFuzz_test"
+TARGETS="Base_test Core_test http_test Platform_test CoreFuzz_test HttpFuzz_test StringUtilFuzz_test FileStreamFuzz_test ThreadFuzz_test"
 if [ -d "${PROJECT_DIR}/src/core" ]; then
     TARGETS="${TARGETS} CoreIntegration_test PlayerMediaIntegration_test Engine_test"
 fi

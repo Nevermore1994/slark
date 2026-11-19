@@ -10,18 +10,18 @@ data class SlarkFlowConfig(
     val dns: Dns = Dns()
 ) {
     data class Source(
-        val lowWatermarkSec: Double = 3.0,
-        val highWatermarkSec: Double = 10.0
+        val lowWatermarkSec: Double = SlarkConfigDefaults.sourceLowWatermarkSec,
+        val highWatermarkSec: Double = SlarkConfigDefaults.sourceHighWatermarkSec
     )
 
     data class Buffering(
-        val startBufferSec: Double = 2.0,
-        val rebufferEnterSec: Double = 3.0,
-        val rebufferExitSec: Double = 4.5
+        val startBufferSec: Double = SlarkConfigDefaults.bufferingStartBufferSec,
+        val rebufferEnterSec: Double = SlarkConfigDefaults.bufferingRebufferEnterSec,
+        val rebufferExitSec: Double = SlarkConfigDefaults.bufferingRebufferExitSec
     )
 
     data class Dns(
         val preResolveUrls: List<String> = emptyList(),
-        val cacheTtlSec: Double = 60.0
+        val cacheTtlSec: Double = SlarkConfigDefaults.dnsCacheTtlSec
     )
 }

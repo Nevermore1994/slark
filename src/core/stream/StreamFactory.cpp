@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <string_view>
 
+#include "Error.h"
 #include "FileStream.h"
 #include "HLSStream.h"
 #include "HttpStream.h"
@@ -25,8 +26,9 @@ FactoryResult<std::shared_ptr<IStream>> StreamFactory::createStream(
         case StreamType::HLS:
             return createHLSStream(uri, std::move(ownerThread));
         default:
-            return std::unexpected(
-                FactoryError{.code = -1, .message = "Unknown stream type for URI: " + uri});
+            return std::unexpected(FactoryError{
+                .code = static_cast<int32_t>(Error::SchemeNotSupported),
+                .message = "Unsupported scheme for URI: " + uri});
     }
 }
 
@@ -61,7 +63,11 @@ StreamType StreamFactory::detectStreamType(const std::string& uri) {
         return StreamType::Http;
     }
 
-    return StreamType::File;
+    // A colon without "://" is a path, not a scheme.
+    if (std::string_view(uri).find("://") == std::string_view::npos) {
+        return StreamType::File;
+    }
+    return StreamType::Unknown;
 }
 
 bool StreamFactory::isHLS(const std::string& uri) noexcept {

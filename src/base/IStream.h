@@ -21,6 +21,7 @@ enum class StreamType : uint8_t {
     File,
     Http,
     HLS,
+    Unknown,
 };
 
 enum class StreamState : uint8_t {

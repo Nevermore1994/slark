@@ -6,16 +6,16 @@ package com.slark.api
 
 data class SlarkLogConfig(
     // Progress log throttle: emit a progress line only after this many bytes accumulate
-    val progressLogBytes: Long = 512 * 1024,
+    val progressLogBytes: Long = SlarkConfigDefaults.progressLogBytes,
 
     // Max single log file size (bytes); rotates to the next file when exceeded
-    val maxLogFileSize: Long = 8 * 1024 * 1024,
+    val maxLogFileSize: Long = SlarkConfigDefaults.maxLogFileSize,
 
     // Max number of retained log files; oldest files are removed when exceeded
-    val maxLogFileCount: Int = 10,
+    val maxLogFileCount: Int = SlarkConfigDefaults.maxLogFileCount,
 
     // Minimum log level that is printed and written to file
-    val minLogLevel: SlarkLogLevel = SlarkLogLevel.DEBUG,
+    val minLogLevel: SlarkLogLevel = SlarkLogLevel.DEFAULT,
 
     // Log output directory; empty uses the default path
     val logDir: String = "",
@@ -23,13 +23,3 @@ data class SlarkLogConfig(
     // Log file name prefix; actual file name is <prefix>_<time>.log, auto-generated when empty
     val logFileName: String = ""
 )
-
-enum class SlarkLogLevel(val value: Int) {
-    PRINT(0),
-    DEBUG(1),
-    INFO(2),
-    WARNING(3),
-    ERROR(4),
-    ASSERT(5),
-    RECORD(6)
-}

@@ -293,6 +293,9 @@ TEST(M3U8ParserTest, ResolveUrlHandlesEmptyReferencesAndBoundaryForms) {
     EXPECT_EQ(M3U8Parser::resolveUrl("rel/base/", "seg.ts"), "rel/base/seg.ts");
     EXPECT_EQ(M3U8Parser::resolveUrl(kBase, "/abs/../seg.ts"),
               "https://example.com/seg.ts");
+    EXPECT_EQ(M3U8Parser::resolveUrl(kBase, "../"), "https://example.com/a/");
+    EXPECT_EQ(M3U8Parser::resolveUrl(kBase, "a//b.ts"),
+              "https://example.com/a/b/a//b.ts");
 }
 
 TEST(M3U8ParserTest, ParseDoesNotRetainInputView) {

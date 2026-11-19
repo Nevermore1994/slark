@@ -8,6 +8,7 @@
 #include <mutex>
 #include <vector>
 
+#include "ConfigDefaults.h"
 #include "Log.hpp"
 
 namespace slark {

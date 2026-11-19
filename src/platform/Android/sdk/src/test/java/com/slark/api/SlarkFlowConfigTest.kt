@@ -17,13 +17,15 @@ class SlarkFlowConfigTest {
     @Test
     fun defaultConfigMatchesCoreDefaults() {
         val config = SlarkFlowConfig()
-        assertEquals(3.0, config.source.lowWatermarkSec, 0.0)
-        assertEquals(10.0, config.source.highWatermarkSec, 0.0)
-        assertEquals(2.0, config.buffering.startBufferSec, 0.0)
-        assertEquals(3.0, config.buffering.rebufferEnterSec, 0.0)
-        assertEquals(4.5, config.buffering.rebufferExitSec, 0.0)
+        assertEquals(SlarkConfigDefaults.sourceLowWatermarkSec, config.source.lowWatermarkSec, 0.0)
+        assertEquals(SlarkConfigDefaults.sourceHighWatermarkSec, config.source.highWatermarkSec, 0.0)
+        assertEquals(SlarkConfigDefaults.bufferingStartBufferSec, config.buffering.startBufferSec, 0.0)
+        assertEquals(SlarkConfigDefaults.bufferingRebufferEnterSec,
+            config.buffering.rebufferEnterSec, 0.0)
+        assertEquals(SlarkConfigDefaults.bufferingRebufferExitSec,
+            config.buffering.rebufferExitSec, 0.0)
         assertEquals(emptyList<String>(), config.dns.preResolveUrls)
-        assertEquals(60.0, config.dns.cacheTtlSec, 0.0)
+        assertEquals(SlarkConfigDefaults.dnsCacheTtlSec, config.dns.cacheTtlSec, 0.0)
     }
 
     @Test

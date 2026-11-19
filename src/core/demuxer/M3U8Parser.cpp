@@ -10,10 +10,10 @@
 #include <regex>
 #include <string_view>
 #include <utility>
-#include <vector>
 
 #include "Log.hpp"
 #include "StringUtil.h"
+#include "UrlPath.hpp"
 
 namespace slark {
 
@@ -315,61 +315,16 @@ std::string M3U8Parser::resolveUrl(std::string_view baseUrl,
                               ? kRootPath
                               : baseWithoutQuery.substr(pathStart);
 
-    const auto normalizePath = [](std::string_view path) {
-        const bool absolute = path.starts_with('/');
-        const bool trailingSlash = path.ends_with('/');
-        std::vector<std::string_view> components;
-        size_t begin = 0;
-        while (begin <= path.size()) {
-            const auto end = path.find('/', begin);
-            const auto component = path.substr(
-                begin, end == std::string_view::npos ? end : end - begin);
-            if (component.empty() || component == ".") {
-            } else if (component == "..") {
-                if (!components.empty() && components.back() != "..") {
-                    components.pop_back();
-                } else if (!absolute) {
-                    components.emplace_back(component);
-                }
-            } else {
-                components.emplace_back(component);
-            }
-            if (end == std::string_view::npos) {
-                break;
-            }
-            begin = end + 1;
-        }
-
-        size_t length = absolute ? 1 : 0;
-        for (const auto component : components) {
-            length += component.size();
-        }
-        std::string normalized = absolute ? "/" : "";
-        normalized.reserve(length + components.size() + (trailingSlash ? 1 : 0));
-        for (size_t i = 0; i < components.size(); ++i) {
-            if (i > 0) {
-                normalized += '/';
-            }
-            normalized.append(components[i]);
-        }
-        if (trailingSlash && !normalized.ends_with('/')) {
-            normalized += '/';
-        }
-        if (normalized.empty() && absolute) {
-            normalized = "/";
-        }
-        return normalized;
-    };
-
     if (referencePath.empty()) {
-        return concatParts({origin, normalizePath(basePath), query, fragment});
+        const auto resolvedPath = removeDotSegments(basePath);
+        return concatParts({origin, resolvedPath, query, fragment});
     }
 
-    const auto resolvedPath =
+    const auto mergedPath =
         referencePath.starts_with('/')
-            ? normalizePath(referencePath)
-            : normalizePath(concatParts(
-                  {basePath.substr(0, basePath.rfind('/') + 1), referencePath}));
+            ? std::string(referencePath)
+            : concatParts({basePath.substr(0, basePath.rfind('/') + 1), referencePath});
+    const auto resolvedPath = removeDotSegments(mergedPath);
     return concatParts({origin, resolvedPath, query, fragment});
 }
 

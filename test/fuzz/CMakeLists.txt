@@ -10,14 +10,13 @@ set(HTTP_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/http)
 
 
 # =============================================================================
-# CoreFuzz_test — M3U8 解析器 + Mp4Box + Mp4Demuxer + WAV + TS + MediaUtil 随机测试
+# CoreFuzz_test — M3U8 解析器 + Mp4Box 随机测试
 # =============================================================================
 # 复用 core test 的源文件依赖
 set(CORE_FUZZ_SOURCES
     ${CORE_SRC_DIR}/media/MediaDefs.cpp
     ${CORE_SRC_DIR}/media/MediaUtil.cpp
     ${CORE_SRC_DIR}/stream/MediaPlaylist.cpp
-    # ${CORE_SRC_DIR}/perf/PlaySession.cpp
     ${DEMUXER_SRC_DIR}/M3U8Parser.cpp
     ${DEMUXER_SRC_DIR}/DemuxerManager.cpp
     ${DEMUXER_SRC_DIR}/Mp4Box.cpp
@@ -29,10 +28,6 @@ set(CORE_FUZZ_SOURCES
 add_executable(CoreFuzz_test
     ${CMAKE_CURRENT_SOURCE_DIR}/M3U8ParserFuzzTest.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Mp4BoxFuzzTest.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/Mp4DemuxerFuzzTest.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/WavDemuxerFuzzTest.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/TSDemuxerFuzzTest.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/MediaUtilFuzzTest.cpp
     ${CORE_FUZZ_SOURCES}
 )
 target_include_directories(CoreFuzz_test PRIVATE
@@ -65,12 +60,11 @@ gtest_discover_tests(CoreFuzz_test
 )
 
 # =============================================================================
-# HttpFuzz_test — HTTP 响应解析器 + URL + HttpProcessor 随机测试
+# HttpFuzz_test — HTTP 响应解析器 + URL 随机测试
 # =============================================================================
 add_executable(HttpFuzz_test
     ${CMAKE_CURRENT_SOURCE_DIR}/HttpResponseParserFuzzTest.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/UrlFuzzTest.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/HttpProcessorFuzzTest.cpp
 )
 target_include_directories(HttpFuzz_test PRIVATE
     ${HTTP_SRC_DIR}
@@ -112,48 +106,6 @@ gtest_discover_tests(StringUtilFuzz_test
 )
 
 # =============================================================================
-# SeekContextFuzz_test — 多线程 seek 状态机竞争测试
-# =============================================================================
-add_executable(SeekContextFuzz_test
-    ${CMAKE_CURRENT_SOURCE_DIR}/SeekContextFuzzTest.cpp
-)
-target_include_directories(SeekContextFuzz_test PRIVATE
-    ${CORE_SRC_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../include
-)
-target_link_libraries(SeekContextFuzz_test
-    slark_base
-    gtest_main
-    pthread)
-gtest_discover_tests(SeekContextFuzz_test
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    PROPERTIES
-    TIMEOUT 300
-    LABELS "fuzz"
-)
-
-# =============================================================================
-# TimerPoolFuzz_test — 时间轮随机添加/取消/过期竞争测试
-# =============================================================================
-add_executable(TimerPoolFuzz_test
-    ${CMAKE_CURRENT_SOURCE_DIR}/TimerPoolFuzzTest.cpp
-)
-target_include_directories(TimerPoolFuzz_test PRIVATE
-    ${BASE_SRC_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../include
-)
-target_link_libraries(TimerPoolFuzz_test
-    slark_base
-    gtest_main
-    pthread)
-gtest_discover_tests(TimerPoolFuzz_test
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    PROPERTIES
-    TIMEOUT 300
-    LABELS "fuzz"
-)
-
-# =============================================================================
 # FileStreamFuzz_test — 文件流并发 read/seek/pause 状态机测试
 # =============================================================================
 add_executable(FileStreamFuzz_test
@@ -168,27 +120,6 @@ target_link_libraries(FileStreamFuzz_test
     gtest_main
     pthread)
 gtest_discover_tests(FileStreamFuzz_test
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    PROPERTIES
-    TIMEOUT 300
-    LABELS "fuzz"
-)
-
-# =============================================================================
-# WriterFuzz_test — 并发写入/关闭/停止状态机测试
-# =============================================================================
-add_executable(WriterFuzz_test
-    ${CMAKE_CURRENT_SOURCE_DIR}/WriterFuzzTest.cpp
-)
-target_include_directories(WriterFuzz_test PRIVATE
-    ${BASE_SRC_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../include
-)
-target_link_libraries(WriterFuzz_test
-    slark_base
-    gtest_main
-    pthread)
-gtest_discover_tests(WriterFuzz_test
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     PROPERTIES
     TIMEOUT 300

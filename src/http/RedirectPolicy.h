@@ -14,6 +14,7 @@
 
 #include "Type.h"
 #include "Url.h"
+#include "UrlPath.hpp"
 
 namespace slark::http {
 
@@ -96,13 +97,6 @@ class RedirectPolicy {
         return redirectRequest;
     }
 
-    // Overload for backward compatibility
-    [[nodiscard]] static std::optional<RequestInfo> buildRedirectRequest(
-        const RequestInfo& original,
-        std::string_view location) {
-        return buildRedirectRequest(original, HttpStatusCode::Found, location);
-    }
-
  private:
     [[nodiscard]] static bool isSensitiveHeader(std::string_view name) noexcept {
         return StringUtil::iequals(name, "Authorization") ||
@@ -156,49 +150,6 @@ class RedirectPolicy {
         return parts;
     }
 
-    static void removeLastPathSegment(std::string& output) {
-        const auto slash = output.rfind('/');
-        if (slash == std::string::npos) {
-            output.clear();
-        } else {
-            output.erase(slash);
-        }
-    }
-
-    [[nodiscard]] static std::string removeDotSegments(std::string_view input) {
-        std::string output;
-        output.reserve(input.size());
-        while (!input.empty()) {
-            if (input.starts_with("../")) {
-                input.remove_prefix(3);
-            } else if (input.starts_with("./")) {
-                input.remove_prefix(2);
-            } else if (input == "/.") {
-                input = "/";
-            } else if (input.starts_with("/./")) {
-                input.remove_prefix(2);
-            } else if (input == "/..") {
-                input = "/";
-                removeLastPathSegment(output);
-            } else if (input.starts_with("/../")) {
-                input.remove_prefix(3);
-                removeLastPathSegment(output);
-            } else if (input == "." || input == "..") {
-                input = {};
-            } else {
-                auto segmentEnd = input.find('/', input.front() == '/' ? 1 : 0);
-                if (segmentEnd == std::string_view::npos) {
-                    output.append(input);
-                    input = {};
-                } else {
-                    output.append(input.substr(0, segmentEnd));
-                    input.remove_prefix(segmentEnd);
-                }
-            }
-        }
-        return output;
-    }
-
     [[nodiscard]] static std::string mergePaths(const Url& url, std::string_view path) {
         std::string_view basePath = url.path;
         if (basePath.empty()) {
@@ -249,9 +200,9 @@ class RedirectPolicy {
                 hasQuery = !url.query.empty();
             }
         } else if (reference.path.starts_with('/')) {
-            targetPath = removeDotSegments(reference.path);
+            targetPath = slark::removeDotSegments(reference.path);
         } else {
-            targetPath = removeDotSegments(mergePaths(url, reference.path));
+            targetPath = slark::removeDotSegments(mergePaths(url, reference.path));
         }
         if (reference.hasQuery) {
             targetQuery = reference.query;

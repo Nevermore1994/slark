@@ -4,6 +4,9 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
+
+#include "Error.h"
 #include "StreamFactory.hpp"
 
 using namespace slark;
@@ -44,4 +47,14 @@ TEST(StreamFactoryTest, DetectsHttpAndLocalStreamsWithoutPlaylistSuffix) {
     EXPECT_EQ(StreamFactory::detectStreamType("../../test_sample/sample-3s.wav"),
               StreamType::File);
     EXPECT_EQ(StreamFactory::detectStreamType("file:///tmp/video.mp4"), StreamType::File);
+}
+
+TEST(StreamFactoryTest, ReportsUnsupportedSchemeInsteadOfTreatingItAsAFile) {
+    constexpr std::string_view kUri = "rtmp://example.com/live/stream";
+    EXPECT_EQ(StreamFactory::detectStreamType(std::string(kUri)), StreamType::Unknown);
+    EXPECT_EQ(StreamFactory::detectStreamType("clip:take2.mp4"), StreamType::File);
+
+    const auto stream = StreamFactory::createStream(std::string(kUri));
+    ASSERT_FALSE(stream.has_value());
+    EXPECT_EQ(stream.error().code, static_cast<int32_t>(Error::SchemeNotSupported));
 }

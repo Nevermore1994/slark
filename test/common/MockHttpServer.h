@@ -272,6 +272,8 @@ class StallingHttpServer {
         if (listenFd_ < 0) {
             return false;
         }
+        int noSigpipe = 1;
+        ::setsockopt(listenFd_, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, sizeof(noSigpipe));
         int reuse = 1;
         ::setsockopt(listenFd_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
         sockaddr_in addr{};
