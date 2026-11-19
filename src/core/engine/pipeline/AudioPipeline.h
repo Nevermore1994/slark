@@ -63,6 +63,7 @@ class AudioPipeline final : public Pipeline {
     void handleDecoded(slark::DecoderData data);
     void drainDecoderOutput();
     void pump();
+    bool updateUnderrunLocked();
     void rebaseLocked(Time::TimePoint target);
     void waitForWork();
     void waitForWake(std::optional<std::chrono::milliseconds> timeout);
@@ -101,6 +102,9 @@ class AudioPipeline final : public Pipeline {
     std::optional<double> lastDecodedPts_;
     // Stays ready once the prefill was reached: dipping below it is normal while playing.
     mutable bool primedOnce_ = false;
+    // An empty hardware buffer after prefill means audio stopped advancing while the clock runs.
+    bool starved_ = false;
+    int underrunTicks_ = 0;
     std::deque<AVFrameRefPtr> pendingOutput_;
     // Frames the sink took since flush(); bounded by its capacity, dropped when playback starts.
     std::deque<AVFrameRefPtr> written_;
@@ -115,6 +119,9 @@ class AudioPipeline final : public Pipeline {
     bool blockedByCodec_ = false;
 
     static constexpr size_t kMaxPendingOutput = 32;
+    // Underruns need several empty sink ticks before the player rebuffers; a single
+    // late frame must not flap Buffering on and off.
+    static constexpr int kUnderrunTicks = 5;
 
     struct ThreadSnapshot {
         size_t inboxDepth = 0;

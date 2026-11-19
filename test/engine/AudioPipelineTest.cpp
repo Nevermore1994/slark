@@ -183,7 +183,7 @@ struct FakeAudioSink : public AudioSink {
     std::atomic<int> pauses{0};
     std::atomic<int> flushes{0};
     std::atomic<uint64_t> offsetUs{0};
-    int prefillFrames = 4;
+    std::atomic<int> prefillFrames{4};
     std::atomic<bool> decoderEnded{false};
     std::atomic<bool> hardwareTailPlayed{false};
     std::atomic<double> lastWrittenPts{-1.0};

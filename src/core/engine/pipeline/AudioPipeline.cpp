@@ -89,6 +89,8 @@ void AudioPipeline::flush(SeekEpoch epoch, Time::TimePoint target, SeekMode /*mo
         decoderEnded_ = false;
         lastDecodedPts_.reset();
         primedOnce_ = false;
+        starved_ = false;
+        underrunTicks_ = 0;
         lastAnchored_ = target;
         pendingOutput_.clear();
         written_.clear();
@@ -137,6 +139,8 @@ void AudioPipeline::rebaseLocked(Time::TimePoint target) {
     pendingOutput_ = std::move(kept);
     decoderEnded_ = false;
     primedOnce_ = false;
+    starved_ = false;
+    underrunTicks_ = 0;
     lastAnchored_ = target;
 }
 
@@ -186,7 +190,7 @@ bool AudioPipeline::ready(SeekEpoch epoch, Time::TimePoint target) const {
     if (!primedOnce_ && sink_->primed()) {
         primedOnce_ = true;
     }
-    return primedOnce_;
+    return primedOnce_ && !starved_;
 }
 
 bool AudioPipeline::ended() const {
@@ -394,18 +398,43 @@ void AudioPipeline::drainDecoderOutput() {
 }
 
 void AudioPipeline::pump() {
-    std::lock_guard lock(mutex_);
-    while (!pendingOutput_.empty() && sink_->write(pendingOutput_.front())) {
-        if (recording_) {
-            written_.push_back(std::move(pendingOutput_.front()));
+    bool stateChanged = false;
+    {
+        std::lock_guard lock(mutex_);
+        while (!pendingOutput_.empty() && sink_->write(pendingOutput_.front())) {
+            if (recording_) {
+                written_.push_back(std::move(pendingOutput_.front()));
+            }
+            pendingOutput_.pop_front();
         }
-        pendingOutput_.pop_front();
+        const auto position = sink_->position();
+        if (clock_ && position > lastAnchored_) {
+            clock_->anchor(position);
+            lastAnchored_ = position;
+        }
+        stateChanged = updateUnderrunLocked();
     }
-    const auto position = sink_->position();
-    if (clock_ && position > lastAnchored_) {
-        clock_->anchor(position);
-        lastAnchored_ = position;
+    if (stateChanged && wake_) {
+        wake_();
     }
+}
+
+// An empty hardware buffer after prefill means the clock keeps running while audio stalls.
+// Clearing on pause would let Buffering resolve itself and oscillate; only refilled audio
+// (or a finished stream) clears the flag.
+bool AudioPipeline::updateUnderrunLocked() {
+    const bool wasStarved = starved_;
+    const bool finished = eosReceived_ || decoderEnded_ || failure_.has_value();
+    if (finished || sink_->primed()) {
+        starved_ = false;
+        underrunTicks_ = 0;
+    } else if (!playing_ || !primedOnce_ || sink_->bufferedSec() > 0.0) {
+        // Paused or not yet primed: neither count nor clear, so Buffering cannot self-resolve.
+        underrunTicks_ = 0;
+    } else if (++underrunTicks_ >= kUnderrunTicks) {
+        starved_ = true;
+    }
+    return wasStarved != starved_;
 }
 
 void AudioPipeline::waitForWork() {
@@ -468,6 +497,7 @@ DebugInfo AudioPipeline::debugInfo() const {
     queue.add("Audio written", written_.size(), "frames");
     queue.add("Audio buffered", sink_->bufferedSec(), "s");
     queue.add("Audio primed", sink_->primed());
+    queue.add("Audio starved", starved_);
     queue.add("Audio drained", sink_->drained());
     queue.add("Blocked by codec", threadSnapshot_.blockedByCodec);
     queue.add("Input closed", threadSnapshot_.inputClosed);
@@ -492,8 +522,8 @@ DebugInfo AudioPipeline::debugInfo() const {
 std::string AudioPipeline::debugState() const {
     std::lock_guard lock(mutex_);
     return std::format(
-        "audio[epoch={} lastPts={:.3f} primed={} position={:.3f} drained={} eos={} ended={}]",
-        epoch_, lastDecodedPts_ ? *lastDecodedPts_ : -1.0, sink_->primed(),
+        "audio[epoch={} lastPts={:.3f} primed={} starved={} position={:.3f} drained={} eos={} ended={}]",
+        epoch_, lastDecodedPts_ ? *lastDecodedPts_ : -1.0, sink_->primed(), starved_,
         sink_->position().second(), sink_->drained(), eosReceived_, decoderEnded_);
 }
 
