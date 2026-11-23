@@ -32,6 +32,10 @@ class ScriptedStream final : public IStream {
         return info;
     }
 
+    [[nodiscard]] const OpenParams& openedParams() const noexcept {
+        return params_;
+    }
+
     void close() noexcept override {
         if (closeCounter) {
             ++*closeCounter;
@@ -242,6 +246,10 @@ class ScriptedSource final : public StreamSource {
     [[nodiscard]] bool ready() const {
         auto* s = streamPtr_.load(std::memory_order_acquire);
         return s && s->opened.load(std::memory_order_acquire);
+    }
+
+    [[nodiscard]] ScriptedStream* openedStream() const {
+        return streamPtr_.load(std::memory_order_acquire);
     }
 
     ScriptedStream* stream = nullptr;

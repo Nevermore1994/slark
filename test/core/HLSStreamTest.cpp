@@ -576,3 +576,26 @@ TEST_F(HLSStreamTest, L5_ConcurrentStartSeekCloseIsSafe) {
     stream_->close();
     EXPECT_TRUE(true);
 }
+
+TEST_F(HLSStreamTest, L6_DebugNetworkLinesExposePlaylistMetrics) {
+    auto params = makeParams();
+    params.uri = server_.masterUrl();
+    std::atomic<bool> completed{false};
+    params.onComplete = [&completed](uint64_t) {
+        completed = true;
+    };
+
+    ASSERT_TRUE(stream_->open(params).has_value());
+    stream_->start();
+    ASSERT_TRUE(waitUntil([&]() { return completed.load(); }, 15000));
+
+    const auto network = stream_->debugInfo().network;
+    EXPECT_NE(network.find("Playlist host:"), std::string::npos);
+    EXPECT_NE(network.find("Playlist connect result:"), std::string::npos);
+    EXPECT_NE(network.find("Playlist request total:"), std::string::npos);
+    EXPECT_NE(network.find("Playlist send total:"), std::string::npos);
+    EXPECT_NE(network.find("Playlist receive total:"), std::string::npos);
+    EXPECT_NE(network.find("Playlist timeout source:"), std::string::npos);
+    EXPECT_NE(network.find("Playlist connection reused:"), std::string::npos);
+    EXPECT_NE(network.find("Segment count:"), std::string::npos);
+}

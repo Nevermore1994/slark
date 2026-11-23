@@ -572,3 +572,14 @@ TEST_F(GatePullTest, ASourceThatPullsTheGateReopensItAfterEveryChunk) {
 TEST_F(GatePullTest, AWatermarkDrivenSourceNeverReopensItFromTheChunkPath) {
     EXPECT_EQ(openCallsAfterParsing(false), 0);
 }
+
+TEST(PerfRoutingTest, PerfSessionIdReachesOpenParams) {
+    SourceOptions options;
+    options.uri = "scripted";
+    options.perfSessionId = "sess-e2e";
+    auto source = ScriptedSource::create(std::move(options), 1, [] {});
+    ASSERT_NE(source, nullptr);
+    ASSERT_TRUE(waitUntil([&] { return source->ready(); }));
+    EXPECT_EQ(source->openedStream()->openedParams().perfSessionId, "sess-e2e");
+    source->close();
+}

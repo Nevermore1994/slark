@@ -21,6 +21,7 @@
 #include <thread>
 #include <vector>
 
+#include "DebugInfo.h"
 #include "MockHttpServer.h"
 #include "TaskThread.h"
 
@@ -541,4 +542,68 @@ TEST_F(HttpStreamTest, W2_PauseWhileWindowIsBackpressuredDoesNotDeadlock) {
     stream_->close();
     EXPECT_EQ(stream_->state(), StreamState::Idle);
     server.stop();
+}
+
+TEST_F(HttpStreamTest, N1_DebugNetworkLinesExposeCapturedMetrics) {
+    auto params = makeParams();
+    params.uri = server_.url();
+    std::atomic<bool> completed{false};
+    params.onComplete = [&completed](uint64_t) {
+        completed = true;
+    };
+
+    ASSERT_TRUE(stream_->open(params).has_value());
+    stream_->start();
+    ASSERT_TRUE(waitUntil([&]() {
+        return completed.load();
+    }));
+
+    const auto info = stream_->debugInfo();
+    EXPECT_NE(info.network.find("Reason: Partial Content"), std::string::npos);
+    EXPECT_NE(info.network.find("Resolved host: 127.0.0.1"), std::string::npos);
+    EXPECT_NE(info.network.find("Connect result:"), std::string::npos);
+    EXPECT_NE(info.network.find("Parse result:"), std::string::npos);
+    EXPECT_NE(info.network.find("Send total:"), std::string::npos);
+    EXPECT_NE(info.network.find("Receive total:"), std::string::npos);
+    EXPECT_NE(info.network.find("Stream state: completed"), std::string::npos);
+    EXPECT_NE(info.network.find("Timeout source: none"), std::string::npos);
+    EXPECT_NE(info.network.find("Stream generation:"), std::string::npos);
+    // Close-mode streams never reuse a connection; a zero connect time is not evidence.
+    EXPECT_NE(info.network.find("Connection reused: false"), std::string::npos);
+    EXPECT_NE(info.network.find("Connection busy: false"), std::string::npos);
+    // Content-Length bodies now count every delivered body piece, not just chunked ones.
+    EXPECT_EQ(info.network.find("Chunks: 0"), std::string::npos);
+}
+
+TEST_F(HttpStreamTest, N2_CancelTerminalKeepsCapturedHeaderAndClearsBusy) {
+    MockHttpServer slowServer;
+    ASSERT_TRUE(slowServer.start(true, /*chunkDelayMs=*/2));
+
+    auto params = makeParams();
+    params.uri = slowServer.url();
+    std::atomic<uint64_t> totalBytes{0};
+    params.onData = [&totalBytes](DataChunk chunk) {
+        totalBytes.fetch_add(chunk.size(), std::memory_order_relaxed);
+    };
+
+    ASSERT_TRUE(stream_->open(params).has_value());
+    stream_->start();
+    ASSERT_TRUE(waitUntil([&]() {
+        return totalBytes.load() > 0 && stream_->debugInfo().network.find("HTTP status: 206") !=
+                                            std::string::npos;
+    }));
+
+    stream_->close();
+    const auto network = stream_->debugInfo().network;
+    EXPECT_NE(network.find("HTTP status: 206"), std::string::npos);
+    EXPECT_NE(network.find("Reason: Partial Content"), std::string::npos);
+    EXPECT_NE(network.find("Connection busy: false"), std::string::npos);
+    slowServer.stop();
+}
+
+TEST_F(HttpStreamTest, R7_RequestInfoCarriesPerfSessionId) {
+    const auto info = HttpStream::makeRequestInfo("http://example.com/a.mp4", Range{}, "sess-r7");
+    EXPECT_EQ(info.perfSessionId, "sess-r7");
+    const auto plain = HttpStream::makeRequestInfo("http://example.com/a.mp4", Range{});
+    EXPECT_TRUE(plain.perfSessionId.empty());
 }

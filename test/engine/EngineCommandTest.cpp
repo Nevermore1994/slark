@@ -338,3 +338,16 @@ TEST_F(EngineCommandTest, DebugInfoSurvivesTeardown) {
     EXPECT_FALSE(info.playback.empty());
     EXPECT_NE(info.playback.find("Status: Idle"), std::string::npos);
 }
+
+TEST_F(EngineCommandTest, TeardownHookRunsAfterSourceIsClosed) {
+    int closesAtHook = -1;
+    int hookCalls = 0;
+    engine = Engine::create(sched, notifier, fakeFactory.hooks(), [&] {
+        ++hookCalls;
+        closesAtHook = factory->sourcesClosed;
+    });
+    prepare();
+    send(Stop{});
+    EXPECT_EQ(hookCalls, 1);
+    EXPECT_EQ(closesAtHook, 1);
+}

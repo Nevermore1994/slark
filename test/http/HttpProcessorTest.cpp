@@ -2,9 +2,10 @@
 
 #include <gtest/gtest.h>
 
-#include <atomic>
 #include <chrono>
 #include <memory>
+#include <thread>
+#include <vector>
 
 #include "CancellationToken.h"
 #include "ThreadPool.hpp"
@@ -19,27 +20,69 @@ Task<void> runVoidTask(Func func) {
     co_await func();
 }
 
-HttpResponse executeSync(const RequestInfo& info) {
-    ThreadPool pool(ThreadPoolConfig{2});
-    std::atomic<bool> done{false};
-    HttpResponse result;
+// A timed-out chain is adopted here instead of being destroyed on the test thread,
+// which could race with a child frame still in await_suspend on the EventLoop thread.
+std::vector<Task<void>>& orphanedFrames() {
+    static auto* frames = new std::vector<Task<void>>;
+    return *frames;
+}
 
-    auto task = runVoidTask([&]() -> Task<void> {
-        HttpProcessor processor;
-        auto r = co_await processor.process(info);
-        if (r.has_value()) {
-            result = std::move(r.value());
-        } else {
-            result.error = r.error();
-        }
-        done = true;
-    });
-    task.resume();
-    for (int i = 0; i < 200 && !done.load(); ++i) {
+// isDone() is set by final_suspend/finish(), after the whole chain has settled.
+// A body-local flag fires earlier, before co_return and final_suspend.
+bool waitForDone(Task<void>& task, std::chrono::milliseconds budget) {
+    const auto deadline = std::chrono::steady_clock::now() + budget;
+    while (!task.isDone() && std::chrono::steady_clock::now() < deadline) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    EXPECT_TRUE(done.load()) << "Request timed out: " << info.url;
-    return result;
+    if (!task.isDone()) {
+        orphanedFrames().push_back(std::move(task));
+        return false;
+    }
+    return true;
+}
+
+// Cover connect + read timeouts plus headroom; the old 2s budget was shorter than
+// the requests' own 5s/10s timeouts, so a slow response returned and destroyed a live chain.
+std::chrono::milliseconds syncBudget(const RequestInfo& info) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        info.connectTimeout + info.readTimeout + std::chrono::seconds(5));
+}
+
+template <typename Func>
+bool runSync(Func func, std::chrono::milliseconds budget) {
+    auto task = runVoidTask(std::move(func));
+    task.resume();
+    return waitForDone(task, budget);
+}
+
+struct StreamOutcome {
+    Error error = Error::Success;
+    size_t totalBytes = 0;
+    int32_t chunkCount = 0;
+    HttpStatusCode lastStatus = HttpStatusCode::Unknown;
+};
+
+HttpResponse executeSync(const RequestInfo& info) {
+    // Shared so a timed-out body adopted by orphanedFrames() never touches a dead stack object.
+    auto result = std::make_shared<HttpResponse>();
+    const bool settled = runSync(
+        [result, info]() -> Task<void> {
+            HttpProcessor processor;
+            auto r = co_await processor.process(info);
+            if (r.has_value()) {
+                *result = std::move(r.value());
+            } else {
+                result->error = r.error();
+            }
+        },
+        syncBudget(info));
+    if (!settled) {
+        ADD_FAILURE() << "Request timed out: " << info.url;
+        HttpResponse timeout;
+        timeout.error = ErrorInfo{Error::Failed};
+        return timeout;
+    }
+    return std::move(*result);
 }
 
 }  // namespace
@@ -120,26 +163,21 @@ TEST(HttpProcessorTest, ProcessCancelledDuringRequest) {
     info.connectTimeout = std::chrono::seconds(5);
     info.readTimeout = std::chrono::seconds(15);
     ThreadPool pool(ThreadPoolConfig{2});
-    std::atomic<bool> done{false};
-    HttpResponse result;
-    auto task = runVoidTask([&]() -> Task<void> {
+    auto result = std::make_shared<HttpResponse>();
+    auto task = runVoidTask([result, info, token]() -> Task<void> {
         HttpProcessor processor;
         auto r = co_await processor.process(info, token);
         if (r.has_value()) {
-            result = std::move(r.value());
+            *result = std::move(r.value());
         } else {
-            result.error = r.error();
+            result->error = r.error();
         }
-        done = true;
     });
     task.resume();
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     token.cancel();
-    for (int i = 0; i < 200 && !done.load(); ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    EXPECT_TRUE(done.load());
-    EXPECT_EQ(result.error.retCode, Error::Cancelled);
+    ASSERT_TRUE(waitForDone(task, syncBudget(info)));
+    EXPECT_EQ(result->error.retCode, Error::Cancelled);
 }
 
 TEST(HttpProcessorTest, ProcessTimeout) {
@@ -161,28 +199,23 @@ TEST(HttpProcessorTest, StreamingRejectsResponseBodyAboveLimit) {
     info.maxResponseBodySize = 128;
 
     ThreadPool pool(ThreadPoolConfig{2});
-    std::atomic<bool> done{false};
-    Error error = Error::Success;
-    auto task = runVoidTask([&]() -> Task<void> {
-        HttpProcessor processor;
-        auto gen = processor.processStreaming(info);
-        while (true) {
-            auto chunk = co_await gen.next();
-            if (!chunk.has_value()) {
-                break;
+    auto outcome = std::make_shared<StreamOutcome>();
+    ASSERT_TRUE(runSync(
+        [outcome, info]() -> Task<void> {
+            HttpProcessor processor;
+            auto gen = processor.processStreaming(info);
+            while (true) {
+                auto chunk = co_await gen.next();
+                if (!chunk.has_value()) {
+                    break;
+                }
+                if (chunk->hasError()) {
+                    outcome->error = chunk->error.retCode;
+                }
             }
-            if (chunk->hasError()) {
-                error = chunk->error.retCode;
-            }
-        }
-        done = true;
-    });
-    task.resume();
-    for (int i = 0; i < 200 && !done.load(); ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    EXPECT_TRUE(done.load());
-    EXPECT_EQ(error, Error::HttpResponseBodyTooLarge);
+        },
+        syncBudget(info)));
+    EXPECT_EQ(outcome->error, Error::HttpResponseBodyTooLarge);
 }
 
 TEST(HttpProcessorTest, StreamingGetReturnsChunks) {
@@ -192,31 +225,25 @@ TEST(HttpProcessorTest, StreamingGetReturnsChunks) {
     info.connectTimeout = std::chrono::seconds(5);
     info.readTimeout = std::chrono::seconds(15);
     ThreadPool pool(ThreadPoolConfig{2});
-    std::atomic<bool> done{false};
-    size_t totalBytes = 0;
-    int32_t chunkCount = 0;
-    auto task = runVoidTask([&]() -> Task<void> {
-        HttpProcessor processor;
-        auto gen = processor.processStreaming(info);
-        while (true) {
-            auto chunk = co_await gen.next();
-            if (!chunk.has_value()) {
-                break;
+    auto outcome = std::make_shared<StreamOutcome>();
+    ASSERT_TRUE(runSync(
+        [outcome, info]() -> Task<void> {
+            HttpProcessor processor;
+            auto gen = processor.processStreaming(info);
+            while (true) {
+                auto chunk = co_await gen.next();
+                if (!chunk.has_value()) {
+                    break;
+                }
+                if (chunk->hasData()) {
+                    outcome->totalBytes += chunk->data->length();
+                }
+                ++outcome->chunkCount;
             }
-            if (chunk->hasData()) {
-                totalBytes += chunk->data->length();
-            }
-            chunkCount++;
-        }
-        done = true;
-    });
-    task.resume();
-    for (int i = 0; i < 200 && !done.load(); ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
-    EXPECT_TRUE(done.load());
-    EXPECT_GT(chunkCount, 0);
-    EXPECT_EQ(totalBytes, 1024u);
+        },
+        syncBudget(info)));
+    EXPECT_GT(outcome->chunkCount, 0);
+    EXPECT_EQ(outcome->totalBytes, 1024u);
 }
 
 TEST(HttpProcessorTest, StreamingFollowsRedirect) {
@@ -227,34 +254,27 @@ TEST(HttpProcessorTest, StreamingFollowsRedirect) {
     info.readTimeout = std::chrono::seconds(15);
     info.isAllowRedirect = true;
     ThreadPool pool(ThreadPoolConfig{2});
-    std::atomic<bool> done{false};
-    HttpStatusCode lastStatus = HttpStatusCode::Unknown;
-    size_t totalBytes = 0;
-    int32_t chunkCount = 0;
-    auto task = runVoidTask([&]() -> Task<void> {
-        HttpProcessor processor;
-        auto gen = processor.processStreaming(info);
-        while (true) {
-            auto chunk = co_await gen.next();
-            if (!chunk.has_value()) {
-                break;
+    auto outcome = std::make_shared<StreamOutcome>();
+    ASSERT_TRUE(runSync(
+        [outcome, info]() -> Task<void> {
+            HttpProcessor processor;
+            auto gen = processor.processStreaming(info);
+            while (true) {
+                auto chunk = co_await gen.next();
+                if (!chunk.has_value()) {
+                    break;
+                }
+                if (chunk->statusCode != HttpStatusCode::Unknown) {
+                    outcome->lastStatus = chunk->statusCode;
+                }
+                if (chunk->hasData()) {
+                    outcome->totalBytes += chunk->data->length();
+                }
+                ++outcome->chunkCount;
             }
-            if (chunk->statusCode != HttpStatusCode::Unknown) {
-                lastStatus = chunk->statusCode;
-            }
-            if (chunk->hasData()) {
-                totalBytes += chunk->data->length();
-            }
-            chunkCount++;
-        }
-        done = true;
-    });
-    task.resume();
-    for (int i = 0; i < 200 && !done.load(); ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
-    EXPECT_TRUE(done.load());
-    EXPECT_EQ(lastStatus, HttpStatusCode::OK);
-    EXPECT_GT(totalBytes, 0u);
-    EXPECT_GT(chunkCount, 0);
+        },
+        syncBudget(info)));
+    EXPECT_EQ(outcome->lastStatus, HttpStatusCode::OK);
+    EXPECT_GT(outcome->totalBytes, 0u);
+    EXPECT_GT(outcome->chunkCount, 0);
 }
