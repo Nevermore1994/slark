@@ -126,12 +126,20 @@ static slark::FlowConfig toFlowConfig(SlarkFlowConfig* config) {
 - (instancetype)initWithTimeRange:(NSString*)path
                           range:(CMTimeRange)range
                      flowConfig:(SlarkFlowConfig*)flowConfig {
+    return [self initWithTimeRange:path range:range flowConfig:flowConfig perfEnabled:NO];
+}
+
+- (instancetype)initWithTimeRange:(NSString*)path
+                          range:(CMTimeRange)range
+                     flowConfig:(SlarkFlowConfig*)flowConfig
+                    perfEnabled:(BOOL)perfEnabled {
     if (self = [super init]) {
         auto params = std::make_unique<slark::PlayerParams>();
         params->item.path = [path UTF8String];
         if (flowConfig) {
             params->setting.flowConfig = toFlowConfig(flowConfig);
         }
+        params->setting.perfConfig.enabled = perfEnabled != NO;
         auto context = slark::createGLContext();
         context->init(nullptr);
         if (CMTIMERANGE_IS_VALID(range)) {

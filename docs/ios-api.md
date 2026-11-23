@@ -108,6 +108,21 @@ The main media player class that provides complete audio and video playback cont
   - `range`: Playback time range
 - **Return Value**: SlarkPlayer instance
 
+```objc
+- (instancetype)initWithTimeRange:(NSString*) path
+                           range:(CMTimeRange)range
+                      flowConfig:(SlarkFlowConfig*)flowConfig
+                     perfEnabled:(BOOL)perfEnabled;
+```
+- **Description**: Initialize player with full configuration. `flowConfig` may be `nil`.
+- **Parameters**:
+  - `path`: Media file path (local path or network URL)
+  - `range`: Playback time range
+  - `flowConfig`: Optional buffer / DNS tuning
+  - `perfEnabled`: Enable per-session performance reporting. Construction-time only (the session starts inside `prepare`), defaults to `NO` on the other initializers. When enabled, each playback session emits a `[Perf] session ...` summary including the HTTP network aggregate; `IPerfReporter` subscribers receive the full `SessionReport` with `networkStats`.
+
+The existing `init:`, `init:flowConfig:`, and `initWithTimeRange:range:` initializers keep their behavior with performance reporting off.
+
 #### Playback Control Methods
 
 ```objc

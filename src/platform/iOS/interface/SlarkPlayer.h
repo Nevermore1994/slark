@@ -135,6 +135,12 @@ NS_ASSUME_NONNULL_BEGIN
                                    range:(CMTimeRange)range
                               flowConfig:(SlarkFlowConfig* _Nullable)flowConfig;
 
+// Perf session reporting is read at prepare(), so it must be set at construction.
+- (instancetype _Nonnull)initWithTimeRange:(NSString* _Nonnull)path
+                                   range:(CMTimeRange)range
+                              flowConfig:(SlarkFlowConfig* _Nullable)flowConfig
+                             perfEnabled:(BOOL)perfEnabled;
+
 - (void)prepare;
 
 - (void)play;

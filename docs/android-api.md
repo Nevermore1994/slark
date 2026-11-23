@@ -189,7 +189,9 @@ Player configuration class.
 ```kotlin
 data class SlarkPlayerConfig(
     val dataSource: String, // URL or file path
-    val timeRange: KtTimeRange = KtTimeRange.zero // Playback time range
+    val timeRange: KtTimeRange = KtTimeRange.zero, // Playback time range
+    val flowConfig: SlarkFlowConfig? = null, // Buffer / DNS tuning
+    val perfEnabled: Boolean = false // Perf session reporting
 )
 ```
 
@@ -200,6 +202,8 @@ data class SlarkPlayerConfig(
   - HTTP/HTTPS URL: `https://example.com/video.mp4`
   - HLS stream: `https://example.com/stream.m3u8`
 - **timeRange**: Playback time range, defaults to entire file
+- **flowConfig**: Optional buffer / DNS tuning
+- **perfEnabled**: Enable per-session performance reporting. Construction-time only (the session starts inside `prepare()`), defaults to `false`. When enabled, each playback session emits a `[Perf] session ...` summary including the HTTP network aggregate to logcat; `IPerfReporter` subscribers receive the full `SessionReport` with `networkStats`. Leave off in production unless diagnostics are needed.
 
 ## Interfaces
 

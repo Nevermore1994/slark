@@ -303,8 +303,12 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
             }
             val (start, duration) = config.timeRange.get()
             val playerId = config.flowConfig?.let {
-                SlarkPlayerManager.createPlayerWithFlowConfig(config.dataSource, start, duration, it)
-            } ?: SlarkPlayerManager.createPlayer(config.dataSource, start, duration)
+                SlarkPlayerManager.createPlayerWithFlowConfig(
+                    config.dataSource, start, duration, it, config.perfEnabled
+                )
+            } ?: SlarkPlayerManager.createPlayer(
+                config.dataSource, start, duration, config.perfEnabled
+            )
             val player = SlarkPlayerImpl(config, playerId)
             SlarkPlayerManager.addPlayer(playerId, player)
             return player

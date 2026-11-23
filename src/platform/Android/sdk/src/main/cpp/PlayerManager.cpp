@@ -129,9 +129,11 @@ jstring createPlayer(JNIEnv* env,
                      jstring path,
                      jdouble start,
                      jdouble duration,
-                     std::optional<FlowConfig> flowConfig) {
+                     std::optional<FlowConfig> flowConfig,
+                     bool perfEnabled) {
     auto playerParams = std::make_unique<PlayerParams>();
     playerParams->setting.flowConfig = std::move(flowConfig);
+    playerParams->setting.perfConfig.enabled = perfEnabled;
     playerParams->item.path = JNI::FromJVM::str(env, path);
     playerParams->item.displayStart = start;
     playerParams->item.displayDuration = duration;
@@ -160,8 +162,9 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_createPlayer(JNIEnv* env,
                                                                   jobject /*thiz*/,
                                                                   jstring path,
                                                                   jdouble start,
-                                                                  jdouble duration) {
-    return createPlayer(env, path, start, duration, std::nullopt);
+                                                                  jdouble duration,
+                                                                  jboolean perfEnabled) {
+    return createPlayer(env, path, start, duration, std::nullopt, perfEnabled != JNI_FALSE);
 }
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -170,13 +173,14 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_createPlayerWithFlowConfig(
                                                                                 jstring path,
                                                                                 jdouble start,
                                                                                 jdouble duration,
-                                                                                jobject config) {
+                                                                                jobject config,
+                                                                                jboolean perfEnabled) {
     FlowConfig flowConfig;
     if (const auto result = readFlowConfig(env, config, flowConfig); !result.has_value()) {
         raiseIllegalArgument(env, std::string(result.error()).append(" must not be null"));
         return nullptr;
     }
-    return createPlayer(env, path, start, duration, flowConfig);
+    return createPlayer(env, path, start, duration, flowConfig, perfEnabled != JNI_FALSE);
 }
 
 extern "C" JNIEXPORT void JNICALL

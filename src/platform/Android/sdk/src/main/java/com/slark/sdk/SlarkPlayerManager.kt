@@ -69,10 +69,19 @@ class SlarkPlayerManager {
             players[playerId]?.setVideoRotation(rotationDegrees)
         }
 
-        external fun createPlayer(path: String, start: Double, duration: Double): String
+        external fun createPlayer(
+            path: String,
+            start: Double,
+            duration: Double,
+            perfEnabled: Boolean
+        ): String
 
         external fun createPlayerWithFlowConfig(
-            path: String, start: Double, duration: Double, flowConfig: SlarkFlowConfig
+            path: String,
+            start: Double,
+            duration: Double,
+            flowConfig: SlarkFlowConfig,
+            perfEnabled: Boolean
         ): String
 
         external fun preResolve(dns: SlarkFlowConfig.Dns)

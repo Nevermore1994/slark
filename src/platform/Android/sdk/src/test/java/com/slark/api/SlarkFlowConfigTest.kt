@@ -62,4 +62,17 @@ class SlarkFlowConfigTest {
         )
         assertEquals(override, SlarkPlayerConfig("sample.mp4", flowConfig = override).flowConfig)
     }
+
+    @Test
+    fun perfEnabledDefaultsToFalse() {
+        assertEquals(false, SlarkPlayerConfig("sample.mp4").perfEnabled)
+    }
+
+    @Test
+    fun perfEnabledCanBeSetWithoutDisturbingFlowConfig() {
+        val override = SlarkFlowConfig()
+        val config = SlarkPlayerConfig("sample.mp4", flowConfig = override, perfEnabled = true)
+        assertEquals(true, config.perfEnabled)
+        assertEquals(override, config.flowConfig)
+    }
 }
