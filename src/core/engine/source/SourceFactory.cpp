@@ -19,6 +19,7 @@ std::unique_ptr<Source> SourceFactory::create(const Prepare& prepare,
     options.uri = prepare.item.path;
     options.playbackRange = prepare.playbackRange;
     options.flow = prepare.setting.flowConfig.value_or(FlowConfig{});
+    options.perfSessionId = prepare.perfSessionId;
     switch (StreamFactory::detectStreamType(options.uri)) {
         case StreamType::HLS:
             options.demuxer = DemuxerType::TS;

@@ -62,7 +62,8 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
 
     // The overall deadline is a wall clock that also runs during backpressure, and a media
     // file has no meaningful size cap, so only the idle timeout bounds a stalled transfer.
-    static http::RequestInfo makeRequestInfo(const std::string& uri, const Range& range);
+    static http::RequestInfo makeRequestInfo(const std::string& uri, const Range& range,
+                                             std::string perfSessionId = {});
 
  private:
     // Decoupled from the Stream: network callbacks hold only a weak_ptr, alive=false after close
@@ -139,14 +140,19 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
         uint64_t positionBytes = 0;
         uint64_t totalBytes = 0;
         uint64_t receivedBytes = 0;
+        uint64_t bodyBytes = 0;
         int statusCode = 0;
         std::string reasonPhrase;
+        std::string host;
+        std::string connectResult;
+        std::string parseResult;
         std::string contentType;
         std::string rangeCapability;
-        std::string streamState;
         double connectMs = 0.0;
         double tlsHandshakeMs = 0.0;
         double totalRequestMs = 0.0;
+        double totalSendMs = 0.0;
+        double totalReceiveMs = 0.0;
         int64_t headerParseUs = 0;
         int32_t chunkCount = 0;
         int32_t redirectCount = 0;
@@ -154,12 +160,12 @@ class HttpStream : public IStream, public std::enable_shared_from_this<HttpStrea
         int32_t sendRetryCount = 0;
         int32_t receiveWaitCount = 0;
         std::string timeoutSource;
-        uint64_t connectionGeneration = 0;
+        // Generation of the stream operation (start/pause/seek), not a TCP connection.
+        uint64_t streamGeneration = 0;
         bool connectionReused = false;
-        bool connectionBusy = false;
     };
 
-    // Written on the owner thread, read by debugLines() from any thread.
+    // Written on the owner thread, read by debugInfo() from any thread.
     mutable std::mutex debugMutex_;
     NetDebug netDebug_;
 

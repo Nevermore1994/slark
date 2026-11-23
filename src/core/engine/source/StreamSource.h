@@ -24,6 +24,7 @@ struct SourceOptions {
     std::string uri;
     Range range;
     FlowConfig flow;
+    std::string perfSessionId;
     DemuxerType demuxer = DemuxerType::Unknown;
 
     PlaybackRange playbackRange;

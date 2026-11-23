@@ -601,9 +601,6 @@ void HttpResponseParser::processChunkSize() {
         currentChunkSize_ = chunkSize;
         chunkBytesRead_ = 0;
         state_ = State::ChunkData;
-        if (perf_) {
-            perf_->parser.chunkCount++;
-        }
     }
 }
 

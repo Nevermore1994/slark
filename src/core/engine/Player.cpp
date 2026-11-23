@@ -3,6 +3,7 @@
 //
 #include <algorithm>
 #include <limits>
+#include <memory>
 #include <thread>
 #include <utility>
 
@@ -17,6 +18,8 @@
 #include "GLContextManager.h"
 #include "Log.hpp"
 #include "PlaybackFactory.h"
+#include "PerfMonitor.h"
+#include "PlaySession.h"
 #include "Player.h"
 #include "PlayerContext.h"
 #include "Random.hpp"
@@ -43,7 +46,7 @@ PlaybackRange toPlaybackRange(const ResourceItem& item) noexcept {
 
 }  // namespace
 
-class Player::Impl {
+class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
  public:
     std::string playerId;
     std::unique_ptr<PlayerParams> params;
@@ -53,8 +56,45 @@ class Player::Impl {
     std::weak_ptr<IVideoRender> videoRender;
     std::vector<IPlayerObserverPtr> observers;
     std::atomic<bool> prepared{false};
+    // stop() only posts a command; the teardown hook decides the report's success flag.
+    std::atomic<bool> stopRequested{false};
+    std::shared_ptr<perf::PlaySession> perfSession;
+    std::string perfSessionId;
+
+    void beginPerfSession() noexcept {
+        try {
+            auto& monitor = perf::PerfMonitor::instance();
+            monitor.configure(params->setting.perfConfig);
+            if (!monitor.isEnabled()) {
+                return;
+            }
+            perfSession = std::make_shared<perf::PlaySession>(
+                std::to_string(monitor.nextSessionId()), params->item.path);
+            perfSessionId = perfSession->sessionId();
+            monitor.registerSession(perfSession);
+        } catch (const std::exception& e) {
+            LogW("[Player] perf session unavailable: {}", e.what());
+            perfSession.reset();
+            perfSessionId.clear();
+        }
+    }
+
+    void endPerfSession(bool success) noexcept {
+        if (!perfSession) {
+            return;
+        }
+        auto session = std::move(perfSession);
+        try {
+            session->finish(success);
+            perf::PerfMonitor::instance().unregisterSession(session->sessionId());
+        } catch (const std::exception& e) {
+            LogW("[Player] perf report failed: {}", e.what());
+        }
+        perfSessionId.clear();
+    }
 
     void start() {
+        beginPerfSession();
         scheduler = std::make_unique<ThreadScheduler>(playerId);
         notifier = std::make_unique<Notifier>(playerId);
         for (const auto& observer : observers) {
@@ -81,8 +121,13 @@ class Player::Impl {
         engine = Engine::create(*scheduler, *notifier,
                                 makePlaybackFactory(params->setting,
                                                     PlayerContext{playerId, params->mainGLContext},
-                                                    std::move(factories)));
-        // The hook captures a weak_ptr to the engine, so it must be installed after it exists.
+                                                    std::move(factories)),
+                                [weak = weak_from_this()] {
+                                    if (auto self = weak.lock()) {
+                                        self->endPerfSession(true);
+                                    }
+                                });
+        // The vsync hook captures a weak_ptr to the engine, so install it after creation.
         attachRenderVsync();
     }
 
@@ -139,6 +184,7 @@ Player::~Player() {
         if (stack->engine) {
             stack->engine->close();
         }
+        stack->endPerfSession(stack->stopRequested.load(std::memory_order_acquire));
         if (stack->scheduler) {
             stack->scheduler->stop();
         }
@@ -155,7 +201,7 @@ void Player::prepare() noexcept {
     pimpl_->start();
     // The playback range start is rebased to zero inside the source, so play begins at 0.
     pimpl_->post(Prepare{pimpl_->params->item, pimpl_->params->setting, Time::TimePoint{},
-                          toPlaybackRange(pimpl_->params->item)});
+                          toPlaybackRange(pimpl_->params->item), pimpl_->perfSessionId});
 }
 
 void Player::play() noexcept {
@@ -166,6 +212,8 @@ void Player::play() noexcept {
 
 void Player::stop() noexcept {
     if (pimpl_ && pimpl_->prepared.load()) {
+        pimpl_->stopRequested.store(true, std::memory_order_release);
+        // Teardown settles in-flight requests before the hook seals the session.
         pimpl_->post(Stop{});
     }
 }

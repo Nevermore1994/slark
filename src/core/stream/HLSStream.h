@@ -197,6 +197,8 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
         uint32_t variantBandwidth = 0;
         uint32_t variantWidth = 0;
         uint32_t variantHeight = 0;
+        // Metrics of the most recent playlist request (KeepAlive/session path).
+        http::RequestPerf playlistPerf;
     };
 
     // Written on the owner thread, read by debugInfo() from any thread.

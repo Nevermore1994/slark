@@ -79,6 +79,7 @@ struct OpenParams {
     std::string uri;
     Range range;
     uint32_t readChunkSize = 64 * 1024;
+    std::string perfSessionId;
 
     DataCallback onData;
     ErrorCallback onError;

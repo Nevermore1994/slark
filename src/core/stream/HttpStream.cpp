@@ -26,6 +26,19 @@ inline uint64_t logProgressBytes() {
     return getLogConfig().progressLogBytes;
 }
 
+[[nodiscard]] std::string_view streamStateName(StreamState state) noexcept {
+    switch (state) {
+        case StreamState::Idle: return "idle";
+        case StreamState::Opening: return "opening";
+        case StreamState::Ready: return "ready";
+        case StreamState::Reading: return "reading";
+        case StreamState::Paused: return "paused";
+        case StreamState::Completed: return "completed";
+        case StreamState::Error: return "error";
+    }
+    return "unknown";
+}
+
 constexpr std::chrono::milliseconds kWaitSettleTimeout{500};
 constexpr std::chrono::milliseconds kCloseWaitTimeout{5000};
 
@@ -40,13 +53,15 @@ constexpr std::chrono::hours kStreamTotalTimeout{24};
 constexpr std::chrono::seconds kStreamIdleTimeout{30};
 }  // namespace
 
-http::RequestInfo HttpStream::makeRequestInfo(const std::string& uri, const Range& range) {
+http::RequestInfo HttpStream::makeRequestInfo(const std::string& uri, const Range& range,
+                                              std::string perfSessionId) {
     http::RequestInfo requestInfo;
     requestInfo.url = uri;
     requestInfo.methodType = http::HttpMethodType::Get;
     requestInfo.readTimeout = kStreamTotalTimeout;
     requestInfo.readIdleTimeout = kStreamIdleTimeout;
     requestInfo.maxResponseBodySize = std::numeric_limits<uint64_t>::max();
+    requestInfo.perfSessionId = std::move(perfSessionId);
     if (range.isValid()) {
         requestInfo.headers["Range"] = range.toHeaderString();
     }
@@ -121,7 +136,7 @@ void HttpStream::startLocked() noexcept {
     uint64_t gen = generation_;
     uint64_t opId = nextOperationId_++;
 
-    auto requestInfo = makeRequestInfo(params_.uri, readRange_);
+    auto requestInfo = makeRequestInfo(params_.uri, readRange_, params_.perfSessionId);
 
     LogI("[HttpStream::startLocked] url={} range={} gen={} method=GET", requestInfo.url,
          requestInfo.headers.count("Range") ? requestInfo.headers["Range"] : std::string{}, gen);
@@ -479,8 +494,7 @@ void HttpStream::refreshNetDebug(const http::StreamChunk& chunk, uint64_t genera
     out.positionBytes = position_.load(std::memory_order_relaxed);
     out.totalBytes = info_.totalSize;
     out.receivedBytes = deliveredPosition_;
-    out.connectionGeneration = generation;
-    out.connectionBusy = state_.load(std::memory_order_relaxed) == StreamState::Reading;
+    out.streamGeneration = generation;
     switch (rangeCapability_) {
         case RangeCapability::Supported:
             out.rangeCapability = "supported";
@@ -494,25 +508,33 @@ void HttpStream::refreshNetDebug(const http::StreamChunk& chunk, uint64_t genera
     }
     if (chunk.statusCode != http::HttpStatusCode::Unknown) {
         out.statusCode = static_cast<int>(chunk.statusCode);
+        out.reasonPhrase = chunk.reasonPhrase;
         if (const auto it = chunk.headers.find("content-type"); it != chunk.headers.end()) {
             out.contentType = it->second;
         }
     }
-    if (!chunk.isFinal) {
+    // A terminal without metrics must not erase what an earlier chunk already captured.
+    if (!chunk.hasPerf) {
         return;
     }
     const auto& perf = chunk.perf;
+    out.host = perf.host;
+    out.connectResult = toString(perf.connection.connectResult);
+    out.parseResult = toString(perf.parser.parseResult);
+    out.bodyBytes = static_cast<uint64_t>(perf.parser.bodySize);
     out.connectMs = static_cast<double>(perf.connection.connectTimeMs);
     out.tlsHandshakeMs = static_cast<double>(perf.connection.tlsHandshakeTimeMs);
     out.totalRequestMs = static_cast<double>(perf.totalRequestTimeMs);
+    out.totalSendMs = static_cast<double>(perf.transport.totalSendTimeMs);
+    out.totalReceiveMs = static_cast<double>(perf.transport.totalReceiveTimeMs);
     out.headerParseUs = perf.parser.headerParseTimeUs;
     out.chunkCount = perf.parser.chunkCount;
     out.redirectCount = perf.transport.redirectCount;
     out.recvLoops = perf.transport.recvLoops;
     out.sendRetryCount = perf.transport.sendRetryCount;
     out.receiveWaitCount = perf.transport.receiveWaitCount;
-    out.connectionReused = perf.connection.connectTimeMs == 0;
-    out.timeoutSource = std::to_string(static_cast<int>(perf.transport.timeoutSource));
+    out.timeoutSource = http::timeoutSourceName(perf.transport.timeoutSource);
+    out.connectionReused = perf.connection.reused;
 }
 
 DebugInfo HttpStream::debugInfo() const {
@@ -522,20 +544,29 @@ DebugInfo HttpStream::debugInfo() const {
         snapshot = netDebug_;
     }
     const auto info = this->info();
+    const auto state = state_.load(std::memory_order_relaxed);
     DebugLines lines;
     lines.add("URL", info.uri);
     lines.add("Host", host());
     lines.add("Protocol", "HTTP/HTTPS");
     lines.add("HTTP status", snapshot.statusCode);
+    lines.add("Reason", snapshot.reasonPhrase);
+    lines.add("Resolved host", snapshot.host);
+    lines.add("Connect result", snapshot.connectResult);
+    lines.add("Parse result", snapshot.parseResult);
     lines.add("Content-Type", snapshot.contentType);
     lines.add("Content-Length", snapshot.totalBytes, "bytes");
     lines.add("Range", snapshot.rangeCapability);
+    lines.add("Stream state", streamStateName(state));
     lines.add("Received", snapshot.receivedBytes, "bytes");
+    lines.add("Body", snapshot.bodyBytes, "bytes");
     lines.add("Total", snapshot.totalBytes, "bytes");
     lines.add("Position", snapshot.positionBytes, "bytes");
     lines.add("Connect", snapshot.connectMs, "ms");
     lines.add("TLS handshake", snapshot.tlsHandshakeMs, "ms");
     lines.add("Request total", snapshot.totalRequestMs, "ms");
+    lines.add("Send total", snapshot.totalSendMs, "ms");
+    lines.add("Receive total", snapshot.totalReceiveMs, "ms");
     lines.add("Header parse", snapshot.headerParseUs, "us");
     lines.add("Chunks", snapshot.chunkCount);
     lines.add("Redirects", snapshot.redirectCount);
@@ -543,9 +574,9 @@ DebugInfo HttpStream::debugInfo() const {
     lines.add("Send retries", snapshot.sendRetryCount);
     lines.add("Recv waits", snapshot.receiveWaitCount);
     lines.add("Timeout source", snapshot.timeoutSource);
-    lines.add("Connection generation", snapshot.connectionGeneration);
+    lines.add("Stream generation", snapshot.streamGeneration);
     lines.add("Connection reused", snapshot.connectionReused);
-    lines.add("Connection busy", snapshot.connectionBusy);
+    lines.add("Connection busy", state == StreamState::Reading);
     DebugInfo result;
     result.network = lines.take();
     return result;

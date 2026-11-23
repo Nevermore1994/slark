@@ -29,7 +29,7 @@ target_include_directories(slark_jni PUBLIC
     ${SLARK_PROJECT_PATH}/src/core/engine
     ${SLARK_PROJECT_PATH}/src/core/engine/pipeline
     ${SLARK_PROJECT_PATH}/src/core/engine/source
-    ${SLARK_PROJECT_PATH}/src/core/perf
+    ${SLARK_PROJECT_PATH}/src/perf
     ${SLARK_PROJECT_PATH}/src/http
     ${SLARK_PROJECT_PATH}/include
     ${SLARK_PROJECT_PATH}/internal

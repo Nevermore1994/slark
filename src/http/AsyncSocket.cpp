@@ -188,10 +188,11 @@ Task<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data,
     size_t totalSent = 0;
     int32_t retryCount = 0;
     const auto started = Time::nowTimeStamp();
-    ScopeGuard sendTiming([this, started] {
+    ScopeGuard sendTiming([this, started, &retryCount] {
         if (perf_) {
             perf_->transport.totalSendTimeMs +=
                 (Time::nowTimeStamp() - started).toMilliSeconds().count();
+            perf_->transport.sendRetryCount += retryCount;
         }
     });
 
@@ -226,9 +227,6 @@ Task<AsyncSocketResult> AsyncSocket::asyncSend(const std::string_view& data,
         co_return std::unexpected(error);
     }
 
-    if (perf_) {
-        perf_->transport.sendRetryCount += retryCount;
-    }
     co_return totalSent;
 }
 
@@ -242,10 +240,11 @@ Task<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
     Time::Deadline deadline(timeout);
     int32_t waitCount = 0;
     const auto started = Time::nowTimeStamp();
-    ScopeGuard receiveTiming([this, started] {
+    ScopeGuard receiveTiming([this, started, &waitCount] {
         if (perf_) {
             perf_->transport.totalReceiveTimeMs +=
                 (Time::nowTimeStamp() - started).toMilliSeconds().count();
+            perf_->transport.receiveWaitCount += waitCount;
         }
     });
 
@@ -257,9 +256,6 @@ Task<AsyncSocketResult> AsyncSocket::asyncReceive(void* buffer,
 
         ssize_t result = transport_->read(buffer, size);
         if (result > 0) {
-            if (perf_) {
-                perf_->transport.receiveWaitCount += waitCount;
-            }
             co_return static_cast<size_t>(result);
         }
 

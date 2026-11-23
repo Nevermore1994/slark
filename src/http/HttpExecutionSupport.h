@@ -45,6 +45,7 @@ inline HttpResponseParser::Callbacks makeParserCallbacks(ParserEventState& state
         }
         state.pendingBody->append(ConstByteSpan(data, size));
         perf.parser.bodySize += static_cast<int64_t>(size);
+        ++perf.parser.chunkCount;
     };
     callbacks.onError = [&state, &perf](Error code) {
         state.parseError = true;
@@ -102,6 +103,18 @@ struct StreamReadResult final {
 
 [[nodiscard]] inline ErrorInfo streamEndError(bool cancelled) noexcept {
     return ErrorInfo{cancelled ? slark::Error::Cancelled : slark::Error::ConnectionReset};
+}
+
+// A parser that stopped without completing may not have reported a specific parse error;
+// falling back to ConnectionReset is what the loopback truncation tests rely on.
+[[nodiscard]] inline ErrorInfo parserTerminalError(const HttpResponseParser& parser,
+                                                   const ParserEventState& state) noexcept {
+    if (parser.hasError() || state.parseError || !parser.isCompleted()) {
+        return ErrorInfo{state.parseErrorCode == slark::Error::Success
+                             ? slark::Error::ConnectionReset
+                             : state.parseErrorCode};
+    }
+    return ErrorInfo{slark::Error::Success};
 }
 
 inline ErrorInfo classifyStreamReadError(Error error,

@@ -79,6 +79,7 @@ Task<Http1Session::ConnectionResult> Http1Session::acquireConnection(const Reque
         }
         if (connection_) {
             connection_->setPerf(&perf);
+            perf.connection.reused = true;
             co_return connection_;
         }
     }
@@ -205,7 +206,8 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEventsImpl(RequestInfo re
     BusyGuard busyGuard{this};
 
     RequestPerf perf;
-    perf.host = requestInfo.url;
+    perf.requestStartUs = steadyUs();
+    perf.perfSessionId = requestInfo.perfSessionId;
     const auto requestStart = Time::nowTimeStamp();
     if (co_await coro::cancellation_requested()) {
         busyGuard.release();
@@ -225,6 +227,7 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEventsImpl(RequestInfo re
         }
         co_return;
     }
+    perf.host = parsedUrl->host;
 
     auto connectionResult = co_await acquireConnection(requestInfo, *parsedUrl, perf);
     if (!connectionResult) {
@@ -275,6 +278,7 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEventsImpl(RequestInfo re
                 parser.onEof();
             } else {
                 ++recvLoops;
+                perf.transport.recvLoops = static_cast<int32_t>(recvLoops);
                 parser.feed(readBuffer.data(), read.bytesRead);
             }
         }
@@ -302,11 +306,9 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEventsImpl(RequestInfo re
         }
     }
 
-    if (parser.hasError() || parserState.parseError || !parser.isCompleted()) {
+    if (const auto error = parserTerminalError(parser, parserState);
+        error.retCode != slark::Error::Success) {
         discardConnection(connection);
-        const auto error = parserState.parseErrorCode == slark::Error::Success
-                               ? ErrorInfo{slark::Error::ConnectionReset}
-                               : ErrorInfo{parserState.parseErrorCode};
         busyGuard.release();
         co_yield HttpResponseEvent::makeError(error, std::move(perf));
         co_return;
@@ -320,7 +322,6 @@ AsyncGenerator<HttpResponseEvent> Http1Session::executeEventsImpl(RequestInfo re
     }
 
     perf.totalRequestTimeMs = (Time::nowTimeStamp() - requestStart).toMilliSeconds().count();
-    perf.transport.recvLoops = static_cast<int32_t>(recvLoops);
     const bool keepAlive = requestInfo.connectionMode == HttpConnectionMode::KeepAlive;
     const bool canReuse = keepAlive && parser.canReuseConnection();
     bool storedForReuse = false;

@@ -325,6 +325,7 @@ void StreamSource::openOnLoader() {
     OpenParams params;
     params.uri = options_.uri;
     params.range = options_.range;
+    params.perfSessionId = options_.perfSessionId;
     params.onData = [this](DataChunk chunk) {
         onChunk(std::move(chunk));
     };

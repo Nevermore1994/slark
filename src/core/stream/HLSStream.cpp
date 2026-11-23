@@ -272,6 +272,7 @@ void HLSStream::requestPlaylist(const std::string& url) {
     requestInfo.methodType = http::HttpMethodType::Get;
     requestInfo.connectionMode = http::HttpConnectionMode::KeepAlive;
     requestInfo.session = playlistSession();
+    requestInfo.perfSessionId = params_.perfSessionId;
 
     auto task = fetchPlaylist(request, requestInfo, control, generation, operationId);
     playlistOp_.emplace(PlaylistOp{generation, operationId, request,
@@ -290,6 +291,12 @@ void HLSStream::handlePlaylistEvent(PlaylistEvent event) noexcept {
 }
 
 void HLSStream::handlePlaylistResponse(http::HttpResponse&& response) {
+    {
+        std::lock_guard<std::mutex> lock(debugMutex_);
+        if (response.perf.hasPerf()) {
+            hlsDebug_.playlistPerf = response.perf;
+        }
+    }
     LogI("[HLSStream::handlePlaylistResponse] received: status={} bodySize={}",
          static_cast<int>(response.statusCode), response.body ? response.body->size() : 0);
 
@@ -486,6 +493,7 @@ void HLSStream::downloadSegment(uint32_t segIndex) {
     requestInfo.readTimeout = std::chrono::minutes(5);
     requestInfo.readIdleTimeout = std::chrono::seconds(30);
     requestInfo.session = mediaSession_;
+    requestInfo.perfSessionId = params_.perfSessionId;
 
     std::weak_ptr<HLSStream> weakThis = shared_from_this();
     std::weak_ptr<StreamControl> weakControl = control;
@@ -863,7 +871,8 @@ void HLSStream::refreshHlsDebug() noexcept {
         snapshot.variantHeight = variant.height.value_or(0);
     }
     std::lock_guard<std::mutex> lock(debugMutex_);
-    hlsDebug_ = snapshot;
+    snapshot.playlistPerf = hlsDebug_.playlistPerf;
+    hlsDebug_ = std::move(snapshot);
 }
 
 DebugInfo HLSStream::debugInfo() const {
@@ -891,6 +900,25 @@ DebugInfo HLSStream::debugInfo() const {
     lines.add("Variant bandwidth", snapshot.variantBandwidth, "bit/s");
     lines.add("Variant resolution", std::format("{}x{}", snapshot.variantWidth,
                                                snapshot.variantHeight));
+    const auto& perf = snapshot.playlistPerf;
+    lines.add("Playlist host", perf.host);
+    lines.add("Playlist connect result", toString(perf.connection.connectResult));
+    lines.add("Playlist parse result", toString(perf.parser.parseResult));
+    lines.add("Playlist connect", static_cast<double>(perf.connection.connectTimeMs), "ms");
+    lines.add("Playlist TLS handshake",
+              static_cast<double>(perf.connection.tlsHandshakeTimeMs), "ms");
+    lines.add("Playlist request total", static_cast<double>(perf.totalRequestTimeMs), "ms");
+    lines.add("Playlist send total", static_cast<double>(perf.transport.totalSendTimeMs), "ms");
+    lines.add("Playlist receive total",
+              static_cast<double>(perf.transport.totalReceiveTimeMs), "ms");
+    lines.add("Playlist body", static_cast<uint64_t>(perf.parser.bodySize), "bytes");
+    lines.add("Playlist chunks", perf.parser.chunkCount);
+    lines.add("Playlist redirects", perf.transport.redirectCount);
+    lines.add("Playlist recv loops", perf.transport.recvLoops);
+    lines.add("Playlist send retries", perf.transport.sendRetryCount);
+    lines.add("Playlist recv waits", perf.transport.receiveWaitCount);
+    lines.add("Playlist timeout source", http::timeoutSourceName(perf.transport.timeoutSource));
+    lines.add("Playlist connection reused", perf.connection.reused);
     DebugInfo result;
     result.network = lines.take();
     return result;

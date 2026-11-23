@@ -3,6 +3,7 @@
 //
 #pragma once
 
+#include <string>
 #include <variant>
 
 #include "Error.h"
@@ -23,6 +24,8 @@ struct Prepare {
     Time::TimePoint startPos{};
     // Mapped from ResourceItem::displayStart/displayDuration by the player.
     PlaybackRange playbackRange;
+    // Routes HTTP request metrics to the owning perf session.
+    std::string perfSessionId;
 };
 
 struct Play {};

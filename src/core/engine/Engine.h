@@ -25,9 +25,12 @@ namespace slark::engine {
 // All state lives on the scheduler thread; other threads post commands and read snapshots.
 class Engine : public std::enable_shared_from_this<Engine> {
  public:
+    using TeardownHook = std::function<void()>;
+
     static std::shared_ptr<Engine> create(Scheduler& scheduler,
                                           Notifier& notifier,
-                                          PlaybackFactory factory);
+                                          PlaybackFactory factory,
+                                          TeardownHook teardownHook = {});
 
     void post(Command command);
     void close() noexcept;
@@ -37,7 +40,8 @@ class Engine : public std::enable_shared_from_this<Engine> {
     [[nodiscard]] DebugInfo debugInfo() const;
 
  private:
-    Engine(Scheduler& scheduler, Notifier& notifier, PlaybackFactory factory);
+    Engine(Scheduler& scheduler, Notifier& notifier, PlaybackFactory factory,
+           TeardownHook teardownHook);
 
     void apply(Command& command);
     void onPrepare(Prepare& c);
@@ -76,6 +80,7 @@ class Engine : public std::enable_shared_from_this<Engine> {
     Scheduler& scheduler_;
     Notifier& notifier_;
     PlaybackFactory factory_;
+    const TeardownHook teardownHook_;
 
     MediaClock clock_;
     BufferPolicy bufferPolicy_;

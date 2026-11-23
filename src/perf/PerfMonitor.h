@@ -48,8 +48,14 @@ class PerfMonitor {
     void recordSlowOp(const std::string& stage, double durationMs);
     void recordError(const std::string& reason);
 
+    // Aggregates a completed HTTP request into the session named by the sample.
+    void recordNetwork(const NetworkSample& sample);
+
     [[nodiscard]] SlowOpsStats slowOpsSnapshot() const;
     [[nodiscard]] std::unordered_map<std::string, uint64_t> errorsSnapshot() const;
+    [[nodiscard]] NetworkStats networkSnapshot(const std::string& sessionId) const;
+    [[nodiscard]] size_t activeSessionCount() const;
+    [[nodiscard]] std::vector<std::string> activeSessionIds() const;
 
     [[nodiscard]] bool isEnabled() const noexcept;
     [[nodiscard]] bool isFrameTraceEnabled() const noexcept;
@@ -73,6 +79,9 @@ class PerfMonitor {
 
     mutable std::mutex slowOpsMutex_;
     SlowOpsStats slowOpsStats_;
+
+    mutable std::mutex networkMutex_;
+    std::unordered_map<std::string, std::shared_ptr<PlaySession>> sessions_;
 
     mutable std::mutex resourceSamplerMutex_;
     std::unique_ptr<ResourceSampler> resourceSampler_;

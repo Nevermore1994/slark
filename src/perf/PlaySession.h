@@ -40,6 +40,9 @@ class PlaySession : public std::enable_shared_from_this<PlaySession> {
     // Accumulate frame rendering stats
     void recordFrame(int64_t frameDurationUs) noexcept;
 
+    // Accumulate one completed HTTP request into this session's network aggregate
+    void recordNetwork(const NetworkSample& sample);
+
     // Record a lifecycle event timestamp
     void recordEvent(const std::string& eventName, int64_t timestampUs);
 
@@ -61,6 +64,7 @@ class PlaySession : public std::enable_shared_from_this<PlaySession> {
     [[nodiscard]] std::unordered_map<std::string, PerfStats> stageStatsSnapshot() const;
     [[nodiscard]] FrameStats frameStatsSnapshot() const;
     [[nodiscard]] ResourceStats resourceStatsSnapshot() const;
+    [[nodiscard]] NetworkStats networkStatsSnapshot() const;
     [[nodiscard]] std::vector<MilestoneEntry> milestonesSnapshot() const;
 
     [[nodiscard]] double elapsedMs() const noexcept;
@@ -107,6 +111,9 @@ class PlaySession : public std::enable_shared_from_this<PlaySession> {
 
     mutable std::mutex resourceMutex_;
     ResourceStats resourceStats_;
+
+    mutable std::mutex networkMutex_;
+    NetworkStats networkStats_;
 };
 
 }  // namespace slark::perf

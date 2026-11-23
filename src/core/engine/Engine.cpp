@@ -44,12 +44,16 @@ constexpr int kMaxSeekAttempts = 3;
 
 std::shared_ptr<Engine> Engine::create(Scheduler& scheduler,
                                        Notifier& notifier,
-                                       PlaybackFactory factory) {
-    return std::shared_ptr<Engine>(new Engine(scheduler, notifier, std::move(factory)));
+                                       PlaybackFactory factory,
+                                       TeardownHook teardownHook) {
+    return std::shared_ptr<Engine>(new Engine(scheduler, notifier, std::move(factory),
+                                              std::move(teardownHook)));
 }
 
-Engine::Engine(Scheduler& scheduler, Notifier& notifier, PlaybackFactory factory)
-    : scheduler_(scheduler), notifier_(notifier), factory_(std::move(factory)), clock_(scheduler) {}
+Engine::Engine(Scheduler& scheduler, Notifier& notifier, PlaybackFactory factory,
+               TeardownHook teardownHook)
+    : scheduler_(scheduler), notifier_(notifier), factory_(std::move(factory)),
+      teardownHook_(std::move(teardownHook)), clock_(scheduler) {}
 
 void Engine::post(Command command) {
     scheduler_.execute([weak = weak_from_this(), command = std::move(command)]() mutable {
@@ -310,6 +314,9 @@ void Engine::teardown() {
     rebuffering_ = false;
     silentSeek_ = false;
     firstFrameNotified_ = false;
+    if (teardownHook_) {
+        teardownHook_();
+    }
 }
 
 bool Engine::adoptSession() {

@@ -152,6 +152,13 @@ Task<ResponseResult> HttpProcessor::collectResponse(RequestInfo requestInfo) {
                     response.perf = std::move(event->perf);
                     co_return std::move(response);
                 }
+                // Transport errors have no response object, so their metrics go to the log.
+                LogI("[HttpProcessor::collectResponse] failed: err={} host={} connectMs={} "
+                     "totalMs={} sendMs={} recvMs={}",
+                     toString(event->error.retCode), event->perf.host,
+                     event->perf.connection.connectTimeMs, event->perf.totalRequestTimeMs,
+                     event->perf.transport.totalSendTimeMs,
+                     event->perf.transport.totalReceiveTimeMs);
                 co_return std::unexpected(event->error);
         }
     }
@@ -173,7 +180,6 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::processEvents(RequestInfo reque
                 streamEndError(co_await coro::cancellation_requested()));
             co_return;
         }
-
         // Drain the redirected response to its terminal event before starting the next request.
         if (pendingRedirect.has_value()) {
             if (isTerminalEvent(*event)) {
@@ -223,7 +229,8 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::processEvents(RequestInfo reque
 AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(RequestInfo requestInfo) {
     const auto requestStart = Time::nowTimeStamp();
     RequestPerf perf;
-    perf.host = requestInfo.url;
+    perf.requestStartUs = steadyUs();
+    perf.perfSessionId = requestInfo.perfSessionId;
 
     LogI("[HttpProcessor::executeEventsSingle] enter url={} method={}", requestInfo.url,
          static_cast<int>(requestInfo.methodType));
@@ -238,6 +245,7 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(RequestInfo
         co_yield HttpResponseEvent::makeError(parsed.error, std::move(perf));
         co_return;
     }
+    perf.host = parsed.url->host;
 
     if (!Util::validateRequest(requestInfo, *parsed.url)) {
         co_yield HttpResponseEvent::makeError(
@@ -336,10 +344,8 @@ AsyncGenerator<HttpResponseEvent> HttpProcessor::executeEventsSingle(RequestInfo
         }
     }
 
-    if (parser.hasError() || parserState.parseError || !parser.isCompleted()) {
-        const auto error = parserState.parseErrorCode == slark::Error::Success
-                               ? ErrorInfo{slark::Error::ConnectionReset}
-                               : ErrorInfo{parserState.parseErrorCode};
+    if (const auto error = parserTerminalError(parser, parserState);
+        error.retCode != slark::Error::Success) {
         co_yield HttpResponseEvent::makeError(error, std::move(perf));
         co_return;
     }
@@ -368,7 +374,8 @@ AsyncGenerator<StreamChunk> HttpProcessor::processStreaming(RequestInfo requestI
                 break;
             case HttpResponseEventType::Headers:
                 co_yield StreamChunk::makeHeader(event->header.httpStatusCode,
-                                                 std::move(event->header.headers));
+                                                 std::move(event->header.headers),
+                                                 std::move(event->header.reasonPhrase));
                 break;
             case HttpResponseEventType::Data:
                 // The consumer may have cancelled between the header and this body chunk

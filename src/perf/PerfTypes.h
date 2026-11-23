@@ -13,6 +13,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "NetworkPerf.h"
+
 namespace slark::perf {
 
 struct PerfConfig {
@@ -154,6 +156,7 @@ struct SessionReport {
     FrameStats frameStats;
     ResourceStats resourceStats;
     DeviceEnv deviceEnv;
+    NetworkStats networkStats;
 };
 
 struct SpanEntry {

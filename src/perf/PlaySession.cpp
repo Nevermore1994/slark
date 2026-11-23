@@ -43,6 +43,11 @@ void PlaySession::recordFrame(int64_t frameDurationUs) noexcept {
     frameStats_.record(frameDurationUs);
 }
 
+void PlaySession::recordNetwork(const NetworkSample& sample) {
+    std::lock_guard<std::mutex> lock(networkMutex_);
+    networkStats_.record(sample);
+}
+
 void PlaySession::recordEvent(const std::string& eventName, int64_t timestampUs) {
     std::lock_guard<std::mutex> lock(milestoneMutex_);
     milestones_.push_back({eventName, timestampUs > 0
@@ -115,6 +120,11 @@ FrameStats PlaySession::frameStatsSnapshot() const {
 ResourceStats PlaySession::resourceStatsSnapshot() const {
     std::lock_guard<std::mutex> lock(resourceMutex_);
     return resourceStats_;
+}
+
+NetworkStats PlaySession::networkStatsSnapshot() const {
+    std::lock_guard<std::mutex> lock(networkMutex_);
+    return networkStats_;
 }
 
 std::vector<MilestoneEntry> PlaySession::milestonesSnapshot() const {

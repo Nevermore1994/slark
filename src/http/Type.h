@@ -13,6 +13,7 @@
 
 #include "Data.h"
 #include "Error.h"
+#include "NetworkPerf.h"
 
 namespace slark::http {
 
@@ -133,6 +134,8 @@ struct ConnectionPerf {
     int64_t connectTimeMs = 0;
     int64_t tlsHandshakeTimeMs = 0;
     Error connectResult = Error::Success;
+    // Set by the session when a cached connection serves this request.
+    bool reused = false;
 };
 
 struct TransportPerf {
@@ -152,14 +155,73 @@ struct ParserPerf {
     int64_t bodySize = 0;
 };
 
+[[nodiscard]] inline int64_t steadyUs() noexcept {
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
+
 struct RequestPerf {
     ConnectionPerf connection;
     TransportPerf transport;
     ParserPerf parser;
     int64_t totalRequestTimeMs = 0;
-    std::string host;
+    std::string host;  // resolved hostname, set once by the connection factory
+    std::string perfSessionId;
+    // Zero means the event carries no captured metrics. Set by every request pipeline.
+    int64_t requestStartUs = 0;
 
+    [[nodiscard]] bool hasPerf() const noexcept {
+        return requestStartUs != 0;
+    }
+
+    // Terminal events finalize the elapsed time, including error and cancellation paths.
+    void finalize() noexcept {
+        if (requestStartUs != 0 && totalRequestTimeMs == 0) {
+            totalRequestTimeMs = (steadyUs() - requestStartUs) / 1000;
+        }
+    }
 };
+
+[[nodiscard]] inline std::string_view timeoutSourceName(TimeoutSource source) noexcept {
+    switch (source) {
+        case TimeoutSource::Connect: return "connect";
+        case TimeoutSource::TlsHandshake: return "tls-handshake";
+        case TimeoutSource::Write: return "write";
+        case TimeoutSource::ReadIdle: return "read-idle";
+        case TimeoutSource::ReadOverall: return "read-overall";
+        default: return "none";
+    }
+}
+
+// Terminal events publish one sample per completed request. The bridge is
+// header-only, so src/http has no link dependency on slark_perf.
+inline void publishRequestPerf(const RequestPerf& perf, bool success) {
+    if (!perf.hasPerf()) {
+        return;
+    }
+    ::slark::perf::NetworkSample sample;
+    sample.perfSessionId = perf.perfSessionId;
+    sample.host = perf.host;
+    sample.connectResult = std::string(toString(perf.connection.connectResult));
+    sample.parseResult = std::string(toString(perf.parser.parseResult));
+    sample.timeoutSource = std::string(timeoutSourceName(perf.transport.timeoutSource));
+    sample.connectMs = perf.connection.connectTimeMs;
+    sample.tlsHandshakeMs = perf.connection.tlsHandshakeTimeMs;
+    sample.totalRequestMs = perf.totalRequestTimeMs;
+    sample.sendMs = perf.transport.totalSendTimeMs;
+    sample.receiveMs = perf.transport.totalReceiveTimeMs;
+    sample.headerParseUs = perf.parser.headerParseTimeUs;
+    sample.bodyBytes = static_cast<uint64_t>(perf.parser.bodySize);
+    sample.chunkCount = perf.parser.chunkCount;
+    sample.redirectCount = perf.transport.redirectCount;
+    sample.recvLoops = perf.transport.recvLoops;
+    sample.sendRetryCount = perf.transport.sendRetryCount;
+    sample.receiveWaitCount = perf.transport.receiveWaitCount;
+    sample.success = success;
+    sample.connectionReused = perf.connection.reused;
+    ::slark::perf::publishNetworkSample(sample);
+}
 
 #ifdef __clang__
 #pragma clang diagnostic pop
@@ -192,7 +254,7 @@ struct RequestInfo {
     uint64_t maxResponseBodySize = kDefaultMaxResponseBodySize;
     std::string reqId;
     std::string tag;
-    RequestPerf perf;
+    std::string perfSessionId;
 
     [[nodiscard]] inline uint64_t bodySize() const noexcept {
         return body ? body->length() : 0;
@@ -282,6 +344,8 @@ struct HttpResponseEvent {
     static HttpResponseEvent makeCompleted(
         RequestPerf responsePerf,
         std::unordered_map<std::string, std::string> responseTrailers = {}) {
+        responsePerf.finalize();
+        publishRequestPerf(responsePerf, true);
         HttpResponseEvent event;
         event.type = HttpResponseEventType::Completed;
         event.trailers = std::move(responseTrailers);
@@ -293,6 +357,8 @@ struct HttpResponseEvent {
         ErrorInfo responseError,
         RequestPerf responsePerf = {},
         std::unordered_map<std::string, std::string> responseTrailers = {}) {
+        responsePerf.finalize();
+        publishRequestPerf(responsePerf, false);
         HttpResponseEvent event;
         event.type = HttpResponseEventType::Error;
         event.error = std::move(responseError);
@@ -350,6 +416,8 @@ struct StreamChunk {
     std::unordered_map<std::string, std::string> headers;  // response headers (carried by the first chunk)
     std::unordered_map<std::string, std::string> trailers; // final response metadata
     RequestPerf perf;                                      // metrics (carried by the final chunk)
+    std::string reasonPhrase;                              // carried by the first chunk
+    bool hasPerf = false;                                  // false when the terminal has no metrics
 
     [[nodiscard]] bool hasError() const noexcept {
         return error.retCode != slark::Error::Success;
@@ -370,31 +438,39 @@ struct StreamChunk {
     static StreamChunk makeFinal(
         std::unordered_map<std::string, std::string> responseTrailers = {},
         RequestPerf requestPerf = {}) {
+        requestPerf.finalize();
+        const bool hasMetrics = requestPerf.hasPerf();
         return StreamChunk{.data = nullptr,
                            .isFinal = true,
                            .error = {},
                            .headers = {},
                            .trailers = std::move(responseTrailers),
-                           .perf = std::move(requestPerf)};
+                           .perf = std::move(requestPerf),
+                           .hasPerf = hasMetrics};
     }
 
     static StreamChunk makeError(ErrorInfo err, RequestPerf requestPerf = {}) {
+        requestPerf.finalize();
+        const bool hasMetrics = requestPerf.hasPerf();
         return StreamChunk{.data = nullptr,
                            .isFinal = true,
                            .error = std::move(err),
                            .statusCode = HttpStatusCode::Unknown,
                            .headers = {},
-                           .perf = std::move(requestPerf)};
+                           .perf = std::move(requestPerf),
+                           .hasPerf = hasMetrics};
     }
 
     static StreamChunk makeHeader(HttpStatusCode code,
-                                  std::unordered_map<std::string, std::string> hdrs) {
+                                  std::unordered_map<std::string, std::string> hdrs,
+                                  std::string reason = {}) {
         return StreamChunk{.data = nullptr,
                            .isFinal = false,
                            .error = {},
                            .statusCode = code,
                            .headers = std::move(hdrs),
-                           .trailers = {}};
+                           .trailers = {},
+                           .reasonPhrase = std::move(reason)};
     }
 };
 

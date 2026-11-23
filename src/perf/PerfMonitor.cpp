@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "Log.hpp"
+#include "NetworkPerf.h"
 #include "PlaySession.h"
 
 namespace slark::perf {
@@ -27,6 +28,15 @@ PerfMonitor::~PerfMonitor() {
 }
 
 void PerfMonitor::configure(const PerfConfig& config) {
+    // The HTTP layer publishes request samples through a header-only bridge so
+    // src/http never links against slark_perf. Disable the bridge when off.
+    if (config.enabled && config.enableSessionTrace) {
+        setNetworkSampleSink(
+            [](const NetworkSample& sample) { PerfMonitor::instance().recordNetwork(sample); });
+    } else {
+        setNetworkSampleSink({});
+    }
+
     // Soft reconfig: stop the sampler and reset stats only, keep reporters_
     {
         std::lock_guard<std::mutex> lock(resourceSamplerMutex_);
@@ -77,6 +87,7 @@ void PerfMonitor::setDeviceEnv(const DeviceEnv& env) {
 }
 
 void PerfMonitor::shutdown() {
+    setNetworkSampleSink({});
     {
         std::lock_guard<std::mutex> lock(resourceSamplerMutex_);
         if (resourceSampler_) {
@@ -97,6 +108,10 @@ void PerfMonitor::shutdown() {
     {
         std::lock_guard<std::mutex> lock(slowOpsMutex_);
         slowOpsStats_ = {};
+    }
+    {
+        std::lock_guard<std::mutex> lock(networkMutex_);
+        sessions_.clear();
     }
     {
         std::lock_guard<std::mutex> lock(reporterMutex_);
@@ -121,17 +136,75 @@ void PerfMonitor::removeReporter(const std::shared_ptr<IPerfReporter>& reporter)
 }
 
 void PerfMonitor::registerSession(std::shared_ptr<PlaySession> session) {
+    if (!session) {
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lock(networkMutex_);
+        sessions_[session->sessionId()] = session;
+    }
     std::lock_guard<std::mutex> lock(resourceSamplerMutex_);
-    if (resourceSampler_ && session) {
-        resourceSampler_->registerSession(session);
+    if (resourceSampler_) {
+        resourceSampler_->registerSession(std::move(session));
     }
 }
 
 void PerfMonitor::unregisterSession(const std::string& sessionId) {
+    {
+        std::lock_guard<std::mutex> lock(networkMutex_);
+        if (sessions_.erase(sessionId) == 0) {
+            return;
+        }
+    }
     std::lock_guard<std::mutex> lock(resourceSamplerMutex_);
     if (resourceSampler_) {
         resourceSampler_->unregisterSession(sessionId);
     }
+}
+
+void PerfMonitor::recordNetwork(const NetworkSample& sample) {
+    if (!isEnabled()) {
+        return;
+    }
+    std::shared_ptr<PlaySession> session;
+    {
+        std::lock_guard<std::mutex> lock(networkMutex_);
+        const auto it = sessions_.find(sample.perfSessionId);
+        if (it == sessions_.end()) {
+            return;
+        }
+        session = it->second;
+    }
+    session->recordNetwork(sample);
+}
+
+NetworkStats PerfMonitor::networkSnapshot(const std::string& sessionId) const {
+    std::shared_ptr<PlaySession> session;
+    {
+        std::lock_guard<std::mutex> lock(networkMutex_);
+        const auto it = sessions_.find(sessionId);
+        if (it == sessions_.end()) {
+            return {};
+        }
+        session = it->second;
+    }
+    return session->networkStatsSnapshot();
+}
+
+size_t PerfMonitor::activeSessionCount() const {
+    std::lock_guard<std::mutex> lock(networkMutex_);
+    return sessions_.size();
+}
+
+std::vector<std::string> PerfMonitor::activeSessionIds() const {
+    std::lock_guard<std::mutex> lock(networkMutex_);
+    std::vector<std::string> ids;
+    ids.reserve(sessions_.size());
+    for (const auto& [id, session] : sessions_) {
+        (void)session;
+        ids.push_back(id);
+    }
+    return ids;
 }
 
 void PerfMonitor::reportFrame(std::shared_ptr<const FrameTrace> trace) {
@@ -178,10 +251,19 @@ void PerfMonitor::reportSession(PlaySession& session) {
     report->stageStats = session.stageStatsSnapshot();
     report->frameStats = session.frameStatsSnapshot();
     report->resourceStats = session.resourceStatsSnapshot();
+    report->networkStats = session.networkStatsSnapshot();
     {
         std::shared_lock<std::shared_mutex> rlock(configMutex_);
         report->deviceEnv = deviceEnv_;
     }
+
+    const auto& network = report->networkStats;
+    LogI("[Perf] session {}: {:.1f}ms firstFrame={:.1f}ms requests={} ok={} failed={} "
+         "networkMs={:.1f} avg={:.1f}ms bytes={} success={}",
+         report->sessionId, report->elapsedMs, report->firstFrameMs, network.requestCount,
+         network.successCount, network.failureCount,
+         static_cast<double>(network.totalRequestMs), network.avgRequestMs(),
+         network.totalBodyBytes, report->success);
 
     std::vector<std::shared_ptr<IPerfReporter>> snapshot;
     {
