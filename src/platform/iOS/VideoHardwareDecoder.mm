@@ -161,20 +161,20 @@ Error VideoHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
     if (decodeInfo == nullptr) {
         return Error::CodecError;
     }
+    ScopeGuard decodeInfoGuard([decodeInfo] { delete decodeInfo; });
     auto status = VTDecompressionSessionDecodeFrame(decodeSession_, sampleBuffer,
                                                     kVTDecodeFrame_EnableAsynchronousDecompression,
                                                     reinterpret_cast<void*>(decodeInfo), nullptr);
-    // Per Apple docs, the callback is not guaranteed when decode returns an error,
-    // so decodeInfo must be released explicitly
+    // Per Apple docs, the callback is not guaranteed when decode returns an error
     if (status != kVTInvalidSessionErr && status != kVTVideoDecoderMalfunctionErr) {
-        if (status != noErr) {
-            delete decodeInfo;
+        if (status == noErr) {
+            decodeInfoGuard.dismiss();
         }
         return status == noErr ? Error::Success : Error::CodecError;
     }
 
     // Session error: release the old decodeInfo and retry after recreating the session
-    delete decodeInfo;
+    decodeInfoGuard.release();
     LogE("decode session error:{}, recreating", getVTErrorStr(status));
     if (!createDecodeSession()) {
         return Error::CodecError;
@@ -183,11 +183,12 @@ Error VideoHardwareDecoder::decode(AVFrameRefPtr& frame) noexcept {
     if (!retryInfo) {
         return Error::CodecError;
     }
+    ScopeGuard retryInfoGuard([retryInfo] { delete retryInfo; });
     status = VTDecompressionSessionDecodeFrame(decodeSession_, sampleBuffer,
                                                kVTDecodeFrame_EnableAsynchronousDecompression,
                                                reinterpret_cast<void*>(retryInfo), nullptr);
-    if (status != noErr) {
-        delete retryInfo;
+    if (status == noErr) {
+        retryInfoGuard.dismiss();
     }
     // sampleBuffer is released by the ScopeGuard; no manual CFRelease needed
     return status == noErr ? Error::Success : Error::CodecError;

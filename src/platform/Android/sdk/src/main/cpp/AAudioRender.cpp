@@ -8,6 +8,7 @@
 
 #include "AccessGate.hpp"
 #include "Log.hpp"
+#include "ScopeGuard.h"
 
 namespace slark {
 
@@ -27,6 +28,17 @@ void AAudioRender::initStream() noexcept {
         return;
     }
 
+    ScopeGuard cleanup([this] {
+        if (stream_) {
+            AAudioStream_close(stream_);
+            stream_ = nullptr;
+        }
+        if (builder_) {
+            AAudioStreamBuilder_delete(builder_);
+            builder_ = nullptr;
+        }
+    });
+
     auto result = AAudio_createStreamBuilder(&builder_);
     if (result != AAUDIO_OK || builder_ == nullptr) {
         LogE("AAudio createStreamBuilder failed: {}", AAudio_convertResultToText(result));
@@ -44,18 +56,13 @@ void AAudioRender::initStream() noexcept {
     result = AAudioStreamBuilder_openStream(builder_, &stream_);
     if (result != AAUDIO_OK) {
         LogE("AAudio openStream failed: {}", AAudio_convertResultToText(result));
-        AAudioStreamBuilder_delete(builder_);
-        builder_ = nullptr;
         status_ = RenderStatus::Error;
         return;
     }
     if (closing_.load(std::memory_order_acquire)) {
-        AAudioStream_close(stream_);
-        stream_ = nullptr;
-        AAudioStreamBuilder_delete(builder_);
-        builder_ = nullptr;
         return;
     }
+    cleanup.dismiss();
     flushBaseFrames_.store(0, std::memory_order_release);
     callbackGate_.open();
     status_ = RenderStatus::Ready;

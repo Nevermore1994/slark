@@ -8,6 +8,7 @@
 #include <new>
 
 #include "Log.hpp"
+#include "ScopeGuard.h"
 #include "Url.h"
 
 namespace slark::http {
@@ -225,12 +226,21 @@ AddressInfoPtr DnsResolver::cloneAddrInfo(const addrinfo* src) noexcept {
 
     addrinfo* head = nullptr;
     addrinfo* tail = nullptr;
+    ScopeGuard chainGuard([&head] { destroyClonedAddressInfo(head); });
+
     for (auto* current = src; current; current = current->ai_next) {
         auto* node = new (std::nothrow) addrinfo{};
         if (!node) {
-            destroyClonedAddressInfo(head);
             return makeClonedAddressInfo(nullptr);
         }
+
+        // Link before filling so the guard also owns partially built nodes.
+        if (tail) {
+            tail->ai_next = node;
+        } else {
+            head = node;
+        }
+        tail = node;
 
         node->ai_flags = current->ai_flags;
         node->ai_family = current->ai_family;
@@ -242,8 +252,6 @@ AddressInfoPtr DnsResolver::cloneAddrInfo(const addrinfo* src) noexcept {
             node->ai_addr = reinterpret_cast<sockaddr*>(
                 new (std::nothrow) Byte[current->ai_addrlen]{});
             if (!node->ai_addr) {
-                delete node;
-                destroyClonedAddressInfo(head);
                 return makeClonedAddressInfo(nullptr);
             }
             std::memcpy(node->ai_addr, current->ai_addr, current->ai_addrlen);
@@ -253,23 +261,15 @@ AddressInfoPtr DnsResolver::cloneAddrInfo(const addrinfo* src) noexcept {
             const auto length = std::strlen(current->ai_canonname);
             node->ai_canonname = new (std::nothrow) char[length + 1];
             if (!node->ai_canonname) {
-                delete[] reinterpret_cast<Byte*>(node->ai_addr);
-                delete node;
-                destroyClonedAddressInfo(head);
                 return makeClonedAddressInfo(nullptr);
             }
             std::memcpy(node->ai_canonname, current->ai_canonname, length + 1);
         }
-
-        if (!head) {
-            head = node;
-        } else {
-            tail->ai_next = node;
-        }
-        tail = node;
     }
 
-    return makeClonedAddressInfo(head);
+    auto cloned = makeClonedAddressInfo(head);
+    chainGuard.dismiss();
+    return cloned;
 }
 
 }  // namespace slark::http

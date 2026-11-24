@@ -17,6 +17,7 @@
 #import <memory>
 
 #include "Clock.h"
+#include "ScopeGuard.h"
 #include "VideoInfo.h"
 #import "interface/SlarkGraphicsConfig.h"
 
@@ -187,6 +188,7 @@ struct MetalVideoRender : public IVideoRender {
     CVMetalTextureCacheRef _textureCache;
 
     std::shared_ptr<MetalVideoRender> _videoRenderImpl;
+    slark::IVideoRenderWeakPtr _renderImplWeak;
     std::atomic<bool> _setupComplete;
     std::atomic<bool> _isDestructing;
     std::atomic<float> _atomicWidth;
@@ -465,9 +467,8 @@ struct MetalVideoRender : public IVideoRender {
 }
 
 - (void*)renderImpl {
-    auto ptr = std::make_shared<std::weak_ptr<IVideoRender>>(
-        std::weak_ptr<IVideoRender>(_videoRenderImpl));
-    return static_cast<void*>(new std::weak_ptr<IVideoRender>(*ptr));
+    _renderImplWeak = _videoRenderImpl;
+    return static_cast<void*>(&_renderImplWeak);
 }
 
 - (void)setRotation:(double)rotation {
@@ -651,14 +652,20 @@ struct MetalVideoRender : public IVideoRender {
         return NO;
     }
 
+    ScopeGuard texYRollback([outTexY] {
+        if (*outTexY) {
+            CFRelease(*outTexY);
+            *outTexY = nil;
+        }
+    });
+
     ret = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, _textureCache, pixelBuffer,
                                                     nil, MTLPixelFormatRG8Unorm, frameWidth / 2,
                                                     frameHeight / 2, 1, outTexUV);
     if (ret != kCVReturnSuccess) {
-        CFRelease(*outTexY);
-        *outTexY = nil;
         return NO;
     }
+    texYRollback.dismiss();
     return YES;
 }
 

@@ -11,6 +11,7 @@
 #include "GLContextManager.h"
 #include "Log.hpp"
 #include "NativeHardwareDecoder.h"
+#include "ScopeGuard.h"
 #include "Texture.h"
 #include "TexturePool.h"
 
@@ -298,18 +299,21 @@ bool VideoHardwareDecoder::open(std::shared_ptr<DecoderConfig> config) noexcept 
         resource_->attachContext(surface_);
     }
 
-    decoderId_ = NativeHardwareDecoder::createVideoDecoder(videoConfig, mode_);
-    if (decoderId_.empty()) {
-        LogE("create video decoder failed!");
+    ScopeGuard detachGuard([this] {
         if (mode_ == DecodeMode::Texture) {
             resource_->detachContext();
         }
+    });
+
+    decoderId_ = NativeHardwareDecoder::createVideoDecoder(videoConfig, mode_);
+    if (decoderId_.empty()) {
+        LogE("create video decoder failed!");
         return false;
     }
     NativeDecoderManager::shareInstance().add(decoderId_, shared_from_this());
 
     if (mode_ == DecodeMode::Texture) {
-        resource_->detachContext();
+        detachGuard.release();
         contextAttached_ = false;
     }
 

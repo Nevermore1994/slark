@@ -19,6 +19,7 @@
 #include "GLContextManager.h"
 #include "GLProgram.h"
 #include "GLShader.h"
+#include "ScopeGuard.h"
 #include "VideoInfo.h"
 #include "iOSEGLContext.h"
 
@@ -132,6 +133,7 @@ static const GLfloat kColorConversion709FullRange[] = {
     IEGLContextRefPtr _context;
     std::unique_ptr<GLProgram> _program;
     std::shared_ptr<VideoRender> _videoRenderImpl;
+    slark::IVideoRenderWeakPtr _renderImplWeak;
     const GLfloat* _preferredConversion;
     GLfloat _yOffset;
     CVOpenGLESTextureCacheRef _videoTextureCache;
@@ -377,9 +379,8 @@ static const GLfloat kColorConversion709FullRange[] = {
 }
 
 - (void*)renderImpl {
-    auto ptr = std::make_shared<std::weak_ptr<IVideoRender>>(
-        std::weak_ptr<IVideoRender>(_videoRenderImpl));
-    return static_cast<void*>(new std::weak_ptr<IVideoRender>(*ptr));
+    _renderImplWeak = _videoRenderImpl;
+    return static_cast<void*>(&_renderImplWeak);
 }
 
 - (void)setRotation:(double)rotation {
@@ -654,6 +655,12 @@ static const GLfloat kColorConversion709FullRange[] = {
         return NO;
     }
 
+    auto* luma = &_lumaTexture;
+    ScopeGuard lumaRollback([luma] {
+        CFRelease(*luma);
+        *luma = NULL;
+    });
+
     glBindTexture(CVOpenGLESTextureGetTarget(_lumaTexture), CVOpenGLESTextureGetName(_lumaTexture));
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -670,11 +677,10 @@ static const GLfloat kColorConversion709FullRange[] = {
         GL_RG_EXT, GL_UNSIGNED_BYTE, 1, &_chromaTexture);
 
     if (err != kCVReturnSuccess) {
-        CFRelease(_lumaTexture);
-        _lumaTexture = NULL;
         LogE("upload error");
         return NO;
     }
+    lumaRollback.dismiss();
 
     glBindTexture(CVOpenGLESTextureGetTarget(_chromaTexture),
                   CVOpenGLESTextureGetName(_chromaTexture));

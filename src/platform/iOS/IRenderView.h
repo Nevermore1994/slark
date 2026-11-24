@@ -26,7 +26,7 @@ using IVideoRenderWeakPtr = std::weak_ptr<IVideoRender>;
 
 - (void)start;
 - (void)stop;
-/// Returns a heap-allocated weak_ptr<IVideoRender>; caller takes ownership.
+/// Returns a borrowed pointer to the view's weak_ptr<IVideoRender>.
 - (void*)renderImpl;
 
 @end

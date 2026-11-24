@@ -11,6 +11,7 @@
 #include "AudioRenderSink.h"
 #include "HttpsHelper.h"
 #include "Log.hpp"
+#include "ScopeGuard.h"
 
 DISABLE_WARNINGS
 #include <openssl/ssl.h>
@@ -31,11 +32,11 @@ void loadAndroidSystemCerts(SSL_CTX* ctx) {
         LogW("Failed to open system CA dir: {}", kSystemCaDir);
         return;
     }
+    ScopeGuard dirGuard([dir] { closedir(dir); });
 
     auto* store = SSL_CTX_get_cert_store(ctx);
     if (!store) {
         LogW("Failed to get cert store from SSL_CTX");
-        closedir(dir);
         return;
     }
 
@@ -76,7 +77,6 @@ void loadAndroidSystemCerts(SSL_CTX* ctx) {
             X509_free(cert);
         }
     }
-    closedir(dir);
 
     LogI("Loaded {} system CA certificates from {}", loadedCount, kSystemCaDir);
 }

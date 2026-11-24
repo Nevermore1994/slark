@@ -48,20 +48,19 @@ static void RenderManager_rebuildSurface(JNIEnv* env,
     contextInfo->surface = nullptr;
     eglContext->detachContext();
 
-    auto* window = ANativeWindow_fromSurface(env, surface);
+    std::unique_ptr<ANativeWindow, decltype(&ANativeWindow_release)> window(
+        ANativeWindow_fromSurface(env, surface), &ANativeWindow_release);
     if (window == nullptr) {
         LogE("failed to get ANativeWindow from surface");
         return;
     }
-    auto eglSurface = eglContext->createWindowSurface(window);
+    auto eglSurface = eglContext->createWindowSurface(window.get());
     if (eglSurface == nullptr) {
         LogE("failed to create EGL surface for playerId: {}", playerId);
-        ANativeWindow_release(window);
         return;
     }
     eglContext->attachContext(eglSurface);
     contextInfo->surface = eglSurface;
-    ANativeWindow_release(window);
 }
 
 static jboolean RenderManager_createEGLContext(JNIEnv* env,
