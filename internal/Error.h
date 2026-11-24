@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <expected>
 #include <stdexcept>
 #include <string>
@@ -82,6 +83,21 @@ enum class Error : uint16_t {
     SchemeNotSupported = 712,
     SchemeDowngradeBlocked = 719,
 };
+
+namespace engine {
+
+struct ErrorDetail {
+    int32_t origin = 0;
+    std::string host;
+};
+
+struct ErrorEvent {
+    Error code = Error::Success;
+    bool fatal = false;
+    ErrorDetail detail;
+};
+
+}  // namespace engine
 
 std::string_view toString(Error error) noexcept;
 

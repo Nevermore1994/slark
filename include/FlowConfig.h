@@ -39,13 +39,24 @@ struct DnsConfig {
     }
 };
 
+// Progress step is measured in media position; cache interval in wall-clock time.
+struct NotifyConfig {
+    double progressStepSec = 0.1;
+    double cacheIntervalSec = 0.5;
+
+    [[nodiscard]] bool isValid() const noexcept {
+        return progressStepSec > 0.0 && cacheIntervalSec > 0.0;
+    }
+};
+
 struct FlowConfig {
     SourceWatermarkConfig source;
     BufferingConfig buffering;
     DnsConfig dns;
+    NotifyConfig notify;
 
     [[nodiscard]] bool isValid() const noexcept {
-        return source.isValid() && buffering.isValid() && dns.isValid() &&
+        return source.isValid() && buffering.isValid() && dns.isValid() && notify.isValid() &&
                buffering.rebufferExitSec < source.highWatermarkSec;
     }
 };

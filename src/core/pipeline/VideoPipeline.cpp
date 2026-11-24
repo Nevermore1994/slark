@@ -515,7 +515,7 @@ DebugInfo VideoPipeline::debugInfo() const {
 
     render.add("Presented frame", presentedFrame_);
     render.add("Catch-up count", catchUpCount_);
-    render.add("Decoder type", decoder_ ? static_cast<int>(decoder_->type()) : 0);
+    render.add("Decoder", decoder_ ? decoder_->name() : "n/a");
     render.add("Decoder open", decoder_ && decoder_->isOpen());
     render.add("Decoder completed", decoder_ && decoder_->isCompleted());
 

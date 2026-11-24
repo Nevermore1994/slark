@@ -11,9 +11,7 @@
 #include "Channel.hpp"
 #include "DebugInfo.h"
 #include "Error.h"
-#include "ErrorDetail.h"
-#include "MediaInfo.h"
-#include "SeekEpoch.h"
+#include "EngineTypes.h"
 #include "Time.hpp"
 #include "VideoInfo.h"
 

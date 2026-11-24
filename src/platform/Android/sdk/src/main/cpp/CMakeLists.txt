@@ -26,9 +26,8 @@ target_include_directories(slark_jni PUBLIC
     ${SLARK_PROJECT_PATH}/src/core/render
     ${SLARK_PROJECT_PATH}/src/core/demuxer
     ${SLARK_PROJECT_PATH}/src/core/codec
-    ${SLARK_PROJECT_PATH}/src/core/engine
-    ${SLARK_PROJECT_PATH}/src/core/engine/pipeline
-    ${SLARK_PROJECT_PATH}/src/core/engine/source
+    ${SLARK_PROJECT_PATH}/src/core/pipeline
+    ${SLARK_PROJECT_PATH}/src/core/source
     ${SLARK_PROJECT_PATH}/src/perf
     ${SLARK_PROJECT_PATH}/src/http
     ${SLARK_PROJECT_PATH}/include

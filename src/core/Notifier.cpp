@@ -12,16 +12,13 @@
 namespace slark::engine {
 namespace {
 
-constexpr int64_t kProgressStepUs = 100'000;
-constexpr int64_t kCacheIntervalUs = 500'000;
-
 std::string formatError(const ErrorEvent& event) {
     return std::to_string(static_cast<uint32_t>(event.code)) + "|" +
            std::to_string(event.detail.origin) + "|" + event.detail.host;
 }
 
-bool movedEnough(Time::TimePoint now, Time::TimePoint last) noexcept {
-    return std::abs((now - last).point()) >= kProgressStepUs;
+bool movedEnough(Time::TimePoint now, Time::TimePoint last, int64_t stepUs) noexcept {
+    return std::abs((now - last).point()) >= stepUs;
 }
 
 }  // namespace
@@ -44,8 +41,13 @@ PlayerState toPlayerState(const Snapshot& s) noexcept {
     return PlayerState::Unknown;
 }
 
-Notifier::Notifier(std::string playerId, std::shared_ptr<IExecutor> executor)
-    : playerId_(std::move(playerId)), executor_(std::move(executor)) {}
+Notifier::Notifier(std::string playerId,
+                   std::shared_ptr<IExecutor> executor,
+                   NotifyIntervals intervals)
+    : playerId_(std::move(playerId)),
+      executor_(std::move(executor)),
+      intervals_{std::max<int64_t>(0, intervals.progressStepUs),
+                 std::max<int64_t>(0, intervals.cacheIntervalUs)} {}
 
 void Notifier::addObserver(IPlayerObserverPtr observer) {
     std::lock_guard lock(mutex_);
@@ -110,7 +112,8 @@ void Notifier::publish(const Snapshot& s, Time::TimePoint now) {
         return;
     }
 
-    if (enteredEnded || !lastPosition_ || movedEnough(s.position, *lastPosition_)) {
+    if (enteredEnded || !lastPosition_ ||
+        movedEnough(s.position, *lastPosition_, intervals_.progressStepUs)) {
         const auto position = s.status == Status::Ended ? s.duration : s.position;
         lastPosition_ = position;
         dispatch([sec = position.second()](IPlayerObserver& o, std::string_view id) {
@@ -119,7 +122,8 @@ void Notifier::publish(const Snapshot& s, Time::TimePoint now) {
     }
 
     bufferedPending_ = s.buffered != lastBuffered_;
-    if (bufferedPending_ && (!lastBufferedAt_ || (now - *lastBufferedAt_).point() >= kCacheIntervalUs)) {
+    if (bufferedPending_ &&
+        (!lastBufferedAt_ || (now - *lastBufferedAt_).point() >= intervals_.cacheIntervalUs)) {
         lastBuffered_ = s.buffered;
         lastBufferedAt_ = now;
         bufferedPending_ = false;
@@ -133,7 +137,8 @@ std::optional<Time::TimePoint> Notifier::cacheReportDue() const {
     if (!bufferedPending_ || !lastBufferedAt_) {
         return std::nullopt;
     }
-    return Time::TimePoint(lastBufferedAt_->point() + kCacheIntervalUs);
+    return Time::TimePoint(lastBufferedAt_->point() +
+                           static_cast<uint64_t>(intervals_.cacheIntervalUs));
 }
 
 void Notifier::notify(const Notification& notification) {

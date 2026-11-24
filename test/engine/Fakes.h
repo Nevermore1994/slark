@@ -11,7 +11,7 @@
 #include <optional>
 #include <vector>
 
-#include "Command.h"
+#include "EngineMessages.h"
 #include "Engine.h"
 #include "ManualScheduler.h"
 
@@ -284,7 +284,7 @@ class EngineTest : public ::testing::Test {
         engine = Engine::create(sched, notifier, fakeFactory.hooks());
     }
 
-    void send(Command command) {
+    void send(PlayerAction command) {
         engine->post(std::move(command));
         sched.runUntilIdle();
     }

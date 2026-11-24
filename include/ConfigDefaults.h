@@ -19,6 +19,8 @@ static_assert(BufferingConfig{}.startBufferSec == 2.0, "regenerate config defaul
 static_assert(BufferingConfig{}.rebufferEnterSec == 3.0, "regenerate config defaults");
 static_assert(BufferingConfig{}.rebufferExitSec == 4.5, "regenerate config defaults");
 static_assert(DnsConfig{}.cacheTtlSec == 60.0, "regenerate config defaults");
+static_assert(NotifyConfig{}.progressStepSec == 0.1, "regenerate config defaults");
+static_assert(NotifyConfig{}.cacheIntervalSec == 0.5, "regenerate config defaults");
 static_assert(LogConfig{}.progressLogBytes == 524288ULL, "regenerate config defaults");
 static_assert(LogConfig{}.maxLogFileSize == 8388608ULL, "regenerate config defaults");
 static_assert(LogConfig{}.maxLogFileCount == 10U, "regenerate config defaults");

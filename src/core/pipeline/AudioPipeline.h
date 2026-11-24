@@ -18,8 +18,7 @@
 #include "IDecoder.h"
 #include "LoopThread.h"
 #include "Pipeline.h"
-#include "SeekEpoch.h"
-#include "SeekMode.h"
+#include "EngineTypes.h"
 #include "Time.hpp"
 
 namespace slark::engine {

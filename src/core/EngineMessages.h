@@ -1,0 +1,60 @@
+//
+// Copyright (c) 2026 Nevermore-. All rights reserved.
+//
+#pragma once
+
+#include <string>
+#include <variant>
+
+#include "EngineTypes.h"
+#include "Error.h"
+#include "PlayerTypes.h"
+#include "Time.hpp"
+
+namespace slark::engine {
+
+struct Prepare {
+    ResourceItem item;
+    PlayerSetting setting;
+    Time::TimePoint startPos{};
+    // Mapped from ResourceItem::displayStart/displayDuration by the player.
+    PlaybackRange playbackRange;
+    // Routes HTTP request metrics to the owning perf session.
+    std::string perfSessionId;
+};
+
+struct Play {};
+
+struct Pause {};
+
+struct Seek {
+    Time::TimePoint target;
+    SeekMode mode = SeekMode::Exact;
+};
+
+struct SetSpeed {
+    double speed = 1.0;
+};
+
+struct SetRepeat {
+    RepeatMode mode = RepeatMode::Off;
+};
+
+struct SetVolume {
+    float volume = 1.0f;
+};
+
+struct SetMute {
+    bool muted = false;
+};
+
+struct Stop {};
+
+struct Release {};
+
+// clang-format off
+using PlayerAction = std::variant<Prepare, Play, Pause, Seek, SetSpeed, SetRepeat, SetVolume, SetMute,
+                                  Stop, Release>;
+// clang-format on
+
+}  // namespace slark::engine

@@ -7,6 +7,7 @@
 #include "Time.hpp"
 
 #if defined(__ANDROID__)
+#include <ctime>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -38,44 +39,12 @@ void readMemory(int64_t& rssKB, int64_t& vmSizeKB) noexcept {
 }
 
 bool readCounters(int64_t& proc, int64_t& total) noexcept {
-    std::ifstream procStat("/proc/self/stat");
-    std::string line;
-    if (!procStat.is_open() || !std::getline(procStat, line)) {
+    timespec cpu{};
+    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &cpu) != 0) {
         return false;
     }
-    const auto commEnd = line.rfind(')');
-    if (commEnd == std::string::npos || commEnd + 2 >= line.size()) {
-        return false;
-    }
-    std::istringstream iss(line.substr(commEnd + 2));
-    std::string token;
-    for (int32_t i = 0; i < 11; ++i) {
-        if (!(iss >> token)) {
-            return false;
-        }
-    }
-    int64_t utime = 0;
-    int64_t stime = 0;
-    if (!(iss >> utime >> stime)) {
-        return false;
-    }
-    proc = utime + stime;
-
-    std::ifstream sysStat("/proc/stat");
-    std::string cpuLine;
-    if (!sysStat.is_open() || !std::getline(sysStat, cpuLine)) {
-        return false;
-    }
-    std::istringstream cpuIss(cpuLine);
-    std::string label;
-    cpuIss >> label;
-    if (label != "cpu") {
-        return false;
-    }
-    int64_t value = 0;
-    while (cpuIss >> value) {
-        total += value;
-    }
+    proc = static_cast<int64_t>(cpu.tv_sec) * 1000000 + cpu.tv_nsec / 1000;
+    total = static_cast<int64_t>(Time::nowTimeStamp().point());
     return true;
 }
 

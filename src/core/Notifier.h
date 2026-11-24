@@ -3,16 +3,34 @@
 //
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
-#include "Command.h"
+#include "EngineState.h"
+#include "Error.h"
 #include "Executor.h"
+#include "PlayerTypes.h"
+#include "Time.hpp"
 
 namespace slark::engine {
+
+struct SeekDone {};
+
+struct PlayEnd {};
+
+struct FirstFrameRendered {};
+
+using Notification = std::variant<SeekDone, ErrorEvent, PlayEnd, FirstFrameRendered>;
+
+struct NotifyIntervals {
+    int64_t progressStepUs = 100'000;
+    int64_t cacheIntervalUs = 500'000;
+};
 
 [[nodiscard]] PlayerState toPlayerState(const Snapshot& snapshot) noexcept;
 
@@ -20,7 +38,8 @@ namespace slark::engine {
 class Notifier {
  public:
     explicit Notifier(std::string playerId,
-                      std::shared_ptr<IExecutor> executor = std::make_shared<InlineExecutor>());
+                      std::shared_ptr<IExecutor> executor = std::make_shared<InlineExecutor>(),
+                      NotifyIntervals intervals = {});
 
     void addObserver(IPlayerObserverPtr observer);
     void removeObserver(const IPlayerObserverPtr& observer);
@@ -36,6 +55,7 @@ class Notifier {
 
     const std::string playerId_;
     const std::shared_ptr<IExecutor> executor_;
+    const NotifyIntervals intervals_;
 
     std::mutex mutex_;
     std::vector<IPlayerObserverPtr> observers_;

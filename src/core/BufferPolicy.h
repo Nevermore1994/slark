@@ -8,7 +8,6 @@
 
 namespace slark::engine {
 
-// Stateless: the caller keeps the rebuffering flag, which is what makes the dead band work.
 class BufferPolicy {
  public:
     explicit BufferPolicy(const FlowConfig& config = {}) noexcept : config_(config) {}

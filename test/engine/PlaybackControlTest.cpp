@@ -12,13 +12,11 @@
 #include <algorithm>
 
 #include "AudioSink.h"
-#include "Command.h"
-#include "ComponentFactories.h"
-#include "PlaybackFactory.h"
+#include "EngineMessages.h"
+#include "EngineTypes.h"
 #include "Engine.h"
 #include "LogOutput.h"
 #include "Notifier.h"
-#include "PlayerContext.h"
 #include "Scheduler.h"
 #include "SourceSupport.h"
 #include "ThreadManager.h"

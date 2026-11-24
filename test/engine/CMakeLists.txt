@@ -6,17 +6,15 @@ project(Engine_test)
 
 set(CORE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/core)
 set(PERF_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/perf)
-set(ENGINE_SRC_DIR ${CORE_SRC_DIR}/engine)
-
 file(GLOB TEST_FILES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
 )
 
 # 与 Core_test 一致：直接列出源文件，不链接 slark_core。
 file(GLOB ENGINE_SOURCES CONFIGURE_DEPENDS
-    ${ENGINE_SRC_DIR}/*.cpp
-    ${ENGINE_SRC_DIR}/source/*.cpp
-    ${ENGINE_SRC_DIR}/pipeline/*.cpp
+    ${CORE_SRC_DIR}/*.cpp
+    ${CORE_SRC_DIR}/source/*.cpp
+    ${CORE_SRC_DIR}/pipeline/*.cpp
 )
 
 set(DEMUXER_SRC_DIR ${CORE_SRC_DIR}/demuxer)
@@ -45,9 +43,8 @@ add_executable(${PROJECT_NAME} ${TEST_FILES} ${ENGINE_SOURCES} ${LEGACY_SOURCES}
 target_include_directories(${PROJECT_NAME}
     PRIVATE
     ${CORE_SRC_DIR}
-    ${ENGINE_SRC_DIR}
-    ${ENGINE_SRC_DIR}/source
-    ${ENGINE_SRC_DIR}/pipeline
+    ${CORE_SRC_DIR}/source
+    ${CORE_SRC_DIR}/pipeline
     ${CORE_SRC_DIR}/demuxer
     ${CORE_SRC_DIR}/codec
     ${CORE_SRC_DIR}/media

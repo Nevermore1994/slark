@@ -8,8 +8,7 @@
 
 #include "DebugInfo.h"
 #include "Error.h"
-#include "SeekEpoch.h"
-#include "SeekMode.h"
+#include "EngineTypes.h"
 #include "Time.hpp"
 
 namespace slark::engine {

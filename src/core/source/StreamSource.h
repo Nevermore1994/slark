@@ -13,7 +13,7 @@
 #include "FlowConfig.h"
 #include "IDemuxer.h"
 #include "IStream.h"
-#include "PlaybackRange.h"
+#include "EngineTypes.h"
 #include "Scheduler.h"
 #include "Source.h"
 #include "WatermarkGate.h"

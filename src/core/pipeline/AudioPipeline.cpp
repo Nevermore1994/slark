@@ -509,7 +509,7 @@ DebugInfo AudioPipeline::debugInfo() const {
     audio.add("Decoder ended", decoderEnded_);
     audio.add("Epoch", epoch_);
 
-    render.add("Decoder type", decoder_ ? static_cast<int>(decoder_->type()) : 0);
+    render.add("Decoder", decoder_ ? decoder_->name() : "n/a");
     render.add("Decoder open", decoder_ && decoder_->isOpen());
     render.add("Decoder completed", decoder_ && decoder_->isCompleted());
 

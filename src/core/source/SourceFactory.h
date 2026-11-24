@@ -6,8 +6,8 @@
 #include <functional>
 #include <memory>
 
-#include "Command.h"
-#include "SeekEpoch.h"
+#include "EngineMessages.h"
+#include "EngineTypes.h"
 #include "Source.h"
 
 namespace slark::engine {

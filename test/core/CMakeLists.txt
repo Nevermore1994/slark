@@ -122,9 +122,8 @@ if(NOT DISABLE_CORE)
         pthread)
 
     target_include_directories(${PROJECT_NAME} PRIVATE
-        ${CORE_SRC_DIR}/engine
-        ${CORE_SRC_DIR}/engine/source
-        ${CORE_SRC_DIR}/engine/pipeline)
+        ${CORE_SRC_DIR}/source
+        ${CORE_SRC_DIR}/pipeline)
 
     if(NOT DISABLE_HTTP)
         target_link_libraries(${PROJECT_NAME} slark_http)
@@ -171,9 +170,8 @@ if(NOT DISABLE_CORE)
         pthread)
 
     target_include_directories(${PROJECT_NAME} PRIVATE
-        ${CORE_SRC_DIR}/engine
-        ${CORE_SRC_DIR}/engine/source
-        ${CORE_SRC_DIR}/engine/pipeline)
+        ${CORE_SRC_DIR}/source
+        ${CORE_SRC_DIR}/pipeline)
 
     if(NOT DISABLE_HTTP)
         target_link_libraries(${PROJECT_NAME} slark_http)

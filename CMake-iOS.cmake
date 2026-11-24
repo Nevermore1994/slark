@@ -96,9 +96,8 @@ macro(add_ios_framework)
             "${CORE_DIR}/codec"
             "${CORE_DIR}/demuxer"
             "${PERF_DIR}"
-            "${CORE_DIR}/engine"
-            "${CORE_DIR}/engine/pipeline"
-            "${CORE_DIR}/engine/source"
+            "${CORE_DIR}/pipeline"
+            "${CORE_DIR}/source"
         )
     endif()
 

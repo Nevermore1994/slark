@@ -7,11 +7,7 @@
 #include <type_traits>
 
 #include "MediaDefs.h"
-#include "PlaybackRange.h"
-#include "RepeatMode.h"
-#include "SeekEpoch.h"
-#include "SeekMode.h"
-#include "Status.h"
+#include "EngineTypes.h"
 
 namespace eng = slark::engine;
 

@@ -46,7 +46,9 @@ void publish(Notifier& notifier, const Snapshot& s) {
     notifier.publish(s, Time::TimePoint(now));
 }
 
-Snapshot snap(Status status, double positionSec = 0, bool wantPlay = false,
+Snapshot snap(Status status,
+              double positionSec = 0,
+              bool wantPlay = false,
               bool tracksKnown = false) {
     Snapshot s;
     s.status = status;
@@ -83,19 +85,17 @@ TEST_F(NotifierTest, PreparedIsReportedOnceWhenTracksBecomeKnown) {
     publish(notifier, snap(Status::Buffering, 0, false, /*tracksKnown=*/true));
     publish(notifier, snap(Status::Ready));
     publish(notifier, snap(Status::Ready));
-    EXPECT_EQ(rec->states,
-              (std::vector<PlayerState>{PlayerState::Buffering, PlayerState::Prepared,
-                                        PlayerState::Buffering, PlayerState::Pause}));
+    EXPECT_EQ(rec->states, (std::vector<PlayerState>{PlayerState::Buffering, PlayerState::Prepared,
+                                                     PlayerState::Buffering, PlayerState::Pause}));
 }
 
 TEST_F(NotifierTest, IdleResetsTheOneShotPrepared) {
     publish(notifier, snap(Status::Ready, 0, false, /*tracksKnown=*/true));
     publish(notifier, snap(Status::Idle));
     publish(notifier, snap(Status::Ready, 0, false, /*tracksKnown=*/true));
-    EXPECT_EQ(rec->states,
-              (std::vector<PlayerState>{PlayerState::Prepared, PlayerState::Pause,
-                                        PlayerState::NotInited, PlayerState::Prepared,
-                                        PlayerState::Pause}));
+    EXPECT_EQ(rec->states, (std::vector<PlayerState>{PlayerState::Prepared, PlayerState::Pause,
+                                                     PlayerState::NotInited, PlayerState::Prepared,
+                                                     PlayerState::Pause}));
 }
 
 TEST_F(NotifierTest, OpeningBufferingSeekingShareOneState) {
@@ -289,4 +289,34 @@ TEST(NotifierExecutorTest, ObserverDroppedBeforeTheExecutorRunsIsSkipped) {
     publish(notifier, snap(Status::Ready, 0, true));
     rec.reset();
     exec->drain();
+}
+
+TEST(NotifierIntervalsTest, CustomProgressStepIsHonored) {
+    Notifier notifier("p1", std::make_shared<InlineExecutor>(),
+                      NotifyIntervals{.progressStepUs = 10'000});
+    auto rec = std::make_shared<Recorder>();
+    notifier.addObserver(rec);
+    publish(notifier, snap(Status::Ready, 1.0));
+    publish(notifier, snap(Status::Ready, 1.005));
+    EXPECT_EQ(rec->times.size(), 1u);
+    publish(notifier, snap(Status::Ready, 1.011));
+    ASSERT_EQ(rec->times.size(), 2u);
+    EXPECT_DOUBLE_EQ(rec->times.back(), secs(1.011).second());
+}
+
+TEST(NotifierIntervalsTest, CustomCacheIntervalIsHonored) {
+    Notifier notifier("p1", std::make_shared<InlineExecutor>(),
+                      NotifyIntervals{.cacheIntervalUs = 50'000});
+    auto rec = std::make_shared<Recorder>();
+    notifier.addObserver(rec);
+    auto s = snap(Status::Ready);
+    s.buffered = secs(1.0);
+    notifier.publish(s, atMs(0));
+    s.buffered = secs(1.5);
+    notifier.publish(s, atMs(10));
+    ASSERT_TRUE(notifier.cacheReportDue());
+    EXPECT_EQ(*notifier.cacheReportDue(), atMs(50));
+    notifier.publish(s, atMs(50));
+    ASSERT_EQ(rec->events.size(), 2u);
+    EXPECT_EQ(rec->events[1].second, std::to_string(1.5));
 }

@@ -2,26 +2,26 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #include <algorithm>
+#include <format>
 #include <limits>
 #include <memory>
 #include <thread>
 #include <utility>
 
 #include "AudioRenderSink.h"
-#include "ComponentFactories.h"
+#include "EngineTypes.h"
 #include "DebugInfo.h"
 #include "DebugLines.h"
+#include "DebugMetrics.h"
 #include "DnsResolver.h"
 #include "Engine.h"
 #include "IOContext.h"
 #include "ProcessMetrics.h"
 #include "GLContextManager.h"
 #include "Log.hpp"
-#include "PlaybackFactory.h"
 #include "PerfMonitor.h"
 #include "PlaySession.h"
 #include "Player.h"
-#include "PlayerContext.h"
 #include "Random.hpp"
 #include "Scheduler.h"
 #include "ThreadManager.h"
@@ -96,7 +96,15 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
     void start() {
         beginPerfSession();
         scheduler = std::make_unique<ThreadScheduler>(playerId);
-        notifier = std::make_unique<Notifier>(playerId);
+        NotifyIntervals intervals;
+        if (const auto& flow = params->setting.flowConfig) {
+            intervals.progressStepUs =
+                static_cast<int64_t>(flow->notify.progressStepSec * Time::kMicroSecondScale);
+            intervals.cacheIntervalUs =
+                static_cast<int64_t>(flow->notify.cacheIntervalSec * Time::kMicroSecondScale);
+        }
+        notifier =
+            std::make_unique<Notifier>(playerId, std::make_shared<InlineExecutor>(), intervals);
         for (const auto& observer : observers) {
             notifier->addObserver(observer);
         }
@@ -148,7 +156,7 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
         }
     }
 
-    void post(Command command) {
+    void post(PlayerAction command) {
         if (engine) {
             engine->post(std::move(command));
         }
@@ -320,17 +328,17 @@ double Player::currentPlayedTime() noexcept {
 
 std::string Player::debugSnapshot() noexcept {
     DebugInfo info = pimpl_ && pimpl_->engine ? pimpl_->engine->debugInfo() : DebugInfo{};
+    const auto& metrics = perf::DebugMetrics::instance();
+    const auto sample = metrics.latest();
     DebugLines system;
-    int64_t rssKB = 0;
-    int64_t vmSizeKB = 0;
-    perf::readProcessMemoryKB(rssKB, vmSizeKB);
-    system.add("CPU", perf::readProcessCpuPercent(), "%");
-    system.add("Memory RSS", rssKB, "KB");
-    system.add("Memory VmSize", vmSizeKB, "KB");
+    system.add("CPU", std::format("{:.1f}", sample.cpuPercent), "%");
+    system.add("Memory RSS", std::format("{:.1f}", sample.rssKB / 1024.0), "MB");
+    system.add("Virtual address space", std::format("{:.2f}", sample.vmSizeKB / 1048576.0), "GB");
     system.add("Threads", ThreadManager::shareInstance().size());
     system.add("Pending timers", TimerManager::shareInstance().pendingTimerCount());
     system.add("Active connections", http::IOContext::instance().fdCount());
     system.add("Texture pool", "n/a");
+    system.add("History samples", metrics.count());
     info.system += system.take();
     return formatDebugInfo(info);
 }

@@ -10,13 +10,13 @@
 #include <vector>
 
 #include "BufferPolicy.h"
-#include "Command.h"
+#include "EngineMessages.h"
 #include "DebugInfo.h"
 #include "EngineState.h"
 #include "MediaClock.h"
 #include "Notifier.h"
 #include "Pipeline.h"
-#include "PlaybackFactory.h"
+#include "EngineTypes.h"
 #include "Scheduler.h"
 #include "Source.h"
 
@@ -32,7 +32,7 @@ class Engine : public std::enable_shared_from_this<Engine> {
                                           PlaybackFactory factory,
                                           TeardownHook teardownHook = {});
 
-    void post(Command command);
+    void post(PlayerAction command);
     void close() noexcept;
     // vsync tick from the render side; paces the video pipeline.
     void notifyVsync();
@@ -43,7 +43,7 @@ class Engine : public std::enable_shared_from_this<Engine> {
     Engine(Scheduler& scheduler, Notifier& notifier, PlaybackFactory factory,
            TeardownHook teardownHook);
 
-    void apply(Command& command);
+    void apply(PlayerAction& command);
     void onPrepare(Prepare& c);
     void onPlay();
     void onPause();

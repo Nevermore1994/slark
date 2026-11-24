@@ -82,9 +82,8 @@ Pod::Spec.new do |s|
             $(PODS_TARGET_SRCROOT)/src/core/codec
             $(PODS_TARGET_SRCROOT)/src/core/demuxer
             $(PODS_TARGET_SRCROOT)/src/perf
-            $(PODS_TARGET_SRCROOT)/src/core/engine
-            $(PODS_TARGET_SRCROOT)/src/core/engine/pipeline
-            $(PODS_TARGET_SRCROOT)/src/core/engine/source
+            $(PODS_TARGET_SRCROOT)/src/core/pipeline
+            $(PODS_TARGET_SRCROOT)/src/core/source
             $(PODS_TARGET_SRCROOT)/src/http
             $(PODS_TARGET_SRCROOT)/src/platform/iOS
             $(PODS_TARGET_SRCROOT)/src/platform/iOS/interface

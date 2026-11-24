@@ -55,7 +55,7 @@ Engine::Engine(Scheduler& scheduler, Notifier& notifier, PlaybackFactory factory
     : scheduler_(scheduler), notifier_(notifier), factory_(std::move(factory)),
       teardownHook_(std::move(teardownHook)), clock_(scheduler) {}
 
-void Engine::post(Command command) {
+void Engine::post(PlayerAction command) {
     scheduler_.execute([weak = weak_from_this(), command = std::move(command)]() mutable {
         if (auto self = weak.lock()) {
             if (self->closed_.load(std::memory_order_acquire)) {
@@ -99,7 +99,7 @@ void Engine::wake() {
     });
 }
 
-void Engine::apply(Command& command) {
+void Engine::apply(PlayerAction& command) {
     if (released_ && !std::holds_alternative<Release>(command)) {
         reject();
         return;

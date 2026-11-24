@@ -13,6 +13,8 @@ object SlarkConfigDefaults {
     const val bufferingRebufferEnterSec: Double = 3.0
     const val bufferingRebufferExitSec: Double = 4.5
     const val dnsCacheTtlSec: Double = 60.0
+    const val notifyProgressStepSec: Double = 0.1
+    const val notifyCacheIntervalSec: Double = 0.5
     const val progressLogBytes: Long = 524288L
     const val maxLogFileSize: Long = 8388608L
     const val maxLogFileCount: Int = 10

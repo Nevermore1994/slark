@@ -6,11 +6,7 @@
 #include <optional>
 
 #include "Error.h"
-#include "MediaInfo.h"
-#include "RepeatMode.h"
-#include "SeekEpoch.h"
-#include "SeekMode.h"
-#include "Status.h"
+#include "EngineTypes.h"
 #include "Time.hpp"
 
 namespace slark::engine {
@@ -36,6 +32,23 @@ struct PipelineView {
     // Must be false without pipelines, or a session with known tracks reads as Ended.
     bool allEnded = false;
     bool aheadBelowStart = false;
+};
+
+struct Snapshot {
+    Status status = Status::Idle;
+    bool wantPlay = false;
+    bool isPlaying = false;
+    bool isLoading = false;
+    bool muted = false;
+    bool hasAudio = false;
+    bool hasVideo = false;
+    bool isSeekable = false;
+    bool tracksKnown = false;
+    Time::TimePoint position{};
+    Time::TimePoint buffered{};
+    Time::TimePoint duration{};
+    double speed = 1.0;
+    float volume = 1.0f;
 };
 
 [[nodiscard]] constexpr Status deriveStatus(const EngineState& state,

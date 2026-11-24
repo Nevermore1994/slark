@@ -2,6 +2,8 @@
 // Copyright (c) 2026 Nevermore-. All rights reserved.
 //
 #pragma once
+#include <string>
+#include <string_view>
 #include <utility>
 
 #include "AVFrame.hpp"
@@ -20,6 +22,33 @@ enum class DecoderType {
     AudioDecoderEnd,
     VideoHardwareDecoder = 2001,
 };
+
+[[nodiscard]] inline constexpr std::string_view decoderTypeName(DecoderType type) noexcept {
+    switch (type) {
+        case DecoderType::RAW:
+            return "RAW PCM (passthrough)";
+        case DecoderType::AACSoftwareDecoder:
+            return "AAC (software)";
+        case DecoderType::AACHardwareDecoder:
+#if defined(__ANDROID__)
+            return "AAC (MediaCodec hardware)";
+#elif defined(__APPLE__)
+            return "AAC (AudioToolbox hardware)";
+#else
+            return "AAC (hardware)";
+#endif
+        case DecoderType::VideoHardwareDecoder:
+#if defined(__ANDROID__)
+            return "Video (MediaCodec hardware)";
+#elif defined(__APPLE__)
+            return "Video (VideoToolbox hardware)";
+#else
+            return "Video (hardware)";
+#endif
+        default:
+            return "n/a";
+    }
+}
 
 struct DecoderTypeInfo {
     DecoderType type = DecoderType::Unknown;
@@ -54,6 +83,10 @@ class IDecoder : public NonCopyMovable {
  public:
     [[nodiscard]] DecoderType type() const noexcept {
         return decoderType_;
+    }
+
+    [[nodiscard]] virtual std::string name() const noexcept {
+        return std::string(decoderTypeName(decoderType_));
     }
 
     [[nodiscard]] bool isAudio() const noexcept {

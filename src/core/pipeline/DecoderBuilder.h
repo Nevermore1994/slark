@@ -8,7 +8,7 @@
 
 #include "AudioInfo.h"
 #include "IDecoder.h"
-#include "PlayerContext.h"
+#include "EngineTypes.h"
 #include "PlayerTypes.h"
 #include "VideoInfo.h"
 

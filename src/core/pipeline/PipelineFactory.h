@@ -8,10 +8,9 @@
 #include <vector>
 
 #include "AudioInfo.h"
-#include "ComponentFactories.h"
+#include "EngineTypes.h"
 #include "DecoderBuilder.h"
 #include "Pipeline.h"
-#include "SeekEpoch.h"
 #include "Source.h"
 #include "VideoInfo.h"
 
