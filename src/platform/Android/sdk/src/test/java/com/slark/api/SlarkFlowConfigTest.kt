@@ -26,6 +26,10 @@ class SlarkFlowConfigTest {
             config.buffering.rebufferExitSec, 0.0)
         assertEquals(emptyList<String>(), config.dns.preResolveUrls)
         assertEquals(SlarkConfigDefaults.dnsCacheTtlSec, config.dns.cacheTtlSec, 0.0)
+        assertEquals(SlarkConfigDefaults.notifyProgressStepSec,
+            config.notify.progressStepSec, 0.0)
+        assertEquals(SlarkConfigDefaults.notifyCacheIntervalSec,
+            config.notify.cacheIntervalSec, 0.0)
     }
 
     @Test
@@ -33,7 +37,8 @@ class SlarkFlowConfigTest {
         val groups = mapOf(
             "source" to SlarkFlowConfig.Source::class.java,
             "buffering" to SlarkFlowConfig.Buffering::class.java,
-            "dns" to SlarkFlowConfig.Dns::class.java
+            "dns" to SlarkFlowConfig.Dns::class.java,
+            "notify" to SlarkFlowConfig.Notify::class.java
         )
         groups.forEach { (field, type) ->
             assertEquals(type, SlarkFlowConfig::class.java.getDeclaredField(field).type)
@@ -51,6 +56,8 @@ class SlarkFlowConfigTest {
             "rebufferExitSec" to doubleType)
         checkFields(SlarkFlowConfig.Dns::class.java,
             "preResolveUrls" to java.util.List::class.java, "cacheTtlSec" to doubleType)
+        checkFields(SlarkFlowConfig.Notify::class.java,
+            "progressStepSec" to doubleType, "cacheIntervalSec" to doubleType)
     }
 
     @Test

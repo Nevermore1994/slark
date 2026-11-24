@@ -156,6 +156,9 @@ NS_ASSUME_NONNULL_BEGIN
 // PotPlayer-style diagnostics text; refresh it periodically, not per frame.
 - (NSString*)debugSnapshot;
 
+// Samples process CPU/memory once and returns the retained history as CSV lines.
++ (NSString*)debugMetricsTick;
+
 @end
 
 NS_ASSUME_NONNULL_END

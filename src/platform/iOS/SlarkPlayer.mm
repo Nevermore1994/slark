@@ -4,6 +4,7 @@
 
 #import "interface/SlarkPlayer.h"
 
+#import "DebugMetrics.h"
 #import "GLContextManager.h"
 #import "Player.h"
 #import "iOSBase.h"
@@ -84,7 +85,7 @@ static slark::DnsConfig toDnsConfig(SlarkDnsFlowConfig* config) {
 }
 
 static slark::FlowConfig toFlowConfig(SlarkFlowConfig* config) {
-    if (!config.source || !config.buffering || !config.dns) {
+    if (!config.source || !config.buffering || !config.dns || !config.notify) {
         [NSException raise:NSInvalidArgumentException format:@"FlowConfig groups must not be nil"];
     }
     slark::FlowConfig result;
@@ -94,6 +95,8 @@ static slark::FlowConfig toFlowConfig(SlarkFlowConfig* config) {
     result.buffering.rebufferEnterSec = config.buffering.rebufferEnterSec;
     result.buffering.rebufferExitSec = config.buffering.rebufferExitSec;
     result.dns = toDnsConfig(config.dns);
+    result.notify.progressStepSec = config.notify.progressStepSec;
+    result.notify.cacheIntervalSec = config.notify.cacheIntervalSec;
     return result;
 }
 
@@ -281,6 +284,10 @@ static slark::FlowConfig toFlowConfig(SlarkFlowConfig* config) {
         return @"";
     }
     return [NSString stringWithUTF8String:_player->debugSnapshot().c_str()];
+}
+
++ (NSString*)debugMetricsTick {
+    return [NSString stringWithUTF8String:slark::perf::DebugMetrics::instance().tick().c_str()];
 }
 
 - (void)setRotation:(SlarkPlayerRotation)rotation {

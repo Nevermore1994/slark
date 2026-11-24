@@ -265,6 +265,19 @@ Error NativeHardwareDecoder::sendPacket(std::string_view decoderId,
     return Native_HardwareDecoder_sendPacket(envGuard.get(), decoderId, data, pts, flag, type);
 }
 
+std::string NativeHardwareDecoder::decoderName(std::string_view decoderId) {
+    if (decoderId.empty()) {
+        return {};
+    }
+    JNIEnvGuard envGuard(getJavaVM());
+    JNIEnv* env = envGuard.get();
+    auto jName = JNI::JNICall::callStatic<jobject>(
+        env, kMediaCodecDecoderClass, JavaMethod::GetCodecName,
+        JNI::ReturnSig{JNI::Sig::String},
+        JNI::JObjectWithSig(ToJVM::str(env, decoderId), JNI::Sig::String));
+    return jName ? FromJVM::str(env, reinterpret_cast<jstring>(jName.get())) : std::string{};
+}
+
 void NativeHardwareDecoder::release(std::string_view decoderId) {
     if (decoderId.empty()) {
         LogE("decoderId is empty");

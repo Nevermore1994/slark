@@ -35,5 +35,8 @@ class SlarkSdk {
         fun preResolve(dns: SlarkFlowConfig.Dns) {
             SlarkPlayerManager.preResolve(dns)
         }
+
+        @JvmStatic
+        fun debugMetricsTick(): String = SlarkPlayerManager.debugMetricsTick()
     }
 }

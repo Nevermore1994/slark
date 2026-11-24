@@ -24,10 +24,16 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign) double cacheTtlSec;
 @end
 
+@interface SlarkNotifyFlowConfig : NSObject
+@property(nonatomic, assign) double progressStepSec;
+@property(nonatomic, assign) double cacheIntervalSec;
+@end
+
 @interface SlarkFlowConfig : NSObject
 @property(nonatomic, strong) SlarkSourceFlowConfig* source;
 @property(nonatomic, strong) SlarkBufferingFlowConfig* buffering;
 @property(nonatomic, strong) SlarkDnsFlowConfig* dns;
+@property(nonatomic, strong) SlarkNotifyFlowConfig* notify;
 @end
 
 NS_ASSUME_NONNULL_END

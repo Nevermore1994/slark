@@ -18,12 +18,24 @@ TEST(FlowConfigTest, DefaultConfigIsValid) {
     EXPECT_DOUBLE_EQ(cfg.buffering.startBufferSec, 2.0);
     EXPECT_DOUBLE_EQ(cfg.buffering.rebufferEnterSec, 3.0);
     EXPECT_DOUBLE_EQ(cfg.buffering.rebufferExitSec, 4.5);
+    EXPECT_DOUBLE_EQ(cfg.notify.progressStepSec, 0.1);
+    EXPECT_DOUBLE_EQ(cfg.notify.cacheIntervalSec, 0.5);
 }
 
 TEST(FlowConfigTest, EverySliceIsValidInTheDefaultConfig) {
     const FlowConfig cfg;
     EXPECT_TRUE(cfg.source.isValid());
     EXPECT_TRUE(cfg.buffering.isValid());
+    EXPECT_TRUE(cfg.notify.isValid());
+}
+
+TEST(FlowConfigTest, NotifyIntervalsMustBePositive) {
+    FlowConfig cfg;
+    cfg.notify.progressStepSec = 0.0;
+    EXPECT_FALSE(cfg.isValid());
+    cfg = FlowConfig{};
+    cfg.notify.cacheIntervalSec = -0.1;
+    EXPECT_FALSE(cfg.isValid());
 }
 
 // A broken slice must invalidate the aggregate, otherwise a bad value reaches a module that

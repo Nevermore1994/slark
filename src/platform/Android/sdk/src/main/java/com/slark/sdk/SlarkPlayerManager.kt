@@ -108,5 +108,7 @@ class SlarkPlayerManager {
 
         external fun debugSnapshot(playerId: String): String
 
+        external fun debugMetricsTick(): String
+
     }
 }

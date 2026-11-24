@@ -55,6 +55,8 @@ struct NativeHardwareDecoder {
                             NativeDecodeFlag flag,
                             PacketType type);
 
+    static std::string decoderName(std::string_view decoderId);
+
     static void release(std::string_view decoderId);
 
     static void flush(std::string_view decoderId);

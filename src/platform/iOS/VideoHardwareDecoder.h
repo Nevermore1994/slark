@@ -23,6 +23,10 @@ class VideoHardwareDecoder : public IDecoder {
     void flush() noexcept override;
     Error decode(AVFrameRefPtr& frame) noexcept override;
 
+    [[nodiscard]] std::string name() const noexcept override {
+        return "VideoToolbox (hardware)";
+    }
+
     inline static const DecoderTypeInfo& info() noexcept {
         static DecoderTypeInfo info = {
             DecoderType::VideoHardwareDecoder,

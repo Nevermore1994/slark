@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 
+#include "DebugMetrics.h"
 #include "GLContextManager.h"
 #include "JNICache.h"
 #include "JNICall.h"
@@ -33,6 +34,7 @@ namespace {
 constexpr std::string_view kSourceSignature = "Lcom/slark/api/SlarkFlowConfig$Source;";
 constexpr std::string_view kBufferingSignature = "Lcom/slark/api/SlarkFlowConfig$Buffering;";
 constexpr std::string_view kDnsSignature = "Lcom/slark/api/SlarkFlowConfig$Dns;";
+constexpr std::string_view kNotifySignature = "Lcom/slark/api/SlarkFlowConfig$Notify;";
 
 void raiseIllegalArgument(JNIEnv* env, std::string_view message) {
     if (!env || env->ExceptionCheck()) {
@@ -99,6 +101,15 @@ template <typename Group, typename... Fields>
     return readDnsGroup(env, value.get(), group);
 }
 
+[[nodiscard]] JNI::GroupRead readNotify(JNIEnv* env,
+                                        jobject object,
+                                        jclass cls,
+                                        NotifyConfig& group) {
+    return readFlowGroup(env, object, cls, "notify", kNotifySignature, group,
+                         field("progressStepSec", &NotifyConfig::progressStepSec),
+                         field("cacheIntervalSec", &NotifyConfig::cacheIntervalSec));
+}
+
 [[nodiscard]] JNI::GroupRead readFlowConfig(JNIEnv* env, jobject object, FlowConfig& config) {
     if (!env) {
         return std::unexpected("flowConfig");
@@ -122,6 +133,9 @@ template <typename Group, typename... Fields>
         },
         [&] {
             return readDns(env, object, cls.get(), config.dns);
+        },
+        [&] {
+            return readNotify(env, object, cls.get(), config.notify);
         });
 }
 
@@ -363,4 +377,11 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_debugSnapshot(JNIEnv* env,
         LogE("not found player, {}", playerId);
     }
     return JNI::ToJVM::str(env, snapshot).detach();
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_slark_sdk_SlarkPlayerManager_00024Companion_debugMetricsTick(JNIEnv* env,
+                                                                      jobject /*thiz*/) {
+    auto csv = perf::DebugMetrics::instance().tick();
+    return JNI::ToJVM::str(env, csv).detach();
 }

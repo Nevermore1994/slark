@@ -29,6 +29,8 @@ class MediaCodecDecoder(
 ) {
     var decoderId: String = hashCode().toString()
         private set
+    val codecName: String
+        get() = decoder?.name.orEmpty()
     private var decoder: MediaCodec? = null
     private val isRunning = AtomicBoolean(false)
     private val isCompleted = AtomicBoolean(false)
@@ -459,6 +461,11 @@ class MediaCodecDecoder(
                 return 0L
             }
             return decoder.requestVideoFrame(waitTime, width, height)
+        }
+
+        @JvmStatic
+        fun getCodecName(decoderId: String): String {
+            return decoders[decoderId]?.codecName.orEmpty()
         }
 
         @JvmStatic @Synchronized

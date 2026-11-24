@@ -46,6 +46,19 @@
 
 @end
 
+@implementation SlarkNotifyFlowConfig
+
+- (instancetype)init {
+    if (self = [super init]) {
+        const slark::NotifyConfig config;
+        _progressStepSec = config.progressStepSec;
+        _cacheIntervalSec = config.cacheIntervalSec;
+    }
+    return self;
+}
+
+@end
+
 @implementation SlarkFlowConfig
 
 - (instancetype)init {
@@ -53,6 +66,7 @@
         _source = [SlarkSourceFlowConfig new];
         _buffering = [SlarkBufferingFlowConfig new];
         _dns = [SlarkDnsFlowConfig new];
+        _notify = [SlarkNotifyFlowConfig new];
     }
     return self;
 }

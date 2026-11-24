@@ -40,6 +40,7 @@ inline constexpr const char* ReleaseDecoder = "releaseDecoder";
 inline constexpr const char* FlushDecoder = "flushDecoder";
 inline constexpr const char* RequestVideoFrame = "requestVideoFrame";
 inline constexpr const char* DoAction = "doAction";
+inline constexpr const char* GetCodecName = "getCodecName";
 inline constexpr const char* GetFilesDir = "getFilesDir";
 inline constexpr const char* GetCacheDir = "getCacheDir";
 inline constexpr const char* GetPath = "getPath";
