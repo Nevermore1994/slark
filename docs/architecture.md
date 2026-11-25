@@ -28,12 +28,12 @@
 
 | 环节 | 位置 | 语义 |
 |---|---|---|
-| 命令 | `Command.h:20-58` | `Prepare` / `Play` / `Pause` / `Seek` / `SetSpeed` / `SetRepeat` / `SetVolume` / `SetMute` / `Stop` / `Release`，`std::variant` |
-| Facts | `EngineState.h:19-32` | `wantPlay`、`seekTarget`、`hasSession`、`info`、`failure` 等事实；**不存 Status** |
-| 派生 | `EngineState.h:41-62` | `constexpr deriveStatus(state, pipelines)` → `Status`（`Status.h` 的 7 值枚举） |
+| 命令 | `EngineMessages.h:16-56` | `Prepare` / `Play` / `Pause` / `Seek` / `SetSpeed` / `SetRepeat` / `SetVolume` / `SetMute` / `Stop` / `Release`，`std::variant` |
+| Facts | `EngineState.h:15-28` | `wantPlay`、`seekTarget`、`hasSession`、`info`、`failure` 等事实；**不存 Status** |
+| 派生 | `EngineState.h:54-79` | `constexpr deriveStatus(state, pipelines)` → `Status`（`EngineTypes.h` 的 7 值枚举） |
 | 收敛 | `Engine.cpp:476-510` | `reconcile()`：`adoptSession` / `startSeek` / `completeSeek` / `retryStuckSeek` / `repeatIfEnded` 多轮 settle 至不变，再派生 status、发通知、`applyClock()`、`publish()`、`scheduleWakeup()` |
-| 快照 | `Command.h:74-89` | `Snapshot` 是对外只读视图，由 `Engine::snapshot()` 加锁返回 |
-| 通知 | `Notifier.h:20-49`、`Notifier.cpp:29-45,91-93` | `Snapshot` → `PlayerState`（`toPlayerState`）；`Notification` 只发 `SeekDone` / `ErrorEvent` / `PlayEnd` / `FirstFrameRendered`；回调不在锁内执行 |
+| 快照 | `EngineState.h:37-52` | `Snapshot` 是对外只读视图，由 `Engine::snapshot()` 加锁返回 |
+| 通知 | `Notifier.h:21-61`、`Notifier.cpp:29-45,91-93` | `Snapshot` → `PlayerState`（`toPlayerState`）；`Notification` 只发 `SeekDone` / `ErrorEvent` / `PlayEnd` / `FirstFrameRendered`；回调不在锁内执行 |
 
 `Engine.h:86` 的 `status_` 是 `deriveStatus()` **结果的缓存**，用于 `previousStatus` 比较与快照，不是第二份权威状态；只由 `reconcile()` 写入。
 
@@ -43,12 +43,12 @@
 
 | 层 | 位置 | 说明 |
 |---|---|---|
-| Source | `src/core/engine/source/` | `FileSource`、`HttpMp4Source`、`HLSSource`、`StreamSource`（基类）、`SourceFactory`；loader 线程是 demuxer 唯一运行处，每轨一条 `Channel`，帧带 `SeekEpoch` |
-| Pipeline | `src/core/engine/pipeline/` | `AudioPipeline` / `VideoPipeline` 各一条独立线程；`DecoderBuilder`、`PipelineFactory`；sink 为 `AudioRenderSink` / `VideoRenderSink` |
+| Source | `src/core/source/` | `FileSource`、`HttpMp4Source`、`HLSSource`、`StreamSource`（基类）、`SourceFactory`；loader 线程是 demuxer 唯一运行处，每轨一条 `Channel`，帧带 `SeekEpoch` |
+| Pipeline | `src/core/pipeline/` | `AudioPipeline` / `VideoPipeline` 各一条独立线程；`DecoderBuilder`、`PipelineFactory`；sink 为 `AudioRenderSink` / `VideoRenderSink` |
 | 同步与策略 | `MediaClock`、`AVSync`、`BufferPolicy`、`WatermarkGate`、`AccessGate` | 纯函数策略：`deriveStatus`、`WatermarkGate`、`AVSync::decide`、`BufferPolicy` |
 | 容器与传输 | `src/core/demuxer/`、`src/core/stream/`、`src/http/` | `DemuxerManager` + `Reflection` 注册表（**不是** `DemuxerRegistry`）；`M3U8Parser`、`HLSDemuxer`；`HttpProcessor` 与 `Http1Session` 两条请求流水线 |
 | 平台 | `src/core/render/`、`src/platform/`、`ComponentFactories.h` | 现有工厂注入（**不是** `PlatformServices`）；`TSDemuxer` 的平台宏是文档化例外 |
-| 公开入口 | `src/core/engine/Player.cpp`、`include/Player.h` | `Player` 持有 `Engine` 与 `Notifier`，对外投递命令 |
+| 公开入口 | `src/core/Player.cpp`、`include/Player.h` | `Player` 持有 `Engine` 与 `Notifier`，对外投递命令 |
 
 `Scheduler` 可注入，各端口有 fake，是引擎测试的主要手段。
 
@@ -58,7 +58,9 @@
 
 ## 4.1 debug 状态量出口
 
-`Player::debugSnapshot()` 返回 PotPlayer 风格的十组多行文本。出口不改 `PlayerEvent` / `Notification` / `Snapshot` ABI：`Engine::publish()` 在 scheduler 线程生成 `DebugInfo` 快照，`debugInfo()` 只加锁返回拷贝；`Source`、`Pipeline`、`IStream` 各自在所属锁内产生分组行文本，底层只依赖 `src/base/DebugInfo.h`，不反向依赖 engine。线程专有字段由所属线程写入受锁保护的 POD 快照，UI 线程从不直读。进程级 CPU / 内存由 `src/perf/ProcessMetrics.cpp` 独立采集，不接 `perf` 单例全链路。显示项清单见 `.plan/metrics_pipeline_plan_2026-11-18.md` v5 §1。
+`Player::debugSnapshot()` 返回 PotPlayer 风格的十组多行文本。出口不改 `PlayerEvent` / `Notification` / `Snapshot` ABI：`Engine::publish()` 在 scheduler 线程生成 `DebugInfo` 快照，`debugInfo()` 只加锁返回拷贝；`Source`、`Pipeline`、`IStream` 各自在所属锁内产生分组行文本，底层只依赖 `src/base/DebugInfo.h`，不反向依赖 engine。线程专有字段由所属线程写入受锁保护的 POD 快照，UI 线程从不直读。显示项清单见 `.plan/metrics_pipeline_plan_2026-11-18.md` v5 §1。
+
+进程级 CPU / 内存与曲线由 `src/perf/DebugMetrics.cpp` 的单例统一采集（环形缓冲 120 点，1s 采样，约 2 分钟），复用 `ProcessMetrics.cpp` 的平台读取逻辑但持有独立的 `CpuBaseline`；不接 `perf` 单例全链路。`Player::debugSnapshot()` 的 `System` 组读该单例的 `latest()`，双端 demo 的 debug 窗口通过静态出口 `debugMetricsTick()` 驱动采样并拉取 CSV 历史，两者共用一份 CPU 基线；CPU 口径统一为「进程 CPU 时间 / 墙钟时间」，Android 用 `CLOCK_PROCESS_CPUTIME_ID` 消除 jiffies 量化与核数稀释，Apple 用 `TASK_THREAD_TIMES_INFO`，首个样本仅预热基线不写入历史。窗口是进程级独立载体（Android 独立 Activity + 应用内浮窗 / iOS 独立 `UIWindow`），不随播放器页销毁，因此无播放时仍能观察内存回落与 CPU 曲线；播放器页只注册 `snapshotProvider` 提供十组文本。窗口按 5 个归类 tab 呈现：Overview、Media、Pipeline、Network、System（含 CPU / RSS 曲线）。
 
 HTTP 侧另有一套 `http::RequestPerf`（`src/http/Type.h`）。两条链路现已打通：请求流水线在终态把 `RequestPerf` 经 `src/base/NetworkPerf.h` 的中立桥发布为 `perf::NetworkSample`（header-only，`src/http` 不链接 `slark_perf`），样本带 `perfSessionId`（`Prepare → SourceOptions → OpenParams → RequestInfo` 逐层传递），`PerfMonitor` 按 sessionId 路由到对应 `PlaySession` 聚合成 `NetworkStats` 并写入 `SessionReport`；未知/空 sessionId 直接丢弃，不回退到任意活跃会话。同时 `StreamChunk.perf` → `HttpStream::NetDebug`、`HttpResponse.perf` → `HLSStream::HlsDebug` 仍独立供 debug 窗口的 Network 组拉取。终态事件统一 `finalize()`，无指标的终态不覆盖已有快照。
 

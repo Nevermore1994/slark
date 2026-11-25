@@ -146,7 +146,13 @@ fun currentTime(): Double
 fun debugSnapshot(): String
 ```
 - **Description**: PotPlayer-style diagnostics text grouped into `[Source]`, `[Video]`, `[Audio]`, `[Playback]`, `[Sync]`, `[Buffer]`, `[Queue]`, `[Render]`, `[Network]`, `[System]`. Each line is `label: value unit`. Values unavailable on the current platform show `n/a`. The render backend is appended by the demo layer.
-- **Return Value**: Multi-line text; poll at ~200ms, not per frame.
+- **Return Value**: Multi-line text; poll at ~1s, not per frame.
+
+```kotlin
+SlarkSdk.debugMetricsTick(): String
+```
+- **Description**: Static process-level metrics entry, independent of any player instance. Samples CPU and process memory once, then returns the retained history (up to 120 points at 1s, about 2 minutes) as CSV lines `timestampUs,cpuPercent,rssKB,vmSizeKB`, oldest first. `Player.debugSnapshot()` reads the same sampler for its `[System]` group so both share one CPU baseline. CPU is process CPU time over wall time (per-core scale, may exceed 100% on multicore); the first tick only primes the baseline and returns an empty history.
+- **Return Value**: CSV text. Drive it from a ~1s timer; the debug window keeps sampling while the player is released, so memory and CPU curves stay continuous across page changes.
 
 #### Lifecycle Management
 
@@ -190,7 +196,7 @@ Player configuration class.
 data class SlarkPlayerConfig(
     val dataSource: String, // URL or file path
     val timeRange: KtTimeRange = KtTimeRange.zero, // Playback time range
-    val flowConfig: SlarkFlowConfig? = null, // Buffer / DNS tuning
+    val flowConfig: SlarkFlowConfig? = null, // Buffer / DNS / notification tuning
     val perfEnabled: Boolean = false // Perf session reporting
 )
 ```
@@ -202,7 +208,7 @@ data class SlarkPlayerConfig(
   - HTTP/HTTPS URL: `https://example.com/video.mp4`
   - HLS stream: `https://example.com/stream.m3u8`
 - **timeRange**: Playback time range, defaults to entire file
-- **flowConfig**: Optional buffer / DNS tuning
+- **flowConfig**: Optional buffer / DNS / notification tuning. `notify.progressStepSec` (default 0.1) is the media-position step between progress callbacks; `notify.cacheIntervalSec` (default 0.5) is the wall-clock interval between cache updates.
 - **perfEnabled**: Enable per-session performance reporting. Construction-time only (the session starts inside `prepare()`), defaults to `false`. When enabled, each playback session emits a `[Perf] session ...` summary including the HTTP network aggregate to logcat; `IPerfReporter` subscribers receive the full `SessionReport` with `networkStats`. Leave off in production unless diagnostics are needed.
 
 ## Interfaces
