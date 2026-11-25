@@ -12,6 +12,7 @@
 /build
 /Testing
 /.cmake
+/.learnings
 
 #IDE ignore
 /.idea
