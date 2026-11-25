@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F20C00000000000000000003 /* SLDebugWindow.m in Sources */ = {isa = PBXBuildFile; fileRef = F20C00000000000000000002 /* SLDebugWindow.m */; };
+		F10C00000000000000000003 /* FlowConfigViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = F10C00000000000000000002 /* FlowConfigViewController.m */; };
 		4BD8428D2E32933D0082F6F3 /* VideoPickerViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 4BD8428C2E32933D0082F6F3 /* VideoPickerViewController.m */; };
 		4BD842902E3925F30082F6F3 /* SelectUrlViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 4BD8428F2E3925F30082F6F3 /* SelectUrlViewController.m */; };
 		7E95BE021A3805A7EE0186FA /* Pods_demo.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 17C352FC5441DA44DC8441B5 /* Pods_demo.framework */; };
@@ -44,6 +46,10 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		F20C00000000000000000001 /* SLDebugWindow.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SLDebugWindow.h; sourceTree = "<group>"; };
+		F20C00000000000000000002 /* SLDebugWindow.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SLDebugWindow.m; sourceTree = "<group>"; };
+		F10C00000000000000000001 /* FlowConfigViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = FlowConfigViewController.h; sourceTree = "<group>"; };
+		F10C00000000000000000002 /* FlowConfigViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = FlowConfigViewController.m; sourceTree = "<group>"; };
 		17C352FC5441DA44DC8441B5 /* Pods_demo.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_demo.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		4BD8428B2E3292A10082F6F3 /* VideoPickerViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = VideoPickerViewController.h; sourceTree = "<group>"; };
 		4BD8428C2E32933D0082F6F3 /* VideoPickerViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = VideoPickerViewController.m; sourceTree = "<group>"; };
@@ -161,6 +167,7 @@
 				C1948EEE2CA17DDD00425DB3 /* EXTScope */,
 				C1DA2DD62C989A3D00DF03CB /* View */,
 				C1DA2DCF2C97222500DF03CB /* ViewController */,
+				F20C00000000000000000004 /* Debug */,
 				C11838172ADFCC6800DB0127 /* AppDelegate.h */,
 				C11838182ADFCC6800DB0127 /* AppDelegate.m */,
 				C118381D2ADFCC6800DB0127 /* ViewController.h */,
@@ -183,6 +190,15 @@
 			path = EXTScope;
 			sourceTree = "<group>";
 		};
+		F20C00000000000000000004 /* Debug */ = {
+			isa = PBXGroup;
+			children = (
+				F20C00000000000000000001 /* SLDebugWindow.h */,
+				F20C00000000000000000002 /* SLDebugWindow.m */,
+			);
+			path = Debug;
+			sourceTree = "<group>";
+		};
 		C1DA2DCF2C97222500DF03CB /* ViewController */ = {
 			isa = PBXGroup;
 			children = (
@@ -194,6 +210,8 @@
 				4BD8428C2E32933D0082F6F3 /* VideoPickerViewController.m */,
 				4BD8428E2E3925D90082F6F3 /* SelectUrlViewController.h */,
 				4BD8428F2E3925F30082F6F3 /* SelectUrlViewController.m */,
+				F10C00000000000000000001 /* FlowConfigViewController.h */,
+				F10C00000000000000000002 /* FlowConfigViewController.m */,
 			);
 			path = ViewController;
 			sourceTree = "<group>";
@@ -401,6 +419,8 @@
 				C1E0D0B52CBAC6CC002FE528 /* VideoViewController.m in Sources */,
 				C1DA2E5A2C9C364D00DF03CB /* MASLayoutConstraint.m in Sources */,
 				C1DA2DD22C97235400DF03CB /* AudioViewController.m in Sources */,
+				F10C00000000000000000003 /* FlowConfigViewController.m in Sources */,
+				F20C00000000000000000003 /* SLDebugWindow.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

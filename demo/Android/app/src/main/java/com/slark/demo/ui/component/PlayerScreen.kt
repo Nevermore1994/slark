@@ -17,6 +17,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,6 +32,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.slark.demo.R
+import com.slark.demo.ui.debug.DebugWindowStore
 import com.slark.demo.ui.model.PlayerViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -39,6 +42,7 @@ import kotlinx.coroutines.launch
 fun PlayerScreen(
     viewModel: PlayerViewModel,
     onBackClick: () -> Unit,
+    onConfigClick: () -> Unit = {},
     onPickClick: (() -> Unit)? = null
 ) {
     var controlsVisible by remember { mutableStateOf(true) }
@@ -138,6 +142,17 @@ fun PlayerScreen(
         }
 
         if (controlsVisible) {
+            TextButton(
+                onClick = onConfigClick,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 48.dp, end = 8.dp)
+            ) {
+                Text("Config", color = Color.White)
+            }
+        }
+
+        if (controlsVisible) {
             PlayerControls(
                 viewModel,
                 modifier = Modifier
@@ -146,14 +161,12 @@ fun PlayerScreen(
             )
         }
 
-        PlayerDebugPanel(
-            viewModel,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .fillMaxWidth(0.55f)
-                .padding(8.dp)
-                .heightIn(max = 260.dp)
-        )
+        DisposableEffect(viewModel) {
+            DebugWindowStore.registerSnapshot {
+                viewModel.debugSnapshot() + "Backend: ${viewModel.graphicsBackend}\n"
+            }
+            onDispose { DebugWindowStore.unregisterSnapshot() }
+        }
     }
 }
 

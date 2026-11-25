@@ -10,4 +10,5 @@ sealed class Screen(val route: String) {
     object SelectUrlScreen : Screen("select_url")
     object NetworkPlayerScreen : Screen("network_player")
     object AudioPlayerScreen : Screen("audio_player")
+    object FlowConfigScreen : Screen("flow_config")
 }

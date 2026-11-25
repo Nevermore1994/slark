@@ -11,15 +11,23 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.slark.api.SlarkSdk
+import com.slark.demo.ui.debug.DebugFloatingWindow
+import com.slark.demo.ui.debug.DebugWindowStore
 import com.slark.demo.ui.navigation.AppNavHost
 import com.slark.demo.ui.navigation.Screen
 import com.slark.demo.ui.theme.SlarkDemoTheme
@@ -28,6 +36,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         SlarkSdk.init(application)
         super.onCreate(savedInstanceState)
+        DebugWindowStore.start()
         enableEdgeToEdge()
         setContent {
             SlarkDemoTheme {
@@ -93,6 +102,13 @@ fun MainScreen(navController: NavHostController) {
             }
         }
     ) { innerPadding ->
-        AppNavHost(navController = navController, innerPadding = innerPadding)
+        Box(modifier = Modifier.fillMaxSize()) {
+            AppNavHost(navController = navController, innerPadding = innerPadding)
+            DebugFloatingWindow(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 96.dp, end = 8.dp)
+            )
+        }
     }
 }

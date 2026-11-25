@@ -4,7 +4,9 @@
 
 #import "VideoViewController.h"
 
+#import "../Debug/SLDebugWindow.h"
 #import "EXTScope.h"
+#import "FlowConfigViewController.h"
 #import "Masonry.h"
 #import "PlayerControllerView.h"
 #import "SlarkGraphicsConfig.h"
@@ -18,8 +20,7 @@
 @property (nonatomic, strong) SlarkViewController* playerController;
 @property (nonatomic, strong) UIImageView* loadingView;
 @property (nonatomic, strong) NSTimer* hideControllerTimer;
-@property (nonatomic, strong) NSTimer* debugTimer;
-@property (nonatomic, strong) UILabel* debugLabel;
+@property (nonatomic, strong) UIButton* configButton;
 @property (nonatomic, assign) NSInteger rotationAngle;
 @end
 
@@ -46,8 +47,7 @@
     [super viewWillDisappear:animated];
     [self.hideControllerTimer invalidate];
     self.hideControllerTimer = nil;
-    [self.debugTimer invalidate];
-    self.debugTimer = nil;
+    [SLDebugWindow shared].snapshotProvider = nil;
     [self.playerController removeFromParentViewController];
     self.playerController = nil;
 }
@@ -65,6 +65,7 @@
 
 - (void)handleTap:(UITapGestureRecognizer*)gesture {
     self.controllerView.hidden = !self.controllerView.hidden;
+    self.configButton.hidden = self.controllerView.hidden;
     if (!self.controllerView.hidden) {
         [self resetHideControllerTimer];
     }
@@ -82,6 +83,7 @@
 
 - (void)dismissControllerView {
     self.controllerView.hidden = YES;
+    self.configButton.hidden = YES;
 }
 
 - (void)initSubviews {
@@ -91,10 +93,16 @@
     [self.view addSubview:self.playerController.view];
     [self.view addSubview:self.loadingView];
     [self.view addSubview:self.controllerView];
-    [self.view addSubview:self.debugLabel];
+    [self.view addSubview:self.configButton];
 
     [self.playerController.view mas_makeConstraints:^(MASConstraintMaker* make) {
         make.edges.equalTo(self.view);
+    }];
+    [self.configButton mas_makeConstraints:^(MASConstraintMaker* make) {
+        make.top.mas_equalTo(8);
+        make.right.mas_equalTo(-12);
+        make.width.mas_equalTo(72);
+        make.height.mas_equalTo(32);
     }];
     [self.loadingView mas_makeConstraints:^(MASConstraintMaker* make) {
         make.width.height.mas_equalTo(54);
@@ -106,38 +114,16 @@
         make.bottom.mas_equalTo(-SAFE_BOTTOM_HEIGHT - 16);
         make.height.mas_equalTo(160);
     }];
-    [self.debugLabel mas_makeConstraints:^(MASConstraintMaker* make) {
-        make.left.mas_equalTo(8);
-        make.top.mas_equalTo(8);
-        make.width.mas_equalTo(320);
-        make.height.mas_lessThanOrEqualTo(260);
-    }];
-    self.debugTimer = [NSTimer scheduledTimerWithTimeInterval:0.2
-                                                      target:self
-                                                    selector:@selector(refreshDebugInfo)
-                                                    userInfo:nil
-                                                     repeats:YES];
-}
-
-- (void)refreshDebugInfo {
-    NSString* text = [self.playerController.player debugSnapshot];
-    NSString* backend = self.playerController.currentBackend == SlarkGraphicsBackendMetal
-                            ? @"Metal"
-                            : @"OpenGL ES";
-    self.debugLabel.text = [NSString stringWithFormat:@"%@Backend: %@\n", text, backend];
-}
-
-- (UILabel*)debugLabel {
-    if (_debugLabel == nil) {
-        _debugLabel = [[UILabel alloc] init];
-        _debugLabel.numberOfLines = 0;
-        _debugLabel.textColor = [UIColor whiteColor];
-        _debugLabel.font = [UIFont systemFontOfSize:9];
-        _debugLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.6];
-        _debugLabel.layer.cornerRadius = 8;
-        _debugLabel.clipsToBounds = YES;
-    }
-    return _debugLabel;
+    __weak typeof(self) weakSelf = self;
+    [SLDebugWindow shared].snapshotProvider = ^NSString* {
+        __strong typeof(weakSelf) self = weakSelf;
+        if (!self || !self.playerController.player) return @"";
+        NSString* backend = self.playerController.currentBackend == SlarkGraphicsBackendMetal
+                                ? @"Metal"
+                                : @"OpenGL ES";
+        return [NSString stringWithFormat:@"%@Backend: %@\n",
+                                         [self.playerController.player debugSnapshot], backend];
+    };
 }
 
 - (UIImageView*)loadingView {
@@ -155,12 +141,58 @@
 }
 
 - (void)initData {
-    SlarkPlayer* player = [[SlarkPlayer alloc] init:self.path];
+    SlarkPlayer* player = [[SlarkPlayer alloc] init:self.path
+                                         flowConfig:[DemoFlowConfig shared].config];
     player.delegate = self;
     self.playerController = [[SlarkViewController alloc] initWithPlayer:self.view.bounds
                                                                  player:player];
     [self addChildViewController:self.playerController];
     [self.playerController.player prepare];
+}
+
+- (void)rebuildPlayer {
+    [self.playerController.player stop];
+    [self.playerController.view removeFromSuperview];
+    [self.playerController removeFromParentViewController];
+    self.playerController = nil;
+    [self initData];
+    [self.view insertSubview:self.playerController.view atIndex:0];
+    [self.playerController.view mas_makeConstraints:^(MASConstraintMaker* make) {
+        make.edges.equalTo(self.view);
+    }];
+}
+
+- (UIButton*)configButton {
+    if (_configButton == nil) {
+        _configButton = [UIButton buttonWithType:UIButtonTypeSystem];
+        [_configButton setTitle:@"Config" forState:UIControlStateNormal];
+        _configButton.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+        _configButton.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.6];
+        [_configButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+        _configButton.layer.cornerRadius = 8;
+        [_configButton addTarget:self
+                          action:@selector(openConfig)
+                forControlEvents:UIControlEventTouchUpInside];
+    }
+    return _configButton;
+}
+
+- (void)openConfig {
+    FlowConfigViewController* configVC = [FlowConfigViewController new];
+    configVC.modalPresentationStyle = UIModalPresentationOverFullScreen;
+    @weakify(self);
+    configVC.onCancel = ^{
+        @strongify(self);
+        [self dismissViewControllerAnimated:YES completion:nil];
+    };
+    configVC.onApply = ^{
+        @strongify(self);
+        [self dismissViewControllerAnimated:YES
+                                 completion:^{
+                                     [self rebuildPlayer];
+                                 }];
+    };
+    [self presentViewController:configVC animated:YES completion:nil];
 }
 
 - (PlayerControllerView*)controllerView {

@@ -21,6 +21,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -33,14 +34,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
-import com.slark.demo.ui.component.PlayerDebugPanel
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import com.slark.demo.R
 import com.slark.demo.ui.component.kControlTint
+import com.slark.demo.ui.debug.DebugWindowStore
+import com.slark.demo.ui.model.DemoFlowConfig
 import com.slark.demo.ui.model.PlayerViewModel
+import com.slark.demo.ui.navigation.Screen
 import com.slark.demo.ui.screen.LocalPlayer.SharedViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -105,7 +108,7 @@ fun AudioPlayerScreenRoute(navController: NavHostController, innerPadding: Paddi
         }
     }
 
-    LaunchedEffect(sharedViewModel.uriVersion) {
+    LaunchedEffect(sharedViewModel.uriVersion, DemoFlowConfig.version) {
         if (sharedViewModel.uriVersion > 0) {
             sharedViewModel.createPlayer(context)
             sharedViewModel.playerViewModel?.loop(loopEnabled)
@@ -130,6 +133,7 @@ fun AudioPlayerScreenRoute(navController: NavHostController, innerPadding: Paddi
             onPrev = { playIndex(if (currentIndex > 0) currentIndex - 1 else tracks.lastIndex) },
             onNext = { playIndex(if (currentIndex < tracks.lastIndex) currentIndex + 1 else 0) },
             onAdd = { picker.launch(arrayOf("audio/*")) },
+            onConfigClick = { navController.navigate(Screen.FlowConfigScreen.route) },
             loop = loopEnabled,
             onToggleLoop = {
                 loopEnabled = !loopEnabled
@@ -150,6 +154,7 @@ private fun AudioPlayerScreen(
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onAdd: () -> Unit,
+    onConfigClick: () -> Unit,
     loop: Boolean,
     onToggleLoop: () -> Unit
 ) {
@@ -166,13 +171,19 @@ private fun AudioPlayerScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = title,
-            color = kControlTint,
-            fontSize = 16.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onConfigClick) {
+                Text("Config", color = kControlTint)
+            }
+            Text(
+                text = title,
+                color = kControlTint,
+                fontSize = 16.sp,
+                maxLines = 1,
+                modifier = Modifier.weight(1f),
+                overflow = TextOverflow.Ellipsis
+            )
+        }
         Spacer(modifier = Modifier.height(16.dp))
         Image(
             painter = painterResource(id = R.drawable.music_normal),
@@ -195,12 +206,12 @@ private fun AudioPlayerScreen(
                 .fillMaxWidth()
                 .height(200.dp)
         )
-        PlayerDebugPanel(
-            viewModel,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(120.dp)
-        )
+        DisposableEffect(viewModel) {
+            DebugWindowStore.registerSnapshot {
+                viewModel.debugSnapshot() + "Backend: n/a\n"
+            }
+            onDispose { DebugWindowStore.unregisterSnapshot() }
+        }
     }
 }
 

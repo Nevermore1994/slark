@@ -14,6 +14,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navigation
+import com.slark.demo.ui.screen.FlowConfig.FlowConfigScreen
 import com.slark.demo.ui.screen.LocalPlayer.*
 import com.slark.demo.ui.screen.NetworkPlayer.*
 import com.slark.demo.ui.screen.VideoPicker.*
@@ -93,6 +94,13 @@ fun AppNavHost(navController: NavHostController, innerPadding: PaddingValues) {
 
         composable(Screen.AudioPlayerScreen.route) {
             AudioPlayerScreenRoute(navController = navController, innerPadding = innerPadding)
+        }
+
+        composable(Screen.FlowConfigScreen.route) {
+            FlowConfigScreen(
+                innerPadding = innerPadding,
+                onBack = { navController.popBackStack() }
+            )
         }
     }
 }

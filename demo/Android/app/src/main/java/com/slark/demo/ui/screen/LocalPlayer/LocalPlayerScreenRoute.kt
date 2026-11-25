@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -25,7 +26,9 @@ import androidx.navigation.NavHostController
 import com.slark.api.SlarkPlayerConfig
 import com.slark.api.SlarkPlayerFactory
 import com.slark.demo.ui.component.PlayerScreen
+import com.slark.demo.ui.model.DemoFlowConfig
 import com.slark.demo.ui.model.PlayerViewModel
+import com.slark.demo.ui.navigation.Screen
 
 class SharedViewModel : ViewModel() {
     private val _selectedVideoUris = mutableStateListOf<Uri>()
@@ -48,7 +51,7 @@ class SharedViewModel : ViewModel() {
         if (_selectedVideoUris.isEmpty()) return
         val uri = _selectedVideoUris[0]
         val path = resolveUri(context, uri)
-        val config = SlarkPlayerConfig(path)
+        val config = SlarkPlayerConfig(path, flowConfig = DemoFlowConfig.config)
         playerViewModel = PlayerViewModel(
             SlarkPlayerFactory.createPlayer(config),
             context.applicationContext
@@ -106,17 +109,20 @@ fun LocalPlayerScreenRoute(navController: NavHostController, sharedViewModel: Sh
         }
     }
 
-    LaunchedEffect(sharedViewModel.uriVersion) {
+    LaunchedEffect(sharedViewModel.uriVersion, DemoFlowConfig.version) {
         if (sharedViewModel.uriVersion > 0) {
             sharedViewModel.createPlayer(context)
         }
     }
 
     sharedViewModel.playerViewModel?.let { playerViewModel ->
-        PlayerScreen(
-            playerViewModel,
-            onBackClick = { navController.popBackStack() }
-        )
+        key(playerViewModel) {
+            PlayerScreen(
+                playerViewModel,
+                onBackClick = { navController.popBackStack() },
+                onConfigClick = { navController.navigate(Screen.FlowConfigScreen.route) }
+            )
+        }
     }
 
 }

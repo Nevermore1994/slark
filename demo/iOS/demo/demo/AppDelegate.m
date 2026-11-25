@@ -5,6 +5,7 @@
 
 #import "AppDelegate.h"
 
+#import "Debug/SLDebugWindow.h"
 #import "ViewController.h"
 
 @interface AppDelegate ()
@@ -21,6 +22,7 @@
     self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     self.window.rootViewController = nav;
     [self.window makeKeyAndVisible];
+    [[SLDebugWindow shared] start];
     return YES;
 }
 
