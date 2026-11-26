@@ -101,6 +101,10 @@ else()
             slark_jni_common
             -Wl,--no-whole-archive
         )
+        target_link_options(${PROJECT_NAME} PRIVATE
+            "-Wl,-z,max-page-size=16384"
+            "-Wl,-z,common-page-size=16384"
+        )
     endif()
 
     if(NOT DISABLE_HTTP)

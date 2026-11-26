@@ -408,6 +408,7 @@ function(_openssl_build_android OPENSSL_SOURCE_DIR)
     execute_process(
         COMMAND sh -c
         "ANDROID_NDK_ROOT='${ANDROID_NDK}' PATH='${NDK_TOOLCHAIN_BIN}:/usr/bin:/bin:$PATH' \
+             LDFLAGS='-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384' \
              /usr/bin/perl ./Configure ${OPENSSL_TARGET} \
              --prefix=${OPENSSL_INSTALL_DIR} \
              --openssldir=${OPENSSL_INSTALL_DIR}/ssl \
@@ -455,12 +456,14 @@ function(build_openssl)
     _openssl_download_source()
 
     if(OPENSSL_TARGET_PLATFORM STREQUAL "android")
-        if(EXISTS "${OPENSSL_INSTALL_DIR}/lib/libssl.so" OR EXISTS "${OPENSSL_INSTALL_DIR}/lib64/libssl.so")
+        if((EXISTS "${OPENSSL_INSTALL_DIR}/lib/libssl.so" OR EXISTS "${OPENSSL_INSTALL_DIR}/lib64/libssl.so")
+            AND EXISTS "${OPENSSL_INSTALL_DIR}/.16kb-page-alignment")
             message(STATUS "OpenSSL already built at: ${OPENSSL_INSTALL_DIR}")
             return()
         endif()
 
         _openssl_build_android("${OPENSSL_SOURCE_DIR}")
+        file(WRITE "${OPENSSL_INSTALL_DIR}/.16kb-page-alignment" "16384\n")
     else()
         # iOS：configure 阶段同时构建 iphoneos 和 iphonesimulator 两套，
         # 确保 xcodebuild 编译真机和模拟器时都能找到对应的库。
