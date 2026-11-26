@@ -49,7 +49,7 @@ EXCLUDE_PATTERNS=(
     "*/.fetchcontent_cache/*"
     "*/Masonry/*"
     "*/EXTScope/*"
-    "*/cmake-build-*/*"
+    "*/cmake/build/*"
 )
 
 # 颜色输出

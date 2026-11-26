@@ -16,3 +16,9 @@ FetchContent_Declare(googletest
 
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    foreach(gtest_target gtest gtest_main gmock gmock_main)
+        target_compile_options(${gtest_target} PRIVATE -Wno-character-conversion)
+    endforeach()
+endif()

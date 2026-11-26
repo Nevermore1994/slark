@@ -196,7 +196,12 @@ def generate_cpp_guard(fields: dict[str, int | float],
     asserts: list[str] = []
     for _, cpp_field, kind, cpp_expr, suffix in MIRROR:
         value = literal(fields[cpp_field], kind, suffix)
-        asserts.append(f'static_assert({cpp_expr} == {value}, "regenerate config defaults");')
+        # Avoid -Wfloat-equal in the generated compile-time mirror guard.
+        if kind == "Double":
+            asserts.append(f'static_assert({cpp_expr} >= {value} && {cpp_expr} <= {value}, '
+                           '"regenerate config defaults");')
+        else:
+            asserts.append(f'static_assert({cpp_expr} == {value}, "regenerate config defaults");')
     asserts.append(f'static_assert(kMinLogLevelDefault == {default_value}, '
                    '"regenerate config defaults");')
     for name, value in log_type:

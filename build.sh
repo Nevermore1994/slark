@@ -141,7 +141,7 @@ case "$PLATFORM" in
         
         # 打开 Xcode
         if [[ "$OPEN_IDE" == true ]]; then
-            xcode_project="${SCRIPT_DIR}/cmake-build-${BUILD_TYPE}/iOS/slark.xcodeproj"
+            xcode_project="${SCRIPT_DIR}/cmake/build/${BUILD_TYPE}/iOS/slark.xcodeproj"
             if [[ -d "$xcode_project" ]]; then
                 print_info "打开 Xcode..."
                 open "$xcode_project"

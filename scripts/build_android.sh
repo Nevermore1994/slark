@@ -15,7 +15,7 @@ generate_android_project() {
     
     print_info "生成 Android Ninja 项目..."
     
-    local output_dir="${script_dir}/cmake-build-${build_type}/Android"
+    local output_dir="${script_dir}/cmake/build/${build_type}/Android"
     local ndk_toolchain="${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake"
     local fc_cache="${script_dir}/.fetchcontent_cache/Android"
     

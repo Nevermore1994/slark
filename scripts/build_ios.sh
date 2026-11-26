@@ -16,7 +16,7 @@ generate_ios_project() {
     
     print_info "生成 iOS Xcode 项目..."
     
-    local output_dir="${script_dir}/cmake-build-${build_type}/iOS"
+    local output_dir="${script_dir}/cmake/build/${build_type}/iOS"
     local toolchain_file="${script_dir}/ios.toolchain.cmake"
     local fc_cache="${script_dir}/.fetchcontent_cache/iOS"
     
@@ -91,7 +91,7 @@ build_framework() {
 
     print_info "编译 iOS framework (${build_type})..."
 
-    local proj_dir="${script_dir}/cmake-build-${build_type}/iOS"
+    local proj_dir="${script_dir}/cmake/build/${build_type}/iOS"
     local framework_name="slark.framework"
     local framework_path="${proj_dir}/${build_type}-iphoneos/${framework_name}"
 
@@ -221,7 +221,7 @@ build_openssl_multi_arch() {
     
     local openssl_version="3.0.13"
     local openssl_src_dir="${script_dir}/.fetchcontent_cache/openssl/openssl-${openssl_version}"
-    local openssl_base_dir="${script_dir}/cmake-build-${build_type}/iOS/deps/openssl"
+    local openssl_base_dir="${script_dir}/cmake/build/${build_type}/iOS/deps/openssl"
     
     # 检查最终合并后的 fat library 是否已存在
     if [[ -f "${openssl_base_dir}/iphoneos/lib/libssl.a" && \

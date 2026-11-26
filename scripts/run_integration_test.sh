@@ -68,7 +68,7 @@ collect_instrumentation() {
 
 # ─── iOS: gtest binary (test/iOS + ios.toolchain.cmake), simctl install + launch ───
 run_ios() {
-    local BUILD_DIR="${ROOT_DIR}/cmake-build-Debug/iOSTest"
+    local BUILD_DIR="${ROOT_DIR}/cmake/build/Debug/iOSTest"
     local DEVICE_NAME="${1:-${SLARK_IOS_SIMULATOR_DEVICE:-}}"
     shift || true
     local BUNDLE_ID="com.slark.PlayerMediaIntegrationTest"

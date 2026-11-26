@@ -19,7 +19,15 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 BUILD_TYPE="${1:-Debug}"
-BUILD_DIR="${PROJECT_DIR}/cmake-build-${BUILD_TYPE}-test"
+case "${BUILD_TYPE}" in
+    Debug|Release) ;;
+    *)
+        echo "Invalid build type '${BUILD_TYPE}'; expected Debug or Release." >&2
+        echo "Run '${0##*/}' without arguments to build and run all tests." >&2
+        exit 2
+        ;;
+esac
+BUILD_DIR="${PROJECT_DIR}/cmake/build/${BUILD_TYPE}-test"
 BUILD_JOBS="${BUILD_JOBS:-$(sysctl -n hw.logicalcpu 2>/dev/null || nproc 2>/dev/null || echo 4)}"
 
 # Colors
@@ -83,6 +91,7 @@ echo ""
 echo -e "${YELLOW}[1/3] Configuring CMake...${NC}"
 if ! cmake -S "${PROJECT_DIR}" \
       -B "${BUILD_DIR}" \
+      -G Ninja \
       -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
       -DBUILD_PLATFORM=PC \
       -DDISABLE_HTTP=OFF; then

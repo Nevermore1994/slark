@@ -40,7 +40,7 @@ clean_build_cache() {
     if [[ -z "$platform" ]]; then
         # 清理所有平台
         for bt in "${build_types[@]}"; do
-            local dir="${script_dir}/cmake-build-${bt}"
+            local dir="${script_dir}/cmake/build/${bt}"
             if [[ -d "$dir" ]]; then
                 print_info "删除目录: $dir"
                 rm -rf "$dir"
@@ -54,7 +54,7 @@ clean_build_cache() {
     else
         # 只清理指定平台的子目录
         for bt in "${build_types[@]}"; do
-            local dir="${script_dir}/cmake-build-${bt}/${platform}"
+            local dir="${script_dir}/cmake/build/${bt}/${platform}"
             if [[ -d "$dir" ]]; then
                 print_info "删除目录: $dir"
                 rm -rf "$dir"
@@ -110,7 +110,7 @@ generate_local_project() {
         print_info "生成本地 Makefile 项目 (仅 base + http 模块)..."
     fi
     
-    local output_dir="${script_dir}/cmake-build-${build_type}/local"
+    local output_dir="${script_dir}/cmake/build/${build_type}/local"
     local fc_cache="${script_dir}/.fetchcontent_cache/local"
     local cmake_options=$(build_cmake_options "$disable_http" "$disable_test" "$disable_core")
 

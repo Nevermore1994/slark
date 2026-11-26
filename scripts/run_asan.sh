@@ -27,7 +27,7 @@ case "${SANITIZER}" in
         exit 1
         ;;
 esac
-BUILD_DIR="${SLARK_SANITIZER_BUILD_DIR:-${ROOT_DIR}/cmake-build-${BUILD_NAME}-test}"
+BUILD_DIR="${SLARK_SANITIZER_BUILD_DIR:-${ROOT_DIR}/cmake/build/${BUILD_NAME}-test}"
 
 if [[ -n "${SLARK_ASAN_CC:-}" || -n "${SLARK_ASAN_CXX:-}" || -n "${SLARK_MACOS_SDKROOT:-}" ]]; then
     echo "Custom sanitizer compiler/SDK overrides are not supported; use SLARK_MACOS_CLT_ROOT instead." >&2
