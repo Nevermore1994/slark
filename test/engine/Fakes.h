@@ -28,6 +28,7 @@ struct FakeSource final : Source {
     MediaInfo facts;
     Time::TimePoint cache{};
     bool loading = true;
+    bool loadingStopped = false;
     std::optional<Error> fail;
     std::vector<SeekCall> seeks;
     std::vector<Time::TimePoint> retargets;
@@ -86,6 +87,10 @@ struct FakeSource final : Source {
         seekingCalls.push_back(seeking);
     }
 
+    void stopLoading() override {
+        loadingStopped = true;
+    }
+
     void close() override {
         if (closeCounter) {
             ++*closeCounter;
@@ -116,11 +121,15 @@ struct FakePipeline final : Pipeline {
     bool blocking = true;
     bool isEnded = false;
     std::optional<Error> fail;
+    ErrorDetail failDetail;
+    int aborts = 0;
     std::optional<Time::TimePoint> wakeup;
     std::vector<FlushCall> flushes;
     std::vector<FlushCall> retargets;
     std::vector<float> volumes;
     bool presented = false;
+    bool isStarved = false;
+    std::optional<Time::TimePoint> lastVsync;
     MediaClock* clock = nullptr;
     Wake wake;
     std::optional<SeekEpoch> readyForEpoch;
@@ -153,6 +162,14 @@ struct FakePipeline final : Pipeline {
         return presented;
     }
 
+    void onVsync(Time::TimePoint clockNow) override {
+        lastVsync = clockNow;
+    }
+
+    [[nodiscard]] bool starved() const override {
+        return isStarved;
+    }
+
     [[nodiscard]] bool ready(SeekEpoch epoch, Time::TimePoint) const override {
         return readyForEpoch == epoch;
     }
@@ -163,6 +180,14 @@ struct FakePipeline final : Pipeline {
 
     [[nodiscard]] std::optional<Error> failure() const override {
         return fail;
+    }
+
+    [[nodiscard]] ErrorDetail failureDetail() const override {
+        return failDetail;
+    }
+
+    void abort() override {
+        ++aborts;
     }
 
     [[nodiscard]] bool blocksReady() const override {
@@ -189,6 +214,11 @@ struct FakePipeline final : Pipeline {
 
     void present() {
         presented = true;
+        wake();
+    }
+
+    void setStarved(bool value) {
+        isStarved = value;
         wake();
     }
 };
@@ -242,9 +272,9 @@ class FakeFactory {
         factory.createSource = [this](const Prepare& prepare, SeekEpoch epoch, Wake wake) {
             return createSource(prepare, epoch, std::move(wake));
         };
-        factory.createPipelines = [this](Source& source, const MediaInfo& info, SeekEpoch epoch,
+        factory.createPipelines = [this](Source& src, const MediaInfo& info, SeekEpoch epoch,
                                          Wake wake) {
-            return createPipelines(source, info, epoch, std::move(wake));
+            return createPipelines(src, info, epoch, std::move(wake));
         };
         return factory;
     }

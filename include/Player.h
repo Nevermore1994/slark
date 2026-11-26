@@ -42,10 +42,15 @@ class Player {
 
     void setRenderImpl(std::weak_ptr<IVideoRender> render) noexcept;
 
+    // Platform render loops query this instead of maintaining their own state whitelist.
+    void setRenderSuspended(bool suspended) noexcept;
+
  public:
     PlayerParams peek() noexcept;
 
     PlayerState state() noexcept;
+
+    [[nodiscard]] bool vsyncDesired() noexcept;
 
     PlayerInfo info() noexcept;
 

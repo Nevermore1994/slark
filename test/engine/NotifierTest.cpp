@@ -212,7 +212,7 @@ TEST_F(NotifierTest, IdleResetsProgressDedupe) {
 
 TEST_F(NotifierTest, NotificationsMapToPlayerEvents) {
     notifier.notify(SeekDone{});
-    notifier.notify(ErrorEvent{Error::PipelineDecodeError, true});
+    notifier.notify(ErrorEvent{Error::PipelineDecodeError, true, {}});
     ASSERT_EQ(rec->events.size(), 2u);
     EXPECT_EQ(rec->events[0].first, PlayerEvent::SeekDone);
     EXPECT_EQ(rec->events[1].first, PlayerEvent::OnError);

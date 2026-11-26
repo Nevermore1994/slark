@@ -21,6 +21,7 @@ struct EngineState {
     RepeatMode repeat = RepeatMode::Off;
     float volume = 1.0f;
     bool muted = false;
+    bool renderSuspended = false;
 
     bool hasSession = false;
     MediaInfo info;
@@ -49,6 +50,7 @@ struct Snapshot {
     Time::TimePoint duration{};
     double speed = 1.0;
     float volume = 1.0f;
+    bool renderSuspended = false;
 };
 
 [[nodiscard]] constexpr Status deriveStatus(const EngineState& state,

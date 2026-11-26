@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <fstream>
 #include <iterator>
+#include <optional>
 
 #include "MockHlsServer.h"
 #include "SourceSupport.h"
@@ -25,6 +26,17 @@ constexpr double kSegmentDurationSec = 6.0;
 
 Time::TimePoint sec(double s) {
     return Time::TimePoint::fromSeconds(s);
+}
+
+std::optional<double> firstPtsAtEpoch(const std::vector<AVFrameRefPtr>& frames,
+                                      SeekEpoch epoch) {
+    const auto it = std::ranges::find_if(frames, [epoch](const auto& frame) {
+        return !frame->isEOS && frame->seekEpoch == epoch;
+    });
+    if (it == frames.end()) {
+        return std::nullopt;
+    }
+    return (*it)->ptsTime();
 }
 
 std::string readTsSample() {
@@ -181,6 +193,68 @@ TEST_F(HLSSourceTest, SeekToTimeSwitchesEpochAndDropsStaleFrames) {
     ASSERT_TRUE(tailIsNewEpoch(after.audio));
     EXPECT_TRUE(after.video.back()->isEOS);
     EXPECT_GT(after.video.size(), 10u);
+}
+
+TEST_F(HLSSourceTest, SeekWithinSegmentKeepsEstablishedPtsOffset) {
+    serve();
+    auto source = open();
+    ASSERT_TRUE(waitTracks(*source));
+
+    Drained before;
+    ASSERT_TRUE(waitUntil([&] {
+        consume(*source, before);
+        return firstPtsAtEpoch(before.video, 1) && firstPtsAtEpoch(before.audio, 1);
+    }));
+    const auto initialVideoPts = *firstPtsAtEpoch(before.video, 1);
+    const auto initialAudioPts = *firstPtsAtEpoch(before.audio, 1);
+
+    source->seekTo(sec(0.5), 2);
+    Drained after;
+    ASSERT_TRUE(waitUntil([&] {
+        consume(*source, after);
+        return firstPtsAtEpoch(after.video, 2) && firstPtsAtEpoch(after.audio, 2);
+    }));
+    EXPECT_NEAR(*firstPtsAtEpoch(after.video, 2), initialVideoPts, 0.05);
+    EXPECT_NEAR(*firstPtsAtEpoch(after.audio, 2), initialAudioPts, 0.05);
+    EXPECT_LT(*firstPtsAtEpoch(after.video, 2), 0.5);
+    EXPECT_LT(*firstPtsAtEpoch(after.audio, 2), 0.5);
+}
+
+TEST_F(HLSSourceTest, SeekWithinSegmentBeforeFirstFrameUsesSegmentStart) {
+    serve();
+    auto source = open();
+    source->seekTo(sec(0.5), 2);
+
+    Drained after;
+    ASSERT_TRUE(waitUntil([&] {
+        consume(*source, after);
+        return firstPtsAtEpoch(after.video, 2) && firstPtsAtEpoch(after.audio, 2);
+    }));
+    EXPECT_GE(*firstPtsAtEpoch(after.video, 2), 0.0);
+    EXPECT_GE(*firstPtsAtEpoch(after.audio, 2), 0.0);
+    EXPECT_LT(*firstPtsAtEpoch(after.video, 2), 0.5);
+    EXPECT_LT(*firstPtsAtEpoch(after.audio, 2), 0.5);
+}
+
+TEST_F(HLSSourceTest, SeekToDiscontinuityReanchorsAtSegmentStart) {
+    serve(/*live=*/false, /*discontinuity=*/true);
+    auto source = open();
+    ASSERT_TRUE(waitTracks(*source));
+
+    Drained before;
+    ASSERT_TRUE(waitUntil([&] {
+        consume(*source, before);
+        return firstPtsAtEpoch(before.video, 1) && firstPtsAtEpoch(before.audio, 1);
+    }));
+
+    source->seekTo(sec(12.5), 2);
+    Drained after;
+    ASSERT_TRUE(waitUntil([&] {
+        consume(*source, after);
+        return firstPtsAtEpoch(after.video, 2) && firstPtsAtEpoch(after.audio, 2);
+    }));
+    EXPECT_NEAR(*firstPtsAtEpoch(after.video, 2), 12.0, 0.05);
+    EXPECT_NEAR(*firstPtsAtEpoch(after.audio, 2), 12.0, 0.05);
 }
 
 TEST_F(HLSSourceTest, ClosedWatermarkGateStopsSegmentRequestsUntilTheClockMoves) {

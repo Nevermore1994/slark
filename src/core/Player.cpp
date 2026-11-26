@@ -19,6 +19,7 @@
 #include "ProcessMetrics.h"
 #include "GLContextManager.h"
 #include "Log.hpp"
+#include "Notifier.h"
 #include "PerfMonitor.h"
 #include "PlaySession.h"
 #include "Player.h"
@@ -56,6 +57,7 @@ class Player::Impl : public std::enable_shared_from_this<Player::Impl> {
     std::weak_ptr<IVideoRender> videoRender;
     std::vector<IPlayerObserverPtr> observers;
     std::atomic<bool> prepared{false};
+    std::atomic<bool> renderSuspended{false};
     // stop() only posts a command; the teardown hook decides the report's success flag.
     std::atomic<bool> stopRequested{false};
     std::shared_ptr<perf::PlaySession> perfSession;
@@ -187,19 +189,18 @@ Player::~Player() {
         return;
     }
     auto stack = std::move(pimpl_);
-    std::thread([stack = std::move(stack)]() mutable {
-        GLContextManager::shareInstance().removeMainContext(stack->playerId);
-        if (stack->engine) {
-            stack->engine->close();
-        }
-        stack->endPerfSession(stack->stopRequested.load(std::memory_order_acquire));
-        if (stack->scheduler) {
-            stack->scheduler->stop();
-        }
-        stack->engine.reset();
-        stack->notifier.reset();
-        stack->scheduler.reset();
-    }).detach();
+    GLContextManager::shareInstance().removeMainContext(stack->playerId);
+    if (stack->engine) {
+        stack->engine->close();
+    }
+    if (stack->scheduler) {
+        stack->scheduler->stop();
+    }
+    stack->endPerfSession(stack->stopRequested.load(std::memory_order_acquire));
+    // ~Engine() runs teardown: it joins the source loader and releases the pipelines.
+    stack->engine.reset();
+    stack->notifier.reset();
+    stack->scheduler.reset();
 }
 
 void Player::prepare() noexcept {
@@ -283,6 +284,16 @@ void Player::setRenderImpl(std::weak_ptr<IVideoRender> render) noexcept {
     pimpl_->attachRenderVsync();
 }
 
+void Player::setRenderSuspended(bool suspended) noexcept {
+    if (!pimpl_) {
+        return;
+    }
+    pimpl_->renderSuspended.store(suspended, std::memory_order_release);
+    if (pimpl_->prepared.load()) {
+        pimpl_->post(SetRenderSuspended{suspended});
+    }
+}
+
 PlayerParams Player::peek() noexcept {
     if (!pimpl_->params) {
         return {};
@@ -299,6 +310,13 @@ PlayerState Player::state() noexcept {
         return PlayerState::NotInited;
     }
     return toPlayerState(pimpl_->engine->snapshot());
+}
+
+bool Player::vsyncDesired() noexcept {
+    if (!pimpl_ || !pimpl_->prepared.load() || !pimpl_->engine) {
+        return false;
+    }
+    return shouldDriveVsync(state(), pimpl_->renderSuspended.load(std::memory_order_acquire));
 }
 
 PlayerInfo Player::info() noexcept {
@@ -332,8 +350,10 @@ std::string Player::debugSnapshot() noexcept {
     const auto sample = metrics.latest();
     DebugLines system;
     system.add("CPU", std::format("{:.1f}", sample.cpuPercent), "%");
-    system.add("Memory RSS", std::format("{:.1f}", sample.rssKB / 1024.0), "MB");
-    system.add("Virtual address space", std::format("{:.2f}", sample.vmSizeKB / 1048576.0), "GB");
+    system.add("Memory RSS", std::format("{:.1f}", static_cast<double>(sample.rssKB) / 1024.0),
+               "MB");
+    system.add("Virtual address space",
+               std::format("{:.2f}", static_cast<double>(sample.vmSizeKB) / 1048576.0), "GB");
     system.add("Threads", ThreadManager::shareInstance().size());
     system.add("Pending timers", TimerManager::shareInstance().pendingTimerCount());
     system.add("Active connections", http::IOContext::instance().fdCount());

@@ -221,6 +221,27 @@ TEST(PlayerTest, PlayerDrivesPerfSessionLifecycle) {
     EXPECT_EQ(report->networkStats.requestCount, 1u);
 }
 
+TEST(PlayerTest, DestructorCompletesTeardownSynchronously) {
+    for (int round = 0; round < 20; ++round) {
+        PerfScope scope(true);
+        {
+            auto params = makeParams();
+            params->setting.perfConfig.enabled = true;
+            Player player(std::move(params));
+            player.prepare();
+            const auto ids = slark::perf::PerfMonitor::instance().activeSessionIds();
+            ASSERT_EQ(ids.size(), 1u);
+            slark::perf::publishNetworkSample(makeSample(ids.front(), "127.0.0.1", true));
+            player.stop();
+        }
+        // No waiting: teardown must be finished when the destructor returns.
+        auto report = scope.reporter->report();
+        ASSERT_NE(report, nullptr) << "round " << round;
+        EXPECT_EQ(report->networkStats.requestCount, 1u);
+        EXPECT_TRUE(slark::perf::PerfMonitor::instance().activeSessionIds().empty());
+    }
+}
+
 TEST(PlayerTest, StopKeepsInFlightNetworkSamplesInReport) {
     PerfScope scope(true);
     auto params = makeParams();

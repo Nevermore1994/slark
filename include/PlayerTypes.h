@@ -30,6 +30,14 @@ enum class PlayerState : uint8_t {
     Unknown,
 };
 
+[[nodiscard]] constexpr bool shouldDriveVsync(PlayerState state, bool renderSuspended) noexcept {
+    if (renderSuspended) {
+        return false;
+    }
+    return state == PlayerState::Prepared || state == PlayerState::Buffering ||
+           state == PlayerState::Playing;
+}
+
 enum class PlayerEvent : uint8_t {
     FirstFrameRendered,
     SeekDone,

@@ -113,7 +113,7 @@ Time::TimePoint AudioRenderSink::position() const {
     }
     const uint64_t consumed =
         info_->dataLen2TimePoint(plane_->consumedBytes.load(std::memory_order_acquire)).point();
-    const uint64_t latency = render_->getHardwareLatency().point();
+    const uint64_t latency = static_cast<uint64_t>(render_->getHardwareLatency().point());
     const uint64_t offset = plane_->offsetUs.load(std::memory_order_acquire);
     const uint64_t position = consumed > latency ? offset + consumed - latency : offset;
     auto previous = plane_->lastPositionUs.load(std::memory_order_acquire);

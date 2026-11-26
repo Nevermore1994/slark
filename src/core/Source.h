@@ -57,6 +57,9 @@ class Source {
         (void)seeking;
     }
 
+    // Stops data production without releasing the source; failure paths still read its state.
+    virtual void stopLoading() {}
+
     virtual void close() = 0;
 };
 

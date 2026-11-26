@@ -171,6 +171,19 @@ TEST_F(EngineSeekTest, SeekWhilePlayingResumesWhenReady) {
     EXPECT_TRUE(engine->snapshot().isPlaying);
 }
 
+TEST_F(EngineSeekTest, StarvationDoesNotBlockSeekCompletion) {
+    openReady();
+    send(Play{});
+    pipeline().setStarved(true);
+    sched.runUntilIdle();
+    ASSERT_EQ(status(), Status::Buffering);
+
+    send(Seek{sec(5), SeekMode::Exact});
+    pipeline().becomeReady();
+    sched.runUntilIdle();
+    EXPECT_EQ(rec->count(PlayerEvent::SeekDone), 1);
+}
+
 TEST_F(EngineSeekTest, NotSeekableIsRejected) {
     open(10.0, false);
     send(Seek{sec(5), SeekMode::Exact});

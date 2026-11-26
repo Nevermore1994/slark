@@ -48,11 +48,14 @@ class AudioPipeline final : public Pipeline {
     void setVolume(float volume) override;
 
     [[nodiscard]] bool ready(SeekEpoch epoch, Time::TimePoint target) const override;
+    [[nodiscard]] bool starved() const override;
 
     [[nodiscard]] std::string debugState() const override;
     [[nodiscard]] DebugInfo debugInfo() const override;
     [[nodiscard]] bool ended() const override;
     [[nodiscard]] std::optional<Error> failure() const override;
+    [[nodiscard]] ErrorDetail failureDetail() const override;
+    void abort() override;
 
  private:
     void run();
@@ -72,7 +75,7 @@ class AudioPipeline final : public Pipeline {
     [[nodiscard]] bool outputFull() const;
     [[nodiscard]] bool refusalExceededLimit();
     void noteProgress();
-    void fail(slark::Error error);
+    void fail(slark::Error error, int32_t origin = 0);
     void wakeLoop();
 
     Receiver<AVFrameRefPtr>& input_;
@@ -110,6 +113,7 @@ class AudioPipeline final : public Pipeline {
     bool recording_ = true;
     Time::TimePoint lastAnchored_{};
     std::optional<Error> failure_;
+    int32_t failureOrigin_ = 0;
 
     // Pipeline thread only.
     std::deque<AVFrameRefPtr> inbox_;

@@ -55,6 +55,10 @@ Engine::Engine(Scheduler& scheduler, Notifier& notifier, PlaybackFactory factory
     : scheduler_(scheduler), notifier_(notifier), factory_(std::move(factory)),
       teardownHook_(std::move(teardownHook)), clock_(scheduler) {}
 
+Engine::~Engine() {
+    teardown();
+}
+
 void Engine::post(PlayerAction command) {
     scheduler_.execute([weak = weak_from_this(), command = std::move(command)]() mutable {
         if (auto self = weak.lock()) {
@@ -123,6 +127,8 @@ void Engine::apply(PlayerAction& command) {
                 onSetVolume(c);
             } else if constexpr (std::is_same_v<T, SetMute>) {
                 onSetMute(c);
+            } else if constexpr (std::is_same_v<T, SetRenderSuspended>) {
+                onSetRenderSuspended(c);
             } else if constexpr (std::is_same_v<T, Stop>) {
                 onStop();
             } else if constexpr (std::is_same_v<T, Release>) {
@@ -135,7 +141,7 @@ void Engine::apply(PlayerAction& command) {
 }
 
 void Engine::reject() {
-    notifier_.notify(ErrorEvent{Error::InvalidOperation, false});
+    notifier_.notify(ErrorEvent{Error::InvalidOperation, false, {}});
 }
 
 bool Engine::mayControl() {
@@ -240,6 +246,10 @@ void Engine::onSetMute(SetMute& c) {
     applyVolume();
 }
 
+void Engine::onSetRenderSuspended(SetRenderSuspended& c) {
+    state_.renderSuspended = c.suspended;
+}
+
 void Engine::applyVolume() {
     const float effective = state_.muted ? 0.0f : state_.volume;
     for (auto& pipeline : pipelines_) {
@@ -282,7 +292,7 @@ void Engine::notifyVsync() {
     if (pipelines_.empty()) {
         return;
     }
-    const auto now = clock_.running() ? clock_.now() : readyTarget_.load();
+    const auto now = clock_.now();
     for (auto& pipeline : pipelines_) {
         pipeline->onVsync(now);
     }
@@ -354,7 +364,11 @@ bool Engine::adoptSession() {
             break;
         }
         if (const auto failure = pipeline->failure()) {
-            fail(*failure);
+            auto detail = pipeline->failureDetail();
+            if (source_) {
+                detail.host = source_->failureDetail().host;
+            }
+            fail(*failure, std::move(detail));
             changed = true;
         }
     }
@@ -463,9 +477,15 @@ bool Engine::repeatIfEnded() {
 
 PipelineView Engine::evaluatePipelines() {
     PipelineView view;
-    view.blockingNotReady = std::ranges::any_of(pipelines_, [this](const auto& pipeline) {
-        return pipeline->blocksReady() && !pipeline->ready(readyEpoch_, readyTarget_);
-    });
+    // The watermark only gates the start; steady-state Buffering follows a starved pipeline.
+    const bool stalled =
+        state_.wantPlay && started_ && std::ranges::any_of(pipelines_, [](const auto& pipeline) {
+            return pipeline->blocksReady() && pipeline->starved();
+        });
+    view.blockingNotReady =
+        stalled || std::ranges::any_of(pipelines_, [this](const auto& pipeline) {
+            return pipeline->blocksReady() && !pipeline->ready(readyEpoch_, readyTarget_);
+        });
     view.allEnded = !pipelines_.empty() && std::ranges::all_of(pipelines_, &Pipeline::ended);
 
     if (!source_ || !source_->isLoading()) {
@@ -475,7 +495,6 @@ PipelineView Engine::evaluatePipelines() {
     const double ahead = (source_->cacheEnd() - clock_.now()).second();
     if (started_) {
         rebuffering_ = bufferPolicy_.shouldRebuffer(ahead, rebuffering_);
-        view.aheadBelowStart = rebuffering_;
     } else {
         view.aheadBelowStart = !bufferPolicy_.canStart(ahead);
     }
@@ -483,7 +502,7 @@ PipelineView Engine::evaluatePipelines() {
 }
 
 void Engine::applyClock() {
-    const bool playing = status_ == Status::Ready && state_.wantPlay;
+    const bool playing = status_ == Status::Ready && state_.wantPlay && !state_.renderSuspended;
     if (playing) {
         clock_.start();
     } else {
@@ -523,7 +542,14 @@ void Engine::reconcile() {
         state_.wantPlay = false;
     }
 
-    if (source_) {
+    if (status_ == Status::Failed) {
+        if (source_) {
+            source_->stopLoading();
+        }
+        for (auto& pipeline : pipelines_) {
+            pipeline->abort();
+        }
+    } else if (source_) {
         source_->regulate(clock_.now());
     }
     publish();
@@ -566,6 +592,7 @@ void Engine::publish() {
     }
     s.speed = state_.speed;
     s.volume = state_.volume;
+    s.renderSuspended = state_.renderSuspended;
     {
         std::lock_guard lock(snapshotMutex_);
         snapshot_ = s;

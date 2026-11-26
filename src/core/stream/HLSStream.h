@@ -50,6 +50,7 @@ class HLSStream : public IStream, public std::enable_shared_from_this<HLSStream>
     // Playlist segment for a media sequence, for sources that need per-segment attributes
     // (discontinuity, duration) the byte stream does not carry.
     [[nodiscard]] std::optional<Segment> segmentInfo(uint64_t sequence) const noexcept;
+    [[nodiscard]] std::optional<Segment> segmentInfoAtTime(double timeSec) const noexcept;
 
     [[nodiscard]] bool isCompleted() const noexcept override {
         return isCompleted_.load();

@@ -33,11 +33,25 @@ StreamResult<std::shared_ptr<IStream>> HLSSource::createStream() {
 }
 
 StreamResult<void> HLSSource::seekStream(Time::TimePoint target, uint64_t, uint64_t generation) {
-    anchorSec_ = target.second() + rangeStartSec();
-    audioTimeline_ = {};
-    videoTimeline_ = {};
+    const auto mediaTarget = target.second() + rangeStartSec();
+    const auto segment = hls_->segmentInfoAtTime(mediaTarget);
+    if (auto result = stream_->seekByTime(mediaTarget, generation); !result) {
+        return result;
+    }
+    if (segment) {
+        anchorSec_ = segment->startTime;
+    }
+    if (segment && segment->isDiscontinuity) {
+        audioTimeline_ = {};
+        videoTimeline_ = {};
+    } else {
+        audioTimeline_.lastPlaybackSec.reset();
+        videoTimeline_.lastPlaybackSec.reset();
+        audioTimeline_.discontinuityPending = false;
+        videoTimeline_.discontinuityPending = false;
+    }
     hasCurrentSequence_ = false;
-    return stream_->seekByTime(target.second(), generation);
+    return {};
 }
 
 double HLSSource::mapPts(const AVFrame& frame) const noexcept {

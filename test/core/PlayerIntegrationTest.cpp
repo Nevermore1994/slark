@@ -24,10 +24,10 @@ using ::testing::AtLeast;
 
 namespace slark {
 
-static constexpr const char* kTsPath = "../../test_sample/segment-0.ts";
-static constexpr const char* kWavPath = "../../test_sample/sample-3s.wav";
+[[maybe_unused]] static constexpr const char* kTsPath = "../../test_sample/segment-0.ts";
+[[maybe_unused]] static constexpr const char* kWavPath = "../../test_sample/sample-3s.wav";
 
-static DataPtr loadFileData(const char* path) {
+[[maybe_unused]] static DataPtr loadFileData(const char* path) {
     std::ifstream input(path, std::ios::binary | std::ios::ate);
     if (!input) {
         return nullptr;

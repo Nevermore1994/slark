@@ -61,6 +61,24 @@ TEST_F(EngineCommandTest, FailedClearsWantPlay) {
     EXPECT_FALSE(engine->snapshot().wantPlay);
 }
 
+TEST_F(EngineCommandTest, SetRenderSuspendedFreezesAndResumesTheClock) {
+    openReady();
+    send(Play{});
+    sched.advance(1s);
+    const auto before = engine->snapshot().position;
+    ASSERT_GT(before.second(), 0.0);
+
+    send(SetRenderSuspended{true});
+    sched.advance(2s);
+    EXPECT_TRUE(engine->snapshot().renderSuspended);
+    EXPECT_EQ(engine->snapshot().position, before);
+
+    send(SetRenderSuspended{false});
+    sched.advance(1s);
+    EXPECT_FALSE(engine->snapshot().renderSuspended);
+    EXPECT_GT(engine->snapshot().position.second(), before.second());
+}
+
 TEST_F(EngineCommandTest, VsyncFromTheRenderThreadSurvivesRepeatedTeardown) {
     std::atomic<bool> stop{false};
     std::thread render([&] {

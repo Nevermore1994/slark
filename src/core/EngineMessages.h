@@ -48,13 +48,17 @@ struct SetMute {
     bool muted = false;
 };
 
+struct SetRenderSuspended {
+    bool suspended = false;
+};
+
 struct Stop {};
 
 struct Release {};
 
 // clang-format off
 using PlayerAction = std::variant<Prepare, Play, Pause, Seek, SetSpeed, SetRepeat, SetVolume, SetMute,
-                                  Stop, Release>;
+                                  SetRenderSuspended, Stop, Release>;
 // clang-format on
 
 }  // namespace slark::engine

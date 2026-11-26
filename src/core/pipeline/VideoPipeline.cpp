@@ -123,7 +123,7 @@ void VideoPipeline::setPlaying(bool playing) {
         return;
     }
     playing_ = playing;
-    if (!playing) {
+    if (playing) {
         // Do not carry a stale starvation verdict into the next resume.
         starved_ = false;
         starvedVsyncs_ = 0;
@@ -153,6 +153,11 @@ bool VideoPipeline::ready(SeekEpoch epoch, Time::TimePoint target) const {
     (void)target;
     std::lock_guard lock(mutex_);
     return epoch == epoch_ && readyLocked();
+}
+
+bool VideoPipeline::starved() const {
+    std::lock_guard lock(mutex_);
+    return starved_ && !eosReceived_;
 }
 
 bool VideoPipeline::presentedFrame() const {
@@ -218,7 +223,7 @@ void VideoPipeline::advanceLocked(Time::TimePoint clockNow) {
             }
             queue_.pop_front();
         }
-    } else {
+    } else if (playing_) {
         AVSync::Config sync;
         sync.maxDropPerVsync = config_.maxDropPerVsync;
         while (!queue_.empty()) {
@@ -393,7 +398,7 @@ void VideoPipeline::noteProgress() {
 void VideoPipeline::handleDecoded(slark::DecoderData data) {
     if (!data.frame || data.error != Error::Success) {
         if (data.error != Error::Success && data.error != Error::Cancelled) {
-            fail(data.error);
+            fail(data.error, data.origin);
         }
         return;
     }
@@ -543,11 +548,28 @@ int32_t VideoPipeline::queueCapacityLocked() const {
     return config_.maxQueueFrames + sink_->heldCount();
 }
 
-void VideoPipeline::fail(slark::Error error) {
+ErrorDetail VideoPipeline::failureDetail() const {
+    std::lock_guard lock(mutex_);
+    return ErrorDetail{failureOrigin_, {}};
+}
+
+void VideoPipeline::abort() {
+    {
+        std::lock_guard lock(mutex_);
+        if (closed_) {
+            return;
+        }
+        closed_ = true;
+    }
+    wakeLoop();
+}
+
+void VideoPipeline::fail(slark::Error error, int32_t origin) {
     {
         std::lock_guard lock(mutex_);
         if (!failure_) {
             failure_ = error;
+            failureOrigin_ = origin;
         }
     }
     wakeLoop();

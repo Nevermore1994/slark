@@ -20,6 +20,9 @@ std::shared_ptr<slark::IDecoder> DecoderBuilder::createAudio(
     if (override_) {
         return override_(true);
     }
+    if (!info || info->sampleRate == 0 || info->channels == 0) {
+        return nullptr;
+    }
     auto& manager = DecoderManager::shareInstance();
     auto decoder = manager.create(manager.getDecoderType(info->mediaInfo,
                                                          setting_.enableAudioSoftDecode));

@@ -63,7 +63,7 @@ struct AcceptingAudioSink : public AudioSink {
         return true;
     }
 
-    bool write(AVFrameRefPtr frame) override {
+    bool write(AVFrameRefPtr) override {
         ++written;
         return true;
     }

@@ -3,6 +3,7 @@
 //
 
 #include <chrono>
+#include <limits>
 
 #include "Fakes.h"
 
@@ -125,28 +126,25 @@ TEST_F(EngineStartupTest, FullyLoadedShortMediaDoesNotWaitForTheStartBuffer) {
     EXPECT_EQ(status(), Status::Ready);
 }
 
-TEST_F(EngineStartupTest, RebufferingHasADeadBand) {
+TEST_F(EngineStartupTest, SteadyWatermarkDropDoesNotTriggerBuffering) {
     openReady();
+    send(Play{});
     ASSERT_EQ(status(), Status::Ready);
 
     src().setCache(2.9);
     sched.runUntilIdle();
-    EXPECT_EQ(status(), Status::Buffering);
+    EXPECT_EQ(status(), Status::Ready);
 
-    src().setCache(4.4);
-    sched.runUntilIdle();
-    EXPECT_EQ(status(), Status::Buffering);
-
-    src().setCache(4.5);
+    src().setCache(1.2);
     sched.runUntilIdle();
     EXPECT_EQ(status(), Status::Ready);
 }
 
-TEST_F(EngineStartupTest, RebufferingStopsTheClockAndResumesWithIt) {
+TEST_F(EngineStartupTest, StarvationStopsTheClockAndResumesWithIt) {
     openReady();
     send(Play{});
     sched.advance(1s);
-    src().setCache(1.2);
+    pipeline().setStarved(true);
     sched.runUntilIdle();
     ASSERT_EQ(status(), Status::Buffering);
 
@@ -154,9 +152,52 @@ TEST_F(EngineStartupTest, RebufferingStopsTheClockAndResumesWithIt) {
     sched.advance(2s);
     EXPECT_EQ(engine->snapshot().position, frozen);
 
-    src().setCache(9.0);
+    pipeline().setStarved(false);
     sched.advance(1s);
+    EXPECT_EQ(status(), Status::Ready);
     EXPECT_EQ(engine->snapshot().position, frozen + Time::TimeDelta::fromMilliSeconds(1000ms));
+}
+
+TEST_F(EngineStartupTest, StarvationDoesNotResolveItself) {
+    openReady();
+    send(Play{});
+    pipeline().setStarved(true);
+    sched.runUntilIdle();
+    ASSERT_EQ(status(), Status::Buffering);
+
+    for (int i = 0; i < 10; ++i) {
+        sched.advance(500ms);
+        EXPECT_EQ(status(), Status::Buffering);
+    }
+
+    pipeline().setStarved(false);
+    sched.runUntilIdle();
+    EXPECT_EQ(status(), Status::Ready);
+}
+
+TEST_F(EngineStartupTest, PausedStarvationDoesNotTriggerBuffering) {
+    openReady();
+    pipeline().setStarved(true);
+    sched.runUntilIdle();
+    EXPECT_EQ(status(), Status::Ready);
+    EXPECT_FALSE(engine->snapshot().wantPlay);
+}
+
+TEST_F(EngineStartupTest, BufferingKeepsTheFrozenVsyncTime) {
+    openReady();
+    send(Play{});
+    sched.advance(1s);
+    engine->notifyVsync();
+    ASSERT_TRUE(pipeline().lastVsync.has_value());
+    const auto running = pipeline().lastVsync->second();
+
+    pipeline().setStarved(true);
+    sched.runUntilIdle();
+    ASSERT_EQ(status(), Status::Buffering);
+    engine->notifyVsync();
+    ASSERT_TRUE(pipeline().lastVsync.has_value());
+    EXPECT_GT(pipeline().lastVsync->second(), 0.5);
+    EXPECT_NEAR(pipeline().lastVsync->second(), running, 0.05);
 }
 
 TEST_F(EngineStartupTest, SourceFailureBecomesFailedAndNotifiesOnce) {
@@ -188,6 +229,34 @@ TEST_F(EngineStartupTest, PipelineFailureBecomesFailed) {
     pipeline().wake();
     sched.runUntilIdle();
     EXPECT_EQ(status(), Status::Failed);
+}
+
+TEST_F(EngineStartupTest, PipelineFailureKeepsOriginCodeAndHost) {
+    open();
+    src().failDetail = ErrorDetail{0, "cdn.example.com:8443"};
+    pipeline().fail = Error::CodecError;
+    pipeline().failDetail =
+        ErrorDetail{std::numeric_limits<int32_t>::min(), {}};
+    pipeline().wake();
+    sched.runUntilIdle();
+    ASSERT_EQ(rec->count(PlayerEvent::OnError), 1);
+    EXPECT_EQ(rec->events.back().second,
+              std::to_string(static_cast<uint32_t>(Error::CodecError)) +
+                  "|-2147483648|cdn.example.com:8443");
+}
+
+TEST_F(EngineStartupTest, FailureStopsLoadingAndAbortsPipelines) {
+    open();
+    pipeline().fail = Error::CodecError;
+    pipeline().wake();
+    sched.runUntilIdle();
+    ASSERT_EQ(status(), Status::Failed);
+    EXPECT_TRUE(src().loadingStopped);
+    EXPECT_GE(pipeline().aborts, 1);
+
+    const auto regulated = src().regulated.size();
+    sched.advance(1s);
+    EXPECT_EQ(src().regulated.size(), regulated);
 }
 
 TEST_F(EngineStartupTest, NoUsablePipelineIsAFormatError) {

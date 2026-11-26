@@ -32,6 +32,8 @@ class Engine : public std::enable_shared_from_this<Engine> {
                                           PlaybackFactory factory,
                                           TeardownHook teardownHook = {});
 
+    ~Engine();
+
     void post(PlayerAction command);
     void close() noexcept;
     // vsync tick from the render side; paces the video pipeline.
@@ -52,6 +54,7 @@ class Engine : public std::enable_shared_from_this<Engine> {
     void onSetRepeat(SetRepeat& c);
     void onSetVolume(SetVolume& c);
     void onSetMute(SetMute& c);
+    void onSetRenderSuspended(SetRenderSuspended& c);
     void applyVolume();
     void onStop();
     void onRelease();

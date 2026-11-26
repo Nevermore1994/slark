@@ -93,7 +93,7 @@ struct SinkHarness {
     SinkHarness() {
         auto info = audioInfo();
         sink = std::make_unique<AudioRenderSink>(
-            [this](const std::shared_ptr<AudioInfo>& i) {
+            [this](const std::shared_ptr<AudioInfo>&) {
                 return render;
             },
             0.1);

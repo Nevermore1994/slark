@@ -8,6 +8,7 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <limits>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -636,6 +637,18 @@ TEST(AudioPipelineTest, CloseIsIdempotent) {
     }
     // Destroying again via the harness must be a no-op; the pipeline handle is already moved out.
     SUCCEED();
+}
+
+TEST(AudioPipelineTest, DecoderErrorKeepsItsOriginCode) {
+    auto harness = PipelineHarness::create();
+    constexpr int32_t kCodecOrigin = std::numeric_limits<int32_t>::min();
+    harness.decoder->invokeReceiveFunc(
+        DecoderData{nullptr, Error::CodecError, 0, kCodecOrigin});
+    ASSERT_TRUE(waitUntil([&] {
+        return harness.pipeline->failure().has_value();
+    }));
+    EXPECT_EQ(harness.pipeline->failure().value(), Error::CodecError);
+    EXPECT_EQ(harness.pipeline->failureDetail().origin, kCodecOrigin);
 }
 
 TEST(AudioPipelineTest, PermanentlyRefusingCodecFailsThePipeline) {

@@ -127,6 +127,8 @@ class ScriptedDemuxer final : public IDemuxer {
 
     ScriptedDemuxer() {
         audioInfo_ = std::make_shared<AudioInfo>();
+        audioInfo_->sampleRate = 48000;
+        audioInfo_->channels = 2;
         videoInfo_ = std::make_shared<VideoInfo>();
         totalDuration_ = CTime(60.0);
     }

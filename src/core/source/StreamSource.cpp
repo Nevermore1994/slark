@@ -223,9 +223,23 @@ DebugInfo StreamSource::debugInfo() const {
 }
 
 void StreamSource::applyFlowGate(bool closed) {
-    if (!closed && stream_) {
+    if (!closed && !stopped_.load(std::memory_order_acquire) && stream_) {
         stream_->openFetchGate();
     }
+}
+
+void StreamSource::stopLoading() {
+    if (stopped_.exchange(true, std::memory_order_acq_rel)) {
+        return;
+    }
+    if (!loader_) {
+        return;
+    }
+    (void)loader_->postTask(ThreadTask([this] {
+        if (stream_ && !closed_.load(std::memory_order_acquire)) {
+            stream_->close();
+        }
+    }));
 }
 
 void StreamSource::postFlowGate(bool closed) {
@@ -353,7 +367,8 @@ void StreamSource::openOnLoader() {
 }
 
 void StreamSource::onChunk(DataChunk chunk) {
-    if (closed_.load(std::memory_order_acquire) || chunk.empty()) {
+    if (closed_.load(std::memory_order_acquire) ||
+        stopped_.load(std::memory_order_acquire) || chunk.empty()) {
         return;
     }
     DataPacket packet;
@@ -366,11 +381,13 @@ void StreamSource::onChunk(DataChunk chunk) {
     pendingChunks_.fetch_add(1, std::memory_order_acq_rel);
     const bool posted = loader_
                             ->postTask(ThreadTask([this, holder] {
-                                if (!closed_.load(std::memory_order_acquire)) {
+                                if (!closed_.load(std::memory_order_acquire) &&
+                                    !stopped_.load(std::memory_order_acquire)) {
                                     feedDemuxer(*holder);
                                 }
                                 pendingChunks_.fetch_sub(1, std::memory_order_acq_rel);
-                                if (stream_ && pullsGate()) {
+                                if (stream_ && pullsGate() &&
+                                    !stopped_.load(std::memory_order_acquire)) {
                                     stream_->openFetchGate();
                                 }
                             }))
@@ -489,10 +506,13 @@ void StreamSource::refreshTracksOnLoader() {
         track_ = std::move(snapshot);
     }
 
+    // TS announces the audio track in PMT before ADTS supplies its format.
+    const auto audio = demuxer_->audioInfo();
+    const bool audioReady = !audio || (audio->sampleRate > 0 && audio->channels > 0);
     bool becameKnown = false;
     {
         std::lock_guard lock(infoMutex_);
-        if (!info_.tracksKnown) {
+        if (!info_.tracksKnown && audioReady) {
             hasAudio_ = demuxer_->hasAudio();
             hasVideo_ = demuxer_->hasVideo();
             info_.tracksKnown = true;

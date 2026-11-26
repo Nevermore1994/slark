@@ -229,6 +229,7 @@ TEST(PipelineEpochTest, AudioEpochBumpDoesNotDisturbVideo) {
             return std::make_shared<EchoVideoDecoder>();
         },
         std::move(videoSink), VideoPipeline::Config{}, 1, sec(0.0), [] {});
+    videoPipeline.setPlaying(true);
 
     // Audio track switch: only audio flushes to epoch 2; video stays on epoch 1 and keeps
     // accepting its frames.

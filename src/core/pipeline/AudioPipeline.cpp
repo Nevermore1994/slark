@@ -160,6 +160,8 @@ void AudioPipeline::setPlaying(bool playing) {
             // A retarget needs a seek in flight, and each seek reopens the record in flush().
             recording_ = false;
             written_.clear();
+            starved_ = false;
+            underrunTicks_ = 0;
         }
     }
     if (playing) {
@@ -191,6 +193,11 @@ bool AudioPipeline::ready(SeekEpoch epoch, Time::TimePoint target) const {
         primedOnce_ = true;
     }
     return primedOnce_ && !starved_;
+}
+
+bool AudioPipeline::starved() const {
+    std::lock_guard lock(mutex_);
+    return starved_ && !(eosReceived_ || decoderEnded_ || failure_);
 }
 
 bool AudioPipeline::ended() const {
@@ -338,7 +345,7 @@ void AudioPipeline::noteProgress() {
 void AudioPipeline::handleDecoded(slark::DecoderData data) {
     if (!data.frame || data.error != Error::Success) {
         if (data.error != Error::Success && data.error != Error::Cancelled) {
-            fail(data.error);
+            fail(data.error, data.origin);
         }
         return;
     }
@@ -527,11 +534,28 @@ std::string AudioPipeline::debugState() const {
         sink_->position().second(), sink_->drained(), eosReceived_, decoderEnded_);
 }
 
-void AudioPipeline::fail(slark::Error error) {
+ErrorDetail AudioPipeline::failureDetail() const {
+    std::lock_guard lock(mutex_);
+    return ErrorDetail{failureOrigin_, {}};
+}
+
+void AudioPipeline::abort() {
+    {
+        std::lock_guard lock(mutex_);
+        if (closed_) {
+            return;
+        }
+        closed_ = true;
+    }
+    wakeLoop();
+}
+
+void AudioPipeline::fail(slark::Error error, int32_t origin) {
     {
         std::lock_guard lock(mutex_);
         if (!failure_) {
             failure_ = error;
+            failureOrigin_ = origin;
         }
     }
     wakeLoop();

@@ -13,6 +13,9 @@
 
 namespace slark {
 
+bool findAdtsHeader(DataView view, uint32_t& pos) noexcept;
+bool parseAdtsHeader(DataView dataView, AACAdtsHeader& header) noexcept;
+
 bool TSDemuxer::checkPacket(Buffer& buffer, uint64_t& pos) noexcept {
     constexpr char kSyncByte = 0x47;
     auto view = buffer.shotView();
@@ -250,6 +253,19 @@ bool TSDemuxer::parseTSPes(DataView data, uint8_t payloadIndicator, TSPESFrame& 
         return false;
     }
     pes.mediaData.append(data.substr(dataOffset));
+    if (isAudio && audioInfo_ && (audioInfo_->sampleRate == 0 || audioInfo_->channels == 0)) {
+        // ADTS header arrives with the first PES; track format must not wait for a packed frame.
+        auto es = data.substr(dataOffset);
+        uint32_t start = 0;
+        AACAdtsHeader header;
+        if (findAdtsHeader(es, start) && parseAdtsHeader(es.substr(start), header)) {
+            if (header.channel == 0) {
+                header.channel = 2;
+            }
+            initAudioInfoIfNeeded(header,
+                                  static_cast<uint64_t>(getAACSamplingRate(header.samplingIndex)));
+        }
+    }
     return true;
 }
 
@@ -470,7 +486,8 @@ void TSDemuxer::applyTimestamp(AVFrame& frame, TSParseInfo::Info& info, bool isA
 }
 
 void TSDemuxer::initAudioInfoIfNeeded(const AACAdtsHeader& header, uint64_t sampleRate) noexcept {
-    if (!audioInfo_ || parseInfo_.audioInfo.isValid) {
+    if (!audioInfo_ || sampleRate == 0 || header.channel == 0 ||
+        (audioInfo_->sampleRate != 0 && audioInfo_->channels != 0)) {
         return;
     }
     audioInfo_->channels = header.channel;

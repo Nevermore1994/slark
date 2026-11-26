@@ -68,6 +68,7 @@ struct DecoderData {
     AVFrameRefPtr frame;
     Error error = Error::Success;
     uint64_t seekEpoch{0};  ///< seek epoch captured at dispatch, used for stale detection in callbacks
+    int32_t origin = 0;
 };
 
 using DecoderReceiveFunc = std::function<void(DecoderData)>;

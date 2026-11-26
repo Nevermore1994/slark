@@ -28,7 +28,7 @@ using namespace slark::engine;
 
 namespace {
 
-constexpr const char* kWavPath = "../../test_sample/sample-3s.wav";
+[[maybe_unused]] constexpr const char* kWavPath = "../../test_sample/sample-3s.wav";
 constexpr const char* kMp4Path = "../../test_sample/Sample.mp4";
 
 Time::TimePoint sec(double s) {
@@ -45,7 +45,7 @@ struct GatedAudioSink {
         return true;
     }
     [[nodiscard]] Time::TimePoint position() const {
-        constexpr int64_t kFrameUs = 6000;
+        constexpr uint64_t kFrameUs = 6000;
         return Time::TimePoint(baseUs.load() +
                                static_cast<uint64_t>(consumed.load()) * kFrameUs);
     }
@@ -81,7 +81,7 @@ struct GatedAudioSink {
     int capacity = 8;
     std::atomic<int> buffered{0};
     std::atomic<int> consumed{0};
-    std::atomic<std::int64_t> baseUs{0};
+    std::atomic<std::uint64_t> baseUs{0};
     std::atomic<bool> ended{false};
 };
 

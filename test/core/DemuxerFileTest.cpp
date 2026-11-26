@@ -584,6 +584,43 @@ TEST_F(TsDemuxerFileTest, TsDemuxerFillsAudioInfo) {
     EXPECT_GT(audioInfo->channels, 0u) << "audio channels should be filled after parsing TS";
 }
 
+TEST_F(TsDemuxerFileTest, TsDemuxerFillsAudioInfoBeforeAudioFrames) {
+    std::ifstream ifs(kTsPath, std::ios::binary);
+    ASSERT_TRUE(ifs.good());
+
+    auto audioInfo = std::shared_ptr<AudioInfo>();
+    auto videoInfo = std::shared_ptr<VideoInfo>();
+    TSDemuxer tsDemuxer(audioInfo, videoInfo);
+
+    std::array<uint8_t, 188> packet{};
+    int infoReadyAt = -1;
+    int framesAt = -1;
+    for (int i = 0; i < 4000 && (infoReadyAt < 0 || framesAt < 0); ++i) {
+        if (!ifs.read(reinterpret_cast<char*>(packet.data()), packet.size())) {
+            break;
+        }
+        auto data = Data::create(packet.size());
+        ASSERT_NE(data, nullptr);
+        std::memcpy(data->data(), packet.data(), packet.size());
+        data->setSize(packet.size());
+        Buffer buffer;
+        buffer.append(0, std::move(data));
+
+        DemuxerResult result;
+        tsDemuxer.parseData(buffer, 0, result);
+        if (infoReadyAt < 0 && audioInfo && audioInfo->sampleRate > 0 &&
+            audioInfo->channels > 0) {
+            infoReadyAt = i;
+        }
+        if (framesAt < 0 && !result.audioFrames.empty()) {
+            framesAt = i;
+        }
+    }
+    EXPECT_GE(infoReadyAt, 0) << "audio format must be known from the first audio PES";
+    EXPECT_GE(framesAt, 0) << "TS sample should produce audio frames";
+    EXPECT_LT(infoReadyAt, framesAt) << "audio format must precede audio frame emission";
+}
+
 TEST_F(TsDemuxerFileTest, TsDemuxerFillsVideoInfo) {
     auto audioInfo = std::shared_ptr<AudioInfo>();
     auto videoInfo = std::shared_ptr<VideoInfo>();

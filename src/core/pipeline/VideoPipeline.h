@@ -59,8 +59,11 @@ class VideoPipeline final : public Pipeline {
     [[nodiscard]] DebugInfo debugInfo() const override;
 
     [[nodiscard]] bool ready(SeekEpoch epoch, Time::TimePoint target) const override;
+    [[nodiscard]] bool starved() const override;
     [[nodiscard]] bool ended() const override;
     [[nodiscard]] std::optional<Error> failure() const override;
+    [[nodiscard]] ErrorDetail failureDetail() const override;
+    void abort() override;
 
     // Called from the vsync/render thread.
     void onVsync(Time::TimePoint clockNow) override;
@@ -83,7 +86,7 @@ class VideoPipeline final : public Pipeline {
     [[nodiscard]] bool queueFull() const;
     [[nodiscard]] bool refusalExceededLimit();
     void noteProgress();
-    void fail(slark::Error error);
+    void fail(slark::Error error, int32_t origin = 0);
     void wakeLoop();
     void advanceLocked(Time::TimePoint clockNow);
     [[nodiscard]] bool readyLocked() const noexcept;
@@ -123,6 +126,7 @@ class VideoPipeline final : public Pipeline {
     bool playing_ = false;
     std::deque<AVFrameRefPtr> queue_;
     std::optional<Error> failure_;
+    int32_t failureOrigin_ = 0;
 
     // Pipeline thread only.
     std::deque<AVFrameRefPtr> inbox_;

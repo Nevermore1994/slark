@@ -458,6 +458,18 @@ std::optional<Segment> HLSStream::segmentInfo(uint64_t sequence) const noexcept 
     return playlist_->segments()[*index];
 }
 
+std::optional<Segment> HLSStream::segmentInfoAtTime(double timeSec) const noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!playlist_) {
+        return std::nullopt;
+    }
+    const auto index = playlist_->findSegmentByTime(timeSec);
+    if (!index) {
+        return std::nullopt;
+    }
+    return playlist_->segments()[*index];
+}
+
 void HLSStream::openFetchGate() noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!waitingForCapacity_ || closing_ || isPaused_ || !isRunning_ || segmentOp_) {

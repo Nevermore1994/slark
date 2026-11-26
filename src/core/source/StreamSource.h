@@ -55,6 +55,7 @@ class StreamSource : public Source {
 
     void setSeeking(bool seeking) noexcept override;
 
+    void stopLoading() override;
     void close() override;
 
  protected:
@@ -72,7 +73,7 @@ class StreamSource : public Source {
 
     // Also closed while the loader is behind, since cacheEnd counts parsed data only.
     [[nodiscard]] bool gateOpen() const noexcept {
-        return !gate_.isPaused() &&
+        return !stopped_.load(std::memory_order_acquire) && !gate_.isPaused() &&
                pendingChunks_.load(std::memory_order_acquire) < kMaxPendingChunks;
     }
 
@@ -206,6 +207,7 @@ class StreamSource : public Source {
     std::atomic<uint64_t> clockUs_{0};
     std::atomic<bool> eos_{false};
     std::atomic<bool> closed_{false};
+    std::atomic<bool> stopped_{false};
 };
 
 }  // namespace slark::engine

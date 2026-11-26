@@ -324,15 +324,65 @@ TEST(VideoPipelineTest, StarvedVsyncsClearReady) {
     }
     EXPECT_FALSE(harness.pipeline->ready(1, sec(0.0)));
 
-    // Pausing clears the starvation verdict and stops counting empty vsyncs.
+    // Pausing keeps seek readiness true while the starvation signal survives.
     harness.pipeline->setPlaying(false);
     EXPECT_TRUE(harness.pipeline->ready(1, sec(0.0)));
+    EXPECT_TRUE(harness.pipeline->starved());
+}
+
+TEST(VideoPipelineTest, StarvationSurvivesBufferingPauseAndClearsOnResume) {
+    VideoPipeline::Config config;
+    config.starvationThreshold = 2;
+    auto harness = PipelineHarness::create(1, sec(0.0), config);
+    harness.pipeline->setPlaying(true);
+    harness.sender->post(videoFrame(0.0, 1, true));
+    ASSERT_TRUE(waitUntil([&] {
+        harness.pipeline->onVsync(sec(0.0));
+        return harness.pipeline->ready(1, sec(0.0));
+    }));
+
+    for (int i = 0; i < 3; ++i) {
+        harness.pipeline->onVsync(sec(5.0));
+    }
+    ASSERT_TRUE(harness.pipeline->starved());
+
+    harness.pipeline->setPlaying(false);
+    EXPECT_TRUE(harness.pipeline->ready(1, sec(0.0)));
+    EXPECT_TRUE(harness.pipeline->starved());
+
+    harness.pipeline->setPlaying(true);
+    EXPECT_FALSE(harness.pipeline->starved());
+}
+
+TEST(VideoPipelineTest, PausedVsyncDoesNotConsumeFrames) {
+    auto harness = PipelineHarness::create(1, sec(0.0));
+    harness.pipeline->setPlaying(true);
+    harness.sender->post(videoFrame(0.0, 1, true));
+    ASSERT_TRUE(waitUntil([&] {
+        harness.pipeline->onVsync(sec(0.0));
+        return harness.pipeline->ready(1, sec(0.0));
+    }));
+    for (int i = 0; i < 3; ++i) {
+        harness.sender->post(videoFrame(0.2 * (i + 1), 1));
+    }
+    harness.pipeline->setPlaying(false);
+    for (int i = 0; i < 20; ++i) {
+        harness.pipeline->onVsync(sec(5.0));
+    }
+    EXPECT_EQ(harness.sink->presentedPts.size(), 1u);
+
+    harness.pipeline->setPlaying(true);
+    EXPECT_TRUE(waitUntil([&] {
+        harness.pipeline->onVsync(sec(0.2));
+        return harness.sink->presentedPts.size() >= 2u;
+    }));
 }
 
 TEST(VideoPipelineTest, RenderHeldFramesCountTowardsTheQueueLimit) {
     VideoPipeline::Config config;
     config.maxQueueFrames = 2;
     auto harness = PipelineHarness::create(1, sec(0.0), config);
+    harness.pipeline->setPlaying(true);
     for (int i = 0; i < 3; ++i) {
         harness.sender->post(videoFrame(0.2 * i, 1, i == 0));
     }
@@ -361,6 +411,7 @@ TEST(VideoPipelineTest, AFullPresentationQueueResumesWhenVsyncOpensRoom) {
     VideoPipeline::Config config;
     config.maxQueueFrames = 2;
     auto harness = PipelineHarness::create(1, sec(0.0), config);
+    harness.pipeline->setPlaying(true);
     for (int i = 0; i < 3; ++i) {
         harness.sender->post(videoFrame(0.2 * i, 1, i == 0));
     }
@@ -397,6 +448,7 @@ TEST(VideoPipelineTest, EosEndsThePipelineOnceTheQueueDrains) {
 
 TEST(VideoPipelineTest, EosEndsThePipelineWhenTheDecoderKeepsItsPendingFlag) {
     auto harness = PipelineHarness::create();
+    harness.pipeline->setPlaying(true);
     harness.decoder->stickyPending = true;
     for (int i = 0; i < 4; ++i) {
         harness.sender->post(videoFrame(0.04 * i, 1, i == 0));
@@ -470,6 +522,7 @@ TEST(VideoPipelineTest, FramesCarryingEpochOnlyInDecoderDataArePresented) {
 
 TEST(VideoPipelineTest, KeepsDrainingOutputsSoAFullCodecQueueRecovers) {
     auto harness = PipelineHarness::create(1, sec(0.0));
+    harness.pipeline->setPlaying(true);
     harness.decoder->maxCheckedOutOutput = 2;
     harness.pipeline->flush(1, sec(0.0), SeekMode::Fast);
     for (int i = 0; i < 6; ++i) {

@@ -44,9 +44,19 @@ class Pipeline {
         (void)clockNow;
     }
 
+    // Starvation is separate from ready(): seek readiness ignores a paused pipeline.
+    [[nodiscard]] virtual bool starved() const {
+        return false;
+    }
+
     [[nodiscard]] virtual bool ready(SeekEpoch epoch, Time::TimePoint target) const = 0;
     [[nodiscard]] virtual bool ended() const = 0;
     [[nodiscard]] virtual std::optional<Error> failure() const = 0;
+    [[nodiscard]] virtual ErrorDetail failureDetail() const {
+        return {};
+    }
+
+    virtual void abort() {}
 
     [[nodiscard]] virtual bool blocksReady() const {
         return true;
