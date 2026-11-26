@@ -39,6 +39,7 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
     private var isReleased = false
     private val releaseScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var lastVideoRotation: Int = 0
+    private var pendingSurfaceRebuild = false
 
     override var isLoop: Boolean = false
         set(value) {
@@ -81,7 +82,7 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
     override fun release() {
         if (isReleased) return
         isReleased = true
-        stopRendering()
+        renderThread?.stop()
         releaseScope.launch {
             renderThread?.shutdown()
             renderThread?.join()
@@ -125,12 +126,14 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
         val degrees = rotation.ordinal * 90
         SlarkLog.i(LOG_TAG, "setRotation(api): rotation=$rotation, degrees={$degrees}")
         renderThread?.setRotation(degrees)
+        renderThread?.presentBackup()
     }
 
     fun setVideoRotation(rotationDegrees: Int) {
         SlarkLog.i(LOG_TAG, "setVideoRotation(metadata): degrees=$rotationDegrees")
         lastVideoRotation = rotationDegrees
         renderThread?.setRotation(rotationDegrees)
+        renderThread?.presentBackup()
     }
 
     override fun onBackground(isBackground: Boolean) {
@@ -175,12 +178,16 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
         renderThread?.render(textureRenderId, width, height)
     }
 
-    fun startRendering() {
-        renderThread?.start()
+    fun reconcileRendering() {
+        if (SlarkPlayerManager.vsyncDesired(playerId)) {
+            renderThread?.start()
+        } else {
+            renderThread?.stop()
+        }
     }
 
-    fun stopRendering() {
-        renderThread?.stop()
+    fun setRenderSuspended(suspended: Boolean) {
+        SlarkPlayerManager.setRenderSuspended(playerId, suspended)
     }
 
     @Volatile
@@ -190,60 +197,61 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
         SlarkLog.i(LOG_TAG, "switchGraphicsBackend: {} -> {}", graphicsBackend, backend)
         if (graphicsBackend == backend) return
         isSwitchingBackend = true
+        pendingSurfaceRebuild = false
+        setRenderSuspended(true)
         graphicsBackend = backend
-        val surface = currentSurface
-        if (surface == null) {
-            SlarkLog.w(LOG_TAG, "switchGraphicsBackend: currentSurface is null")
-            isSwitchingBackend = false
-            return
+        if (currentSurface != null) {
+            rebuildRenderThread()
         }
-        val old = renderThread
-        SlarkLog.i(LOG_TAG, "switchGraphicsBackend: shutdown old thread={}", old != null)
-        old?.shutdown()
-        old?.join()
-        SlarkLog.i(LOG_TAG, "switchGraphicsBackend: create new thread, backend={}", backend)
-        renderThread = RenderThreadFactory.create(graphicsBackend, surface, currentSurfaceWidth, currentSurfaceHeight)
-        renderThread?.playerId = playerId
-        renderThread?.initContext()
-        if (lastVideoRotation != 0) {
-            renderThread?.setRotation(lastVideoRotation)
-        }
-        startRendering()
+        setRenderSuspended(false)
         isSwitchingBackend = false
+        if (pendingSurfaceRebuild) {
+            pendingSurfaceRebuild = false
+            if (currentSurface != null) {
+                rebuildRenderThread()
+            } else {
+                renderThread?.shutdown()
+                renderThread = null
+            }
+        }
+        reconcileRendering()
         SlarkLog.i(LOG_TAG, "switchGraphicsBackend: done")
     }
 
-    private fun onSurfaceAvailable(surface: Surface, width: Int, height: Int) {
-        SlarkLog.i(LOG_TAG, "onSurfaceAvailable: " + width + "x" + height + ", switching=" + isSwitchingBackend)
-        if (isSwitchingBackend) {
-            SlarkLog.w(LOG_TAG, "onSurfaceAvailable: skip during backend switch")
-            return
-        }
-        currentSurface = surface
-        currentSurfaceWidth = width
-        currentSurfaceHeight = height
+    private fun rebuildRenderThread() {
+        val surface = currentSurface ?: return
         val old = renderThread
         old?.shutdown()
         old?.join()
-        renderThread = RenderThreadFactory.create(graphicsBackend, surface, width, height)
+        renderThread = RenderThreadFactory.create(
+            graphicsBackend, surface, currentSurfaceWidth, currentSurfaceHeight
+        )
         renderThread?.playerId = playerId
         renderThread?.initContext()
-        if (lastVideoRotation != 0) {
-            renderThread?.setRotation(lastVideoRotation)
-        }
-        // startRendering() was a no-op if the state became Buffering before the surface existed.
-        val current = state()
-        if (current == SlarkPlayerState.Buffering || current == SlarkPlayerState.Prepared ||
-            current == SlarkPlayerState.Ready || current == SlarkPlayerState.Playing) {
-            startRendering()
-        }
+        renderThread?.setRotation(lastVideoRotation)
+        renderThread?.presentBackup()
     }
 
-    private fun shouldRebuildOnSizeChange(): Boolean {
-        val state = state()
-        return state == SlarkPlayerState.Pause ||
-            state == SlarkPlayerState.Ready ||
-            state == SlarkPlayerState.Completed
+    private fun onSurfaceAvailable(surface: Surface, width: Int, height: Int) {
+        currentSurface = surface
+        currentSurfaceWidth = width
+        currentSurfaceHeight = height
+        if (isSwitchingBackend) {
+            pendingSurfaceRebuild = true
+            return
+        }
+        rebuildRenderThread()
+        reconcileRendering()
+    }
+
+    private fun onSurfaceDestroyed() {
+        currentSurface = null
+        if (isSwitchingBackend) {
+            pendingSurfaceRebuild = true
+            return
+        }
+        renderThread?.shutdown()
+        renderThread = null
     }
 
     private fun setupTextureView(textureView: TextureView) {
@@ -255,12 +263,11 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
 
             override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
                 renderThread?.setRenderSize(width, height)
-                if (shouldRebuildOnSizeChange()) renderThread?.rebuildSurface()
+                renderThread?.presentBackup()
             }
 
             override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
-                renderThread?.shutdown()
-                renderThread = null
+                onSurfaceDestroyed()
                 return true
             }
 
@@ -280,12 +287,11 @@ class SlarkPlayerImpl(val config: SlarkPlayerConfig, private val playerId: Strin
 
             override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
                 renderThread?.setRenderSize(width, height)
-                if (shouldRebuildOnSizeChange()) renderThread?.rebuildSurface()
+                renderThread?.presentBackup()
             }
 
             override fun surfaceDestroyed(holder: SurfaceHolder) {
-                renderThread?.shutdown()
-                renderThread = null
+                onSurfaceDestroyed()
             }
         })
         val holderSurface = surfaceView.holder.surface

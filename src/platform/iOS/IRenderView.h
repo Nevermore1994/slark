@@ -13,6 +13,7 @@ using IVideoRenderWeakPtr = std::weak_ptr<IVideoRender>;
 
 }  // namespace slark
 
+#import <CoreVideo/CoreVideo.h>
 #import <UIKit/UIKit.h>
 
 /**
@@ -28,5 +29,8 @@ using IVideoRenderWeakPtr = std::weak_ptr<IVideoRender>;
 - (void)stop;
 /// Returns a borrowed pointer to the view's weak_ptr<IVideoRender>.
 - (void*)renderImpl;
+/// Borrowed last presented frame; adoptPreRenderBuffer: retains it for the new view.
+- (CVPixelBufferRef)preRenderBuffer;
+- (void)adoptPreRenderBuffer:(CVPixelBufferRef)buffer;
 
 @end

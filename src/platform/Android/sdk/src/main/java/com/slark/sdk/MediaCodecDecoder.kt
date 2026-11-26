@@ -413,6 +413,10 @@ class MediaCodecDecoder(
 
         @JvmStatic
         fun createAudioDecoder(mediaInfo: String, config: AudioDecoderConfig): String {
+            if (config.sampleRate <= 0 || config.channels <= 0) {
+                SlarkLog.e(LOG_TAG, "invalid audio config: rate=${config.sampleRate} channels=${config.channels}")
+                return ""
+            }
             val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, config.sampleRate, config.channels).apply {
                 setInteger(MediaFormat.KEY_AAC_PROFILE, config.profile)
                 setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 4096)
@@ -431,9 +435,9 @@ class MediaCodecDecoder(
         }
 
         private fun buildAacCsd(config: AudioDecoderConfig): ByteArray {
-            val bytes = ByteArray(4)
             val isHE = config.profile == MediaCodecInfo.CodecProfileLevel.AACObjectHE ||
                 config.profile == MediaCodecInfo.CodecProfileLevel.AACObjectHE_PS
+            val bytes = ByteArray(if (isHE) 4 else 2)
             if (!isHE) {
                 bytes[0] = ((config.profile shl 3) or (config.samplingFreqIndex shr 1)).toByte()
                 bytes[1] = (((config.samplingFreqIndex and 0x01) shl 7) or (config.channels shl 3)).toByte()

@@ -273,6 +273,9 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_seek(JNIEnv* env,
                                                           jboolean isAccurate) {
     auto playerId = JNI::FromJVM::str(env, jPlayerId);
     if (auto player = PlayerManager::shareInstance().find(playerId)) {
+        if (auto render = VideoRenderManager::shareInstance().find(playerId)) {
+            render->clearBackup();
+        }
         player->seek(time, static_cast<bool>(isAccurate));
     } else {
         LogE("not found player, {}", playerId);
@@ -335,6 +338,31 @@ Java_com_slark_sdk_SlarkPlayerManager_00024Companion_state(JNIEnv* env,
     }
     auto stateValue = JNICache::instance().getEnumField(env, kPlayerStateClass, fieldView);
     return stateValue.detach();
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_slark_sdk_SlarkPlayerManager_00024Companion_vsyncDesired(JNIEnv* env,
+                                                                  jobject /*thiz*/,
+                                                                  jstring jPlayerId) {
+    auto playerId = FromJVM::str(env, jPlayerId);
+    if (auto player = PlayerManager::shareInstance().find(playerId)) {
+        return player->vsyncDesired() ? JNI_TRUE : JNI_FALSE;
+    }
+    LogE("not found player, {}", playerId);
+    return JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_slark_sdk_SlarkPlayerManager_00024Companion_setRenderSuspended(JNIEnv* env,
+                                                                        jobject /*thiz*/,
+                                                                        jstring jPlayerId,
+                                                                        jboolean suspended) {
+    auto playerId = FromJVM::str(env, jPlayerId);
+    if (auto player = PlayerManager::shareInstance().find(playerId)) {
+        player->setRenderSuspended(suspended != JNI_FALSE);
+    } else {
+        LogE("not found player, {}", playerId);
+    }
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

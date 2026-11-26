@@ -863,53 +863,33 @@ void AndroidVulkanContext::doBlitOES(int32_t textureId,
     }
     const float kVerts[] = {-normX, -normY, normX, -normY, -normX, normY, normX, normY};
 
-    // Compute texture coordinates from rotation_, consistent with GLPreviewRenderer.
-    // TRIANGLE_STRIP: BL, BR, TL, TR
-    // Note: GL's V axis points up (0=bottom,1=top) while Vulkan's points down (0=top,1=bottom).
-    // The AHardwareBuffer is written by GL and sampled by the Vulkan shader, so the V axis
-    // must be flipped to compensate for the coordinate-system difference.
-    float kUVs[8];
+    // TRIANGLE_STRIP: BL, BR, TL, TR; base texcoords match GLPreviewRenderer.
+    static constexpr float kBaseUVs[4][8] = {
+        {0, 0, 1, 0, 0, 1, 1, 1},
+        {1, 0, 1, 1, 0, 0, 0, 1},
+        {1, 1, 0, 1, 1, 0, 0, 0},
+        {0, 1, 0, 0, 1, 1, 1, 0},
+    };
+    const float* base = kBaseUVs[0];
     switch (rotation_) {
         case 90:
-            kUVs[0] = 1;
-            kUVs[1] = 1;
-            kUVs[2] = 1;
-            kUVs[3] = 0;
-            kUVs[4] = 0;
-            kUVs[5] = 1;
-            kUVs[6] = 0;
-            kUVs[7] = 0;
+            base = kBaseUVs[1];
             break;
         case 180:
-            kUVs[0] = 1;
-            kUVs[1] = 0;
-            kUVs[2] = 0;
-            kUVs[3] = 0;
-            kUVs[4] = 1;
-            kUVs[5] = 1;
-            kUVs[6] = 0;
-            kUVs[7] = 1;
+            base = kBaseUVs[2];
             break;
         case 270:
-            kUVs[0] = 0;
-            kUVs[1] = 0;
-            kUVs[2] = 0;
-            kUVs[3] = 1;
-            kUVs[4] = 1;
-            kUVs[5] = 0;
-            kUVs[6] = 1;
-            kUVs[7] = 1;
+            base = kBaseUVs[3];
             break;
         default:
-            kUVs[0] = 0;
-            kUVs[1] = 1;
-            kUVs[2] = 1;
-            kUVs[3] = 1;
-            kUVs[4] = 0;
-            kUVs[5] = 0;
-            kUVs[6] = 1;
-            kUVs[7] = 0;
             break;
+    }
+    // A 90/270 rotation swaps texcoord axes, so the Vulkan vertical flip is a U flip here.
+    const bool flipU = rotation_ == 90 || rotation_ == 270;
+    float kUVs[8];
+    for (int i = 0; i < 8; i += 2) {
+        kUVs[i] = flipU ? 1.0f - base[i] : base[i];
+        kUVs[i + 1] = flipU ? base[i + 1] : 1.0f - base[i + 1];
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, fbo_);

@@ -104,8 +104,9 @@ static slark::FlowConfig toFlowConfig(SlarkFlowConfig* config) {
     std::unique_ptr<slark::Player> _player;
     std::shared_ptr<PlayerObserver> _observer;
     void (^rotationCallback_)(double);
+    void (^renderReconcileBlock_)(void);
 }
-
+- (void)notifyRenderingChanged;
 @end
 
 @implementation SlarkPlayer
@@ -165,9 +166,13 @@ static slark::FlowConfig toFlowConfig(SlarkFlowConfig* config) {
         _observer->notifyStateFunc = [weakSelf](NSString* playerId, SlarkPlayerState state) {
             dispatch_async(dispatch_get_main_queue(), ^{
               __strong __typeof(weakSelf) strongSelf = weakSelf;
+              if (!strongSelf) {
+                  return;
+              }
               if ([strongSelf.delegate respondsToSelector:@selector(notifyState:state:)]) {
                   [strongSelf.delegate notifyState:playerId state:state];
               }
+              [strongSelf notifyRenderingChanged];
             });
         };
         _observer->notifyEventFunc = [weakSelf](NSString* playerId, SlarkPlayerEvent evnt,
@@ -316,6 +321,26 @@ static slark::FlowConfig toFlowConfig(SlarkFlowConfig* config) {
 
 - (void)setRotationCallback:(void (^)(double))callback {
     rotationCallback_ = callback;
+}
+
+- (void)setRenderReconcileBlock:(void (^)(void))block {
+    renderReconcileBlock_ = [block copy];
+}
+
+- (void)notifyRenderingChanged {
+    if (renderReconcileBlock_) {
+        renderReconcileBlock_();
+    }
+}
+
+- (void)setRenderSuspended:(BOOL)suspended {
+    if (_player) {
+        _player->setRenderSuspended(static_cast<bool>(suspended));
+    }
+}
+
+- (BOOL)vsyncDesired {
+    return _player && _player->vsyncDesired() ? YES : NO;
 }
 
 - (void)setRenderImpl:(void*)ptr {

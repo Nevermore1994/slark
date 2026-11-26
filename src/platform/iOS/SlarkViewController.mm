@@ -18,13 +18,18 @@
 @interface SlarkPlayer (Render)
 - (void)setRenderImpl:(void*)ptr;
 - (void)setRotationCallback:(void (^)(double))callback;
+- (void)setRenderSuspended:(BOOL)suspended;
+- (void)setRenderReconcileBlock:(void (^)(void))block;
+- (BOOL)vsyncDesired;
 @end
 
 @interface SlarkViewController ()
 @property(nonatomic, strong) UIView<IRenderView>* renderView;
 @property(nonatomic, strong) SlarkPlayer* player;
 @property(nonatomic, assign) BOOL isActive;
+@property(nonatomic, assign) BOOL visible;
 @property(nonatomic, assign) SlarkGraphicsBackend currentBackend;
+- (void)reconcileRendering;
 @end
 
 @implementation SlarkViewController
@@ -46,6 +51,12 @@
           __strong __typeof(weakSelf) strongSelf = weakSelf;
           if (strongSelf) {
               strongSelf.renderView.rotation = degrees;
+          }
+        }];
+        [self.player setRenderReconcileBlock:^{
+          __strong __typeof(weakSelf) strongSelf = weakSelf;
+          if (strongSelf) {
+              [strongSelf reconcileRendering];
           }
         }];
         self.view = self.renderView;
@@ -95,7 +106,7 @@
 }
 
 - (void)applicationWillResignActive {
-    if (self.renderView.isActive) {
+    if (self.visible) {
         [self.player pause];
         _isActive = YES;
     } else {
@@ -116,7 +127,7 @@
         [info[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue]);
     if (type == AVAudioSessionInterruptionTypeBegan) {
         // Interruption began (call, VoIP, etc.), pause playback
-        if (self.renderView.isActive) {
+        if (self.visible) {
             [self.player pause];
             _isActive = YES;
         }
@@ -142,12 +153,22 @@
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
-    [self.renderView start];
+    self.visible = YES;
+    [self reconcileRendering];
 }
 
 - (void)viewWillDisappear:(BOOL)animated {
     [super viewWillDisappear:animated];
-    [self.renderView stop];
+    self.visible = NO;
+    [self reconcileRendering];
+}
+
+- (void)reconcileRendering {
+    if (self.visible && [self.player vsyncDesired]) {
+        [self.renderView start];
+    } else {
+        [self.renderView stop];
+    }
 }
 
 - (void)switchGraphicsBackend:(SlarkGraphicsBackend)backend {
@@ -158,11 +179,14 @@
     if (backend == self.currentBackend) {
         return;
     }
+    [self.player setRenderSuspended:YES];
     [self.renderView stop];
+    CVPixelBufferRef lastFrame = [self.renderView preRenderBuffer];
     CGRect frame = self.renderView.frame;
     UIView<IRenderView>* newView = [self createRenderViewWithFrame:frame
                                                            backend:backend
                                                         hdrEnabled:hdrEnabled];
+    [newView adoptPreRenderBuffer:lastFrame];
     [self.player setRenderImpl:[newView renderImpl]];
     __weak __typeof(self) weakSelf = self;
     [self.player setRotationCallback:^(double degrees) {
@@ -174,11 +198,13 @@
     self.renderView = newView;
     self.view = newView;
     self.currentBackend = backend;
-    [newView start];
+    [self.player setRenderSuspended:NO];
+    [self reconcileRendering];
 }
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    self.visible = NO;
     [self.player stop];
     [self.renderView stop];
 }

@@ -552,6 +552,18 @@ struct MetalVideoRender : public IVideoRender {
     _preRenderBuffer = CVPixelBufferRetain(pixelBuffer);
 }
 
+- (CVPixelBufferRef)preRenderBuffer {
+    return _preRenderBuffer;
+}
+
+- (void)adoptPreRenderBuffer:(CVPixelBufferRef)buffer {
+    if (!buffer) {
+        return;
+    }
+    [self saveAsPreRenderBuffer:buffer];
+    [self renderPreBufferIfNeeded];
+}
+
 #pragma mark - Pixel Buffer Display
 
 - (void)updateVertexBufferWithFrameWidth:(size_t)frameWidth frameHeight:(size_t)frameHeight {

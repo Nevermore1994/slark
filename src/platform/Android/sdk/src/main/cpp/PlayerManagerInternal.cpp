@@ -36,16 +36,8 @@ void PlayerObserver::notifyPlayerState(std::string_view playerId, PlayerState st
     JNICall::callStatic<void>(env, kPlayerManagerClass, JavaMethod::NotifyPlayerState,
                               std::string(playerId),
                               JObjectWithSig(std::move(stateEnum), makeObject(kPlayerStateClass)));
-    // Buffering needs the render loop too: its first frame is presented by this vsync loop.
-    if (state == PlayerState::Prepared || state == PlayerState::Buffering ||
-        state == PlayerState::Playing) {
-        JNICall::callStatic<void>(env, kPlayerManagerClass, JavaMethod::StartRendering,
-                                  std::string(playerId));
-    } else if (state == PlayerState::Pause || state == PlayerState::Completed ||
-               state == PlayerState::Stop || state == PlayerState::Error) {
-        JNICall::callStatic<void>(env, kPlayerManagerClass, JavaMethod::StopRendering,
-                                  std::string(playerId));
-    }
+    JNICall::callStatic<void>(env, kPlayerManagerClass, JavaMethod::ReconcileRendering,
+                              std::string(playerId));
 }
 
 void PlayerObserver::notifyPlayerEvent(std::string_view playerId,

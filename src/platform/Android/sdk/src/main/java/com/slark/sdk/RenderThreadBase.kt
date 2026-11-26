@@ -101,22 +101,18 @@ abstract class RenderThreadBase(
             return
         }
         startPending = false
-        if (vsyncActive) {
-            // Already running; posting again would duplicate the frame callback chain.
-            return
-        }
-        vsyncActive = true
         handler.post {
-            if (shutdownRequested) {
-                SlarkLog.w(logTag, "start: handler post after shutdown, skip")
+            if (shutdownRequested || vsyncActive) {
                 return@post
             }
+            vsyncActive = true
             Choreographer.getInstance().postFrameCallback(vsyncCallback)
         }
     }
 
     override fun stop() {
         vsyncActive = false
+        startPending = false
         handler.post {
             Choreographer.getInstance().removeFrameCallback(vsyncCallback)
         }
@@ -173,11 +169,7 @@ abstract class RenderThreadBase(
         SlarkLog.i(logTag, "setRotation: degrees=$rotation")
         handler.post {
             applyRotation(rotation)
-            val backup = fetchBackupTextureId(playerId)
-            if (backup != null && backup.isValid()) {
-                pendingTexture = backup.asBackup()
-                presentTexture()
-            }
+            repaintBackup()
         }
     }
 
@@ -195,16 +187,21 @@ abstract class RenderThreadBase(
     }
 
     override fun rebuildSurface() {
-        val backupTexture = fetchBackupTextureId(playerId)
-        if (backupTexture != null && backupTexture.isValid()) {
-            val backup = backupTexture.asBackup()
-            handler.post {
-                rebuildBackend()
-                pendingTexture = backup
-                presentTexture()
-            }
-        } else {
-            SlarkLog.w(logTag, "rebuildSurface: no valid backup texture")
+        handler.post {
+            rebuildBackend()
+            repaintBackup()
+        }
+    }
+
+    override fun presentBackup() {
+        handler.post { repaintBackup() }
+    }
+
+    private fun repaintBackup() {
+        val backup = fetchBackupTextureId(playerId)
+        if (backup != null && backup.isValid()) {
+            pendingTexture = backup.asBackup()
+            presentTexture()
         }
     }
 

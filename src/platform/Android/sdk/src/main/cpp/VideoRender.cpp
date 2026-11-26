@@ -114,6 +114,9 @@ void VideoRender::renderFrame(const AVFrameRefPtr& frame) noexcept {
 }
 
 void VideoRender::renderFrameComplete(int32_t id) noexcept {
+    if (id == 0) {
+        return;
+    }
     std::lock_guard lock(mutex_);
     auto textureId = static_cast<uint32_t>(id);
     if (renderInfos_.contains(textureId)) {
@@ -135,6 +138,12 @@ void VideoRender::renderFrameComplete(int32_t id) noexcept {
 void VideoRender::renderEnd() noexcept {
     videoClock_.pause();
     LogI("VideoRender renderEnd, playerId:{}", playerId_);
+}
+
+void VideoRender::clearBackup() noexcept {
+    std::lock_guard lock(mutex_);
+    backupRenderInfo_ = {};
+    renderInfos_.clear();
 }
 
 }  // namespace slark

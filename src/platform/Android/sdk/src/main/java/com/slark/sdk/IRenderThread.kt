@@ -23,6 +23,7 @@ interface IRenderThread {
     fun setRotation(rotation: Int)
     fun setRenderSize(width: Int, height: Int)
     fun rebuildSurface()
+    fun presentBackup()
 }
 
 // Factory for creating render threads based on graphics backend

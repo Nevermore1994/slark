@@ -198,7 +198,7 @@ Java_com_slark_sdk_MediaCodecDecoder_processCodecError(JNIEnv* env,
     }
     LogE("codec error, decoderId:{} error={} originErrorCode={}", decoderId,
          toString(Error::CodecError), errorCode);
-    decoder->onError(Error::CodecError);
+    decoder->onError(Error::CodecError, errorCode);
 }
 
 extern "C" JNIEXPORT void JNICALL

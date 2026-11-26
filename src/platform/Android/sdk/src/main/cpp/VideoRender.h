@@ -56,6 +56,8 @@ class VideoRender : public IVideoRender, public std::enable_shared_from_this<Vid
         return backupRenderInfo_.texture;
     }
 
+    void clearBackup() noexcept;
+
  private:
     void requestRenderFrame() noexcept;
 

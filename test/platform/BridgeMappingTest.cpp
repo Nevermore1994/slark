@@ -55,6 +55,23 @@ TEST(BridgeMappingTest, SnapshotToPlayerStateCoversEveryStatus) {
     EXPECT_EQ(toPlayerState(snapshotWith(Status::Failed)), PlayerState::Error);
 }
 
+TEST(BridgeMappingTest, ShouldDriveVsyncCoversEveryState) {
+    constexpr PlayerState kDriving[] = {PlayerState::Prepared, PlayerState::Buffering,
+                                        PlayerState::Playing};
+    for (auto state : kDriving) {
+        EXPECT_TRUE(shouldDriveVsync(state, false));
+        EXPECT_FALSE(shouldDriveVsync(state, true));
+    }
+    constexpr PlayerState kIdle[] = {PlayerState::NotInited, PlayerState::Initializing,
+                                     PlayerState::Ready,     PlayerState::Pause,
+                                     PlayerState::Stop,      PlayerState::Error,
+                                     PlayerState::Completed, PlayerState::Unknown};
+    for (auto state : kIdle) {
+        EXPECT_FALSE(shouldDriveVsync(state, false));
+        EXPECT_FALSE(shouldDriveVsync(state, true));
+    }
+}
+
 TEST(BridgeMappingTest, StateNotificationsAreDeduplicated) {
     Notifier notifier{"bridge"};
     auto observer = std::make_shared<RecordingObserver>();

@@ -24,8 +24,8 @@ class NativeDecoder : public IDecoder {
 
     virtual void receiveDecodedData(DataPtr data, int64_t pts, bool isCompleted) noexcept = 0;
 
-    virtual void onError(Error error) noexcept {
-        invokeReceiveFunc(DecoderData{nullptr, error});
+    virtual void onError(Error error, int32_t origin = 0) noexcept {
+        invokeReceiveFunc(DecoderData{nullptr, error, 0, origin});
     }
 
     virtual void onVideoSizeChanged(uint32_t /*width*/, uint32_t /*height*/) noexcept {}

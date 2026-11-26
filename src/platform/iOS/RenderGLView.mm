@@ -472,6 +472,18 @@ static const GLfloat kColorConversion709FullRange[] = {
     _preRenderBuffer = CVPixelBufferRetain(pixelBuffer);
 }
 
+- (CVPixelBufferRef)preRenderBuffer {
+    return _preRenderBuffer;
+}
+
+- (void)adoptPreRenderBuffer:(CVPixelBufferRef)buffer {
+    if (!buffer) {
+        return;
+    }
+    [self saveAsPreRenderBuffer:buffer];
+    [self renderPreBufferIfNeeded];
+}
+
 #pragma mark - OpenGL Management
 
 - (void)setupOpenGL {
