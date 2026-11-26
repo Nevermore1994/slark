@@ -60,7 +60,7 @@ void outputLog(LogType level, const std::string& log);
             outputLog(level, std::format("{}{}[{}][Line:{}][Function:{}]" fmt "\n",              \
                                          Time::localTimeStr(),                                   \
                                          kLogTags[static_cast<size_t>(level)], __FILE_NAME__,    \
-                                         __LINE__, __FUNCTION__, ##__VA_ARGS__));                \
+                                         __LINE__, __func__, ##__VA_ARGS__));                \
         }                                                                                        \
     } while (0)
 

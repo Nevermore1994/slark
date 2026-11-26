@@ -59,7 +59,7 @@ TEST_F(ThreadPoolTest, ExceptionHandling) {
     });
 
     ASSERT_TRUE(future);
-    EXPECT_THROW(future->get(), std::runtime_error);
+    EXPECT_THROW(static_cast<void>(future->get()), std::runtime_error);
 }
 
 TEST_F(ThreadPoolTest, ShutdownBehavior) {

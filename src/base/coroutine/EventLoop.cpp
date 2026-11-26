@@ -14,6 +14,15 @@
 
 namespace slark {
 
+namespace {
+
+[[maybe_unused]] constexpr uint64_t encodeEvent(int32_t fd, uint64_t generation) noexcept {
+    return (static_cast<uint64_t>(static_cast<uint32_t>(fd)) << 32) |
+           (generation & 0xFFFFFFFFULL);
+}
+
+}  // namespace
+
 EventLoop::EventLoop() {
 #ifdef __linux__
     epollFd_ = epoll_create1(EPOLL_CLOEXEC);
@@ -24,7 +33,7 @@ EventLoop::EventLoop() {
     if (wakeupFd_ >= 0) {
         epoll_event event{};
         event.events = EPOLLIN;
-        event.data.fd = wakeupFd_;
+        event.data.u64 = 0;
         epoll_ctl(epollFd_, EPOLL_CTL_ADD, wakeupFd_, &event);
     }
 #elif defined(__APPLE__)
@@ -87,15 +96,44 @@ void EventLoop::wakeup() noexcept {
 #endif
 }
 
+uint64_t EventLoop::fdGeneration(int32_t fd) const noexcept {
+    std::lock_guard l(fdMutex_);
+    const auto it = fdGenerations_.find(fd);
+    return it == fdGenerations_.end() ? 0 : it->second;
+}
+
+uint64_t EventLoop::ensureGenerationLocked(int32_t fd) noexcept {
+    auto it = fdGenerations_.find(fd);
+    if (it == fdGenerations_.end()) {
+        const uint64_t candidate = (nextId_.fetch_add(1) % 0xFFFFFFFFULL) + 1;
+        it = fdGenerations_.emplace(fd, candidate).first;
+    }
+    return it->second;
+}
+
+bool EventLoop::matchesGeneration(int32_t fd, uint64_t generation) const noexcept {
+    if (generation == 0) {
+        return false;
+    }
+    std::lock_guard l(fdMutex_);
+    const auto it = fdGenerations_.find(fd);
+    return it != fdGenerations_.end() &&
+           static_cast<uint32_t>(it->second) == static_cast<uint32_t>(generation);
+}
+
 void EventLoop::registerFd(int32_t fd) noexcept {
     int32_t flags = fcntl(fd, F_GETFL, 0);
     if (flags >= 0) {
         fcntl(fd, F_SETFL, flags | O_NONBLOCK);
     }
+    [[maybe_unused]] const uint64_t generation = [this, fd] {
+        std::lock_guard l(fdMutex_);
+        return ensureGenerationLocked(fd);
+    }();
 #ifdef __linux__
     epoll_event e{};
     e.events = EPOLLET;
-    e.data.fd = fd;
+    e.data.u64 = encodeEvent(fd, generation);
     epoll_ctl(epollFd_, EPOLL_CTL_ADD, fd, &e);
 #endif
 }
@@ -122,6 +160,7 @@ void EventLoop::unregisterFd(int32_t fd) noexcept {
             }
             fdSlots_.erase(it);
         }
+        fdGenerations_.erase(fd);
 #ifdef __linux__
         fdEvents_.erase(fd);
 #endif
@@ -160,7 +199,7 @@ void EventLoop::setReadable(int32_t fd, bool en) noexcept {
         fdEvents_[fd] &= ~EPOLLIN;
     }
     epoll_event e{};
-    e.data.fd = fd;
+    e.data.u64 = encodeEvent(fd, ensureGenerationLocked(fd));
     e.events = EPOLLET | fdEvents_[fd];
     epoll_ctl(epollFd_, EPOLL_CTL_MOD, fd, &e);
 #elif defined(__APPLE__)
@@ -173,7 +212,8 @@ void EventLoop::setReadable(int32_t fd, bool en) noexcept {
         }
     }
     struct kevent c;
-    EV_SET(&c, fd, EVFILT_READ, en ? EV_ADD | EV_ENABLE : EV_DELETE, 0, 0, 0);
+    EV_SET(&c, fd, EVFILT_READ, en ? EV_ADD | EV_ENABLE : EV_DELETE, 0, 0,
+           reinterpret_cast<void*>(ensureGenerationLocked(fd)));
     kevent(kqueueFd_, &c, 1, 0, 0, 0);
 #endif
 }
@@ -194,7 +234,7 @@ void EventLoop::setWritable(int32_t fd, bool en) noexcept {
         fdEvents_[fd] &= ~EPOLLOUT;
     }
     epoll_event e{};
-    e.data.fd = fd;
+    e.data.u64 = encodeEvent(fd, ensureGenerationLocked(fd));
     e.events = EPOLLET | fdEvents_[fd];
     epoll_ctl(epollFd_, EPOLL_CTL_MOD, fd, &e);
 #elif defined(__APPLE__)
@@ -207,7 +247,8 @@ void EventLoop::setWritable(int32_t fd, bool en) noexcept {
         }
     }
     struct kevent c;
-    EV_SET(&c, fd, EVFILT_WRITE, en ? EV_ADD | EV_ENABLE : EV_DELETE, 0, 0, 0);
+    EV_SET(&c, fd, EVFILT_WRITE, en ? EV_ADD | EV_ENABLE : EV_DELETE, 0, 0,
+           reinterpret_cast<void*>(ensureGenerationLocked(fd)));
     kevent(kqueueFd_, &c, 1, 0, 0, 0);
 #endif
 }
@@ -331,7 +372,17 @@ void EventLoop::RegistrationToken::cancel() noexcept {
     }
 }
 
-void EventLoop::dispatchEvent(int32_t fd, bool readable, bool writable, bool error) noexcept {
+void EventLoop::dispatchFdEvent(int32_t fd, bool readable, bool writable,
+                                uint64_t generation) noexcept {
+    dispatchEvent(fd, readable, writable, false, generation);
+}
+
+void EventLoop::dispatchEvent(int32_t fd, bool readable, bool writable, bool error,
+                             uint64_t generation) noexcept {
+    // A queued event from a closed fd must never touch the new registration on the same number.
+    if (!matchesGeneration(fd, generation)) {
+        return;
+    }
     FdRegistration readReg, writeReg;
     bool disableRead = false, disableWrite = false;
     if (readable || error) {
@@ -372,15 +423,17 @@ void EventLoop::poll() noexcept {
     epoll_event events[kMaxEvents];
     int32_t cnt = epoll_wait(epollFd_, events, kMaxEvents, kPollTimeoutMs);
     for (int32_t i = 0; i < cnt; ++i) {
-        int32_t fd = events[i].data.fd;
-        if (fd == wakeupFd_) {
+        const uint64_t raw = events[i].data.u64;
+        if (raw == 0) {
             uint64_t v = 0;
             (void)::read(wakeupFd_, &v, sizeof(v));
             continue;
         }
+        const int32_t fd = static_cast<int32_t>(raw >> 32);
+        const uint64_t generation = raw & 0xFFFFFFFFULL;
         uint32_t m = events[i].events;
         dispatchEvent(fd, (m & EPOLLIN) != 0, (m & EPOLLOUT) != 0,
-                      (m & (EPOLLERR | EPOLLHUP)) != 0);
+                      (m & (EPOLLERR | EPOLLHUP)) != 0, generation);
     }
 #elif defined(__APPLE__)
     struct kevent events[kMaxEvents];
@@ -391,8 +444,10 @@ void EventLoop::poll() noexcept {
         if (fd == 0 && events[i].filter == EVFILT_USER) {
             continue;
         }
+        const uint64_t generation =
+            static_cast<uint64_t>(reinterpret_cast<uintptr_t>(events[i].udata));
         dispatchEvent(fd, events[i].filter == EVFILT_READ, events[i].filter == EVFILT_WRITE,
-                      (events[i].flags & EV_ERROR) != 0);
+                      (events[i].flags & EV_ERROR) != 0, generation);
     }
 #endif
 }

@@ -107,6 +107,12 @@ class EventLoop : public NonCopyable {
 #endif
     }
 
+    // Diagnostics: the generation of an fd's current registration lifetime, 0 when unregistered.
+    [[nodiscard]] uint64_t fdGeneration(int32_t fd) const noexcept;
+
+    // Replays one kernel event with an explicit generation (tests and event replay).
+    void dispatchFdEvent(int32_t fd, bool readable, bool writable, uint64_t generation) noexcept;
+
  private:
     RegistrationToken createToken(int32_t fd,
                                   FdInterest interest,
@@ -115,7 +121,10 @@ class EventLoop : public NonCopyable {
         int32_t fd,
         FdInterest interest,
         const std::shared_ptr<ResumeGate>* expectedGate = nullptr) noexcept;
-    void dispatchEvent(int32_t fd, bool readable, bool writable, bool error) noexcept;
+    [[nodiscard]] uint64_t ensureGenerationLocked(int32_t fd) noexcept;
+    [[nodiscard]] bool matchesGeneration(int32_t fd, uint64_t generation) const noexcept;
+    void dispatchEvent(int32_t fd, bool readable, bool writable, bool error,
+                       uint64_t generation) noexcept;
     void poll() noexcept;
 
     struct FdSlot {
@@ -137,6 +146,7 @@ class EventLoop : public NonCopyable {
     std::atomic<uint64_t> nextId_{1};
     mutable std::mutex fdMutex_;
     std::unordered_map<int32_t, FdSlot> fdSlots_;
+    std::unordered_map<int32_t, uint64_t> fdGenerations_;
     std::unordered_map<uint64_t, std::pair<int32_t, FdInterest>> tokenMap_;
 #ifdef __linux__
     std::unordered_map<int32_t, uint32_t> fdEvents_;

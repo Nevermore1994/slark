@@ -262,6 +262,84 @@ TEST(IOContextTest, ReadinessRacingCancelResumesExactlyOnce) {
     }
 }
 
+TEST(IOContextTest, FdReuseKeepsStaleEventsAwayFromFreshWaiter) {
+    auto& ctx = IOContext::instance();
+    for (int round = 0; round < 200; ++round) {
+        int fds[2];
+        ASSERT_EQ(pipe(fds), 0);
+        ctx.registerSocket(fds[0]);
+        const auto staleGeneration = ctx.fdGeneration(fds[0]);
+        ASSERT_NE(staleGeneration, 0u);
+
+        std::atomic<int> resumes{0};
+        auto stale = awaitReadableCounting(fds[0], &resumes);
+        stale.resume();
+        ASSERT_FALSE(stale.isDone()) << "round " << round;
+
+        // Keep the fd readable while unregistering, so a stale event may still be in flight.
+        (void)write(fds[1], "x", 1);
+        ctx.unregisterSocket(fds[0]);
+        EXPECT_EQ(ctx.fdGeneration(fds[0]), 0u);
+        ASSERT_TRUE(waitForDone(stale)) << "round " << round;
+        ::close(fds[0]);
+        ::close(fds[1]);
+
+        ASSERT_EQ(pipe(fds), 0);
+        ctx.registerSocket(fds[0]);
+        EXPECT_NE(ctx.fdGeneration(fds[0]), staleGeneration) << "round " << round;
+        std::atomic<int> freshResumes{0};
+        auto fresh = awaitReadableCounting(fds[0], &freshResumes);
+        fresh.resume();
+        ASSERT_FALSE(fresh.isDone()) << "round " << round;
+        (void)write(fds[1], "y", 1);
+        ASSERT_TRUE(waitForDone(fresh)) << "round " << round;
+        EXPECT_EQ(freshResumes.load(), 1) << "round " << round;
+
+        ctx.unregisterSocket(fds[0]);
+        ::close(fds[0]);
+        ::close(fds[1]);
+    }
+}
+
+TEST(IOContextTest, StaleGenerationEventDoesNotWakeFreshWaiter) {
+    auto& ctx = IOContext::instance();
+    int fds[2];
+    ASSERT_EQ(pipe(fds), 0);
+    ctx.registerSocket(fds[0]);
+    const auto staleGeneration = ctx.fdGeneration(fds[0]);
+    ASSERT_NE(staleGeneration, 0u);
+
+    std::atomic<int> staleResumes{0};
+    auto stale = awaitReadableCounting(fds[0], &staleResumes);
+    stale.resume();
+    ASSERT_FALSE(stale.isDone());
+    ctx.unregisterSocket(fds[0]);
+    ASSERT_TRUE(waitForDone(stale));
+    ::close(fds[0]);
+    ::close(fds[1]);
+
+    ASSERT_EQ(pipe(fds), 0);
+    ctx.registerSocket(fds[0]);
+    const auto freshGeneration = ctx.fdGeneration(fds[0]);
+    ASSERT_NE(freshGeneration, staleGeneration);
+
+    std::atomic<int> freshResumes{0};
+    auto fresh = awaitReadableCounting(fds[0], &freshResumes);
+    fresh.resume();
+    ASSERT_FALSE(fresh.isDone());
+
+    ctx.dispatchFdEvent(fds[0], true, false, staleGeneration);
+    EXPECT_FALSE(fresh.isDone()) << "a stale-generation event must be discarded";
+
+    ctx.dispatchFdEvent(fds[0], true, false, freshGeneration);
+    EXPECT_TRUE(waitForDone(fresh));
+    EXPECT_EQ(freshResumes.load(), 1);
+
+    ctx.unregisterSocket(fds[0]);
+    ::close(fds[0]);
+    ::close(fds[1]);
+}
+
 TEST(IOContextTest, SetReadableWritable) {
     int fds[2];
     ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);

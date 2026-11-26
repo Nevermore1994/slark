@@ -435,7 +435,8 @@ BenchResult runBenchmark(const std::string& name,
     }
     std::ranges::sort(merged);
 
-    double totalMs = duration_cast<microseconds>(wallEnd - wallStart).count() / 1000.0;
+    double totalMs =
+        static_cast<double>(duration_cast<microseconds>(wallEnd - wallStart).count()) / 1000.0;
     int64_t totalOps = static_cast<int64_t>(threadCount) * opsPerThread;
     double throughput = static_cast<double>(totalOps) / (totalMs / 1000.0);
     double avgNs =

@@ -616,13 +616,13 @@ TEST(CancellationPropagationTest, GeneratorHandoffToATokenlessConsumerDropsThePr
 }
 
 TEST(CancellationPropagationTest, GeneratorHandoffsFollowEachConsumerAndStayBounded) {
-    constexpr int kConsumers = 32;
+    constexpr std::size_t kConsumers = 32;
     std::vector<StepRecord> steps;
     std::vector<CancellationToken> tokens(kConsumers);
-    auto generator = recordsEachStepsToken(kConsumers, &steps);
+    auto generator = recordsEachStepsToken(static_cast<int>(kConsumers), &steps);
     generator.setCancellationToken(CancellationToken{});
 
-    for (int i = 0; i < kConsumers; ++i) {
+    for (std::size_t i = 0; i < kConsumers; ++i) {
         if (i % 2 == 1) {
             tokens[i].cancel();
         }
@@ -632,13 +632,13 @@ TEST(CancellationPropagationTest, GeneratorHandoffsFollowEachConsumerAndStayBoun
         ASSERT_TRUE(consumer.isDone()) << "consumer " << i;
     }
 
-    ASSERT_EQ(steps.size(), static_cast<std::size_t>(kConsumers));
-    for (int i = 0; i < kConsumers; ++i) {
+    ASSERT_EQ(steps.size(), kConsumers);
+    for (std::size_t i = 0; i < kConsumers; ++i) {
         EXPECT_EQ(steps[i].cancelled, i % 2 == 1)
             << "step " << i << " must observe the token of the consumer that pulled it";
         EXPECT_LE(steps[i].depth, 1u) << "a handoff rebuilds the link instead of stacking it";
     }
-    for (int i = 0; i + 1 < kConsumers; ++i) {
+    for (std::size_t i = 0; i + 1 < kConsumers; ++i) {
         EXPECT_EQ(slark::CancellationTokenTestAccess::callbackCount(tokens[i]), 0u)
             << "consumer " << i << " was handed over and must not stay linked";
     }

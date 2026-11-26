@@ -46,7 +46,7 @@ TEST(DebugMetricsTest, TickReturnsOneCsvRowPerSample) {
     auto& metrics = slark::perf::DebugMetrics::instance();
     metrics.reset();
 
-    metrics.tick();
+    static_cast<void>(metrics.tick());
     const auto two = metrics.tick();
     const auto three = metrics.tick();
     EXPECT_EQ(splitLines(two).size(), 1u);
